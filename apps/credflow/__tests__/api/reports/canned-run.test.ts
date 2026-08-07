@@ -30,7 +30,7 @@ describe("GET /api/reports/canned/[id]", () => {
   });
 
   it("returns 404 for an unknown report id", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
     const { GET } = await import("@/app/api/reports/canned/[id]/route");
     const req = new Request("http://test/api/reports/canned/no-such-report");
     const res = await GET(req as unknown as import("next/server").NextRequest, {
@@ -42,7 +42,7 @@ describe("GET /api/reports/canned/[id]", () => {
   });
 
   it("forwards the caller's tenantId into the run query", async () => {
-    setSession({ userId: "u1", tenantId: "tenant-A", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "tenant-A", role: "Administrator", email: "a@x.co", name: "A" });
     asMock(db.qcfOpportunity.groupBy).mockResolvedValueOnce([] as never);
 
     const { GET } = await import("@/app/api/reports/canned/[id]/route");
@@ -56,11 +56,11 @@ describe("GET /api/reports/canned/[id]", () => {
     const args = asMock(db.qcfOpportunity.groupBy).mock.calls[0]?.[0];
     expect(args).toBeDefined();
     const where = args!.where as Record<string, unknown>;
-    expect(where.tenantId).toBe("tenant-A");
+    expect(where.orgId).toBe("tenant-A");
   });
 
   it("happy path: runs pipeline-by-stage and returns the spec'd shape", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
     asMock(db.qcfOpportunity.groupBy).mockResolvedValueOnce([
       {
         stage: "Prospecting",

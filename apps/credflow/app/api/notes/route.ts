@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     if (isResponse(user)) return user;
     const { searchParams } = new URL(req.url);
     const objectId = searchParams.get("relatedObjectId");
-    const where: Record<string, unknown> = { tenantId: user.tenantId };
+    const where: Record<string, unknown> = { orgId: user.orgId };
     if (objectId) where.relatedObjectId = objectId;
     const items = await prisma.qcfNote.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
     return NextResponse.json({
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       data: {
         ...rest,
         content: storedContent,
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         createdByUserId: user.userId,
       },
     });
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       (rest.relatedKind.toLowerCase() === "lead" ? rest.relatedObjectId : null);
     if (noteLeadId) {
       await touchLeadLastActivity({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         leadId: noteLeadId,
         label: "Note",
       });

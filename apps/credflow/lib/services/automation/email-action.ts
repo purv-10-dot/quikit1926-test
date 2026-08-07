@@ -77,11 +77,11 @@ export function evaluateSuppression(lead: Lead, recipient: string): SuppressionR
  * send — the run continues.
  */
 export async function executeSendEmail(input: {
-  tenantId: string;
+  orgId: string;
   lead: Lead;
   cfg: SendEmailConfig;
 }): Promise<SendEmailActionResult> {
-  const { tenantId, lead, cfg } = input;
+  const { orgId, lead, cfg } = input;
   const recipient = (cfg.to?.trim() || lead.email?.trim() || "");
   const subject = renderMergeFields(String(cfg.subject ?? "Hello from QuikCRM"), lead);
   const body = renderMergeFields(String(cfg.body ?? ""), lead);
@@ -92,7 +92,7 @@ export async function executeSendEmail(input: {
     // error (SPEC §5.1). Status "skipped" keeps it out of the dispatcher's reach.
     const row = await prisma.qcfOutboundMessageLog.create({
       data: {
-        tenantId,
+        orgId,
         channel: "email",
         to: recipient,
         subject,
@@ -105,9 +105,9 @@ export async function executeSendEmail(input: {
   }
 
   const row = await prisma.qcfOutboundMessageLog.create({
-    data: { tenantId, channel: "email", to: recipient, subject, body, status: "queued" },
+    data: { orgId, channel: "email", to: recipient, subject, body, status: "queued" },
   });
-  const res = await dispatchOutboundMessage(tenantId, row.id);
+  const res = await dispatchOutboundMessage(orgId, row.id);
   const status: SendEmailActionResult["status"] =
     res.outcome === "sent" ? "sent" : res.outcome === "failed" ? "failed" : "skipped";
   return { status, logId: row.id, reason: res.reason };

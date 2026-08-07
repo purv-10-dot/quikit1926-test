@@ -45,14 +45,14 @@ async function newVersion(): Promise<string> {
 
 async function newLead(status = "Open", stage = "New", substatus: string | null = null): Promise<string> {
   const lead = await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: `Lead ${STAMP}-${vn}`, status, stage, substatus },
+    data: { orgId: TENANT, name: `Lead ${STAMP}-${vn}`, status, stage, substatus },
   });
   return lead.id;
 }
 
 beforeAll(async () => {
   const set = await integrationPrisma.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
 });
@@ -73,11 +73,11 @@ afterAll(async () => {
     await integrationPrisma.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
     await integrationPrisma.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
   }
-  await integrationPrisma.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFieldValue.deleteMany({ where: { orgId: TENANT } });
   await integrationPrisma.qcfFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
   await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
   await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
-  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { orgId: TENANT } });
 });
 
 describe("loadEvalRules — Prisma rows -> EvalRule[] adapter", () => {
@@ -117,8 +117,8 @@ describe("loadEvalContext — lead state + field values -> EvalContext", () => {
     const activityId = `act_${STAMP}_ctx`;
     await integrationPrisma.qcfFieldValue.createMany({
       data: [
-        { tenantId: TENANT, activityId, formSetVersionId: versionId, fieldKey: "payment_mode", valueType: "dropdown", valueText: "invoice" },
-        { tenantId: TENANT, activityId, formSetVersionId: versionId, fieldKey: "owners", valueType: "user_picker", valueUserIds: ["u1", "u2"] },
+        { orgId: TENANT, activityId, formSetVersionId: versionId, fieldKey: "payment_mode", valueType: "dropdown", valueText: "invoice" },
+        { orgId: TENANT, activityId, formSetVersionId: versionId, fieldKey: "owners", valueType: "user_picker", valueUserIds: ["u1", "u2"] },
       ],
     });
 
@@ -153,7 +153,7 @@ describe("applyFormRules — set_stage writes the lead's Contact Stage, one hop,
     await addRuleCondition({ formRuleId: ruleB.id, subjectKind: "stage", operator: "is", valueKeys: [STAGE_A], sortOrder: 0 });
     await addRuleAction({ formRuleId: ruleB.id, actionType: "set_stage", targetKind: "stage", setStatusId: STAGE_B, sortOrder: 0 });
 
-    const result = await applyFormRules({ tenantId: TENANT, leadId, activityId: null, formSetVersionId: versionId });
+    const result = await applyFormRules({ orgId: TENANT, leadId, activityId: null, formSetVersionId: versionId });
 
     expect(result.decision.setStage).toEqual({ status: STAGE_A, subStatus: null });
     expect(result.stageApplied).toBe(true);
@@ -173,7 +173,7 @@ describe("applyFormRules — set_stage writes the lead's Contact Stage, one hop,
     await addRuleCondition({ formRuleId: rule.id, subjectKind: "status", operator: "is", valueKeys: ["Open"], sortOrder: 0 });
     await addRuleAction({ formRuleId: rule.id, actionType: "show_field", targetKind: "field", targetFieldKey: "gst", sortOrder: 0 });
 
-    const result = await applyFormRules({ tenantId: TENANT, leadId, activityId: null, formSetVersionId: versionId });
+    const result = await applyFormRules({ orgId: TENANT, leadId, activityId: null, formSetVersionId: versionId });
 
     expect(result.stageApplied).toBe(false);
     expect(result.decision.fieldVisibility.gst).toBe("show");

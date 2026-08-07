@@ -2,7 +2,7 @@ import type { FolderDto } from "./types";
 
 export interface FolderRow {
   id: string;
-  tenantId: string;
+  orgId: string;
   name: string;
   parentFolderId: string | null;
   refType: string | null;

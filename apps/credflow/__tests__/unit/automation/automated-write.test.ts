@@ -46,10 +46,10 @@ const guard = vi.mocked(recordWriteAndCheck);
 const attribution = vi.mocked(recordAttribution);
 
 function lead(overrides: Record<string, unknown> = {}): QcfLead {
-  return { id: "lead-1", tenantId: "t1", stage: "New Lead", status: "Open", ownerId: null, ...overrides } as unknown as QcfLead;
+  return { id: "lead-1", orgId: "t1", stage: "New Lead", status: "Open", ownerId: null, ...overrides } as unknown as QcfLead;
 }
 const base = {
-  tenantId: "t1",
+  orgId: "t1",
   workflowId: "wf1",
   nodeId: "n1",
   triggerEventId: "evt1",
@@ -73,7 +73,7 @@ describe("applyAutomatedLeadWrite · 1.3 contract", () => {
 
     expect(outcome).toBe("written");
     expect(transition).toHaveBeenCalledWith({
-      user: expect.objectContaining({ tenantId: "t1", userId: AUTOMATION_ACTOR_ID }),
+      user: expect.objectContaining({ orgId: "t1", userId: AUTOMATION_ACTOR_ID }),
       leadId: "lead-1",
       input: { stage: "Negotiation" },
     });

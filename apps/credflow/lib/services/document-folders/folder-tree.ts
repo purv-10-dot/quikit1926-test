@@ -18,13 +18,13 @@ export async function listFolderTreeChildren(
 
   const rows = await prisma.qcfDocumentFolder.findMany({
     where: {
-      ...scopeWhere(user.tenantId, scope),
+      ...scopeWhere(user.orgId, scope),
       parentFolderId,
     },
     orderBy: { name: "asc" },
     select: {
       id: true,
-      tenantId: true,
+      orgId: true,
       name: true,
       parentFolderId: true,
       refType: true,
@@ -48,21 +48,21 @@ export async function listFolderTreeChildren(
 }
 
 export async function searchFolders(
-  tenantId: string,
+  orgId: string,
   scope: FolderScope,
   q: string,
   limit = 50,
 ): Promise<FolderTreeNodeDto[]> {
   const rows = await prisma.qcfDocumentFolder.findMany({
     where: {
-      ...scopeWhere(tenantId, scope),
+      ...scopeWhere(orgId, scope),
       name: { contains: q.trim(), mode: "insensitive" },
     },
     take: limit,
     orderBy: { name: "asc" },
     select: {
       id: true,
-      tenantId: true,
+      orgId: true,
       name: true,
       parentFolderId: true,
       refType: true,
@@ -86,12 +86,12 @@ export async function searchFolders(
 }
 
 export async function assertFolderInScope(
-  tenantId: string,
+  orgId: string,
   folderId: string,
   scope: FolderScope,
 ): Promise<{ refType: DocumentRefType | null; refId: string | null }> {
   const folder = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: folderId, tenantId, deletedAt: null },
+    where: { id: folderId, orgId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
 

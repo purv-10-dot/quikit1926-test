@@ -12,8 +12,8 @@ export type LeadEvent =
   | { type: "transitioned"; leadId: string; stage: string; fromStage: string }
   | { type: "deleted"; leadId: string };
 
-export function tenantLeadChannel(tenantId: string): string {
-  return `quikcrm:leads:${tenantId}`;
+export function tenantLeadChannel(orgId: string): string {
+  return `quikcrm:leads:${orgId}`;
 }
 
 let warnedDown = false;
@@ -23,10 +23,10 @@ let warnedDown = false;
  * pattern in lib/services/automation/triggers.ts so the rest of the CRM stays
  * functional in environments without Redis).
  */
-export async function publishLeadEvent(tenantId: string, event: LeadEvent): Promise<void> {
+export async function publishLeadEvent(orgId: string, event: LeadEvent): Promise<void> {
   if (!isRedisEnabled()) return;
   try {
-    await getRedis().publish(tenantLeadChannel(tenantId), JSON.stringify(event));
+    await getRedis().publish(tenantLeadChannel(orgId), JSON.stringify(event));
   } catch (err) {
     if (!warnedDown) {
       warnedDown = true;

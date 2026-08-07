@@ -35,7 +35,7 @@ export default async function ContactDetailPage({
   let canViewLeads = isAdmin;
 
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     contactsEdit = !!matrix.find((r) => r.module === "contacts")?.actions.includes("edit");
     contactsDelete = !!matrix.find((r) => r.module === "contacts")?.actions.includes("delete");
     activitiesCreate = !!matrix

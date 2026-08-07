@@ -19,7 +19,7 @@ const mockCreate = vi.mocked(createNotification);
 function dueTodayTask() {
   return {
     id: "task-today",
-    tenantId: "t1",
+    orgId: "t1",
     subject: "Call Acme",
     priority: "High",
     dueDate: new Date(),
@@ -30,7 +30,7 @@ function dueTodayTask() {
 function overdueTask() {
   return {
     id: "task-overdue",
-    tenantId: "t1",
+    orgId: "t1",
     subject: "Overdue follow-up",
     priority: "High",
     dueDate: new Date(Date.now() - 86_400_000),

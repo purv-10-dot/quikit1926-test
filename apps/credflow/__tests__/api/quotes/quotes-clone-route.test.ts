@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -35,7 +35,7 @@ describe("POST /api/quotes/[id]/clone", () => {
     db.$transaction.mockImplementation(async (cb: unknown) => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
-    // findFirst returns null because the where { id, tenantId } filter
+    // findFirst returns null because the where { id, orgId } filter
     // doesn't match in the requesting tenant.
     db.qcfQuote.findFirst.mockResolvedValue(null);
 
@@ -56,7 +56,7 @@ describe("POST /api/quotes/[id]/clone", () => {
     });
     db.qcfQuote.findFirst.mockResolvedValue({
       id: "q-src",
-      tenantId: "t1",
+      orgId: "t1",
       quoteNumber: "QT-2026-0007",
       versionNumber: 3,
       status: "Won",

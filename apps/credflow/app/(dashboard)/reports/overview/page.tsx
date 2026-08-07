@@ -6,7 +6,7 @@ import { ReportsExecutiveClient } from "@/components/reports/reports-executive-c
 export default async function ReportsOverviewPage() {
   const user = await requireUser();
   const memberships = await prisma.orgMember.findMany({
-    where: { orgId: user.tenantId },
+    where: { orgId: user.orgId },
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
   const ownerOptions = memberships

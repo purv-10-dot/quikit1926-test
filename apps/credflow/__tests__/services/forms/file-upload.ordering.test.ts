@@ -29,7 +29,7 @@ const MB = 1024 * 1024;
 
 const user: SessionUser = {
   userId: "u_1",
-  tenantId: "t_1",
+  orgId: "t_1",
   role: "member",
   email: "u@test",
   name: "U",

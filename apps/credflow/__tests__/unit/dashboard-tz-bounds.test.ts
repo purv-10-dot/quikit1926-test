@@ -37,7 +37,7 @@ const RANGE_BASE = {
   from: new Date("2026-05-01T00:00:00Z"),
   to: new Date("2026-05-08T23:59:59.999Z"),
 };
-const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
+const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
 
 function armPrismaDefaults(): void {
   db.qcfLead.count.mockResolvedValue(0);

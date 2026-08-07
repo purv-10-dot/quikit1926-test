@@ -42,7 +42,7 @@ async function main() {
   if (dbrow[0]?.db !== "first_db_crm_autotest") throw new Error(`REFUSING: on ${dbrow[0]?.db}`);
 
   const stageChanges = (leadId: string) =>
-    prisma.qcfActivity.count({ where: { tenantId: TENANT, leadId, type: "LeadStageChange" } });
+    prisma.qcfActivity.count({ where: { orgId: TENANT, leadId, type: "LeadStageChange" } });
 
   // ---- reset fixture baselines (idempotent, direct writes) ----
   await prisma.qcfLead.update({ where: { id: "autotest-r19-match" }, data: { stage: "New Lead", substatus: "Negotiation" } });
@@ -53,7 +53,7 @@ async function main() {
   // ---- definitions ----
   const r19 = await prisma.qcfWorkflowDefinition.create({
     data: {
-      tenantId: TENANT, name: "R19 substage→Negotiation", status: "Active", triggerType: "trigger_lead_updated",
+      orgId: TENANT, name: "R19 substage→Negotiation", status: "Active", triggerType: "trigger_lead_updated",
       graphNodes: [
         { id: "t", kind: "trigger_lead_updated", config: {} },
         { id: "cond", kind: "if_else", config: { conditions: [{ field: "substatus", op: "in", value: ["Negotiation"] }] } },
@@ -67,7 +67,7 @@ async function main() {
   });
   const r1 = await prisma.qcfWorkflowDefinition.create({
     data: {
-      tenantId: TENANT, name: "R1 substage+stage→Disqualified", status: "Active", triggerType: "trigger_lead_updated",
+      orgId: TENANT, name: "R1 substage+stage→Disqualified", status: "Active", triggerType: "trigger_lead_updated",
       graphNodes: [
         { id: "t", kind: "trigger_lead_updated", config: {} },
         { id: "cond", kind: "if_else", config: { conditions: [

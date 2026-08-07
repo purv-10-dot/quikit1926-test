@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await listPriceLists({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       q: parsed.data.q,
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const created = await createPriceList({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         userName: user.name,
         input: parsed.data,

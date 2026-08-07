@@ -16,7 +16,7 @@ import { enqueueLeadSquaredSyncSafe } from "@/lib/queue/leadsquared-queue";
  *  - Redundant enqueues are cheap: the loop guard drops an unchanged payload, so
  *    a change to a non-synced field (e.g. owner) is a no-op at push time.
  */
-export function triggerOutboundSync(input: { tenantId: string; crmLeadId: string }): void {
+export function triggerOutboundSync(input: { orgId: string; crmLeadId: string }): void {
   void enqueueLeadSquaredSyncSafe(input).catch((err) =>
     console.error("[leadsquared] enqueue failed", err instanceof Error ? err.message : err),
   );

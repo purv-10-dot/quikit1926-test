@@ -8,8 +8,8 @@ import { parseOptionalCampaignDate, updateCampaignSchema } from "@/lib/validator
 
 export const runtime = "nodejs";
 
-async function loadCampaign(tenantId: string, id: string) {
-  return prisma.qcfCampaign.findFirst({ where: { id, tenantId } });
+async function loadCampaign(orgId: string, id: string) {
+  return prisma.qcfCampaign.findFirst({ where: { id, orgId } });
 }
 
 export async function GET(
@@ -21,7 +21,7 @@ export async function GET(
     const user = await requireApiUser();
     if (isResponse(user)) return user;
 
-    const c = await loadCampaign(user.tenantId, id);
+    const c = await loadCampaign(user.orgId, id);
     if (!c) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
     return NextResponse.json(serializeCampaign(c));
   } catch (e) {
@@ -39,7 +39,7 @@ export async function PATCH(
     if (isResponse(user)) return user;
     await assertModule(user, "campaigns", "edit");
 
-    const existing = await loadCampaign(user.tenantId, id);
+    const existing = await loadCampaign(user.orgId, id);
     if (!existing) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
 
     const parsed = updateCampaignSchema.safeParse(await req.json().catch(() => null));

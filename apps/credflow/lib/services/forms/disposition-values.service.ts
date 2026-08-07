@@ -40,11 +40,11 @@ function fmtDate(d: Date): string {
  * Empty array when the activity has no custom field values.
  */
 export async function getDispositionValues(
-  tenantId: string,
+  orgId: string,
   activityId: string,
 ): Promise<DispositionValueView[]> {
   const rows = await prisma.qcfFieldValue.findMany({
-    where: { tenantId, activityId },
+    where: { orgId, activityId },
     select: {
       fieldKey: true,
       valueType: true,

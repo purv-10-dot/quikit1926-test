@@ -45,31 +45,31 @@ interface SettingsTree {
   [k: string]: unknown;
 }
 
-async function readTree(tenantId: string): Promise<SettingsTree> {
-  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+async function readTree(orgId: string): Promise<SettingsTree> {
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   return ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
 }
 
-async function writeTree(tenantId: string, next: SettingsTree): Promise<void> {
+async function writeTree(orgId: string, next: SettingsTree): Promise<void> {
   await prisma.qcfOrgWorkspaceSettings.upsert({
-    where: { tenantId },
-    create: { tenantId, settings: next as object },
+    where: { orgId },
+    create: { orgId, settings: next as object },
     update: { settings: next as object },
   });
 }
 
 /** All role overrides for a tenant (empty object when none configured). */
-export async function getRoleOverrides(tenantId: string): Promise<RoleOverrides> {
-  const tree = await readTree(tenantId);
+export async function getRoleOverrides(orgId: string): Promise<RoleOverrides> {
+  const tree = await readTree(orgId);
   return tree.roleOverrides ?? {};
 }
 
 /** The override for one role, or null when none is configured. */
 export async function getRoleOverride(
-  tenantId: string,
+  orgId: string,
   role: string,
 ): Promise<RoleOverride | null> {
-  const all = await getRoleOverrides(tenantId);
+  const all = await getRoleOverrides(orgId);
   return all[role] ?? null;
 }
 
@@ -78,14 +78,14 @@ export async function getRoleOverride(
  * roles). Returns the full overrides map after the write.
  */
 export async function setRoleOverride(
-  tenantId: string,
+  orgId: string,
   role: string,
   patch: RoleOverride,
 ): Promise<RoleOverrides> {
-  const tree = await readTree(tenantId);
+  const tree = await readTree(orgId);
   const current = tree.roleOverrides ?? {};
   const nextForRole: RoleOverride = { ...(current[role] ?? {}), ...patch };
   const nextOverrides: RoleOverrides = { ...current, [role]: nextForRole };
-  await writeTree(tenantId, { ...tree, roleOverrides: nextOverrides });
+  await writeTree(orgId, { ...tree, roleOverrides: nextOverrides });
   return nextOverrides;
 }

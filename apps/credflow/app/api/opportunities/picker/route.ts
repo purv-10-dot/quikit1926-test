@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     );
 
     const acl = await accountScopeFilter(user);
-    const baseWhere: Record<string, unknown> = { tenantId: user.tenantId };
+    const baseWhere: Record<string, unknown> = { orgId: user.orgId };
     if (q) {
       baseWhere.name = { contains: q, mode: "insensitive" };
     }

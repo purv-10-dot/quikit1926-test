@@ -14,12 +14,12 @@ export async function PUT(req: NextRequest) {
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     await prisma.qcfQuickFilter.updateMany({
-      where: { tenantId: user.tenantId, userId: user.userId, module: parsed.data.module, isLastApplied: true },
+      where: { orgId: user.orgId, userId: user.userId, module: parsed.data.module, isLastApplied: true },
       data: { isLastApplied: false },
     });
     if (parsed.data.filterId) {
       await prisma.qcfQuickFilter.updateMany({
-        where: { id: parsed.data.filterId, tenantId: user.tenantId, userId: user.userId },
+        where: { id: parsed.data.filterId, orgId: user.orgId, userId: user.userId },
         data: { isLastApplied: true },
       });
     }

@@ -25,7 +25,7 @@ const dispatch = vi.mocked(dispatchOutboundMessage);
 function lead(overrides: Record<string, unknown> = {}): QcfLead {
   return {
     id: "lead-1",
-    tenantId: "t1",
+    orgId: "t1",
     name: "Acme Co",
     firstName: "Ada",
     email: "ada@example.test",
@@ -73,16 +73,16 @@ describe("evaluateSuppression · §5.1", () => {
 
 describe("executeSendEmail · orchestration", () => {
   it("renders merge fields then queues + dispatches a mailable lead", async () => {
-    const res = await executeSendEmail({ tenantId: "t1", lead: lead(), cfg: { subject: "Hi {firstName}", body: "From {name}" } });
+    const res = await executeSendEmail({ orgId: "t1", lead: lead(), cfg: { subject: "Hi {firstName}", body: "From {name}" } });
     expect(res.status).toBe("sent");
     expect(db.qcfOutboundMessageLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ tenantId: "t1", to: "ada@example.test", subject: "Hi Ada", body: "From Acme Co", status: "queued" }),
+      data: expect.objectContaining({ orgId: "t1", to: "ada@example.test", subject: "Hi Ada", body: "From Acme Co", status: "queued" }),
     });
     expect(dispatch).toHaveBeenCalledWith("t1", "log-1");
   });
 
   it("SKIPS a Do-Not-Email lead — records a skipped row, never dispatches", async () => {
-    const res = await executeSendEmail({ tenantId: "t1", lead: lead({ doNotEmail: true }), cfg: { subject: "s", body: "b" } });
+    const res = await executeSendEmail({ orgId: "t1", lead: lead({ doNotEmail: true }), cfg: { subject: "s", body: "b" } });
     expect(res).toMatchObject({ status: "skipped", reason: "do-not-email" });
     expect(db.qcfOutboundMessageLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ status: "skipped", metadata: { skippedReason: "do-not-email" } }),
@@ -91,13 +91,13 @@ describe("executeSendEmail · orchestration", () => {
   });
 
   it("SKIPS a lead with no valid email — no dispatch", async () => {
-    const res = await executeSendEmail({ tenantId: "t1", lead: lead({ email: null }), cfg: {} });
+    const res = await executeSendEmail({ orgId: "t1", lead: lead({ email: null }), cfg: {} });
     expect(res).toMatchObject({ status: "skipped", reason: "no-valid-email" });
     expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("honors a literal `to` override over the lead email", async () => {
-    await executeSendEmail({ tenantId: "t1", lead: lead(), cfg: { to: "override@example.test", subject: "s" } });
+    await executeSendEmail({ orgId: "t1", lead: lead(), cfg: { to: "override@example.test", subject: "s" } });
     expect(db.qcfOutboundMessageLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ to: "override@example.test", status: "queued" }),
     });

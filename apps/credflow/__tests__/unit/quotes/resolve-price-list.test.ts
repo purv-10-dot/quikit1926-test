@@ -16,7 +16,7 @@ describe("resolvePriceListIdForQuote", () => {
       "@/lib/services/quotes/resolve-price-list-for-record"
     );
     const id = await resolvePriceListIdForQuote({
-      tenantId: "t1",
+      orgId: "t1",
       accountId: "a1",
       explicitPriceListId: "pl-explicit",
     });
@@ -29,7 +29,7 @@ describe("resolvePriceListIdForQuote", () => {
       "@/lib/services/quotes/resolve-price-list-for-record"
     );
     const id = await resolvePriceListIdForQuote({
-      tenantId: "t1",
+      orgId: "t1",
       accountId: "a1",
       opportunityId: "o1",
     });

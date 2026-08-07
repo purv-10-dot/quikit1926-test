@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest) {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const data = await getCurrentDispositionRuntime(user.tenantId);
+    const data = await getCurrentDispositionRuntime(user.orgId);
     return NextResponse.json({ success: true, data });
   } catch (e) {
     return errorResponse(e);

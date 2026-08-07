@@ -24,12 +24,12 @@ import { createNotification } from "@/lib/notifications/service";
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 async function getSalesManagers(
-  tenantId: string,
+  orgId: string,
   excludeUserId: string,
 ): Promise<string[]> {
   const members = await prisma.orgMember.findMany({
     where: {
-      orgId: tenantId,
+      orgId: orgId,
       status: "active",
       role: {
         in: [
@@ -46,7 +46,7 @@ async function getSalesManagers(
 // ─── Quote Created ────────────────────────────────────────────────────────────
 
 export interface QuoteCreatedParams {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   quoteNumber: string;
   ownerId: string | null | undefined;
@@ -59,7 +59,7 @@ export interface QuoteCreatedParams {
  * new quote is created. The creator already knows — suppress their notification.
  */
 export async function notifyQuoteCreated(p: QuoteCreatedParams): Promise<void> {
-  const managers = await getSalesManagers(p.tenantId, p.actorUserId);
+  const managers = await getSalesManagers(p.orgId, p.actorUserId);
   const recipients = new Set(managers);
   if (p.ownerId && p.ownerId !== p.actorUserId) recipients.add(p.ownerId);
 
@@ -68,7 +68,7 @@ export async function notifyQuoteCreated(p: QuoteCreatedParams): Promise<void> {
   await Promise.allSettled(
     [...recipients].map((userId) =>
       createNotification({
-        tenantId: p.tenantId,
+        orgId: p.orgId,
         userId,
         type: "lead_assigned",
         category: "lead",
@@ -89,7 +89,7 @@ export async function notifyQuoteCreated(p: QuoteCreatedParams): Promise<void> {
 // ─── Quote Sent ───────────────────────────────────────────────────────────────
 
 export interface QuoteSentParams {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   quoteNumber: string;
   ownerId: string | null | undefined;
@@ -103,7 +103,7 @@ export interface QuoteSentParams {
  * the customer. Includes the recipient email(s) in the notification body.
  */
 export async function notifyQuoteSent(p: QuoteSentParams): Promise<void> {
-  const managers = await getSalesManagers(p.tenantId, p.actorUserId);
+  const managers = await getSalesManagers(p.orgId, p.actorUserId);
   const recipients = new Set(managers);
   if (p.ownerId && p.ownerId !== p.actorUserId) recipients.add(p.ownerId);
 
@@ -117,7 +117,7 @@ export async function notifyQuoteSent(p: QuoteSentParams): Promise<void> {
   await Promise.allSettled(
     [...recipients].map((userId) =>
       createNotification({
-        tenantId: p.tenantId,
+        orgId: p.orgId,
         userId,
         type: "lead_stage_changed",
         category: "lead",
@@ -139,7 +139,7 @@ export async function notifyQuoteSent(p: QuoteSentParams): Promise<void> {
 // ─── Quote Approved ───────────────────────────────────────────────────────────
 
 export interface QuoteApprovedParams {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   quoteNumber: string;
   /** The user who originally requested approval — fetched from QcfQuoteApproval. */
@@ -158,7 +158,7 @@ export async function notifyQuoteApproved(p: QuoteApprovedParams): Promise<void>
 
   const notesLine = p.notes ? ` Notes: "${p.notes}".` : "";
   await createNotification({
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     userId: p.requestedById,
     type: "lead_converted",
     category: "lead",
@@ -178,7 +178,7 @@ export async function notifyQuoteApproved(p: QuoteApprovedParams): Promise<void>
 // ─── Quote Rejected ───────────────────────────────────────────────────────────
 
 export interface QuoteRejectedParams {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   quoteNumber: string;
   /** The user who originally requested approval. */
@@ -197,7 +197,7 @@ export async function notifyQuoteRejected(p: QuoteRejectedParams): Promise<void>
 
   const notesLine = p.notes ? ` Reason: "${p.notes}".` : "";
   await createNotification({
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     userId: p.requestedById,
     type: "lead_reassigned",
     category: "lead",

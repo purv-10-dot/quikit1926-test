@@ -36,7 +36,7 @@ export async function POST(
     }
     // Fetch approval record BEFORE deciding so we have the requester's ID.
     const approval = await prisma.qcfQuoteApproval.findFirst({
-      where: { id: parsed.data.approvalId, quoteId: id, tenantId: user.tenantId },
+      where: { id: parsed.data.approvalId, quoteId: id, orgId: user.orgId },
       select: {
         requestedById: true,
         requestedByName: true,
@@ -45,7 +45,7 @@ export async function POST(
     });
 
     await decideQuoteApproval({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: id,
       approvalId: parsed.data.approvalId,
       decision: parsed.data.decision,
@@ -60,7 +60,7 @@ export async function POST(
     const triggerFn =
       parsed.data.decision === "Approved" ? notifyQuoteApproved : notifyQuoteRejected;
     triggerFn({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: id,
       quoteNumber: quoteNum,
       requestedById,

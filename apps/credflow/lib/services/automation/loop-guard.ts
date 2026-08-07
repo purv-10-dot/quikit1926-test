@@ -41,10 +41,10 @@ export interface LoopGuardResult {
 /**
  * Count ONE lead-mutating automated write toward the per-lead/day cap and
  * report whether the lead is now terminated. Atomic increment via upsert; the
- * row is keyed on (tenantId, leadId, day) so both engines share it.
+ * row is keyed on (orgId, leadId, day) so both engines share it.
  */
 export async function recordWriteAndCheck(opts: {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   source: EngineSource;
   now?: Date;
@@ -52,14 +52,14 @@ export async function recordWriteAndCheck(opts: {
   const day = loopDayKey(opts.now);
   const cap = loopCap();
   const row = await prisma.qcfAutomationLeadDayCount.upsert({
-    where: { tenantId_leadId_day: { tenantId: opts.tenantId, leadId: opts.leadId, day } },
-    create: { tenantId: opts.tenantId, leadId: opts.leadId, day, count: 1 },
+    where: { orgId_leadId_day: { orgId: opts.orgId, leadId: opts.leadId, day } },
+    create: { orgId: opts.orgId, leadId: opts.leadId, day, count: 1 },
     update: { count: { increment: 1 } },
   });
   const terminated = row.count > cap;
   if (terminated && !row.terminated) {
     await prisma.qcfAutomationLeadDayCount.update({
-      where: { tenantId_leadId_day: { tenantId: opts.tenantId, leadId: opts.leadId, day } },
+      where: { orgId_leadId_day: { orgId: opts.orgId, leadId: opts.leadId, day } },
       data: { terminated: true },
     });
   }
@@ -68,12 +68,12 @@ export async function recordWriteAndCheck(opts: {
 
 /** Read-only: has this lead hit the loop cap (Terminated) for the given day? */
 export async function isLeadTerminated(
-  tenantId: string,
+  orgId: string,
   leadId: string,
   now?: Date,
 ): Promise<boolean> {
   const row = await prisma.qcfAutomationLeadDayCount.findUnique({
-    where: { tenantId_leadId_day: { tenantId, leadId, day: loopDayKey(now) } },
+    where: { orgId_leadId_day: { orgId, leadId, day: loopDayKey(now) } },
   });
   return row?.terminated ?? false;
 }

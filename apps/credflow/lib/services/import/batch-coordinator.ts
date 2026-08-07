@@ -21,7 +21,7 @@ export async function isBlocked(jobId: string): Promise<boolean> {
   const myRank = ENTITY_RANK[job.entityType];
   const blockers = await prisma.qcfLeadImportJob.count({
     where: {
-      tenantId: job.tenantId,
+      orgId: job.orgId,
       batchId: job.batchId,
       entityType: { in: lowerEntities(myRank) },
       status: { in: ["queued", "processing"] },

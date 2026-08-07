@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     }
 
     const acl = await accountScopeFilter(user);
-    const where: Record<string, unknown> = { tenantId: user.tenantId };
+    const where: Record<string, unknown> = { orgId: user.orgId };
     if (q.accountId) where.accountId = q.accountId;
     if (q.ownerId) where.ownerId = q.ownerId;
     if (q.q) {
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
       prisma.qcfContact.count({ where: finalWhere }),
     ]);
 
-    const items = await attachAccountNames(user.tenantId, rows);
+    const items = await attachAccountNames(user.orgId, rows);
     const totalPages = Math.max(1, Math.ceil(total / q.pageSize));
 
     return ok({ items, total, page: q.page, pageSize: q.pageSize, totalPages });
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
     if (data.accountId) await assertAccountAccess(user, data.accountId);
 
     if (data.email) {
-      const dup = await findDuplicateContactByEmail(user.tenantId, data.email);
+      const dup = await findDuplicateContactByEmail(user.orgId, data.email);
       if (dup) {
         return fail(
           409,
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
     // route's { success:false, ... } failure shape via fail(...).
     let phoneNorm: string | null = null;
     if (data.phone) {
-      const defaultCountry = await getWorkspacePhoneDefaultCountry(user.tenantId);
+      const defaultCountry = await getWorkspacePhoneDefaultCountry(user.orgId);
       const r = normalizePhoneOrError(data.phone, defaultCountry);
       if (!r.ok) return fail(400, "Validation failed", { phone: r.message });
       phoneNorm = r.value;
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
     let ownerId = data.ownerId ?? null;
     let ownerName: string | null = null;
     if (ownerId) {
-      const owner = await resolveOwnerForTenant(user.tenantId, ownerId);
+      const owner = await resolveOwnerForTenant(user.orgId, ownerId);
       ownerId = owner.ownerId;
       ownerName = owner.ownerName;
     } else {
@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
 
     const created = await prisma.qcfContact.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email ?? null,
@@ -212,12 +212,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const [withName] = await attachAccountNames(user.tenantId, [created]);
+    const [withName] = await attachAccountNames(user.orgId, [created]);
     evaluateRulesForEvent({
       event: "created",
       entityType: "contact",
       entityId: created.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: withName as unknown as Record<string, unknown>,

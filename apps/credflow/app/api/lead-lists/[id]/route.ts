@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const parsed = patchSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const updated = await prisma.qcfLeadSavedList.updateMany({
-      where: { id, tenantId: user.tenantId, userId: user.userId },
+      where: { id, orgId: user.orgId, userId: user.userId },
       data: {
         name: parsed.data.name ?? undefined,
         filters: parsed.data.filter ?? undefined,
@@ -44,7 +44,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "delete");
     const deleted = await prisma.qcfLeadSavedList.deleteMany({
-      where: { id, tenantId: user.tenantId, userId: user.userId },
+      where: { id, orgId: user.orgId, userId: user.userId },
     });
     if (deleted.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ok: true });

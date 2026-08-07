@@ -103,7 +103,7 @@ export async function GET(
     const ownerId = ownerIdParam && ownerIdParam.trim() ? ownerIdParam : undefined;
 
     const ctx = {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       session: user,
       from: range.from,
       to: range.to,

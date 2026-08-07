@@ -26,15 +26,15 @@ async function main() {
   const check = (n: string, ok: boolean, d: string) => { out.push(`${ok ? "PASS" : "FAIL"}  ${n} — ${d}`); allOk = allOk && ok; };
 
   // ─── fresh fixtures ───
-  await prisma.qcfAutomationAttribution.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfAutomationAttribution.deleteMany({ where: { orgId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { orgId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
   await prisma.qcfLead.deleteMany({ where: { id: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.qcfLead.create({ data: { id: AUTO_LEAD, tenantId: TENANT, name: "P22 auto", stage: "New Lead", status: "Open", substatus: "Student Lead", source: "p22" } });
-  await prisma.qcfLead.create({ data: { id: DISPO_LEAD, tenantId: TENANT, name: "P22 dispo", stage: "New Lead", status: "Open", source: "p22" } });
+  await prisma.qcfLead.create({ data: { id: AUTO_LEAD, orgId: TENANT, name: "P22 auto", stage: "New Lead", status: "Open", substatus: "Student Lead", source: "p22" } });
+  await prisma.qcfLead.create({ data: { id: DISPO_LEAD, orgId: TENANT, name: "P22 dispo", stage: "New Lead", status: "Open", source: "p22" } });
 
   // ─── 1. automation write → attribution ───
   const wf = await prisma.qcfWorkflowDefinition.create({ data: {
-    tenantId: TENANT, name: "P22 R1-like", status: "Active", triggerType: "trigger_lead_updated",
+    orgId: TENANT, name: "P22 R1-like", status: "Active", triggerType: "trigger_lead_updated",
     graphNodes: [
       { id: "cond", kind: "if_else", config: { conditions: [
         { field: "substatus", op: "in", value: ["Student Lead"] },
@@ -46,7 +46,7 @@ async function main() {
   } });
   await runFrom(TENANT, wf.id, AUTO_LEAD, "cond");
 
-  const attr = await prisma.qcfAutomationAttribution.findFirst({ where: { tenantId: TENANT, leadId: AUTO_LEAD } });
+  const attr = await prisma.qcfAutomationAttribution.findFirst({ where: { orgId: TENANT, leadId: AUTO_LEAD } });
   const snap = (attr?.triggerSnapshot ?? {}) as Record<string, unknown>;
   check("1.attribution-written", !!attr, attr ? "one row written" : "no attribution row");
   check("1.engineSource", attr?.engineSource === "automation", `engineSource=${attr?.engineSource}`);
@@ -60,13 +60,13 @@ async function main() {
 
   // ─── 2. legacy-disposition write → attribution, distinguishable ───
   const rule = await prisma.qcfAutomationRule.create({ data: {
-    tenantId: TENANT, name: "P22 dispo", sortOrder: 1, isActive: true,
+    orgId: TENANT, name: "P22 dispo", sortOrder: 1, isActive: true,
     trigger: { type: "activity_logged", activity_type: "call", disposition: "P22PROOF" },
     action: { type: "set_lead_status", status: "Future Lead" },
   } });
-  await runAfterActivityLogged({ tenantId: TENANT, leadId: DISPO_LEAD, activityId: "p22-act", dispositionCode: "P22PROOF", activityDatetime: new Date(), ownerId: null });
+  await runAfterActivityLogged({ orgId: TENANT, leadId: DISPO_LEAD, activityId: "p22-act", dispositionCode: "P22PROOF", activityDatetime: new Date(), ownerId: null });
 
-  const dispoAttr = await prisma.qcfAutomationAttribution.findFirst({ where: { tenantId: TENANT, leadId: DISPO_LEAD } });
+  const dispoAttr = await prisma.qcfAutomationAttribution.findFirst({ where: { orgId: TENANT, leadId: DISPO_LEAD } });
   check("2.disposition-attribution", dispoAttr?.engineSource === "legacy-disposition" && dispoAttr?.ruleId === rule.id && dispoAttr?.field === "status",
     `engineSource=${dispoAttr?.engineSource}, ruleId=${dispoAttr?.ruleId === rule.id ? "set" : dispoAttr?.ruleId}, field=${dispoAttr?.field}`);
   check("2.discriminator-distinguishes", attr?.engineSource !== dispoAttr?.engineSource,
@@ -75,9 +75,9 @@ async function main() {
   // ─── cleanup ───
   await prisma.qcfWorkflowDefinition.deleteMany({ where: { id: wf.id } });
   await prisma.qcfAutomationRule.deleteMany({ where: { id: rule.id } });
-  await prisma.qcfAutomationAttribution.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.qcfActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfAutomationAttribution.deleteMany({ where: { orgId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { orgId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfActivity.deleteMany({ where: { orgId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
   await prisma.qcfLead.deleteMany({ where: { id: { in: [AUTO_LEAD, DISPO_LEAD] } } });
 
   console.log("\n" + out.join("\n"));

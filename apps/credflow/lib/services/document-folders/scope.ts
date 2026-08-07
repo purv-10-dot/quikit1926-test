@@ -26,17 +26,17 @@ export function normalizeScope(scope: FolderScope): {
 }
 
 export function scopeWhere(
-  tenantId: string,
+  orgId: string,
   scope: FolderScope,
 ): {
-  tenantId: string;
+  orgId: string;
   deletedAt: null;
   refType: DocumentRefType | null;
   refId: string | null;
 } {
   const { refType, refId } = normalizeScope(scope);
   return {
-    tenantId,
+    orgId,
     deletedAt: null,
     refType,
     refId,

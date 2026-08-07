@@ -31,10 +31,10 @@ const DEFAULTS: QuoteEnterpriseSettings = {
 };
 
 export async function getQuoteEnterpriseSettings(
-  tenantId: string,
+  orgId: string,
 ): Promise<QuoteEnterpriseSettings> {
   const row = await db.qcfOrgWorkspaceSettings.findUnique({
-    where: { tenantId },
+    where: { orgId },
     select: { settings: true },
   });
   const raw = row?.settings as Record<string, unknown> | undefined;
@@ -51,10 +51,10 @@ export async function getQuoteEnterpriseSettings(
 }
 
 export async function saveQuoteEnterpriseSettings(
-  tenantId: string,
+  orgId: string,
   patch: Partial<QuoteEnterpriseSettings>,
 ): Promise<QuoteEnterpriseSettings> {
-  const current = await getQuoteEnterpriseSettings(tenantId);
+  const current = await getQuoteEnterpriseSettings(orgId);
   const next: QuoteEnterpriseSettings = {
     approval: { ...current.approval, ...patch.approval },
     cpqRules: patch.cpqRules ?? current.cpqRules,
@@ -62,14 +62,14 @@ export async function saveQuoteEnterpriseSettings(
       patch.reminderDaysBeforeExpiry ?? current.reminderDaysBeforeExpiry,
   };
   const row = await db.qcfOrgWorkspaceSettings.findUnique({
-    where: { tenantId },
+    where: { orgId },
     select: { settings: true },
   });
   const settings = (row?.settings as Record<string, unknown> | undefined) ?? {};
   const merged = { ...settings, quotesEnterprise: next } as unknown as Prisma.InputJsonValue;
   await db.qcfOrgWorkspaceSettings.upsert({
-    where: { tenantId },
-    create: { tenantId, settings: merged },
+    where: { orgId },
+    create: { orgId, settings: merged },
     update: { settings: merged },
   });
   return next;

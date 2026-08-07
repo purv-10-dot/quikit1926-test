@@ -28,7 +28,7 @@ const dbMock = {
 
 const quoteMock = {
   id: "q1",
-  tenantId: "t1",
+  orgId: "t1",
   quoteNumber: "QT-2026-0001",
   versionNumber: 2,
   status: "Draft",
@@ -118,7 +118,7 @@ describe("generateQuotePdfSnapshot", () => {
     );
 
     await generateQuotePdfSnapshot({
-      tenantId: "t1",
+      orgId: "t1",
       quoteId: "q1",
       userId: "u1",
       userName: null,

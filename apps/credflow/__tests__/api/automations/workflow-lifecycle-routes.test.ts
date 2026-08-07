@@ -4,12 +4,12 @@ import { mockDb, setSession } from "../../helpers/mockDb";
 const db = mockDb();
 
 function adminSession() {
-  setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@b.co", name: "Alice" });
+  setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@b.co", name: "Alice" });
 }
 
 const base = {
   id: "wf1",
-  tenantId: "t1",
+  orgId: "t1",
   name: "Flow",
   triggerType: "trigger_lead_created",
   triggerSummary: null,
@@ -50,7 +50,7 @@ describe("POST /api/automations/workflows/[id]/publish", () => {
       params: Promise.resolve({ id: "wf1" }),
     });
     expect(res.status).toBe(404);
-    expect((db.qcfWorkflowDefinition.findFirst.mock.calls[0]![0]!.where as { tenantId: string }).tenantId).toBe("t1");
+    expect((db.qcfWorkflowDefinition.findFirst.mock.calls[0]![0]!.where as { orgId: string }).orgId).toBe("t1");
   });
 
   it("publishes a Draft → Active (happy path, stamps lastPublishedOn)", async () => {

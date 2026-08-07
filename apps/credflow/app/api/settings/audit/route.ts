@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid query", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
     }
     const q = parsed.data;
-    const where: Record<string, unknown> = { tenantId: user.tenantId };
+    const where: Record<string, unknown> = { orgId: user.orgId };
     if (q.module) where.module = q.module;
     if (q.action) where.action = q.action;
     if (q.userId) where.userId = q.userId;

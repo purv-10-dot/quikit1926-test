@@ -44,7 +44,7 @@ export async function buildKanbanBoard(opts: {
 
   const acl = await accountScopeFilter(user);
   const ownerScope = await ownerScopeFilter(user);
-  const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+  const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
   if (acl) baseAnd.push(acl);
   if (ownerScope) baseAnd.push(ownerScope);
   if (opts.ownerName) baseAnd.push({ ownerName: opts.ownerName });
@@ -61,7 +61,7 @@ export async function buildKanbanBoard(opts: {
     stage: true,
   } as const;
 
-  const pipeline = await getPipelineConfig(user.tenantId);
+  const pipeline = await getPipelineConfig(user.orgId);
   const allStages = pipeline.stages.length > 0 ? pipeline.stages : (KANBAN_STAGES as readonly string[]);
   const stages = opts.stage ? allStages.filter((s) => s === opts.stage) : allStages;
 

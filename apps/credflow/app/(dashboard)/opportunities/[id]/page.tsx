@@ -20,7 +20,7 @@ export default async function OpportunityDetailPage({
   const { id } = await params;
   const user = await requireUser();
   const o = await prisma.qcfOpportunity.findFirst({
-    where: { id, tenantId: user.tenantId },
+    where: { id, orgId: user.orgId },
     include: {
       account: true,
       clientMeetings: { orderBy: { meetingAt: "desc" } },
@@ -32,7 +32,7 @@ export default async function OpportunityDetailPage({
 
   const lead = o.leadId
     ? await prisma.qcfLead.findFirst({
-        where: { id: o.leadId, tenantId: user.tenantId },
+        where: { id: o.leadId, orgId: user.orgId },
         select: {
           id: true,
           name: true,
@@ -62,7 +62,7 @@ export default async function OpportunityDetailPage({
   // cross-schema-FK rationale). Soft-delete is auto-filtered by the
   // middleware. Limited to 50 — enough for any sane Opportunity.
   const quotes = await prisma.qcfQuote.findMany({
-    where: { tenantId: user.tenantId, opportunityId: o.id },
+    where: { orgId: user.orgId, opportunityId: o.id },
     select: {
       id: true,
       quoteNumber: true,

@@ -24,7 +24,7 @@ async function draft(id: string, nodes: unknown[], edges: unknown[]) {
   return integrationPrisma.qcfWorkflowDefinition.create({
     data: {
       id: `${TENANT}_${id}`,
-      tenantId: TENANT,
+      orgId: TENANT,
       name: id,
       status: "Draft",
       triggerType: "trigger_lead_updated",
@@ -35,7 +35,7 @@ async function draft(id: string, nodes: unknown[], edges: unknown[]) {
 }
 
 afterAll(async () => {
-  await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { orgId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 

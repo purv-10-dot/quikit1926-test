@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest) {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const config = await getLeadScoringConfig(user.tenantId);
+    const config = await getLeadScoringConfig(user.orgId);
     return NextResponse.json({
       success: true,
       data: {
@@ -49,23 +49,23 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    let config = await getLeadScoringConfig(user.tenantId);
+    let config = await getLeadScoringConfig(user.orgId);
     if (parsed.data.config) {
-      config = await setLeadScoringConfig(user.tenantId, parsed.data.config);
+      config = await setLeadScoringConfig(user.orgId, parsed.data.config);
     }
 
     let recalc: { processed: number; updated: number } | undefined;
     if (parsed.data.recalculateAll) {
-      recalc = await recalculateAllLeadScores(user.tenantId);
+      recalc = await recalculateAllLeadScores(user.orgId);
     }
 
     let preview: { score: number; breakdown: unknown } | undefined;
     if (parsed.data.previewLeadId) {
       const lead = await prisma.qcfLead.findFirst({
-        where: { id: parsed.data.previewLeadId, tenantId: user.tenantId, deletedAt: null },
+        where: { id: parsed.data.previewLeadId, orgId: user.orgId, deletedAt: null },
       });
       if (lead) {
-        const ctx = await loadLeadScoringContext(user.tenantId, lead.id, lead.createdAt);
+        const ctx = await loadLeadScoringContext(user.orgId, lead.id, lead.createdAt);
         const breakdown = computeLeadScore(
           {
             name: lead.name,

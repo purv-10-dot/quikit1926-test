@@ -15,8 +15,8 @@ export async function moduleHasDocuments(
   const refType = module as DocumentRefType;
   if (!DOCUMENT_REF_TYPES.includes(refType)) return false;
 
-  const { tenantId } = user;
-  const base = { tenantId, refType, deletedAt: null as null };
+  const { orgId } = user;
+  const base = { orgId, refType, deletedAt: null as null };
 
   const doc = await prisma.qcfDocument.findFirst({
     where: base,
@@ -33,7 +33,7 @@ export async function moduleHasDocuments(
   const linkClient = getDocumentLinkClient();
   if (linkClient) {
     const link = await linkClient.findFirst({
-      where: { tenantId, refType, deletedAt: null },
+      where: { orgId, refType, deletedAt: null },
       select: { id: true },
     });
     if (link) return true;
@@ -55,7 +55,7 @@ export async function listVisibleExplorerModules(
 export async function globalModuleHasTreeChildren(user: SessionUser): Promise<boolean> {
   const folder = await prisma.qcfDocumentFolder.findFirst({
     where: {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       refType: null,
       refId: null,
       parentFolderId: null,

@@ -12,7 +12,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await requirePermission(user, "settings", "view");
-    const items = await listGroups(user.tenantId);
+    const items = await listGroups(user.orgId);
     return NextResponse.json({ items });
   } catch (e) {
     if (e instanceof SettingsConflictError) return NextResponse.json({ error: e.message }, { status: e.statusCode });

@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await assertModule(user, "contacts", "delete");
 
     const existing = await prisma.qcfContact.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: { not: null } },
+      where: { id, orgId: user.orgId, deletedAt: { not: null } },
     });
     if (!existing) return fail(404, "Contact not found in trash");
 
@@ -29,7 +29,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       where: { id },
       data: { deletedAt: null },
     });
-    const [withName] = await attachAccountNames(user.tenantId, [restored]);
+    const [withName] = await attachAccountNames(user.orgId, [restored]);
     return NextResponse.json({ success: true, data: withName });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Restore failed";

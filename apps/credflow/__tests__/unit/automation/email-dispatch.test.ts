@@ -22,7 +22,7 @@ const send = vi.mocked(sendTransactionalEmail);
 function queuedRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "log-1",
-    tenantId: "t1",
+    orgId: "t1",
     channel: "email",
     to: "captured@example.test",
     subject: "Hi",
@@ -97,7 +97,7 @@ describe("dispatchOutboundMessage · B1", () => {
     send.mockResolvedValue({ driver: "console", messageId: "m", sentAt: new Date() } as never);
     await dispatchOutboundMessage("t1", "log-1");
     expect(db.qcfOutboundMessageLog.findFirst).toHaveBeenCalledWith({
-      where: { id: "log-1", tenantId: "t1" },
+      where: { id: "log-1", orgId: "t1" },
     });
   });
 });

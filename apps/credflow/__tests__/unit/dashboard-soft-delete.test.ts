@@ -24,7 +24,7 @@ const RANGE = {
   tz: "UTC",
 };
 
-const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
+const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
 const FILTERS = { range: RANGE, resolvedOwnerId: null, ownerId: null };
 
 function armPrismaDefaults(): void {

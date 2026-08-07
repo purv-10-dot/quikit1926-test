@@ -11,13 +11,13 @@ import { seedProtectedDispositionTab } from "@/lib/services/forms/form-structure
 
 /** Create a call_disposition form set + its v1 draft + the protected tab/fields. */
 export async function createFormSet(input: {
-  tenantId: string;
+  orgId: string;
   name: string;
   createdByUserId?: string | null;
 }): Promise<{ set: QcfFormSet; version: QcfFormSetVersion }> {
   const set = await prisma.qcfFormSet.create({
     data: {
-      tenantId: input.tenantId,
+      orgId: input.orgId,
       surface: "call_disposition",
       name: input.name,
       isDefault: true, // demo: one set per surface; multi-set default mgmt deferred
@@ -34,9 +34,9 @@ export async function createFormSet(input: {
 }
 
 /** A tenant's call_disposition form sets, with their versions (draft/published). */
-export async function listFormSets(tenantId: string) {
+export async function listFormSets(orgId: string) {
   return prisma.qcfFormSet.findMany({
-    where: { tenantId, surface: "call_disposition" },
+    where: { orgId, surface: "call_disposition" },
     orderBy: { createdAt: "asc" },
     include: {
       versions: {

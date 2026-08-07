@@ -55,7 +55,7 @@ function beforeAfterPayload(
 }
 
 function leadRow(partial: Partial<QcfLead>): QcfLead {
-  return { id: "lead-1", tenantId: TENANT, name: "Ada Lovelace", deletedAt: null, ...partial } as unknown as QcfLead;
+  return { id: "lead-1", orgId: TENANT, name: "Ada Lovelace", deletedAt: null, ...partial } as unknown as QcfLead;
 }
 
 function setup() {
@@ -191,10 +191,10 @@ describe("processInboundWebhook", () => {
     // Race-safe create: upsert on the lead_external_uk unique triple.
     const leadUpsert = db.qcfLead.upsert.mock.calls[0][0];
     expect(leadUpsert.where).toEqual({
-      lead_external_uk: { tenantId: TENANT, sourceSystem: "leadsquared", externalId: PID },
+      lead_external_uk: { orgId: TENANT, sourceSystem: "leadsquared", externalId: PID },
     });
     expect(leadUpsert.create).toMatchObject({
-      tenantId: TENANT,
+      orgId: TENANT,
       name: "Ada Lovelace",
       sourceSystem: "leadsquared",
       externalId: PID,
@@ -205,7 +205,7 @@ describe("processInboundWebhook", () => {
     const upsertArg = db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0];
     expect(upsertArg.where).toEqual({ crmLeadId: "lead-new" });
     expect(upsertArg.create).toMatchObject({
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-new",
       lsqProspectId: PID,
       syncOrigin: "leadsquared",
@@ -219,7 +219,7 @@ describe("processInboundWebhook", () => {
     const { db, deps } = setup();
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-9",
       lsqProspectId: PID,
       syncOrigin: "crm",
@@ -246,7 +246,7 @@ describe("processInboundWebhook", () => {
     const { db, deps } = setup();
     // No mapping row...
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    // ...but a QcfLead already exists keyed by (tenantId, sourceSystem, externalId).
+    // ...but a QcfLead already exists keyed by (orgId, sourceSystem, externalId).
     db.qcfLead.findUnique.mockResolvedValue(leadRow({ id: "lead-existing" }));
     db.qcfLead.update.mockResolvedValue(leadRow({ id: "lead-existing" }));
 
@@ -257,9 +257,9 @@ describe("processInboundWebhook", () => {
     expect(db.qcfLead.upsert).not.toHaveBeenCalled();
     // Resolved via the exact unique index — findUnique bypasses the soft-delete filter.
     expect(db.qcfLead.findUnique).toHaveBeenCalledWith({
-      where: { lead_external_uk: { tenantId: TENANT, sourceSystem: "leadsquared", externalId: PID } },
+      where: { lead_external_uk: { orgId: TENANT, sourceSystem: "leadsquared", externalId: PID } },
       // stage/status/substatus are selected too, to diff for the timeline entry.
-      select: { id: true, tenantId: true, deletedAt: true, stage: true, status: true, substatus: true },
+      select: { id: true, orgId: true, deletedAt: true, stage: true, status: true, substatus: true },
     });
     expect(db.qcfLead.update.mock.calls[0][0].where).toEqual({ id: "lead-existing" });
     // Mapping row is (re)created with the loop-break provenance.
@@ -303,7 +303,7 @@ describe("processInboundWebhook", () => {
     await processInboundWebhook(TENANT, payload(), deps);
 
     expect(db.qcfLeadSquaredSyncMap.findFirst).toHaveBeenCalledWith({
-      where: { tenantId: TENANT, lsqProspectId: PID },
+      where: { orgId: TENANT, lsqProspectId: PID },
     });
   });
 
@@ -324,7 +324,7 @@ describe("processInboundWebhook", () => {
     const H = outboundHashFor({ firstName: "Ada", lastName: "Lovelace", email: "ada@x.com", phone: "+919876543210" });
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-9",
       lsqProspectId: PID,
       syncOrigin: "crm",
@@ -350,7 +350,7 @@ describe("processInboundWebhook", () => {
     const lastSyncedAt = new Date("2026-07-15T10:00:00.000Z");
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-9",
       lsqProspectId: PID,
       syncOrigin: "crm", // our push was the last write
@@ -377,7 +377,7 @@ describe("processInboundWebhook", () => {
     const { db, deps } = setup();
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-9",
       lsqProspectId: PID,
       syncOrigin: "crm",
@@ -525,7 +525,7 @@ describe("processInboundWebhook — faithful change-detection hash (inbound UPDA
   function mappingRow(overrides: Record<string, unknown>) {
     return {
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-9",
       lsqProspectId: PID,
       syncOrigin: "leadsquared",
@@ -617,7 +617,7 @@ describe("processInboundWebhook — timeline entry on inbound status/stage chang
   function mapping() {
     return {
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: "lead-9",
       lsqProspectId: PID,
       syncOrigin: "leadsquared",
@@ -646,7 +646,7 @@ describe("processInboundWebhook — timeline entry on inbound status/stage chang
     expect(db.qcfActivity.create).toHaveBeenCalledTimes(1);
     const data = db.qcfActivity.create.mock.calls[0][0].data;
     expect(data).toMatchObject({
-      tenantId: TENANT,
+      orgId: TENANT,
       type: "LeadStageChange",
       relatedKind: "Lead",
       relatedObjectId: "lead-9",
@@ -790,7 +790,7 @@ describe("processInboundWebhook — Before/After snapshot end-to-end", () => {
     expect(result).toMatchObject({ action: "created", crmLeadId: "lead-new", lsqProspectId: PID });
     const data = db.qcfLead.upsert.mock.calls[0][0].create;
     expect(data).toMatchObject({
-      tenantId: TENANT,
+      orgId: TENANT,
       sourceSystem: "leadsquared",
       externalId: PID,
       email: "ada@x.com",

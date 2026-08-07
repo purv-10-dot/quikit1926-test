@@ -103,43 +103,43 @@ function toContact360Row(c: {
   };
 }
 
-async function loadActivities(tenantId: string, ids: ContactRollupIds) {
+async function loadActivities(orgId: string, ids: ContactRollupIds) {
   return prisma.qcfActivity.findMany({
-    where: buildContactActivityWhere(tenantId, ids),
+    where: buildContactActivityWhere(orgId, ids),
     orderBy: { occurredAt: "desc" },
     take: 100,
   });
 }
 
-async function loadTasks(tenantId: string, ids: ContactRollupIds) {
+async function loadTasks(orgId: string, ids: ContactRollupIds) {
   return prisma.qcfTask.findMany({
-    where: buildContactTaskWhere(tenantId, ids),
+    where: buildContactTaskWhere(orgId, ids),
     orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     take: 100,
   });
 }
 
-async function loadNotes(tenantId: string, ids: ContactRollupIds) {
+async function loadNotes(orgId: string, ids: ContactRollupIds) {
   return prisma.qcfNote.findMany({
-    where: buildContactNoteWhere(tenantId, ids),
+    where: buildContactNoteWhere(orgId, ids),
     orderBy: { createdAt: "desc" },
     take: 50,
   });
 }
 
-async function loadCallLogs(tenantId: string, leadId: string | null) {
+async function loadCallLogs(orgId: string, leadId: string | null) {
   if (!leadId) return [];
   return prisma.qcfCallLog.findMany({
-    where: { tenantId, leadId },
+    where: { orgId, leadId },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
 }
 
-async function loadAttachments(tenantId: string, contactId: string) {
+async function loadAttachments(orgId: string, contactId: string) {
   return prisma.qcfDocument.findMany({
     where: {
-      tenantId,
+      orgId,
       refType: "contact",
       refId: contactId,
       deletedAt: null,
@@ -155,7 +155,7 @@ export async function getFullContactRecord(opts: {
   const { user, contactId } = opts;
 
   const c = await prisma.qcfContact.findFirst({
-    where: { id: contactId, tenantId: user.tenantId },
+    where: { id: contactId, orgId: user.orgId },
     include: {
       account: { select: { id: true, name: true } },
       lead: { select: { id: true, name: true, company: true } },
@@ -172,7 +172,7 @@ export async function getFullContactRecord(opts: {
   const opportunitiesPromise = c.accountId
     ? prisma.qcfOpportunity.findMany({
         where: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           accountId: c.accountId,
           deletedAt: null,
         },
@@ -183,11 +183,11 @@ export async function getFullContactRecord(opts: {
 
   const [opportunities, activities, tasks, notes, callLogs, attachments] = await Promise.all([
     opportunitiesPromise,
-    loadActivities(user.tenantId, rollupIds),
-    loadTasks(user.tenantId, rollupIds),
-    loadNotes(user.tenantId, rollupIds),
-    loadCallLogs(user.tenantId, c.leadId),
-    loadAttachments(user.tenantId, contactId),
+    loadActivities(user.orgId, rollupIds),
+    loadTasks(user.orgId, rollupIds),
+    loadNotes(user.orgId, rollupIds),
+    loadCallLogs(user.orgId, c.leadId),
+    loadAttachments(user.orgId, contactId),
   ]);
 
   const contact = toContact360Row(c);

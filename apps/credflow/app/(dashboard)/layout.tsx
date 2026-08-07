@@ -22,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         email: true,
       },
     }),
-    getEffectiveMatrix(session.userId, session.tenantId, session.role),
+    getEffectiveMatrix(session.userId, session.orgId, session.role),
   ]);
   if (!profile) {
     // session refers to a user that no longer exists — force re-login
@@ -31,7 +31,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   // Tenant + role come from the OAuth session (Membership), not the User row.
   const user = {
     id: profile.id,
-    tenantId: session.tenantId,
+    orgId: session.orgId,
     firstName: profile.firstName,
     lastName: profile.lastName,
     email: profile.email,

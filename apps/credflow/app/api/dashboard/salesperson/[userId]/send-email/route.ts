@@ -65,7 +65,7 @@ export async function POST(
     const filters = parseOverviewFilters(req, user);
 
     // Fetch salesperson data
-    const data = await getSalespersonDetail(user.tenantId, userId, filters.range);
+    const data = await getSalespersonDetail(user.orgId, userId, filters.range);
     if (!data) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }

@@ -106,10 +106,10 @@ export function validateActionInput(input: ActionInput): void {
 async function resolveTenantId(formSetVersionId: string): Promise<string> {
   const version = await prisma.qcfFormSetVersion.findUnique({
     where: { id: formSetVersionId },
-    select: { formSet: { select: { tenantId: true } } },
+    select: { formSet: { select: { orgId: true } } },
   });
   if (!version) throw new FormRuleError("Form set version not found.", 404);
-  return version.formSet.tenantId;
+  return version.formSet.orgId;
 }
 
 /**
@@ -118,8 +118,8 @@ async function resolveTenantId(formSetVersionId: string): Promise<string> {
  * — the same source /api/leads/stages feeds the rule-builder picker, so a rule can
  * never be saved pointing at a stage the builder didn't offer.
  */
-async function assertSetStageTarget(tenantId: string, stageName: string): Promise<void> {
-  const cfg = await getPipelineConfig(tenantId);
+async function assertSetStageTarget(orgId: string, stageName: string): Promise<void> {
+  const cfg = await getPipelineConfig(orgId);
   if (!cfg.stages.includes(stageName)) {
     throw new FormRuleError(
       `set_stage references Contact Stage "${stageName}" which is not a configured pipeline ` +
@@ -149,8 +149,8 @@ async function assertActionTargets(
     return;
   }
   if (input.actionType === "set_stage") {
-    const tenantId = await resolveTenantId(formSetVersionId);
-    await assertSetStageTarget(tenantId, input.setStatusId!.trim());
+    const orgId = await resolveTenantId(formSetVersionId);
+    await assertSetStageTarget(orgId, input.setStatusId!.trim());
   }
 }
 

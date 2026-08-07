@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     const { userId, type, title, body, link, skipEmail } = parsed.data;
 
     await createNotification({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId,
       type,
       category: "lead",

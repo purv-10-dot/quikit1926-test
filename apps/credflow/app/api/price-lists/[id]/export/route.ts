@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "export");
 
-    const rows = await exportPriceListItems(user.tenantId, id);
+    const rows = await exportPriceListItems(user.orgId, id);
     if (!rows) {
       return NextResponse.json({ success: false, error: "Price list not found" }, { status: 404 });
     }

@@ -12,10 +12,10 @@ import { publishLocalNotification } from "./local-bus";
 
 /** Per-user channel name. One Redis subscriber per open SSE connection. */
 export function tenantUserNotificationChannel(
-  tenantId: string,
+  orgId: string,
   userId: string,
 ): string {
-  return `quikcrm:notifications:${tenantId}:${userId}`;
+  return `quikcrm:notifications:${orgId}:${userId}`;
 }
 
 /** Minimal payload pushed over SSE — enough to render a toast + update the bell. */
@@ -40,11 +40,11 @@ let warnedDown = false;
  * only ONE transport, so this never double-delivers.
  */
 export async function publishNotificationEvent(
-  tenantId: string,
+  orgId: string,
   userId: string,
   event: NotificationEvent,
 ): Promise<void> {
-  const channel = tenantUserNotificationChannel(tenantId, userId);
+  const channel = tenantUserNotificationChannel(orgId, userId);
 
   // In-process delivery — free no-op when nothing is subscribed in this process.
   publishLocalNotification(channel, event);

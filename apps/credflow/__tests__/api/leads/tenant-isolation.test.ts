@@ -5,7 +5,7 @@
  * findMany/count return armed data regardless of the `where` — so a route that
  * forgets its `tenantId` filter still goes green. This test instead drives the
  * real route handlers through a FAITHFUL in-memory fake whose findMany/count
- * actually honor the tenant constraint: if a route ever drops the tenantId
+ * actually honor the tenant constraint: if a route ever drops the orgId
  * filter, the fake returns the other tenant's rows and these assertions fail.
  *
  * Covered: GET /api/leads and POST /api/leads/filter. The dashboard read path is
@@ -16,7 +16,7 @@ import { NextResponse } from "next/server";
 
 type LeadRow = {
   id: string;
-  tenantId: string;
+  orgId: string;
   name: string;
   deletedAt: Date | null;
   [k: string]: unknown;
@@ -26,13 +26,13 @@ const TENANT_A = "tenant-a";
 const TENANT_B = "tenant-b";
 
 const seed: LeadRow[] = [
-  { id: "a1", tenantId: TENANT_A, name: "A One", deletedAt: null },
-  { id: "a2", tenantId: TENANT_A, name: "A Two", deletedAt: null },
-  { id: "b1", tenantId: TENANT_B, name: "B One", deletedAt: null },
+  { id: "a1", orgId: TENANT_A, name: "A One", deletedAt: null },
+  { id: "a2", orgId: TENANT_A, name: "A Two", deletedAt: null },
+  { id: "b1", orgId: TENANT_B, name: "B One", deletedAt: null },
 ];
 
 /**
- * Pull the tenantId constraint out of a Prisma `where`. Handles both the
+ * Pull the orgId constraint out of a Prisma `where`. Handles both the
  * top-level `{ tenantId }` (list route) and `{ AND: [{ tenantId }, ...] }`
  * (filter route) shapes. Returns undefined when NO tenant constraint exists —
  * which is exactly the leak we want the fake to surface (it then returns every
@@ -41,7 +41,7 @@ const seed: LeadRow[] = [
 function extractTenantId(where: unknown): string | undefined {
   if (!where || typeof where !== "object") return undefined;
   const w = where as Record<string, unknown>;
-  if (typeof w.tenantId === "string") return w.tenantId;
+  if (typeof w.orgId === "string") return w.orgId;
   if (Array.isArray(w.AND)) {
     for (const clause of w.AND) {
       const t = extractTenantId(clause);
@@ -52,9 +52,9 @@ function extractTenantId(where: unknown): string | undefined {
 }
 
 function selectRows(where: unknown): LeadRow[] {
-  const tenantId = extractTenantId(where);
+  const orgId = extractTenantId(where);
   const active = seed.filter((r) => r.deletedAt === null);
-  return tenantId ? active.filter((r) => r.tenantId === tenantId) : active;
+  return orgId ? active.filter((r) => r.orgId === orgId) : active;
 }
 
 const fakePrisma = {
@@ -73,7 +73,7 @@ vi.mock("@quikit/database", () => ({ db: fakePrisma }));
 vi.mock("@/lib/db", () => ({ db: fakePrisma }));
 vi.mock("@/lib/db/prisma", () => ({ prisma: fakePrisma }));
 
-const sessionRef: { current: { userId: string; tenantId: string; role: string } | null } = {
+const sessionRef: { current: { userId: string; orgId: string; role: string } | null } = {
   current: null,
 };
 
@@ -103,8 +103,8 @@ vi.mock("@/lib/services/fields/repo", () => ({
   listCustomFields: vi.fn(async () => []),
 }));
 
-function asTenant(tenantId: string): void {
-  sessionRef.current = { userId: `u-${tenantId}`, tenantId, role: "SalesUser" };
+function asTenant(orgId: string): void {
+  sessionRef.current = { userId: `u-${orgId}`, orgId, role: "SalesUser" };
 }
 
 async function callListLeads(): Promise<Response> {
@@ -137,7 +137,7 @@ describe("cross-tenant isolation — lead read paths", () => {
     const jsonA = await resA.json();
     expect(jsonA.items.map((l: LeadRow) => l.id).sort()).toEqual(["a1", "a2"]);
     expect(jsonA.total).toBe(2);
-    expect(jsonA.items.some((l: LeadRow) => l.tenantId === TENANT_B)).toBe(false);
+    expect(jsonA.items.some((l: LeadRow) => l.orgId === TENANT_B)).toBe(false);
 
     asTenant(TENANT_B);
     const resB = await callListLeads();

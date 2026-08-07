@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const customOnly = new URL(req.url).searchParams.get("customOnly") === "true";
-    const items = await listProductFields(user.tenantId);
+    const items = await listProductFields(user.orgId);
     return NextResponse.json({
       items: customOnly ? items.filter((f) => !f.isStandard) : items,
     });
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const created = await createCustomProductField(user.tenantId, {
+    const created = await createCustomProductField(user.orgId, {
       ...parsed.data,
       isStandard: false,
     });

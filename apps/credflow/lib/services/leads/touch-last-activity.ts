@@ -23,19 +23,19 @@ type Tx = PrismaClient | Prisma.TransactionClient;
  * - Best-effort: failures are logged and swallowed, never breaking the save.
  */
 export async function touchLeadLastActivity(opts: {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   when?: Date;
   label?: string;
   tx?: Tx;
 }): Promise<void> {
-  const { tenantId, leadId, when, label, tx } = opts;
+  const { orgId, leadId, when, label, tx } = opts;
   const client: Tx = tx ?? prisma;
   const stampIso = (when ?? new Date()).toISOString();
 
   try {
     const lead = await client.qcfLead.findFirst({
-      where: { id: leadId, tenantId },
+      where: { id: leadId, orgId },
       select: { dynamicFields: true },
     });
     if (!lead) return;

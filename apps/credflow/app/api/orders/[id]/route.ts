@@ -56,7 +56,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const o = await getOrder(user.tenantId, id);
+    const o = await getOrder(user.orgId, id);
     if (!o) return fail(404, "Order not found");
     return ok(serialise(o));
   } catch (error: unknown) {
@@ -86,13 +86,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     try {
       await updateOrder({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         userName: user.name ?? null,
         id,
         input: parsed.data,
       });
-      const o = await getOrder(user.tenantId, id);
+      const o = await getOrder(user.orgId, id);
       return ok(serialise(o));
     } catch (e: unknown) {
       if (e instanceof OrderError) return fail(e.statusCode, e.message);
@@ -113,9 +113,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
 
-    const existing = await getOrder(user.tenantId, id);
+    const existing = await getOrder(user.orgId, id);
     if (!existing) return fail(404, "Order not found");
-    await softDeleteOrder(user.tenantId, id);
+    await softDeleteOrder(user.orgId, id);
     return ok({ ok: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to delete order";

@@ -20,17 +20,17 @@ export interface VersionComparison {
 }
 
 export async function compareQuoteVersions(
-  tenantId: string,
+  orgId: string,
   quoteIdA: string,
   quoteIdB: string,
 ): Promise<VersionComparison> {
   const [a, b] = await Promise.all([
     db.qcfQuote.findFirst({
-      where: { id: quoteIdA, tenantId },
+      where: { id: quoteIdA, orgId },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
     }),
     db.qcfQuote.findFirst({
-      where: { id: quoteIdB, tenantId },
+      where: { id: quoteIdB, orgId },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
     }),
   ]);
@@ -81,10 +81,10 @@ export async function compareQuoteVersions(
   };
 }
 
-export async function listComparableVersions(tenantId: string, quoteId: string) {
+export async function listComparableVersions(orgId: string, quoteId: string) {
   const row = await db.qcfQuote.findFirst({
-    where: { id: quoteId, tenantId },
+    where: { id: quoteId, orgId },
     select: { parentQuoteId: true },
   });
-  return loadRevisionChain(tenantId, quoteId, row?.parentQuoteId ?? null);
+  return loadRevisionChain(orgId, quoteId, row?.parentQuoteId ?? null);
 }

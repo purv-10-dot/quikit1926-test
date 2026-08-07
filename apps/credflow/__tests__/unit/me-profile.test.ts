@@ -42,7 +42,7 @@ describe("updateMeProfile", () => {
     const { updateMeProfile } = await import("@/lib/services/profile/me-profile");
     const result = await updateMeProfile({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       firstName: "Admin",
       lastName: "User",
       phone: "7024324880",

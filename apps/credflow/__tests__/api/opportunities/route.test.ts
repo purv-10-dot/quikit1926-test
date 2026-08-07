@@ -25,7 +25,7 @@ describe("GET /api/opportunities", () => {
   it("returns the {success, data} envelope on a happy GET", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "admin",
       email: "a@b.co",
       name: "Alice",
@@ -87,7 +87,7 @@ describe("POST /api/opportunities — tenant isolation", () => {
   it("returns 404 when the referenced account belongs to another tenant", async () => {
     setSession({
       userId: "u1",
-      tenantId: "tenant-A",
+      orgId: "tenant-A",
       role: "admin",
       email: "a@b.co",
       name: "Alice",
@@ -95,7 +95,7 @@ describe("POST /api/opportunities — tenant isolation", () => {
     db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
     // assertAccountAccess: admin role shortcut returns immediately, so no
     // ACL queries are needed.
-    // crmAccount lookup is scoped by tenantId — return null to simulate that
+    // crmAccount lookup is scoped by orgId — return null to simulate that
     // the account exists only in tenant B.
     db.qcfAccount.findFirst.mockResolvedValue(null);
 

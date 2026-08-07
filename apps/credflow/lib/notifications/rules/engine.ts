@@ -36,7 +36,7 @@ import { FIELD_CONDITIONS, VALUE_CONDITIONS, ENTITY_OWNER_FIELD } from "./types"
 export async function evaluateRulesForEvent(ctx: RuleEventContext): Promise<void> {
   let rules: NotificationRule[];
   try {
-    rules = await getActiveRulesForEntity(ctx.tenantId, ctx.entityType);
+    rules = await getActiveRulesForEntity(ctx.orgId, ctx.entityType);
   } catch (err) {
     if (isTableMissingError(err)) return; // Table not set up yet — skip silently.
     throw err;
@@ -57,7 +57,7 @@ export async function evaluateRulesForEvent(ctx: RuleEventContext): Promise<void
 
       for (const userId of recipientIds) {
         await createNotification({
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           userId,
           type: pickNotificationType(ctx.entityType),
           category: ctx.entityType as "lead",
@@ -157,7 +157,7 @@ async function resolveRecipients(
     case "manager": {
       const members = await prisma.orgMember.findMany({
         where: {
-          orgId: ctx.tenantId,
+          orgId: ctx.orgId,
           status: "active",
           role: {
             in: [
@@ -183,7 +183,7 @@ async function resolveRecipients(
       const role = rule.recipientValue?.trim();
       if (!role) return [];
       const members = await prisma.orgMember.findMany({
-        where: { orgId: ctx.tenantId, role, status: "active" },
+        where: { orgId: ctx.orgId, role, status: "active" },
         select: { userId: true },
       });
       return members

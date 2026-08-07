@@ -39,7 +39,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.qcfOrgWorkspaceSettings.deleteMany({ where: { tenantId: { in: [TENANT, SEED_TENANT] } } });
+  await db.qcfOrgWorkspaceSettings.deleteMany({ where: { orgId: { in: [TENANT, SEED_TENANT] } } });
   await db.qcfLeadStatus.deleteMany({ where: { name: { in: [ST_A, ST_B] } } });
 });
 

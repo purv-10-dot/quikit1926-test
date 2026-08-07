@@ -16,7 +16,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const items = await prisma.qcfCampaign.findMany({
-      where: { tenantId: user.tenantId },
+      where: { orgId: user.orgId },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ items });
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         startDate: parseOptionalCampaignDate(startDate),
         endDate: parseOptionalCampaignDate(endDate),
         config: buildCampaignConfig({ budget, description, config }) as Prisma.InputJsonValue | undefined,
-        tenantId: user.tenantId,
+        orgId: user.orgId,
       },
     });
     return NextResponse.json(c, { status: 201 });

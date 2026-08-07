@@ -27,14 +27,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
 
-    const pl = await getPriceList(user.tenantId, id);
+    const pl = await getPriceList(user.orgId, id);
     if (!pl) return fail(404, "Price list not found");
 
     const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
     if (!parsed.success) return fail(400, "Invalid pagination");
 
     const result = await listPriceListAudit({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       priceListId: id,
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,

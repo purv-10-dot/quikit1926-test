@@ -58,7 +58,7 @@ function onLeadSquaredJobFailed(
 }
 
 async function processAutomationJob(job: Job<AutomationJobData>) {
-  const { tenantId, workflowId, leadId, startNodeId, step, pendingStepId, triggerEventId, triggerType, triggerSnapshot } = job.data;
+  const { orgId, workflowId, leadId, startNodeId, step, pendingStepId, triggerEventId, triggerType, triggerSnapshot } = job.data;
   if (pendingStepId) {
     await prisma.qcfAutomationPendingStep
       .update({
@@ -68,7 +68,7 @@ async function processAutomationJob(job: Job<AutomationJobData>) {
       .catch(() => undefined);
   }
   try {
-    await runFrom(tenantId, workflowId, leadId, startNodeId, step ?? 0, {
+    await runFrom(orgId, workflowId, leadId, startNodeId, step ?? 0, {
       eventId: triggerEventId,
       type: triggerType,
       snapshot: triggerSnapshot,
@@ -179,7 +179,7 @@ async function main() {
     LEADSQUARED_INBOUND_QUEUE_NAME,
     async (job) => {
       const fieldMap = await getResolvedFieldMap();
-      const results = await processInboundBatch(job.data.tenantId, job.data.payload, { fieldMap });
+      const results = await processInboundBatch(job.data.orgId, job.data.payload, { fieldMap });
       for (const r of results) {
         console.log(
           `[worker] leadsquared-inbound: action=${r.action} prospectId=${r.lsqProspectId ?? "-"} crmLeadId=${r.crmLeadId ?? "-"}`,

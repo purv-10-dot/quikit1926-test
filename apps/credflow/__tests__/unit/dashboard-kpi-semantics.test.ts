@@ -28,7 +28,7 @@ const RANGE = {
   to: new Date("2026-05-01T23:59:59.999Z"),
   tz: "UTC",
 };
-const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
+const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
 const FILTERS = { range: RANGE, resolvedOwnerId: null, ownerId: null };
 
 function armPrismaDefaults(): void {
@@ -164,7 +164,7 @@ describe("Bug 1 — conversionLeadToQualifiedPct empty-window guard", () => {
       { stage: "Qualified", _count: 2 },
     ]);
     db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue({
-      tenantId: "t1",
+      orgId: "t1",
       settings: {
         dashboard: { qualifiedStages: ["Qualified"], funnelStages: ["New"] },
       },

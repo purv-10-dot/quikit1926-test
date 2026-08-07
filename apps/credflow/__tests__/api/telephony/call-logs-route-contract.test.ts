@@ -37,7 +37,7 @@ function postReq(body: unknown) {
 }
 
 beforeEach(() => {
-  setSession({ userId: "u1", tenantId: "t1", name: "Dev Pallav" });
+  setSession({ userId: "u1", orgId: "t1", name: "Dev Pallav" });
 });
 
 describe("POST /api/telephony/call-logs — Option-Y contract", () => {

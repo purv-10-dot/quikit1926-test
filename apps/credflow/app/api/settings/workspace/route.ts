@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest) {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const cfg = await getPipelineConfig(user.tenantId);
+    const cfg = await getPipelineConfig(user.orgId);
     return NextResponse.json({ leadPipelineConfig: cfg });
   } catch (e) {
     return errorResponse(e);
@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
         { status: 400 },
       );
     }
-    const next = await setPipelineConfig(user.tenantId, parsed.data);
+    const next = await setPipelineConfig(user.orgId, parsed.data);
     return NextResponse.json({ leadPipelineConfig: next });
   } catch (e) {
     return errorResponse(e);

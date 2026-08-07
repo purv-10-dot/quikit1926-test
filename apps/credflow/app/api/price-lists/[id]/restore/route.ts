@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await assertModule(user, "quotes", "delete");
 
     const existing = await db.qcfPriceList.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: { not: null } },
+      where: { id, orgId: user.orgId, deletedAt: { not: null } },
       select: { id: true },
     });
     if (!existing) {
@@ -29,7 +29,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
 
     await restorePriceList({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       id,
       userId: user.userId,
       userName: user.name,

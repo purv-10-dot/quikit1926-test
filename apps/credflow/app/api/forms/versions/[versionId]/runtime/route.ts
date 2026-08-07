@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ver
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const { versionId } = await params;
-    const data = await getFormRuntime(versionId, user.tenantId);
+    const data = await getFormRuntime(versionId, user.orgId);
     return NextResponse.json({ success: true, data });
   } catch (e) {
     if (e instanceof FormStructureError) {

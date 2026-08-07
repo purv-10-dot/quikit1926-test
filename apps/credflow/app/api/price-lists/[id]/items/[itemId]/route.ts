@@ -44,7 +44,7 @@ export async function PATCH(
 
     try {
       const updated = await updatePriceListItem({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         itemId,
         userId: user.userId,
         userName: user.name,
@@ -84,7 +84,7 @@ export async function DELETE(
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
     await deletePriceListItem({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       itemId,
       userId: user.userId,
       userName: user.name,

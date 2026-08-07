@@ -22,7 +22,7 @@ import { recordAttribution } from "@/lib/services/automation/attribution";
 // ── Public call context ───────────────────────────────────────────────────────
 
 export interface RunAfterActivityLoggedCtx {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   activityId: string;
   /** The QcfCallDisposition.code that the agent selected. */
@@ -154,7 +154,7 @@ export async function runAfterActivityLogged(
 
 async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
   const rules = await prisma.qcfAutomationRule.findMany({
-    where: { tenantId: ctx.tenantId, isActive: true },
+    where: { orgId: ctx.orgId, isActive: true },
     orderBy: { sortOrder: "asc" },
   });
 
@@ -193,14 +193,14 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
         },
       });
       // Outbound sync (status/substatus changed). Fire-and-forget.
-      triggerOutboundSync({ tenantId: ctx.tenantId, crmLeadId: ctx.leadId });
+      triggerOutboundSync({ orgId: ctx.orgId, crmLeadId: ctx.leadId });
 
       // Dual-engine loop guard (SPEC §6): a legacy-disposition status write
       // increments the SAME per-lead/day counter the workflow engine uses, so a
       // cross-engine ping-pong is caught below either engine's individual cap.
       // Best-effort — a guard failure must never block the disposition save.
       await recordWriteAndCheck({
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         leadId: ctx.leadId,
         source: "legacy-disposition",
       }).catch((e) =>
@@ -210,7 +210,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
       // Attribution (SPEC §8): distinguishable engine source so the same
       // "why did this lead change?" lookup covers legacy-disposition writes too.
       await recordAttribution({
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         leadId: ctx.leadId,
         engineSource: "legacy-disposition",
         ruleId: rule.id,
@@ -225,7 +225,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
       // FR-D5: audit-log with rule as actor.
       await prisma.qcfAuditLog.create({
         data: {
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           userId: null,
           module: "leads",
           action: "status_changed",
@@ -255,7 +255,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
 
       await prisma.qcfTask.create({
         data: {
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           subject: title,
           taskType: "FollowUp",
           priority: "Medium",

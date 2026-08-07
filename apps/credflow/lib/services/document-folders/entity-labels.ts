@@ -22,14 +22,14 @@ export async function resolveEntityLabels(
   const out = new Map<string, EntityLabelRow>();
   if (unique.length === 0) return out;
 
-  const { tenantId } = user;
+  const { orgId } = user;
   const acl = await accountScopeFilter(user);
 
   switch (refType) {
     case "lead": {
       const rows = await prisma.qcfLead.findMany({
         where: {
-          tenantId,
+          orgId,
           id: { in: unique },
           ...(acl ? { AND: [acl] } : {}),
         },
@@ -51,7 +51,7 @@ export async function resolveEntityLabels(
         ? unique
         : unique.filter((id) => scope.allowedAccountIds.includes(id));
       const rows = await prisma.qcfAccount.findMany({
-        where: { tenantId, id: { in: allowedIds } },
+        where: { orgId, id: { in: allowedIds } },
         select: { id: true, name: true },
       });
       for (const r of rows) {
@@ -67,7 +67,7 @@ export async function resolveEntityLabels(
     case "opportunity": {
       const rows = await prisma.qcfOpportunity.findMany({
         where: {
-          tenantId,
+          orgId,
           id: { in: unique },
           ...(acl ? { AND: [acl] } : {}),
         },
@@ -85,7 +85,7 @@ export async function resolveEntityLabels(
     }
     case "quote": {
       const rows = await prisma.qcfQuote.findMany({
-        where: { tenantId, id: { in: unique } },
+        where: { orgId, id: { in: unique } },
         select: { id: true, quoteNumber: true },
       });
       for (const r of rows) {
@@ -100,7 +100,7 @@ export async function resolveEntityLabels(
     }
     case "order": {
       const rows = await prisma.qcfOrder.findMany({
-        where: { tenantId, id: { in: unique } },
+        where: { orgId, id: { in: unique } },
         select: { id: true, orderNumber: true },
       });
       for (const r of rows) {
@@ -123,7 +123,7 @@ export async function listEntityIdsForModule(
   user: SessionUser,
   module: ExplorerModuleKey,
 ): Promise<string[]> {
-  const { tenantId } = user;
+  const { orgId } = user;
 
   if (module === "global") {
     return [];
@@ -134,12 +134,12 @@ export async function listEntityIdsForModule(
 
   const [folderRows, docRows] = await Promise.all([
     prisma.qcfDocumentFolder.findMany({
-      where: { tenantId, refType, refId: { not: null }, deletedAt: null },
+      where: { orgId, refType, refId: { not: null }, deletedAt: null },
       select: { refId: true },
       distinct: ["refId"],
     }),
     prisma.qcfDocument.findMany({
-      where: { tenantId, refType, deletedAt: null },
+      where: { orgId, refType, deletedAt: null },
       select: { refId: true },
       distinct: ["refId"],
     }),

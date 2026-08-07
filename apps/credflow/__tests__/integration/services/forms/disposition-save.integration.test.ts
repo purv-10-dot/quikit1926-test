@@ -35,7 +35,7 @@ let versionId: string;
 
 beforeAll(async () => {
   const set = await db.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
   });
   setId = set.id;
   const version = await db.qcfFormSetVersion.create({ data: { formSetId: setId, versionNumber: 1, status: "draft" } });
@@ -66,12 +66,12 @@ afterAll(async () => {
     await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
     await db.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
   }
-  await db.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await db.qcfFieldValue.deleteMany({ where: { orgId: TENANT } });
   await db.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
   await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
   await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
   await db.qcfFormSet.deleteMany({ where: { id: setId } });
-  await db.qcfLead.deleteMany({ where: { tenantId: TENANT } });
+  await db.qcfLead.deleteMany({ where: { orgId: TENANT } });
 });
 
 describe("getLiveDispositionVersionId — resolve the live (currentVersion) form version", () => {
@@ -87,7 +87,7 @@ describe("saveDispositionFieldValues — persist typed custom field values", () 
   it("writes each value to the right column for its field type", async () => {
     const activityId = `act_${STAMP}_fv`;
     await saveDispositionFieldValues({
-      tenantId: TENANT,
+      orgId: TENANT,
       activityId,
       formSetVersionId: versionId,
       fieldValues: { payment_mode: "invoice", verifiers: ["u1", "u2"] },
@@ -104,7 +104,7 @@ describe("saveDispositionFieldValues — persist typed custom field values", () 
   it("ignores values for fields not defined in the version (server-authoritative)", async () => {
     const activityId = `act_${STAMP}_unknown`;
     await saveDispositionFieldValues({
-      tenantId: TENANT,
+      orgId: TENANT,
       activityId,
       formSetVersionId: versionId,
       fieldValues: { not_a_field: "x" },
@@ -115,11 +115,11 @@ describe("saveDispositionFieldValues — persist typed custom field values", () 
 
 describe("saveAndApplyDisposition — END-TO-END: entered field drives the rule, Contact Stage moves", () => {
   it("writes the field value, fires the rule, and moves the lead's Contact Stage", async () => {
-    const lead = await db.qcfLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}`, status: "Open", stage: "New" } });
+    const lead = await db.qcfLead.create({ data: { orgId: TENANT, name: `Lead ${STAMP}`, status: "Open", stage: "New" } });
     const activityId = `act_${STAMP}_e2e`;
 
     const result = await saveAndApplyDisposition({
-      tenantId: TENANT,
+      orgId: TENANT,
       leadId: lead.id,
       activityId,
       fieldValues: { payment_mode: "invoice" },
@@ -141,7 +141,7 @@ describe("saveAndApplyDisposition — END-TO-END: entered field drives the rule,
 
   it("returns null (no-op, legacy path) when the tenant has no live form set", async () => {
     const result = await saveAndApplyDisposition({
-      tenantId: EMPTY_TENANT,
+      orgId: EMPTY_TENANT,
       leadId: "no_lead",
       activityId: `act_${STAMP}_none`,
       fieldValues: { payment_mode: "invoice" },
@@ -157,9 +157,9 @@ describe("saveAndApplyDisposition — END-TO-END: entered field drives the rule,
  */
 describe("Option A ordering — FR-RE overrides the mapping when fired, legacy stands when not", () => {
   it("FR-RE OVERRIDES the (legacy-mapped) Contact Stage when a rule fires", async () => {
-    const lead = await db.qcfLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}-ovr`, status: "Open", stage: "MappedStage" } });
+    const lead = await db.qcfLead.create({ data: { orgId: TENANT, name: `Lead ${STAMP}-ovr`, status: "Open", stage: "MappedStage" } });
     const result = await saveAndApplyDisposition({
-      tenantId: TENANT,
+      orgId: TENANT,
       leadId: lead.id,
       activityId: `act_${STAMP}_ovr`,
       fieldValues: { payment_mode: "invoice" }, // matches the rule
@@ -170,9 +170,9 @@ describe("Option A ordering — FR-RE overrides the mapping when fired, legacy s
   });
 
   it("the legacy-mapped Contact Stage STANDS when no FR-RE rule fires", async () => {
-    const lead = await db.qcfLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}-keep`, status: "Open", stage: "MappedStage" } });
+    const lead = await db.qcfLead.create({ data: { orgId: TENANT, name: `Lead ${STAMP}-keep`, status: "Open", stage: "MappedStage" } });
     const result = await saveAndApplyDisposition({
-      tenantId: TENANT,
+      orgId: TENANT,
       leadId: lead.id,
       activityId: `act_${STAMP}_keep`,
       fieldValues: { payment_mode: "cash" }, // matches no rule

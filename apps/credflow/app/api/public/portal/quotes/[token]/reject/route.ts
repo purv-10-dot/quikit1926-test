@@ -25,7 +25,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Reason required" }, { status: 400 });
     }
     await portalRejectQuote({
-      tenantId: resolved.tenantId,
+      orgId: resolved.orgId,
       quoteId: resolved.quoteId,
       reason: parsed.data.reason,
       ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,

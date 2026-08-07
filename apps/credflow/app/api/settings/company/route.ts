@@ -19,7 +19,7 @@ export async function GET() {
     if (isResponse(user)) return user;
     await requirePermission(user, "settings", "view");
 
-    const data = await getCompanyProfileForSettings(user.tenantId);
+    const data = await getCompanyProfileForSettings(user.orgId);
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load company profile";
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const data = await upsertCompanyProfile(user.tenantId, parsed.data);
+    const data = await upsertCompanyProfile(user.orgId, parsed.data);
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update company profile";

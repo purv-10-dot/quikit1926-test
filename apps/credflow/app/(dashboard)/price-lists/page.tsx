@@ -14,16 +14,16 @@ const ADMIN_ROLE = "Administrator";
  * Server-side stats for the Price Lists page. Cheap: two count queries +
  * one lookup for the default-list name.
  */
-async function computePriceListStats(tenantId: string): Promise<PriceListsStats> {
-  const activeListWhere = { tenantId, deletedAt: null } as const;
+async function computePriceListStats(orgId: string): Promise<PriceListsStats> {
+  const activeListWhere = { orgId, deletedAt: null } as const;
   const [total, totalItems, defaultRow] = await Promise.all([
     db.qcfPriceList.count({ where: activeListWhere }),
     // Count items on active price lists only (works before item-level deletedAt migration).
     db.qcfPriceListItem.count({
-      where: { tenantId, priceList: { deletedAt: null } },
+      where: { orgId, priceList: { deletedAt: null } },
     }),
     db.qcfPriceList.findFirst({
-      where: { tenantId, isDefault: true, deletedAt: null },
+      where: { orgId, isDefault: true, deletedAt: null },
       select: { name: true },
     }),
   ]);
@@ -39,12 +39,12 @@ export default async function PriceListsPage() {
   const isAdmin = user.role === ADMIN_ROLE;
   let canDelete = isAdmin;
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     const row = matrix.find((r) => r.module === "quotes");
     canDelete = !!row?.actions.includes("delete");
   }
 
-  const stats = await computePriceListStats(user.tenantId);
+  const stats = await computePriceListStats(user.orgId);
   return (
     <PageContainer size="wide">
       <PageHeader

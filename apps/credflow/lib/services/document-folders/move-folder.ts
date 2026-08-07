@@ -5,7 +5,7 @@ type FolderParentRow = { parentFolderId: string | null };
 
 /** Returns true if `descendantId` is under `ancestorId` in the folder tree. */
 export async function isFolderDescendant(
-  tenantId: string,
+  orgId: string,
   ancestorId: string,
   descendantId: string,
 ): Promise<boolean> {
@@ -18,7 +18,7 @@ export async function isFolderDescendant(
     seen.add(currentId);
 
     const row: FolderParentRow | null = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: currentId, tenantId, deletedAt: null },
+      where: { id: currentId, orgId, deletedAt: null },
       select: { parentFolderId: true },
     });
     if (!row) return false;
@@ -28,7 +28,7 @@ export async function isFolderDescendant(
 }
 
 export async function validateFolderMove(
-  tenantId: string,
+  orgId: string,
   folderId: string,
   newParentFolderId: string | null,
 ): Promise<void> {
@@ -37,14 +37,14 @@ export async function validateFolderMove(
   }
 
   const folder = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: folderId, tenantId, deletedAt: null },
+    where: { id: folderId, orgId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
 
   if (!newParentFolderId) return;
 
   const parent = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: newParentFolderId, tenantId, deletedAt: null },
+    where: { id: newParentFolderId, orgId, deletedAt: null },
   });
   if (!parent) throw new FolderServiceError("Parent folder not found", 404);
 
@@ -52,7 +52,7 @@ export async function validateFolderMove(
     throw new FolderServiceError("Parent folder must be in the same scope");
   }
 
-  if (await isFolderDescendant(tenantId, folderId, newParentFolderId)) {
+  if (await isFolderDescendant(orgId, folderId, newParentFolderId)) {
     throw new FolderServiceError("Cannot move a folder into its own descendant");
   }
 }

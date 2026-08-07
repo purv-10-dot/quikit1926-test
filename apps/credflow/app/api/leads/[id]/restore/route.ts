@@ -26,7 +26,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await assertModule(user, "leads", "delete");
 
     const existing = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!existing || existing.tenantId !== user.tenantId) {
+    if (!existing || existing.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await assertAccountAccess(user, existing.accountId);
@@ -42,14 +42,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       data: { deletedAt: null },
     });
     await recordLeadChange({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       leadId: id,
       action: "RESTORE",
       before: existing as unknown as Record<string, unknown>,
       after: restored as unknown as Record<string, unknown>,
     });
-    publishLeadEvent(user.tenantId, {
+    publishLeadEvent(user.orgId, {
       type: "updated",
       leadId: id,
       stage: restored.stage,

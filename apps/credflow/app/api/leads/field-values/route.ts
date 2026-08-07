@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing ?field parameter" }, { status: 400 });
     }
 
-    const result = await resolveFieldValues(user.tenantId, field);
+    const result = await resolveFieldValues(user.orgId, field);
     return NextResponse.json(result);
   } catch (e) {
     return errorResponse(e);

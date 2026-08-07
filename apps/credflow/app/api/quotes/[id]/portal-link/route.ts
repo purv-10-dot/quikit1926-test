@@ -28,7 +28,7 @@ export async function POST(
       "";
 
     const data = await createQuotePortalLink({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: id,
       userId: user.userId,
       expiresInDays: Number.isFinite(expiresInDays) ? expiresInDays : 30,

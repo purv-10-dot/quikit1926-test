@@ -4,7 +4,7 @@ import type { DocumentDto, DocumentRefType } from "./types";
 import { isDocumentRefType } from "./types";
 
 export async function enrichRelatedLabels(
-  tenantId: string,
+  orgId: string,
   docs: DocumentDto[],
 ): Promise<DocumentDto[]> {
   if (docs.length === 0) return docs;
@@ -24,7 +24,7 @@ export async function enrichRelatedLabels(
     switch (refType) {
       case "lead": {
         const rows = await prisma.qcfLead.findMany({
-          where: { tenantId, id: { in: unique } },
+          where: { orgId, id: { in: unique } },
           select: { id: true, name: true },
         });
         for (const r of rows) labels.set(`${refType}:${r.id}`, r.name);
@@ -32,7 +32,7 @@ export async function enrichRelatedLabels(
       }
       case "account": {
         const rows = await prisma.qcfAccount.findMany({
-          where: { tenantId, id: { in: unique } },
+          where: { orgId, id: { in: unique } },
           select: { id: true, name: true },
         });
         for (const r of rows) labels.set(`${refType}:${r.id}`, r.name);
@@ -40,7 +40,7 @@ export async function enrichRelatedLabels(
       }
       case "opportunity": {
         const rows = await prisma.qcfOpportunity.findMany({
-          where: { tenantId, id: { in: unique } },
+          where: { orgId, id: { in: unique } },
           select: { id: true, name: true },
         });
         for (const r of rows) labels.set(`${refType}:${r.id}`, r.name);
@@ -48,7 +48,7 @@ export async function enrichRelatedLabels(
       }
       case "quote": {
         const rows = await prisma.qcfQuote.findMany({
-          where: { tenantId, id: { in: unique } },
+          where: { orgId, id: { in: unique } },
           select: { id: true, quoteNumber: true },
         });
         for (const r of rows) labels.set(`${refType}:${r.id}`, r.quoteNumber);
@@ -56,7 +56,7 @@ export async function enrichRelatedLabels(
       }
       case "order": {
         const rows = await prisma.qcfOrder.findMany({
-          where: { tenantId, id: { in: unique } },
+          where: { orgId, id: { in: unique } },
           select: { id: true, orderNumber: true },
         });
         for (const r of rows) labels.set(`${refType}:${r.id}`, r.orderNumber);

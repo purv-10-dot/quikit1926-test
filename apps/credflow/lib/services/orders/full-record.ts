@@ -77,7 +77,7 @@ export interface FullOrderRecord {
   attachments: Awaited<ReturnType<typeof loadAttachments>>;
 }
 
-async function loadOrderActivities(tenantId: string, orderId: string, quoteId: string | null) {
+async function loadOrderActivities(orgId: string, orderId: string, quoteId: string | null) {
   const or: { relatedKind: string; relatedObjectId: string }[] = [
     { relatedKind: "Order", relatedObjectId: orderId },
   ];
@@ -85,7 +85,7 @@ async function loadOrderActivities(tenantId: string, orderId: string, quoteId: s
 
   return prisma.qcfActivity.findMany({
     where: {
-      tenantId,
+      orgId,
       OR: or,
     },
     orderBy: { occurredAt: "desc" },
@@ -93,10 +93,10 @@ async function loadOrderActivities(tenantId: string, orderId: string, quoteId: s
   });
 }
 
-async function loadAttachments(tenantId: string, orderId: string) {
+async function loadAttachments(orgId: string, orderId: string) {
   return prisma.qcfDocument.findMany({
     where: {
-      tenantId,
+      orgId,
       refType: "order",
       refId: orderId,
       deletedAt: null,
@@ -113,7 +113,7 @@ export async function getFullOrderRecord(opts: {
   const { user, orderId } = opts;
 
   const row = await prisma.qcfOrder.findFirst({
-    where: { id: orderId, tenantId: user.tenantId },
+    where: { id: orderId, orgId: user.orgId },
     include: {
       lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
       quote: { select: { id: true, quoteNumber: true, versionNumber: true } },
@@ -124,25 +124,25 @@ export async function getFullOrderRecord(opts: {
   const [account, contact, opportunity, activities, attachments] = await Promise.all([
     row.accountId
       ? prisma.qcfAccount.findFirst({
-          where: { id: row.accountId, tenantId: user.tenantId },
+          where: { id: row.accountId, orgId: user.orgId },
           select: { id: true, name: true },
         })
       : null,
     row.contactId
       ? prisma.qcfContact.findFirst({
           // QcfContact isn't middleware-protected — don't surface a trashed contact.
-          where: { id: row.contactId, tenantId: user.tenantId, deletedAt: null },
+          where: { id: row.contactId, orgId: user.orgId, deletedAt: null },
           select: { id: true, firstName: true, lastName: true, email: true },
         })
       : null,
     row.opportunityId
       ? prisma.qcfOpportunity.findFirst({
-          where: { id: row.opportunityId, tenantId: user.tenantId },
+          where: { id: row.opportunityId, orgId: user.orgId },
           select: { id: true, name: true, stage: true },
         })
       : null,
-    loadOrderActivities(user.tenantId, orderId, row.quoteId),
-    loadAttachments(user.tenantId, orderId),
+    loadOrderActivities(user.orgId, orderId, row.quoteId),
+    loadAttachments(user.orgId, orderId),
   ]);
 
   const order: Order360Row = {

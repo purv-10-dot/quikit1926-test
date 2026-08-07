@@ -23,7 +23,7 @@ vi.mock("@/lib/services/leads/change-log", () => ({
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -33,7 +33,7 @@ function adminSession() {
 function existingLead(overrides: Record<string, unknown> = {}) {
   return {
     id: "l1",
-    tenantId: "t1",
+    orgId: "t1",
     name: "Test Lead",
     stage: "New",
     status: "Open",

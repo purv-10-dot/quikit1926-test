@@ -72,7 +72,7 @@ export function tenantOwnerWhere(
   user: SessionUser,
   ownerId: string | null,
 ): Record<string, unknown> {
-  const w: Record<string, unknown> = { tenantId: user.tenantId };
+  const w: Record<string, unknown> = { orgId: user.orgId };
   if (ownerId) w.ownerId = ownerId;
   return w;
 }
@@ -82,7 +82,7 @@ export function tenantAssigneeWhere(
   user: SessionUser,
   ownerId: string | null,
 ): Record<string, unknown> {
-  const w: Record<string, unknown> = { tenantId: user.tenantId };
+  const w: Record<string, unknown> = { orgId: user.orgId };
   if (ownerId) w.assignedToUserId = ownerId;
   return w;
 }
@@ -92,7 +92,7 @@ export function tenantAgentWhere(
   user: SessionUser,
   ownerId: string | null,
 ): Record<string, unknown> {
-  const w: Record<string, unknown> = { tenantId: user.tenantId };
+  const w: Record<string, unknown> = { orgId: user.orgId };
   if (ownerId) w.agentUserId = ownerId;
   return w;
 }

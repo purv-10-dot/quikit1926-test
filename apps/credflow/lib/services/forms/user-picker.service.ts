@@ -42,7 +42,7 @@ export class UserPickerValidationError extends Error {
 
 interface SessionLike {
   userId: string;
-  tenantId: string;
+  orgId: string;
   role: string;
 }
 
@@ -100,7 +100,7 @@ export async function listUsersForPicker(
   opts: { scope: UserPickerScope; role?: string | null },
 ): Promise<UserPickerOption[]> {
   const where: Prisma.OrgMemberWhereInput = {
-    orgId: user.tenantId,
+    orgId: user.orgId,
     status: "active",
   };
 

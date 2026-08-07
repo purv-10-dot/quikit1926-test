@@ -18,7 +18,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.qcfLandingPage.findMany({ where: { tenantId: user.tenantId }, orderBy: { updatedAt: "desc" } });
+    const items = await prisma.qcfLandingPage.findMany({ where: { orgId: user.orgId }, orderBy: { updatedAt: "desc" } });
     return NextResponse.json({ items });
   } catch (e) { return errorResponse(e); }
 }
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const p = await prisma.qcfLandingPage.create({
-      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.QcfLandingPageUncheckedCreateInput,
+      data: { ...parsed.data, orgId: user.orgId } as Prisma.QcfLandingPageUncheckedCreateInput,
     });
     return NextResponse.json(p, { status: 201 });
   } catch (e) { return errorResponse(e); }

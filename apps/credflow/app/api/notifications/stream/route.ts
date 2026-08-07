@@ -3,7 +3,7 @@
  *
  * Server-Sent Events feed of incoming notifications for the authenticated user.
  * The client's NotificationBell subscribes via EventSource; the server forwards
- * every publish on `quikcrm:notifications:<tenantId>:<userId>` as an SSE event
+ * every publish on `quikcrm:notifications:<orgId>:<userId>` as an SSE event
  * named "notification".
  *
  * Transport selection:
@@ -23,7 +23,7 @@
  *   - `req.signal` "abort" closes the subscriber + the ReadableStream controller.
  *
  * Auth: NextAuth cookie (EventSource sends cookies same-origin by default).
- * Channel naming: `quikcrm:notifications:<tenantId>:<userId>` — per-user, no
+ * Channel naming: `quikcrm:notifications:<orgId>:<userId>` — per-user, no
  * cross-user leakage.
  */
 
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
   const user = await requireApiUser();
   if (isResponse(user)) return user;
 
-  const channel = tenantUserNotificationChannel(user.tenantId, user.userId);
+  const channel = tenantUserNotificationChannel(user.orgId, user.userId);
   const redisSub = await tryRedisSubscriber();
   const transport = redisSub ? "redis" : "local";
 

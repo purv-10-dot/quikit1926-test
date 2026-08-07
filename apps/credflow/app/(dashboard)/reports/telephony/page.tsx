@@ -12,8 +12,8 @@ export default async function TelephonyReportsPage() {
   if (!(await hasPermission(user, "reports", "view"))) redirect("/reports");
 
   const [total, byStatus] = await Promise.all([
-    prisma.qcfCallLog.count({ where: { tenantId: user.tenantId } }),
-    prisma.qcfCallLog.groupBy({ by: ["status"], where: { tenantId: user.tenantId }, _count: true }),
+    prisma.qcfCallLog.count({ where: { orgId: user.orgId } }),
+    prisma.qcfCallLog.groupBy({ by: ["status"], where: { orgId: user.orgId }, _count: true }),
   ]);
   return (
     <div className="space-y-4">

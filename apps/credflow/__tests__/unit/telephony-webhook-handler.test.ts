@@ -10,7 +10,7 @@ const CALL_SID = "3372519";
 
 const callLogRow = {
   id: "call-log-1",
-  tenantId: DIALER_TENANT,
+  orgId: DIALER_TENANT,
   callSid: CALL_SID,
   providerCallSid: CALL_SID,
   durationSec: null,
@@ -40,7 +40,7 @@ describe("processIndiaVoiceWebhook matching", () => {
     db.qcfIndiaVoiceWebhookLog.findUnique.mockResolvedValue(null);
     db.qcfIndiaVoiceWebhookLog.create.mockResolvedValue({
       id: "audit-new",
-      tenantId: WEBHOOK_TENANT,
+      orgId: WEBHOOK_TENANT,
       matchedCallLogId: null,
     } as never);
     db.qcfCallLog.findFirst.mockResolvedValue(null);
@@ -57,7 +57,7 @@ describe("processIndiaVoiceWebhook matching", () => {
     // Per-org IndiaVoice accounts: the webhook always resolves to the same
     // tenant the call log was created under, so the tenant-scoped primary sid
     // match (findFirst) resolves it. Cross-tenant matching does not exist by
-    // design — every match path is gated by tenantId.
+    // design — every match path is gated by orgId.
     db.qcfCallLog.findFirst.mockResolvedValueOnce(callLogRow as never);
 
     const result = await processIndiaVoiceWebhook(DIALER_TENANT, terminalPayload);
@@ -66,7 +66,7 @@ describe("processIndiaVoiceWebhook matching", () => {
     expect(result.callLogId).toBe("call-log-1");
     expect(db.qcfCallLog.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: DIALER_TENANT }),
+        where: expect.objectContaining({ orgId: DIALER_TENANT }),
       }),
     );
     expect(db.qcfCallLog.update).toHaveBeenCalledWith(

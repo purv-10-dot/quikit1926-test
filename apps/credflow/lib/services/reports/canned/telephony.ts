@@ -30,7 +30,7 @@ const callsByDisposition: CannedReport = {
     const grouped = await db.qcfCallLog.groupBy({
       by: ["dispositionName"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         createdAt: { gte: ctx.from, lte: ctx.to },
         ...(ctx.ownerId ? { agentUserId: ctx.ownerId } : {}),
       },
@@ -95,7 +95,7 @@ const callsByDay: CannedReport = {
     const start = startOfDayInTz(ctx.from, ctx.tz);
     const calls = await db.qcfCallLog.findMany({
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         createdAt: { gte: start, lte: ctx.to },
         ...(ctx.ownerId ? { agentUserId: ctx.ownerId } : {}),
       },
@@ -153,7 +153,7 @@ const callsByUser: CannedReport = {
     const grouped = await db.qcfCallLog.groupBy({
       by: ["agentUserId", "ownerName"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         createdAt: { gte: ctx.from, lte: ctx.to },
         ...(ctx.ownerId ? { agentUserId: ctx.ownerId } : {}),
       },
@@ -202,7 +202,7 @@ const talkTimeByUser: CannedReport = {
     const grouped = await db.qcfCallLog.groupBy({
       by: ["agentUserId", "ownerName"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         createdAt: { gte: ctx.from, lte: ctx.to },
         ...(ctx.ownerId ? { agentUserId: ctx.ownerId } : {}),
       },

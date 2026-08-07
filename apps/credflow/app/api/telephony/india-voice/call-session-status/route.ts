@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     const row = await prisma.qcfIndiaVoiceWebhookLog.findFirst({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         OR: [{ callSid }, { campid: callSid }],
       },
       orderBy: { createdAt: "desc" },

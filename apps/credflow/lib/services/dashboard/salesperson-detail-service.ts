@@ -38,7 +38,7 @@ function summariseAudit(module: string, action: string, after: unknown): string 
 
 // Build 90-day activity heatmap
 async function buildHeatmap(
-  tenantId: string,
+  orgId: string,
   activityFilter: Record<string, unknown>,
   tz: string,
 ): Promise<SalespersonHeatmapDay[]> {
@@ -48,7 +48,7 @@ async function buildHeatmap(
 
   const rows = await prisma.qcfActivity.findMany({
     where: {
-      tenantId,
+      orgId,
       occurredAt: { gte: heatmapFrom, lte: heatmapTo },
       ...activityFilter,
     },
@@ -109,14 +109,14 @@ function buildCallDurationBuckets(
 
 // Compute avg response time: for each lead, find first activity occurredAt after lead.createdAt
 async function computeAvgResponseTime(
-  tenantId: string,
+  orgId: string,
   leadIds: string[],
   leadCreatedMap: Map<string, Date>,
 ): Promise<number | null> {
   if (leadIds.length === 0) return null;
 
   const firstActivities = await prisma.qcfActivity.findMany({
-    where: { tenantId, leadId: { in: leadIds } },
+    where: { orgId, leadId: { in: leadIds } },
     orderBy: { occurredAt: "asc" },
     select: { leadId: true, occurredAt: true },
   });
@@ -144,12 +144,12 @@ async function computeAvgResponseTime(
 }
 
 export async function getSalespersonDetail(
-  tenantId: string,
+  orgId: string,
   userId: string,
   range: DateRange,
 ): Promise<SalespersonDetailDto | null> {
   const member = await prisma.orgMember.findFirst({
-    where: { orgId: tenantId, userId },
+    where: { orgId: orgId, userId },
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
   if (!member) return null;
@@ -173,7 +173,7 @@ export async function getSalespersonDetail(
   const now = new Date();
 
   const baseLeadWhere = {
-    tenantId,
+    orgId,
     deletedAt: null,
     createdAt: rangeWhere,
     ...leadFilter,
@@ -220,7 +220,7 @@ export async function getSalespersonDetail(
 
     // All activities with lead info
     prisma.qcfActivity.findMany({
-      where: { tenantId, occurredAt: rangeWhere, ...activityFilter },
+      where: { orgId, occurredAt: rangeWhere, ...activityFilter },
       orderBy: { occurredAt: "desc" },
       take: 150,
       select: {
@@ -232,7 +232,7 @@ export async function getSalespersonDetail(
 
     // All call logs with lead info
     prisma.qcfCallLog.findMany({
-      where: { tenantId, createdAt: rangeWhere, ...callFilter },
+      where: { orgId, createdAt: rangeWhere, ...callFilter },
       orderBy: { createdAt: "desc" },
       take: 150,
       select: {
@@ -244,7 +244,7 @@ export async function getSalespersonDetail(
 
     // All tasks with lead info
     prisma.qcfTask.findMany({
-      where: { tenantId, createdAt: rangeWhere, ...taskFilter },
+      where: { orgId, createdAt: rangeWhere, ...taskFilter },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: {
@@ -256,7 +256,7 @@ export async function getSalespersonDetail(
 
     // Notes by this user
     prisma.qcfNote.findMany({
-      where: { tenantId, createdByUserId: userId, createdAt: rangeWhere },
+      where: { orgId, createdByUserId: userId, createdAt: rangeWhere },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: {
@@ -267,32 +267,32 @@ export async function getSalespersonDetail(
 
     // Deals won
     prisma.qcfOpportunity.count({
-      where: { tenantId, deletedAt: null, stage: "ClosedWon", updatedAt: rangeWhere, ownerId: userId },
+      where: { orgId, deletedAt: null, stage: "ClosedWon", updatedAt: rangeWhere, ownerId: userId },
     }),
 
     // Deals lost
     prisma.qcfOpportunity.count({
-      where: { tenantId, deletedAt: null, stage: "ClosedLost", updatedAt: rangeWhere, ownerId: userId },
+      where: { orgId, deletedAt: null, stage: "ClosedLost", updatedAt: rangeWhere, ownerId: userId },
     }),
 
     // Tasks completed
     prisma.qcfTask.count({
-      where: { tenantId, status: "Completed", updatedAt: rangeWhere, ...taskFilter },
+      where: { orgId, status: "Completed", updatedAt: rangeWhere, ...taskFilter },
     }),
 
     // Total tasks (all statuses)
     prisma.qcfTask.count({
-      where: { tenantId, createdAt: rangeWhere, ...taskFilter },
+      where: { orgId, createdAt: rangeWhere, ...taskFilter },
     }),
 
     // Quotes won
     prisma.qcfQuote.count({
-      where: { tenantId, ownerId: userId, status: "Won", createdAt: rangeWhere },
+      where: { orgId, ownerId: userId, status: "Won", createdAt: rangeWhere },
     }),
 
     // Quotes lost
     prisma.qcfQuote.count({
-      where: { tenantId, ownerId: userId, status: "Lost", createdAt: rangeWhere },
+      where: { orgId, ownerId: userId, status: "Lost", createdAt: rangeWhere },
     }),
 
     // Recent leads (last 20)
@@ -309,7 +309,7 @@ export async function getSalespersonDetail(
     // Stage breakdown (all time for this rep)
     prisma.qcfLead.groupBy({
       by: ["stage"],
-      where: { tenantId, deletedAt: null, ...leadFilter },
+      where: { orgId, deletedAt: null, ...leadFilter },
       _count: true,
       orderBy: { _count: { stage: "desc" } },
     }),
@@ -317,7 +317,7 @@ export async function getSalespersonDetail(
     // Source breakdown
     prisma.qcfLead.groupBy({
       by: ["source"],
-      where: { tenantId, deletedAt: null, ...leadFilter },
+      where: { orgId, deletedAt: null, ...leadFilter },
       _count: true,
       orderBy: { _count: { source: "desc" } },
       take: 6,
@@ -326,7 +326,7 @@ export async function getSalespersonDetail(
     // Converted leads in period
     prisma.qcfLead.findMany({
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         convertedAt: rangeWhere,
         ...leadFilter,
@@ -340,7 +340,7 @@ export async function getSalespersonDetail(
 
     // Quotes created by this user in period
     prisma.qcfQuote.findMany({
-      where: { tenantId, ownerId: userId, createdAt: rangeWhere },
+      where: { orgId, ownerId: userId, createdAt: rangeWhere },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: {
@@ -351,7 +351,7 @@ export async function getSalespersonDetail(
 
     // Opportunities created/updated by this user in period
     prisma.qcfOpportunity.findMany({
-      where: { tenantId, deletedAt: null, ownerId: userId, updatedAt: rangeWhere },
+      where: { orgId, deletedAt: null, ownerId: userId, updatedAt: rangeWhere },
       orderBy: { updatedAt: "desc" },
       take: 50,
       select: {
@@ -363,7 +363,7 @@ export async function getSalespersonDetail(
 
     // Audit log — all actions by this user
     prisma.qcfAuditLog.findMany({
-      where: { tenantId, userId, createdAt: rangeWhere },
+      where: { orgId, userId, createdAt: rangeWhere },
       orderBy: { createdAt: "desc" },
       take: 200,
       select: {
@@ -374,14 +374,14 @@ export async function getSalespersonDetail(
 
     // Last login session event
     prisma.sessionEvent.findFirst({
-      where: { orgId: tenantId, userId, appSlug: "quikcrm", event: "login" },
+      where: { orgId: orgId, userId, appSlug: "quikcrm", event: "login" },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     }),
 
     // Last CRM activity by this user (all time)
     prisma.qcfActivity.findFirst({
-      where: { tenantId, ...activityFilter },
+      where: { orgId, ...activityFilter },
       orderBy: { occurredAt: "desc" },
       select: { occurredAt: true },
     }),
@@ -390,14 +390,14 @@ export async function getSalespersonDetail(
 
     // Revenue from won deals in period
     prisma.qcfOpportunity.aggregate({
-      where: { tenantId, deletedAt: null, stage: "ClosedWon", updatedAt: rangeWhere, ownerId: userId },
+      where: { orgId, deletedAt: null, stage: "ClosedWon", updatedAt: rangeWhere, ownerId: userId },
       _sum: { amount: true },
     }),
 
     // Total pipeline value (all open opportunities, all time)
     prisma.qcfOpportunity.aggregate({
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         ownerId: userId,
         stage: { notIn: ["ClosedWon", "ClosedLost"] },
@@ -408,7 +408,7 @@ export async function getSalespersonDetail(
     // Overdue tasks (due before now, not completed/cancelled)
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         ...taskFilter,
         dueDate: { lt: now },
         status: { notIn: ["Completed", "Cancelled"] },
@@ -417,29 +417,29 @@ export async function getSalespersonDetail(
 
     // ── Previous period queries for deltas ───────────────────────────────────
     prisma.qcfLead.count({
-      where: { tenantId, deletedAt: null, createdAt: priorWhere, ...leadFilter },
+      where: { orgId, deletedAt: null, createdAt: priorWhere, ...leadFilter },
     }),
     prisma.qcfLead.count({
-      where: { tenantId, deletedAt: null, convertedAt: priorWhere, ...leadFilter },
+      where: { orgId, deletedAt: null, convertedAt: priorWhere, ...leadFilter },
     }),
     prisma.qcfCallLog.count({
-      where: { tenantId, createdAt: priorWhere, ...callFilter },
+      where: { orgId, createdAt: priorWhere, ...callFilter },
     }),
     prisma.qcfOpportunity.count({
-      where: { tenantId, deletedAt: null, stage: "ClosedWon", updatedAt: priorWhere, ownerId: userId },
+      where: { orgId, deletedAt: null, stage: "ClosedWon", updatedAt: priorWhere, ownerId: userId },
     }),
     prisma.qcfOpportunity.aggregate({
-      where: { tenantId, deletedAt: null, stage: "ClosedWon", updatedAt: priorWhere, ownerId: userId },
+      where: { orgId, deletedAt: null, stage: "ClosedWon", updatedAt: priorWhere, ownerId: userId },
       _sum: { amount: true },
     }),
     prisma.qcfActivity.count({
-      where: { tenantId, occurredAt: priorWhere, type: { contains: "email", mode: "insensitive" }, ...activityFilter },
+      where: { orgId, occurredAt: priorWhere, type: { contains: "email", mode: "insensitive" }, ...activityFilter },
     }),
     prisma.qcfActivity.count({
-      where: { tenantId, occurredAt: priorWhere, type: { contains: "meeting", mode: "insensitive" }, ...activityFilter },
+      where: { orgId, occurredAt: priorWhere, type: { contains: "meeting", mode: "insensitive" }, ...activityFilter },
     }),
     prisma.qcfTask.count({
-      where: { tenantId, status: "Completed", updatedAt: priorWhere, ...taskFilter },
+      where: { orgId, status: "Completed", updatedAt: priorWhere, ...taskFilter },
     }),
   ]);
 
@@ -487,10 +487,10 @@ export async function getSalespersonDetail(
       const to = endOfDayInTz(from, range.tz);
       const [leads, activities] = await Promise.all([
         prisma.qcfLead.count({
-          where: { tenantId, deletedAt: null, createdAt: { gte: from, lte: to }, ...leadFilter },
+          where: { orgId, deletedAt: null, createdAt: { gte: from, lte: to }, ...leadFilter },
         }),
         prisma.qcfActivity.count({
-          where: { tenantId, occurredAt: { gte: from, lte: to }, ...activityFilter },
+          where: { orgId, occurredAt: { gte: from, lte: to }, ...activityFilter },
         }),
       ]);
       return { label: b.label, leads, activities };
@@ -534,7 +534,7 @@ export async function getSalespersonDetail(
   };
 
   // ── Heatmap (90 days) ──────────────────────────────────────────────────────
-  const heatmap = await buildHeatmap(tenantId, activityFilter, range.tz);
+  const heatmap = await buildHeatmap(orgId, activityFilter, range.tz);
 
   // ── Funnel ─────────────────────────────────────────────────────────────────
   const funnel = buildFunnel(stageGroups);
@@ -547,7 +547,7 @@ export async function getSalespersonDetail(
     recentLeadRows.map((l) => [l.id, l.createdAt]),
   );
   const avgResponseTimeMins = await computeAvgResponseTime(
-    tenantId,
+    orgId,
     recentLeadRows.map((l) => l.id),
     leadCreatedMap,
   );

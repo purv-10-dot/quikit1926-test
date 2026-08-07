@@ -112,7 +112,7 @@ export function validateTransition(
 export async function recordTransition(
   tx: Prisma.TransactionClient | typeof db,
   args: {
-    tenantId: string;
+    orgId: string;
     opportunityId: string;
     opportunityName: string;
     fromStage: QcfOpportunityStage;
@@ -126,7 +126,7 @@ export async function recordTransition(
 ): Promise<void> {
   await tx.qcfOpportunityStageTransition.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       opportunityId: args.opportunityId,
       fromStage: args.fromStage,
       toStage: args.toStage,
@@ -140,7 +140,7 @@ export async function recordTransition(
 
   await tx.qcfActivity.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       type: "OpportunityStageChange",
       relatedKind: "Opportunity",
       relatedObjectId: args.opportunityId,
@@ -175,7 +175,7 @@ export async function recordTransition(
     const now = new Date();
     const activeQuotes = await tx.qcfQuote.findMany({
       where: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         opportunityId: args.opportunityId,
         status: "Active",
       },
@@ -184,7 +184,7 @@ export async function recordTransition(
     if (activeQuotes.length > 0) {
       await tx.qcfQuote.updateMany({
         where: {
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           opportunityId: args.opportunityId,
           status: "Active",
         },
@@ -200,7 +200,7 @@ export async function recordTransition(
       for (const q of activeQuotes) {
         await tx.qcfActivity.create({
           data: {
-            tenantId: args.tenantId,
+            orgId: args.orgId,
             type: "QuoteAutoLostFromOpportunity",
             relatedKind: "Quote",
             relatedObjectId: q.id,

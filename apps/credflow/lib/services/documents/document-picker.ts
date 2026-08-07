@@ -72,12 +72,12 @@ export async function listDocumentPickerFiles(
   const location = decodeLocation(query.location ?? "root");
 
   const where: {
-    tenantId: string;
+    orgId: string;
     deletedAt: null;
     fileName?: { contains: string; mode: "insensitive" };
     refType?: string;
   } = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     deletedAt: null,
   };
 
@@ -94,7 +94,7 @@ export async function listDocumentPickerFiles(
 
   if (location.kind === "folder") {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: location.folderId, orgId: user.orgId, deletedAt: null },
     });
     if (folder?.refType) {
       where.refType = folder.refType;
@@ -117,7 +117,7 @@ export async function listDocumentPickerFiles(
 
   if (location.kind === "folder") {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: location.folderId, orgId: user.orgId, deletedAt: null },
     });
     if (folder) {
       accessible = accessible.filter(
@@ -133,7 +133,7 @@ export async function listDocumentPickerFiles(
 
   if (query.excludeRefType != null || query.excludeTargetFolderId !== undefined) {
     const linkedIds = await findLinkedSourceIdsForExclusion({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       targetFolderId: query.excludeTargetFolderId ?? null,
       refType: query.excludeRefType ?? null,
       refId: query.excludeRefId ?? null,
@@ -156,7 +156,7 @@ export async function listDocumentPickerFiles(
   const pageSlice = accessible.slice(0, pageSize);
 
   const names = await resolveUploaderNames(
-    user.tenantId,
+    user.orgId,
     pageSlice.map((r) => r.uploadedBy),
   );
 
@@ -168,7 +168,7 @@ export async function listDocumentPickerFiles(
     return { ...dto, sourceDocumentId: r.id, isLink: false };
   });
 
-  items = await enrichRelatedLabels(user.tenantId, items);
+  items = await enrichRelatedLabels(user.orgId, items);
 
   return { items, total, page, pageSize, location };
 }

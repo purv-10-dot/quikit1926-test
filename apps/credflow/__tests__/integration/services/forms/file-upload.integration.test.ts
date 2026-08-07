@@ -40,7 +40,7 @@ let versionId: string;
 
 const adminUser: SessionUser = {
   userId: `admin_${STAMP}`,
-  tenantId: TENANT,
+  orgId: TENANT,
   role: ADMIN_ROLE,
   email: "admin@frre.test",
   name: "Admin",
@@ -48,7 +48,7 @@ const adminUser: SessionUser = {
 // Restricted agent: scoped (via QcfUserAccountAccess) to account B only.
 const agentB: SessionUser = {
   userId: `agentB_${STAMP}`,
-  tenantId: TENANT,
+  orgId: TENANT,
   role: "member",
   email: "agentb@frre.test",
   name: "Agent B",
@@ -56,19 +56,19 @@ const agentB: SessionUser = {
 
 beforeAll(async () => {
   const [accA, accB] = await Promise.all([
-    integrationPrisma.qcfAccount.create({ data: { tenantId: TENANT, name: `Acct A ${STAMP}` } }),
-    integrationPrisma.qcfAccount.create({ data: { tenantId: TENANT, name: `Acct B ${STAMP}` } }),
+    integrationPrisma.qcfAccount.create({ data: { orgId: TENANT, name: `Acct A ${STAMP}` } }),
+    integrationPrisma.qcfAccount.create({ data: { orgId: TENANT, name: `Acct B ${STAMP}` } }),
   ]);
   accountAId = accA.id;
   accountBId = accB.id;
 
   // Lead + activity live on account A.
   const leadA = await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: `Lead A ${STAMP}`, accountId: accountAId },
+    data: { orgId: TENANT, name: `Lead A ${STAMP}`, accountId: accountAId },
   });
   leadAId = leadA.id;
   const activityA = await integrationPrisma.qcfActivity.create({
-    data: { tenantId: TENANT, type: "call", relatedKind: "Lead", relatedObjectId: leadAId },
+    data: { orgId: TENANT, type: "call", relatedKind: "Lead", relatedObjectId: leadAId },
   });
   activityAId = activityA.id;
 
@@ -79,7 +79,7 @@ beforeAll(async () => {
 
   // A form-set version to anchor the field value.
   const set = await integrationPrisma.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
   const version = await integrationPrisma.qcfFormSetVersion.create({
@@ -89,20 +89,20 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.qcfFileAttachment.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFieldValue.deleteMany({ where: { orgId: TENANT } });
+  await integrationPrisma.qcfFileAttachment.deleteMany({ where: { orgId: TENANT } });
   await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
   await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
-  await integrationPrisma.qcfActivity.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfActivity.deleteMany({ where: { orgId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { orgId: TENANT } });
   await integrationPrisma.qcfUserAccountAccess.deleteMany({ where: { userId: agentB.userId } });
-  await integrationPrisma.qcfAccount.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfAccount.deleteMany({ where: { orgId: TENANT } });
 });
 
 describe("recordDispositionAttachment — AC-RE-7 (valid upload recorded)", () => {
   it("writes a CrmFileAttachment and points the field value at it", async () => {
     const attachment = await recordDispositionAttachment({
-      tenantId: TENANT,
+      orgId: TENANT,
       activityId: activityAId,
       formSetVersionId: versionId,
       fieldKey: "id_proof",
@@ -127,7 +127,7 @@ describe("recordDispositionAttachment — AC-RE-7 (valid upload recorded)", () =
 
 describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => {
   it("rejects an oversize file and writes NOTHING", async () => {
-    const before = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
+    const before = await integrationPrisma.qcfFileAttachment.count({ where: { orgId: TENANT } });
     const big = new File([new Uint8Array(10 * MB + 1)], "big.pdf", { type: "application/pdf" });
 
     await expect(
@@ -140,7 +140,7 @@ describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => 
       }),
     ).rejects.toBeInstanceOf(FileUploadError);
 
-    const after = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
+    const after = await integrationPrisma.qcfFileAttachment.count({ where: { orgId: TENANT } });
     expect(after).toBe(before); // no new row
     const fv = await integrationPrisma.qcfFieldValue.findUnique({
       where: { activityId_fieldKey: { activityId: activityAId, fieldKey: "oversize_field" } },
@@ -149,7 +149,7 @@ describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => 
   });
 
   it("rejects a disallowed type (gif — allowed by the general service) and writes NOTHING", async () => {
-    const before = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
+    const before = await integrationPrisma.qcfFileAttachment.count({ where: { orgId: TENANT } });
     const gif = new File([new Uint8Array(1024)], "x.gif", { type: "image/gif" });
 
     await expect(
@@ -162,7 +162,7 @@ describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => 
       }),
     ).rejects.toBeInstanceOf(FileUploadError);
 
-    const after = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
+    const after = await integrationPrisma.qcfFileAttachment.count({ where: { orgId: TENANT } });
     expect(after).toBe(before);
   });
 });

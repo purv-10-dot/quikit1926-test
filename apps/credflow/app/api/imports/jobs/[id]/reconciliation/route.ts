@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const job = await prisma.qcfLeadImportJob.findFirst({ where: { id, tenantId: user.tenantId } });
+    const job = await prisma.qcfLeadImportJob.findFirst({ where: { id, orgId: user.orgId } });
     if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({
       job: {

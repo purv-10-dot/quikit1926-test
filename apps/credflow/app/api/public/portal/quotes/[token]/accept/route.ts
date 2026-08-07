@@ -22,7 +22,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const parsed = schema.safeParse(body);
     await portalAcceptQuote({
-      tenantId: resolved.tenantId,
+      orgId: resolved.orgId,
       quoteId: resolved.quoteId,
       comment: parsed.success ? parsed.data.comment : undefined,
       ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,

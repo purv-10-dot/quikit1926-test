@@ -22,7 +22,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const data = await listQuoteTemplates(user.tenantId);
+    const data = await listQuoteTemplates(user.orgId);
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to list templates";
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest) {
     }
     if (parsed.data.isDefault) {
       await db.qcfQuoteTemplate.updateMany({
-        where: { tenantId: user.tenantId },
+        where: { orgId: user.orgId },
         data: { isDefault: false },
       });
     }

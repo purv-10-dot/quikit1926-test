@@ -30,14 +30,14 @@ export async function transitionLead(opts: {
 }): Promise<QcfLead> {
   const { user, leadId, input } = opts;
   const existing = await prisma.qcfLead.findUnique({ where: { id: leadId } });
-  if (!existing || existing.tenantId !== user.tenantId) {
+  if (!existing || existing.orgId !== user.orgId) {
     throw new LeadTransitionError("Not found", 404);
   }
   if (existing.deletedAt) {
     throw new LeadTransitionError("Lead is in trash. Restore it before changing stage.", 410);
   }
 
-  const pipeline = await getPipelineConfig(user.tenantId);
+  const pipeline = await getPipelineConfig(user.orgId);
   // Full cascade (source → stage → status → sub-status), shared with create/PATCH.
   // Source is unchanged by a transition, so validate the incoming stage/status/
   // substatus against the EFFECTIVE record. This also adds the status → sub-status
@@ -80,7 +80,7 @@ export async function transitionLead(opts: {
 
     if (stageChanged) {
       await logActivity({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         type: "LeadStageChange",
         relatedKind: "Lead",
@@ -99,7 +99,7 @@ export async function transitionLead(opts: {
   });
 
   await recordLeadChange({
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     userId: user.userId,
     leadId,
     action: "UPDATE",
@@ -108,10 +108,10 @@ export async function transitionLead(opts: {
     metadata: stageChanged ? { source: "pipeline_stepper" } : undefined,
   });
 
-  onLeadUpdated(user.tenantId, leadId).catch((e) => console.error(e));
-  scheduleLeadScoreRecalc(user.tenantId, leadId);
+  onLeadUpdated(user.orgId, leadId).catch((e) => console.error(e));
+  scheduleLeadScoreRecalc(user.orgId, leadId);
   if (stageChanged) {
-    publishLeadEvent(user.tenantId, {
+    publishLeadEvent(user.orgId, {
       type: "transitioned",
       leadId: updated.id,
       stage: updated.stage,
@@ -120,7 +120,7 @@ export async function transitionLead(opts: {
   }
   // Enqueue outbound LeadSquared push (CRM-origin). Non-blocking + swallowed.
   void enqueueLeadSquaredSyncSafe({
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     crmLeadId: leadId,
   }).catch((e) => console.error("[leadsquared] enqueue (transition) failed", e));
 

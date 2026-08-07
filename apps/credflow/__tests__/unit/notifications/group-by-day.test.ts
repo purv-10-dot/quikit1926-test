@@ -6,7 +6,7 @@ import type { NotificationRow } from "@/lib/notifications/types";
 function at(id: string, createdAt: Date | string): NotificationRow {
   return {
     id,
-    tenantId: "t1",
+    orgId: "t1",
     userId: "u1",
     title: "t",
     body: null,

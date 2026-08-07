@@ -39,21 +39,21 @@ interface SettingsTree {
   [k: string]: unknown;
 }
 
-async function readTree(tenantId: string): Promise<SettingsTree> {
-  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+async function readTree(orgId: string): Promise<SettingsTree> {
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   return ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
 }
 
-async function writeTree(tenantId: string, next: SettingsTree): Promise<void> {
+async function writeTree(orgId: string, next: SettingsTree): Promise<void> {
   await prisma.qcfOrgWorkspaceSettings.upsert({
-    where: { tenantId },
-    create: { tenantId, settings: next as object },
+    where: { orgId },
+    create: { orgId, settings: next as object },
     update: { settings: next as object },
   });
 }
 
-export async function getPipelineConfig(tenantId: string): Promise<PipelineConfig> {
-  const tree = await readTree(tenantId);
+export async function getPipelineConfig(orgId: string): Promise<PipelineConfig> {
+  const tree = await readTree(orgId);
   const cfg = tree.leadPipelineConfig ?? {};
 
   // Derive statuses, substatuses, and statusToSubstatuses from the DB tables
@@ -120,16 +120,16 @@ export async function getPipelineConfig(tenantId: string): Promise<PipelineConfi
   };
 }
 
-export async function setPipelineConfig(tenantId: string, patch: Partial<PipelineConfig>): Promise<PipelineConfig> {
-  const tree    = await readTree(tenantId);
-  const current = await getPipelineConfig(tenantId);
+export async function setPipelineConfig(orgId: string, patch: Partial<PipelineConfig>): Promise<PipelineConfig> {
+  const tree    = await readTree(orgId);
+  const current = await getPipelineConfig(orgId);
   const merged: PipelineConfig = {
     stages:         patch.stages         ?? current.stages,
     statuses:       patch.statuses       ?? current.statuses,
     substatuses:    patch.substatuses    ?? current.substatuses,
     dependentRules: patch.dependentRules ?? current.dependentRules,
   };
-  await writeTree(tenantId, { ...tree, leadPipelineConfig: merged });
+  await writeTree(orgId, { ...tree, leadPipelineConfig: merged });
   return merged;
 }
 

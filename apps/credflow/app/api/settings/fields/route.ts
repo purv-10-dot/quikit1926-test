@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const customOnly = new URL(req.url).searchParams.get("customOnly") === "true";
-    const items = await listLeadFields(user.tenantId);
+    const items = await listLeadFields(user.orgId);
     return NextResponse.json({ items: customOnly ? items.filter((f) => !f.isStandard) : items });
   } catch (e) {
     return errorResponse(e);
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const created = await createCustomField(user.tenantId, { ...parsed.data, isStandard: false });
+    const created = await createCustomField(user.orgId, { ...parsed.data, isStandard: false });
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     if (e instanceof FieldDefError) {

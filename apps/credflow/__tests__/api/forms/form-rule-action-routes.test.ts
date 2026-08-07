@@ -52,7 +52,7 @@ describe("action routes — unauthenticated => 401", () => {
 
 describe("action routes — assertModule gate is wired (denied => 403)", () => {
   it("POST /rules/[ruleId]/actions calls assertModule and surfaces its 403", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser", email: "u@b.co", name: "U" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser", email: "u@b.co", name: "U" });
     const denied = Object.assign(new Error("Forbidden"), { statusCode: 403 });
     vi.mocked(assertModule).mockRejectedValue(denied);
 

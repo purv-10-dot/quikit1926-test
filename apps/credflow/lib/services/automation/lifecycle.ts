@@ -84,12 +84,12 @@ function assertFrom(current: QcfWorkflowStatus, allowed: QcfWorkflowStatus[], op
 
 /** Tenant-scoped load. Excludes soft-deleted rows unless `includeDeleted`. */
 async function loadDef(
-  tenantId: string,
+  orgId: string,
   id: string,
   { includeDeleted = false }: { includeDeleted?: boolean } = {},
 ): Promise<QcfWorkflowDefinition> {
   const def = await prisma.qcfWorkflowDefinition.findFirst({
-    where: { id, tenantId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: { id, orgId, ...(includeDeleted ? {} : { deletedAt: null }) },
   });
   if (!def) throw new LifecycleError(`Workflow "${id}" not found for this tenant.`);
   return def;
@@ -101,8 +101,8 @@ async function loadDef(
  *  first — a self-looping definition is rejected here (LifecycleError) so the
  *  block surfaces uniformly to every caller (Track A's Publish button and any
  *  lifecycle route both call THIS function). SPEC §6, §7. */
-export async function publish(tenantId: string, id: string): Promise<QcfWorkflowDefinition> {
-  const def = await loadDef(tenantId, id);
+export async function publish(orgId: string, id: string): Promise<QcfWorkflowDefinition> {
+  const def = await loadDef(orgId, id);
   assertFrom(def.status, PUBLISH_FROM, "publish");
 
   // [P3.B4] Pre-save static loop check (conservative — the P2.1 runtime cap is
@@ -123,11 +123,11 @@ export async function publish(tenantId: string, id: string): Promise<QcfWorkflow
 
 /** Active → Stopped (immediate) or Active → Draining (delayed). */
 export async function unpublish(
-  tenantId: string,
+  orgId: string,
   id: string,
   mode: UnpublishMode,
 ): Promise<QcfWorkflowDefinition> {
-  const def = await loadDef(tenantId, id);
+  const def = await loadDef(orgId, id);
   assertFrom(def.status, UNPUBLISH_FROM, "unpublish");
   const status: QcfWorkflowStatus = mode === "immediate" ? "Stopped" : "Draining";
   return prisma.qcfWorkflowDefinition.update({ where: { id: def.id }, data: { status } });
@@ -136,8 +136,8 @@ export async function unpublish(
 /** Soft-delete → Deleted + `deletedAt`. Recoverable via restore(). Never a hard
  *  delete (SPEC §7). Rejected while Draining — the automation is still draining
  *  in-flight leads and must be Stopped (Immediate) first. */
-export async function softDelete(tenantId: string, id: string): Promise<QcfWorkflowDefinition> {
-  const def = await loadDef(tenantId, id);
+export async function softDelete(orgId: string, id: string): Promise<QcfWorkflowDefinition> {
+  const def = await loadDef(orgId, id);
   if (def.status === "Draining") {
     throw new LifecycleError(
       "Cannot delete a Draining automation until it has drained — unpublish it Immediately (Stopped) first.",
@@ -152,8 +152,8 @@ export async function softDelete(tenantId: string, id: string): Promise<QcfWorkf
 
 /** Deleted → Draft. Clears `deletedAt`. Restores as an inert Draft (re-publish
  *  is an explicit subsequent action). */
-export async function restore(tenantId: string, id: string): Promise<QcfWorkflowDefinition> {
-  const def = await loadDef(tenantId, id, { includeDeleted: true });
+export async function restore(orgId: string, id: string): Promise<QcfWorkflowDefinition> {
+  const def = await loadDef(orgId, id, { includeDeleted: true });
   if (def.status !== "Deleted") {
     throw new LifecycleError("Only a soft-deleted automation can be restored.");
   }
@@ -168,11 +168,11 @@ export async function restore(tenantId: string, id: string): Promise<QcfWorkflow
 /** Tenant-scoped list. Excludes soft-deleted rows by default (the "active list"
  *  the builder grid shows); pass includeDeleted for a trash view. */
 export async function listAutomations(
-  tenantId: string,
+  orgId: string,
   { includeDeleted = false }: { includeDeleted?: boolean } = {},
 ): Promise<QcfWorkflowDefinition[]> {
   return prisma.qcfWorkflowDefinition.findMany({
-    where: { tenantId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    where: { orgId, ...(includeDeleted ? {} : { deletedAt: null }) },
     orderBy: { updatedAt: "desc" },
   });
 }
@@ -180,9 +180,9 @@ export async function listAutomations(
 /** True when a Draining automation has no leads still in-flight (no pending or
  *  processing steps). Backs A5's "non-deletable until drained" affordance and a
  *  future drain-completion sweep. Tenant-scoped. */
-export async function isDrained(tenantId: string, id: string): Promise<boolean> {
+export async function isDrained(orgId: string, id: string): Promise<boolean> {
   const outstanding = await prisma.qcfAutomationPendingStep.count({
-    where: { tenantId, workflowId: id, status: { in: ["pending", "processing"] } },
+    where: { orgId, workflowId: id, status: { in: ["pending", "processing"] } },
   });
   return outstanding === 0;
 }

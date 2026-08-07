@@ -35,7 +35,7 @@ vi.mock("@/lib/db/prisma", () => ({ prisma: sharedMock }));
 
 export type SessionStub = {
   userId: string;
-  tenantId: string;
+  orgId: string;
   role?: string;
   email?: string;
   name?: string;
@@ -51,7 +51,7 @@ vi.mock("@/lib/auth/require", () => ({
     }
     return {
       userId: s.userId,
-      tenantId: s.tenantId,
+      orgId: s.orgId,
       role: s.role ?? "SalesUser",
       email: s.email ?? "user@example.com",
       name: s.name ?? "Test User",

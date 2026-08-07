@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // viewed in read-only mode (URL access, restore flow). The response carries
     // the `deletedAt` timestamp so the client can render the read-only banner.
     const lead = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!lead || lead.tenantId !== user.tenantId) {
+    if (!lead || lead.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await assertAccountAccess(user, lead.accountId);
@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "edit");
     const existing = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!existing || existing.tenantId !== user.tenantId) {
+    if (!existing || existing.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (existing.deletedAt) {
@@ -79,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // the patch). Reject genuinely-invalid numbers with the lead route's
     // { error, errors } shape. undefined = not being updated → skip.
     if (data.phone !== undefined || data.mobile !== undefined) {
-      const defaultCountry = await getWorkspacePhoneDefaultCountry(user.tenantId);
+      const defaultCountry = await getWorkspacePhoneDefaultCountry(user.orgId);
       if (data.phone !== undefined) {
         const r = normalizePhoneOrError(data.phone, defaultCountry);
         if (!r.ok) {
@@ -113,7 +113,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       data.status !== undefined ||
       data.substatus !== undefined
     ) {
-      const pipeline = await getPipelineConfig(user.tenantId);
+      const pipeline = await getPipelineConfig(user.orgId);
       const cascadeError = validateLeadPipelineCascade({
         pipeline,
         source: data.source !== undefined ? data.source : existing.source,
@@ -138,7 +138,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Merge dynamicFields: existing values + incoming patch (incoming wins). Validate against defs.
     let mergedDyn: Record<string, unknown> | undefined;
     if (data.dynamicFields !== undefined) {
-      const defs = await listLeadFields(user.tenantId);
+      const defs = await listLeadFields(user.orgId);
       const incoming = (data.dynamicFields ?? {}) as Record<string, unknown>;
       const existingDyn = (existing.dynamicFields as Record<string, unknown> | null) ?? {};
       const mergedInput = { ...existingDyn, ...incoming };
@@ -174,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...rest
     } = data;
     const useAutoScore = await shouldUseAutoLeadScore(
-      user.tenantId,
+      user.orgId,
       manualScore !== undefined,
     );
     const updateData = {
@@ -186,21 +186,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     } as Prisma.QcfLeadUncheckedUpdateInput;
     let updated = await updateCrmLead(id, updateData);
     if (useAutoScore) {
-      const computedScore = await syncLeadScoreAfterChange(user.tenantId, id);
+      const computedScore = await syncLeadScoreAfterChange(user.orgId, id);
       if (computedScore !== undefined) {
         updated = { ...updated, score: computedScore };
       }
     }
     await recordLeadChange({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       leadId: updated.id,
       action: "UPDATE",
       before: existing as unknown as Record<string, unknown>,
       after: updated as unknown as Record<string, unknown>,
     });
-    onLeadUpdated(user.tenantId, updated.id).catch((err) => console.error("[automation] onLeadUpdated failed", err));
-    publishLeadEvent(user.tenantId, {
+    onLeadUpdated(user.orgId, updated.id).catch((err) => console.error("[automation] onLeadUpdated failed", err));
+    publishLeadEvent(user.orgId, {
       type: "updated",
       leadId: updated.id,
       stage: updated.stage,
@@ -212,7 +212,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Only runs when ownerId was explicitly included in the PATCH payload.
     if (data.ownerId !== undefined) {
       fireLeadOwnerChangeNotifications({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         actorUserId: user.userId,
         actorName: user.name || user.email,
         leadId: updated.id,
@@ -231,7 +231,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       event: "updated",
       entityType: "lead",
       entityId: updated.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       before: existing as unknown as Record<string, unknown>,
@@ -262,7 +262,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     // findUnique bypasses the soft-delete middleware (only findMany/findFirst/count
     // are intercepted) — lets us locate an already-trashed lead for idempotent re-delete.
     const existing = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!existing || existing.tenantId !== user.tenantId) {
+    if (!existing || existing.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await assertAccountAccess(user, existing.accountId);
@@ -276,14 +276,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       data: { deletedAt: new Date() },
     });
     await recordLeadChange({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       leadId: id,
       action: "DELETE",
       before: existing as unknown as Record<string, unknown>,
       after: null,
     });
-    publishLeadEvent(user.tenantId, { type: "deleted", leadId: id }).catch(() => {});
+    publishLeadEvent(user.orgId, { type: "deleted", leadId: id }).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

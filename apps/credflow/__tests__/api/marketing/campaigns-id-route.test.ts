@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -39,7 +39,7 @@ describe("GET /api/marketing/campaigns/[id]", () => {
     adminSession();
     db.qcfCampaign.findFirst.mockResolvedValue({
       id: "c1",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Diwali Offer",
       status: "Draft",
       type: "Email",
@@ -61,8 +61,8 @@ describe("GET /api/marketing/campaigns/[id]", () => {
 
     const where = db.qcfCampaign.findFirst.mock.calls[0]![0]!.where as {
       id: string;
-      tenantId: string;
+      orgId: string;
     };
-    expect(where).toEqual({ id: "c1", tenantId: "t1" });
+    expect(where).toEqual({ id: "c1", orgId: "t1" });
   });
 });

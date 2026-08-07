@@ -23,7 +23,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const items = await prisma.qcfLeadSavedList.findMany({
-      where: { tenantId: user.tenantId, userId: user.userId },
+      where: { orgId: user.orgId, userId: user.userId },
       orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
     });
     return NextResponse.json({
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const list = await prisma.qcfLeadSavedList.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         name: parsed.data.name,
         filters: parsed.data.filter,

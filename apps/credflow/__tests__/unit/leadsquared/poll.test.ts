@@ -33,7 +33,7 @@ describe("pollLeadSquaredInbound", () => {
     expect(to).toEqual(NOW);
     expect(from).toEqual(new Date("2026-07-20T11:50:00.000Z")); // to − 10min window
     expect(setWatermark).toHaveBeenCalledWith("t1", NOW);
-    expect(res).toMatchObject({ tenantId: "t1", fetched: 0, applied: 0 });
+    expect(res).toMatchObject({ orgId: "t1", fetched: 0, applied: 0 });
   });
 
   it("subsequent run: from = watermark − overlapMs", async () => {

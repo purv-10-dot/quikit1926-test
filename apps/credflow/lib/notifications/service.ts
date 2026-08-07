@@ -28,7 +28,7 @@ export async function createNotification(
   // 1. Persist — synchronous from the caller's perspective.
   const row = await prisma.qcfNotification.create({
     data: {
-      tenantId: payload.tenantId,
+      orgId: payload.orgId,
       userId: payload.userId,
       title: payload.title,
       body: payload.body,
@@ -44,7 +44,7 @@ export async function createNotification(
   });
 
   // 2. Real-time SSE push — fire-and-forget.
-  publishNotificationEvent(payload.tenantId, payload.userId, {
+  publishNotificationEvent(payload.orgId, payload.userId, {
     id: row.id,
     title: row.title,
     body: row.body,
@@ -81,14 +81,14 @@ export interface NotificationPage {
  * Uses cursor-based pagination on `createdAt` (ISO string) for stable ordering.
  */
 export async function getNotifications(
-  tenantId: string,
+  orgId: string,
   userId: string,
   cursor?: string | null,
   take = 30,
 ): Promise<NotificationPage> {
   const rows = await prisma.qcfNotification.findMany({
     where: {
-      tenantId,
+      orgId,
       userId,
       ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
     },
@@ -106,7 +106,7 @@ export async function getNotifications(
 
   // Compute unread across the WHOLE inbox (not just this page).
   const unread = await prisma.qcfNotification.count({
-    where: { tenantId, userId, readAt: null },
+    where: { orgId, userId, readAt: null },
   });
 
   return { items, unread, hasMore, nextCursor };
@@ -116,11 +116,11 @@ export async function getNotifications(
 
 /** Fast unread count — used by the bell badge endpoint. */
 export async function getUnreadCount(
-  tenantId: string,
+  orgId: string,
   userId: string,
 ): Promise<number> {
   return prisma.qcfNotification.count({
-    where: { tenantId, userId, readAt: null },
+    where: { orgId, userId, readAt: null },
   });
 }
 
@@ -128,11 +128,11 @@ export async function getUnreadCount(
 
 /** Mark every unread notification as read for a user. Returns the count touched. */
 export async function markAllRead(
-  tenantId: string,
+  orgId: string,
   userId: string,
 ): Promise<number> {
   const result = await prisma.qcfNotification.updateMany({
-    where: { tenantId, userId, readAt: null },
+    where: { orgId, userId, readAt: null },
     data: { readAt: new Date() },
   });
   return result.count;

@@ -23,7 +23,7 @@ export async function GET(
     const { id } = await params;
 
     const doc = await prisma.qcfDocument.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!doc) return fail(404, "Document not found");
 

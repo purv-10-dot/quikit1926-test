@@ -30,12 +30,12 @@ beforeEach(() => {
 
 describe("createCrmLead · service-layer New-Lead trigger", () => {
   it("fires onLeadCreated AND the outbound sync (so the import path fires rules too)", async () => {
-    db.qcfLead.create.mockResolvedValue({ id: "L1", tenantId: "t1", ownerName: "Owner" } as unknown as QcfLead);
+    db.qcfLead.create.mockResolvedValue({ id: "L1", orgId: "t1", ownerName: "Owner" } as unknown as QcfLead);
 
     const { createCrmLead } = await import("@/lib/services/leads/create-record");
-    await createCrmLead({ tenantId: "t1", name: "Imported Lead" } as never);
+    await createCrmLead({ orgId: "t1", name: "Imported Lead" } as never);
 
-    expect(triggerOutboundSync).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "L1" });
+    expect(triggerOutboundSync).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "L1" });
     expect(onLeadCreated).toHaveBeenCalledTimes(1);
     expect(onLeadCreated).toHaveBeenCalledWith("t1", "L1", "Owner");
   });

@@ -26,7 +26,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await assertModule(user, "quotes", "delete");
 
-    const existing = await getQuote(user.tenantId, id);
+    const existing = await getQuote(user.orgId, id);
     if (!existing) return fail(404, "Quote not found");
     if (!existing.deletedAt) {
       return fail(
@@ -35,7 +35,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       );
     }
 
-    await permanentDeleteQuote(user.tenantId, id);
+    await permanentDeleteQuote(user.orgId, id);
     return ok({ ok: true });
   } catch (error: unknown) {
     const message =

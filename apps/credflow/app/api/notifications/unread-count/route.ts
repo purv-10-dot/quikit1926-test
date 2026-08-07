@@ -16,7 +16,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
 
-    const count = await getUnreadCount(user.tenantId, user.userId);
+    const count = await getUnreadCount(user.orgId, user.userId);
     return NextResponse.json({ count });
   } catch (e) {
     return errorResponse(e);

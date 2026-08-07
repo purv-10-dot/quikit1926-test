@@ -98,13 +98,13 @@ describe("POST /api/leads — auto-task side effect", () => {
     listLeadFields.mockResolvedValue([]);
     findDuplicateLead.mockResolvedValue(null);
     db.qcfLead.create.mockReset();
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
   });
 
   it("dispatches createDefaultTaskForLead after a lead is created", async () => {
     const lead = {
       id: "lead-1",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Acme Lead",
       ownerId: "u-owner",
       stage: "New",
@@ -122,7 +122,7 @@ describe("POST /api/leads — auto-task side effect", () => {
   it("does NOT fail the lead POST when auto-task dispatch throws", async () => {
     db.qcfLead.create.mockResolvedValue({
       id: "lead-4",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Resilient Lead",
       ownerId: "u-owner",
       stage: "New",
@@ -153,7 +153,7 @@ describe("POST /api/leads — auto-task side effect", () => {
   it("creates a company-less B2C lead (no company/firstName/lastName)", async () => {
     const lead = {
       id: "lead-b2c",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Individual Lead",
       mobile: "+919888888888",
       ownerName: "Test Owner",

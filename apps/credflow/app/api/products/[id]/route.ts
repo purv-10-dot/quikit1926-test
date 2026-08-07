@@ -25,9 +25,9 @@ function fail(status: number, error: string, fieldErrors?: Record<string, string
   );
 }
 
-async function serialise(tenantId: string, id: string) {
+async function serialise(orgId: string, id: string) {
   const p = await prisma.qcfProduct.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     include: {
       categoryRef: { select: { id: true, name: true } },
       subcategoryRef: { select: { id: true, name: true } },
@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const p = await serialise(user.tenantId, id);
+    const p = await serialise(user.orgId, id);
     if (!p) return fail(404, "Product not found");
     return ok(p);
   } catch (error: unknown) {
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
 
-    const existing = await getProduct(user.tenantId, id);
+    const existing = await getProduct(user.orgId, id);
     if (!existing) return fail(404, "Product not found");
 
     const body = await req.json().catch(() => null);
@@ -77,7 +77,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const patch = { ...parsed.data };
     if (parsed.data.dynamicFields !== undefined) {
-      const defs = await listProductFields(user.tenantId);
+      const defs = await listProductFields(user.orgId);
       const existingDyn = (existing.dynamicFields as Record<string, unknown> | null) ?? {};
       const merged = { ...existingDyn, ...(parsed.data.dynamicFields ?? {}) };
       const { values, errors: dynErrors } = validateProductDynamicFields({
@@ -93,11 +93,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     try {
       await updateProduct({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         id,
         input: patch,
       });
-      const updated = await serialise(user.tenantId, id);
+      const updated = await serialise(user.orgId, id);
       return ok(updated);
     } catch (e: unknown) {
       const err = e as { code?: string };
@@ -123,10 +123,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
 
-    const existing = await getProduct(user.tenantId, id);
+    const existing = await getProduct(user.orgId, id);
     if (!existing) return fail(404, "Product not found");
 
-    await softDeleteProduct(user.tenantId, id);
+    await softDeleteProduct(user.orgId, id);
     return ok({ ok: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to delete product";
@@ -147,8 +147,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
 
-    await restoreProduct(user.tenantId, id);
-    const p = await serialise(user.tenantId, id);
+    await restoreProduct(user.orgId, id);
+    const p = await serialise(user.orgId, id);
     if (!p) return fail(404, "Product not found");
     return ok(p);
   } catch (error: unknown) {

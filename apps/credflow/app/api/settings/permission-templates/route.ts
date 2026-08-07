@@ -12,7 +12,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     assertAdmin(user);
-    const items = await listTemplates(user.tenantId);
+    const items = await listTemplates(user.orgId);
     return NextResponse.json({ items });
   } catch (e) {
     if (e instanceof SettingsConflictError) return NextResponse.json({ error: e.message }, { status: e.statusCode });

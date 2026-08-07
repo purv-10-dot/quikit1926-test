@@ -76,7 +76,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     // Fires when assignedToUserId changes to a new non-null value.
     if (patch.assignedToUserId !== undefined && updated.assignedToUserId) {
       notifyTaskAssigned({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         taskId: id,
         taskSubject: updated.subject,
         newAssigneeId: updated.assignedToUserId,
@@ -92,7 +92,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     // Fires when someone marks a task complete — notifies the creator/assigner.
     if (patch.status === "Completed") {
       notifyTaskCompleted({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         taskId: id,
         taskSubject: updated.subject,
         completedByUserId: user.userId,
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       event: taskEvent,
       entityType: "task",
       entityId: id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: updated as unknown as Record<string, unknown>,
@@ -136,7 +136,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
         event: "deleted",
         entityType: "task",
         entityId: id,
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         actorUserId: user.userId,
         actorName: user.name || user.email,
         before: taskBefore as unknown as Record<string, unknown>,

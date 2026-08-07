@@ -1,17 +1,17 @@
 import type { QcfStockMovementType } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
-export async function listProductInventory(tenantId: string, productId: string) {
+export async function listProductInventory(orgId: string, productId: string) {
   return prisma.qcfProductInventory.findMany({
-    where: { tenantId, productId },
+    where: { orgId, productId },
     include: { warehouse: { select: { id: true, name: true, code: true } }, variant: { select: { id: true, sku: true, name: true } } },
     orderBy: { updatedAt: "desc" },
   });
 }
 
-export async function listStockMovements(tenantId: string, productId: string, limit = 50) {
+export async function listStockMovements(orgId: string, productId: string, limit = 50) {
   return prisma.qcfStockMovement.findMany({
-    where: { tenantId, productId },
+    where: { orgId, productId },
     include: { warehouse: { select: { id: true, name: true } }, variant: { select: { id: true, sku: true } } },
     orderBy: { createdAt: "desc" },
     take: limit,
@@ -19,7 +19,7 @@ export async function listStockMovements(tenantId: string, productId: string, li
 }
 
 export async function recordStockMovement(input: {
-  tenantId: string;
+  orgId: string;
   productId: string;
   warehouseId: string;
   variantId?: string | null;
@@ -32,7 +32,7 @@ export async function recordStockMovement(input: {
   return prisma.$transaction(async (tx) => {
     const movement = await tx.qcfStockMovement.create({
       data: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         productId: input.productId,
         warehouseId: input.warehouseId,
         variantId: input.variantId ?? null,
@@ -46,7 +46,7 @@ export async function recordStockMovement(input: {
 
     const inv = await tx.qcfProductInventory.findFirst({
       where: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         productId: input.productId,
         warehouseId: input.warehouseId,
         variantId: input.variantId ?? null,
@@ -77,7 +77,7 @@ export async function recordStockMovement(input: {
     } else {
       await tx.qcfProductInventory.create({
         data: {
-          tenantId: input.tenantId,
+          orgId: input.orgId,
           productId: input.productId,
           warehouseId: input.warehouseId,
           variantId: input.variantId ?? null,
@@ -91,17 +91,17 @@ export async function recordStockMovement(input: {
   });
 }
 
-export async function listWarehouses(tenantId: string) {
+export async function listWarehouses(orgId: string) {
   return prisma.qcfWarehouse.findMany({
-    where: { tenantId, isActive: true },
+    where: { orgId, isActive: true },
     orderBy: { name: "asc" },
   });
 }
 
-export async function ensureDefaultWarehouse(tenantId: string) {
-  const existing = await prisma.qcfWarehouse.findFirst({ where: { tenantId, code: "MAIN" } });
+export async function ensureDefaultWarehouse(orgId: string) {
+  const existing = await prisma.qcfWarehouse.findFirst({ where: { orgId, code: "MAIN" } });
   if (existing) return existing;
   return prisma.qcfWarehouse.create({
-    data: { tenantId, name: "Main Warehouse", code: "MAIN" },
+    data: { orgId, name: "Main Warehouse", code: "MAIN" },
   });
 }

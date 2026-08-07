@@ -14,7 +14,7 @@ export default async function ContactsPage() {
   let canEdit = isAdmin;
   let canDelete = isAdmin;
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     const row = matrix.find((r) => r.module === "contacts");
     canCreate = !!row?.actions.includes("create");
     canEdit = !!row?.actions.includes("edit");

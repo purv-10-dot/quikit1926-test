@@ -67,7 +67,7 @@ const LIST_SELECT = {
 } satisfies Prisma.QcfProductSelect;
 
 export interface ListParams {
-  tenantId: string;
+  orgId: string;
   page: number;
   pageSize: number;
   q?: string;
@@ -86,7 +86,7 @@ export interface ListParams {
 
 export function buildProductWhere(p: Omit<ListParams, "page" | "pageSize">): Prisma.QcfProductWhereInput {
   const base = buildProductSearchWhere({
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     q: p.q,
     sku: p.sku,
     barcode: p.barcode,
@@ -107,11 +107,11 @@ export function buildProductWhere(p: Omit<ListParams, "page" | "pageSize">): Pri
 
 function mapProductInput(
   input: ProductCreateInput,
-  tenantId: string,
+  orgId: string,
   userId?: string,
 ): Prisma.QcfProductUncheckedCreateInput {
   return {
-    tenantId,
+    orgId,
     name: input.name,
     sku: input.sku,
     category: input.category ?? null,
@@ -164,24 +164,24 @@ export async function listProducts(p: ListParams) {
   return { items, total, page: p.page, pageSize: p.pageSize, totalPages };
 }
 
-export async function getProduct(tenantId: string, id: string) {
-  return db.qcfProduct.findFirst({ where: { id, tenantId } });
+export async function getProduct(orgId: string, id: string) {
+  return db.qcfProduct.findFirst({ where: { id, orgId } });
 }
 
 export async function createProduct(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   input: ProductCreateInput;
   tx?: DbClient;
 }) {
   const client: DbClient = args.tx ?? db;
   return client.qcfProduct.create({
-    data: mapProductInput(args.input, args.tenantId, args.userId),
+    data: mapProductInput(args.input, args.orgId, args.userId),
   });
 }
 
 export async function updateProduct(args: {
-  tenantId: string;
+  orgId: string;
   id: string;
   input: ProductUpdateInput;
 }) {
@@ -221,13 +221,13 @@ export async function updateProduct(args: {
   if (i.imageUrl !== undefined) data.imageUrl = i.imageUrl || null;
   if (i.productType !== undefined) data.productType = i.productType;
   if (i.isActive !== undefined) data.isActive = i.isActive;
-  return db.qcfProduct.update({ where: { id: args.id, tenantId: args.tenantId }, data });
+  return db.qcfProduct.update({ where: { id: args.id, orgId: args.orgId }, data });
 }
 
-export async function softDeleteProduct(tenantId: string, id: string): Promise<void> {
-  await db.qcfProduct.update({ where: { id, tenantId }, data: { deletedAt: new Date() } });
+export async function softDeleteProduct(orgId: string, id: string): Promise<void> {
+  await db.qcfProduct.update({ where: { id, orgId }, data: { deletedAt: new Date() } });
 }
 
-export async function restoreProduct(tenantId: string, id: string): Promise<void> {
-  await db.qcfProduct.update({ where: { id, tenantId }, data: { deletedAt: null } });
+export async function restoreProduct(orgId: string, id: string): Promise<void> {
+  await db.qcfProduct.update({ where: { id, orgId }, data: { deletedAt: null } });
 }

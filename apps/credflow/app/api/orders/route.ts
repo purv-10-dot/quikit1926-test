@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await listOrders({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       status: parsed.data.status,

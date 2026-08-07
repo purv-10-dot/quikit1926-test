@@ -16,7 +16,7 @@ vi.mock("@/lib/storage/documents", () => ({
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -42,7 +42,7 @@ describe("GET /api/documents", () => {
     db.qcfDocument.findMany.mockResolvedValue([
       {
         id: "d1",
-        tenantId: "t1",
+        orgId: "t1",
         refType: "lead",
         refId: "l1",
         fileName: "kyc.pdf",
@@ -72,7 +72,7 @@ describe("GET /api/documents", () => {
     expect(body.data.items[0].downloadUrl).toBe("/api/documents/d1/download");
     expect(db.qcfDocument.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: "t1", deletedAt: null }),
+        where: expect.objectContaining({ orgId: "t1", deletedAt: null }),
       }),
     );
   });

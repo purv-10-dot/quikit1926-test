@@ -24,9 +24,9 @@ import { createCrmLead, updateCrmLead } from "@/lib/services/leads/create-record
 import { processInboundWebhook } from "@/lib/services/leadsquared/inbound";
 
 const TENANT = "tenant-1";
-const CREATE_DATA = { tenantId: TENANT, name: "Ada" } as unknown as Prisma.QcfLeadUncheckedCreateInput;
+const CREATE_DATA = { orgId: TENANT, name: "Ada" } as unknown as Prisma.QcfLeadUncheckedCreateInput;
 const leadRow = (p: Partial<QcfLead> = {}): QcfLead =>
-  ({ id: "lead-1", tenantId: TENANT, name: "Ada", deletedAt: null, ...p }) as unknown as QcfLead;
+  ({ id: "lead-1", orgId: TENANT, name: "Ada", deletedAt: null, ...p }) as unknown as QcfLead;
 
 beforeEach(() => {
   h.enqueue.mockReset().mockResolvedValue("job-1");
@@ -37,13 +37,13 @@ beforeEach(() => {
 
 describe("createCrmLead — outbound enqueue (the bug fix)", () => {
   it("enqueues once, right after the lead is committed", async () => {
-    h.create.mockResolvedValue(leadRow({ id: "lead-new", tenantId: TENANT }));
+    h.create.mockResolvedValue(leadRow({ id: "lead-new", orgId: TENANT }));
 
     const lead = await createCrmLead(CREATE_DATA);
 
     expect(lead.id).toBe("lead-new");
     expect(h.enqueue).toHaveBeenCalledTimes(1);
-    expect(h.enqueue).toHaveBeenCalledWith({ tenantId: TENANT, crmLeadId: "lead-new" });
+    expect(h.enqueue).toHaveBeenCalledWith({ orgId: TENANT, crmLeadId: "lead-new" });
   });
 
   it("STILL enqueues even when post-commit processing throws (the exact bug)", async () => {
@@ -68,13 +68,13 @@ describe("createCrmLead — outbound enqueue (the bug fix)", () => {
 
 describe("updateCrmLead — outbound enqueue (PATCH path)", () => {
   it("enqueues once, using the updated row's tenant + id", async () => {
-    h.update.mockResolvedValue(leadRow({ id: "lead-9", tenantId: TENANT }));
+    h.update.mockResolvedValue(leadRow({ id: "lead-9", orgId: TENANT }));
 
     const updated = await updateCrmLead("lead-9", { stage: "Won" });
 
     expect(updated.id).toBe("lead-9");
     expect(h.enqueue).toHaveBeenCalledTimes(1);
-    expect(h.enqueue).toHaveBeenCalledWith({ tenantId: TENANT, crmLeadId: "lead-9" });
+    expect(h.enqueue).toHaveBeenCalledWith({ orgId: TENANT, crmLeadId: "lead-9" });
   });
 });
 

@@ -16,7 +16,7 @@ export async function PATCH() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
 
-    const count = await markAllRead(user.tenantId, user.userId);
+    const count = await markAllRead(user.orgId, user.userId);
     return NextResponse.json({ ok: true, count });
   } catch (e) {
     return errorResponse(e);

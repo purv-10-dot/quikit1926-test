@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     const baseWhere: Prisma.QcfAccountWhereInput = applyAccountListWhere(
-      { tenantId: user.tenantId },
+      { orgId: user.orgId },
       { trashed: false, allowedAccountIds, viewMine: null },
     );
 

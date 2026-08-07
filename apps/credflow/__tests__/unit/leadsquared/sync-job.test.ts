@@ -14,13 +14,13 @@ function job(
   data: Partial<LeadSquaredSyncJobData> = {},
 ): Job<LeadSquaredSyncJobData> {
   return {
-    data: { tenantId: TENANT, crmLeadId: LEAD_ID, origin: "crm", ...data },
+    data: { orgId: TENANT, crmLeadId: LEAD_ID, origin: "crm", ...data },
   } as unknown as Job<LeadSquaredSyncJobData>;
 }
 
 /** Build a QcfLead-shaped stub from a partial (narrowed through unknown, no `as any`). */
 function leadRow(partial: Partial<QcfLead>): QcfLead {
-  return { id: LEAD_ID, tenantId: TENANT, name: "Ada", deletedAt: null, ...partial } as unknown as QcfLead;
+  return { id: LEAD_ID, orgId: TENANT, name: "Ada", deletedAt: null, ...partial } as unknown as QcfLead;
 }
 
 function setup() {
@@ -48,11 +48,11 @@ describe("processLeadSquaredSyncJob", () => {
     await processLeadSquaredSyncJob(job(), deps);
 
     expect(db.qcfLead.findFirst).toHaveBeenCalledWith({
-      where: { id: LEAD_ID, tenantId: TENANT },
+      where: { id: LEAD_ID, orgId: TENANT },
     });
     expect(resolveClient).toHaveBeenCalledWith(TENANT);
     expect(sync).toHaveBeenCalledWith(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead, origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead, origin: "crm" },
       { client, fieldMap: DEFAULT_FIELD_MAP_CONFIG },
     );
   });

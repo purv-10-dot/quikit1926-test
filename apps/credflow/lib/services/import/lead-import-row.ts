@@ -7,7 +7,7 @@ import { triggerOutboundSync } from "@/lib/services/leadsquared/outbound-trigger
 import type { LeadCreationContext } from "@/lib/services/leads/log-lead-system-activities";
 
 export type LeadImportRowInput = {
-  tenantId: string;
+  orgId: string;
   name: string;
   email?: string | null;
   phone?: string | null;
@@ -135,7 +135,7 @@ export async function upsertImportedLeadRow(
       : {};
 
   const row: Prisma.QcfLeadUncheckedCreateInput = {
-    tenantId: data.tenantId,
+    orgId: data.orgId,
     name: data.name,
     email: data.email || null,
     phone: data.phone || null,
@@ -155,7 +155,7 @@ export async function upsertImportedLeadRow(
     const existing = await prisma.qcfLead.findUnique({
       where: {
         lead_external_uk: {
-          tenantId: row.tenantId,
+          orgId: row.orgId,
           sourceSystem: row.sourceSystem,
           externalId: row.externalId,
         },
@@ -183,7 +183,7 @@ export async function upsertImportedLeadRow(
       });
       // Imported UPDATE bypasses updateCrmLead, so enqueue the outbound push here
       // (fire-and-forget, per row — matches createCrmLead in the create branch).
-      triggerOutboundSync({ tenantId: lead.tenantId, crmLeadId: lead.id });
+      triggerOutboundSync({ orgId: lead.orgId, crmLeadId: lead.id });
       return { lead, action: "updated" };
     }
   }
@@ -193,7 +193,7 @@ export async function upsertImportedLeadRow(
   // instead of inserting a duplicate the manual path would have rejected. On a
   // match we also stamp externalId/sourceSystem so future re-uploads key cleanly.
   const dupe = await findDuplicateLeadRecord({
-    tenantId: row.tenantId,
+    orgId: row.orgId,
     email: typeof row.email === "string" ? row.email : null,
     mobile: typeof row.mobile === "string" ? row.mobile : null,
     phone: typeof row.phone === "string" ? row.phone : null,
@@ -224,7 +224,7 @@ export async function upsertImportedLeadRow(
       },
     });
     // Dedupe-matched UPDATE also bypasses updateCrmLead — enqueue here too.
-    triggerOutboundSync({ tenantId: lead.tenantId, crmLeadId: lead.id });
+    triggerOutboundSync({ orgId: lead.orgId, crmLeadId: lead.id });
     return { lead, action: "updated" };
   }
 

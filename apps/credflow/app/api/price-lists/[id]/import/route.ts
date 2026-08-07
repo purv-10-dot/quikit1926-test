@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "import");
 
-    const pl = await getPriceList(user.tenantId, id);
+    const pl = await getPriceList(user.orgId, id);
     if (!pl) return fail(404, "Price list not found");
 
     const body = await req.json().catch(() => null);
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const result = await importPriceListItems({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         priceListId: id,
         userId: user.userId,
         userName: user.name,

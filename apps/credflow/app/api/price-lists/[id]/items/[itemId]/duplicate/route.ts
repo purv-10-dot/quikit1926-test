@@ -28,7 +28,7 @@ export async function POST(
 
     try {
       const created = await duplicatePriceListItem({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         itemId,
         userId: user.userId,
         userName: user.name,

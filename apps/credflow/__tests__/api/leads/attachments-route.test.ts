@@ -23,7 +23,7 @@ vi.mock("@/lib/storage/documents", () => ({
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -63,7 +63,7 @@ describe("GET /api/leads/[id]/attachments", () => {
     db.qcfDocument.findMany.mockResolvedValue([
       {
         id: "d1",
-        tenantId: "t1",
+        orgId: "t1",
         refType: "lead",
         refId: "l1",
         fileName: "card.png",

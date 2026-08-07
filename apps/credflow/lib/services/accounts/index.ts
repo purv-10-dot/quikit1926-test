@@ -227,7 +227,7 @@ export async function deriveOwnerName(userId: string | null | undefined): Promis
  * Bounded loop (depth 50) so a corrupt chain doesn't hang the request.
  */
 export async function assertNoParentCycle(
-  tenantId: string,
+  orgId: string,
   accountId: string,
   parentAccountId: string | null | undefined,
 ): Promise<void> {
@@ -242,7 +242,7 @@ export async function assertNoParentCycle(
     }
     const next: { parentAccountId: string | null } | null =
       await prisma.qcfAccount.findFirst({
-        where: { id: cursor, tenantId },
+        where: { id: cursor, orgId },
         select: { parentAccountId: true },
       });
     if (!next) return;
@@ -261,7 +261,7 @@ function throwBadRequest(message: string): never {
 // =====================================================
 
 interface ActivityWriteParams {
-  tenantId: string;
+  orgId: string;
   accountId: string;
   accountName: string;
   outcome: string;
@@ -272,7 +272,7 @@ interface ActivityWriteParams {
 export async function writeAccountActivity(p: ActivityWriteParams): Promise<void> {
   await prisma.qcfActivity.create({
     data: {
-      tenantId: p.tenantId,
+      orgId: p.orgId,
       type: "AccountChange",
       relatedKind: "Account",
       relatedObjectId: p.accountId,

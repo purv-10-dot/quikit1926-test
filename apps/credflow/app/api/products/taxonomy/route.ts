@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const kind = sp.get("kind") as QcfProductTaxonomyKind | null;
     const parentId = sp.get("parentId");
     const items = await listTaxonomy(
-      user.tenantId,
+      user.orgId,
       kind ?? undefined,
       parentId === "" ? null : parentId ?? undefined,
     );
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ success: false, error: "Invalid taxonomy" }, { status: 400 });
     }
-    const created = await createTaxonomy(user.tenantId, parsed.data);
+    const created = await createTaxonomy(user.orgId, parsed.data);
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to create taxonomy";

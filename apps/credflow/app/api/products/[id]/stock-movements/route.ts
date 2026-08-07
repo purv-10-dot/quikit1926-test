@@ -13,9 +13,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const p = await getProduct(user.tenantId, id);
+    const p = await getProduct(user.orgId, id);
     if (!p) return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
-    const items = await listStockMovements(user.tenantId, id);
+    const items = await listStockMovements(user.orgId, id);
     return NextResponse.json({ success: true, data: items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to list movements";
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
-    const p = await getProduct(user.tenantId, id);
+    const p = await getProduct(user.orgId, id);
     if (!p) return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
 
     const parsed = stockMovementSchema.safeParse(await req.json().catch(() => null));
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const movement = await recordStockMovement({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       productId: id,
       userId: user.userId,
       ...parsed.data,

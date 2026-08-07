@@ -107,22 +107,22 @@ function dispositionKeyFor(name: string): string {
  * resolve a fixed, invisible "Call" disposition (find-or-create per tenant). It
  * carries no targetLeadStage and does not trigger payment verification — Status
  * (+ FR-RE rules) owns stage/status/reveal now. Reused across saves via the
- * @@unique([tenantId, code]) on "call".
+ * @@unique([orgId, code]) on "call".
  */
 const INTERNAL_CALL_CODE = "call";
 const INTERNAL_CALL_NAME = "Call";
 
-async function resolveInternalCallDisposition(tenantId: string) {
+async function resolveInternalCallDisposition(orgId: string) {
   const existing = await prisma.qcfCallDisposition.findFirst({
-    where: { tenantId, code: INTERNAL_CALL_CODE },
+    where: { orgId, code: INTERNAL_CALL_CODE },
   });
   if (existing) return existing;
   // upsert-on-unique guards the race where two concurrent saves both seed it.
   return prisma.qcfCallDisposition.upsert({
-    where: { tenantId_code: { tenantId, code: INTERNAL_CALL_CODE } },
+    where: { orgId_code: { orgId, code: INTERNAL_CALL_CODE } },
     update: {},
     create: {
-      tenantId,
+      orgId,
       code: INTERNAL_CALL_CODE,
       label: INTERNAL_CALL_NAME,
       name: INTERNAL_CALL_NAME,
@@ -146,7 +146,7 @@ function toDate(value: string | Date | null | undefined): Date | null {
 }
 
 export async function createCallLog(
-  tenantId: string,
+  orgId: string,
   ownerId: string,
   ownerName: string,
   dto: CreateCallLogDto,
@@ -160,9 +160,9 @@ export async function createCallLog(
   // Status — the disposition is plumbing, never a required agent pick.
   const requestedId = (dto.callDispositionId ?? "").trim();
   const disposition = requestedId
-    ? (await prisma.qcfCallDisposition.findFirst({ where: { id: requestedId, tenantId } })) ??
-      (await resolveInternalCallDisposition(tenantId))
-    : await resolveInternalCallDisposition(tenantId);
+    ? (await prisma.qcfCallDisposition.findFirst({ where: { id: requestedId, orgId } })) ??
+      (await resolveInternalCallDisposition(orgId))
+    : await resolveInternalCallDisposition(orgId);
   const dispositionName = disposition.name ?? disposition.label;
 
   const since = new Date(Date.now() - FOUR_HOURS_MS);
@@ -179,7 +179,7 @@ export async function createCallLog(
     orphanOr.length > 0
       ? await prisma.qcfIndiaVoiceWebhookLog.findFirst({
           where: {
-            tenantId,
+            orgId,
             matchedCallLogId: null,
             createdAt: { gte: since },
             OR: orphanOr,
@@ -192,7 +192,7 @@ export async function createCallLog(
   let leadDisplayName = "";
   if (dto.linkedLeadId && dto.linkedLeadId.trim()) {
     const explicit = await prisma.qcfLead.findFirst({
-      where: { id: dto.linkedLeadId.trim(), tenantId },
+      where: { id: dto.linkedLeadId.trim(), orgId },
       select: { id: true, name: true },
     });
     if (explicit) {
@@ -203,7 +203,7 @@ export async function createCallLog(
   if (!leadId && tailTo) {
     const matched = await prisma.qcfLead.findFirst({
       where: {
-        tenantId,
+        orgId,
         OR: [{ phone: { endsWith: tailTo } }, { mobile: { endsWith: tailTo } }],
       },
       orderBy: { updatedAt: "desc" },
@@ -258,7 +258,7 @@ export async function createCallLog(
     isRealCall && sid
       ? await prisma.qcfCallLog.findFirst({
           where: {
-            tenantId,
+            orgId,
             dispositionName: null,
             OR: [{ providerCallSid: sid }, { callSid: sid }],
           },
@@ -281,7 +281,7 @@ export async function createCallLog(
         })
       : await prisma.qcfCallLog.create({
           data: {
-            tenantId,
+            orgId,
             callSid: sid,
             providerCallSid: sid || orphan?.callSid || null,
             ...baseCallLogFields,
@@ -334,7 +334,7 @@ export async function createCallLog(
 
     const callActivity = await prisma.qcfActivity.create({
       data: {
-        tenantId,
+        orgId,
         type: "Call",
         relatedKind: "Lead",
         relatedObjectId: leadId,
@@ -357,7 +357,7 @@ export async function createCallLog(
     // activityDatetime is the agent-supplied time (FR-D2) so create_task rules
     // correctly schedule the callback task at the reported call time (AC-5).
     await runAfterActivityLogged({
-      tenantId,
+      orgId,
       leadId,
       activityId: callActivity.id,
       dispositionCode: disposition.code,
@@ -378,7 +378,7 @@ export async function createCallLog(
     const mappedStatus = selectedStatus;
 
     const lead = await prisma.qcfLead.findFirst({
-      where: { id: leadId, tenantId },
+      where: { id: leadId, orgId },
       select: { id: true, stage: true, status: true, substatus: true, dynamicFields: true },
     });
     if (lead) {
@@ -450,10 +450,10 @@ export async function createCallLog(
       if (changed.length > 0) {
         await prisma.qcfLead.update({ where: { id: leadId }, data });
         // Outbound sync (status/substatus/stage changed). Fire-and-forget.
-        triggerOutboundSync({ tenantId, crmLeadId: leadId });
+        triggerOutboundSync({ orgId, crmLeadId: leadId });
         await prisma.qcfActivity.create({
           data: {
-            tenantId,
+            orgId,
             type: "LeadStageChange",
             relatedKind: "Lead",
             relatedObjectId: leadId,
@@ -476,7 +476,7 @@ export async function createCallLog(
     // get null (legacy untouched). See docs/fr-re-followups.md.
     if (leadId) {
       const frre = await saveAndApplyDisposition({
-        tenantId,
+        orgId,
         leadId,
         activityId: callActivity.id,
         fieldValues: dto.dispositionFieldValues ?? {},
@@ -492,7 +492,7 @@ export async function createCallLog(
         const ruleStage = frre.decision.setStage.status; // carries a stage name
         await prisma.qcfActivity.create({
           data: {
-            tenantId,
+            orgId,
             type: "LeadStageChange",
             relatedKind: "Lead",
             relatedObjectId: leadId,
@@ -518,14 +518,14 @@ export async function createCallLog(
     // not fail the disposition save. The engine is change-conditional + loop-
     // guarded (S2), so if an automation targets the value the disposition already
     // set, it is a safe no-op rather than a double-move.
-    onLeadUpdated(tenantId, leadId).catch((err) =>
+    onLeadUpdated(orgId, leadId).catch((err) =>
       console.error("[automation] onLeadUpdated (from disposition) failed", err),
     );
 
     if (followUpAt) {
       await prisma.qcfActivity.create({
         data: {
-          tenantId,
+          orgId,
           type: "FollowUp",
           relatedKind: "Lead",
           relatedObjectId: leadId,
@@ -546,7 +546,7 @@ export async function createCallLog(
       // task. TODO(integration): replace with sourceCallLogId unique key
       // once the schema overhaul lands.
       const dup = await findExistingFollowUpTask({
-        tenantId,
+        orgId,
         leadId,
         dueDate: followUpAt,
         // No call-log row on a manual save — dedup the double-save window around
@@ -555,12 +555,12 @@ export async function createCallLog(
       });
       if (!dup) {
         const lead = await prisma.qcfLead.findFirst({
-          where: { id: leadId, tenantId },
+          where: { id: leadId, orgId },
           select: { ownerId: true, name: true },
         });
         await prisma.qcfTask.create({
           data: {
-            tenantId,
+            orgId,
             subject: `Follow up · ${lead?.name ?? leadDisplayName ?? ""}`.trim(),
             taskType: "FollowUp",
             priority: "Medium",

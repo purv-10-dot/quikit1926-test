@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -69,7 +69,7 @@ describe("POST /api/activities/smb-outreach", () => {
     });
     db.qcfActivity.create.mockResolvedValue({
       id: "act1",
-      tenantId: "t1",
+      orgId: "t1",
       type: "SMB Outreach",
       relatedKind: "Lead",
       relatedObjectId: "L1",

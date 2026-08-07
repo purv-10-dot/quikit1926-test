@@ -29,7 +29,7 @@ export async function GET(
     await assertModule(user, "documents", "view");
     const { id } = await params;
     const folder = await getFolder(user, id);
-    const breadcrumbs = await buildFolderBreadcrumbs(user.tenantId, id);
+    const breadcrumbs = await buildFolderBreadcrumbs(user.orgId, id);
     return ok({ folder, breadcrumbs });
   } catch (e: unknown) {
     if (e instanceof FolderServiceError) return fail(e.statusCode, e.message);

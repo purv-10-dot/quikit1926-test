@@ -22,7 +22,7 @@ import {
 
 const STAMP = Date.now();
 const TENANT = `int_frre_u5_${STAMP}`;
-// Globally-unique status names (QcfLeadStatus has no tenantId; name is @unique).
+// Globally-unique status names (QcfLeadStatus has no orgId; name is @unique).
 const STATUS = `Working_${STAMP}`;
 const SUB_MAPPED = `AwaitingDocs_${STAMP}`;
 const SUB_UNMAPPED = `Unrelated_${STAMP}`;
@@ -37,7 +37,7 @@ let subUnmappedId: string;
 
 beforeAll(async () => {
   const set = await integrationPrisma.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
   const version = await integrationPrisma.qcfFormSetVersion.create({

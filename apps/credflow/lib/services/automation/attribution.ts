@@ -34,7 +34,7 @@ export function snapshotOf(lead: Lead): Record<string, unknown> {
 const asStr = (v: unknown): string | null => (v == null ? null : String(v));
 
 export async function recordAttribution(a: {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   engineSource: "automation" | "legacy-disposition";
   workflowId?: string | null;
@@ -50,7 +50,7 @@ export async function recordAttribution(a: {
   try {
     await prisma.qcfAutomationAttribution.create({
       data: {
-        tenantId: a.tenantId,
+        orgId: a.orgId,
         leadId: a.leadId,
         engineSource: a.engineSource,
         workflowId: a.workflowId ?? null,

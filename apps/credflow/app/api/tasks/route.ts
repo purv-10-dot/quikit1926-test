@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     // Task assigned notification — fires when created with an assignee.
     if (task.assignedToUserId) {
       notifyTaskAssigned({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         taskId: task.id,
         taskSubject: task.subject,
         newAssigneeId: task.assignedToUserId,
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       event: "created",
       entityType: "task",
       entityId: task.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: task as unknown as Record<string, unknown>,

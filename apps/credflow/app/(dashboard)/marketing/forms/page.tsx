@@ -5,7 +5,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
 export default async function FormsPage() {
   const user = await requireUser();
-  const items = await prisma.qcfFormDefinition.findMany({ where: { tenantId: user.tenantId } });
+  const items = await prisma.qcfFormDefinition.findMany({ where: { orgId: user.orgId } });
   return (
     <div>
       <PageHeader title="Forms" subtitle={`${items.length} forms`} />

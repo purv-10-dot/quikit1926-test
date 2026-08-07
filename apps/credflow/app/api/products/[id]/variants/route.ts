@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
     const items = await prisma.qcfProductVariant.findMany({
-      where: { tenantId: user.tenantId, productId: id },
+      where: { orgId: user.orgId, productId: id },
       orderBy: { sku: "asc" },
     });
     return NextResponse.json({ success: true, data: items });
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "create");
-    const p = await getProduct(user.tenantId, id);
+    const p = await getProduct(user.orgId, id);
     if (!p) return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
 
     const parsed = productVariantSchema.safeParse(await req.json().catch(() => null));
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const created = await prisma.qcfProductVariant.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         productId: id,
         sku: parsed.data.sku,
         name: parsed.data.name ?? null,

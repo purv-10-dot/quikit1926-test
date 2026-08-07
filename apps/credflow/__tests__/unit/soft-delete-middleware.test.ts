@@ -67,36 +67,36 @@ describe.each([
 ])("applySoftDeleteMiddleware — op %s", (op) => {
   it(`injects deletedAt: null on registered model ${op}`, async () => {
     const spec = captureHooks();
-    const args = { where: { tenantId: "t1" } };
+    const args = { where: { orgId: "t1" } };
     await spec.query.$allModels[op]({
       model: "CrmLead",
       args,
       query: vi.fn().mockResolvedValue(null),
     });
-    expect(args.where).toEqual({ tenantId: "t1", deletedAt: null });
+    expect(args.where).toEqual({ orgId: "t1", deletedAt: null });
   });
 
   it(`leaves unregistered model ${op} args alone`, async () => {
     const spec = captureHooks();
-    const args = { where: { tenantId: "t1" } };
+    const args = { where: { orgId: "t1" } };
     await spec.query.$allModels[op]({
       model: "CrmActivity",
       args,
       query: vi.fn().mockResolvedValue(null),
     });
-    expect(args.where).toEqual({ tenantId: "t1" });
+    expect(args.where).toEqual({ orgId: "t1" });
   });
 
   it(`${op}: top-level deletedAt override is preserved (admin trash)`, async () => {
     const spec = captureHooks();
-    const args = { where: { tenantId: "t1", deletedAt: { not: null } } };
+    const args = { where: { orgId: "t1", deletedAt: { not: null } } };
     await spec.query.$allModels[op]({
       model: "CrmLead",
       args,
       query: vi.fn().mockResolvedValue(null),
     });
     expect(args.where).toEqual({
-      tenantId: "t1",
+      orgId: "t1",
       deletedAt: { not: null },
     });
   });
@@ -107,7 +107,7 @@ describe.each([
     // callers who rely on the shallow semantics).
     const spec = captureHooks();
     const args = {
-      where: { AND: [{ tenantId: "t1" }, { deletedAt: { not: null } }] },
+      where: { AND: [{ orgId: "t1" }, { deletedAt: { not: null } }] },
     };
     await spec.query.$allModels[op]({
       model: "CrmLead",
@@ -115,7 +115,7 @@ describe.each([
       query: vi.fn().mockResolvedValue(null),
     });
     expect(args.where).toEqual({
-      AND: [{ tenantId: "t1" }, { deletedAt: { not: null } }],
+      AND: [{ orgId: "t1" }, { deletedAt: { not: null } }],
       deletedAt: null,
     });
   });

@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     const filterWhere = translateActivityFilterToPrismaWhere(filter);
     const acl = await buildActivityAclWhere(user);
 
-    const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+    const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     if (acl) baseAnd.push(acl);
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
-    const items = await toListRows(user.tenantId, rows, tz);
+    const items = await toListRows(user.orgId, rows, tz);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     return NextResponse.json({
       success: true,

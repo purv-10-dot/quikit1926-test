@@ -96,7 +96,7 @@ describe("PATCH /api/auth/me", () => {
     const json = await res.json();
     expect(json.user).toMatchObject({
       id: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       firstName: "Admin",
       lastName: "User",
       phone: "7024324880",
@@ -105,7 +105,7 @@ describe("PATCH /api/auth/me", () => {
     expect(json.telephony?.registered).toBe(true);
     expect(updateMeProfile).toHaveBeenCalledWith({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       firstName: "Admin",
       lastName: "User",
       phone: "7024324880",

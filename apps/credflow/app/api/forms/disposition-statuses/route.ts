@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const stage = req.nextUrl.searchParams.get("stage");
-    const data = await getDispositionStatuses(user.tenantId, stage);
+    const data = await getDispositionStatuses(user.orgId, stage);
     return NextResponse.json({ success: true, data });
   } catch (e) {
     return errorResponse(e);

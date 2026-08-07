@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await listProducts({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       q: parsed.data.q,
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     });
 
     const enriched = await prisma.qcfProduct.findMany({
-      where: { tenantId: user.tenantId, id: { in: result.items.map((i) => i.id) } },
+      where: { orgId: user.orgId, id: { in: result.items.map((i) => i.id) } },
       include: {
         categoryRef: { select: { id: true, name: true } },
         brandRef: { select: { id: true, name: true } },
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const defs = await listProductFields(user.tenantId);
+    const defs = await listProductFields(user.orgId);
     const { values: dyn, errors: dynErrors } = validateProductDynamicFields({
       defs,
       input: parsed.data.dynamicFields,
@@ -112,12 +112,12 @@ export async function POST(req: NextRequest) {
 
     try {
       const created = await createProduct({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         input: { ...parsed.data, dynamicFields: dyn },
       });
       const full = await prisma.qcfProduct.findFirst({
-        where: { id: created.id, tenantId: user.tenantId },
+        where: { id: created.id, orgId: user.orgId },
         include: {
           categoryRef: { select: { id: true, name: true } },
           brandRef: { select: { id: true, name: true } },

@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -37,10 +37,10 @@ describe("POST /api/contacts/bulk-delete", () => {
     expect(body.data.count).toBe(3);
 
     const where = db.qcfContact.updateMany.mock.calls[0]![0]!.where as {
-      tenantId?: string;
+      orgId?: string;
       deletedAt?: null;
     };
-    expect(where.tenantId).toBe("t1");
+    expect(where.orgId).toBe("t1");
     expect(where.deletedAt).toBe(null);
   });
 });
@@ -63,7 +63,7 @@ describe("DELETE /api/contacts/trash", () => {
   it("returns 403 for non-administrators", async () => {
     setSession({
       userId: "u2",
-      tenantId: "t1",
+      orgId: "t1",
       role: "User",
       email: "u@b.co",
       name: "Bob",

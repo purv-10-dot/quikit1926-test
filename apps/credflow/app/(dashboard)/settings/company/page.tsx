@@ -7,7 +7,7 @@ import { CompanyProfileEditForm } from "@/components/settings/company-profile-ed
 
 export default async function CompanyProfilePage() {
   const user = await requireUser();
-  const profile = await getCompanyProfileForSettings(user.tenantId);
+  const profile = await getCompanyProfileForSettings(user.orgId);
   const canEdit =
     user.role === "Administrator" ||
     (await hasPermission(user, "settings", "edit"));

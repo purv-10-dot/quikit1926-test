@@ -29,7 +29,7 @@ export default async function OrderDetailPage({
   let canEdit = isAdmin;
 
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     canEdit = !!matrix.find((r) => r.module === "quotes")?.actions.includes("edit");
   }
 

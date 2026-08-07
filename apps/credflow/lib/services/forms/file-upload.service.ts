@@ -68,7 +68,7 @@ export function validateDispositionFile(file: { size: number; type: string }): v
  * the field value (QcfFieldValue.valueFileId) at it. DB-only — no S3.
  */
 export async function recordDispositionAttachment(input: {
-  tenantId: string;
+  orgId: string;
   activityId: string;
   formSetVersionId: string;
   fieldKey: string;
@@ -80,7 +80,7 @@ export async function recordDispositionAttachment(input: {
 }): Promise<QcfFileAttachment> {
   const attachment = await prisma.qcfFileAttachment.create({
     data: {
-      tenantId: input.tenantId,
+      orgId: input.orgId,
       activityId: input.activityId,
       storageKey: input.storageKey,
       filename: input.filename,
@@ -95,7 +95,7 @@ export async function recordDispositionAttachment(input: {
       activityId_fieldKey: { activityId: input.activityId, fieldKey: input.fieldKey },
     },
     create: {
-      tenantId: input.tenantId,
+      orgId: input.orgId,
       activityId: input.activityId,
       formSetVersionId: input.formSetVersionId,
       fieldKey: input.fieldKey,
@@ -111,7 +111,7 @@ export async function recordDispositionAttachment(input: {
 /** A caller may only touch an activity within their account scope (Strict). */
 async function assertActivityInScope(user: SessionUser, activityId: string): Promise<void> {
   const aclWhere = await buildActivityAclWhere(user);
-  const where: Prisma.QcfActivityWhereInput = { id: activityId, tenantId: user.tenantId };
+  const where: Prisma.QcfActivityWhereInput = { id: activityId, orgId: user.orgId };
   if (aclWhere) where.AND = [aclWhere];
 
   const activity = await prisma.qcfActivity.findFirst({ where, select: { id: true } });
@@ -138,7 +138,7 @@ export async function saveDispositionUpload(input: {
   const stored = await saveCrmUpload(input.activityId, input.file);
 
   return recordDispositionAttachment({
-    tenantId: input.user.tenantId,
+    orgId: input.user.orgId,
     activityId: input.activityId,
     formSetVersionId: input.formSetVersionId,
     fieldKey: input.fieldKey,
@@ -156,7 +156,7 @@ export async function assertAttachmentAccess(
   attachmentId: string,
 ): Promise<QcfFileAttachment> {
   const attachment = await prisma.qcfFileAttachment.findFirst({
-    where: { id: attachmentId, tenantId: user.tenantId },
+    where: { id: attachmentId, orgId: user.orgId },
   });
   if (!attachment) throw new FileUploadError("Attachment not found.", 404);
   await assertActivityInScope(user, attachment.activityId);

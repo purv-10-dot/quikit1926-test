@@ -15,7 +15,7 @@ export default async function ActivitiesPage() {
   let canDelete = isAdmin;
   let canViewLeads = isAdmin;
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     const row = matrix.find((r) => r.module === "activities");
     canCreate = !!row?.actions.includes("create");
     canEdit = !!row?.actions.includes("edit");

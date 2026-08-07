@@ -49,7 +49,7 @@ afterAll(async () => {
 
 describe("createFormSet + listFormSets", () => {
   it("creates a default call_disposition set, a v1 draft, and seeds the protected tab + 4 fields", async () => {
-    const { set, version } = await createFormSet({ tenantId: TENANT, name: `CredFlow ${STAMP}` });
+    const { set, version } = await createFormSet({ orgId: TENANT, name: `CredFlow ${STAMP}` });
     setId = set.id;
     versionId = version.id;
 

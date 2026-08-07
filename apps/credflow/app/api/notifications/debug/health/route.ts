@@ -22,7 +22,7 @@ interface SubsystemResult {
 async function checkDatabase(): Promise<SubsystemResult> {
   const t0 = Date.now();
   try {
-    await prisma.qcfNotification.count({ where: { tenantId: "__health_check__" } });
+    await prisma.qcfNotification.count({ where: { orgId: "__health_check__" } });
     return { ok: true, latencyMs: Date.now() - t0, detail: "Prisma query succeeded." };
   } catch (err) {
     return {

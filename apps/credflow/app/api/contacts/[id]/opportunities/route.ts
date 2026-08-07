@@ -67,7 +67,7 @@ export async function POST(
 
     const contact = await prisma.qcfContact.findFirst({
       // QcfContact isn't middleware-protected — a trashed contact has no live opportunities view.
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
       select: { id: true, accountId: true },
     });
     if (!contact) {
@@ -96,7 +96,7 @@ export async function POST(
       prisma,
       async (tx) => {
         const opp = await createOpportunity({
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           userId: user.userId,
           input: {
             name: dto.title,
@@ -112,7 +112,7 @@ export async function POST(
 
         await audit(
           {
-            tenantId: user.tenantId,
+            orgId: user.orgId,
             userId: user.userId,
             module: "opportunities",
             action: "create_from_contact",

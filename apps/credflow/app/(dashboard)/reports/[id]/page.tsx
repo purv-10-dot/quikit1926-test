@@ -32,7 +32,7 @@ export default async function ReportRunPage({ params, searchParams }: PageProps)
   const ownerId = sp.ownerId?.trim() || undefined;
 
   const memberships = await prisma.orgMember.findMany({
-    where: { orgId: user.tenantId },
+    where: { orgId: user.orgId },
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
   const ownerOptions = memberships.map((m) => ({

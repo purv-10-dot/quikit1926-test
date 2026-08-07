@@ -15,14 +15,14 @@ export async function GET(
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const quote = await getQuote(user.tenantId, id);
+    const quote = await getQuote(user.orgId, id);
     if (!quote) {
       return NextResponse.json({ success: false, error: "Quote not found" }, { status: 404 });
     }
     const productIds = quote.lines
       .map((l) => l.productId)
       .filter((pid): pid is string => !!pid);
-    const suggestions = await getCpqSuggestions(user.tenantId, id, productIds);
+    const suggestions = await getCpqSuggestions(user.orgId, id, productIds);
     return NextResponse.json({ success: true, data: suggestions });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "CPQ suggestions failed";

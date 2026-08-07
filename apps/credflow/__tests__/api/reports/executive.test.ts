@@ -27,7 +27,7 @@ describe("GET /api/reports/executive", () => {
   it("returns executive summary for authenticated user", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@x.co",
       name: "A",

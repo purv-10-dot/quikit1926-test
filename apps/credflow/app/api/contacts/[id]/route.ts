@@ -33,12 +33,12 @@ function fail(
   );
 }
 
-async function loadOwn(tenantId: string, id: string) {
-  return prisma.qcfContact.findFirst({ where: { id, tenantId } });
+async function loadOwn(orgId: string, id: string) {
+  return prisma.qcfContact.findFirst({ where: { id, orgId } });
 }
 
-async function loadActive(tenantId: string, id: string) {
-  return prisma.qcfContact.findFirst({ where: { id, tenantId, deletedAt: null } });
+async function loadActive(orgId: string, id: string) {
+  return prisma.qcfContact.findFirst({ where: { id, orgId, deletedAt: null } });
 }
 
 export async function GET(
@@ -51,9 +51,9 @@ export async function GET(
     if (isResponse(user)) return user;
     await assertModule(user, "contacts", "view");
 
-    const c = await loadOwn(user.tenantId, id);
+    const c = await loadOwn(user.orgId, id);
     if (!c) return fail(404, "Contact not found");
-    const [withName] = await attachAccountNames(user.tenantId, [c]);
+    const [withName] = await attachAccountNames(user.orgId, [c]);
     return ok(withName);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load contact";
@@ -73,7 +73,7 @@ export async function PATCH(
     if (isResponse(user)) return user;
     await assertModule(user, "contacts", "edit");
 
-    const existing = await loadActive(user.tenantId, id);
+    const existing = await loadActive(user.orgId, id);
     if (!existing) return fail(404, "Contact not found");
 
     const body = await req.json().catch(() => null);
@@ -92,7 +92,7 @@ export async function PATCH(
     }
 
     if (data.email !== undefined && data.email && data.email !== existing.email) {
-      const dup = await findDuplicateContactByEmail(user.tenantId, data.email, id);
+      const dup = await findDuplicateContactByEmail(user.orgId, data.email, id);
       if (dup) {
         return fail(
           409,
@@ -110,7 +110,7 @@ export async function PATCH(
     if (data.phone !== undefined) {
       // Normalize to E.164; reject invalid with the contacts failure shape.
       if (data.phone) {
-        const defaultCountry = await getWorkspacePhoneDefaultCountry(user.tenantId);
+        const defaultCountry = await getWorkspacePhoneDefaultCountry(user.orgId);
         const r = normalizePhoneOrError(data.phone, defaultCountry);
         if (!r.ok) return fail(400, "Validation failed", { phone: r.message });
         updateData.phone = r.value;
@@ -130,7 +130,7 @@ export async function PATCH(
         updateData.ownerId = null;
         updateData.ownerName = null;
       } else if (data.ownerId !== existing.ownerId) {
-        const owner = await resolveOwnerForTenant(user.tenantId, data.ownerId);
+        const owner = await resolveOwnerForTenant(user.orgId, data.ownerId);
         updateData.ownerId = owner.ownerId;
         updateData.ownerName = owner.ownerName;
       }
@@ -140,12 +140,12 @@ export async function PATCH(
       where: { id },
       data: updateData,
     });
-    const [withName] = await attachAccountNames(user.tenantId, [updated]);
+    const [withName] = await attachAccountNames(user.orgId, [updated]);
     evaluateRulesForEvent({
       event: "updated",
       entityType: "contact",
       entityId: id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       before: existing as unknown as Record<string, unknown>,
@@ -172,7 +172,7 @@ export async function DELETE(
     if (isResponse(user)) return user;
     await assertModule(user, "contacts", "delete");
 
-    const existing = await loadActive(user.tenantId, id);
+    const existing = await loadActive(user.orgId, id);
     if (!existing) return fail(404, "Contact not found");
 
     await prisma.qcfContact.update({
@@ -184,7 +184,7 @@ export async function DELETE(
       event: "deleted",
       entityType: "contact",
       entityId: id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       before: existing as unknown as Record<string, unknown>,

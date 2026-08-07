@@ -33,7 +33,7 @@ const STAGE_LABEL: Record<string, string> = {
 async function aclWhere(ctx: ReportRunContext): Promise<Prisma.QcfOpportunityWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
   const base: Prisma.QcfOpportunityWhereInput = {
-    tenantId: ctx.tenantId,
+    orgId: ctx.orgId,
     deletedAt: null,
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };

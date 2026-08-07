@@ -8,7 +8,7 @@
  * keeps the server route stateless.
  *
  * Idempotency: `createMany({ skipDuplicates: true })` against the
- * `(tenantId, sku)` unique constraint means re-running the same import
+ * `(orgId, sku)` unique constraint means re-running the same import
  * twice is safe — duplicates are silently ignored, the count returned
  * reflects only new rows.
  *
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     const validRows: Array<{
-      tenantId: string;
+      orgId: string;
       name: string;
       sku: string;
       category: string | null;
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       }
       const r = v.data;
       validRows.push({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         name: r.name,
         sku: r.sku,
         category: r.category ?? null,
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     let createdCount = 0;
     if (validRows.length > 0) {
-      // skipDuplicates relies on the @@unique([tenantId, sku]) index —
+      // skipDuplicates relies on the @@unique([orgId, sku]) index —
       // if a SKU is re-imported, Prisma silently skips it. This is the
       // "safe to re-run" property we want for bulk CSV imports.
       const result = await db.qcfProduct.createMany({

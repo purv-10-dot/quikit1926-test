@@ -16,7 +16,7 @@ export default async function WorkflowBuilderPage({
   // build (no id) starts empty.
   const def = id
     ? await prisma.qcfWorkflowDefinition.findFirst({
-        where: { id, tenantId: user.tenantId, deletedAt: null },
+        where: { id, orgId: user.orgId, deletedAt: null },
       })
     : null;
 

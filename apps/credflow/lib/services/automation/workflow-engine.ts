@@ -44,7 +44,7 @@ const MAX_STEPS = 48;
 export { AUTOMATION_ACTOR_ID };
 
 interface RunContext {
-  tenantId: string;
+  orgId: string;
   workflowId: string;
   leadId: string;
   graph: WorkflowGraph;
@@ -57,7 +57,7 @@ interface RunContext {
 
 /** Entry point — kick off a workflow from a given node id. */
 export async function runFrom(
-  tenantId: string,
+  orgId: string,
   workflowId: string,
   leadId: string,
   startNodeId: string,
@@ -71,7 +71,7 @@ export async function runFrom(
   // rows (deletedAt set) are excluded here since QcfWorkflowDefinition is not in
   // the shared soft-delete middleware set.
   const wf = await prisma.qcfWorkflowDefinition.findFirst({
-    where: { id: workflowId, tenantId, deletedAt: null },
+    where: { id: workflowId, orgId, deletedAt: null },
   });
   if (!wf || !canResumeInFlight(wf.status)) return;
 
@@ -79,7 +79,7 @@ export async function runFrom(
     nodes: (wf.graphNodes as unknown as WorkflowNode[]) ?? [],
     edges: (wf.graphEdges as unknown as WorkflowEdge[]) ?? [],
   };
-  const lead = await prisma.qcfLead.findFirst({ where: { id: leadId, tenantId } });
+  const lead = await prisma.qcfLead.findFirst({ where: { id: leadId, orgId } });
   if (!lead) return;
 
   // Trigger-time attribution context. Prefer values threaded from the emit site
@@ -95,7 +95,7 @@ export async function runFrom(
   while (nodeId && step < MAX_STEPS) {
     const node = graph.nodes.find((n) => n.id === nodeId);
     if (!node) break;
-    const ctx: RunContext = { tenantId, workflowId, leadId, graph, step, triggerEventId, triggerType, snapshot };
+    const ctx: RunContext = { orgId, workflowId, leadId, graph, step, triggerEventId, triggerType, snapshot };
     const result = await executeNode(node, lead, ctx);
     if (result.kind === "wait") return; // execution suspended; resume job will continue
     nodeId = result.nextNodeId;
@@ -126,7 +126,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         const priority = (cfg.priority as "Low" | "Medium" | "High" | undefined) || "Medium";
         await prisma.qcfTask.create({
           data: {
-            tenantId: ctx.tenantId,
+            orgId: ctx.orgId,
             subject,
             priority,
             status: "Open",
@@ -150,7 +150,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         if (!field) return { kind: "continue", nextNodeId: pickNext(ctx.graph, node.id) };
 
         const outcome = await applyAutomatedLeadWrite({
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           lead,
           field,
           value: cfg.value ?? null,
@@ -174,7 +174,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         // Audit row in Postgres
         const pending = await prisma.qcfAutomationPendingStep.create({
           data: {
-            tenantId: ctx.tenantId,
+            orgId: ctx.orgId,
             workflowId: ctx.workflowId,
             leadId: lead.id,
             resumeNodeId: next,
@@ -185,7 +185,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         });
         // BullMQ delayed job — fires precisely at resumeAt with exponential retry
         const data: AutomationJobData = {
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           workflowId: ctx.workflowId,
           leadId: lead.id,
           startNodeId: next,
@@ -241,7 +241,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         // Separate round-robin state per rule/default (keyed on tenant+wf+nodeId).
         const rrNodeId = resolved.ruleKey ? `${node.id}#${resolved.ruleKey}` : node.id;
         const picked = await pickNextUser({
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           workflowId: ctx.workflowId,
           nodeId: rrNodeId,
           candidateUserIds: resolved.candidateUserIds,
@@ -254,7 +254,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
           // + terminate, ownerId→PATCH path, triggerOutboundSync (once), and
           // attribution. No silent trigger suppression (SPEC §1/§5.4).
           const outcome = await applyAutomatedLeadWrite({
-            tenantId: ctx.tenantId,
+            orgId: ctx.orgId,
             lead,
             field: "ownerId",
             value: picked,
@@ -274,7 +274,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         if (cfg.userId) {
           await prisma.qcfNotification.create({
             data: {
-              tenantId: ctx.tenantId,
+              orgId: ctx.orgId,
               userId: cfg.userId,
               title: String(cfg.title || "Workflow notification"),
               body: String(cfg.body || `Lead ${lead.name} workflow update`),
@@ -293,7 +293,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         // recorded and skipped; a failed dispatch is recorded — neither throws,
         // so the run continues past the email node (SPEC §5.1).
         const cfg = node.config as { to?: string; subject?: string; body?: string };
-        await executeSendEmail({ tenantId: ctx.tenantId, lead, cfg });
+        await executeSendEmail({ orgId: ctx.orgId, lead, cfg });
         return { kind: "continue", nextNodeId: pickNext(ctx.graph, node.id) };
       }
     }

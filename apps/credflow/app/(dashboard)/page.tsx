@@ -11,11 +11,11 @@ import { db } from "@/lib/db";
  */
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
-  const tenantId = session?.user?.orgId;
+  const orgId = session?.user?.orgId;
   const userName = session?.user?.name ?? session?.user?.email ?? "";
 
-  const [leadCount] = tenantId
-    ? await Promise.all([db.qcfLead.count({ where: { tenantId } })])
+  const [leadCount] = orgId
+    ? await Promise.all([db.qcfLead.count({ where: { orgId } })])
     : [0];
 
   return (

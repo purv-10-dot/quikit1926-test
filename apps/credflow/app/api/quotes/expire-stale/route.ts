@@ -23,7 +23,7 @@
  *   Local dev: just hit the endpoint by hand — it's idempotent.
  *
  * Multi-tenant note: this endpoint is per-tenant (uses the calling
- * session's tenantId). A platform-level "expire all tenants" runner
+ * session’s orgId). A platform-level "expire all tenants" runner
  * would iterate the Tenant table and POST per tenant — out of scope
  * for the app-side endpoint.
  */
@@ -49,9 +49,9 @@ export async function POST(_req: NextRequest) {
     // — when a dedicated `automation.run` permission ships, switch.
     await assertModule(user, "settings", "edit");
 
-    const result = await expireStaleQuotes(user.tenantId);
+    const result = await expireStaleQuotes(user.orgId);
     return ok({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       expiredCount: result.count,
       quoteIds: result.quoteIds,
       ranAt: new Date().toISOString(),

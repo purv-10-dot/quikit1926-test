@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     try {
       const created = await cloneQuote({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         userName: user.name ?? null,
         id,

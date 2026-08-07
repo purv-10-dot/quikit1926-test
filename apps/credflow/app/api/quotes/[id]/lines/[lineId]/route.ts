@@ -43,7 +43,7 @@ export async function PATCH(
 
     try {
       const updated = await updateQuoteLine({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         quoteId: id,
         lineId,
         input: parsed.data,
@@ -82,7 +82,7 @@ export async function DELETE(
     await assertModule(user, "quotes", "edit");
     try {
       await deleteQuoteLine({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         quoteId: id,
         lineId,
       });

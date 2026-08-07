@@ -23,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const created = await reviseQuote({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         userName: user.name ?? null,
         id,

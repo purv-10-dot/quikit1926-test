@@ -43,10 +43,10 @@ export const DISPOSITION_STAGE_STATUS_SEED: Record<string, string[]> = {
  * falling back to ALL configured statuses when the stage has no mapping.
  */
 export async function getDispositionStatuses(
-  tenantId: string,
+  orgId: string,
   stage?: string | null,
 ): Promise<string[]> {
-  const cfg = await getPipelineConfig(tenantId);
+  const cfg = await getPipelineConfig(orgId);
   const all = cfg.statuses;
   if (!stage || !stage.trim()) return all;
 
@@ -63,12 +63,12 @@ export async function getDispositionStatuses(
  * Seed the PLACEHOLDER stage->status mapping into pipeline-config — but only
  * when no mapping exists yet. Never clobbers a real mapping plugged in later.
  */
-export async function seedDispositionStageStatuses(tenantId: string): Promise<void> {
-  const cfg = await getPipelineConfig(tenantId);
+export async function seedDispositionStageStatuses(orgId: string): Promise<void> {
+  const cfg = await getPipelineConfig(orgId);
   const existing = cfg.dependentRules.stageToStatuses ?? {};
   if (Object.keys(existing).length > 0) return; // real mapping present -> respect it
 
-  await setPipelineConfig(tenantId, {
+  await setPipelineConfig(orgId, {
     dependentRules: {
       ...cfg.dependentRules,
       stageToStatuses: DISPOSITION_STAGE_STATUS_SEED,

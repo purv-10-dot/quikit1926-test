@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -34,7 +34,7 @@ describe("POST /api/marketing/campaigns", () => {
     adminSession();
     db.qcfCampaign.create.mockResolvedValue({
       id: "c1",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Diwali Offer",
       status: "Draft",
       type: "Email",
@@ -58,11 +58,11 @@ describe("POST /api/marketing/campaigns", () => {
     expect(res.status).toBe(201);
 
     const data = db.qcfCampaign.create.mock.calls[0]![0]!.data as {
-      tenantId: string;
+      orgId: string;
       name: string;
       config?: { budget: number; description: string };
     };
-    expect(data.tenantId).toBe("t1");
+    expect(data.orgId).toBe("t1");
     expect(data.name).toBe("Diwali Offer");
     expect(data.config).toMatchObject({
       budget: 50000,

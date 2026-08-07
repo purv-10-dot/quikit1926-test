@@ -10,10 +10,10 @@
  *
  * The route unwraps the { Before, After } snapshot to `After`, keys on
  * ProspectID, and — because Redis is enabled — ENQUEUES the job. The actual
- * CrmLead write happens in the BullMQ worker, so the worker must be running
+ * QcfLead write happens in the BullMQ worker, so the worker must be running
  * for the DB to change. Expected HTTP response here: { ok: true, queued: true }.
  *
- * After running, check the CrmLead in the DB:
+ * After running, check the QcfLead in the DB:
  *   name  -> "18-UpdatedFromLSQ"
  *   stage -> "Future Lead" (subject to the stage value-map reverse translation)
  */
@@ -67,7 +67,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    "\n✔ Webhook accepted. If the response says { queued: true }, the CrmLead " +
+    "\n✔ Webhook accepted. If the response says { queued: true }, the QcfLead " +
       "write happens in the BullMQ worker — make sure the worker is running, " +
       "then check the DB for name='18-UpdatedFromLSQ' / stage='Future Lead'.",
   );

@@ -10,7 +10,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const data = await getQuoteAnalytics(user.tenantId);
+    const data = await getQuoteAnalytics(user.orgId);
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Analytics failed";

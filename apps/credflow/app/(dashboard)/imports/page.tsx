@@ -11,7 +11,7 @@ import { formatDateTime } from "@/lib/utils/date-helpers";
 export default async function ImportsPage() {
   const user = await requireUser();
   const jobs = await prisma.qcfLeadImportJob.findMany({
-    where: { tenantId: user.tenantId },
+    where: { orgId: user.orgId },
     orderBy: { createdAt: "desc" },
     take: 50,
   });

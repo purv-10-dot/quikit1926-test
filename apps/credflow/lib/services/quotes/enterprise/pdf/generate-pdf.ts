@@ -19,27 +19,27 @@ export class QuotePdfError extends Error {
 }
 
 async function loadPrintPayload(
-  tenantId: string,
+  orgId: string,
   quoteId: string,
 ): Promise<QuotePrintPayload> {
-  const quote = await getQuote(tenantId, quoteId);
+  const quote = await getQuote(orgId, quoteId);
   if (!quote) throw new QuotePdfError("Quote not found", 404);
 
   const [account, contact, company, template] = await Promise.all([
     quote.accountId
       ? db.qcfAccount.findFirst({
-          where: { id: quote.accountId, tenantId },
+          where: { id: quote.accountId, orgId },
           select: { name: true },
         })
       : null,
     quote.contactId
       ? db.qcfContact.findFirst({
-          where: { id: quote.contactId, tenantId },
+          where: { id: quote.contactId, orgId },
           select: { firstName: true, lastName: true, email: true },
         })
       : null,
-    getTenantCompanyBranding(tenantId),
-    getQuoteTemplate(tenantId, quote.templateKey ?? "b2b-standard"),
+    getTenantCompanyBranding(orgId),
+    getQuoteTemplate(orgId, quote.templateKey ?? "b2b-standard"),
   ]);
 
   const isIntraState =
@@ -103,21 +103,21 @@ async function loadPrintPayload(
 
 /** Build branded HTML for preview / print. */
 export async function buildQuotePreviewHtml(
-  tenantId: string,
+  orgId: string,
   quoteId: string,
 ): Promise<string> {
-  const payload = await loadPrintPayload(tenantId, quoteId);
+  const payload = await loadPrintPayload(orgId, quoteId);
   return renderQuoteDocumentHtml(payload);
 }
 
 /** Build a server-generated PDF buffer for preview/download. */
 export async function buildQuotePreviewPdfBuffer(
-  tenantId: string,
+  orgId: string,
   quoteId: string,
 ): Promise<{ fileName: string; buffer: Buffer }> {
-  const quote = await getQuote(tenantId, quoteId);
+  const quote = await getQuote(orgId, quoteId);
   if (!quote) throw new QuotePdfError("Quote not found", 404);
-  const payload = await loadPrintPayload(tenantId, quoteId);
+  const payload = await loadPrintPayload(orgId, quoteId);
   const fileName = `${quote.quoteNumber}-v${quote.versionNumber}.pdf`;
   const buffer = await renderQuotePdfToBuffer(payload);
   return { fileName, buffer };
@@ -128,7 +128,7 @@ export async function buildQuotePreviewPdfBuffer(
  * records QcfQuotePdfSnapshot. When S3 is unavailable, returns HTML buffer only.
  */
 export async function generateQuotePdfSnapshot(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   userId: string;
   userName: string | null;
@@ -138,10 +138,10 @@ export async function generateQuotePdfSnapshot(args: {
   storageKey: string | null;
   downloadUrl: string | null;
 }> {
-  const quote = await getQuote(args.tenantId, args.quoteId);
+  const quote = await getQuote(args.orgId, args.quoteId);
   if (!quote) throw new QuotePdfError("Quote not found", 404);
 
-  const { fileName, buffer } = await buildQuotePreviewPdfBuffer(args.tenantId, args.quoteId);
+  const { fileName, buffer } = await buildQuotePreviewPdfBuffer(args.orgId, args.quoteId);
   const contentHash = createHash("sha256").update(buffer).digest("hex");
 
   let storageKey: string | null = null;
@@ -156,7 +156,7 @@ export async function generateQuotePdfSnapshot(args: {
   const snapshot = await db.$transaction(async (tx) => {
     const row = await tx.qcfQuotePdfSnapshot.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         quoteId: args.quoteId,
         versionNumber: quote.versionNumber,
         templateKey: quote.templateKey ?? "b2b-standard",
@@ -176,7 +176,7 @@ export async function generateQuotePdfSnapshot(args: {
     });
     await tx.qcfActivity.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         type: "QuotePdfGenerated",
         relatedKind: "Quote",
         relatedObjectId: args.quoteId,
@@ -200,9 +200,9 @@ export async function generateQuotePdfSnapshot(args: {
   };
 }
 
-export async function listQuotePdfSnapshots(tenantId: string, quoteId: string) {
+export async function listQuotePdfSnapshots(orgId: string, quoteId: string) {
   return db.qcfQuotePdfSnapshot.findMany({
-    where: { tenantId, quoteId },
+    where: { orgId, quoteId },
     orderBy: { createdAt: "desc" },
     take: 20,
   });

@@ -16,7 +16,7 @@ import type { CannedReport, ReportRunContext } from "./types";
 async function leadAclWhere(ctx: ReportRunContext): Promise<Prisma.QcfLeadWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
   const base: Prisma.QcfLeadWhereInput = {
-    tenantId: ctx.tenantId,
+    orgId: ctx.orgId,
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
   if (!acl) return base;

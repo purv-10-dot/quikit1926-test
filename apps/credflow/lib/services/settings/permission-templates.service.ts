@@ -6,17 +6,17 @@ import type { Prisma } from "@prisma/client";
 
 const MODULE = "permission_templates";
 
-export async function listTemplates(tenantId: string) {
+export async function listTemplates(orgId: string) {
   return prisma.qcfPermissionTemplate.findMany({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { name: "asc" },
     include: { _count: { select: { users: true } } },
   });
 }
 
-export async function getTemplate(tenantId: string, id: string) {
+export async function getTemplate(orgId: string, id: string) {
   return prisma.qcfPermissionTemplate.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     include: { _count: { select: { users: true } } },
   });
 }
@@ -27,18 +27,18 @@ export async function createTemplate(opts: {
 }) {
   const { actor, data } = opts;
   return prisma.$transaction(async (tx) => {
-    const dupe = await tx.qcfPermissionTemplate.findFirst({ where: { tenantId: actor.tenantId, name: data.name } });
+    const dupe = await tx.qcfPermissionTemplate.findFirst({ where: { orgId: actor.orgId, name: data.name } });
     if (dupe) throw new SettingsConflictError(`A template named "${data.name}" already exists`);
 
     const created = await tx.qcfPermissionTemplate.create({
       data: {
-        tenantId: actor.tenantId,
+        orgId: actor.orgId,
         name: data.name,
         matrix: data.matrix as Prisma.InputJsonValue,
       },
     });
     await audit(
-      { tenantId: actor.tenantId, userId: actor.userId, module: MODULE, action: "create", resourceId: created.id, after: created },
+      { orgId: actor.orgId, userId: actor.userId, module: MODULE, action: "create", resourceId: created.id, after: created },
       tx,
     );
     return created;
@@ -52,12 +52,12 @@ export async function updateTemplate(opts: {
 }) {
   const { actor, id, patch } = opts;
   return prisma.$transaction(async (tx) => {
-    const before = await tx.qcfPermissionTemplate.findFirst({ where: { id, tenantId: actor.tenantId } });
+    const before = await tx.qcfPermissionTemplate.findFirst({ where: { id, orgId: actor.orgId } });
     if (!before) throw new SettingsConflictError("Template not found", 404);
 
     if (patch.name && patch.name !== before.name) {
       const dupe = await tx.qcfPermissionTemplate.findFirst({
-        where: { tenantId: actor.tenantId, name: patch.name, id: { not: id } },
+        where: { orgId: actor.orgId, name: patch.name, id: { not: id } },
       });
       if (dupe) throw new SettingsConflictError(`A template named "${patch.name}" already exists`);
     }
@@ -72,7 +72,7 @@ export async function updateTemplate(opts: {
 
     await audit(
       {
-        tenantId: actor.tenantId,
+        orgId: actor.orgId,
         userId: actor.userId,
         module: MODULE,
         action: "update",
@@ -89,7 +89,7 @@ export async function updateTemplate(opts: {
 export async function deleteTemplate(opts: { actor: SessionUser; id: string }) {
   const { actor, id } = opts;
   return prisma.$transaction(async (tx) => {
-    const target = await tx.qcfPermissionTemplate.findFirst({ where: { id, tenantId: actor.tenantId } });
+    const target = await tx.qcfPermissionTemplate.findFirst({ where: { id, orgId: actor.orgId } });
     if (!target) throw new SettingsConflictError("Template not found", 404);
 
     const assignedCount = await tx.qcfUserPermissionTemplate.count({ where: { templateId: id } });
@@ -101,7 +101,7 @@ export async function deleteTemplate(opts: { actor: SessionUser; id: string }) {
 
     await tx.qcfPermissionTemplate.delete({ where: { id } });
     await audit(
-      { tenantId: actor.tenantId, userId: actor.userId, module: MODULE, action: "delete", resourceId: id, before: target },
+      { orgId: actor.orgId, userId: actor.userId, module: MODULE, action: "delete", resourceId: id, before: target },
       tx,
     );
   });

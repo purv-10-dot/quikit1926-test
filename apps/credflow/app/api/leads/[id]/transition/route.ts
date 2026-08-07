@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "edit");
     const lead = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!lead || lead.tenantId !== user.tenantId) {
+    if (!lead || lead.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (lead.deletedAt) {
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Notify lead owner when stage changes — non-blocking.
     notifyLeadStageChanged({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       leadId: id,
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       event: "stage_changed",
       entityType: "lead",
       entityId: id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       before: lead as unknown as Record<string, unknown>,

@@ -17,7 +17,7 @@ export type PriceListAuditAction =
   | "items_bulk_updated";
 
 export async function logPriceListAudit(args: {
-  tenantId: string;
+  orgId: string;
   priceListId: string;
   itemId?: string | null;
   action: PriceListAuditAction;
@@ -34,7 +34,7 @@ export async function logPriceListAudit(args: {
       : (args.changes as unknown as Prisma.InputJsonValue);
   await client.qcfPriceListAuditLog.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.priceListId,
       itemId: args.itemId ?? null,
       action: args.action,
@@ -47,12 +47,12 @@ export async function logPriceListAudit(args: {
 }
 
 export async function listPriceListAudit(args: {
-  tenantId: string;
+  orgId: string;
   priceListId: string;
   page: number;
   pageSize: number;
 }) {
-  const where = { tenantId: args.tenantId, priceListId: args.priceListId };
+  const where = { orgId: args.orgId, priceListId: args.priceListId };
   const [items, total] = await Promise.all([
     db.qcfPriceListAuditLog.findMany({
       where,

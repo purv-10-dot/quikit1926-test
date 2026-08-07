@@ -22,7 +22,7 @@ export async function placeCall(opts: {
   leadId?: string;
 }) {
   const auditBase = {
-    tenantId: opts.user.tenantId,
+    orgId: opts.user.orgId,
     agentUserId: opts.user.userId,
     partyA: opts.partyA,
     partyB: opts.to,
@@ -83,13 +83,13 @@ export async function placeCall(opts: {
   // Pre-create CallLog stub for the webhook to populate later.
   if (result.callSid) {
     console.log(
-      `[call-service] upserting CrmCallLog stub callSid=${result.callSid} tenantId=${opts.user.tenantId} leadId=${opts.leadId ?? null}`,
+      `[call-service] upserting CrmCallLog stub callSid=${result.callSid} tenantId=${opts.user.orgId} leadId=${opts.leadId ?? null}`,
     );
     try {
       await prisma.qcfCallLog.upsert({
-        where: { tenantId_callSid: { tenantId: opts.user.tenantId, callSid: result.callSid } },
+        where: { orgId_callSid: { orgId: opts.user.orgId, callSid: result.callSid } },
         create: {
-          tenantId: opts.user.tenantId,
+          orgId: opts.user.orgId,
           callSid: result.callSid,
           // Mirror callSid into providerCallSid so the new poll/match path
           // (which prefers providerCallSid) finds the row.

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid query", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
     }
-    const result = await listUsers({ tenantId: user.tenantId, ...parsed.data });
+    const result = await listUsers({ orgId: user.orgId, ...parsed.data });
     return NextResponse.json(result);
   } catch (e) {
     return conflictResponse(e);

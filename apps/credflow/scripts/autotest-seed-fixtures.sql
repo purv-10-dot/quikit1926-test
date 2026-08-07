@@ -20,7 +20,7 @@ BEGIN;
 DELETE FROM app_quikcrm."CrmLead" WHERE source = 'autotest-fixture';
 
 INSERT INTO app_quikcrm."CrmLead"
-  (id, "tenantId", name, stage, status, substatus, source, "createdAt", "updatedAt")
+  (id, "orgId", name, stage, status, substatus, source, "createdAt", "updatedAt")
 VALUES
   -- R19: substatus IN ["Negotiation"] -> stage = "Negotiation"
   ('autotest-r19-match', 'cmpzc0bn70000a1xp642kgwmf', 'AUTOTEST R19 match', 'New Lead', 'Open', 'Negotiation', 'autotest-fixture', now(), now()),

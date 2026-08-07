@@ -58,17 +58,17 @@ export type PipelineBoard = {
 };
 
 export async function getPipelineBoard(args: {
-  tenantId: string;
+  orgId: string;
   aclFilter: Record<string, unknown> | null;
   /** When set, replaces the default tenant + ACL where (caller merges ACL). */
   where?: Prisma.QcfOpportunityWhereInput;
 }): Promise<PipelineBoard> {
-  const { tenantId, aclFilter } = args;
+  const { orgId, aclFilter } = args;
 
   const baseWhere: Prisma.QcfOpportunityWhereInput =
     args.where ??
     ({
-      tenantId,
+      orgId,
       deletedAt: null,
       ...(aclFilter ? (aclFilter as Prisma.QcfOpportunityWhereInput) : {}),
     } as Prisma.QcfOpportunityWhereInput);

@@ -84,7 +84,7 @@ describe("POST /api/leadsquared/webhook", () => {
     process.env.LEADSQUARED_WEBHOOK_SECRET = "s3cret";
     process.env.WEBHOOK_REQUIRE_SECRET = "true";
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.qcfLead.upsert.mockResolvedValue(asLead({ id: "lead-new", tenantId: "shield" }));
+    db.qcfLead.upsert.mockResolvedValue(asLead({ id: "lead-new", orgId: "shield" }));
 
     const { POST } = await import("@/app/api/leadsquared/webhook/route");
     const res = await POST(
@@ -104,7 +104,7 @@ describe("POST /api/leadsquared/webhook", () => {
 
   it("allows processing in dev when no secret is configured (not required)", async () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.qcfLead.upsert.mockResolvedValue(asLead({ id: "lead-dev", tenantId: "shield" }));
+    db.qcfLead.upsert.mockResolvedValue(asLead({ id: "lead-dev", orgId: "shield" }));
 
     const { POST } = await import("@/app/api/leadsquared/webhook/route");
     const res = await POST(post({ ProspectID: "P2", EmailAddress: "d@e.co" }));
@@ -144,8 +144,8 @@ describe("POST /api/leadsquared/webhook", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
     db.qcfLead.findUnique.mockResolvedValue(null);
     db.qcfLead.upsert
-      .mockResolvedValueOnce(asLead({ id: "lead-a", tenantId: "shield" }))
-      .mockResolvedValueOnce(asLead({ id: "lead-b", tenantId: "shield" }));
+      .mockResolvedValueOnce(asLead({ id: "lead-a", orgId: "shield" }))
+      .mockResolvedValueOnce(asLead({ id: "lead-b", orgId: "shield" }));
 
     const { POST } = await import("@/app/api/leadsquared/webhook/route");
     const res = await POST(

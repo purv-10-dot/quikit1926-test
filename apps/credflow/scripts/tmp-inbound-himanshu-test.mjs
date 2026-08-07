@@ -5,11 +5,11 @@
  *   npx tsx --env-file=.env.local scripts/tmp-inbound-himanshu-test.mjs
  *
  * Looks up himanshu.mishra.april1996@gmail.com's real ProspectID from the
- * LeadSquaredSyncMap, then POSTs a "Lead Modified" { Before, After } webhook
+ * QcfLeadSquaredSyncMap, then POSTs a "Lead Modified" { Before, After } webhook
  * that CHANGES stage + status (New Lead/Open -> Demo Scheduled/Demo Scheduled).
  *
  * Redis is enabled, so the webhook ENQUEUES; the worker applies the write. We
- * print the HTTP response, then poll the CrmLead to see whether stage/status
+ * print the HTTP response, then poll the QcfLead to see whether stage/status
  * actually changed. If they DON'T change -> the inbound-update-dropped bug.
  *
  * Requires: dev server (3076) + BullMQ worker + Redis up.
@@ -31,20 +31,20 @@ function sleep(ms) {
 
 async function main() {
   // 1. Find the lead + its sync-map row (ProspectID).
-  const lead = await prisma.crmLead.findFirst({
+  const lead = await prisma.qcfLead.findFirst({
     where: { email: EMAIL },
-    select: { id: true, tenantId: true, name: true, firstName: true, stage: true, status: true, phone: true, mobile: true },
+    select: { id: true, orgId: true, name: true, firstName: true, stage: true, status: true, phone: true, mobile: true },
   });
   if (!lead) {
-    console.error(`No CrmLead found with email ${EMAIL}. Aborting.`);
+    console.error(`No QcfLead found with email ${EMAIL}. Aborting.`);
     process.exit(1);
   }
-  const map = await prisma.leadSquaredSyncMap.findFirst({
+  const map = await prisma.qcfLeadSquaredSyncMap.findFirst({
     where: { crmLeadId: lead.id },
     select: { lsqProspectId: true, syncOrigin: true, lastSyncedAt: true, lastPayloadHash: true },
   });
   if (!map || !map.lsqProspectId) {
-    console.error(`No LeadSquaredSyncMap / ProspectID for lead ${lead.id}. Aborting.`);
+    console.error(`No QcfLeadSquaredSyncMap / ProspectID for lead ${lead.id}. Aborting.`);
     console.error("lead:", lead);
     process.exit(1);
   }
@@ -53,7 +53,7 @@ async function main() {
   console.log("── Target lead (BEFORE) ─────────────────────────────");
   console.log({
     crmLeadId: lead.id,
-    tenantId: lead.tenantId,
+    orgId: lead.orgId,
     name: lead.name,
     firstName: lead.firstName,
     stage: lead.stage,
@@ -77,7 +77,7 @@ async function main() {
   // Snapshot activities BEFORE the webhook so we can detect any NEW disposition
   // entry created by the inbound path (feature under test — #3).
   const activityIdsBefore = new Set(
-    (await prisma.crmActivity.findMany({ where: { leadId: lead.id }, select: { id: true } })).map(
+    (await prisma.qcfActivity.findMany({ where: { leadId: lead.id }, select: { id: true } })).map(
       (a) => a.id,
     ),
   );
@@ -109,14 +109,14 @@ async function main() {
   console.log(`\nHTTP ${res.status} ${res.statusText}`);
   console.log("response body:", text);
 
-  // 3. Poll the CrmLead (Redis path enqueues; worker applies async).
-  console.log("\n── Polling CrmLead for stage/status change (up to 10s) ──");
+  // 3. Poll the QcfLead (Redis path enqueues; worker applies async).
+  console.log("\n── Polling QcfLead for stage/status change (up to 10s) ──");
   let after = lead;
   let changed = false;
   const start = Date.now();
   while (Date.now() - start < 10_000) {
     await sleep(500);
-    after = await prisma.crmLead.findUnique({
+    after = await prisma.qcfLead.findUnique({
       where: { id: lead.id },
       select: { id: true, stage: true, status: true },
     });
@@ -130,7 +130,7 @@ async function main() {
   console.log({ crmLeadId: after.id, stage: after.stage, status: after.status });
 
   // 4. Re-read the map to see how the guard treated it.
-  const mapAfter = await prisma.leadSquaredSyncMap.findFirst({
+  const mapAfter = await prisma.qcfLeadSquaredSyncMap.findFirst({
     where: { crmLeadId: lead.id },
     select: { syncOrigin: true, lastSyncedAt: true, lastPayloadHash: true },
   });
@@ -140,7 +140,7 @@ async function main() {
   let newActivities = [];
   const aStart = Date.now();
   while (Date.now() - aStart < 6000) {
-    const acts = await prisma.crmActivity.findMany({
+    const acts = await prisma.qcfActivity.findMany({
       where: { leadId: lead.id },
       select: { id: true, type: true, subject: true, outcome: true, detailNotes: true, occurredAt: true, ownerName: true },
       orderBy: { occurredAt: "desc" },
@@ -154,8 +154,8 @@ async function main() {
   const stageChanged = after.stage === TARGET_STAGE;
 
   console.log("\n══ RESULTS ══════════════════════════════════════════");
-  console.log(`1. CrmLead.status updated -> '${TARGET_STATUS}'? ${statusChanged ? "YES [OK]" : "NO [X]"}  (now: '${after.status}')`);
-  console.log(`2. CrmLead.stage  updated -> '${TARGET_STAGE}'?  ${stageChanged ? "YES [OK]" : "NO [X]"}  (now: '${after.stage}')`);
+  console.log(`1. QcfLead.status updated -> '${TARGET_STATUS}'? ${statusChanged ? "YES [OK]" : "NO [X]"}  (now: '${after.status}')`);
+  console.log(`2. QcfLead.stage  updated -> '${TARGET_STAGE}'?  ${stageChanged ? "YES [OK]" : "NO [X]"}  (now: '${after.stage}')`);
   console.log(`3. New Call Disposition / activity entry created? ${newActivities.length > 0 ? "YES [OK]" : "NO [X]"}`);
   if (newActivities.length > 0) {
     for (const a of newActivities) {
@@ -163,7 +163,7 @@ async function main() {
       if (a.detailNotes) console.log(`       notes: ${a.detailNotes.replace(/\n/g, " | ")}`);
     }
   } else {
-    console.log("     (no new row in CrmActivity for this lead — the inbound path did NOT log a disposition/timeline entry)");
+    console.log("     (no new row in QcfActivity for this lead — the inbound path did NOT log a disposition/timeline entry)");
   }
 }
 

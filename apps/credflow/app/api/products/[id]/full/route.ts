@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
 
-    const record = await getFullProductRecord(user.tenantId, id);
+    const record = await getFullProductRecord(user.orgId, id);
     if (!record) {
       return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
     }

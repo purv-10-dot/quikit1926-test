@@ -48,7 +48,7 @@ export async function POST(
     const isAdmin = user.role === "Administrator";
 
     const opp = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
       select: { id: true, accountId: true, stage: true, name: true },
     });
     if (!opp) return err("Not found", 404);
@@ -75,7 +75,7 @@ export async function POST(
 
     const updated = await db.$transaction(async (tx) => {
       const next = await tx.qcfOpportunity.update({
-        where: { id, tenantId: user.tenantId },
+        where: { id, orgId: user.orgId },
         data: {
           stage: parsed.data.toStage,
           lastStageChangeAt: new Date(),
@@ -88,7 +88,7 @@ export async function POST(
         },
       });
       await recordTransition(tx, {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         opportunityId: id,
         opportunityName: opp.name,
         fromStage: opp.stage,
@@ -105,7 +105,7 @@ export async function POST(
     // ── Dedicated opportunity notifications ───────────────────────────────
     if (parsed.data.toStage === "ClosedWon") {
       notifyOpportunityWon({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         opportunityId: id,
         opportunityName: opp.name,
         ownerId: updated.ownerId,
@@ -117,7 +117,7 @@ export async function POST(
       }).catch((e) => console.error("[notifications] opportunity won", e));
     } else if (parsed.data.toStage === "ClosedLost") {
       notifyOpportunityLost({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         opportunityId: id,
         opportunityName: opp.name,
         ownerId: updated.ownerId,
@@ -128,7 +128,7 @@ export async function POST(
       }).catch((e) => console.error("[notifications] opportunity lost", e));
     } else {
       notifyOpportunityStageChanged({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         opportunityId: id,
         opportunityName: opp.name,
         ownerId: updated.ownerId,
@@ -147,7 +147,7 @@ export async function POST(
       event: oppEvent,
       entityType: "opportunity",
       entityId: id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       before: opp as unknown as Record<string, unknown>,

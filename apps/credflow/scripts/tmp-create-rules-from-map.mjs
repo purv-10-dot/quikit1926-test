@@ -41,12 +41,12 @@ for (const line of raw.split(/\r?\n/)) {
 console.log(`Rules to create: ${pairs.length}`);
 
 // resolve tenant + draft version
-const tenantId =
+const orgId =
   process.env.TENANT_ID ??
-  (await prisma.crmFormSet.findFirst({ where: { surface: "call_disposition", isDefault: true }, select: { tenantId: true } }))?.tenantId;
-const set = await prisma.crmFormSet.findFirst({ where: { tenantId, surface: "call_disposition", isDefault: true }, select: { id: true } });
-const draft = await prisma.crmFormSetVersion.findFirst({ where: { formSetId: set.id, status: "draft" }, orderBy: { versionNumber: "desc" }, select: { id: true, versionNumber: true } });
-console.log(`Tenant ${tenantId} · draft v${draft.versionNumber}`);
+  (await prisma.qcfFormSet.findFirst({ where: { surface: "call_disposition", isDefault: true }, select: { orgId: true } }))?.orgId;
+const set = await prisma.qcfFormSet.findFirst({ where: { orgId, surface: "call_disposition", isDefault: true }, select: { id: true } });
+const draft = await prisma.qcfFormSetVersion.findFirst({ where: { formSetId: set.id, status: "draft" }, orderBy: { versionNumber: "desc" }, select: { id: true, versionNumber: true } });
+console.log(`Tenant ${orgId} · draft v${draft.versionNumber}`);
 console.log(`Sample: WHEN Status is "${pairs[0].status}" -> Set Contact Stage to "${pairs[0].stage}"`);
 
 if (!APPLY) {

@@ -1012,7 +1012,7 @@ function TriggerDebuggerSection() {
             │    └─ createNotification()
             │         ├─ prisma.qcfNotification.create()  (awaited)
             │         ├─ publishNotificationEvent()       (fire-and-forget)
-            │         │    └─ redis.publish("quikcrm:notifications:{tenantId}:{userId}")
+            │         │    └─ redis.publish("quikcrm:notifications:{orgId}:{userId}")
             │         │         └─ EventSource → badge updates (~100ms)
             │         └─ sendNotificationEmail()          (fire-and-forget)
             │

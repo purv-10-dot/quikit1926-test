@@ -41,7 +41,7 @@ const baseLead: any = {
 };
 
 const baseCtx = {
-  tenantId: TENANT,
+  orgId: TENANT,
   leadId: baseLead.id,
   activityId: ACTIVITY_ID,
   activityDatetime: ACTIVITY_DT,
@@ -51,7 +51,7 @@ const baseCtx = {
 function makeRule(overrides: Record<string, unknown> = {}) {
   return {
     id: "rule_001",
-    tenantId: TENANT,
+    orgId: TENANT,
     name: "Test Rule",
     trigger: {
       type: "activity_logged",
@@ -96,7 +96,7 @@ describe("FR-D3 — Disposition Automation Rule Engine", () => {
       }),
     );
     // Outbound sync fires after the status update (this bug-fix's coverage).
-    expect(triggerOutboundSync).toHaveBeenCalledWith({ tenantId: TENANT, crmLeadId: baseLead.id });
+    expect(triggerOutboundSync).toHaveBeenCalledWith({ orgId: TENANT, crmLeadId: baseLead.id });
   });
 
   // Coverage: no outbound sync when the update never happens (no match).
@@ -183,7 +183,7 @@ describe("FR-D3 — Disposition Automation Rule Engine", () => {
           dueDate: ACTIVITY_DT,
           subject: "Callback: Test Lead",
           leadId: baseLead.id,
-          tenantId: TENANT,
+          orgId: TENANT,
         }),
       }),
     );
@@ -236,7 +236,7 @@ describe("FR-D3 — Disposition Automation Rule Engine", () => {
     expect(db.qcfAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          tenantId: TENANT,
+          orgId: TENANT,
           userId: null,
           module: "leads",
           action: "status_changed",

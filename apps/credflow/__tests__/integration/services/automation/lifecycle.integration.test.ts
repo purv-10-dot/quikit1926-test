@@ -30,17 +30,17 @@ import {
 const TENANT = `int_s1_${Date.now()}`;
 const OTHER_TENANT = `int_s1_other_${Date.now()}`;
 
-async function newDraft(tenantId = TENANT, name = "Rule") {
+async function newDraft(orgId = TENANT, name = "Rule") {
   return integrationPrisma.qcfWorkflowDefinition.create({
-    data: { tenantId, name, status: "Draft", triggerType: "trigger_lead_updated", graphNodes: [], graphEdges: [] },
+    data: { orgId, name, status: "Draft", triggerType: "trigger_lead_updated", graphNodes: [], graphEdges: [] },
   });
 }
 const read = (id: string) => integrationPrisma.qcfWorkflowDefinition.findUnique({ where: { id } });
 
 afterAll(async () => {
   for (const t of [TENANT, OTHER_TENANT]) {
-    await integrationPrisma.qcfAutomationPendingStep.deleteMany({ where: { tenantId: t } });
-    await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { tenantId: t } });
+    await integrationPrisma.qcfAutomationPendingStep.deleteMany({ where: { orgId: t } });
+    await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { orgId: t } });
   }
   await integrationPrisma.$disconnect();
 });

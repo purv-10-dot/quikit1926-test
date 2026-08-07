@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     const lead = await prisma.qcfLead.findFirst({
-      where: { id: dto.leadId, tenantId: user.tenantId },
+      where: { id: dto.leadId, orgId: user.orgId },
       select: { id: true, accountId: true },
     });
     if (!lead) {
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     if (dto.opportunityId) {
       const opp = await prisma.qcfOpportunity.findFirst({
-        where: { id: dto.opportunityId, tenantId: user.tenantId },
+        where: { id: dto.opportunityId, orgId: user.orgId },
         select: { id: true },
       });
       if (!opp) {
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
 
     const created = await logActivity({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       ownerId: dto.ownerId ?? user.userId,
       type: dto.activityCode,
@@ -78,10 +78,10 @@ export async function POST(req: NextRequest) {
       leadId: dto.leadId,
     });
 
-    scheduleLeadScoreRecalc(user.tenantId, dto.leadId);
+    scheduleLeadScoreRecalc(user.orgId, dto.leadId);
 
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
-    const row = await toListRow(user.tenantId, created, tz);
+    const row = await toListRow(user.orgId, created, tz);
     return NextResponse.json({ success: true, data: row }, { status: 201 });
   } catch (e) {
     return errorResponse(e);

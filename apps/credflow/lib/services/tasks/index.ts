@@ -97,7 +97,7 @@ export function buildTaskListWhere(
 }
 
 function buildListWhere(user: SessionUser, q: ListTasksQuery): Prisma.QcfTaskWhereInput {
-  const where: Prisma.QcfTaskWhereInput = { tenantId: user.tenantId };
+  const where: Prisma.QcfTaskWhereInput = { orgId: user.orgId };
   const ands: Prisma.QcfTaskWhereInput[] = [];
 
   if (q.status) where.status = q.status;
@@ -155,7 +155,7 @@ export async function listTasks(user: SessionUser, q: ListTasksQuery) {
 }
 
 export async function getTask(user: SessionUser, id: string) {
-  return prisma.qcfTask.findFirst({ where: { id, tenantId: user.tenantId } });
+  return prisma.qcfTask.findFirst({ where: { id, orgId: user.orgId } });
 }
 
 function leadIdFromRelation(input: {
@@ -172,7 +172,7 @@ function leadIdFromRelation(input: {
 
 export async function createTask(user: SessionUser, input: CreateTaskInput) {
   const data: Prisma.QcfTaskUncheckedCreateInput = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     subject: input.subject,
     taskType: input.taskType ?? null,
     priority: input.priority ?? "Medium",
@@ -193,7 +193,7 @@ export async function createTask(user: SessionUser, input: CreateTaskInput) {
   const taskLeadId = leadIdFromRelation(input);
   if (taskLeadId) {
     await touchLeadLastActivity({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       leadId: taskLeadId,
       label: "Task",
     });
@@ -220,7 +220,7 @@ export async function updateTask(
   patch: UpdateTaskInput,
   options: UpdateOptions = {},
 ) {
-  const existing = await prisma.qcfTask.findFirst({ where: { id, tenantId: user.tenantId } });
+  const existing = await prisma.qcfTask.findFirst({ where: { id, orgId: user.orgId } });
   if (!existing) {
     const err = new Error("Task not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -272,7 +272,7 @@ export async function updateTask(
 
 export async function deleteTask(user: SessionUser, id: string) {
   // Tenant-scoped delete; deleteMany returns count so we can detect the 404.
-  const res = await prisma.qcfTask.deleteMany({ where: { id, tenantId: user.tenantId } });
+  const res = await prisma.qcfTask.deleteMany({ where: { id, orgId: user.orgId } });
   if (res.count === 0) {
     const err = new Error("Task not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -285,7 +285,7 @@ export async function snoozeTask(
   id: string,
   newDueDate: Date,
 ): Promise<{ task: Awaited<ReturnType<typeof prisma.qcfTask.update>>; previousDueDate: Date | null }> {
-  const existing = await prisma.qcfTask.findFirst({ where: { id, tenantId: user.tenantId } });
+  const existing = await prisma.qcfTask.findFirst({ where: { id, orgId: user.orgId } });
   if (!existing) {
     const err = new Error("Task not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -303,7 +303,7 @@ export async function snoozeTask(
   if (existing.relatedKind && existing.relatedObjectId) {
     await prisma.qcfActivity.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         type: "TaskSnooze",
         relatedKind: existing.relatedKind,
         relatedObjectId: existing.relatedObjectId,
@@ -321,7 +321,7 @@ export async function snoozeTask(
 }
 
 export async function advancedFilter(user: SessionUser, input: AdvancedFilterInput) {
-  const where: Prisma.QcfTaskWhereInput = { tenantId: user.tenantId };
+  const where: Prisma.QcfTaskWhereInput = { orgId: user.orgId };
   const ands: Prisma.QcfTaskWhereInput[] = [];
   if (input.status?.length) ands.push({ status: { in: input.status } });
   if (input.priority?.length) ands.push({ priority: { in: input.priority } });
@@ -369,7 +369,7 @@ async function writeStatusChangeActivity(
   if (!task.relatedKind || !task.relatedObjectId) return;
   await prisma.qcfActivity.create({
     data: {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       type: "TaskStatusChange",
       relatedKind: task.relatedKind,
       relatedObjectId: task.relatedObjectId,
@@ -404,7 +404,7 @@ async function writeReassignmentActivity(
   };
   await prisma.qcfActivity.create({
     data: {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       type: "TaskReassignment",
       relatedKind: task.relatedKind,
       relatedObjectId: task.relatedObjectId,
@@ -428,7 +428,7 @@ async function writeReassignmentActivity(
  * unique constraint after the schema overhaul.
  */
 export async function findExistingFollowUpTask(opts: {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   dueDate: Date;
   callLogCreatedAt: Date;
@@ -437,7 +437,7 @@ export async function findExistingFollowUpTask(opts: {
   const windowEnd = new Date(opts.callLogCreatedAt.getTime() + 2 * 60 * 1000);
   return prisma.qcfTask.findFirst({
     where: {
-      tenantId: opts.tenantId,
+      orgId: opts.orgId,
       leadId: opts.leadId,
       status: "Open",
       dueDate: opts.dueDate,

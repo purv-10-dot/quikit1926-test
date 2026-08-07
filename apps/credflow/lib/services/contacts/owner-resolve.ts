@@ -10,11 +10,11 @@ import { prisma } from "@/lib/db/prisma";
  * is created/updated — there is no rename-propagation hook today.
  */
 export async function resolveOwnerForTenant(
-  tenantId: string,
+  orgId: string,
   ownerId: string,
 ): Promise<{ ownerId: string; ownerName: string }> {
   const m = await prisma.orgMember.findFirst({
-    where: { orgId: tenantId, userId: ownerId, status: "active" },
+    where: { orgId: orgId, userId: ownerId, status: "active" },
     select: {
       user: { select: { id: true, firstName: true, lastName: true, email: true } },
     },

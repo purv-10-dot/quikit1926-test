@@ -11,7 +11,7 @@ type FolderBreadcrumbRow = {
 };
 
 export async function buildFolderBreadcrumbs(
-  tenantId: string,
+  orgId: string,
   folderId: string | null,
 ): Promise<BreadcrumbItem[]> {
   if (!folderId) return [ROOT_CRUMB];
@@ -27,7 +27,7 @@ export async function buildFolderBreadcrumbs(
     seen.add(currentId);
 
     const row: FolderBreadcrumbRow | null = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: currentId, tenantId, deletedAt: null },
+      where: { id: currentId, orgId, deletedAt: null },
       select: { id: true, name: true, parentFolderId: true },
     });
     if (!row) break;

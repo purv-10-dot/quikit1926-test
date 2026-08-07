@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 100)));
 
     const where: Prisma.QcfLeadWhereInput = {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       accountId: id,
       deletedAt: null,
     };

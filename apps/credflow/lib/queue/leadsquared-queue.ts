@@ -18,7 +18,7 @@ const ENQUEUE_TIMEOUT = Symbol("enqueue-timeout");
  * echo loop the loop guard is there to prevent.
  */
 export interface LeadSquaredSyncJobData {
-  tenantId: string;
+  orgId: string;
   crmLeadId: string;
   origin: SyncOrigin;
 }
@@ -50,12 +50,12 @@ export function getLeadSquaredQueue(): Queue<LeadSquaredSyncJobData> {
  * *Safe wrapper on the request path.
  */
 export async function enqueueLeadSquaredSync(input: {
-  tenantId: string;
+  orgId: string;
   crmLeadId: string;
 }): Promise<string> {
   const queue = getLeadSquaredQueue();
   const data: LeadSquaredSyncJobData = {
-    tenantId: input.tenantId,
+    orgId: input.orgId,
     crmLeadId: input.crmLeadId,
     origin: "crm", // hardcoded — this queue only ever pushes CRM-authored changes
   };
@@ -75,14 +75,14 @@ export async function enqueueLeadSquaredSync(input: {
  * swallowed). Mirrors `enqueueImportSafe`.
  */
 export async function enqueueLeadSquaredSyncSafe(
-  input: { tenantId: string; crmLeadId: string },
+  input: { orgId: string; crmLeadId: string },
   opts: { timeoutMs?: number } = {},
 ): Promise<string | null> {
   // Redis off → outbound sync cannot run. Fail LOUDLY (not silently) so a dropped
   // lead is visible; a reconciliation/backfill can then re-sync it.
   if (!isRedisEnabled()) {
     logSync("warn", "outbound.enqueue.dropped", {
-      tenantId: input.tenantId,
+      orgId: input.orgId,
       crmLeadId: input.crmLeadId,
       reason: "redis-disabled",
     });
@@ -104,7 +104,7 @@ export async function enqueueLeadSquaredSyncSafe(
   const jobId = typeof raced === "string" ? raced : null;
   if (!jobId) {
     logSync("warn", "outbound.enqueue.dropped", {
-      tenantId: input.tenantId,
+      orgId: input.orgId,
       crmLeadId: input.crmLeadId,
       reason: raced === ENQUEUE_TIMEOUT ? "timeout" : "error",
     });

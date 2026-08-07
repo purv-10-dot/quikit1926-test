@@ -64,11 +64,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
 
-    const quote = await getQuote(user.tenantId, id);
+    const quote = await getQuote(user.orgId, id);
     if (!quote) return fail(404, "Quote not found");
 
     try {
-      await assertQuoteApprovedForSend(user.tenantId, id);
+      await assertQuoteApprovedForSend(user.orgId, id);
     } catch (e: unknown) {
       if (e instanceof QuoteApprovalError) return fail(e.statusCode, e.message);
       throw e;
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       "";
 
     const portal = await createQuotePortalLink({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: quote.id,
       userId: user.userId,
       expiresInDays: 30,
@@ -104,13 +104,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     await generateQuotePdfSnapshot({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: quote.id,
       userId: user.userId,
       userName: user.name ?? null,
     }).catch(() => null);
 
-    const company = await getTenantCompanyBranding(user.tenantId);
+    const company = await getTenantCompanyBranding(user.orgId);
     const validUntil = quote.effectiveTo
       ? new Date(quote.effectiveTo).toLocaleDateString("en-IN")
       : "—";
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       await markQuoteSent({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         userName: user.name ?? null,
         quoteId: quote.id,
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     await recordQuoteEngagement({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: quote.id,
       eventType: "quote_sent",
       metadata: { recipients: parsed.data.to, portalUrl: portal.url },
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Dedicated quote sent notification.
     notifyQuoteSent({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: quote.id,
       quoteNumber: String(quote.quoteNumber ?? quote.id),
       ownerId: quote.ownerId,
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       event: "sent",
       entityType: "quote",
       entityId: quote.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: quote as unknown as Record<string, unknown>,

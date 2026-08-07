@@ -14,7 +14,7 @@ export default async function MyProfilePage() {
     }),
     prisma.orgMember.findUnique({
       where: {
-        orgId_userId: { orgId: session.tenantId, userId: session.userId },
+        orgId_userId: { orgId: session.orgId, userId: session.userId },
       },
       select: { role: true, status: true },
     }),
@@ -73,7 +73,7 @@ export default async function MyProfilePage() {
           <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <Detail k="Role" v={membership?.role ?? session.role} />
             <Detail k="Status" v={membership?.status ?? "—"} />
-            <Detail k="Tenant" v={session.tenantId} />
+            <Detail k="Tenant" v={session.orgId} />
             <Detail k="User ID" v={session.userId} mono />
           </dl>
         </CardBody>

@@ -7,9 +7,9 @@
  * NextAuth session into the legacy SessionUser shape so the ported code
  * (~70 API route files + ~40 page components) keeps working unchanged.
  *
- * Legacy SessionUser was `{ userId, orgId, role, email, name }`. The bulk
- * porter renamed `orgId → tenantId` everywhere, so this shim returns
- * `{ userId, tenantId, role, email, name }` — matches types/permission.ts.
+ * SessionUser is `{ userId, orgId, role, email, name }` — matches
+ * types/permission.ts. The standalone port briefly called this field
+ * `tenantId`; it was converted back to the platform-standard `orgId`.
  */
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
@@ -61,7 +61,7 @@ async function readSession(): Promise<SessionUser | null> {
 
   return {
     userId: s.user.id,
-    tenantId: s.user.orgId,
+    orgId: s.user.orgId,
     role: mapRole(membership.role),
     email: s.user.email ?? "",
     name: s.user.name ?? "",

@@ -18,7 +18,7 @@ export async function POST(
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
     const data = await requestQuoteApproval({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: id,
       userId: user.userId,
       userName: user.name ?? null,

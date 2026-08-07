@@ -29,14 +29,14 @@ export async function GET(
 
     const format = (req.nextUrl.searchParams.get("format") ?? "").toLowerCase();
     if (format === "html") {
-      const html = await buildQuotePreviewHtml(user.tenantId, id);
+      const html = await buildQuotePreviewHtml(user.orgId, id);
       return new NextResponse(html, {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
-    const { fileName, buffer } = await buildQuotePreviewPdfBuffer(user.tenantId, id);
+    const { fileName, buffer } = await buildQuotePreviewPdfBuffer(user.orgId, id);
     // NextResponse BodyInit typing doesn't accept Buffer, but runtime does accept Uint8Array.
     const bytes = new Uint8Array(buffer);
     return new NextResponse(bytes, {
@@ -68,7 +68,7 @@ export async function POST(
     await assertModule(user, "quotes", "edit");
 
     const result = await generateQuotePdfSnapshot({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: id,
       userId: user.userId,
       userName: user.name ?? null,

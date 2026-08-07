@@ -25,33 +25,33 @@ interface SettingsTree {
   [k: string]: unknown;
 }
 
-async function readTree(tenantId: string): Promise<SettingsTree> {
-  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+async function readTree(orgId: string): Promise<SettingsTree> {
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   return ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
 }
 
-async function writeTree(tenantId: string, next: SettingsTree): Promise<void> {
+async function writeTree(orgId: string, next: SettingsTree): Promise<void> {
   await prisma.qcfOrgWorkspaceSettings.upsert({
-    where: { tenantId },
-    create: { tenantId, settings: next as object },
+    where: { orgId },
+    create: { orgId, settings: next as object },
     update: { settings: next as object },
   });
 }
 
 /** Returns the union of standard + custom fields, with custom fields appended after standards. */
-export async function listLeadFields(tenantId: string): Promise<LeadFieldDefinition[]> {
-  const tree = await readTree(tenantId);
+export async function listLeadFields(orgId: string): Promise<LeadFieldDefinition[]> {
+  const tree = await readTree(orgId);
   const custom = Array.isArray(tree[SETTINGS_PATH]) ? (tree[SETTINGS_PATH] as LeadFieldDefinition[]) : [];
   return [...STANDARD_LEAD_FIELDS, ...custom];
 }
 
-export async function listCustomFields(tenantId: string): Promise<LeadFieldDefinition[]> {
-  const tree = await readTree(tenantId);
+export async function listCustomFields(orgId: string): Promise<LeadFieldDefinition[]> {
+  const tree = await readTree(orgId);
   return Array.isArray(tree[SETTINGS_PATH]) ? (tree[SETTINGS_PATH] as LeadFieldDefinition[]) : [];
 }
 
-export async function getField(tenantId: string, key: string): Promise<LeadFieldDefinition | null> {
-  const all = await listLeadFields(tenantId);
+export async function getField(orgId: string, key: string): Promise<LeadFieldDefinition | null> {
+  const all = await listLeadFields(orgId);
   return all.find((f) => f.key === key) ?? null;
 }
 
@@ -61,25 +61,25 @@ export class FieldDefError extends Error {
   }
 }
 
-export async function createCustomField(tenantId: string, def: LeadFieldDefinition): Promise<LeadFieldDefinition> {
+export async function createCustomField(orgId: string, def: LeadFieldDefinition): Promise<LeadFieldDefinition> {
   if (!isValidFieldKey(def.key)) {
     throw new FieldDefError("Invalid field key. Use lowercase letters/digits/underscore, ≤41 chars, leading letter.");
   }
   if (STANDARD_KEYS.has(def.key)) {
     throw new FieldDefError(`"${def.key}" is reserved by a standard field.`);
   }
-  const tree = await readTree(tenantId);
+  const tree = await readTree(orgId);
   const list = Array.isArray(tree[SETTINGS_PATH]) ? (tree[SETTINGS_PATH] as LeadFieldDefinition[]) : [];
   if (list.some((f) => f.key === def.key)) {
     throw new FieldDefError(`A field with key "${def.key}" already exists.`, 409);
   }
   const next: LeadFieldDefinition = { ...def, isStandard: false };
-  await writeTree(tenantId, { ...tree, [SETTINGS_PATH]: [...list, next] });
+  await writeTree(orgId, { ...tree, [SETTINGS_PATH]: [...list, next] });
   return next;
 }
 
 export async function updateCustomField(
-  tenantId: string,
+  orgId: string,
   key: string,
   patch: Partial<LeadFieldDefinition>,
 ): Promise<LeadFieldDefinition> {
@@ -95,7 +95,7 @@ export async function updateCustomField(
     // standard-field overrides are out of scope. Surface a clear error.
     throw new FieldDefError("Standard-field overrides not supported in this iteration. Use custom fields.", 422);
   }
-  const tree = await readTree(tenantId);
+  const tree = await readTree(orgId);
   const list = Array.isArray(tree[SETTINGS_PATH]) ? (tree[SETTINGS_PATH] as LeadFieldDefinition[]) : [];
   const idx = list.findIndex((f) => f.key === key);
   if (idx === -1) throw new FieldDefError("Field not found.", 404);
@@ -107,17 +107,17 @@ export async function updateCustomField(
   const updated: LeadFieldDefinition = { ...list[idx]!, ...patch, isStandard: false };
   const nextList = [...list];
   nextList[idx] = updated;
-  await writeTree(tenantId, { ...tree, [SETTINGS_PATH]: nextList });
+  await writeTree(orgId, { ...tree, [SETTINGS_PATH]: nextList });
   return updated;
 }
 
-export async function deleteCustomField(tenantId: string, key: string): Promise<void> {
+export async function deleteCustomField(orgId: string, key: string): Promise<void> {
   if (STANDARD_KEYS.has(key)) {
     throw new FieldDefError("Cannot delete a standard field.");
   }
-  const tree = await readTree(tenantId);
+  const tree = await readTree(orgId);
   const list = Array.isArray(tree[SETTINGS_PATH]) ? (tree[SETTINGS_PATH] as LeadFieldDefinition[]) : [];
   const next = list.filter((f) => f.key !== key);
   if (next.length === list.length) throw new FieldDefError("Field not found.", 404);
-  await writeTree(tenantId, { ...tree, [SETTINGS_PATH]: next });
+  await writeTree(orgId, { ...tree, [SETTINGS_PATH]: next });
 }

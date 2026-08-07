@@ -45,7 +45,7 @@ export async function ensureTableExists(): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS app_quikcredflow.crm_notification_rule (
       id               TEXT         PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      tenant_id        TEXT         NOT NULL,
+      org_id        TEXT         NOT NULL,
       name             VARCHAR(200) NOT NULL,
       description      TEXT,
       entity_type      VARCHAR(50)  NOT NULL DEFAULT 'lead',
@@ -66,7 +66,7 @@ export async function ensureTableExists(): Promise<void> {
   // Statement 2: index (separate call — see note above)
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS idx_crm_notification_rule_lookup
-      ON app_quikcredflow.crm_notification_rule(tenant_id, entity_type, is_active)
+      ON app_quikcredflow.crm_notification_rule(org_id, entity_type, is_active)
   `);
 
   _tableReady = true;
@@ -76,7 +76,7 @@ export async function ensureTableExists(): Promise<void> {
 
 interface RuleRow {
   id: string;
-  tenant_id: string;
+  org_id: string;
   name: string;
   description: string | null;
   entity_type: string;
@@ -96,7 +96,7 @@ interface RuleRow {
 function toRule(row: RuleRow): NotificationRule {
   return {
     id: row.id,
-    tenantId: row.tenant_id,
+    orgId: row.org_id,
     name: row.name,
     description: row.description,
     entityType: row.entity_type as EntityType,
@@ -116,24 +116,24 @@ function toRule(row: RuleRow): NotificationRule {
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-export async function listRules(tenantId: string): Promise<NotificationRule[]> {
+export async function listRules(orgId: string): Promise<NotificationRule[]> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
     SELECT * FROM app_quikcredflow.crm_notification_rule
-    WHERE tenant_id = ${tenantId}
+    WHERE org_id = ${orgId}
     ORDER BY created_at DESC
   `;
   return rows.map(toRule);
 }
 
 export async function getActiveRulesForEntity(
-  tenantId: string,
+  orgId: string,
   entityType: EntityType,
 ): Promise<NotificationRule[]> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
     SELECT * FROM app_quikcredflow.crm_notification_rule
-    WHERE tenant_id = ${tenantId}
+    WHERE org_id = ${orgId}
       AND entity_type = ${entityType}
       AND is_active = TRUE
     ORDER BY created_at ASC
@@ -142,20 +142,20 @@ export async function getActiveRulesForEntity(
 }
 
 export async function getRuleById(
-  tenantId: string,
+  orgId: string,
   id: string,
 ): Promise<NotificationRule | null> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
     SELECT * FROM app_quikcredflow.crm_notification_rule
-    WHERE id = ${id} AND tenant_id = ${tenantId}
+    WHERE id = ${id} AND org_id = ${orgId}
     LIMIT 1
   `;
   return rows[0] ? toRule(rows[0]) : null;
 }
 
 export interface CreateRuleInput {
-  tenantId: string;
+  orgId: string;
   name: string;
   description?: string | null;
   entityType: EntityType;
@@ -174,11 +174,11 @@ export async function createRule(input: CreateRuleInput): Promise<NotificationRu
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
     INSERT INTO app_quikcredflow.crm_notification_rule
-      (tenant_id, name, description, entity_type, field_name, condition_type,
+      (org_id, name, description, entity_type, field_name, condition_type,
        condition_value, notify_in_app, notify_email, recipient_type,
        recipient_value, message_template, is_active)
     VALUES
-      (${input.tenantId}, ${input.name}, ${input.description ?? null},
+      (${input.orgId}, ${input.name}, ${input.description ?? null},
        ${input.entityType}, ${input.fieldName ?? null}, ${input.conditionType},
        ${input.conditionValue ?? null}, ${input.notifyInApp}, ${input.notifyEmail},
        ${input.recipientType}, ${input.recipientValue ?? null},
@@ -206,11 +206,11 @@ export interface UpdateRuleInput {
 }
 
 export async function updateRule(
-  tenantId: string,
+  orgId: string,
   id: string,
   input: UpdateRuleInput,
 ): Promise<NotificationRule | null> {
-  const existing = await getRuleById(tenantId, id); // ensureTableExists called inside
+  const existing = await getRuleById(orgId, id); // ensureTableExists called inside
   if (!existing) return null;
 
   const merged = {
@@ -243,23 +243,23 @@ export async function updateRule(
         message_template = ${merged.messageTemplate},
         is_active        = ${merged.isActive},
         updated_at       = NOW()
-    WHERE id = ${id} AND tenant_id = ${tenantId}
+    WHERE id = ${id} AND org_id = ${orgId}
     RETURNING *
   `;
   return rows[0] ? toRule(rows[0]) : null;
 }
 
-export async function deleteRule(tenantId: string, id: string): Promise<boolean> {
+export async function deleteRule(orgId: string, id: string): Promise<boolean> {
   await ensureTableExists();
   await prisma.$executeRaw`
     DELETE FROM app_quikcredflow.crm_notification_rule
-    WHERE id = ${id} AND tenant_id = ${tenantId}
+    WHERE id = ${id} AND org_id = ${orgId}
   `;
   return true;
 }
 
 export async function toggleRuleActive(
-  tenantId: string,
+  orgId: string,
   id: string,
   isActive: boolean,
 ): Promise<NotificationRule | null> {
@@ -268,17 +268,17 @@ export async function toggleRuleActive(
     UPDATE app_quikcredflow.crm_notification_rule
     SET is_active  = ${isActive},
         updated_at = NOW()
-    WHERE id = ${id} AND tenant_id = ${tenantId}
+    WHERE id = ${id} AND org_id = ${orgId}
     RETURNING *
   `;
   return rows[0] ? toRule(rows[0]) : null;
 }
 
-export async function countRules(tenantId: string): Promise<number> {
+export async function countRules(orgId: string): Promise<number> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<[{ count: bigint }]>`
     SELECT COUNT(*) as count FROM app_quikcredflow.crm_notification_rule
-    WHERE tenant_id = ${tenantId}
+    WHERE org_id = ${orgId}
   `;
   return Number(rows[0]?.count ?? 0);
 }

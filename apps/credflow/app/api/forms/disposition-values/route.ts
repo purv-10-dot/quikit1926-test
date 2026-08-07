@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const data = await getDispositionValues(user.tenantId, parsed.data.activityId);
+    const data = await getDispositionValues(user.orgId, parsed.data.activityId);
     return NextResponse.json({ success: true, data });
   } catch (e) {
     return errorResponse(e);

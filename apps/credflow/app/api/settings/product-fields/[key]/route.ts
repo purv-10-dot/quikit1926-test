@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
     const { key } = await params;
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const f = (await listProductFields(user.tenantId)).find((x) => x.key === key);
+    const f = (await listProductFields(user.orgId)).find((x) => x.key === key);
     if (!f) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(f);
   } catch (e) {
@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ke
         { status: 400 },
       );
     }
-    const updated = await updateCustomProductField(user.tenantId, key, parsed.data);
+    const updated = await updateCustomProductField(user.orgId, key, parsed.data);
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof ProductFieldDefError) {
@@ -53,7 +53,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "settings", "delete");
-    await deleteCustomProductField(user.tenantId, key);
+    await deleteCustomProductField(user.orgId, key);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof ProductFieldDefError) {

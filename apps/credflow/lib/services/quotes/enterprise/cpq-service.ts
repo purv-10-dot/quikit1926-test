@@ -20,11 +20,11 @@ export interface BundleComponent {
 
 /** Expand a bundle product into component lines for the quote. */
 export async function expandProductBundle(
-  tenantId: string,
+  orgId: string,
   bundleProductId: string,
 ): Promise<BundleComponent[]> {
   const product = await db.qcfProduct.findFirst({
-    where: { id: bundleProductId, tenantId, deletedAt: null, productType: "Bundle" },
+    where: { id: bundleProductId, orgId, deletedAt: null, productType: "Bundle" },
     select: {
       id: true,
       name: true,
@@ -54,11 +54,11 @@ export async function expandProductBundle(
 }
 
 export async function getCpqSuggestions(
-  tenantId: string,
+  orgId: string,
   quoteId: string,
   lineProductIds: string[],
 ): Promise<CpqSuggestion[]> {
-  const settings = await getQuoteEnterpriseSettings(tenantId);
+  const settings = await getQuoteEnterpriseSettings(orgId);
   const rules: QuoteCpqRule[] = settings.cpqRules;
   if (rules.length === 0) return [];
 
@@ -75,7 +75,7 @@ export async function getCpqSuggestions(
   if (suggestIds.size === 0) return [];
 
   const products = await db.qcfProduct.findMany({
-    where: { tenantId, id: { in: [...suggestIds] }, deletedAt: null, isActive: true },
+    where: { orgId, id: { in: [...suggestIds] }, deletedAt: null, isActive: true },
     select: { id: true, name: true, sku: true, listPrice: true },
   });
 

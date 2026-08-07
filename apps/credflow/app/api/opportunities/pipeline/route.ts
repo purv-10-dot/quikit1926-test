@@ -42,7 +42,7 @@ async function loadBoard(user: SessionUser, filter?: PipelineFilter) {
 
   const where = hasFilter
     ? buildOpportunityFilterWhere({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         aclFilter: acl,
         conditions: filter?.conditions ?? [],
         combinator: filter?.combinator ?? "AND",
@@ -51,7 +51,7 @@ async function loadBoard(user: SessionUser, filter?: PipelineFilter) {
     : undefined;
 
   const board = await getPipelineBoard({
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     aclFilter: acl,
     where,
   });

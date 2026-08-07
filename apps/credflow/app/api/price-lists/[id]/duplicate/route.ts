@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "create");
 
-    const source = await getPriceList(user.tenantId, id);
+    const source = await getPriceList(user.orgId, id);
     if (!source) return fail(404, "Price list not found");
 
     const body = await req.json().catch(() => ({}));
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const created = await duplicatePriceList({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         sourceId: id,
         userId: user.userId,
         userName: user.name,

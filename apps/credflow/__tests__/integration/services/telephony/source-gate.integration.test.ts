@@ -29,10 +29,10 @@ let dialerLeadId: string;
 
 beforeAll(async () => {
   manualLeadId = (await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: "Manual Lead", phone: "+919999999998", stage: "Old", status: "Old" },
+    data: { orgId: TENANT, name: "Manual Lead", phone: "+919999999998", stage: "Old", status: "Old" },
   })).id;
   dialerLeadId = (await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: "Dialer Lead", phone: "+919999999997", stage: "Old", status: "Old" },
+    data: { orgId: TENANT, name: "Dialer Lead", phone: "+919999999997", stage: "Old", status: "Old" },
   })).id;
 });
 
@@ -55,13 +55,13 @@ describe("FR-RE Stage 3-D(a) — call-log row gated on explicit source", () => {
     await createCallLog(TENANT, OWNER_ID, OWNER_NAME, dto);
 
     const callLogs = await integrationPrisma.qcfCallLog.count({
-      where: { tenantId: TENANT, leadId: manualLeadId },
+      where: { orgId: TENANT, leadId: manualLeadId },
     });
     expect(callLogs).toBe(0); // RED today: createCallLog writes one unconditionally
 
     // Activities still written intact.
     const callAct = await integrationPrisma.qcfActivity.findFirst({
-      where: { tenantId: TENANT, type: "Call", leadId: manualLeadId },
+      where: { orgId: TENANT, type: "Call", leadId: manualLeadId },
       select: { subject: true, ownerName: true, occurredAt: true, linkedCallLogId: true },
     });
     expect(callAct).not.toBeNull();
@@ -92,7 +92,7 @@ describe("FR-RE Stage 3-D(a) — call-log row gated on explicit source", () => {
     await createCallLog(TENANT, OWNER_ID, OWNER_NAME, dto);
 
     const callLogs = await integrationPrisma.qcfCallLog.count({
-      where: { tenantId: TENANT, leadId: dialerLeadId },
+      where: { orgId: TENANT, leadId: dialerLeadId },
     });
     expect(callLogs).toBe(1);
   });

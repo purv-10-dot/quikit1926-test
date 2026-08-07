@@ -22,7 +22,7 @@ export async function GET(
     await assertModule(user, "opportunities", "view");
 
     const opp = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       include: {
         account: { select: { id: true, name: true, status: true } },
         clientMeetings: { orderBy: { meetingAt: "desc" }, take: 50 },

@@ -14,7 +14,7 @@ interface Props {
 export default async function ProductDetailPage({ params }: Props) {
   const { id } = await params;
   const user = await requireUser();
-  const record = await getFullProductRecord(user.tenantId, id);
+  const record = await getFullProductRecord(user.orgId, id);
   if (!record) notFound();
 
   return (

@@ -44,7 +44,7 @@ let bothTabId: string; // #6 tab revealed alongside set_stage
 
 beforeAll(async () => {
   const set = await db.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
   });
   setId = set.id;
   const version = await db.qcfFormSetVersion.create({

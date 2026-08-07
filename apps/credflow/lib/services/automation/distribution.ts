@@ -10,7 +10,7 @@ import type { DistributeConfig } from "@/types/workflow";
  * Port of automation-engine.service.ts::distributeLead behavior.
  */
 export async function pickNextUser(opts: {
-  tenantId: string;
+  orgId: string;
   workflowId: string;
   nodeId: string;
   candidateUserIds: string[];
@@ -20,14 +20,14 @@ export async function pickNextUser(opts: {
   // Upsert the state row, then atomically increment & read in one call
   const state = await prisma.qcfAutomationDistributionState.upsert({
     where: {
-      tenantId_workflowId_nodeId: {
-        tenantId: opts.tenantId,
+      orgId_workflowId_nodeId: {
+        orgId: opts.orgId,
         workflowId: opts.workflowId,
         nodeId: opts.nodeId,
       },
     },
     create: {
-      tenantId: opts.tenantId,
+      orgId: opts.orgId,
       workflowId: opts.workflowId,
       nodeId: opts.nodeId,
       lastIndex: 0,

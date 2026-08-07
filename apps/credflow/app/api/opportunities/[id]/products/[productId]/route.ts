@@ -35,14 +35,14 @@ export async function PATCH(
     await assertModule(user, "opportunities", "edit");
 
     const opp = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       select: { id: true, accountId: true },
     });
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
     const product = await db.qcfOpportunityProduct.findFirst({
-      where: { id: productId, tenantId: user.tenantId, opportunityId: id },
+      where: { id: productId, orgId: user.orgId, opportunityId: id },
     });
     if (!product) return err("Not found", 404);
 
@@ -93,14 +93,14 @@ export async function DELETE(
     await assertModule(user, "opportunities", "edit");
 
     const opp = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       select: { id: true, accountId: true },
     });
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
     const result = await db.qcfOpportunityProduct.deleteMany({
-      where: { id: productId, tenantId: user.tenantId, opportunityId: id },
+      where: { id: productId, orgId: user.orgId, opportunityId: id },
     });
     if (result.count === 0) return err("Not found", 404);
     return NextResponse.json({ success: true, data: { id: productId, deleted: true } });

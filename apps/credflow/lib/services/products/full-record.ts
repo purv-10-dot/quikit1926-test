@@ -4,9 +4,9 @@ import { listProductInventory, listStockMovements } from "@/lib/services/product
 import { serializeProduct } from "@/lib/services/products/serialize";
 import { listProductFields } from "@/lib/services/products/fields/repo";
 
-export async function getFullProductRecord(tenantId: string, productId: string) {
+export async function getFullProductRecord(orgId: string, productId: string) {
   const product = await prisma.qcfProduct.findFirst({
-    where: { id: productId, tenantId },
+    where: { id: productId, orgId },
     include: {
       categoryRef: { select: { id: true, name: true } },
       subcategoryRef: { select: { id: true, name: true } },
@@ -25,12 +25,12 @@ export async function getFullProductRecord(tenantId: string, productId: string) 
 
   const [inventory, movements, analytics, fieldDefs, quoteLines, orderLines, documents] =
     await Promise.all([
-      listProductInventory(tenantId, productId),
-      listStockMovements(tenantId, productId, 30),
-      buildProductAnalytics(tenantId, productId),
-      listProductFields(tenantId),
+      listProductInventory(orgId, productId),
+      listStockMovements(orgId, productId, 30),
+      buildProductAnalytics(orgId, productId),
+      listProductFields(orgId),
       prisma.qcfQuoteLine.findMany({
-        where: { tenantId, productId },
+        where: { orgId, productId },
         select: {
           id: true,
           quoteId: true,
@@ -43,7 +43,7 @@ export async function getFullProductRecord(tenantId: string, productId: string) 
         take: 15,
       }),
       prisma.qcfOrderLine.findMany({
-        where: { tenantId, productId },
+        where: { orgId, productId },
         select: {
           id: true,
           orderId: true,
@@ -56,7 +56,7 @@ export async function getFullProductRecord(tenantId: string, productId: string) 
         take: 15,
       }),
       prisma.qcfDocument.findMany({
-        where: { tenantId, refType: "product", refId: productId, deletedAt: null },
+        where: { orgId, refType: "product", refId: productId, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 20,
       }),

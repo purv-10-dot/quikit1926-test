@@ -38,7 +38,7 @@ function toLeadInput(lead: QcfLead): LeadScoringLeadInput {
 }
 
 export async function loadLeadScoringContext(
-  tenantId: string,
+  orgId: string,
   leadId: string,
   leadCreatedAt: Date,
 ): Promise<LeadScoringContext> {
@@ -48,21 +48,21 @@ export async function loadLeadScoringContext(
   const [activitiesCount, callsCount, notesCount, tasks, lastActivity, lastCall] =
     await Promise.all([
       prisma.qcfActivity.count({
-        where: { tenantId, OR: relatedOr },
+        where: { orgId, OR: relatedOr },
       }),
-      prisma.qcfCallLog.count({ where: { tenantId, leadId } }),
-      prisma.qcfNote.count({ where: { tenantId, OR: relatedOr } }),
+      prisma.qcfCallLog.count({ where: { orgId, leadId } }),
+      prisma.qcfNote.count({ where: { orgId, OR: relatedOr } }),
       prisma.qcfTask.findMany({
-        where: { tenantId, OR: relatedOr },
+        where: { orgId, OR: relatedOr },
         select: { status: true },
       }),
       prisma.qcfActivity.findFirst({
-        where: { tenantId, OR: relatedOr },
+        where: { orgId, OR: relatedOr },
         orderBy: { occurredAt: "desc" },
         select: { occurredAt: true, createdAt: true },
       }),
       prisma.qcfCallLog.findFirst({
-        where: { tenantId, leadId },
+        where: { orgId, leadId },
         orderBy: { startTime: "desc" },
         select: { startTime: true, createdAt: true },
       }),
@@ -111,18 +111,18 @@ export type RecalculateLeadScoreResult = {
  * Recompute and persist lead score. Returns null if lead missing or scoring disabled.
  */
 export async function recalculateLeadScore(
-  tenantId: string,
+  orgId: string,
   leadId: string,
 ): Promise<RecalculateLeadScoreResult | null> {
-  const config = await getLeadScoringConfig(tenantId);
+  const config = await getLeadScoringConfig(orgId);
   if (!config.enabled || !config.autoRecalculate) return null;
 
   const lead = await prisma.qcfLead.findFirst({
-    where: { id: leadId, tenantId, deletedAt: null },
+    where: { id: leadId, orgId, deletedAt: null },
   });
   if (!lead) return null;
 
-  const ctx = await loadLeadScoringContext(tenantId, leadId, lead.createdAt);
+  const ctx = await loadLeadScoringContext(orgId, leadId, lead.createdAt);
   const breakdown = computeLeadScore(toLeadInput(lead), ctx, config);
   const previousScore = lead.score;
 
@@ -142,21 +142,21 @@ export async function recalculateLeadScore(
   };
 }
 
-export async function recalculateAllLeadScores(tenantId: string): Promise<{
+export async function recalculateAllLeadScores(orgId: string): Promise<{
   processed: number;
   updated: number;
 }> {
-  const config = await getLeadScoringConfig(tenantId);
+  const config = await getLeadScoringConfig(orgId);
   if (!config.enabled) return { processed: 0, updated: 0 };
 
   const leads = await prisma.qcfLead.findMany({
-    where: { tenantId, deletedAt: null },
+    where: { orgId, deletedAt: null },
     select: { id: true },
   });
 
   let updated = 0;
   for (const { id } of leads) {
-    const r = await recalculateLeadScore(tenantId, id);
+    const r = await recalculateLeadScore(orgId, id);
     if (r?.changed) updated += 1;
   }
   return { processed: leads.length, updated };

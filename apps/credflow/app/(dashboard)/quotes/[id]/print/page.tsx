@@ -50,7 +50,7 @@ export default async function PrintQuotePage({
   const { id } = await params;
   const { auto } = await searchParams;
 
-  const quote = await getQuote(user.tenantId, id);
+  const quote = await getQuote(user.orgId, id);
   if (!quote) notFound();
 
   // Pull related records the print template needs. None of these are
@@ -58,7 +58,7 @@ export default async function PrintQuotePage({
   const [account, contact, company] = await Promise.all([
     quote.accountId
       ? db.qcfAccount.findFirst({
-          where: { id: quote.accountId, tenantId: user.tenantId },
+          where: { id: quote.accountId, orgId: user.orgId },
           select: {
             name: true,
             city: true,
@@ -71,11 +71,11 @@ export default async function PrintQuotePage({
       : null,
     quote.contactId
       ? db.qcfContact.findFirst({
-          where: { id: quote.contactId, tenantId: user.tenantId },
+          where: { id: quote.contactId, orgId: user.orgId },
           select: { firstName: true, lastName: true, email: true, phone: true, title: true },
         })
       : null,
-    getTenantCompanyBranding(user.tenantId),
+    getTenantCompanyBranding(user.orgId),
   ]);
 
   const lines: PrintQuoteLine[] = quote.lines.map((l) => ({

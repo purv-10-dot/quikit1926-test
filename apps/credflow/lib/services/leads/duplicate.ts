@@ -17,7 +17,7 @@ export function normalizePhoneDigits(value: string | null | undefined): string {
 }
 
 interface DuplicateOpts {
-  tenantId: string;
+  orgId: string;
   email?: string | null;
   mobile?: string | null;
   phone?: string | null;
@@ -36,12 +36,12 @@ export interface DuplicateLeadMatch {
  * instead of inserting a duplicate. Returns null when no duplicate exists.
  */
 export async function findDuplicateLeadRecord(opts: DuplicateOpts): Promise<DuplicateLeadMatch | null> {
-  const { tenantId, email, mobile, phone, excludeId } = opts;
+  const { orgId, email, mobile, phone, excludeId } = opts;
 
   if (email && email.trim()) {
     const hit = await prisma.qcfLead.findFirst({
       where: {
-        tenantId,
+        orgId,
         email: { equals: email.trim(), mode: "insensitive" },
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },
@@ -64,7 +64,7 @@ export async function findDuplicateLeadRecord(opts: DuplicateOpts): Promise<Dupl
 
     const exact = await prisma.qcfLead.findFirst({
       where: {
-        tenantId,
+        orgId,
         OR: [{ mobile: value }, { phone: value }],
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },
@@ -77,7 +77,7 @@ export async function findDuplicateLeadRecord(opts: DuplicateOpts): Promise<Dupl
     if (tail.length === 10) {
       const candidates = await prisma.qcfLead.findMany({
         where: {
-          tenantId,
+          orgId,
           OR: [{ mobile: { contains: tail } }, { phone: { contains: tail } }],
           ...(excludeId ? { NOT: { id: excludeId } } : {}),
         },

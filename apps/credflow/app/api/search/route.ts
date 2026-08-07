@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       ? {
           AND: [
             {
-              tenantId: user.tenantId,
+              orgId: user.orgId,
               OR: [
                 { name: { contains: q, mode: "insensitive" as const } },
                 { email: { contains: q, mode: "insensitive" as const } },
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
           ],
         }
       : {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           OR: [
             { name: { contains: q, mode: "insensitive" as const } },
             { email: { contains: q, mode: "insensitive" as const } },
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
         select: { id: true, name: true, company: true, stage: true },
       }),
       prisma.qcfAccount.findMany({
-        where: { tenantId: user.tenantId, name: { contains: q, mode: "insensitive" } },
+        where: { orgId: user.orgId, name: { contains: q, mode: "insensitive" } },
         take: 10,
         select: { id: true, name: true, industry: true },
       }),
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
         // QcfContact is NOT in SOFT_DELETE_MODELS, so the soft-delete middleware
         // does not auto-inject this — filter trashed contacts out explicitly.
         where: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           deletedAt: null,
           OR: [
             { firstName: { contains: q, mode: "insensitive" } },

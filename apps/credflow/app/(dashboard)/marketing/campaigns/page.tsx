@@ -7,7 +7,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
 export default async function CampaignsPage() {
   const user = await requireUser();
-  const items = await prisma.qcfCampaign.findMany({ where: { tenantId: user.tenantId }, orderBy: { createdAt: "desc" } });
+  const items = await prisma.qcfCampaign.findMany({ where: { orgId: user.orgId }, orderBy: { createdAt: "desc" } });
   return (
     <div>
       <PageHeader

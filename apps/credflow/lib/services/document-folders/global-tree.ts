@@ -95,7 +95,7 @@ export async function listGlobalAggregatedTreeChildren(
     if (parsed.module === "global") {
       const rows = await prisma.qcfDocumentFolder.findMany({
         where: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           refType: null,
           refId: null,
           parentFolderId: null,
@@ -104,7 +104,7 @@ export async function listGlobalAggregatedTreeChildren(
         orderBy: { name: "asc" },
         select: {
           id: true,
-          tenantId: true,
+          orgId: true,
           name: true,
           parentFolderId: true,
           refType: true,
@@ -155,7 +155,7 @@ export async function listGlobalAggregatedTreeChildren(
     await assertDocumentParent(user, parsed.refType, parsed.refId);
     const rows = await prisma.qcfDocumentFolder.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         refType: parsed.refType,
         refId: parsed.refId,
         parentFolderId: null,
@@ -164,7 +164,7 @@ export async function listGlobalAggregatedTreeChildren(
       orderBy: { name: "asc" },
       select: {
         id: true,
-        tenantId: true,
+        orgId: true,
         name: true,
         parentFolderId: true,
         refType: true,
@@ -191,7 +191,7 @@ export async function listGlobalAggregatedTreeChildren(
 
   if (parsed.kind === "folder" && parsed.folderId) {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: parsed.folderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: parsed.folderId, orgId: user.orgId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Folder not found", 404);
     if (folder.refType && folder.refId) {
@@ -200,7 +200,7 @@ export async function listGlobalAggregatedTreeChildren(
 
     const rows = await prisma.qcfDocumentFolder.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         refType: folder.refType,
         refId: folder.refId,
         parentFolderId: folder.id,
@@ -209,7 +209,7 @@ export async function listGlobalAggregatedTreeChildren(
       orderBy: { name: "asc" },
       select: {
         id: true,
-        tenantId: true,
+        orgId: true,
         name: true,
         parentFolderId: true,
         refType: true,
@@ -275,7 +275,7 @@ export async function buildGlobalExplorerBreadcrumbs(
 
   if (location.kind === "folder") {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: location.folderId, orgId: user.orgId, deletedAt: null },
       select: { id: true, name: true, parentFolderId: true, refType: true, refId: true },
     });
     if (!folder) return crumbs;
@@ -295,7 +295,7 @@ export async function buildGlobalExplorerBreadcrumbs(
         seen.add(cur);
         const row: { id: string; name: string; parentFolderId: string | null } | null =
           await prisma.qcfDocumentFolder.findFirst({
-          where: { id: cur, tenantId: user.tenantId, deletedAt: null },
+          where: { id: cur, orgId: user.orgId, deletedAt: null },
           select: { id: true, name: true, parentFolderId: true },
         });
         if (!row) break;
@@ -325,7 +325,7 @@ export async function buildGlobalExplorerBreadcrumbs(
       seen.add(curId);
       const row: { id: string; name: string; parentFolderId: string | null } | null =
         await prisma.qcfDocumentFolder.findFirst({
-        where: { id: curId, tenantId: user.tenantId, deletedAt: null },
+        where: { id: curId, orgId: user.orgId, deletedAt: null },
         select: { id: true, name: true, parentFolderId: true },
       });
       if (!row) break;
@@ -353,7 +353,7 @@ async function listGlobalAllDocumentsView(
   const skip = (page - 1) * pageSize;
 
   const folderWhere = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     refType: null,
     refId: null,
     parentFolderId: null,
@@ -361,11 +361,11 @@ async function listGlobalAllDocumentsView(
   };
 
   const fileWhere: {
-    tenantId: string;
+    orgId: string;
     deletedAt: null;
     fileName?: { contains: string; mode: "insensitive" };
   } = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     deletedAt: null,
   };
   if (opts.q?.trim()) {
@@ -388,11 +388,11 @@ async function listGlobalAllDocumentsView(
   ]);
 
   const names = await resolveUploaderNames(
-    user.tenantId,
+    user.orgId,
     fileRows.map((r) => r.uploadedBy),
   );
   let files = fileRows.map((r) => toDocumentDto(r, names.get(r.uploadedBy) ?? null));
-  files = await enrichRelatedLabels(user.tenantId, files);
+  files = await enrichRelatedLabels(user.orgId, files);
 
   return {
     folder: null,
@@ -506,7 +506,7 @@ export async function listGlobalExplorerContents(
 
   if (location.kind === "folder") {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: location.folderId, orgId: user.orgId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Folder not found", 404);
 

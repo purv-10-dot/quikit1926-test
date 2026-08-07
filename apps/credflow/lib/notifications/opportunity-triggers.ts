@@ -24,12 +24,12 @@ import { createNotification } from "@/lib/notifications/service";
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 async function getSalesManagers(
-  tenantId: string,
+  orgId: string,
   excludeUserId: string,
 ): Promise<string[]> {
   const members = await prisma.orgMember.findMany({
     where: {
-      orgId: tenantId,
+      orgId: orgId,
       status: "active",
       role: {
         in: [
@@ -71,7 +71,7 @@ function formatAmount(amount: unknown, currency = "INR"): string {
 // ─── Opportunity Created ──────────────────────────────────────────────────────
 
 export interface OppCreatedParams {
-  tenantId: string;
+  orgId: string;
   opportunityId: string;
   opportunityName: string;
   ownerId: string | null | undefined;
@@ -93,7 +93,7 @@ export async function notifyOpportunityCreated(p: OppCreatedParams): Promise<voi
 
   const recipients = new Set<string>();
   if (p.ownerId && p.ownerId !== p.actorUserId) recipients.add(p.ownerId);
-  const managers = await getSalesManagers(p.tenantId, p.actorUserId);
+  const managers = await getSalesManagers(p.orgId, p.actorUserId);
   managers.forEach((id) => recipients.add(id));
 
   if (recipients.size === 0) return;
@@ -101,7 +101,7 @@ export async function notifyOpportunityCreated(p: OppCreatedParams): Promise<voi
   await Promise.allSettled(
     [...recipients].map((userId) =>
       createNotification({
-        tenantId: p.tenantId,
+        orgId: p.orgId,
         userId,
         type: "lead_assigned",
         category: "lead",
@@ -124,7 +124,7 @@ export async function notifyOpportunityCreated(p: OppCreatedParams): Promise<voi
 // ─── Opportunity Stage Changed ────────────────────────────────────────────────
 
 export interface OppStageChangedParams {
-  tenantId: string;
+  orgId: string;
   opportunityId: string;
   opportunityName: string;
   ownerId: string | null | undefined;
@@ -145,7 +145,7 @@ export async function notifyOpportunityStageChanged(
   if (p.ownerId === p.actorUserId) return;
 
   await createNotification({
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     userId: p.ownerId,
     type: "lead_stage_changed",
     category: "lead",
@@ -166,7 +166,7 @@ export async function notifyOpportunityStageChanged(
 // ─── Opportunity Won  🎉 ──────────────────────────────────────────────────────
 
 export interface OppWonParams {
-  tenantId: string;
+  orgId: string;
   opportunityId: string;
   opportunityName: string;
   ownerId: string | null | undefined;
@@ -195,7 +195,7 @@ export async function notifyOpportunityWon(p: OppWonParams): Promise<void> {
   const recipients = new Set<string>();
   if (p.ownerId) recipients.add(p.ownerId);
   // Include ALL managers — every win is a team win.
-  const managers = await getSalesManagers(p.tenantId, "__none__");
+  const managers = await getSalesManagers(p.orgId, "__none__");
   managers.forEach((id) => recipients.add(id));
 
   if (recipients.size === 0) return;
@@ -203,7 +203,7 @@ export async function notifyOpportunityWon(p: OppWonParams): Promise<void> {
   await Promise.allSettled(
     [...recipients].map((userId) =>
       createNotification({
-        tenantId: p.tenantId,
+        orgId: p.orgId,
         userId,
         type: "lead_converted",   // TypeScript-valid type; metadata.type drives the icon.
         category: "lead",
@@ -228,7 +228,7 @@ export async function notifyOpportunityWon(p: OppWonParams): Promise<void> {
 // ─── Opportunity Lost ─────────────────────────────────────────────────────────
 
 export interface OppLostParams {
-  tenantId: string;
+  orgId: string;
   opportunityId: string;
   opportunityName: string;
   ownerId: string | null | undefined;
@@ -247,7 +247,7 @@ export async function notifyOpportunityLost(p: OppLostParams): Promise<void> {
 
   const recipients = new Set<string>();
   if (p.ownerId) recipients.add(p.ownerId);
-  const managers = await getSalesManagers(p.tenantId, p.actorUserId);
+  const managers = await getSalesManagers(p.orgId, p.actorUserId);
   managers.forEach((id) => recipients.add(id));
 
   if (recipients.size === 0) return;
@@ -255,7 +255,7 @@ export async function notifyOpportunityLost(p: OppLostParams): Promise<void> {
   await Promise.allSettled(
     [...recipients].map((userId) =>
       createNotification({
-        tenantId: p.tenantId,
+        orgId: p.orgId,
         userId,
         type: "lead_reassigned",
         category: "lead",

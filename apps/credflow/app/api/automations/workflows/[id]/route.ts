@@ -96,7 +96,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     await assertModule(user, "automations", "view");
 
     const wf = await prisma.qcfWorkflowDefinition.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(wf);
@@ -116,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
     const existing = await prisma.qcfWorkflowDefinition.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -161,11 +161,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await assertModule(user, "automations", "delete");
 
     const existing = await prisma.qcfWorkflowDefinition.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const wf = await softDelete(user.tenantId, id);
+    const wf = await softDelete(user.orgId, id);
     return NextResponse.json(wf);
   } catch (e) {
     if (e instanceof LifecycleError) return NextResponse.json({ error: e.message }, { status: 400 });

@@ -25,7 +25,7 @@ let versionId: string;
 
 beforeAll(async () => {
   const set = await integrationPrisma.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${Date.now()}` },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${Date.now()}` },
   });
   setId = set.id;
   const version = await integrationPrisma.qcfFormSetVersion.create({

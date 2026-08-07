@@ -17,7 +17,7 @@ describe("notifyTaskCompleted — recipient is the creator", () => {
 
   it("notifies the creator when a different user completes the task", async () => {
     await notifyTaskCompleted({
-      tenantId: "t1",
+      orgId: "t1",
       taskId: "task-1",
       taskSubject: "Call Acme",
       completedByUserId: "u-other",
@@ -33,7 +33,7 @@ describe("notifyTaskCompleted — recipient is the creator", () => {
 
   it("is suppressed when the creator completes their own task", async () => {
     await notifyTaskCompleted({
-      tenantId: "t1",
+      orgId: "t1",
       taskId: "task-1",
       taskSubject: "Call Acme",
       completedByUserId: "u-creator",
@@ -46,7 +46,7 @@ describe("notifyTaskCompleted — recipient is the creator", () => {
 
   it("is suppressed when taskCreatorUserId is null/undefined", async () => {
     await notifyTaskCompleted({
-      tenantId: "t1",
+      orgId: "t1",
       taskId: "task-1",
       taskSubject: "Call Acme",
       completedByUserId: "u-other",
@@ -54,7 +54,7 @@ describe("notifyTaskCompleted — recipient is the creator", () => {
       taskCreatorUserId: null,
     });
     await notifyTaskCompleted({
-      tenantId: "t1",
+      orgId: "t1",
       taskId: "task-1",
       taskSubject: "Call Acme",
       completedByUserId: "u-other",

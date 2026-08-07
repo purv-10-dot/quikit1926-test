@@ -24,7 +24,7 @@ export type NotificationCategory = "lead" | "task" | "automation" | "system";
 // ─── Payload used to CREATE a notification ────────────────────────────────────
 
 export interface NotificationPayload {
-  tenantId: string;
+  orgId: string;
   userId: string;
   type: NotificationType;
   category: NotificationCategory;
@@ -45,7 +45,7 @@ export interface NotificationPayload {
 
 export interface NotificationRow {
   id: string;
-  tenantId: string;
+  orgId: string;
   userId: string;
   title: string;
   body: string | null;

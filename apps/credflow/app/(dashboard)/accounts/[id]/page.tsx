@@ -35,7 +35,7 @@ export default async function AccountDetailPage({
   let opportunitiesCreate = isAdmin;
 
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     accountsEdit = !!matrix.find((r) => r.module === "accounts")?.actions.includes("edit");
     leadsCreate = !!matrix.find((r) => r.module === "leads")?.actions.includes("create");
     leadsEdit = !!matrix.find((r) => r.module === "leads")?.actions.includes("edit");

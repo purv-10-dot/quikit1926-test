@@ -52,7 +52,7 @@ describe("admin builder routes — unauthenticated => 401", () => {
 
 describe("admin builder routes — assertModule gate is wired (denied => 403)", () => {
   it("POST /sets calls assertModule and surfaces 403", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser", email: "u@b.co", name: "U" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser", email: "u@b.co", name: "U" });
     vi.mocked(assertModule).mockRejectedValue(Object.assign(new Error("Forbidden"), { statusCode: 403 }));
     const { POST } = await import("@/app/api/forms/sets/route");
     const res = await POST(jsonReq("POST", { name: "X" }));

@@ -8,7 +8,7 @@ import { AutomationsTable, type AutomationRow } from "./automations-table";
 export default async function WorkflowsListPage() {
   const user = await requireUser();
   // S1 read: tenant-scoped, soft-deleted rows excluded (the active list).
-  const items = await listAutomations(user.tenantId);
+  const items = await listAutomations(user.orgId);
   const rows: AutomationRow[] = items.map((w) => ({
     id: w.id,
     name: w.name,

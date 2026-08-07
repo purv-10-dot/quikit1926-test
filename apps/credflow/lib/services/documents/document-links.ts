@@ -73,7 +73,7 @@ export async function createDocumentLink(
   input: CreateDocumentLinkInput,
 ): Promise<DocumentLinkDto> {
   const source = await prisma.qcfDocument.findFirst({
-    where: { id: input.sourceDocumentId, tenantId: user.tenantId, deletedAt: null },
+    where: { id: input.sourceDocumentId, orgId: user.orgId, deletedAt: null },
   });
   if (!source) throw new FolderServiceError("Source document not found", 404);
 
@@ -89,7 +89,7 @@ export async function createDocumentLink(
 
   if (targetFolderId) {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: targetFolderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: targetFolderId, orgId: user.orgId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Target folder not found", 404);
     if (folder.refType !== refType || folder.refId !== refId) {
@@ -108,7 +108,7 @@ export async function createDocumentLink(
   const linkClient = requireDocumentLinkClient();
   const existing = await linkClient.findFirst({
     where: {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       sourceDocumentId: source.id,
       targetFolderId,
       refType,
@@ -121,14 +121,14 @@ export async function createDocumentLink(
   if (refType && refId && isDocumentRefType(refType)) {
     await assertDocumentParent(user, refType, refId);
   } else if (refType === "global" || source.refType === "global") {
-    await assertDocumentParent(user, "global", refId ?? user.tenantId);
+    await assertDocumentParent(user, "global", refId ?? user.orgId);
   }
 
   let row;
   try {
     row = await linkClient.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         sourceDocumentId: source.id,
         targetFolderId,
         refType,
@@ -159,7 +159,7 @@ export async function createDocumentLink(
 export async function deleteDocumentLink(user: SessionUser, linkId: string): Promise<void> {
   const linkClient = requireDocumentLinkClient();
   const link = await linkClient.findFirst({
-    where: { id: linkId, tenantId: user.tenantId, deletedAt: null },
+    where: { id: linkId, orgId: user.orgId, deletedAt: null },
   });
   if (!link) throw new FolderServiceError("Link not found", 404);
 
@@ -189,7 +189,7 @@ export async function listLinkedDocumentsForFolder(
   try {
     links = await linkClient.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         deletedAt: null,
         targetFolderId: opts.targetFolderId,
         refType: opts.refType,
@@ -206,14 +206,14 @@ export async function listLinkedDocumentsForFolder(
   const sources = await prisma.qcfDocument.findMany({
     where: {
       id: { in: links.map((l) => l.sourceDocumentId) },
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       deletedAt: null,
     },
   });
   const sourceMap = new Map(sources.map((s) => [s.id, s]));
 
   const names = await resolveUploaderNames(
-    user.tenantId,
+    user.orgId,
     sources.map((s) => s.uploadedBy),
   );
 
@@ -228,6 +228,6 @@ export async function listLinkedDocumentsForFolder(
     })
     .filter((d): d is DocumentDto => d !== null);
 
-  dtos = await enrichRelatedLabels(user.tenantId, dtos);
+  dtos = await enrichRelatedLabels(user.orgId, dtos);
   return dtos;
 }

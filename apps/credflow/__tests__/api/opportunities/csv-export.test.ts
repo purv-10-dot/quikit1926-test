@@ -30,7 +30,7 @@ describe("GET /api/opportunities?format=csv", () => {
   });
 
   it("returns 403 when reports.export is denied", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser", email: "u@x.co", name: "U" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser", email: "u@x.co", name: "U" });
     vi.mocked(assertModule).mockImplementation(async (_user, module, action) => {
       if (module === "reports" && action === "export") {
         const err = new Error("Forbidden: export on reports") as Error & { statusCode?: number };
@@ -49,7 +49,7 @@ describe("GET /api/opportunities?format=csv", () => {
   });
 
   it("streams CSV with curated columns on happy path", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
     db.qcfOpportunity.findMany.mockResolvedValueOnce([
       {
         id: "o1",
@@ -86,7 +86,7 @@ describe("GET /api/opportunities?format=csv", () => {
   });
 
   it("forwards account ACL filter into the cursor query", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser", email: "u@x.co", name: "U" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser", email: "u@x.co", name: "U" });
     vi.mocked(accountScopeFilter).mockResolvedValueOnce({
       OR: [{ accountId: { in: ["acct-allowed"] } }, { accountId: null }],
     });
@@ -100,7 +100,7 @@ describe("GET /api/opportunities?format=csv", () => {
     const call = db.qcfOpportunity.findMany.mock.calls[0]?.[0];
     expect(call).toBeDefined();
     const where = call!.where as Record<string, unknown>;
-    expect(where.tenantId).toBe("t1");
+    expect(where.orgId).toBe("t1");
     // The ACL clause is merged into the same where (spread) — its OR
     // restriction should appear at the top level.
     expect(where.OR).toEqual([

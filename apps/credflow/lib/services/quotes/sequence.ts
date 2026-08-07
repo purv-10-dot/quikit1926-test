@@ -4,7 +4,7 @@
  * The Quotes module wants human-readable QT-YYYY-NNNN identifiers, but
  * Postgres sequences are global (not tenant-scoped) and Prisma's @default
  * doesn't accept per-tenant counters. So we keep a CrmSequence row per
- * (tenantId, name) and bump it inside a transaction.
+ * (orgId, name) and bump it inside a transaction.
  *
  * Concurrency: we use Prisma's `upsert` with an atomic `{ increment: 1 }`
  * update. Postgres takes a row-level lock for the duration of the UPDATE,
@@ -22,7 +22,7 @@ import { db } from "@/lib/db";
 type DbClient = typeof db | Prisma.TransactionClient;
 
 export interface NextNumberArgs {
-  tenantId: string;
+  orgId: string;
   /** Logical bucket name. For quotes: `"quote-${year}"`. */
   name: string;
   /** Sprintf-like printf width for the numeric part. Default 4 (→ "0001"). */
@@ -43,8 +43,8 @@ export async function nextFormattedNumber(
 ): Promise<{ counter: number; formatted: string }> {
   const width = args.width ?? 4;
   const row = await tx.qcfSequence.upsert({
-    where: { sequence_uk: { tenantId: args.tenantId, name: args.name } },
-    create: { tenantId: args.tenantId, name: args.name, counter: 1 },
+    where: { sequence_uk: { orgId: args.orgId, name: args.name } },
+    create: { orgId: args.orgId, name: args.name, counter: 1 },
     update: { counter: { increment: 1 } },
   });
   const padded = String(row.counter).padStart(width, "0");
@@ -58,12 +58,12 @@ export async function nextFormattedNumber(
  */
 export async function nextQuoteNumber(
   tx: DbClient,
-  tenantId: string,
+  orgId: string,
   issueDate: Date = new Date(),
 ): Promise<string> {
   const year = issueDate.getUTCFullYear();
   const { formatted } = await nextFormattedNumber(tx, {
-    tenantId,
+    orgId,
     name: `quote-${year}`,
     prefix: `QT-${year}-`,
     width: 4,

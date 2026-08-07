@@ -15,7 +15,7 @@
  *   - Idempotent: running twice does not create duplicate rules (checks by name).
  *
  * Usage:
- *   npx ts-node scripts/seed-automation-rules.ts <tenantId>
+ *   npx ts-node scripts/seed-automation-rules.ts <orgId>
  */
 
 import { PrismaClient } from "@quikit/database";
@@ -25,17 +25,17 @@ const prisma = new PrismaClient();
 const REQUIRED_CODES = ["not_interested", "callback_requested", "interested"] as const;
 
 async function main() {
-  const tenantId = process.argv[2];
-  if (!tenantId) {
+  const orgId = process.argv[2];
+  if (!orgId) {
     throw new Error("Usage: seed-automation-rules.ts <tenantId>");
   }
 
-  console.log(`[seed-automation-rules] seeding for tenant ${tenantId}…`);
+  console.log(`[seed-automation-rules] seeding for tenant ${orgId}…`);
 
   // ── 1. Verify disposition codes exist — fail loudly if any are missing ────
 
   const dispositions = await prisma.qcfCallDisposition.findMany({
-    where: { tenantId, code: { in: [...REQUIRED_CODES] } },
+    where: { orgId, code: { in: [...REQUIRED_CODES] } },
     select: { code: true },
   });
 
@@ -45,7 +45,7 @@ async function main() {
   if (missingCodes.length > 0) {
     throw new Error(
       `[seed-automation-rules] ABORT: the following disposition codes do not exist ` +
-        `for tenant "${tenantId}": ${missingCodes.join(", ")}.\n` +
+        `for tenant "${orgId}": ${missingCodes.join(", ")}.\n` +
         `Run the disposition seed first (GET /api/telephony/dispositions triggers the default seed), ` +
         `then re-run this script.`,
     );
@@ -110,7 +110,7 @@ async function main() {
 
   for (const rule of SEED_RULES) {
     const existing = await prisma.qcfAutomationRule.findFirst({
-      where: { tenantId, name: rule.name },
+      where: { orgId, name: rule.name },
     });
     if (existing) {
       console.log(`[seed-automation-rules]   skip (already exists): "${rule.name}"`);
@@ -118,7 +118,7 @@ async function main() {
       continue;
     }
     await prisma.qcfAutomationRule.create({
-      data: { tenantId, ...rule, isActive: true },
+      data: { orgId, ...rule, isActive: true },
     });
     console.log(`[seed-automation-rules]   created: "${rule.name}"`);
     created++;

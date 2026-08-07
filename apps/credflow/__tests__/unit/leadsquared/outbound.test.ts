@@ -63,7 +63,7 @@ describe("syncLeadOutbound", () => {
     const input = lead();
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: input, origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: input, origin: "crm" },
       deps,
     );
 
@@ -74,7 +74,7 @@ describe("syncLeadOutbound", () => {
     const arg = db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0];
     expect(arg.where).toEqual({ crmLeadId: LEAD_ID });
     expect(arg.create).toMatchObject({
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: LEAD_ID,
       lsqProspectId: "PID-1",
       syncOrigin: "crm",
@@ -87,12 +87,12 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
       deps,
     );
 
     expect(db.qcfLeadSquaredSyncMap.findFirst).toHaveBeenCalledWith({
-      where: { crmLeadId: LEAD_ID, tenantId: TENANT },
+      where: { crmLeadId: LEAD_ID, orgId: TENANT },
     });
   });
 
@@ -101,7 +101,7 @@ describe("syncLeadOutbound", () => {
     const input = lead();
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: LEAD_ID,
       lsqProspectId: "PID-1",
       syncOrigin: "crm",
@@ -112,7 +112,7 @@ describe("syncLeadOutbound", () => {
     });
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: input, origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: input, origin: "crm" },
       deps,
     );
 
@@ -129,7 +129,7 @@ describe("syncLeadOutbound", () => {
     const { db, client, deps } = setup();
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: LEAD_ID,
       lsqProspectId: "PID-9",
       syncOrigin: "leadsquared",
@@ -142,7 +142,7 @@ describe("syncLeadOutbound", () => {
     const result = await syncLeadOutbound(
       // Even with a genuinely changed payload, a leadsquared-origin write is
       // never pushed back.
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead({ company: "New" }), origin: "leadsquared" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead({ company: "New" }), origin: "leadsquared" },
       deps,
     );
 
@@ -158,7 +158,7 @@ describe("syncLeadOutbound", () => {
 
     await expect(
       syncLeadOutbound(
-        { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
+        { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
         deps,
       ),
     ).rejects.toBeInstanceOf(LeadSquaredError);
@@ -175,7 +175,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.upsert.mockRejectedValue(p2002);
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
       deps,
     );
 
@@ -189,7 +189,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.upsert.mockRejectedValue(new Error("connection reset"));
 
     await expect(
-      syncLeadOutbound({ tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" }, deps),
+      syncLeadOutbound({ orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" }, deps),
     ).rejects.toThrow("connection reset");
   });
 
@@ -198,7 +198,7 @@ describe("syncLeadOutbound", () => {
     const input = lead();
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
-      tenantId: TENANT,
+      orgId: TENANT,
       crmLeadId: LEAD_ID,
       lsqProspectId: "PID-EXISTING",
       syncOrigin: "crm",
@@ -209,7 +209,7 @@ describe("syncLeadOutbound", () => {
     });
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: input, origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: input, origin: "crm" },
       deps,
     );
 
@@ -232,7 +232,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
       deps,
     );
 
@@ -264,7 +264,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead({ email: "ada@x.com" }), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead({ email: "ada@x.com" }), origin: "crm" },
       deps,
     );
 
@@ -294,7 +294,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead({ email: "ada@x.com" }), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead({ email: "ada@x.com" }), origin: "crm" },
       deps,
     );
 
@@ -321,7 +321,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
       deps,
     );
 
@@ -338,7 +338,7 @@ describe("syncLeadOutbound", () => {
     db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
-      { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
+      { orgId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
       deps,
     );
 

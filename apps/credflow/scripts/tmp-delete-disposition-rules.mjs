@@ -13,28 +13,28 @@ const { prisma } = _prismaMod.default ?? _prismaMod;
 
 const APPLY = process.argv.includes("--apply");
 
-const tenantId =
+const orgId =
   process.env.TENANT_ID ??
   (
-    await prisma.crmFormSet.findFirst({
+    await prisma.qcfFormSet.findFirst({
       where: { surface: "call_disposition", isDefault: true },
-      select: { tenantId: true },
+      select: { orgId: true },
     })
-  )?.tenantId;
+  )?.orgId;
 
-if (!tenantId) {
+if (!orgId) {
   console.log("No default call_disposition tenant found. Set TENANT_ID=<id>.");
   await prisma.$disconnect();
   process.exit(1);
 }
 
-const set = await prisma.crmFormSet.findFirst({
-  where: { tenantId, surface: "call_disposition", isDefault: true },
+const set = await prisma.qcfFormSet.findFirst({
+  where: { orgId, surface: "call_disposition", isDefault: true },
   select: { id: true, currentVersionId: true },
 });
 
 // The builder edits the latest DRAFT version — that's what the Rules list shows.
-const draft = await prisma.crmFormSetVersion.findFirst({
+const draft = await prisma.qcfFormSetVersion.findFirst({
   where: { formSetId: set.id, status: "draft" },
   orderBy: { versionNumber: "desc" },
   select: { id: true, versionNumber: true },
@@ -46,13 +46,13 @@ if (!draft) {
   process.exit(1);
 }
 
-const rules = await prisma.crmFormRule.findMany({
+const rules = await prisma.qcfFormRule.findMany({
   where: { formSetVersionId: draft.id },
   select: { id: true, name: true },
   orderBy: { sortOrder: "asc" },
 });
 
-console.log(`Tenant: ${tenantId}`);
+console.log(`Tenant: ${orgId}`);
 console.log(`Draft version: v${draft.versionNumber} (${draft.id})`);
 console.log(`Rules to delete: ${rules.length}`);
 rules.forEach((r) => console.log(`  - ${r.name} (${r.id})`));
@@ -70,9 +70,9 @@ if (!APPLY) {
 }
 
 const ids = rules.map((r) => r.id);
-const a = await prisma.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: ids } } });
-const c = await prisma.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: ids } } });
-const r = await prisma.crmFormRule.deleteMany({ where: { id: { in: ids } } });
+const a = await prisma.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: ids } } });
+const c = await prisma.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: ids } } });
+const r = await prisma.qcfFormRule.deleteMany({ where: { id: { in: ids } } });
 console.log(`\n✔ Deleted ${r.count} rule(s), ${c.count} condition(s), ${a.count} action(s).`);
 
 await prisma.$disconnect();

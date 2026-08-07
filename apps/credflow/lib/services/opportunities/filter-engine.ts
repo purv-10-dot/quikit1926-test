@@ -274,7 +274,7 @@ function buildNumericCondition(
 
 /** Merge base tenant scope, ACL, advanced conditions, and quick search. */
 export function buildOpportunityFilterWhere(args: {
-  tenantId: string;
+  orgId: string;
   aclFilter: Record<string, unknown> | null;
   conditions: RawCondition[];
   combinator: "AND" | "OR";
@@ -282,7 +282,7 @@ export function buildOpportunityFilterWhere(args: {
 }): Prisma.QcfOpportunityWhereInput {
   const parts: Prisma.QcfOpportunityWhereInput[] = [
     {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       deletedAt: null,
       ...(args.aclFilter ? (args.aclFilter as Prisma.QcfOpportunityWhereInput) : {}),
     },

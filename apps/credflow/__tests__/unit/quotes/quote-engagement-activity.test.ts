@@ -27,7 +27,7 @@ describe("recordQuoteEngagement", () => {
     dbMock.qcfActivity.create.mockResolvedValueOnce(undefined);
 
     await recordQuoteEngagement({
-      tenantId: "t1",
+      orgId: "t1",
       quoteId: "q1",
       eventType: "quote_viewed",
       ipAddress: "::1",

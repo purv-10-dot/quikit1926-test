@@ -30,7 +30,7 @@ let srcTabId: string;
 let srcFieldId: string;
 
 beforeAll(async () => {
-  const set = await db.qcfFormSet.create({ data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` } });
+  const set = await db.qcfFormSet.create({ data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` } });
   setId = set.id;
   const version = await db.qcfFormSetVersion.create({ data: { formSetId: setId, versionNumber: 1, status: "draft" } });
   v1 = version.id;
@@ -59,7 +59,7 @@ beforeAll(async () => {
 
   // A logged field value on v1 — record/history that must NOT be cloned.
   await db.qcfFieldValue.create({
-    data: { tenantId: TENANT, activityId: `act_${STAMP}`, formSetVersionId: v1, fieldKey: "payment_mode", valueType: "dropdown", valueText: "invoice" },
+    data: { orgId: TENANT, activityId: `act_${STAMP}`, formSetVersionId: v1, fieldKey: "payment_mode", valueType: "dropdown", valueText: "invoice" },
   });
 
   // Publish v1 so the clone source is a frozen, live version.
@@ -83,7 +83,7 @@ afterAll(async () => {
     await db.qcfFormRule.deleteMany({ where: { id: { in: ruleIds } } });
   }
   if (fieldIds.length) await db.qcfFormFieldOption.deleteMany({ where: { formFieldId: { in: fieldIds } } });
-  await db.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await db.qcfFieldValue.deleteMany({ where: { orgId: TENANT } });
   await db.qcfFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
   if (tabIds.length) await db.qcfFormSection.deleteMany({ where: { formTabId: { in: tabIds } } });
   await db.qcfFormTab.deleteMany({ where: { formSetVersionId: { in: vids } } });

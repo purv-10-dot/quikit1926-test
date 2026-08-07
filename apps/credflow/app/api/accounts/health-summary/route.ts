@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     const scope = await getScope(user);
 
     const where: Prisma.QcfAccountWhereInput = {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       deletedAt: null,
     };
     if (!scope.unrestricted) {

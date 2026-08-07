@@ -27,7 +27,7 @@ const activitiesByType: CannedReport = {
     const grouped = await db.qcfActivity.groupBy({
       by: ["type"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         occurredAt: { gte: ctx.from, lte: ctx.to },
         ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
       },
@@ -67,7 +67,7 @@ const activityLeaderboard: CannedReport = {
     const grouped = await db.qcfActivity.groupBy({
       by: ["ownerId", "ownerName"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         occurredAt: { gte: ctx.from, lte: ctx.to },
         ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
       },

@@ -23,7 +23,7 @@ export async function GET(
 
     const acl = await accountScopeFilter(user);
     const where = {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       leadId,
       deletedAt: null,
       ...(acl ?? {}),

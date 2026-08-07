@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // into the where, so a non-owned lead matches 0 rows → 404 below.
     const ownerScope = await ownerScopeFilter(user);
     const updated = await prisma.qcfLead.updateMany({
-      where: { id, tenantId: user.tenantId, ...(ownerScope ?? {}) },
+      where: { id, orgId: user.orgId, ...(ownerScope ?? {}) },
       data: { isStarred: parsed.data.isStarred },
     });
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });

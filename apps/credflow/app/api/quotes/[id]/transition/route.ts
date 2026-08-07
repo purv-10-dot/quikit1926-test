@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const updated = await transitionQuote({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         userName: user.name ?? null,
         quoteId: id,
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         event: "status_changed",
         entityType: "quote",
         entityId: id,
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         actorUserId: user.userId,
         actorName: user.name || user.email,
         after: updated as unknown as Record<string, unknown>,

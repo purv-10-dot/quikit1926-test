@@ -10,7 +10,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const items = await listApprovalInbox(user.tenantId);
+    const items = await listApprovalInbox(user.orgId);
     return NextResponse.json({ success: true, data: items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Inbox failed";

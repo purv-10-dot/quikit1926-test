@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await listQuotes({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       status: parsed.data.status,
@@ -91,14 +91,14 @@ export async function POST(req: NextRequest) {
     }
 
     const created = await createQuote({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       userName: user.name ?? null,
       input: parsed.data,
     });
     // Dedicated quote created notification.
     notifyQuoteCreated({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: created.id,
       quoteNumber: String(created.quoteNumber ?? created.id),
       // createQuote return type exposes only {id, quoteNumber}; actor is the
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       event: "created",
       entityType: "quote",
       entityId: created.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: created as unknown as Record<string, unknown>,

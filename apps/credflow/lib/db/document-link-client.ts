@@ -49,7 +49,7 @@ function warnMissingTable(): void {
 }
 
 export interface DocumentLinkExclusionWhere {
-  tenantId: string;
+  orgId: string;
   targetFolderId: string | null;
   refType: string | null;
   refId: string | null;
@@ -65,7 +65,7 @@ export async function findLinkedSourceIdsForExclusion(
   try {
     const rows = await linkClient.findMany({
       where: {
-        tenantId: where.tenantId,
+        orgId: where.orgId,
         deletedAt: null,
         targetFolderId: where.targetFolderId,
         refType: where.refType,

@@ -23,7 +23,7 @@ export async function GET(
     }
 
     const quote = await db.qcfQuote.findFirst({
-      where: { id: resolved.quoteId, tenantId: resolved.tenantId, deletedAt: null },
+      where: { id: resolved.quoteId, orgId: resolved.orgId, deletedAt: null },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
     });
     if (!quote) {
@@ -31,7 +31,7 @@ export async function GET(
     }
 
     await recordQuoteEngagement({
-      tenantId: resolved.tenantId,
+      orgId: resolved.orgId,
       quoteId: quote.id,
       eventType: "quote_viewed",
       ipAddress: clientIp(req),
@@ -40,10 +40,10 @@ export async function GET(
 
     const [account, company] = await Promise.all([
       db.qcfAccount.findFirst({
-        where: { id: quote.accountId, tenantId: resolved.tenantId },
+        where: { id: quote.accountId, orgId: resolved.orgId },
         select: { name: true },
       }),
-      getTenantCompanyBranding(resolved.tenantId),
+      getTenantCompanyBranding(resolved.orgId),
     ]);
 
     return NextResponse.json({

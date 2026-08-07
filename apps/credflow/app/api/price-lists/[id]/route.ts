@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const pl = await getPriceList(user.tenantId, id);
+    const pl = await getPriceList(user.orgId, id);
     if (!pl) return fail(404, "Price list not found");
     return ok({
       ...pl,
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
 
-    const existing = await getPriceList(user.tenantId, id);
+    const existing = await getPriceList(user.orgId, id);
     if (!existing) return fail(404, "Price list not found");
 
     const body = await req.json().catch(() => null);
@@ -77,7 +77,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     try {
       const updated = await updatePriceList({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         id,
         userId: user.userId,
         userName: user.name,
@@ -108,10 +108,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
 
-    const existing = await getPriceList(user.tenantId, id);
+    const existing = await getPriceList(user.orgId, id);
     if (!existing) return fail(404, "Price list not found");
     await softDeletePriceList({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       id,
       userId: user.userId,
       userName: user.name,

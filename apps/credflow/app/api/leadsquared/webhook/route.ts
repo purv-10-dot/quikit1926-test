@@ -82,11 +82,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   }
 
   // 3. Resolve tenant from env (single client).
-  const tenantId = resolveInboundTenantId();
+  const orgId = resolveInboundTenantId();
 
   // 4. Rate limit (best-effort; no-op/ fail-open without Redis). Keyed per
   //    tenant. Generous default so normal LeadSquared volume never trips it.
-  const rl = await checkRateLimit(`leadsquared-webhook:${tenantId}`, {
+  const rl = await checkRateLimit(`leadsquared-webhook:${orgId}`, {
     limit: RATE_LIMIT,
     windowSec: RATE_WINDOW_SEC,
   });
@@ -96,7 +96,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   // 5. Offload if Redis is available; otherwise process inline.
   if (isRedisEnabled()) {
-    await enqueueLeadSquaredInboundSafe({ tenantId, payload: body });
+    await enqueueLeadSquaredInboundSafe({ orgId, payload: body });
     return NextResponse.json({ ok: true, queued: true });
   }
 
@@ -105,7 +105,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // (never the payload/secret) for operators to act on.
   try {
     const fieldMap = await getResolvedFieldMap();
-    const results = await processInboundBatch(tenantId, body, { fieldMap });
+    const results = await processInboundBatch(orgId, body, { fieldMap });
     // Single-lead payloads keep the original response shape; batches summarize.
     return NextResponse.json(
       results.length === 1 ? results[0] : { ok: true, batch: true, results },

@@ -148,7 +148,7 @@ function withFilters<T>(where: T, conds: Record<string, unknown>[]): T {
 async function leadWhere(ctx: ReportRunContext): Promise<Prisma.QcfLeadWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
   const base: Prisma.QcfLeadWhereInput = {
-    tenantId: ctx.tenantId,
+    orgId: ctx.orgId,
     createdAt: { gte: ctx.from, lte: ctx.to },
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
@@ -161,7 +161,7 @@ async function opportunityWhere(
 ): Promise<Prisma.QcfOpportunityWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
   const base: Prisma.QcfOpportunityWhereInput = {
-    tenantId: ctx.tenantId,
+    orgId: ctx.orgId,
     deletedAt: null,
     createdAt: { gte: ctx.from, lte: ctx.to },
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
@@ -172,7 +172,7 @@ async function opportunityWhere(
 
 function activityWhere(ctx: ReportRunContext): Prisma.QcfActivityWhereInput {
   return {
-    tenantId: ctx.tenantId,
+    orgId: ctx.orgId,
     occurredAt: { gte: ctx.from, lte: ctx.to },
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
@@ -180,7 +180,7 @@ function activityWhere(ctx: ReportRunContext): Prisma.QcfActivityWhereInput {
 
 function callLogWhere(ctx: ReportRunContext): Prisma.QcfCallLogWhereInput {
   return {
-    tenantId: ctx.tenantId,
+    orgId: ctx.orgId,
     createdAt: { gte: ctx.from, lte: ctx.to },
     ...(ctx.ownerId ? { agentUserId: ctx.ownerId } : {}),
   };
@@ -198,9 +198,9 @@ function bucketLabel(raw: unknown): string {
 const USER_REF_GROUP_BYS = new Set(["ownerId", "agentUserId"]);
 
 /** id → display name for the tenant's org members (matches the pages' logic). */
-async function resolveUserNames(tenantId: string): Promise<Map<string, string>> {
+async function resolveUserNames(orgId: string): Promise<Map<string, string>> {
   const members = await db.orgMember.findMany({
-    where: { orgId: tenantId },
+    where: { orgId: orgId },
     select: {
       user: {
         select: { id: true, firstName: true, lastName: true, email: true },
@@ -485,7 +485,7 @@ export async function runCustomReport(
   // Owner/agent group-bys bucket on a user id — swap the raw UUID for the
   // person's name so the report reads like the canned owner reports do.
   if (!isDateBucket && USER_REF_GROUP_BYS.has(definition.groupBy)) {
-    const names = await resolveUserNames(ctx.tenantId);
+    const names = await resolveUserNames(ctx.orgId);
     rows = rows.map((r) => {
       const id = String(r[dimKey] ?? "");
       // Null/empty owner → friendlier than the generic "(blank)" bucket.

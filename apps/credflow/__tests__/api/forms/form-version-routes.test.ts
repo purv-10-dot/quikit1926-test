@@ -33,7 +33,7 @@ describe("version routes — unauthenticated => 401", () => {
 
 describe("version routes — assertModule gate is wired (denied => 403)", () => {
   it("POST /versions/[versionId]/publish calls assertModule and surfaces 403", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser", email: "u@b.co", name: "U" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser", email: "u@b.co", name: "U" });
     vi.mocked(assertModule).mockRejectedValue(Object.assign(new Error("Forbidden"), { statusCode: 403 }));
     const { POST } = await import("@/app/api/forms/versions/[versionId]/publish/route");
     const res = await POST(req(), versionParams);

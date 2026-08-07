@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     };
 
     const result = await runCustomReport(definition, {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       session: user,
       from: range.from,
       to: range.to,

@@ -13,7 +13,7 @@ export interface QuoteAnalyticsDashboard {
   forecastPipeline: number;
 }
 
-export async function getQuoteAnalytics(tenantId: string): Promise<QuoteAnalyticsDashboard> {
+export async function getQuoteAnalytics(orgId: string): Promise<QuoteAnalyticsDashboard> {
   const now = new Date();
   const weekEnd = new Date(now.getTime() + 7 * 86_400_000);
 
@@ -21,20 +21,20 @@ export async function getQuoteAnalytics(tenantId: string): Promise<QuoteAnalytic
     await Promise.all([
       db.qcfQuote.groupBy({
         by: ["status"],
-        where: { tenantId, deletedAt: null },
+        where: { orgId, deletedAt: null },
         _count: { _all: true },
         _sum: { grandTotal: true },
       }),
       db.qcfQuote.count({
-        where: { tenantId, deletedAt: null, sentAt: { not: null } },
+        where: { orgId, deletedAt: null, sentAt: { not: null } },
       }),
       db.qcfQuote.findMany({
-        where: { tenantId, deletedAt: null, status: "Won" },
+        where: { orgId, deletedAt: null, status: "Won" },
         select: { grandTotal: true, ownerName: true },
       }),
       db.qcfQuote.count({
         where: {
-          tenantId,
+          orgId,
           deletedAt: null,
           status: "Active",
           effectiveTo: { gte: now, lte: weekEnd },
@@ -42,14 +42,14 @@ export async function getQuoteAnalytics(tenantId: string): Promise<QuoteAnalytic
       }),
       db.qcfQuoteLine.findMany({
         where: {
-          tenantId,
+          orgId,
           quote: { status: { in: ["Active", "Won"] }, deletedAt: null },
         },
         select: { productName: true, lineTotal: true },
         take: 500,
       }),
       db.qcfQuoteApproval.findMany({
-        where: { tenantId, status: "Approved", decidedAt: { not: null } },
+        where: { orgId, status: "Approved", decidedAt: { not: null } },
         select: { requestedAt: true, decidedAt: true },
         take: 200,
       }),

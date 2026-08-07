@@ -21,7 +21,7 @@ import { createNotification } from "./service";
 // ─── Lead Assigned ────────────────────────────────────────────────────────────
 
 export interface LeadAssignedParams {
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   actorName: string;
   leadId: string;
@@ -37,14 +37,14 @@ export interface LeadAssignedParams {
 export async function notifyLeadAssigned(
   params: LeadAssignedParams,
 ): Promise<void> {
-  const { tenantId, actorUserId, actorName, leadId, leadName, newOwnerId } =
+  const { orgId, actorUserId, actorName, leadId, leadName, newOwnerId } =
     params;
 
   // Self-assignment — no notification needed.
   if (newOwnerId === actorUserId) return;
 
   await createNotification({
-    tenantId,
+    orgId,
     userId: newOwnerId,
     type: "lead_assigned",
     category: "lead",
@@ -58,7 +58,7 @@ export async function notifyLeadAssigned(
 // ─── Lead Reassigned (old owner notification) ─────────────────────────────────
 
 export interface LeadReassignedParams {
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   actorName: string;
   leadId: string;
@@ -76,7 +76,7 @@ export async function notifyLeadReassigned(
   params: LeadReassignedParams,
 ): Promise<void> {
   const {
-    tenantId,
+    orgId,
     actorUserId,
     actorName,
     leadId,
@@ -89,7 +89,7 @@ export async function notifyLeadReassigned(
   if (oldOwnerId === actorUserId) return;
 
   await createNotification({
-    tenantId,
+    orgId,
     userId: oldOwnerId,
     type: "lead_reassigned",
     category: "lead",
@@ -103,7 +103,7 @@ export async function notifyLeadReassigned(
 // ─── Orchestrator: handle owner change on PATCH ───────────────────────────────
 
 export interface LeadOwnerChangeParams {
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   actorName: string;
   leadId: string;
@@ -133,7 +133,7 @@ export async function fireLeadOwnerChangeNotifications(
 
   // Notify the incoming owner.
   await notifyLeadAssigned({
-    tenantId: params.tenantId,
+    orgId: params.orgId,
     actorUserId: params.actorUserId,
     actorName: params.actorName,
     leadId: params.leadId,
@@ -144,7 +144,7 @@ export async function fireLeadOwnerChangeNotifications(
   // Notify the outgoing owner (if there was one).
   if (oldOwnerId) {
     await notifyLeadReassigned({
-      tenantId: params.tenantId,
+      orgId: params.orgId,
       actorUserId: params.actorUserId,
       actorName: params.actorName,
       leadId: params.leadId,
@@ -158,7 +158,7 @@ export async function fireLeadOwnerChangeNotifications(
 // ─── Lead Stage Changed ───────────────────────────────────────────────────────
 
 export interface LeadStageChangedParams {
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   actorName: string;
   leadId: string;
@@ -176,7 +176,7 @@ export async function notifyLeadStageChanged(
   params: LeadStageChangedParams,
 ): Promise<void> {
   const {
-    tenantId,
+    orgId,
     actorUserId,
     actorName,
     leadId,
@@ -192,7 +192,7 @@ export async function notifyLeadStageChanged(
   if (ownerId === actorUserId) return;
 
   await createNotification({
-    tenantId,
+    orgId,
     userId: ownerId,
     type: "lead_stage_changed",
     category: "lead",
@@ -206,7 +206,7 @@ export async function notifyLeadStageChanged(
 // ─── Lead Converted ───────────────────────────────────────────────────────────
 
 export interface LeadConvertedParams {
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   actorName: string;
   leadId: string;
@@ -224,7 +224,7 @@ export async function notifyLeadConverted(
   params: LeadConvertedParams,
 ): Promise<void> {
   const {
-    tenantId,
+    orgId,
     actorUserId,
     actorName,
     leadId,
@@ -246,7 +246,7 @@ export async function notifyLeadConverted(
       : "";
 
   await createNotification({
-    tenantId,
+    orgId,
     userId: ownerId,
     type: "lead_converted",
     category: "lead",

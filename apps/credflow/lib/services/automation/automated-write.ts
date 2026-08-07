@@ -40,10 +40,10 @@ export const AUTOMATION_ACTOR_ID = "automation-engine";
 
 /** Synthetic session actor for service-layer writes made by the engine.
  *  transition-service / updateCrmLead only read `tenantId` and `userId`. */
-export function automationActor(tenantId: string): SessionUser {
+export function automationActor(orgId: string): SessionUser {
   return {
     userId: AUTOMATION_ACTOR_ID,
-    tenantId,
+    orgId,
     role: "system",
     email: "automation@credflow.local",
     name: "Automation Engine",
@@ -55,7 +55,7 @@ export function automationActor(tenantId: string): SessionUser {
 export type AutomatedWriteOutcome = "noop" | "written" | "terminated";
 
 export interface AutomatedWriteInput {
-  tenantId: string;
+  orgId: string;
   /** The in-memory lead. On a successful write it is mutated so any downstream
    *  node in the same run sees the new value (matches the original engine). */
   lead: Lead;
@@ -76,7 +76,7 @@ export interface AutomatedWriteInput {
  * so the caller controls flow (a "terminated" run advances to a null next node).
  */
 export async function applyAutomatedLeadWrite(input: AutomatedWriteInput): Promise<AutomatedWriteOutcome> {
-  const { tenantId, lead, field, workflowId, nodeId, triggerEventId, triggerType, snapshot } = input;
+  const { orgId, lead, field, workflowId, nodeId, triggerEventId, triggerType, snapshot } = input;
   const value = input.value ?? null;
   const engineSource: EngineSource = input.engineSource ?? "automation";
   const current = (lead as unknown as Record<string, unknown>)[field] ?? null;
@@ -91,7 +91,7 @@ export async function applyAutomatedLeadWrite(input: AutomatedWriteInput): Promi
   // Loop guard (SPEC §6): count this write toward the per-lead/day cap. If the
   // lead is now Terminated, do NOT write and stop the run — this is what stops a
   // runaway/self-referential rule from churning the lead.
-  const guard = await recordWriteAndCheck({ tenantId, leadId: lead.id, source: engineSource });
+  const guard = await recordWriteAndCheck({ orgId, leadId: lead.id, source: engineSource });
   if (guard.terminated) {
     console.warn("[automated-write] loop cap reached — lead terminated, write skipped", {
       leadId: lead.id,
@@ -107,7 +107,7 @@ export async function applyAutomatedLeadWrite(input: AutomatedWriteInput): Promi
     // and emits the outbound LeadSquared sync internally exactly once.
     if (value == null) return "noop";
     await transitionLead({
-      user: automationActor(tenantId),
+      user: automationActor(orgId),
       leadId: lead.id,
       input: { stage: String(value) },
     });
@@ -123,7 +123,7 @@ export async function applyAutomatedLeadWrite(input: AutomatedWriteInput): Promi
   // Attribution (SPEC §8): record which automation/node made this write, the
   // trigger event, before→after, and the trigger-time snapshot.
   await recordAttribution({
-    tenantId,
+    orgId,
     leadId: lead.id,
     engineSource,
     workflowId,

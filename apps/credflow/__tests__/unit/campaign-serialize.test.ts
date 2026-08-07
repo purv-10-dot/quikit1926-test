@@ -8,7 +8,7 @@ describe("serializeCampaign", () => {
   it("reads budget and description from config", () => {
     const dto = serializeCampaign({
       id: "c1",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Test",
       status: "Draft",
       type: "Email",

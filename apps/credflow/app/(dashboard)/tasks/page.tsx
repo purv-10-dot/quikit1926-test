@@ -11,7 +11,7 @@ export default async function TasksPage() {
   // intentionally has no cross-schema relation from QcfTask → User, so we
   // pre-compute names server-side once per page render.
   const memberships = await prisma.orgMember.findMany({
-    where: { orgId: user.tenantId },
+    where: { orgId: user.orgId },
     include: {
       user: { select: { id: true, firstName: true, lastName: true, email: true } },
     },

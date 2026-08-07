@@ -59,7 +59,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
   });
 
   it("returns 403 when user lacks opportunities:create permission", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const forbidden = Object.assign(new Error("Forbidden"), { statusCode: 403 });
     vi.mocked(assertModule).mockRejectedValueOnce(forbidden);
 
@@ -68,7 +68,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
   });
 
   it("returns 404 when contact doesn't exist or wrong tenant", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfContact.findFirst.mockResolvedValueOnce(null);
 
     const res = await callPost("c-missing", { title: "Test" });
@@ -79,7 +79,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
   });
 
   it("returns 400 with a clear message when contact.accountId is null", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfContact.findFirst.mockResolvedValueOnce({
       id: "c1",
       accountId: null,
@@ -94,31 +94,31 @@ describe("POST /api/contacts/[id]/opportunities", () => {
   });
 
   it("returns 400 when title is missing", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const res = await callPost("c1", { amount: 100 });
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when title is whitespace-only", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const res = await callPost("c1", { title: "   " });
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when amount is negative", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const res = await callPost("c1", { title: "OK", amount: -50 });
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when closeDate is in the past", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const res = await callPost("c1", { title: "OK", closeDate: pastIso(2) });
     expect(res.status).toBe(400);
   });
 
   it("creates a CrmOpportunity with correct fields and writes the audit row", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfContact.findFirst.mockResolvedValueOnce({
       id: "c1",
       accountId: "acc-1",
@@ -144,7 +144,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
     // Opportunity create call (via the service)
     const oppArg = db.qcfOpportunity.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
-    expect(oppArg.tenantId).toBe("t1");
+    expect(oppArg.orgId).toBe("t1");
     expect(oppArg.accountId).toBe("acc-1");
     expect(oppArg.leadId).toBeNull();
     expect(oppArg.name).toBe("Acme Deal");
@@ -159,7 +159,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
     // Audit log
     const auditArg = db.qcfAuditLog.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
-    expect(auditArg.tenantId).toBe("t1");
+    expect(auditArg.orgId).toBe("t1");
     expect(auditArg.module).toBe("opportunities");
     expect(auditArg.action).toBe("create_from_contact");
     expect(auditArg.resourceId).toBe("opp-new");
@@ -172,7 +172,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
   });
 
   it("defaults stage to Prospecting when none is provided", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfContact.findFirst.mockResolvedValueOnce({
       id: "c1",
       accountId: "acc-1",

@@ -35,7 +35,7 @@ import type { SessionUser } from "@/types/permission";
  */
 export async function isOwnerRestricted(user: SessionUser): Promise<boolean> {
   if (isAdminRole(user.role)) return false;
-  const override = await getRoleOverride(user.tenantId, user.role);
+  const override = await getRoleOverride(user.orgId, user.role);
   return override?.restrictToOwnedLeads === true;
 }
 

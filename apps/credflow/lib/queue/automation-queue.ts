@@ -2,7 +2,7 @@ import { Queue, type JobsOptions } from "bullmq";
 import { getQueueRedis } from "@/lib/db/redis";
 
 export interface AutomationJobData {
-  tenantId: string;
+  orgId: string;
   workflowId: string;
   leadId: string;
   startNodeId: string;

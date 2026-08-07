@@ -26,11 +26,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!parsed.success) return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
 
     const wf = await prisma.qcfWorkflowDefinition.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const updated = await unpublish(user.tenantId, id, parsed.data.mode);
+    const updated = await unpublish(user.orgId, id, parsed.data.mode);
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof LifecycleError) return NextResponse.json({ error: e.message }, { status: 400 });

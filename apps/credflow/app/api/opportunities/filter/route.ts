@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const where = buildOpportunityFilterWhere({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       aclFilter: acl,
       conditions,
       combinator,

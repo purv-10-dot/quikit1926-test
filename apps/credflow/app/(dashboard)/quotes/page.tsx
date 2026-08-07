@@ -17,13 +17,13 @@ import { QuotesAnalyticsDashboard } from "@/components/quotes/enterprise/quotes-
  * page. This matches how the Opportunities pipeline header behaves.
  *
  * Uses `groupBy` for the by-status counts + grand-total sums in a single
- * query. Cheap (`(tenantId, status)` is indexed via `@@index([tenantId, status])`
+ * query. Cheap (`(orgId, status)` is indexed via `@@index([orgId, status])`
  * on QcfQuote).
  */
-async function computeQuoteStats(tenantId: string): Promise<QuotesStats> {
+async function computeQuoteStats(orgId: string): Promise<QuotesStats> {
   const grouped = await db.qcfQuote.groupBy({
     by: ["status"],
-    where: { tenantId, deletedAt: null },
+    where: { orgId, deletedAt: null },
     _count: { _all: true },
     _sum: { grandTotal: true },
   });
@@ -50,12 +50,12 @@ export default async function QuotesPage() {
   const isAdmin = user.role === ADMIN_ROLE;
   let canDelete = isAdmin;
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     const row = matrix.find((r) => r.module === "quotes");
     canDelete = !!row?.actions.includes("delete");
   }
 
-  const stats = await computeQuoteStats(user.tenantId);
+  const stats = await computeQuoteStats(user.orgId);
   return (
     <PageContainer size="wide">
       <PageHeader

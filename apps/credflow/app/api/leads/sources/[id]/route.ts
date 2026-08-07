@@ -25,13 +25,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { status: 400 },
       );
     }
-    const existing = await prisma.qcfLeadSource.findFirst({ where: { id: params.id, tenantId: user.tenantId } });
+    const existing = await prisma.qcfLeadSource.findFirst({ where: { id: params.id, orgId: user.orgId } });
     if (!existing) return NextResponse.json({ error: "Source not found" }, { status: 404 });
 
     if (parsed.data.name && parsed.data.name !== existing.name) {
       const dup = await prisma.qcfLeadSource.findFirst({
         where: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           name: { equals: parsed.data.name, mode: "insensitive" },
           NOT: { id: existing.id },
         },
@@ -59,7 +59,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "settings", "delete");
-    const existing = await prisma.qcfLeadSource.findFirst({ where: { id: params.id, tenantId: user.tenantId } });
+    const existing = await prisma.qcfLeadSource.findFirst({ where: { id: params.id, orgId: user.orgId } });
     if (!existing) return NextResponse.json({ error: "Source not found" }, { status: 404 });
     await prisma.qcfLeadSource.delete({ where: { id: existing.id } });
     return NextResponse.json({ ok: true });

@@ -134,7 +134,7 @@ export interface LeadSquaredFieldMapConfig {
   area: string | null;
 
   // ── EXCLUDED — never mapped (internal / system / sync-control fields): ──
-  //   id, tenantId, accountId, linkedContactId, externalId, sourceSystem,
+  //   id, orgId, accountId, linkedContactId, externalId, sourceSystem,
   //   ownerName, name (derived only), score, leadQuality, isStarred,
   //   isDisengaged, followupPriority, createdAt, updatedAt, deletedAt,
   //   convertedAt, dynamicFields, requirementDetails.

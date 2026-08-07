@@ -1,7 +1,7 @@
 /**
  * Seed: the 7 "truly clean" CredFlow automations (R1, R3, R9, R17, R18, R19, R21).
  *
- *   npx tsx --env-file=.env.local scripts/seed-clean-automations.ts <tenantId>
+ *   npx tsx --env-file=.env.local scripts/seed-clean-automations.ts <orgId>
  *   SEED_TENANT_ID=xxx npx tsx --env-file=.env.local scripts/seed-clean-automations.ts
  *
  * WHAT THIS IS
@@ -172,7 +172,7 @@ async function main() {
 
   for (const spec of RULES) {
     const existing = await prisma.qcfWorkflowDefinition.findFirst({
-      where: { tenantId: TENANT_ID, name: spec.name, deletedAt: null },
+      where: { orgId: TENANT_ID, name: spec.name, deletedAt: null },
       select: { id: true },
     });
     if (existing) {
@@ -186,7 +186,7 @@ async function main() {
     await prisma.qcfWorkflowDefinition.create({
       data: {
         id: randomUUID(),
-        tenantId: TENANT_ID,
+        orgId: TENANT_ID,
         name: spec.name,
         status: status as never,
         triggerType: "trigger_lead_updated",
@@ -212,7 +212,7 @@ async function main() {
   console.log("\nVerify:");
   console.log(`  SELECT name, status, "triggerType", "triggerCount"`);
   console.log(`  FROM app_quikcrm."CrmWorkflowDefinition"`);
-  console.log(`  WHERE "tenantId"='${TENANT_ID}' AND name LIKE 'R%' ORDER BY name;`);
+  console.log(`  WHERE "orgId"='${TENANT_ID}' AND name LIKE 'R%' ORDER BY name;`);
   console.log("\nRun the worker (SAFE mode) to fire them: npm run worker:test");
 
   await prisma.$disconnect();

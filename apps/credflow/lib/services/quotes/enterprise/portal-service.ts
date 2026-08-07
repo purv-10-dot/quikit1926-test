@@ -11,14 +11,14 @@ export function generatePortalToken(): string {
 }
 
 export async function createQuotePortalLink(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   userId: string;
   expiresInDays?: number;
   origin: string;
 }): Promise<{ url: string; expiresAt: string | null }> {
   const quote = await db.qcfQuote.findFirst({
-    where: { id: args.quoteId, tenantId: args.tenantId, deletedAt: null },
+    where: { id: args.quoteId, orgId: args.orgId, deletedAt: null },
     select: { id: true },
   });
   if (!quote) throw new QuoteError("Quote not found", 404);
@@ -33,7 +33,7 @@ export async function createQuotePortalLink(args: {
   await db.$transaction(async (tx) => {
     await tx.qcfQuotePortalAccess.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         quoteId: args.quoteId,
         tokenHash,
         expiresAt,
@@ -54,7 +54,7 @@ export async function createQuotePortalLink(args: {
 }
 
 export async function resolvePortalToken(token: string): Promise<{
-  tenantId: string;
+  orgId: string;
   quoteId: string;
 } | null> {
   const tokenHash = hashToken(token);
@@ -64,7 +64,7 @@ export async function resolvePortalToken(token: string): Promise<{
       revokedAt: null,
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
-    select: { tenantId: true, quoteId: true, id: true },
+    select: { orgId: true, quoteId: true, id: true },
   });
   if (!access) return null;
 
@@ -73,11 +73,11 @@ export async function resolvePortalToken(token: string): Promise<{
     data: { lastUsedAt: new Date() },
   });
 
-  return { tenantId: access.tenantId, quoteId: access.quoteId };
+  return { orgId: access.orgId, quoteId: access.quoteId };
 }
 
 export async function portalAcceptQuote(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   comment?: string | null;
   ipAddress?: string | null;
@@ -94,7 +94,7 @@ export async function portalAcceptQuote(args: {
   });
   const { recordQuoteEngagement } = await import("./engagement-service");
   await recordQuoteEngagement({
-    tenantId: args.tenantId,
+    orgId: args.orgId,
     quoteId: args.quoteId,
     eventType: "quote_accepted",
     ipAddress: args.ipAddress,
@@ -103,7 +103,7 @@ export async function portalAcceptQuote(args: {
 }
 
 export async function portalRejectQuote(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   reason: string;
   ipAddress?: string | null;
@@ -120,7 +120,7 @@ export async function portalRejectQuote(args: {
   });
   const { recordQuoteEngagement } = await import("./engagement-service");
   await recordQuoteEngagement({
-    tenantId: args.tenantId,
+    orgId: args.orgId,
     quoteId: args.quoteId,
     eventType: "quote_rejected",
     ipAddress: args.ipAddress,

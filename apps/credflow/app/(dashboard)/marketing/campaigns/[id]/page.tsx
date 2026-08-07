@@ -19,7 +19,7 @@ export default async function CampaignDetailPage({
   const user = await requireUser();
 
   const row = await prisma.qcfCampaign.findFirst({
-    where: { id, tenantId: user.tenantId },
+    where: { id, orgId: user.orgId },
   });
   if (!row) notFound();
 

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *
  * Server-Sent Events feed of lead changes for the caller's tenant. The kanban
  * (and any future "live" surface) subscribes via EventSource — the server
- * forwards every Redis publish on `quikcrm:leads:<tenantId>` as an SSE event.
+ * forwards every Redis publish on `quikcrm:leads:<orgId>` as an SSE event.
  *
  * Connection lifecycle:
  *   - Redis subscriber is duplicated per connection (subscribe mode is sticky).
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     return new Response("Realtime unavailable: REDIS_URL is not set", { status: 503 });
   }
 
-  const channel = tenantLeadChannel(user.tenantId);
+  const channel = tenantLeadChannel(user.orgId);
   const sub = getRedis().duplicate();
   // Suppress ioredis 'unhandled error event' noise on this short-lived clone.
   sub.on("error", () => {});
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
         }
       });
 
-      sendEvent("hello", { tenantId: user.tenantId, ts: Date.now() });
+      sendEvent("hello", { orgId: user.orgId, ts: Date.now() });
 
       const heartbeat = setInterval(() => writeFrame(`: ping ${Date.now()}\n\n`), 25000);
 

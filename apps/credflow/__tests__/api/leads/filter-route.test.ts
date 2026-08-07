@@ -32,7 +32,7 @@ describe("POST /api/leads/filter", () => {
   it("translates contains conditions with tenant scope", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@b.co",
       name: "Alice",
@@ -62,7 +62,7 @@ describe("POST /api/leads/filter", () => {
     const where = db.qcfLead.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
-    expect(where.AND[0]).toMatchObject({ tenantId: "t1" });
+    expect(where.AND[0]).toMatchObject({ orgId: "t1" });
     const filterFrag = where.AND[1] as { company?: { contains?: string } };
     expect(filterFrag.company?.contains).toBe("Acme");
   });
@@ -70,7 +70,7 @@ describe("POST /api/leads/filter", () => {
   it("applies toolbar search across email and company", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@b.co",
       name: "Alice",
@@ -112,7 +112,7 @@ describe("POST /api/leads/filter", () => {
   it("returns 400 for invalid match mode", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@b.co",
       name: "Alice",

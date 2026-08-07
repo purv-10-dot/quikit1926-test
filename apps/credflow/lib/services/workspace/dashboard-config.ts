@@ -33,8 +33,8 @@ interface SettingsTree {
   [k: string]: unknown;
 }
 
-export async function getDashboardConfig(tenantId: string): Promise<DashboardConfig> {
-  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+export async function getDashboardConfig(orgId: string): Promise<DashboardConfig> {
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   const tree = ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
   const cfg = tree.dashboard ?? {};
 
@@ -47,7 +47,7 @@ export async function getDashboardConfig(tenantId: string): Promise<DashboardCon
   if (Array.isArray(cfg.funnelStages) && cfg.funnelStages.length > 0) {
     funnelStages = cfg.funnelStages;
   } else {
-    const pipeline = await getPipelineConfig(tenantId);
+    const pipeline = await getPipelineConfig(orgId);
     funnelStages = pipeline.stages;
   }
 

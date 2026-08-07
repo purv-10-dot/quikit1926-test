@@ -8,7 +8,7 @@ export interface ContactRollupIds {
 }
 
 export function buildContactActivityWhere(
-  tenantId: string,
+  orgId: string,
   ids: ContactRollupIds,
 ): Prisma.QcfActivityWhereInput {
   const or: Prisma.QcfActivityWhereInput[] = [
@@ -25,14 +25,14 @@ export function buildContactActivityWhere(
     or.push({ relatedKind: "account", relatedObjectId: ids.accountId });
   }
   return {
-    tenantId,
+    orgId,
     relatedOrphanedAt: null,
     OR: or,
   };
 }
 
 export function buildContactTaskWhere(
-  tenantId: string,
+  orgId: string,
   ids: ContactRollupIds,
 ): Prisma.QcfTaskWhereInput {
   const or: Prisma.QcfTaskWhereInput[] = [
@@ -44,11 +44,11 @@ export function buildContactTaskWhere(
     or.push({ relatedKind: "Lead", relatedObjectId: ids.leadId });
     or.push({ relatedKind: "lead", relatedObjectId: ids.leadId });
   }
-  return { tenantId, OR: or };
+  return { orgId, OR: or };
 }
 
 export function buildContactNoteWhere(
-  tenantId: string,
+  orgId: string,
   ids: ContactRollupIds,
 ): Prisma.QcfNoteWhereInput {
   const or: Prisma.QcfNoteWhereInput[] = [
@@ -60,5 +60,5 @@ export function buildContactNoteWhere(
     or.push({ relatedKind: "Lead", relatedObjectId: ids.leadId });
     or.push({ relatedKind: "lead", relatedObjectId: ids.leadId });
   }
-  return { tenantId, OR: or };
+  return { orgId, OR: or };
 }

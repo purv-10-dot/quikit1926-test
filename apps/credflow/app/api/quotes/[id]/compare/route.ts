@@ -20,11 +20,11 @@ export async function GET(
 
     const withId = req.nextUrl.searchParams.get("with");
     if (!withId) {
-      const versions = await listComparableVersions(user.tenantId, id);
+      const versions = await listComparableVersions(user.orgId, id);
       return NextResponse.json({ success: true, data: { versions } });
     }
 
-    const comparison = await compareQuoteVersions(user.tenantId, id, withId);
+    const comparison = await compareQuoteVersions(user.orgId, id, withId);
     return NextResponse.json({ success: true, data: comparison });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Compare failed";

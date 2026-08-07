@@ -45,7 +45,7 @@ export async function POST(
     });
 
     await recordQuoteEngagement({
-      tenantId: resolved.tenantId,
+      orgId: resolved.orgId,
       quoteId: resolved.quoteId,
       eventType: "quote_signed",
       ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
@@ -54,7 +54,7 @@ export async function POST(
     });
 
     await generateQuotePdfSnapshot({
-      tenantId: resolved.tenantId,
+      orgId: resolved.orgId,
       quoteId: resolved.quoteId,
       userId: "portal",
       userName: parsed.data.signerName,

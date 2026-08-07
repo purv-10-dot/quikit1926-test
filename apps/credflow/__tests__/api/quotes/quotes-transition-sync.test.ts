@@ -45,7 +45,7 @@ describe("transitionQuote â€” Opportunity probability sync (audit W-1)", ()
     db.qcfQuote.findFirst.mockResolvedValueOnce({ id: "q1", lines: [] } as never);
 
     await transitionQuote({
-      tenantId: "t1",
+      orgId: "t1",
       userId: "u1",
       userName: "Alice",
       quoteId: "q1",
@@ -54,11 +54,11 @@ describe("transitionQuote â€” Opportunity probability sync (audit W-1)", ()
 
     expect(db.qcfOpportunity.updateMany).toHaveBeenCalledOnce();
     const call = db.qcfOpportunity.updateMany.mock.calls[0]![0]! as {
-      where: { id: string; tenantId: string; stage: { in: string[] } };
+      where: { id: string; orgId: string; stage: { in: string[] } };
       data: { probability: number; lastActivityAt: Date };
     };
     expect(call.where.id).toBe("opp1");
-    expect(call.where.tenantId).toBe("t1");
+    expect(call.where.orgId).toBe("t1");
     // Only opens stages should be touched â€” don't overwrite Closed* manual decisions.
     expect(call.where.stage.in).toEqual(
       expect.arrayContaining(["Prospecting", "Qualification", "Proposal", "Negotiation"]),
@@ -80,7 +80,7 @@ describe("transitionQuote â€” Opportunity probability sync (audit W-1)", ()
     db.qcfQuote.findFirst.mockResolvedValueOnce({ id: "q1", lines: [] } as never);
 
     await transitionQuote({
-      tenantId: "t1",
+      orgId: "t1",
       userId: "u1",
       userName: "Alice",
       quoteId: "q1",
@@ -103,7 +103,7 @@ describe("transitionQuote â€” Opportunity probability sync (audit W-1)", ()
     db.qcfQuote.findFirst.mockResolvedValueOnce({ id: "q1", lines: [] } as never);
 
     await transitionQuote({
-      tenantId: "t1",
+      orgId: "t1",
       userId: "u1",
       userName: "Alice",
       quoteId: "q1",
@@ -123,7 +123,7 @@ describe("transitionQuote â€” Opportunity probability sync (audit W-1)", ()
     db.qcfQuote.findFirst.mockResolvedValueOnce({ id: "q1", lines: [] } as never);
 
     await transitionQuote({
-      tenantId: "t1",
+      orgId: "t1",
       userId: "u1",
       userName: "Alice",
       quoteId: "q1",
@@ -147,7 +147,7 @@ describe("transitionQuote â€” Opportunity probability sync (audit W-1)", ()
     db.qcfQuote.findFirst.mockResolvedValueOnce({ id: "q1", lines: [] } as never);
 
     await transitionQuote({
-      tenantId: "t1",
+      orgId: "t1",
       userId: "u1",
       userName: "Alice",
       quoteId: "q1",

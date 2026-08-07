@@ -45,7 +45,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const rule = await getRuleById(user.tenantId, id);
+    const rule = await getRuleById(user.orgId, id);
     if (!rule) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ rule });
   } catch (e) {
@@ -73,12 +73,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     // Fast-path for toggle (single isActive boolean PATCH).
     if (Object.keys(parsed.data).length === 1 && "isActive" in parsed.data) {
-      const rule = await toggleRuleActive(user.tenantId, id, parsed.data.isActive!);
+      const rule = await toggleRuleActive(user.orgId, id, parsed.data.isActive!);
       if (!rule) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ rule });
     }
 
-    const rule = await updateRule(user.tenantId, id, parsed.data);
+    const rule = await updateRule(user.orgId, id, parsed.data);
     if (!rule) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ rule });
   } catch (e) {
@@ -96,10 +96,10 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const exists = await getRuleById(user.tenantId, id);
+    const exists = await getRuleById(user.orgId, id);
     if (!exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await deleteRule(user.tenantId, id);
+    await deleteRule(user.orgId, id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

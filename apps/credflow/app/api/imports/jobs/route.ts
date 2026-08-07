@@ -9,7 +9,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const items = await prisma.qcfLeadImportJob.findMany({
-      where: { tenantId: user.tenantId },
+      where: { orgId: user.orgId },
       orderBy: { createdAt: "desc" },
       take: 200,
       select: {

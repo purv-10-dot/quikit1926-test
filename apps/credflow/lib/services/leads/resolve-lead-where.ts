@@ -8,7 +8,7 @@ import type { FilterPayloadInput } from "@/lib/validators/lead-filter";
 /**
  * Build the Prisma `where` for a user-facing lead query from an advanced-filter
  * payload, applying the SAME guards the /api/leads/filter route uses:
- *   { AND: [ {tenantId}, filterWhere, accountAcl?, ownerScope? ] }
+ *   { AND: [ {orgId}, filterWhere, accountAcl?, ownerScope? ] }
  *
  * Shared so the paginated list and the bulk-update endpoint resolve "the leads
  * matching this filter" IDENTICALLY — a drift or missing ACL/owner-scope clause
@@ -28,12 +28,12 @@ export async function resolveLeadWhere(
   user: SessionUser,
   filter: FilterPayloadInput,
 ): Promise<Record<string, unknown>> {
-  const customDefs = await listCustomFields(user.tenantId);
+  const customDefs = await listCustomFields(user.orgId);
   const filterWhere = translateFilterToPrismaWhere(filter, customDefs);
   const acl = await accountScopeFilter(user);
   const ownerScope = await ownerScopeFilter(user);
 
-  const and: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+  const and: Record<string, unknown>[] = [{ orgId: user.orgId }];
   if (Object.keys(filterWhere).length > 0) and.push(filterWhere);
   if (acl) and.push(acl);
   if (ownerScope) and.push(ownerScope);

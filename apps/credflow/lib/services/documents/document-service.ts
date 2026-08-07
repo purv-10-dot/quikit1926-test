@@ -16,14 +16,14 @@ import { resolveUploaderNames } from "./uploader-names";
 export { DocumentParentError };
 
 async function validateFolderForEntity(
-  tenantId: string,
+  orgId: string,
   refType: DocumentRefType,
   refId: string,
   folderId: string | null | undefined,
 ): Promise<string | null> {
   if (!folderId) return null;
   const folder = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: folderId, tenantId, deletedAt: null },
+    where: { id: folderId, orgId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
   if (folder.refType !== refType || folder.refId !== refId) {
@@ -40,11 +40,11 @@ export async function listEntityDocuments(
 ): Promise<DocumentDto[]> {
   await assertDocumentParent(user, refType, refId);
   const resolvedFolderId =
-    folderId === undefined ? undefined : await validateFolderForEntity(user.tenantId, refType, refId, folderId);
+    folderId === undefined ? undefined : await validateFolderForEntity(user.orgId, refType, refId, folderId);
 
   const rows = await prisma.qcfDocument.findMany({
     where: {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       refType,
       refId,
       deletedAt: null,
@@ -53,7 +53,7 @@ export async function listEntityDocuments(
     orderBy: { createdAt: "desc" },
   });
   const names = await resolveUploaderNames(
-    user.tenantId,
+    user.orgId,
     rows.map((r) => r.uploadedBy),
   );
   return rows.map((r) => toDocumentDto(r, names.get(r.uploadedBy) ?? null));
@@ -68,7 +68,7 @@ export async function uploadEntityDocument(
 ): Promise<DocumentDto> {
   await assertDocumentParent(user, refType, refId);
   const resolvedFolderId = await validateFolderForEntity(
-    user.tenantId,
+    user.orgId,
     refType,
     refId,
     folderId ?? null,
@@ -78,7 +78,7 @@ export async function uploadEntityDocument(
   try {
     const row = await prisma.qcfDocument.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         refType,
         refId,
         folderId: resolvedFolderId,
@@ -89,7 +89,7 @@ export async function uploadEntityDocument(
         uploadedBy: user.userId,
       },
     });
-    const names = await resolveUploaderNames(user.tenantId, [user.userId]);
+    const names = await resolveUploaderNames(user.orgId, [user.userId]);
     return toDocumentDto(row, names.get(user.userId) ?? null);
   } catch (e: unknown) {
     await deleteCrmUpload(storageKey);
@@ -107,7 +107,7 @@ export async function deleteEntityDocument(
   const doc = await prisma.qcfDocument.findFirst({
     where: {
       id: attachmentId,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       refType,
       refId,
       deletedAt: null,
@@ -138,7 +138,7 @@ async function findEntityDocument(
   const doc = await prisma.qcfDocument.findFirst({
     where: {
       id: attachmentId,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       refType,
       refId,
       deletedAt: null,

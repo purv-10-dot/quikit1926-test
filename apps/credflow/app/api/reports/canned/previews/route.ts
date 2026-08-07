@@ -47,7 +47,7 @@ async function runOne(
     const ownerIdParam = searchParams.get("ownerId");
     const ownerId = ownerIdParam && ownerIdParam.trim() ? ownerIdParam : undefined;
     const result = await report.run({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       session: user,
       from: range.from,
       to: range.to,

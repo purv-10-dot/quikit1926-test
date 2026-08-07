@@ -97,7 +97,7 @@ export async function createCrmLead(
   const lead = await insertLead(data);
   // Enqueue outbound sync FIRST — before the (throwable) activity log below and
   // before any caller-side scoring/change-log — so it can never be skipped.
-  triggerOutboundSync({ tenantId: lead.tenantId, crmLeadId: lead.id });
+  triggerOutboundSync({ orgId: lead.orgId, crmLeadId: lead.id });
   // Fire the New-Lead automation trigger from the SERVICE layer so EVERY create
   // path fires rules — the API route AND bulk import (lead-import-row) both call
   // createCrmLead, so this closes the SURVEY #2 silent no-fire on the import
@@ -105,7 +105,7 @@ export async function createCrmLead(
   // trigger or rules silently won't fire there. Fire-and-forget + Redis-safe
   // (fireTrigger no-ops without Redis).
   void Promise.resolve(
-    onLeadCreated(lead.tenantId, lead.id, lead.ownerName ?? ""),
+    onLeadCreated(lead.orgId, lead.id, lead.ownerName ?? ""),
   ).catch((err) => console.error("[automation] onLeadCreated failed", err));
   try {
     await logLeadSystemActivitiesOnCreate(lead, options?.creation ?? {});
@@ -143,6 +143,6 @@ export async function updateCrmLead(
   data: Prisma.QcfLeadUncheckedUpdateInput,
 ) {
   const updated = await runUpdate(id, data);
-  triggerOutboundSync({ tenantId: updated.tenantId, crmLeadId: updated.id });
+  triggerOutboundSync({ orgId: updated.orgId, crmLeadId: updated.id });
   return updated;
 }

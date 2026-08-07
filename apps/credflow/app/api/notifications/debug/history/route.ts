@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
           ? { readAt: { not: null } }
           : {};
 
-    const where = { tenantId: user.tenantId, ...readFilter };
+    const where = { orgId: user.orgId, ...readFilter };
 
     const [items, total] = await Promise.all([
       prisma.qcfNotification.findMany({

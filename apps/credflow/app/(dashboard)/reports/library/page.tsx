@@ -8,7 +8,7 @@ export default async function ReportsLibraryPage() {
   const user = await requireUser();
   const canExport = await hasPermission(user, "reports", "export");
   const memberships = await prisma.orgMember.findMany({
-    where: { orgId: user.tenantId },
+    where: { orgId: user.orgId },
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
   const ownerOptions = memberships

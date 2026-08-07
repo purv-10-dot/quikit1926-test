@@ -57,7 +57,7 @@ async function countActivitiesInRange(
   to: Date,
 ): Promise<number> {
   const where: Record<string, unknown> = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     occurredAt: { gte: from, lte: to },
   };
   if (ownerId) where.ownerId = ownerId;
@@ -90,7 +90,7 @@ export async function buildSummary(
   const { range, resolvedOwnerId } = filters;
   const prior = priorRange(range);
 
-  const dashCfg = await getDashboardConfig(user.tenantId);
+  const dashCfg = await getDashboardConfig(user.orgId);
 
   // Soft-delete-aware bases. QcfLead, QcfOpportunity, and QcfAccount all
   // carry `deletedAt`. They are NOT yet registered in the package-level
@@ -313,7 +313,7 @@ async function buildTeamDashboard(
   }
 
   const callWhere = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     createdAt: { gte: range.from, lte: range.to },
     OR: [
       { agentUserId: { in: team.memberIds } },
@@ -322,7 +322,7 @@ async function buildTeamDashboard(
   };
 
   const activityWhere = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     occurredAt: { gte: range.from, lte: range.to },
     OR: [
       { ownerId: { in: team.memberIds } },

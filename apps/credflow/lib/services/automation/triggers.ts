@@ -14,7 +14,7 @@ import type { WorkflowEdge, WorkflowNode } from "@/types/workflow";
 
 let warnedDisabled = false;
 
-async function fireTrigger(tenantId: string, leadId: string, triggerType: string) {
+async function fireTrigger(orgId: string, leadId: string, triggerType: string) {
   if (!isRedisEnabled()) {
     if (!warnedDisabled) {
       warnedDisabled = true;
@@ -30,7 +30,7 @@ async function fireTrigger(tenantId: string, leadId: string, triggerType: string
   // (Draining still *resumes* its in-flight leads — that gate is in runFrom).
   // ADMIT_NEW_STATUS is the single source of truth shared with the engine.
   const workflows = await prisma.qcfWorkflowDefinition.findMany({
-    where: { tenantId, status: ADMIT_NEW_STATUS, deletedAt: null, triggerType },
+    where: { orgId, status: ADMIT_NEW_STATUS, deletedAt: null, triggerType },
   });
   if (workflows.length === 0) return;
 
@@ -38,7 +38,7 @@ async function fireTrigger(tenantId: string, leadId: string, triggerType: string
   // snapshot ONCE and carry it on every enqueued run so attribution (SPEC §8)
   // can show "field was X at trigger". Shared across all matching workflows.
   const eventId = randomUUID();
-  const lead = await prisma.qcfLead.findFirst({ where: { id: leadId, tenantId } });
+  const lead = await prisma.qcfLead.findFirst({ where: { id: leadId, orgId } });
   const triggerSnapshot = lead ? snapshotOf(lead) : undefined;
 
   for (const wf of workflows) {
@@ -50,7 +50,7 @@ async function fireTrigger(tenantId: string, leadId: string, triggerType: string
     if (!firstAction) continue;
     await enqueueAutomation(
       {
-        tenantId,
+        orgId,
         workflowId: wf.id,
         leadId,
         startNodeId: firstAction,
@@ -73,10 +73,10 @@ async function fireTrigger(tenantId: string, leadId: string, triggerType: string
   // time, and a failed run can't gum up future events for that lead.
 }
 
-export async function onLeadCreated(tenantId: string, leadId: string, _ownerName: string): Promise<void> {
-  await fireTrigger(tenantId, leadId, "trigger_lead_created");
+export async function onLeadCreated(orgId: string, leadId: string, _ownerName: string): Promise<void> {
+  await fireTrigger(orgId, leadId, "trigger_lead_created");
 }
 
-export async function onLeadUpdated(tenantId: string, leadId: string): Promise<void> {
-  await fireTrigger(tenantId, leadId, "trigger_lead_updated");
+export async function onLeadUpdated(orgId: string, leadId: string): Promise<void> {
+  await fireTrigger(orgId, leadId, "trigger_lead_updated");
 }

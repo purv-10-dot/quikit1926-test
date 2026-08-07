@@ -15,10 +15,10 @@ import type { CannedReport, ReportRunContext } from "./types";
 
 const SALES_USER_ROLES = ["user", "member", "sales_user", "salesuser"];
 
-async function tenantSalesUserMemberships(tenantId: string) {
+async function tenantSalesUserMemberships(orgId: string) {
   const lowered = SALES_USER_ROLES.map((r) => r.toLowerCase());
   const all = await db.orgMember.findMany({
-    where: { orgId: tenantId },
+    where: { orgId: orgId },
     include: {
       user: { select: { id: true, firstName: true, lastName: true, email: true } },
     },
@@ -60,7 +60,7 @@ const teamConversionRate: CannedReport = {
     return ownerId ? `/leads?ownerId=${encodeURIComponent(ownerId)}` : null;
   },
   async run(ctx) {
-    const memberships = await tenantSalesUserMemberships(ctx.tenantId);
+    const memberships = await tenantSalesUserMemberships(ctx.orgId);
     if (memberships.length === 0) {
       return {
         columns: [
@@ -86,7 +86,7 @@ const teamConversionRate: CannedReport = {
     const totals = await db.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         ownerId: { in: userIds },
         createdAt: { gte: ctx.from, lte: ctx.to },
       },
@@ -95,7 +95,7 @@ const teamConversionRate: CannedReport = {
     const qualified = await db.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         ownerId: { in: userIds },
         createdAt: { gte: ctx.from, lte: ctx.to },
         stage: { not: "New" },
@@ -182,7 +182,7 @@ const teamDispositionMix: CannedReport = {
     const grouped = await db.qcfCallLog.groupBy({
       by: ["dispositionName"],
       where: {
-        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
         agentUserId: { in: reportIds },
         createdAt: { gte: ctx.from, lte: ctx.to },
       },

@@ -31,9 +31,9 @@ export type ImportJobRunResult =
  * Safe to call from the worker or inline from an API route after enqueue.
  */
 export async function executeImportJob(data: ImportJobData): Promise<ImportJobRunResult> {
-  const { tenantId, jobId, entityType } = data;
+  const { orgId, jobId, entityType } = data;
   const dbJob = await prisma.qcfLeadImportJob.findUnique({ where: { id: jobId } });
-  if (!dbJob || dbJob.tenantId !== tenantId) {
+  if (!dbJob || dbJob.orgId !== orgId) {
     return { outcome: "skipped" };
   }
 

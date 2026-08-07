@@ -31,7 +31,7 @@ export async function createDefaultTaskForLead(
 
     await prisma.qcfTask.create({
       data: {
-        tenantId: lead.tenantId,
+        orgId: lead.orgId,
         subject: overrides.subject ?? `Follow-up with ${lead.name}`,
         taskType: "To-Do",
         priority: overrides.priority ?? "Medium",

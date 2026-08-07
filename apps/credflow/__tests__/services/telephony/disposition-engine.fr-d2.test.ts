@@ -40,7 +40,7 @@ const DISP_ID = "disp_d2";
 
 const fakeDisposition = {
   id: DISP_ID,
-  tenantId: TENANT,
+  orgId: TENANT,
   name: "Interested",
   label: "Interested",
   code: "interested",

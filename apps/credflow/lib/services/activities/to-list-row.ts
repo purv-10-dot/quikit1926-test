@@ -100,11 +100,11 @@ function readLeadLog(d: QcfActivity): ActivityLeadLogApi | undefined {
 }
 
 export async function toListRows(
-  tenantId: string,
+  orgId: string,
   rows: ReadonlyArray<QcfActivity>,
   tz: string,
 ): Promise<ActivityRow[]> {
-  const labelMap = await resolveRelatedLabels(tenantId, rows);
+  const labelMap = await resolveRelatedLabels(orgId, rows);
   return rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -127,10 +127,10 @@ export async function toListRows(
 }
 
 export async function toListRow(
-  tenantId: string,
+  orgId: string,
   row: QcfActivity,
   tz: string,
 ): Promise<ActivityRow> {
-  const [out] = await toListRows(tenantId, [row], tz);
+  const [out] = await toListRows(orgId, [row], tz);
   return out!;
 }

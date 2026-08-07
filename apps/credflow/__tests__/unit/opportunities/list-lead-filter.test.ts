@@ -11,17 +11,17 @@ describe("opportunity list by leadId", () => {
 
   it("filters where clause by leadId", () => {
     const where = buildOpportunityListWhere({
-      tenantId: "t1",
+      orgId: "t1",
       trashed: false,
       leadId: "lead_abc",
       aclFilter: null,
     });
-    expect(where).toMatchObject({ tenantId: "t1", leadId: "lead_abc", deletedAt: null });
+    expect(where).toMatchObject({ orgId: "t1", leadId: "lead_abc", deletedAt: null });
   });
 
   it("searches across name, related account.name, and ownerName", () => {
     const where = buildOpportunityListWhere({
-      tenantId: "t1",
+      orgId: "t1",
       trashed: false,
       q: "acme",
       aclFilter: null,
@@ -40,7 +40,7 @@ describe("opportunity list by leadId", () => {
       OR: [{ accountId: { in: ["a1"] } }, { accountId: null }],
     };
     const where = buildOpportunityListWhere({
-      tenantId: "t1",
+      orgId: "t1",
       trashed: false,
       q: "acme",
       aclFilter,

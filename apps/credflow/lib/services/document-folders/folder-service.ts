@@ -42,13 +42,13 @@ async function assertScopeAccess(user: SessionUser, scope: FolderScope): Promise
 }
 
 async function resolveParentForCreate(
-  tenantId: string,
+  orgId: string,
   scope: FolderScope,
   parentFolderId: string | null | undefined,
 ): Promise<string | null> {
   if (!parentFolderId) return null;
   const parent = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: parentFolderId, tenantId, deletedAt: null },
+    where: { id: parentFolderId, orgId, deletedAt: null },
   });
   if (!parent) throw new FolderServiceError("Parent folder not found", 404);
   const expected = normalizeScope(scope);
@@ -71,7 +71,7 @@ export async function createFolder(
   if (!name) throw new FolderServiceError("Folder name is required");
 
   const parentFolderId = await resolveParentForCreate(
-    user.tenantId,
+    user.orgId,
     scope,
     input.parentFolderId ?? null,
   );
@@ -79,7 +79,7 @@ export async function createFolder(
   const { refType, refId } = normalizeScope(scope);
   const row = await prisma.qcfDocumentFolder.create({
     data: {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       name,
       parentFolderId,
       refType,
@@ -92,7 +92,7 @@ export async function createFolder(
 
 export async function getFolder(user: SessionUser, folderId: string): Promise<FolderDto> {
   const row = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: folderId, tenantId: user.tenantId, deletedAt: null },
+    where: { id: folderId, orgId: user.orgId, deletedAt: null },
   });
   if (!row) throw new FolderServiceError("Folder not found", 404);
   await assertScopeAccess(user, {
@@ -102,10 +102,10 @@ export async function getFolder(user: SessionUser, folderId: string): Promise<Fo
 
   const [childFolderCount, fileCount] = await Promise.all([
     prisma.qcfDocumentFolder.count({
-      where: { tenantId: user.tenantId, parentFolderId: folderId, deletedAt: null },
+      where: { orgId: user.orgId, parentFolderId: folderId, deletedAt: null },
     }),
     prisma.qcfDocument.count({
-      where: { tenantId: user.tenantId, folderId, deletedAt: null },
+      where: { orgId: user.orgId, folderId, deletedAt: null },
     }),
   ]);
 
@@ -134,7 +134,7 @@ export async function moveFolder(
   input: MoveFolderInput,
 ): Promise<FolderDto> {
   await getFolder(user, folderId);
-  await validateFolderMove(user.tenantId, folderId, input.parentFolderId);
+  await validateFolderMove(user.orgId, folderId, input.parentFolderId);
 
   const row = await prisma.qcfDocumentFolder.update({
     where: { id: folderId },
@@ -151,10 +151,10 @@ export async function deleteFolder(
   await getFolder(user, folderId);
 
   const childCount = await prisma.qcfDocumentFolder.count({
-    where: { tenantId: user.tenantId, parentFolderId: folderId, deletedAt: null },
+    where: { orgId: user.orgId, parentFolderId: folderId, deletedAt: null },
   });
   const fileCount = await prisma.qcfDocument.count({
-    where: { tenantId: user.tenantId, folderId, deletedAt: null },
+    where: { orgId: user.orgId, folderId, deletedAt: null },
   });
 
   if (!recursive && (childCount > 0 || fileCount > 0)) {
@@ -165,7 +165,7 @@ export async function deleteFolder(
   }
 
   if (recursive) {
-    await softDeleteFolderRecursive(user.tenantId, folderId);
+    await softDeleteFolderRecursive(user.orgId, folderId);
     return;
   }
 
@@ -175,18 +175,18 @@ export async function deleteFolder(
   });
 }
 
-async function softDeleteFolderRecursive(tenantId: string, folderId: string): Promise<void> {
+async function softDeleteFolderRecursive(orgId: string, folderId: string): Promise<void> {
   const children = await prisma.qcfDocumentFolder.findMany({
-    where: { tenantId, parentFolderId: folderId, deletedAt: null },
+    where: { orgId, parentFolderId: folderId, deletedAt: null },
     select: { id: true },
   });
   for (const c of children) {
-    await softDeleteFolderRecursive(tenantId, c.id);
+    await softDeleteFolderRecursive(orgId, c.id);
   }
 
   const now = new Date();
   await prisma.qcfDocument.updateMany({
-    where: { tenantId, folderId, deletedAt: null },
+    where: { orgId, folderId, deletedAt: null },
     data: { deletedAt: now },
   });
   await prisma.qcfDocumentFolder.update({
@@ -213,11 +213,11 @@ export async function listFolderContents(
   const skip = (page - 1) * pageSize;
 
   if (query.folderId) {
-    await assertFolderInScope(user.tenantId, query.folderId, query.scope);
+    await assertFolderInScope(user.orgId, query.folderId, query.scope);
   }
 
   const folderWhere: Prisma.QcfDocumentFolderWhereInput = {
-    ...scopeWhere(user.tenantId, query.scope),
+    ...scopeWhere(user.orgId, query.scope),
     parentFolderId: query.folderId,
   };
   if (query.q?.trim()) {
@@ -225,7 +225,7 @@ export async function listFolderContents(
   }
 
   const fileWhere: Prisma.QcfDocumentWhereInput = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     deletedAt: null,
     folderId: query.folderId,
   };
@@ -234,7 +234,7 @@ export async function listFolderContents(
     fileWhere.refId = query.scope.refId;
   } else if (!query.scope.refType && !query.scope.refId) {
     fileWhere.refType = "global";
-    fileWhere.refId = user.tenantId;
+    fileWhere.refId = user.orgId;
   }
   if (query.q?.trim()) {
     fileWhere.fileName = { contains: query.q.trim(), mode: "insensitive" };
@@ -258,17 +258,17 @@ export async function listFolderContents(
       prisma.qcfDocument.count({ where: fileWhere }),
       query.folderId
         ? prisma.qcfDocumentFolder.findFirst({
-            where: { id: query.folderId, tenantId: user.tenantId, deletedAt: null },
+            where: { id: query.folderId, orgId: user.orgId, deletedAt: null },
           })
         : Promise.resolve(null),
-      buildFolderBreadcrumbs(user.tenantId, query.folderId),
+      buildFolderBreadcrumbs(user.orgId, query.folderId),
     ]);
 
   const linkRefType = query.scope.refType ?? null;
   const linkRefId = query.scope.refId ?? null;
 
   const [names, linkedFiles] = await Promise.all([
-    resolveUploaderNames(user.tenantId, fileRows.map((r) => r.uploadedBy)),
+    resolveUploaderNames(user.orgId, fileRows.map((r) => r.uploadedBy)),
     listLinkedDocumentsForFolder(user, {
       targetFolderId: query.folderId,
       refType: linkRefType,
@@ -298,7 +298,7 @@ export async function uploadFileToFolder(
   file: File,
 ): Promise<ReturnType<typeof uploadEntityDocument>> {
   const folder = await prisma.qcfDocumentFolder.findFirst({
-    where: { id: folderId, tenantId: user.tenantId, deletedAt: null },
+    where: { id: folderId, orgId: user.orgId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
 
@@ -317,15 +317,15 @@ export async function uploadGlobalRootDocument(
   user: SessionUser,
   file: File,
 ): Promise<Awaited<ReturnType<typeof uploadEntityDocument>>> {
-  await assertDocumentParent(user, "global", user.tenantId);
-  const segment = user.tenantId;
+  await assertDocumentParent(user, "global", user.orgId);
+  const segment = user.orgId;
   const { storageKey, size, safeName } = await saveCrmUpload(segment, file);
   try {
     const row = await prisma.qcfDocument.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         refType: "global",
-        refId: user.tenantId,
+        refId: user.orgId,
         folderId: null,
         fileName: safeName,
         contentType: file.type || "application/octet-stream",
@@ -334,7 +334,7 @@ export async function uploadGlobalRootDocument(
         uploadedBy: user.userId,
       },
     });
-    const names = await resolveUploaderNames(user.tenantId, [user.userId]);
+    const names = await resolveUploaderNames(user.orgId, [user.userId]);
     return toDocumentDto(row, names.get(user.userId) ?? null);
   } catch (e: unknown) {
     await deleteCrmUpload(storageKey);
@@ -353,9 +353,9 @@ async function uploadGlobalFolderDocument(
   try {
     const row = await prisma.qcfDocument.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         refType: "global",
-        refId: user.tenantId,
+        refId: user.orgId,
         folderId,
         fileName: safeName,
         contentType: file.type || "application/octet-stream",
@@ -364,7 +364,7 @@ async function uploadGlobalFolderDocument(
         uploadedBy: user.userId,
       },
     });
-    const names = await resolveUploaderNames(user.tenantId, [user.userId]);
+    const names = await resolveUploaderNames(user.orgId, [user.userId]);
     return toDocumentDto(row, names.get(user.userId) ?? null);
   } catch (e: unknown) {
     await deleteCrmUpload(storageKey);
@@ -378,7 +378,7 @@ export async function moveDocumentToFolder(
   input: MoveDocumentInput,
 ): Promise<void> {
   const doc = await prisma.qcfDocument.findFirst({
-    where: { id: documentId, tenantId: user.tenantId, deletedAt: null },
+    where: { id: documentId, orgId: user.orgId, deletedAt: null },
   });
   if (!doc) throw new FolderServiceError("Document not found", 404);
 
@@ -386,7 +386,7 @@ export async function moveDocumentToFolder(
 
   if (input.folderId) {
     const folder = await prisma.qcfDocumentFolder.findFirst({
-      where: { id: input.folderId, tenantId: user.tenantId, deletedAt: null },
+      where: { id: input.folderId, orgId: user.orgId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Folder not found", 404);
     if (folder.refType !== doc.refType || folder.refId !== doc.refId) {

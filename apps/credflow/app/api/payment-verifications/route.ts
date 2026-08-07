@@ -32,14 +32,14 @@ export async function POST(req: NextRequest) {
 
     if (leadId) {
       const lead = await prisma.qcfLead.findFirst({
-        where: { id: leadId, tenantId: user.tenantId },
+        where: { id: leadId, orgId: user.orgId },
         select: { id: true },
       });
       if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     if (callLogId) {
       const cl = await prisma.qcfCallLog.findFirst({
-        where: { id: callLogId, tenantId: user.tenantId },
+        where: { id: callLogId, orgId: user.orgId },
         select: { id: true },
       });
       if (!cl) return NextResponse.json({ error: "Call log not found" }, { status: 404 });
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const row = await prisma.qcfPaymentVerification.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         leadId: leadId ?? null,
         callLogId: callLogId ?? null,
         amount,

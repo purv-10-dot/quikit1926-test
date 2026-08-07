@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     // Owner-based visibility: restricted roles see only leads they own.
     const ownerScope = await ownerScopeFilter(user);
 
-    const where: Record<string, unknown> = { tenantId: user.tenantId };
+    const where: Record<string, unknown> = { orgId: user.orgId };
     if (q.stage) where.stage = q.stage;
     if (q.status) where.status = q.status;
     if (q.ownerId) where.ownerId = q.ownerId;
@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
     // messy input ("7631957103") is stored consistently and dedupes correctly.
     // Reject genuinely-invalid numbers with the lead route's { error, errors } shape.
     if (data.phone !== undefined || data.mobile !== undefined) {
-      const defaultCountry = await getWorkspacePhoneDefaultCountry(user.tenantId);
+      const defaultCountry = await getWorkspacePhoneDefaultCountry(user.orgId);
       if (data.phone !== undefined) {
         const r = normalizePhoneOrError(data.phone, defaultCountry);
         if (!r.ok) {
@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
 
     // Duplicate-identity check (email + mobile/phone). Mirrors legacy Mongo unique constraints.
     const dup = await findDuplicateLead({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       email: data.email,
       mobile: data.mobile,
       phone: data.phone,
@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
 
     // Pipeline cascade: source → stage → status → sub-status. Shared with the
     // PATCH and transition write paths via validateLeadPipelineCascade.
-    const pipeline = await getPipelineConfig(user.tenantId);
+    const pipeline = await getPipelineConfig(user.orgId);
     const cascadeError = validateLeadPipelineCascade({
       pipeline,
       source: data.source,
@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate + coerce dynamic fields against the org's field definitions
-    const defs = await listLeadFields(user.tenantId);
+    const defs = await listLeadFields(user.orgId);
     const { values: dyn, errors: dynErrors } = validateDynamicFields({
       defs,
       input: data.dynamicFields as Record<string, unknown> | undefined,
@@ -266,7 +266,7 @@ export async function POST(req: NextRequest) {
     // structurally; cast through to the Unchecked input shape since Zod has
     // already validated the required fields on parsed.data.
     const useAutoScore = await shouldUseAutoLeadScore(
-      user.tenantId,
+      user.orgId,
       parsed.data.score !== undefined,
     );
     const { score: _manualScore, ...restWithoutScore } = rest;
@@ -279,7 +279,7 @@ export async function POST(req: NextRequest) {
       ...(useAutoScore ? restWithoutScore : rest),
       dynamicFields:
         Object.keys(dyn).length > 0 ? (dyn as Prisma.InputJsonValue) : undefined,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       ...(effectiveOwnerId ? { ownerId: effectiveOwnerId } : {}),
       ...(accountId ? { accountId } : {}),
       ...(!useAutoScore && parsed.data.score !== undefined ? { score: parsed.data.score } : {}),
@@ -299,13 +299,13 @@ export async function POST(req: NextRequest) {
       creation: { channel, userId: user.userId },
     });
     if (useAutoScore) {
-      const computedScore = await syncLeadScoreAfterChange(user.tenantId, lead.id);
+      const computedScore = await syncLeadScoreAfterChange(user.orgId, lead.id);
       if (computedScore !== undefined) {
         lead = { ...lead, score: computedScore };
       }
     }
     await recordLeadChange({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       leadId: lead.id,
       action: "CREATE",
@@ -320,7 +320,7 @@ export async function POST(req: NextRequest) {
       console.error("[auto-task] dispatch failed", err),
     );
     void Promise.resolve(
-      publishLeadEvent(user.tenantId, {
+      publishLeadEvent(user.orgId, {
         type: "created",
         leadId: lead.id,
         stage: lead.stage,
@@ -333,7 +333,7 @@ export async function POST(req: NextRequest) {
       event: "created",
       entityType: "lead",
       entityId: lead.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: lead as unknown as Record<string, unknown>,
@@ -343,7 +343,7 @@ export async function POST(req: NextRequest) {
     // someone other than the creator. Mirrors the PATCH owner-change path.
     if (lead.ownerId) {
       void notifyLeadAssigned({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         actorUserId: user.userId,
         actorName: user.name || user.email,
         leadId: lead.id,

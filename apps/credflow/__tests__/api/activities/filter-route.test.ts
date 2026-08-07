@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -40,7 +40,7 @@ describe("POST /api/activities/filter", () => {
     const rows = Array.from({ length: 50 }).flatMap((_, i) => [
       {
         id: `a${i}-lead`,
-        tenantId: "t1",
+        orgId: "t1",
         type: "Call",
         relatedKind: "Lead",
         relatedObjectId: `lead-${i}`,
@@ -65,7 +65,7 @@ describe("POST /api/activities/filter", () => {
       } as never,
       {
         id: `a${i}-opp`,
-        tenantId: "t1",
+        orgId: "t1",
         type: "Note",
         relatedKind: "Opportunity",
         relatedObjectId: `opp-${i}`,

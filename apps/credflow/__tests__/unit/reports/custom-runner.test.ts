@@ -7,10 +7,10 @@ const db = mockDb();
 const asMock = <T>(fn: T): Mock => fn as unknown as Mock;
 
 const ctx: ReportRunContext = {
-  tenantId: "t1",
+  orgId: "t1",
   session: {
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@x.co",
     name: "Admin",
@@ -52,7 +52,7 @@ describe("runCustomReport", () => {
     expect(result.rows).toHaveLength(1);
     expect(asMock(db.qcfLead.groupBy)).toHaveBeenCalled();
     const args = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0];
-    expect(args?.where?.tenantId).toBe("t1");
+    expect(args?.where?.orgId).toBe("t1");
   });
 
   it("applies a whitelisted filter as an extra where condition", async () => {
@@ -89,7 +89,7 @@ describe("runCustomReport", () => {
       unknown
     >;
     // Unknown field dropped → no extra AND wrapper, base where intact.
-    expect(where.tenantId).toBe("t1");
+    expect(where.orgId).toBe("t1");
     expect(where.AND).toBeUndefined();
   });
 
@@ -242,7 +242,7 @@ describe("runCustomReport", () => {
     };
     expect(Array.isArray(where.AND)).toBe(true);
     // Tenant scope preserved in the base where (AND[0]) — not replaced.
-    expect((where.AND![0] as { tenantId?: string }).tenantId).toBe("t1");
+    expect((where.AND![0] as { orgId?: string }).orgId).toBe("t1");
     // Owner condition ANDed in alongside tenant scope.
     expect(where.AND).toEqual(expect.arrayContaining([{ ownerId: "user-7" }]));
   });
@@ -261,7 +261,7 @@ describe("runCustomReport", () => {
     const where = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0]?.where as {
       AND?: Array<Record<string, unknown>>;
     };
-    expect((where.AND![0] as { tenantId?: string }).tenantId).toBe("t1");
+    expect((where.AND![0] as { orgId?: string }).orgId).toBe("t1");
     expect(where.AND).toEqual(
       expect.arrayContaining([{ ownerId: { not: null } }]),
     );
@@ -282,7 +282,7 @@ describe("runCustomReport", () => {
       AND?: Array<Record<string, unknown>>;
     };
     expect(Array.isArray(where.AND)).toBe(true);
-    expect((where.AND![0] as { tenantId?: string }).tenantId).toBe("t1");
+    expect((where.AND![0] as { orgId?: string }).orgId).toBe("t1");
     expect(where.AND).toEqual(
       expect.arrayContaining([{ agentUserId: "agent-2" }]),
     );

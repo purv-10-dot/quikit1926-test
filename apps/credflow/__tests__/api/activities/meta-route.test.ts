@@ -5,7 +5,7 @@ describe("Activities meta endpoints", () => {
   beforeEach(() => setSession(null));
 
   it("GET /api/activities/meta/lead-log returns activityCodes and outcomes", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@b.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@b.co", name: "A" });
     const { GET } = await import("@/app/api/activities/meta/lead-log/route");
     const res = await GET();
     expect(res.status).toBe(200);
@@ -17,7 +17,7 @@ describe("Activities meta endpoints", () => {
   });
 
   it("GET /api/activities/smb-outreach/meta returns the disposition tree", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@b.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@b.co", name: "A" });
     const { GET } = await import("@/app/api/activities/smb-outreach/meta/route");
     const res = await GET();
     expect(res.status).toBe(200);

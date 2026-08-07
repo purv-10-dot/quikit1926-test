@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     await assertAccountAccess(user, id);
 
     const acc = await findFirstAccountRow({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!acc) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(acc);
@@ -61,12 +61,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const dto = parsed.data;
 
     const existing = await findFirstAccountRow({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (dto.parentAccountId !== undefined && dto.parentAccountId !== null) {
-      await assertNoParentCycle(user.tenantId, id, dto.parentAccountId);
+      await assertNoParentCycle(user.orgId, id, dto.parentAccountId);
     }
 
     // ownerId change → re-derive ownerName + record outcome
@@ -156,7 +156,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const updated = await updateAccountRow({ where: { id }, data });
     await prisma.qcfActivity.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         type: "AccountChange",
         relatedKind: "Account",
         relatedObjectId: id,
@@ -186,7 +186,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await assertAccountAccess(user, id);
 
     const existing = await prisma.qcfAccount.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
       select: { id: true, name: true },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -195,7 +195,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       prisma.qcfAccount.update({ where: { id }, data: { deletedAt: new Date() } }),
       prisma.qcfActivity.create({
         data: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           type: "AccountChange",
           relatedKind: "Account",
           relatedObjectId: id,

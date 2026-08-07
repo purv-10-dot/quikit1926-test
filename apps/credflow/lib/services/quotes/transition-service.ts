@@ -70,7 +70,7 @@ export function validateTransition(from: QcfQuoteStatus, input: TransitionInput)
 export async function recordTransition(
   tx: DbClient,
   args: {
-    tenantId: string;
+    orgId: string;
     quoteId: string;
     quoteNumber: string;
     fromStatus: QcfQuoteStatus;
@@ -83,7 +83,7 @@ export async function recordTransition(
 ): Promise<void> {
   await tx.qcfQuoteStatusTransition.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       quoteId: args.quoteId,
       fromStatus: args.fromStatus,
       toStatus: args.toStatus,
@@ -95,7 +95,7 @@ export async function recordTransition(
   });
   await tx.qcfActivity.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       type: "QuoteStatusChange",
       relatedKind: "Quote",
       relatedObjectId: args.quoteId,
@@ -132,7 +132,7 @@ export async function recordTransition(
  * marker so the lift-out is obvious.
  */
 export async function transitionQuote(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   userName: string | null;
   quoteId: string;
@@ -140,7 +140,7 @@ export async function transitionQuote(args: {
 }) {
   return serverlessTransaction(db, async (tx) => {
     const existing = await tx.qcfQuote.findFirst({
-      where: { id: args.quoteId, tenantId: args.tenantId },
+      where: { id: args.quoteId, orgId: args.orgId },
       // opportunityId pulled into the row so the side-effect block doesn't
       // need a second read.
       select: { id: true, quoteNumber: true, status: true, opportunityId: true },
@@ -161,7 +161,7 @@ export async function transitionQuote(args: {
 
     await tx.qcfQuote.update({ where: { id: args.quoteId }, data });
     await recordTransition(tx, {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       quoteId: args.quoteId,
       quoteNumber: existing.quoteNumber,
       fromStatus: existing.status,
@@ -175,14 +175,14 @@ export async function transitionQuote(args: {
     // ─── Opportunity probability sync (audit finding W-1) ─────────────
     // Only when the quote is linked to an opportunity AND the transition
     // is to a terminal won/lost. `updateMany` (not `update`) so the
-    // tenantId condition is enforced at the SQL level — defense in depth
+    // orgId condition is enforced at the SQL level — defense in depth
     // even though the quote's tenant has already been verified above.
     if (existing.opportunityId && (args.input.toStatus === "Won" || args.input.toStatus === "Lost")) {
       const nextProbability = args.input.toStatus === "Won" ? 100 : 0;
       const updated = await tx.qcfOpportunity.updateMany({
         where: {
           id: existing.opportunityId,
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           // Don't overwrite a manual probability on an already-closed opp.
           // If the opp is still open, sync. If sales ops has already
           // ClosedWon/ClosedLost it themselves, leave their decision alone.
@@ -199,7 +199,7 @@ export async function transitionQuote(args: {
       if (updated.count > 0) {
         await tx.qcfActivity.create({
           data: {
-            tenantId: args.tenantId,
+            orgId: args.orgId,
             type: "OpportunityProbabilityFromQuote",
             relatedKind: "Opportunity",
             relatedObjectId: existing.opportunityId,
@@ -215,7 +215,7 @@ export async function transitionQuote(args: {
     // ──────────────────────────────────────────────────────────────────
 
     return tx.qcfQuote.findFirst({
-      where: { id: args.quoteId, tenantId: args.tenantId },
+      where: { id: args.quoteId, orgId: args.orgId },
       include: {
         lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
       },

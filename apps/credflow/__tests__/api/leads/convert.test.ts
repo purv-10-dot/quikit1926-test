@@ -53,10 +53,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("creates contact with title (jobTitle), ownerId, ownerName from lead", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead1",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Rohit Sharma",
       email: "rohit@x.com",
       phone: "+919999",
@@ -87,10 +87,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("auto-creates an account from lead.company when accountId is null and links the contact to it", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead2",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Jane Doe",
       email: null,
       phone: null,
@@ -115,7 +115,7 @@ describe("POST /api/leads/[id]/convert", () => {
     expect(db.qcfAccount.create).toHaveBeenCalledTimes(1);
     const accountCreateArg = db.qcfAccount.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(accountCreateArg.name).toBe("Acme Corp");
-    expect(accountCreateArg.tenantId).toBe("t1");
+    expect(accountCreateArg.orgId).toBe("t1");
     expect(accountCreateArg.ownerId).toBe("u-owner");
 
     const contactCreateArg = db.qcfContact.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
@@ -128,10 +128,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("reuses an existing account by name (case-sensitive match) instead of creating a new one", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead3",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Bob",
       email: null,
       phone: null,
@@ -161,10 +161,10 @@ describe("POST /api/leads/[id]/convert", () => {
   // account — synthesized from the individual's name — not produce a silent
   // account-less Contact.
   it("synthesizes a personal account from lead.name when company is blank (B2C convert)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-b2c",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Individual Person",
       email: "ip@x.com",
       phone: null,
@@ -195,10 +195,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("returns 409 when the lead is already converted (linkedContactId is set)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead4",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Already Converted",
       linkedContactId: "c-existing",
       accountId: null,
@@ -212,10 +212,10 @@ describe("POST /api/leads/[id]/convert", () => {
   // Idempotency regression (launch item 7): account-only converts never set
   // linkedContactId, so the fast-path must also reject on status === "Converted".
   it("returns 409 on an account-only re-convert (status already Converted, no linkedContactId)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-reconv",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Re Convert",
       status: "Converted",
       linkedContactId: null,
@@ -231,10 +231,10 @@ describe("POST /api/leads/[id]/convert", () => {
   // Simulates a lost double-submit race: the lead read as not-yet-converted, but
   // the atomic claim matches 0 rows because a concurrent request already won it.
   it("returns 409 when the atomic claim is lost (concurrent double-submit)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-race",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Race Lead",
       status: "Open",
       company: "Race Co",
@@ -252,10 +252,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("re-keys activities/tasks/notes to Contact and populates opportunityId on activities (full convert)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-full",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Full Convert",
       email: "fc@x.com",
       phone: "+9199",
@@ -288,7 +288,7 @@ describe("POST /api/leads/[id]/convert", () => {
       where: Record<string, unknown>;
       data: Record<string, unknown>;
     };
-    expect(actArg.where).toEqual({ tenantId: "t1", leadId: "lead-full" });
+    expect(actArg.where).toEqual({ orgId: "t1", leadId: "lead-full" });
     expect(actArg.data).toEqual({
       relatedKind: "Contact",
       relatedObjectId: "c-new",
@@ -299,28 +299,28 @@ describe("POST /api/leads/[id]/convert", () => {
       where: Record<string, unknown>;
       data: Record<string, unknown>;
     };
-    expect(taskArg.where).toEqual({ tenantId: "t1", leadId: "lead-full" });
+    expect(taskArg.where).toEqual({ orgId: "t1", leadId: "lead-full" });
     expect(taskArg.data).toEqual({ relatedKind: "Contact", relatedObjectId: "c-new" });
 
     const noteArg = db.qcfNote.updateMany.mock.calls[0]?.[0] as {
       where: Record<string, unknown>;
       data: Record<string, unknown>;
     };
-    expect(noteArg.where).toEqual({ tenantId: "t1", leadId: "lead-full" });
+    expect(noteArg.where).toEqual({ orgId: "t1", leadId: "lead-full" });
     expect(noteArg.data).toEqual({ relatedKind: "Contact", relatedObjectId: "c-new" });
 
     const callArg = db.qcfCallLog.updateMany.mock.calls[0]?.[0] as {
       where: Record<string, unknown>;
       data: Record<string, unknown>;
     };
-    expect(callArg.where).toEqual({ tenantId: "t1", leadId: "lead-full" });
+    expect(callArg.where).toEqual({ orgId: "t1", leadId: "lead-full" });
     expect(callArg.data).toEqual({ linkedContactId: "c-new" });
 
     const auditArg = db.qcfAuditLog.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(auditArg.module).toBe("leads");
     expect(auditArg.action).toBe("lead_convert_relink");
     expect(auditArg.resourceId).toBe("lead-full");
-    expect(auditArg.tenantId).toBe("t1");
+    expect(auditArg.orgId).toBe("t1");
     expect(auditArg.metadata).toEqual({
       fromLeadId: "lead-full",
       toContactId: "c-new",
@@ -333,10 +333,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("re-keys to Contact but does NOT populate activity.opportunityId when no Opp is created", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-c-only",
-      tenantId: "t1",
+      orgId: "t1",
       name: "C Only",
       jobTitle: null,
       company: null,
@@ -366,10 +366,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("does NOT re-key anything when createContact is false (Account-only convert)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-acc-only",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Acc Only",
       company: "Some Co",
       accountId: null,
@@ -392,7 +392,7 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("returns 400 when createOpportunity=true and createContact=false (Zod refinement)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const res = await callConvert("lead-x", {
       createContact: false,
       createOpportunity: true,
@@ -402,10 +402,10 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("threads opportunityCloseDate through to CrmOpportunity.create", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     db.qcfLead.findFirst.mockResolvedValueOnce({
       id: "lead-cd",
-      tenantId: "t1",
+      orgId: "t1",
       name: "CloseDate Test",
       email: null,
       phone: null,
@@ -445,7 +445,7 @@ describe("POST /api/leads/[id]/convert", () => {
   });
 
   it("returns 400 when opportunityCloseDate is in the past", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
     const past = new Date();
     past.setDate(past.getDate() - 1);
     const res = await callConvert("lead-past", {

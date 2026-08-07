@@ -22,7 +22,7 @@ function toMeUser(
 ) {
   return {
     id: profile.id,
-    tenantId: orgId,
+    orgId: orgId,
     email: profile.email ?? "",
     firstName: profile.firstName,
     lastName: profile.lastName,
@@ -85,7 +85,7 @@ export async function PATCH(req: Request) {
 
     const { profile, telephony } = await updateMeProfile({
       userId: session.user.id,
-      tenantId: session.user.orgId,
+      orgId: session.user.orgId,
       firstName: parsed.data.firstName,
       lastName: parsed.data.lastName,
       phone: parsed.data.phone ?? null,

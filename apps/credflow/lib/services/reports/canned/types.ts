@@ -56,7 +56,7 @@ export type DefaultDateRange =
   | "thisQuarter";
 
 export type ReportRunContext = {
-  tenantId: string;
+  orgId: string;
   session: SessionUser;
   from: Date;
   to: Date;

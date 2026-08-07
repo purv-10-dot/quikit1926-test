@@ -38,12 +38,12 @@ export class OrderError extends Error {
  */
 async function nextOrderNumber(
   tx: DbClient,
-  tenantId: string,
+  orgId: string,
   issueDate: Date = new Date(),
 ): Promise<string> {
   const year = issueDate.getUTCFullYear();
   const { formatted } = await nextFormattedNumber(tx, {
-    tenantId,
+    orgId,
     name: `order-${year}`,
     prefix: `ORD-${year}-`,
     width: 4,
@@ -67,7 +67,7 @@ async function nextOrderNumber(
  *     and `CrmActivity{type:QuoteConvertedToOrder}` on the quote
  */
 export async function createOrderFromQuote(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   userName: string | null;
   quoteId: string;
@@ -81,7 +81,7 @@ export async function createOrderFromQuote(args: {
     // is the friendly path (lets the UI redirect to the existing order
     // instead of error-handling a 409).
     const existingOrder = await tx.qcfOrder.findFirst({
-      where: { tenantId: args.tenantId, quoteId: args.quoteId },
+      where: { orgId: args.orgId, quoteId: args.quoteId },
       select: { id: true, orderNumber: true },
     });
     if (existingOrder) {
@@ -93,7 +93,7 @@ export async function createOrderFromQuote(args: {
     }
 
     const quote = await tx.qcfQuote.findFirst({
-      where: { id: args.quoteId, tenantId: args.tenantId },
+      where: { id: args.quoteId, orgId: args.orgId },
       include: {
         lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
       },
@@ -107,11 +107,11 @@ export async function createOrderFromQuote(args: {
     }
 
     const orderDate = args.orderDate ?? new Date();
-    const orderNumber = await nextOrderNumber(tx, args.tenantId, orderDate);
+    const orderNumber = await nextOrderNumber(tx, args.orgId, orderDate);
 
     const created = await tx.qcfOrder.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         orderNumber,
         quoteId: quote.id,
         opportunityId: quote.opportunityId,
@@ -149,7 +149,7 @@ export async function createOrderFromQuote(args: {
     for (const l of quote.lines) {
       await tx.qcfOrderLine.create({
         data: {
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           orderId: created.id,
           lineNumber: l.lineNumber,
           productId: l.productId,
@@ -179,7 +179,7 @@ export async function createOrderFromQuote(args: {
     await Promise.all([
       tx.qcfActivity.create({
         data: {
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           type: "OrderCreatedFromQuote",
           relatedKind: "Order",
           relatedObjectId: created.id,
@@ -191,7 +191,7 @@ export async function createOrderFromQuote(args: {
       }),
       tx.qcfActivity.create({
         data: {
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           type: "QuoteConvertedToOrder",
           relatedKind: "Quote",
           relatedObjectId: quote.id,
@@ -232,7 +232,7 @@ const LIST_SELECT = {
 } satisfies Prisma.QcfOrderSelect;
 
 export interface ListOrdersParams {
-  tenantId: string;
+  orgId: string;
   page: number;
   pageSize: number;
   status?: QcfOrderStatus;
@@ -243,7 +243,7 @@ export interface ListOrdersParams {
 
 export function buildOrderWhere(p: Omit<ListOrdersParams, "page" | "pageSize">): Prisma.QcfOrderWhereInput {
   return {
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     deletedAt: p.trashed ? { not: null } : null,
     ...(p.status ? { status: p.status } : {}),
     ...(p.accountId ? { accountId: p.accountId } : {}),
@@ -276,7 +276,7 @@ export async function listOrders(p: ListOrdersParams) {
     accountIds.length === 0
       ? []
       : await db.qcfAccount.findMany({
-          where: { tenantId: p.tenantId, id: { in: accountIds } },
+          where: { orgId: p.orgId, id: { in: accountIds } },
           select: { id: true, name: true },
         });
   const accountById = new Map(accounts.map((a) => [a.id, a.name]));
@@ -290,9 +290,9 @@ export async function listOrders(p: ListOrdersParams) {
   return { items: enriched, total, page: p.page, pageSize: p.pageSize, totalPages };
 }
 
-export async function getOrder(tenantId: string, id: string) {
+export async function getOrder(orgId: string, id: string) {
   return db.qcfOrder.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     include: {
       lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
       quote: { select: { id: true, quoteNumber: true, versionNumber: true } },
@@ -315,7 +315,7 @@ export interface UpdateOrderInput {
  * state machine.
  */
 export async function updateOrder(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   userName: string | null;
   id: string;
@@ -323,7 +323,7 @@ export async function updateOrder(args: {
 }) {
   return db.$transaction(async (tx) => {
     const existing = await tx.qcfOrder.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, orgId: args.orgId },
       select: { id: true, orderNumber: true, status: true },
     });
     if (!existing) throw new OrderError("Order not found", 404);
@@ -363,7 +363,7 @@ export async function updateOrder(args: {
         : `${existing.orderNumber}: header updated`;
     await tx.qcfActivity.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         type:
           i.status && i.status !== existing.status
             ? "OrderStatusChange"
@@ -379,15 +379,15 @@ export async function updateOrder(args: {
     });
 
     return tx.qcfOrder.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, orgId: args.orgId },
       select: LIST_SELECT,
     });
   });
 }
 
-export async function softDeleteOrder(tenantId: string, id: string): Promise<void> {
+export async function softDeleteOrder(orgId: string, id: string): Promise<void> {
   await db.qcfOrder.update({
-    where: { id, tenantId },
+    where: { id, orgId },
     data: { deletedAt: new Date() },
   });
 }

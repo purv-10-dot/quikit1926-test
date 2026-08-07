@@ -31,7 +31,7 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.qcfOutboundMessageLog.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfOutboundMessageLog.deleteMany({ where: { orgId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 
@@ -39,7 +39,7 @@ describe("B1 email dispatch · real DB (captured transport)", () => {
   it("consumes a queued row → dispatches via console driver → status queued→sent", async () => {
     const row = await integrationPrisma.qcfOutboundMessageLog.create({
       data: {
-        tenantId: TENANT,
+        orgId: TENANT,
         channel: "email",
         to: "captured+b1@example.test", // synthetic, never a real lead
         subject: "B1 dispatch test",
@@ -62,7 +62,7 @@ describe("B1 email dispatch · real DB (captured transport)", () => {
   it("records failed (no throw) when the recipient is invalid", async () => {
     // Empty recipient → ensureRecipients throws inside the driver → recorded failed.
     const row = await integrationPrisma.qcfOutboundMessageLog.create({
-      data: { tenantId: TENANT, channel: "email", to: "", subject: "x", body: "y", status: "queued" },
+      data: { orgId: TENANT, channel: "email", to: "", subject: "x", body: "y", status: "queued" },
     });
 
     const res = await dispatchOutboundMessage(TENANT, row.id);
@@ -75,7 +75,7 @@ describe("B1 email dispatch · real DB (captured transport)", () => {
 
   it("skips a non-queued row (idempotent — never double-sends)", async () => {
     const row = await integrationPrisma.qcfOutboundMessageLog.create({
-      data: { tenantId: TENANT, channel: "email", to: "captured@example.test", subject: "x", body: "y", status: "sent" },
+      data: { orgId: TENANT, channel: "email", to: "captured@example.test", subject: "x", body: "y", status: "sent" },
     });
     const res = await dispatchOutboundMessage(TENANT, row.id);
     expect(res.outcome).toBe("skipped");

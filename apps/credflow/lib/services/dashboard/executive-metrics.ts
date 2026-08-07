@@ -49,7 +49,7 @@ export async function buildExecutiveSummary(
   const callWhere = tenantAgentWhere(user, resolvedOwnerId);
 
   const activityBase: Record<string, unknown> = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     occurredAt: { gte: range.from, lte: range.to },
   };
   if (resolvedOwnerId) activityBase.ownerId = resolvedOwnerId;
@@ -133,7 +133,7 @@ export async function buildExecutiveSummary(
     }),
     prisma.qcfActivity.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         followUpAt: { gte: startOfToday, lte: endOfToday },
         ...(resolvedOwnerId ? { ownerId: resolvedOwnerId } : {}),
       },

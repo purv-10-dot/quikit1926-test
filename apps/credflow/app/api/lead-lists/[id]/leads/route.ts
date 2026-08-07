@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (isResponse(user)) return user;
 
     const list = await prisma.qcfLeadSavedList.findFirst({
-      where: { id, tenantId: user.tenantId, userId: user.userId },
+      where: { id, orgId: user.orgId, userId: user.userId },
     });
     if (!list) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const filterWhere = translateFilterToPrismaWhere(filterParsed.data);
     const acl = await accountScopeFilter(user);
-    const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+    const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     if (acl) baseAnd.push(acl);
     const where = { AND: baseAnd };

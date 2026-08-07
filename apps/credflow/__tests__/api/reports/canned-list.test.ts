@@ -19,7 +19,7 @@ describe("GET /api/reports/canned", () => {
   });
 
   it("returns the 15 canned report summaries on the happy path", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
 
     const { GET } = await import("@/app/api/reports/canned/route");
     const res = await GET();

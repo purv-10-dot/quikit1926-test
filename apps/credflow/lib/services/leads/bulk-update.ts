@@ -19,7 +19,7 @@ import { resolveLeadWhere } from "@/lib/services/leads/resolve-lead-where";
  *   - scope "ids": explicit ids (checkbox selection), still tenant + (implicitly)
  *     visibility-guarded because we intersect with the caller's resolvable set is
  *     NOT done here — ids are trusted to come from a prior visible listing, but we
- *     STILL scope every write by tenantId and re-filter ids through the same
+ *     STILL scope every write by orgId and re-filter ids through the same
  *     visibility where to prevent tampering.
  *
  * WRITE SEMANTICS (dynamicFields is JSON — must read-merge-write per row):
@@ -125,7 +125,7 @@ export async function bulkUpdateLeads(opts: {
     const batchIds = ids.slice(i, i + BATCH_SIZE);
     // Read the current dynamicFields for this batch, merge, write back.
     const rows = await prisma.qcfLead.findMany({
-      where: { id: { in: batchIds }, tenantId: user.tenantId },
+      where: { id: { in: batchIds }, orgId: user.orgId },
       select: { id: true, dynamicFields: true },
     });
     await prisma.$transaction(

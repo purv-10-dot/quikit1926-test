@@ -21,7 +21,7 @@ const RANGE = {
   to: new Date("2026-05-01T23:59:59.999Z"),
   tz: "UTC",
 };
-const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
+const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
 
 function armPrismaDefaults(): void {
   db.qcfLead.count.mockResolvedValue(0);
@@ -56,7 +56,7 @@ describe("Bug 13 — leads-by-stage ordering", () => {
 
   it("output is sorted by canonical pipeline order; junk stages last alphabetically", async () => {
     db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue({
-      tenantId: "t1",
+      orgId: "t1",
       settings: {
         dashboard: {
           qualifiedStages: ["Qualified"],

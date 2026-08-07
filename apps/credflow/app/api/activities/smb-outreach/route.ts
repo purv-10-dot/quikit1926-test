@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     const lead = await prisma.qcfLead.findFirst({
-      where: { id: dto.leadId, tenantId: user.tenantId },
+      where: { id: dto.leadId, orgId: user.orgId },
       select: { id: true, accountId: true },
     });
     if (!lead) {
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     const created = await prisma.$transaction(async (tx) => {
       const activity = await logActivity({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         ownerId,
         type: "SMB Outreach",
@@ -116,10 +116,10 @@ export async function POST(req: NextRequest) {
     // currently mutates country + followupPriority, which are NOT LSQ-synced
     // today, so the push is a loop-guard no-op until/unless those map — kept for
     // coverage of the path.
-    triggerOutboundSync({ tenantId: user.tenantId, crmLeadId: dto.leadId });
+    triggerOutboundSync({ orgId: user.orgId, crmLeadId: dto.leadId });
 
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
-    const row = await toListRow(user.tenantId, created, tz);
+    const row = await toListRow(user.orgId, created, tz);
     return NextResponse.json({ success: true, data: row }, { status: 201 });
   } catch (e) {
     return errorResponse(e);

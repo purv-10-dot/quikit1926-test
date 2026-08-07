@@ -12,7 +12,7 @@ import { prisma } from "@/lib/db/prisma";
 type AnyTx = Prisma.TransactionClient | PrismaClient;
 
 export interface AuditOptions {
-  tenantId: string;
+  orgId: string;
   userId?: string | null;
   module: string;
   action: "create" | "update" | "delete" | "bulk_update" | string;
@@ -25,7 +25,7 @@ export interface AuditOptions {
 export async function audit(opts: AuditOptions, tx: AnyTx = prisma): Promise<void> {
   await tx.qcfAuditLog.create({
     data: {
-      tenantId: opts.tenantId,
+      orgId: opts.orgId,
       userId: opts.userId ?? null,
       module: opts.module,
       action: opts.action,

@@ -23,15 +23,15 @@ import { incr, logSync } from "@/lib/services/leadsquared/telemetry";
 
 const WATERMARK_PREFIX = "leadsquared:poll:watermark:";
 
-async function defaultGetWatermark(tenantId: string): Promise<Date | null> {
-  const v = await getRedis().get(`${WATERMARK_PREFIX}${tenantId}`);
+async function defaultGetWatermark(orgId: string): Promise<Date | null> {
+  const v = await getRedis().get(`${WATERMARK_PREFIX}${orgId}`);
   if (!v) return null;
   const d = new Date(v);
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
-async function defaultSetWatermark(tenantId: string, at: Date): Promise<void> {
-  await getRedis().set(`${WATERMARK_PREFIX}${tenantId}`, at.toISOString());
+async function defaultSetWatermark(orgId: string, at: Date): Promise<void> {
+  await getRedis().set(`${WATERMARK_PREFIX}${orgId}`, at.toISOString());
 }
 
 export interface PollDeps {
@@ -39,8 +39,8 @@ export interface PollDeps {
   processBatch?: typeof processInboundBatch;
   resolveTenant?: () => string;
   resolveFieldMap?: () => Promise<LeadSquaredFieldMapConfig>;
-  getWatermark?: (tenantId: string) => Promise<Date | null>;
-  setWatermark?: (tenantId: string, at: Date) => Promise<void>;
+  getWatermark?: (orgId: string) => Promise<Date | null>;
+  setWatermark?: (orgId: string, at: Date) => Promise<void>;
   now?: () => Date;
   /** First-run look-back when no watermark exists (default 10 min). */
   windowMs?: number;
@@ -49,7 +49,7 @@ export interface PollDeps {
 }
 
 export interface PollResult {
-  tenantId: string;
+  orgId: string;
   from: Date;
   to: Date;
   fetched: number;
@@ -72,9 +72,9 @@ export async function pollLeadSquaredInbound(deps: PollDeps = {}): Promise<PollR
   const windowMs = deps.windowMs ?? Number(process.env.LEADSQUARED_POLL_WINDOW_MS ?? 600_000);
   const overlapMs = deps.overlapMs ?? Number(process.env.LEADSQUARED_POLL_OVERLAP_MS ?? 120_000);
 
-  const tenantId = resolveTenant();
+  const orgId = resolveTenant();
   const to = now();
-  const last = await getWatermark(tenantId);
+  const last = await getWatermark(orgId);
   const from = last ? new Date(last.getTime() - overlapMs) : new Date(to.getTime() - windowMs);
 
   // Fetch FIRST. If this throws we never advance the watermark → next run retries.
@@ -83,18 +83,18 @@ export async function pollLeadSquaredInbound(deps: PollDeps = {}): Promise<PollR
   let applied = 0;
   if (leads.length > 0) {
     const fieldMap = await resolveFieldMap();
-    const results = await processBatch(tenantId, leads, { fieldMap });
+    const results = await processBatch(orgId, leads, { fieldMap });
     applied = results.filter((r) => r.action === "created" || r.action === "updated").length;
   }
 
-  await setWatermark(tenantId, to);
+  await setWatermark(orgId, to);
   logSync("info", "poll.completed", {
-    tenantId,
+    orgId,
     from: from.toISOString(),
     to: to.toISOString(),
     fetched: leads.length,
     applied,
   });
   incr("poll.completed");
-  return { tenantId, from, to, fetched: leads.length, applied };
+  return { orgId, from, to, fetched: leads.length, applied };
 }

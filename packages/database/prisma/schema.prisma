@@ -292,6 +292,86 @@ model Org {
   userAppAccess            UserAppAccess[]
   subscription             Subscription?
 
+  qcfPermissionTemplates            QcfPermissionTemplate[]
+  qcfAccounts                       QcfAccount[]
+  qcfContacts                       QcfContact[]
+  qcfLeads                          QcfLead[]
+  qcfLeadSquaredSyncMaps            QcfLeadSquaredSyncMap[]
+  qcfLeadAttachments                QcfLeadAttachment[]
+  qcfLeadListViews                  QcfLeadListView[]
+  qcfLeadSavedLists                 QcfLeadSavedList[]
+  qcfLeadSources                    QcfLeadSource[]
+  qcfOpportunitys                   QcfOpportunity[]
+  qcfOpportunityClientMeetings      QcfOpportunityClientMeeting[]
+  qcfOpportunityProducts            QcfOpportunityProduct[]
+  qcfOpportunityStageTransitions    QcfOpportunityStageTransition[]
+  qcfActivitys                      QcfActivity[]
+  qcfTasks                          QcfTask[]
+  qcfNotes                          QcfNote[]
+  qcfCompanyProfiles                QcfCompanyProfile?
+  qcfOrgWorkspaceSettingss          QcfOrgWorkspaceSettings?
+  qcfQuickFilters                   QcfQuickFilter[]
+  qcfDashboardPins                  QcfDashboardPin[]
+  qcfCampaigns                      QcfCampaign[]
+  qcfLandingPages                   QcfLandingPage[]
+  qcfWebWidgets                     QcfWebWidget[]
+  qcfFormDefinitions                QcfFormDefinition[]
+  qcfAutomationRules                QcfAutomationRule[]
+  qcfWorkflowDefinitions            QcfWorkflowDefinition[]
+  qcfAutomationPendingSteps         QcfAutomationPendingStep[]
+  qcfAutomationDistributionStates   QcfAutomationDistributionState[]
+  qcfAutomationLeadDayCounts        QcfAutomationLeadDayCount[]
+  qcfAutomationAttributions         QcfAutomationAttribution[]
+  qcfProcessDefinitions             QcfProcessDefinition[]
+  qcfSlaRules                       QcfSlaRule[]
+  qcfSlaLeadTrackings               QcfSlaLeadTracking[]
+  qcfTelephonyProviders             QcfTelephonyProvider[]
+  qcfVirtualNumbers                 QcfVirtualNumber[]
+  qcfCallLogs                       QcfCallLog[]
+  qcfCallDispositions               QcfCallDisposition[]
+  qcfCtcCallAudits                  QcfCtcCallAudit[]
+  qcfIndiaVoiceWebhookLogs          QcfIndiaVoiceWebhookLog[]
+  qcfLeadImportJobs                 QcfLeadImportJob[]
+  qcfReportDefinitions              QcfReportDefinition[]
+  qcfNotifications                  QcfNotification[]
+  qcfOutboundMessageLogs            QcfOutboundMessageLog[]
+  qcfAttendanceLogs                 QcfAttendanceLog[]
+  qcfSalesTeams                     QcfSalesTeam[]
+  qcfSalesGroups                    QcfSalesGroup[]
+  qcfAuditLogs                      QcfAuditLog[]
+  qcfIntegrationConfigs             QcfIntegrationConfig[]
+  qcfPaymentVerifications           QcfPaymentVerification[]
+  qcfDocumentFolders                QcfDocumentFolder[]
+  qcfDocuments                      QcfDocument[]
+  qcfDocumentLinks                  QcfDocumentLink[]
+  qcfProductTaxonomys               QcfProductTaxonomy[]
+  qcfProducts                       QcfProduct[]
+  qcfProductVariants                QcfProductVariant[]
+  qcfWarehouses                     QcfWarehouse[]
+  qcfProductInventorys              QcfProductInventory[]
+  qcfStockMovements                 QcfStockMovement[]
+  qcfProductImages                  QcfProductImage[]
+  qcfPriceLists                     QcfPriceList[]
+  qcfPriceListItems                 QcfPriceListItem[]
+  qcfPriceListAuditLogs             QcfPriceListAuditLog[]
+  qcfQuotes                         QcfQuote[]
+  qcfQuoteLines                     QcfQuoteLine[]
+  qcfQuoteStatusTransitions         QcfQuoteStatusTransition[]
+  qcfQuoteTemplates                 QcfQuoteTemplate[]
+  qcfQuoteApprovals                 QcfQuoteApproval[]
+  qcfQuotePdfSnapshots              QcfQuotePdfSnapshot[]
+  qcfQuoteComments                  QcfQuoteComment[]
+  qcfQuoteEngagementEvents          QcfQuoteEngagementEvent[]
+  qcfQuotePortalAccesss             QcfQuotePortalAccess[]
+  qcfInvoices                       QcfInvoice[]
+  qcfSequences                      QcfSequence[]
+  qcfOrders                         QcfOrder[]
+  qcfOrderLines                     QcfOrderLine[]
+  qcfFormSets                       QcfFormSet[]
+  qcfFieldValues                    QcfFieldValue[]
+  qcfSetSelectionLogs               QcfSetSelectionLog[]
+  qcfFileAttachments                QcfFileAttachment[]
+
   @@index([slug])
   @@index([status])
   @@schema("quikit")
@@ -22933,14 +23013,15 @@ enum QcfFieldVisibility {
 }
 model QcfPermissionTemplate {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   matrix    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   users     QcfUserPermissionTemplate[]
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("CrmPermissionTemplate")
   @@schema("app_quikcredflow")
 }
@@ -22962,7 +23043,8 @@ model QcfUserAccountAccess {
 }
 model QcfAccount {
   id                    String   @id @default(cuid())
-  tenantId              String
+  orgId              String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name                  String
   segment               String?
   ownerId               String?
@@ -23000,21 +23082,22 @@ model QcfAccount {
   opportunities         QcfOpportunity[]
   userAccess            QcfUserAccountAccess[]
   groupAccess           QcfSalesGroupAccount[]
-  @@index([tenantId])
-  @@index([tenantId, name])
-  @@index([tenantId, ownerId])
-  @@index([tenantId, status])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, parentAccountId])
-  @@index([tenantId, industryKey])
-  @@index([tenantId, segmentEnum])
-  @@index([tenantId, defaultPriceListId])
+  @@index([orgId])
+  @@index([orgId, name])
+  @@index([orgId, ownerId])
+  @@index([orgId, status])
+  @@index([orgId, deletedAt])
+  @@index([orgId, parentAccountId])
+  @@index([orgId, industryKey])
+  @@index([orgId, segmentEnum])
+  @@index([orgId, defaultPriceListId])
   @@map("CrmAccount")
   @@schema("app_quikcredflow")
 }
 model QcfContact {
   id           String   @id @default(cuid())
-  tenantId     String
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   firstName    String
   lastName     String?
   email        String?
@@ -23032,18 +23115,19 @@ model QcfContact {
   updatedAt    DateTime @updatedAt
   account      QcfAccount? @relation(fields: [accountId], references: [id])
   lead         QcfLead?    @relation(fields: [leadId], references: [id])
-  @@index([tenantId])
-  @@index([tenantId, email])
-  @@index([tenantId, accountId])
-  @@index([tenantId, ownerId])
-  @@index([tenantId, phone])
-  @@index([tenantId, deletedAt])
+  @@index([orgId])
+  @@index([orgId, email])
+  @@index([orgId, accountId])
+  @@index([orgId, ownerId])
+  @@index([orgId, phone])
+  @@index([orgId, deletedAt])
   @@map("CrmContact")
   @@schema("app_quikcredflow")
 }
 model QcfLead {
   id               String    @id @default(cuid())
-  tenantId         String
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name             String
   email            String?
   phone            String?
@@ -23104,19 +23188,20 @@ model QcfLead {
   callLogs         QcfCallLog[]
   slaTracking      QcfSlaLeadTracking[]
   leadSquaredSyncMap QcfLeadSquaredSyncMap?
-  @@unique([tenantId, sourceSystem, externalId], name: "lead_external_uk")
-  @@index([tenantId])
-  @@index([tenantId, stage])
-  @@index([tenantId, ownerId])
-  @@index([tenantId, accountId])
-  @@index([tenantId, isStarred])
-  @@index([tenantId, deletedAt])
+  @@unique([orgId, sourceSystem, externalId], name: "lead_external_uk")
+  @@index([orgId])
+  @@index([orgId, stage])
+  @@index([orgId, ownerId])
+  @@index([orgId, accountId])
+  @@index([orgId, isStarred])
+  @@index([orgId, deletedAt])
   @@map("CrmLead")
   @@schema("app_quikcredflow")
 }
 model QcfLeadSquaredSyncMap {
   id              String    @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   /// FK to the QuikCRM lead. One mapping row per lead.
   crmLeadId       String    @unique
   /// LeadSquared ProspectId. Null until the first outbound push returns one
@@ -23132,14 +23217,15 @@ model QcfLeadSquaredSyncMap {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   lead            QcfLead   @relation(fields: [crmLeadId], references: [id], onDelete: Cascade)
-  @@unique([tenantId, lsqProspectId], name: "leadsquared_prospect_uk")
-  @@index([tenantId])
+  @@unique([orgId, lsqProspectId], name: "leadsquared_prospect_uk")
+  @@index([orgId])
   @@map("LeadSquaredSyncMap")
   @@schema("app_quikcredflow")
 }
 model QcfLeadAttachment {
   id          String   @id @default(cuid())
-  tenantId    String
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId      String
   fileName    String
   contentType String
@@ -23148,53 +23234,60 @@ model QcfLeadAttachment {
   uploadedBy  String
   createdAt   DateTime @default(now())
   lead        QcfLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  @@index([tenantId, leadId])
+  @@index([orgId, leadId])
+  @@index([orgId])
   @@map("CrmLeadAttachment")
   @@schema("app_quikcredflow")
 }
 model QcfLeadListView {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId    String
   name      String
   filters   Json
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId, userId])
+  @@index([orgId, userId])
+  @@index([orgId])
   @@map("CrmLeadListView")
   @@schema("app_quikcredflow")
 }
 model QcfLeadSavedList {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId    String
   name      String
   filters   Json
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId, userId])
+  @@index([orgId, userId])
+  @@index([orgId])
   @@map("CrmLeadSavedList")
   @@schema("app_quikcredflow")
 }
 model QcfLeadSource {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   type      String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@unique([tenantId, name])
-  @@index([tenantId])
-  @@index([tenantId, active])
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, active])
   @@map("CrmLeadSource")
   @@schema("app_quikcredflow")
 }
 model QcfOpportunity {
   id                  String              @id @default(cuid())
-  tenantId            String
+  orgId            String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name                String
   stage               QcfOpportunityStage @default(Prospecting)
   probability         Int                 @default(10)
@@ -23221,18 +23314,19 @@ model QcfOpportunity {
   clientMeetings      QcfOpportunityClientMeeting[]
   products            QcfOpportunityProduct[]
   transitions         QcfOpportunityStageTransition[]
-  @@index([tenantId])
-  @@index([tenantId, stage])
-  @@index([tenantId, accountId])
-  @@index([tenantId, ownerId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, priceListId])
+  @@index([orgId])
+  @@index([orgId, stage])
+  @@index([orgId, accountId])
+  @@index([orgId, ownerId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, priceListId])
   @@map("CrmOpportunity")
   @@schema("app_quikcredflow")
 }
 model QcfOpportunityClientMeeting {
   id             String   @id @default(cuid())
-  tenantId       String
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   opportunityId  String
   subject        String
   meetingAt      DateTime
@@ -23243,13 +23337,15 @@ model QcfOpportunityClientMeeting {
   notes          String?
   createdAt      DateTime @default(now())
   opportunity    QcfOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  @@index([tenantId, opportunityId])
+  @@index([orgId, opportunityId])
+  @@index([orgId])
   @@map("CrmOpportunityClientMeeting")
   @@schema("app_quikcredflow")
 }
 model QcfOpportunityProduct {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   opportunityId String
   productName   String
   quantity      Int      @default(1)
@@ -23261,13 +23357,15 @@ model QcfOpportunityProduct {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   opportunity   QcfOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  @@index([tenantId, opportunityId])
+  @@index([orgId, opportunityId])
+  @@index([orgId])
   @@map("CrmOpportunityProduct")
   @@schema("app_quikcredflow")
 }
 model QcfOpportunityStageTransition {
   id                  String              @id @default(cuid())
-  tenantId            String
+  orgId            String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   opportunityId       String
   fromStage           QcfOpportunityStage
   toStage             QcfOpportunityStage
@@ -23278,13 +23376,15 @@ model QcfOpportunityStageTransition {
   notes               String?
   occurredAt          DateTime            @default(now())
   opportunity         QcfOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  @@index([tenantId, opportunityId, occurredAt])
+  @@index([orgId, opportunityId, occurredAt])
+  @@index([orgId])
   @@map("CrmOpportunityStageTransition")
   @@schema("app_quikcredflow")
 }
 model QcfActivity {
   id                String    @id @default(cuid())
-  tenantId          String
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   type              String
   relatedKind       String
   relatedObjectId   String
@@ -23307,17 +23407,18 @@ model QcfActivity {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lead              QcfLead?  @relation(fields: [leadId], references: [id])
-  @@unique([tenantId, sourceSystem, externalId])
-  @@index([tenantId])
-  @@index([tenantId, relatedKind, relatedObjectId])
-  @@index([tenantId, ownerId, occurredAt])
-  @@index([tenantId, relatedOrphanedAt])
+  @@unique([orgId, sourceSystem, externalId])
+  @@index([orgId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@index([orgId, ownerId, occurredAt])
+  @@index([orgId, relatedOrphanedAt])
   @@map("CrmActivity")
   @@schema("app_quikcredflow")
 }
 model QcfTask {
   id               String          @id @default(cuid())
-  tenantId         String
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   subject          String
   taskType         String?
   priority         QcfTaskPriority @default(Medium)
@@ -23331,15 +23432,16 @@ model QcfTask {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   lead             QcfLead? @relation(fields: [leadId], references: [id])
-  @@index([tenantId])
-  @@index([tenantId, assignedToUserId])
-  @@index([tenantId, status])
+  @@index([orgId])
+  @@index([orgId, assignedToUserId])
+  @@index([orgId, status])
   @@map("CrmTask")
   @@schema("app_quikcredflow")
 }
 model QcfNote {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   content         String
   relatedKind     String
   relatedObjectId String
@@ -23347,13 +23449,15 @@ model QcfNote {
   leadId          String?
   createdAt       DateTime @default(now())
   lead            QcfLead? @relation(fields: [leadId], references: [id])
-  @@index([tenantId, relatedKind, relatedObjectId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@index([orgId])
   @@map("CrmNote")
   @@schema("app_quikcredflow")
 }
 model QcfCompanyProfile {
   id          String   @id @default(cuid())
-  tenantId    String   @unique
+  orgId    String   @unique
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   companyName String
   logoUrl     String?
   website     String?
@@ -23362,21 +23466,25 @@ model QcfCompanyProfile {
   employees   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  @@index([orgId])
   @@map("CrmCompanyProfile")
   @@schema("app_quikcredflow")
 }
 model QcfOrgWorkspaceSettings {
   id        String   @id @default(cuid())
-  tenantId  String   @unique
+  orgId  String   @unique
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   settings  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@index([orgId])
   @@map("CrmOrgWorkspaceSettings")
   @@schema("app_quikcredflow")
 }
 model QcfQuickFilter {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId        String
   module        String
   name          String
@@ -23384,25 +23492,29 @@ model QcfQuickFilter {
   isLastApplied Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  @@index([tenantId, userId, module])
+  @@index([orgId, userId, module])
+  @@index([orgId])
   @@map("CrmQuickFilter")
   @@schema("app_quikcredflow")
 }
 model QcfDashboardPin {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId    String
   reportId  String
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
-  @@unique([tenantId, userId, reportId])
-  @@index([tenantId, userId])
+  @@unique([orgId, userId, reportId])
+  @@index([orgId, userId])
+  @@index([orgId])
   @@map("CrmDashboardPin")
   @@schema("app_quikcredflow")
 }
 model QcfCampaign {
   id        String    @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   status    String    @default("Draft")
   type      String?
@@ -23411,51 +23523,55 @@ model QcfCampaign {
   config    Json?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmCampaign")
   @@schema("app_quikcredflow")
 }
 model QcfLandingPage {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   slug      String
   status    String   @default("Draft")
   content   Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@unique([tenantId, slug])
-  @@index([tenantId])
+  @@unique([orgId, slug])
+  @@index([orgId])
   @@map("CrmLandingPage")
   @@schema("app_quikcredflow")
 }
 model QcfWebWidget {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   type      String
   config    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmWebWidget")
   @@schema("app_quikcredflow")
 }
 model QcfFormDefinition {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   fields    Json
   config    Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmFormDefinition")
   @@schema("app_quikcredflow")
 }
 model QcfAutomationRule {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   trigger   Json
   action    Json
@@ -23463,13 +23579,15 @@ model QcfAutomationRule {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId, isActive, sortOrder])
+  @@index([orgId, isActive, sortOrder])
+  @@index([orgId])
   @@map("CrmAutomationRule")
   @@schema("app_quikcredflow")
 }
 model QcfWorkflowDefinition {
   id                String            @id @default(cuid())
-  tenantId          String
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name              String
   status            QcfWorkflowStatus @default(Draft)
   triggerSummary    String?
@@ -23488,16 +23606,17 @@ model QcfWorkflowDefinition {
   updatedAt         DateTime          @updatedAt
   pendingSteps      QcfAutomationPendingStep[]
   distributionState QcfAutomationDistributionState[]
-  @@unique([tenantId, sourceSystem, externalId])
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, deletedAt])
+  @@unique([orgId, sourceSystem, externalId])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, deletedAt])
   @@map("CrmWorkflowDefinition")
   @@schema("app_quikcredflow")
 }
 model QcfAutomationPendingStep {
   id            String                  @id @default(cuid())
-  tenantId      String
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workflowId    String
   leadId        String
   resumeNodeId  String
@@ -23509,40 +23628,46 @@ model QcfAutomationPendingStep {
   createdAt     DateTime                @default(now())
   updatedAt     DateTime                @updatedAt
   workflow      QcfWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  @@index([tenantId, status, resumeAt])
-  @@index([tenantId, workflowId, leadId])
+  @@index([orgId, status, resumeAt])
+  @@index([orgId, workflowId, leadId])
+  @@index([orgId])
   @@map("CrmAutomationPendingStep")
   @@schema("app_quikcredflow")
 }
 model QcfAutomationDistributionState {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workflowId String
   nodeId     String
   lastIndex  Int      @default(0)
   updatedAt  DateTime @updatedAt
   workflow   QcfWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  @@unique([tenantId, workflowId, nodeId])
+  @@unique([orgId, workflowId, nodeId])
+  @@index([orgId])
   @@map("CrmAutomationDistributionState")
   @@schema("app_quikcredflow")
 }
 model QcfAutomationLeadDayCount {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId     String
   day        String
   count      Int      @default(0)
   terminated Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  @@unique([tenantId, leadId, day])
-  @@index([tenantId, terminated])
+  @@unique([orgId, leadId, day])
+  @@index([orgId, terminated])
+  @@index([orgId])
   @@map("CrmAutomationLeadDayCount")
   @@schema("app_quikcredflow")
 }
 model QcfAutomationAttribution {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId          String
   engineSource    String
   workflowId      String?
@@ -23555,25 +23680,28 @@ model QcfAutomationAttribution {
   afterValue      String?
   triggerSnapshot Json?
   createdAt       DateTime @default(now())
-  @@index([tenantId, leadId, createdAt])
-  @@index([tenantId, engineSource])
+  @@index([orgId, leadId, createdAt])
+  @@index([orgId, engineSource])
+  @@index([orgId])
   @@map("CrmAutomationAttribution")
   @@schema("app_quikcredflow")
 }
 model QcfProcessDefinition {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   config    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmProcessDefinition")
   @@schema("app_quikcredflow")
 }
 model QcfSlaRule {
   id           String   @id @default(cuid())
-  tenantId     String
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name         String
   targetHours  Int
   appliesTo    String?
@@ -23581,14 +23709,15 @@ model QcfSlaRule {
   sourceSystem String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  @@unique([tenantId, sourceSystem, externalId])
-  @@index([tenantId])
+  @@unique([orgId, sourceSystem, externalId])
+  @@index([orgId])
   @@map("CrmSlaRule")
   @@schema("app_quikcredflow")
 }
 model QcfSlaLeadTracking {
   id            String    @id @default(cuid())
-  tenantId      String
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId        String
   ruleName      String
   status        String
@@ -23599,39 +23728,43 @@ model QcfSlaLeadTracking {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lead          QcfLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  @@index([tenantId, leadId])
-  @@index([tenantId, status])
+  @@index([orgId, leadId])
+  @@index([orgId, status])
+  @@index([orgId])
   @@map("CrmSlaLeadTracking")
   @@schema("app_quikcredflow")
 }
 model QcfTelephonyProvider {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   type      String
   config    Json
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmTelephonyProvider")
   @@schema("app_quikcredflow")
 }
 model QcfVirtualNumber {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   number     String
   label      String?
   providerId String?
   createdAt  DateTime @default(now())
-  @@unique([tenantId, number])
-  @@index([tenantId])
+  @@unique([orgId, number])
+  @@index([orgId])
   @@map("CrmVirtualNumber")
   @@schema("app_quikcredflow")
 }
 model QcfCallLog {
   id                           String    @id @default(cuid())
-  tenantId                     String
+  orgId                     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId                       String?
   agentUserId                  String?
   callSid                      String?
@@ -23662,16 +23795,17 @@ model QcfCallLog {
   createdAt                    DateTime  @default(now())
   updatedAt                    DateTime  @updatedAt
   lead                         QcfLead?  @relation(fields: [leadId], references: [id])
-  @@unique([tenantId, callSid])
-  @@index([tenantId])
-  @@index([tenantId, leadId])
-  @@index([tenantId, providerCallSid, createdAt])
+  @@unique([orgId, callSid])
+  @@index([orgId])
+  @@index([orgId, leadId])
+  @@index([orgId, providerCallSid, createdAt])
   @@map("CrmCallLog")
   @@schema("app_quikcredflow")
 }
 model QcfCallDisposition {
   id                          String   @id @default(cuid())
-  tenantId                    String
+  orgId                    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   code                        String
   label                       String
   category                    String?
@@ -23685,15 +23819,16 @@ model QcfCallDisposition {
   targetLeadStage             String?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
-  @@unique([tenantId, code])
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("CrmCallDisposition")
   @@schema("app_quikcredflow")
 }
 model QcfCtcCallAudit {
   id               String   @id @default(cuid())
-  tenantId         String
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   agentUserId      String?
   partyA           String?
   partyB           String?
@@ -23708,14 +23843,15 @@ model QcfCtcCallAudit {
   providerResponse String?  @db.Text
   kind             String?
   createdAt        DateTime @default(now())
-  @@index([tenantId])
-  @@index([tenantId, agentUserId, createdAt])
+  @@index([orgId])
+  @@index([orgId, agentUserId, createdAt])
   @@map("CrmCtcCallAudit")
   @@schema("app_quikcredflow")
 }
 model QcfIndiaVoiceWebhookLog {
   id                String    @id @default(cuid())
-  tenantId          String
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   callSid           String?
   campid            String?
   vendorEventType   String?
@@ -23734,16 +23870,17 @@ model QcfIndiaVoiceWebhookLog {
   rawPayload        Json
   processDedupeKey  String?
   createdAt         DateTime  @default(now())
-  @@unique([tenantId, processDedupeKey])
-  @@index([tenantId])
-  @@index([tenantId, callSid])
-  @@index([tenantId, campid])
+  @@unique([orgId, processDedupeKey])
+  @@index([orgId])
+  @@index([orgId, callSid])
+  @@index([orgId, campid])
   @@map("CrmIndiaVoiceWebhookLog")
   @@schema("app_quikcredflow")
 }
 model QcfLeadImportJob {
   id              String              @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   fileName        String?
   status          QcfImportJobStatus  @default(queued)
   entityType      QcfImportEntityType
@@ -23768,29 +23905,31 @@ model QcfLeadImportJob {
   bullJobId       String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
-  @@unique([tenantId, entityType, sourceSystem, idempotencyKey])
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, batchId])
-  @@index([tenantId, entityType, status, nextRetryAt])
+  @@unique([orgId, entityType, sourceSystem, idempotencyKey])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, batchId])
+  @@index([orgId, entityType, status, nextRetryAt])
   @@map("CrmLeadImportJob")
   @@schema("app_quikcredflow")
 }
 model QcfReportDefinition {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   category  String?
   config    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmReportDefinition")
   @@schema("app_quikcredflow")
 }
 model QcfNotification {
   id        String    @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId    String
   title     String
   body      String?
@@ -23799,13 +23938,15 @@ model QcfNotification {
   readAt    DateTime?
   metadata  Json?
   createdAt DateTime  @default(now())
-  @@index([tenantId, userId, readAt])
+  @@index([orgId, userId, readAt])
+  @@index([orgId])
   @@map("CrmNotification")
   @@schema("app_quikcredflow")
 }
 model QcfOutboundMessageLog {
   id        String    @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   channel   String
   to        String
   subject   String?
@@ -23814,45 +23955,49 @@ model QcfOutboundMessageLog {
   metadata  Json?
   sentAt    DateTime?
   createdAt DateTime  @default(now())
-  @@index([tenantId])
+  @@index([orgId])
   @@map("CrmOutboundMessageLog")
   @@schema("app_quikcredflow")
 }
 model QcfAttendanceLog {
   id        String    @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId    String
   checkIn   DateTime
   checkOut  DateTime?
   metadata  Json?
   createdAt DateTime  @default(now())
-  @@index([tenantId, userId])
+  @@index([orgId, userId])
+  @@index([orgId])
   @@map("CrmAttendanceLog")
   @@schema("app_quikcredflow")
 }
 model QcfSalesTeam {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   managerId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("CrmSalesTeam")
   @@schema("app_quikcredflow")
 }
 model QcfSalesGroup {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   members   QcfSalesGroupMember[]
   managers  QcfSalesGroupManager[]
   accounts  QcfSalesGroupAccount[]
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("CrmSalesGroup")
   @@schema("app_quikcredflow")
 }
@@ -23883,7 +24028,8 @@ model QcfSalesGroupAccount {
 }
 model QcfAuditLog {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   userId     String?
   module     String
   action     String
@@ -23892,15 +24038,17 @@ model QcfAuditLog {
   after      Json?
   metadata   Json?
   createdAt  DateTime @default(now())
-  @@index([tenantId, createdAt])
-  @@index([tenantId, module, resourceId])
-  @@index([tenantId, userId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([orgId, module, resourceId])
+  @@index([orgId, userId, createdAt])
+  @@index([orgId])
   @@map("CrmAuditLog")
   @@schema("app_quikcredflow")
 }
 model QcfIntegrationConfig {
   id                   String    @id @default(cuid())
-  tenantId             String
+  orgId             String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name                 String
   type                 String
   status               String    @default("inactive")
@@ -23910,14 +24058,16 @@ model QcfIntegrationConfig {
   lastError            String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
-  @@unique([tenantId, name])
-  @@index([tenantId, status])
+  @@unique([orgId, name])
+  @@index([orgId, status])
+  @@index([orgId])
   @@map("CrmIntegrationConfig")
   @@schema("app_quikcredflow")
 }
 model QcfPaymentVerification {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId     String?
   callLogId  String?
   amount     Float
@@ -23927,13 +24077,15 @@ model QcfPaymentVerification {
   metadata   Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  @@index([tenantId, status])
+  @@index([orgId, status])
+  @@index([orgId])
   @@map("CrmPaymentVerification")
   @@schema("app_quikcredflow")
 }
 model QcfDocumentFolder {
   id             String    @id @default(cuid())
-  tenantId       String
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name           String
   parentFolderId String?
   parentFolder   QcfDocumentFolder?  @relation("FolderHierarchy", fields: [parentFolderId], references: [id], onDelete: Restrict)
@@ -23948,16 +24100,17 @@ model QcfDocumentFolder {
   deletedAt DateTime?
 
   documents QcfDocument[]
-  @@index([tenantId])
-  @@index([tenantId, parentFolderId])
-  @@index([tenantId, refType, refId])
-  @@index([tenantId, deletedAt])
+  @@index([orgId])
+  @@index([orgId, parentFolderId])
+  @@index([orgId, refType, refId])
+  @@index([orgId, deletedAt])
   @@map("CrmDocumentFolder")
   @@schema("app_quikcredflow")
 }
 model QcfDocument {
   id          String    @id @default(cuid())
-  tenantId    String
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   refType     String
   refId       String
   folderId    String?
@@ -23971,15 +24124,17 @@ model QcfDocument {
   createdAt   DateTime  @default(now())
 
   linksFrom QcfDocumentLink[] @relation("DocumentLinkSource")
-  @@index([tenantId, refType, refId])
-  @@index([tenantId, deletedAt])
+  @@index([orgId, refType, refId])
+  @@index([orgId, deletedAt])
   @@index([folderId])
+  @@index([orgId])
   @@map("CrmDocument")
   @@schema("app_quikcredflow")
 }
 model QcfDocumentLink {
   id               String    @id @default(cuid())
-  tenantId         String
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   sourceDocumentId String
   sourceDocument   QcfDocument @relation("DocumentLinkSource", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
   targetFolderId   String?
@@ -23988,16 +24143,18 @@ model QcfDocumentLink {
   createdBy        String
   createdAt        DateTime  @default(now())
   deletedAt        DateTime?
-  @@index([tenantId, targetFolderId])
-  @@index([tenantId, sourceDocumentId])
-  @@index([tenantId, refType, refId])
-  @@index([tenantId, deletedAt])
+  @@index([orgId, targetFolderId])
+  @@index([orgId, sourceDocumentId])
+  @@index([orgId, refType, refId])
+  @@index([orgId, deletedAt])
+  @@index([orgId])
   @@map("CrmDocumentLink")
   @@schema("app_quikcredflow")
 }
 model QcfProductTaxonomy {
   id        String                 @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   kind      QcfProductTaxonomyKind
   name      String
   parentId  String?
@@ -24012,15 +24169,17 @@ model QcfProductTaxonomy {
   productsAsSubcategory QcfProduct[] @relation("ProductSubcategory")
   productsAsBrand       QcfProduct[] @relation("ProductBrand")
   productsAsFamily      QcfProduct[] @relation("ProductFamily")
-  @@unique([tenantId, kind, name, parentId])
-  @@index([tenantId, kind])
-  @@index([tenantId, parentId])
+  @@unique([orgId, kind, name, parentId])
+  @@index([orgId, kind])
+  @@index([orgId, parentId])
+  @@index([orgId])
   @@map("CrmProductTaxonomy")
   @@schema("app_quikcredflow")
 }
 model QcfProduct {
   id              String         @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name            String
   sku             String
   /// Legacy free-text category — prefer categoryId when set.
@@ -24070,19 +24229,20 @@ model QcfProduct {
   images          QcfProductImage[]
   inventory       QcfProductInventory[]
   stockMovements  QcfStockMovement[]
-  @@unique([tenantId, sku])
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, isActive])
-  @@index([tenantId, categoryId])
-  @@index([tenantId, brandId])
-  @@index([tenantId, barcode])
+  @@unique([orgId, sku])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, isActive])
+  @@index([orgId, categoryId])
+  @@index([orgId, brandId])
+  @@index([orgId, barcode])
   @@map("CrmProduct")
   @@schema("app_quikcredflow")
 }
 model QcfProductVariant {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   productId    String
   sku          String
   name         String?
@@ -24097,14 +24257,16 @@ model QcfProductVariant {
   product      QcfProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
   inventory    QcfProductInventory[]
   stockMovements QcfStockMovement[]
-  @@unique([tenantId, sku])
-  @@index([tenantId, productId])
+  @@unique([orgId, sku])
+  @@index([orgId, productId])
+  @@index([orgId])
   @@map("CrmProductVariant")
   @@schema("app_quikcredflow")
 }
 model QcfWarehouse {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   code      String?
   isActive  Boolean  @default(true)
@@ -24112,14 +24274,15 @@ model QcfWarehouse {
   updatedAt DateTime @updatedAt
   inventory QcfProductInventory[]
   stockMovements QcfStockMovement[]
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@map("CrmWarehouse")
   @@schema("app_quikcredflow")
 }
 model QcfProductInventory {
   id                String   @id @default(cuid())
-  tenantId          String
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   productId         String
   variantId         String?
   warehouseId       String
@@ -24130,15 +24293,17 @@ model QcfProductInventory {
   product           QcfProduct        @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant           QcfProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse         QcfWarehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  @@unique([tenantId, productId, variantId, warehouseId])
-  @@index([tenantId, productId])
-  @@index([tenantId, warehouseId])
+  @@unique([orgId, productId, variantId, warehouseId])
+  @@index([orgId, productId])
+  @@index([orgId, warehouseId])
+  @@index([orgId])
   @@map("CrmProductInventory")
   @@schema("app_quikcredflow")
 }
 model QcfStockMovement {
   id              String               @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   productId       String
   variantId       String?
   warehouseId     String
@@ -24151,14 +24316,16 @@ model QcfStockMovement {
   product         QcfProduct           @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant         QcfProductVariant?   @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse       QcfWarehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  @@index([tenantId, productId, createdAt])
-  @@index([tenantId, warehouseId])
+  @@index([orgId, productId, createdAt])
+  @@index([orgId, warehouseId])
+  @@index([orgId])
   @@map("CrmStockMovement")
   @@schema("app_quikcredflow")
 }
 model QcfProductImage {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   productId String
   url       String
   label     String?
@@ -24166,13 +24333,15 @@ model QcfProductImage {
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
   product   QcfProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-  @@index([tenantId, productId])
+  @@index([orgId, productId])
+  @@index([orgId])
   @@map("CrmProductImage")
   @@schema("app_quikcredflow")
 }
 model QcfPriceList {
   id                String    @id @default(cuid())
-  tenantId          String
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name              String
   description       String?
   currency          String    @default("INR")
@@ -24196,17 +24365,18 @@ model QcfPriceList {
   sourcePriceList   QcfPriceList?  @relation("PriceListClone", fields: [sourcePriceListId], references: [id], onDelete: SetNull)
   clonedLists       QcfPriceList[] @relation("PriceListClone")
   auditLogs         QcfPriceListAuditLog[]
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, isActive])
-  @@index([tenantId, regionCode])
-  @@index([tenantId, customerTier])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, isActive])
+  @@index([orgId, regionCode])
+  @@index([orgId, customerTier])
   @@map("CrmPriceList")
   @@schema("app_quikcredflow")
 }
 model QcfPriceListItem {
   id              String       @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   priceListId     String
   productId       String
   unitPrice       Decimal      @db.Decimal(18, 2)
@@ -24221,15 +24391,17 @@ model QcfPriceListItem {
   updatedAt       DateTime     @updatedAt
   priceList       QcfPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
   product         QcfProduct   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  @@index([tenantId, priceListId])
-  @@index([tenantId, priceListId, deletedAt])
-  @@index([tenantId, productId])
+  @@index([orgId, priceListId])
+  @@index([orgId, priceListId, deletedAt])
+  @@index([orgId, productId])
+  @@index([orgId])
   @@map("CrmPriceListItem")
   @@schema("app_quikcredflow")
 }
 model QcfPriceListAuditLog {
   id          String   @id @default(cuid())
-  tenantId    String
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   priceListId String
   itemId      String?
   action      String
@@ -24239,13 +24411,15 @@ model QcfPriceListAuditLog {
   userName    String?
   createdAt   DateTime @default(now())
   priceList   QcfPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
-  @@index([tenantId, priceListId, createdAt])
+  @@index([orgId, priceListId, createdAt])
+  @@index([orgId])
   @@map("CrmPriceListAuditLog")
   @@schema("app_quikcredflow")
 }
 model QcfQuote {
   id                    String             @id @default(cuid())
-  tenantId              String
+  orgId              String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteNumber           String
   versionNumber         Int                @default(1)
   parentQuoteId         String?
@@ -24311,22 +24485,23 @@ model QcfQuote {
   engagements           QcfQuoteEngagementEvent[]
   portalAccess          QcfQuotePortalAccess[]
   invoice               QcfInvoice?
-  @@unique([tenantId, quoteNumber])
-  @@unique([tenantId, portalTokenHash])
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, accountId])
-  @@index([tenantId, opportunityId])
-  @@index([tenantId, ownerId])
-  @@index([tenantId, parentQuoteId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, approvalStatus])
+  @@unique([orgId, quoteNumber])
+  @@unique([orgId, portalTokenHash])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, accountId])
+  @@index([orgId, opportunityId])
+  @@index([orgId, ownerId])
+  @@index([orgId, parentQuoteId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, approvalStatus])
   @@map("CrmQuote")
   @@schema("app_quikcredflow")
 }
 model QcfQuoteLine {
   id             String   @id @default(cuid())
-  tenantId       String
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId        String
   lineNumber     Int
   productId      String?
@@ -24349,13 +24524,15 @@ model QcfQuoteLine {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   quote          QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  @@index([tenantId, quoteId])
+  @@index([orgId, quoteId])
+  @@index([orgId])
   @@map("CrmQuoteLine")
   @@schema("app_quikcredflow")
 }
 model QcfQuoteStatusTransition {
   id              String         @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId         String
   fromStatus      QcfQuoteStatus
   toStatus        QcfQuoteStatus
@@ -24365,13 +24542,15 @@ model QcfQuoteStatusTransition {
   notes           String?
   createdAt       DateTime       @default(now())
   quote           QcfQuote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  @@index([tenantId, quoteId])
+  @@index([orgId, quoteId])
+  @@index([orgId])
   @@map("CrmQuoteStatusTransition")
   @@schema("app_quikcredflow")
 }
 model QcfQuoteTemplate {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   key             String
   name            String
   description     String?
@@ -24386,14 +24565,16 @@ model QcfQuoteTemplate {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  @@unique([tenantId, key])
-  @@index([tenantId, isActive])
+  @@unique([orgId, key])
+  @@index([orgId, isActive])
+  @@index([orgId])
   @@map("CrmQuoteTemplate")
   @@schema("app_quikcredflow")
 }
 model QcfQuoteApproval {
   id              String                @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId         String
   status          QcfQuoteApprovalStatus @default(Pending)
   triggerReason   String
@@ -24405,14 +24586,16 @@ model QcfQuoteApproval {
   requestedAt     DateTime              @default(now())
   decidedAt       DateTime?
   quote           QcfQuote              @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  @@index([tenantId, quoteId])
-  @@index([tenantId, status])
+  @@index([orgId, quoteId])
+  @@index([orgId, status])
+  @@index([orgId])
   @@map("CrmQuoteApproval")
   @@schema("app_quikcredflow")
 }
 model QcfQuotePdfSnapshot {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId         String
   versionNumber   Int
   templateKey     String
@@ -24427,13 +24610,15 @@ model QcfQuotePdfSnapshot {
   generatedByName String?
   createdAt       DateTime @default(now())
   quote           QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  @@index([tenantId, quoteId, createdAt])
+  @@index([orgId, quoteId, createdAt])
+  @@index([orgId])
   @@map("CrmQuotePdfSnapshot")
   @@schema("app_quikcredflow")
 }
 model QcfQuoteComment {
   id          String   @id @default(cuid())
-  tenantId    String
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId     String
   body        String
   mentions    Json?
@@ -24443,13 +24628,15 @@ model QcfQuoteComment {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   quote       QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  @@index([tenantId, quoteId, createdAt])
+  @@index([orgId, quoteId, createdAt])
+  @@index([orgId])
   @@map("CrmQuoteComment")
   @@schema("app_quikcredflow")
 }
 model QcfQuoteEngagementEvent {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId    String
   eventType  String
   ipAddress  String?
@@ -24457,14 +24644,16 @@ model QcfQuoteEngagementEvent {
   metadata   Json?
   createdAt  DateTime @default(now())
   quote      QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  @@index([tenantId, quoteId, createdAt])
-  @@index([tenantId, eventType])
+  @@index([orgId, quoteId, createdAt])
+  @@index([orgId, eventType])
+  @@index([orgId])
   @@map("CrmQuoteEngagementEvent")
   @@schema("app_quikcredflow")
 }
 model QcfQuotePortalAccess {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   quoteId      String
   tokenHash    String
   expiresAt    DateTime?
@@ -24474,13 +24663,15 @@ model QcfQuotePortalAccess {
   lastUsedAt   DateTime?
   quote        QcfQuote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   @@unique([tokenHash])
-  @@index([tenantId, quoteId])
+  @@index([orgId, quoteId])
+  @@index([orgId])
   @@map("CrmQuotePortalAccess")
   @@schema("app_quikcredflow")
 }
 model QcfInvoice {
   id                String           @id @default(cuid())
-  tenantId          String
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   invoiceNumber     String
   quoteId           String?          @unique
   orderId           String?
@@ -24507,25 +24698,29 @@ model QcfInvoice {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   quote             QcfQuote?        @relation(fields: [quoteId], references: [id])
-  @@unique([tenantId, invoiceNumber])
-  @@index([tenantId, status])
-  @@index([tenantId, accountId])
+  @@unique([orgId, invoiceNumber])
+  @@index([orgId, status])
+  @@index([orgId, accountId])
+  @@index([orgId])
   @@map("CrmInvoice")
   @@schema("app_quikcredflow")
 }
 model QcfSequence {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   counter   Int      @default(0)
   updatedAt DateTime @updatedAt
-  @@unique([tenantId, name], name: "sequence_uk")
+  @@unique([orgId, name], name: "sequence_uk")
+  @@index([orgId])
   @@map("CrmSequence")
   @@schema("app_quikcredflow")
 }
 model QcfOrder {
   id                  String          @id @default(cuid())
-  tenantId            String
+  orgId            String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orderNumber         String
   quoteId             String?         @unique
   opportunityId       String?
@@ -24559,17 +24754,18 @@ model QcfOrder {
   updatedAt           DateTime        @updatedAt
   quote               QcfQuote?       @relation(fields: [quoteId], references: [id])
   lines               QcfOrderLine[]
-  @@unique([tenantId, orderNumber])
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, accountId])
-  @@index([tenantId, deletedAt])
+  @@unique([orgId, orderNumber])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, accountId])
+  @@index([orgId, deletedAt])
   @@map("CrmOrder")
   @@schema("app_quikcredflow")
 }
 model QcfOrderLine {
   id             String   @id @default(cuid())
-  tenantId       String
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orderId        String
   lineNumber     Int
   productId      String?
@@ -24592,7 +24788,8 @@ model QcfOrderLine {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   order          QcfOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  @@index([tenantId, orderId])
+  @@index([orgId, orderId])
+  @@index([orgId])
   @@map("CrmOrderLine")
   @@schema("app_quikcredflow")
 }
@@ -24624,7 +24821,8 @@ model QcfLeadStatusSubStatus {
 }
 model QcfFormSet {
   id               String              @id @default(cuid())
-  tenantId         String
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   surface          QcfFormSurface
   name             String
   isDefault        Boolean             @default(false)
@@ -24637,8 +24835,9 @@ model QcfFormSet {
   versions         QcfFormSetVersion[] @relation("FormSetVersions")
   selectionLogsAsDefault QcfSetSelectionLog[] @relation("DefaultSet")
   selectionLogsAsChosen  QcfSetSelectionLog[] @relation("ChosenSet")
-  @@unique([tenantId, surface, name])
-  @@index([tenantId, surface, isDefault])
+  @@unique([orgId, surface, name])
+  @@index([orgId, surface, isDefault])
+  @@index([orgId])
   @@map("CrmFormSet")
   @@schema("app_quikcredflow")
 }
@@ -24709,7 +24908,8 @@ model QcfFormFieldOption {
 }
 model QcfFieldValue {
   id               String            @id @default(cuid())
-  tenantId         String
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   activityId       String
   formSetVersionId String
   fieldKey         String
@@ -24723,16 +24923,18 @@ model QcfFieldValue {
   version          QcfFormSetVersion @relation(fields: [formSetVersionId], references: [id])
   valueFile        QcfFileAttachment? @relation(fields: [valueFileId], references: [id])
   @@unique([activityId, fieldKey])
-  @@index([tenantId, fieldKey, valueText])
-  @@index([tenantId, fieldKey, valueNumber])
-  @@index([tenantId, fieldKey, valueDatetime])
+  @@index([orgId, fieldKey, valueText])
+  @@index([orgId, fieldKey, valueNumber])
+  @@index([orgId, fieldKey, valueDatetime])
   @@index([valueUserIds], type: Gin)
+  @@index([orgId])
   @@map("CrmFieldValue")
   @@schema("app_quikcredflow")
 }
 model QcfSetSelectionLog {
   id            String            @id @default(cuid())
-  tenantId      String
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId        String
   activityId    String?
   defaultSetId  String
@@ -24744,8 +24946,9 @@ model QcfSetSelectionLog {
   defaultSet    QcfFormSet        @relation("DefaultSet", fields: [defaultSetId], references: [id])
   chosenSet     QcfFormSet        @relation("ChosenSet", fields: [chosenSetId], references: [id])
   version       QcfFormSetVersion @relation(fields: [formSetVersionId], references: [id])
-  @@index([tenantId, leadId])
-  @@index([tenantId, wasOverridden])
+  @@index([orgId, leadId])
+  @@index([orgId, wasOverridden])
+  @@index([orgId])
   @@map("CrmSetSelectionLog")
   @@schema("app_quikcredflow")
 }
@@ -24847,7 +25050,8 @@ model QcfFormRuleAction {
 }
 model QcfFileAttachment {
   id          String          @id @default(cuid())
-  tenantId    String
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   activityId  String
   storageKey  String
   filename    String
@@ -24856,7 +25060,8 @@ model QcfFileAttachment {
   uploadedBy  String
   createdAt   DateTime        @default(now())
   fieldValues QcfFieldValue[]
-  @@index([tenantId, activityId])
+  @@index([orgId, activityId])
+  @@index([orgId])
   @@map("CrmFileAttachment")
   @@schema("app_quikcredflow")
 }

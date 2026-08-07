@@ -27,7 +27,7 @@ describe("GET /api/leads?format=csv", () => {
   });
 
   it("returns 403 with the spec'd error body when reports.export is denied", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "SalesUser", email: "u@x.co", name: "U" });
+    setSession({ userId: "u1", orgId: "t1", role: "SalesUser", email: "u@x.co", name: "U" });
     vi.mocked(assertModule).mockImplementation(async (_user, module, action) => {
       if (module === "reports" && action === "export") {
         const err = new Error("Forbidden: export on reports") as Error & { statusCode?: number };
@@ -46,7 +46,7 @@ describe("GET /api/leads?format=csv", () => {
   });
 
   it("streams CSV with BOM + matching header row on the happy path", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
     db.qcfLead.findMany.mockResolvedValueOnce([
       {
         id: "l1",
@@ -86,7 +86,7 @@ describe("GET /api/leads?format=csv", () => {
   });
 
   it("filters by tenant — findMany receives the caller's tenantId in where", async () => {
-    setSession({ userId: "u1", tenantId: "tenant-A", role: "Administrator", email: "a@x.co", name: "A" });
+    setSession({ userId: "u1", orgId: "tenant-A", role: "Administrator", email: "a@x.co", name: "A" });
     db.qcfLead.findMany.mockResolvedValueOnce([]);
 
     const { GET } = await import("@/app/api/leads/route");
@@ -96,6 +96,6 @@ describe("GET /api/leads?format=csv", () => {
     expect(db.qcfLead.findMany).toHaveBeenCalled();
     const call = db.qcfLead.findMany.mock.calls[0]?.[0];
     expect(call).toBeDefined();
-    expect((call!.where as Record<string, unknown>).tenantId).toBe("tenant-A");
+    expect((call!.where as Record<string, unknown>).orgId).toBe("tenant-A");
   });
 });

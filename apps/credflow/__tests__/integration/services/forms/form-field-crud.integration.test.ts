@@ -24,7 +24,7 @@ let setId: string;
 let versionId: string;
 
 beforeAll(async () => {
-  const { set, version } = await createFormSet({ tenantId: TENANT, name: `Fld ${STAMP}` });
+  const { set, version } = await createFormSet({ orgId: TENANT, name: `Fld ${STAMP}` });
   setId = set.id;
   versionId = version.id;
 });

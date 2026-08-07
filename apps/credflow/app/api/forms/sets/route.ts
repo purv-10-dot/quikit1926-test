@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest) {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "settings", "edit");
-    const data = await listFormSets(user.tenantId);
+    const data = await listFormSets(user.orgId);
     return NextResponse.json({ success: true, data });
   } catch (e) {
     return errorResponse(e);
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const data = await createFormSet({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       name: parsed.data.name,
       createdByUserId: user.userId,
     });

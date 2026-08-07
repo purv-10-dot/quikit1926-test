@@ -23,7 +23,7 @@ describe("createDefaultTaskForLead", () => {
 
   const lead = {
     id: "lead-1",
-    tenantId: "t1",
+    orgId: "t1",
     name: "Acme Lead",
     ownerId: "u-owner",
   } as const;

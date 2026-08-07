@@ -346,7 +346,7 @@ export interface InboundDeps {
  * mapping row, stamping `syncOrigin = "leadsquared"`. Tenant-scoped throughout.
  */
 export async function processInboundWebhook(
-  tenantId: string,
+  orgId: string,
   payload: unknown,
   deps: InboundDeps = {},
 ): Promise<InboundResult> {
@@ -361,9 +361,9 @@ export async function processInboundWebhook(
   }
   const { lsqProspectId } = fields;
 
-  // Look up the mapping by (tenantId, lsqProspectId) — tenant-scoped.
+  // Look up the mapping by (orgId, lsqProspectId) — tenant-scoped.
   const mapping = await db.qcfLeadSquaredSyncMap.findFirst({
-    where: { tenantId, lsqProspectId },
+    where: { orgId, lsqProspectId },
   });
 
   // Cross-direction hash of the incoming content — the FAITHFUL representation
@@ -422,19 +422,19 @@ export async function processInboundWebhook(
 
   // Determine the target QcfLead. Two independent keys can already point at this
   // ProspectId, and we must UPDATE (never re-create) if either resolves:
-  //   1. the mapping row, by (tenantId, lsqProspectId) — the canonical link;
+  //   1. the mapping row, by (orgId, lsqProspectId) — the canonical link;
   //   2. the QcfLead's own unique triple (tenantId, sourceSystem='leadsquared',
   //      externalId=ProspectId) — the DB constraint `lead_external_uk`.
   //
   // We use findUnique (NOT findFirst): the soft-delete middleware injects
   // `deletedAt: null` into findFirst, so a trashed lead was invisible there —
   // which is exactly why create() ran and hit `lead_external_uk` ("Unique
-  // constraint failed on (tenantId, sourceSystem, externalId)"). findUnique
+  // constraint failed on (orgId, sourceSystem, externalId)"). findUnique
   // bypasses that filter, so we see the row regardless of deletedAt: skip it if
   // trashed, otherwise UPDATE it instead of racing into a duplicate.
   const byTriple: Prisma.QcfLeadWhereUniqueInput = {
     lead_external_uk: {
-      tenantId,
+      orgId,
       sourceSystem: "leadsquared",
       externalId: lsqProspectId,
     },
@@ -444,7 +444,7 @@ export async function processInboundWebhook(
   // log a timeline entry only when one of them actually changed (see below).
   const existingSelect = {
     id: true,
-    tenantId: true,
+    orgId: true,
     deletedAt: true,
     stage: true,
     status: true,
@@ -457,7 +457,7 @@ export async function processInboundWebhook(
       })
     : null;
   // findUnique(by id) is not tenant-scoped — enforce the tenant boundary.
-  if (existingLead && existingLead.tenantId !== tenantId) existingLead = null;
+  if (existingLead && existingLead.orgId !== orgId) existingLead = null;
   if (!existingLead) {
     existingLead = await db.qcfLead.findUnique({
       where: byTriple,
@@ -511,7 +511,7 @@ export async function processInboundWebhook(
       try {
         await db.qcfActivity.create({
           data: {
-            tenantId,
+            orgId,
             type: "LeadStageChange",
             relatedKind: "Lead",
             relatedObjectId: crmLeadId,
@@ -541,7 +541,7 @@ export async function processInboundWebhook(
     const upserted = await db.qcfLead.upsert({
       where: byTriple,
       create: {
-        tenantId,
+        orgId,
         name: deriveName(fields),
         sourceSystem: "leadsquared",
         externalId: lsqProspectId,
@@ -562,7 +562,7 @@ export async function processInboundWebhook(
     await db.qcfLeadSquaredSyncMap.upsert({
       where: { crmLeadId },
       create: {
-        tenantId,
+        orgId,
         crmLeadId,
         lsqProspectId,
         syncOrigin: "leadsquared" satisfies SyncOrigin,
@@ -577,13 +577,13 @@ export async function processInboundWebhook(
       },
     });
   } catch (e: unknown) {
-    // [tenantId, lsqProspectId] conflict: this ProspectId already maps to a
+    // [orgId, lsqProspectId] conflict: this ProspectId already maps to a
     // different lead. The QcfLead write already happened; log and continue
     // rather than fail the webhook/job.
     if (isUniqueConstraintError(e)) {
       console.warn(
         `[leadsquared-webhook] prospect-id conflict: ${lsqProspectId} already mapped to ` +
-          `another lead in tenant ${tenantId}; mapping write skipped for crmLead ${crmLeadId}.`,
+          `another lead in tenant ${orgId}; mapping write skipped for crmLead ${crmLeadId}.`,
       );
       return { ok: true, action, crmLeadId, lsqProspectId };
     }
@@ -600,7 +600,7 @@ export async function processInboundWebhook(
  * result per lead.
  */
 export async function processInboundBatch(
-  tenantId: string,
+  orgId: string,
   payload: unknown,
   deps: InboundDeps = {},
 ): Promise<InboundResult[]> {
@@ -608,7 +608,7 @@ export async function processInboundBatch(
   const results: InboundResult[] = [];
   for (const item of items) {
     try {
-      results.push(await processInboundWebhook(tenantId, item, deps));
+      results.push(await processInboundWebhook(orgId, item, deps));
     } catch (e: unknown) {
       // One bad record must not fail the whole job — otherwise BullMQ retries the
       // ENTIRE batch and re-applies the good records. Log a redacted summary
@@ -696,16 +696,16 @@ export function assertInboundSecret(
  * from the payload.
  */
 export function resolveInboundTenantId(): string {
-  const tenantId =
+  const orgId =
     process.env.LEADSQUARED_DEFAULT_ORG_ID ||
     process.env.WEBHOOK_DEFAULT_ORG_ID ||
     process.env.DEFAULT_ORG_ID ||
     "";
-  if (!tenantId) {
+  if (!orgId) {
     throw statusError(
       "Could not resolve tenant for LeadSquared webhook — set LEADSQUARED_DEFAULT_ORG_ID or DEFAULT_ORG_ID.",
       400,
     );
   }
-  return tenantId;
+  return orgId;
 }

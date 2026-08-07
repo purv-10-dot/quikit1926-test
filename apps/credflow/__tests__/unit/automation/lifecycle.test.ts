@@ -26,7 +26,7 @@ const db = mockDb();
 function def(status: QcfWorkflowStatus): QcfWorkflowDefinition {
   return {
     id: "wf1",
-    tenantId: "t1",
+    orgId: "t1",
     name: "Rule",
     status,
     deletedAt: null,
@@ -72,7 +72,7 @@ describe("lifecycle · publish", () => {
     db.qcfWorkflowDefinition.findFirst.mockResolvedValue(def("Draft"));
     await publish("t1", "wf1");
     expect(db.qcfWorkflowDefinition.findFirst).toHaveBeenCalledWith({
-      where: { id: "wf1", tenantId: "t1", deletedAt: null },
+      where: { id: "wf1", orgId: "t1", deletedAt: null },
     });
     const arg = db.qcfWorkflowDefinition.update.mock.calls[0][0];
     expect(arg.data.status).toBe("Active");
@@ -132,7 +132,7 @@ describe("lifecycle · softDelete / restore", () => {
     const arg = db.qcfWorkflowDefinition.update.mock.calls[0][0];
     expect(arg.data).toEqual({ status: "Draft", deletedAt: null });
     // restore must be able to see soft-deleted rows
-    expect(db.qcfWorkflowDefinition.findFirst).toHaveBeenCalledWith({ where: { id: "wf1", tenantId: "t1" } });
+    expect(db.qcfWorkflowDefinition.findFirst).toHaveBeenCalledWith({ where: { id: "wf1", orgId: "t1" } });
   });
 
   it("restore rejects a non-deleted automation", async () => {
@@ -146,7 +146,7 @@ describe("lifecycle · reads", () => {
     db.qcfWorkflowDefinition.findMany.mockResolvedValue([]);
     await listAutomations("t1");
     expect(db.qcfWorkflowDefinition.findMany).toHaveBeenCalledWith({
-      where: { tenantId: "t1", deletedAt: null },
+      where: { orgId: "t1", deletedAt: null },
       orderBy: { updatedAt: "desc" },
     });
   });
@@ -155,7 +155,7 @@ describe("lifecycle · reads", () => {
     db.qcfWorkflowDefinition.findMany.mockResolvedValue([]);
     await listAutomations("t1", { includeDeleted: true });
     expect(db.qcfWorkflowDefinition.findMany).toHaveBeenCalledWith({
-      where: { tenantId: "t1" },
+      where: { orgId: "t1" },
       orderBy: { updatedAt: "desc" },
     });
   });
@@ -166,7 +166,7 @@ describe("lifecycle · reads", () => {
     db.qcfAutomationPendingStep.count.mockResolvedValue(2);
     expect(await isDrained("t1", "wf1")).toBe(false);
     expect(db.qcfAutomationPendingStep.count).toHaveBeenCalledWith({
-      where: { tenantId: "t1", workflowId: "wf1", status: { in: ["pending", "processing"] } },
+      where: { orgId: "t1", workflowId: "wf1", status: { in: ["pending", "processing"] } },
     });
   });
 });

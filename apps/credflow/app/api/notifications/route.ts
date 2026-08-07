@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       ? Math.min(Math.max(rawTake, 1), 100)
       : 30;
 
-    const page = await getNotifications(user.tenantId, user.userId, cursor, take);
+    const page = await getNotifications(user.orgId, user.userId, cursor, take);
     return NextResponse.json(page);
   } catch (e) {
     return errorResponse(e);

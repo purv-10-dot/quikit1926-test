@@ -36,7 +36,7 @@ export async function deriveOwnerName(
 }
 
 export type ListParams = {
-  tenantId: string;
+  orgId: string;
   page: number;
   pageSize: number;
   trashed: boolean;
@@ -77,7 +77,7 @@ export function buildOpportunityListWhere(
   p: Omit<ListParams, "page" | "pageSize">,
 ): Prisma.QcfOpportunityWhereInput {
   return {
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     deletedAt: p.trashed ? { not: null } : null,
     ...(p.leadId ? { leadId: p.leadId } : {}),
     ...(p.stage ? { stage: p.stage } : {}),
@@ -136,13 +136,13 @@ export type CreateInput = {
 };
 
 export async function createOpportunity(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   input: CreateInput;
   /** Optional transaction client. When passed, all writes run inside the caller's tx. */
   tx?: DbClient;
 }) {
-  const { tenantId, userId, input } = args;
+  const { orgId, userId, input } = args;
   const client: DbClient = args.tx ?? db;
   const stage: QcfOpportunityStage = input.stage ?? "Prospecting";
   const probability = input.probability ?? 10;
@@ -153,7 +153,7 @@ export async function createOpportunity(args: {
   const [ownerName, priceListId] = await Promise.all([
     deriveOwnerName(ownerId, client),
     resolveOpportunityPriceListId({
-      tenantId,
+      orgId,
       accountId: input.accountId,
       explicitPriceListId: input.priceListId,
       client,
@@ -161,7 +161,7 @@ export async function createOpportunity(args: {
   ]);
 
   const data: Prisma.QcfOpportunityUncheckedCreateInput = {
-    tenantId,
+    orgId,
     name: input.name,
     accountId: input.accountId,
     leadId: input.leadId ?? null,
@@ -182,7 +182,7 @@ export async function createOpportunity(args: {
 
   await client.qcfActivity.create({
     data: {
-      tenantId,
+      orgId,
       type: "OpportunityCreated",
       relatedKind: "Opportunity",
       relatedObjectId: created.id,
@@ -210,13 +210,13 @@ export type UpdateInput = Partial<{
 
 /** Stage updates are NOT allowed through the generic patch — see /transition. */
 export async function updateOpportunity(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   id: string;
   input: UpdateInput;
   existing: { ownerId: string | null; amount: unknown; probability: number };
 }) {
-  const { tenantId, userId, id, input, existing } = args;
+  const { orgId, userId, id, input, existing } = args;
 
   const data: Prisma.QcfOpportunityUncheckedUpdateInput = { ...input };
 
@@ -239,14 +239,14 @@ export async function updateOpportunity(args: {
   }
 
   const updated = await db.qcfOpportunity.update({
-    where: { id, tenantId },
+    where: { id, orgId },
     data,
   });
 
   if (ownerChanged) {
     await db.qcfActivity.create({
       data: {
-        tenantId,
+        orgId,
         type: "OpportunityOwnerChange",
         relatedKind: "Opportunity",
         relatedObjectId: id,
@@ -261,39 +261,39 @@ export async function updateOpportunity(args: {
   return updated;
 }
 
-export async function softDelete(tenantId: string, id: string): Promise<void> {
+export async function softDelete(orgId: string, id: string): Promise<void> {
   await db.qcfOpportunity.update({
-    where: { id, tenantId },
+    where: { id, orgId },
     data: { deletedAt: new Date() },
   });
 }
 
-export async function restore(tenantId: string, id: string): Promise<void> {
+export async function restore(orgId: string, id: string): Promise<void> {
   await db.qcfOpportunity.update({
-    where: { id, tenantId },
+    where: { id, orgId },
     data: { deletedAt: null },
   });
 }
 
 /** Recompute amount + weightedAmount from product line totals. */
 export async function recalculateFromProducts(
-  tenantId: string,
+  orgId: string,
   opportunityId: string,
 ): Promise<{ amount: number; weightedAmount: number | null }> {
   const opp = await db.qcfOpportunity.findFirst({
-    where: { id: opportunityId, tenantId },
+    where: { id: opportunityId, orgId },
     select: { probability: true },
   });
   if (!opp) throw new Error("Opportunity not found");
 
   const products = await db.qcfOpportunityProduct.findMany({
-    where: { tenantId, opportunityId },
+    where: { orgId, opportunityId },
     select: { lineTotal: true },
   });
   const amount = products.reduce((sum, p) => sum + Number(String(p.lineTotal)), 0);
   const weightedAmount = computeWeightedAmount(amount, opp.probability);
   await db.qcfOpportunity.update({
-    where: { id: opportunityId, tenantId },
+    where: { id: opportunityId, orgId },
     data: { amount, weightedAmount },
   });
   return { amount, weightedAmount };

@@ -22,7 +22,7 @@ import type { LeadSquaredFieldMapConfig } from "@/lib/services/leadsquared/field
  */
 export function resolveLeadSquaredClient(_tenantId: string): LeadSquaredClient {
   // TODO(leadsquared): resolve per-tenant credentials here (e.g. from a
-  // QcfOrgWorkspaceSettings / secret store keyed by tenantId) instead of the
+  // QcfOrgWorkspaceSettings / secret store keyed by orgId) instead of the
   // single env-based client.
   return LeadSquaredClient.fromEnv();
 }
@@ -31,7 +31,7 @@ export interface SyncJobDeps {
   prisma?: typeof prisma;
   sync?: typeof syncLeadOutbound;
   resolveClient?: (
-    tenantId: string,
+    orgId: string,
   ) => Pick<LeadSquaredClient, "createOrUpdateLead" | "updateLead"> &
     Partial<Pick<LeadSquaredClient, "getLeadByEmail">>;
   /** Injectable per-lead lock (default: Redis advisory lock). Tests pass a pass-through. */
@@ -50,25 +50,25 @@ export async function processLeadSquaredSyncJob(
   const lock = deps.lock ?? withLeadLock;
   const resolveFieldMap = deps.resolveFieldMap ?? getResolvedFieldMap;
 
-  const { tenantId, crmLeadId, origin } = job.data;
+  const { orgId, crmLeadId, origin } = job.data;
 
   // Serialize all sync work for this lead so concurrent pushes can't reorder at
   // the network layer and leave LeadSquared stale. Different leads stay parallel.
-  await lock(`${tenantId}:${crmLeadId}`, async () => {
+  await lock(`${orgId}:${crmLeadId}`, async () => {
     // Re-read the current lead, tenant-scoped. Skip soft-deleted / missing rows
     // (the lead may have been deleted between enqueue and processing).
     const lead = await db.qcfLead.findFirst({
-      where: { id: crmLeadId, tenantId },
+      where: { id: crmLeadId, orgId },
     });
     if (!lead || lead.deletedAt) {
       console.warn(
-        `[leadsquared] skip push: lead ${crmLeadId} (tenant ${tenantId}) not found or deleted`,
+        `[leadsquared] skip push: lead ${crmLeadId} (tenant ${orgId}) not found or deleted`,
       );
       return;
     }
 
-    const client = resolveClient(tenantId);
+    const client = resolveClient(orgId);
     const fieldMap = await resolveFieldMap();
-    await runSync({ tenantId, crmLeadId, lead, origin }, { client, fieldMap });
+    await runSync({ orgId, crmLeadId, lead, origin }, { client, fieldMap });
   });
 }

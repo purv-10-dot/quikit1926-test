@@ -29,12 +29,12 @@ export async function resolveManagerTeam(user: SessionUser): Promise<Team | null
 
   const managed = await prisma.qcfSalesGroupManager.findMany({
     where: { userId: user.userId },
-    select: { groupId: true, group: { select: { tenantId: true } } },
+    select: { groupId: true, group: { select: { orgId: true } } },
   });
   // Defensive tenant filter — the manager link table doesn't carry tenantId
   // directly, so trust the join.
   const groupIds = managed
-    .filter((g) => g.group.tenantId === user.tenantId)
+    .filter((g) => g.group.orgId === user.orgId)
     .map((g) => g.groupId);
   if (groupIds.length === 0) {
     return { memberIds: [], memberNames: [], size: 0 };

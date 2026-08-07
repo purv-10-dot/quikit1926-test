@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -37,7 +37,7 @@ describe("POST /api/quotes/[id]/send", () => {
 
   it("returns 404 when the quote is in another tenant", async () => {
     adminSession();
-    // getQuote uses findFirst({ id, tenantId }) â€” null when foreign.
+    // getQuote uses findFirst({ id, orgId }) â€” null when foreign.
     db.qcfQuote.findFirst.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/quotes/[id]/send/route");

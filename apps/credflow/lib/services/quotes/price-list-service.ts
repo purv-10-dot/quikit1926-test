@@ -57,7 +57,7 @@ const LIST_SELECT = {
 export type PriceListSortBy = "name" | "createdAt" | "updatedAt";
 
 export interface ListParams {
-  tenantId: string;
+  orgId: string;
   page: number;
   pageSize: number;
   q?: string;
@@ -71,7 +71,7 @@ export interface ListParams {
 
 export function buildPriceListWhere(p: Omit<ListParams, "page" | "pageSize" | "sortBy" | "sortDir">): Prisma.QcfPriceListWhereInput {
   return {
-    tenantId: p.tenantId,
+    orgId: p.orgId,
     deletedAt: p.trashed ? { not: null } : null,
     ...(p.isActive !== undefined ? { isActive: p.isActive } : {}),
     ...(p.isDefault !== undefined ? { isDefault: p.isDefault } : {}),
@@ -141,9 +141,9 @@ const ITEM_INCLUDE = {
   },
 } satisfies Prisma.QcfPriceListItemInclude;
 
-export async function getPriceList(tenantId: string, id: string, opts?: { includeTrashedItems?: boolean }) {
+export async function getPriceList(orgId: string, id: string, opts?: { includeTrashedItems?: boolean }) {
   return db.qcfPriceList.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     include: {
       items: {
         where: opts?.includeTrashedItems ? {} : activePriceListItemWhere(),
@@ -154,10 +154,10 @@ export async function getPriceList(tenantId: string, id: string, opts?: { includ
   });
 }
 
-async function clearOtherDefaults(tx: DbClient, tenantId: string, exceptId?: string) {
+async function clearOtherDefaults(tx: DbClient, orgId: string, exceptId?: string) {
   await tx.qcfPriceList.updateMany({
     where: {
-      tenantId,
+      orgId,
       isDefault: true,
       ...(exceptId ? { id: { not: exceptId } } : {}),
     },
@@ -181,16 +181,16 @@ function assertFloorPrice(args: {
 }
 
 export async function createPriceList(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   userName?: string | null;
   input: PriceListCreateInput;
 }) {
   return db.$transaction(async (tx) => {
-    if (args.input.isDefault) await clearOtherDefaults(tx, args.tenantId);
+    if (args.input.isDefault) await clearOtherDefaults(tx, args.orgId);
     const created = await tx.qcfPriceList.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         name: args.input.name,
         description: args.input.description ?? null,
         currency: (args.input.currency ?? "INR").toUpperCase(),
@@ -205,7 +205,7 @@ export async function createPriceList(args: {
       },
     });
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: created.id,
       action: "list_created",
       summary: `Created price list "${created.name}"`,
@@ -218,7 +218,7 @@ export async function createPriceList(args: {
 }
 
 export async function updatePriceList(args: {
-  tenantId: string;
+  orgId: string;
   id: string;
   userId: string;
   userName?: string | null;
@@ -226,11 +226,11 @@ export async function updatePriceList(args: {
 }) {
   return db.$transaction(async (tx) => {
     const before = await tx.qcfPriceList.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, orgId: args.orgId },
     });
     if (!before) throw new PriceListItemError("Price list not found", 404);
 
-    if (args.input.isDefault === true) await clearOtherDefaults(tx, args.tenantId, args.id);
+    if (args.input.isDefault === true) await clearOtherDefaults(tx, args.orgId, args.id);
     const data: Prisma.QcfPriceListUncheckedUpdateInput = { updatedByUserId: args.userId };
     const i = args.input;
     if (i.name !== undefined) data.name = i.name;
@@ -246,12 +246,12 @@ export async function updatePriceList(args: {
     if (i.customerTier !== undefined) data.customerTier = i.customerTier?.trim() || null;
 
     const updated = await tx.qcfPriceList.update({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, orgId: args.orgId },
       data,
     });
 
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.id,
       action: "list_updated",
       summary: `Updated price list "${updated.name}"`,
@@ -264,7 +264,7 @@ export async function updatePriceList(args: {
 }
 
 export async function duplicatePriceList(args: {
-  tenantId: string;
+  orgId: string;
   sourceId: string;
   userId: string;
   userName?: string | null;
@@ -272,7 +272,7 @@ export async function duplicatePriceList(args: {
 }) {
   return db.$transaction(async (tx) => {
     const source = await tx.qcfPriceList.findFirst({
-      where: { id: args.sourceId, tenantId: args.tenantId, deletedAt: null },
+      where: { id: args.sourceId, orgId: args.orgId, deletedAt: null },
       include: {
         items: { where: activePriceListItemWhere() },
       },
@@ -281,7 +281,7 @@ export async function duplicatePriceList(args: {
 
     const created = await tx.qcfPriceList.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         name: args.name?.trim() || `${source.name} (copy)`,
         description: source.description,
         currency: source.currency,
@@ -301,7 +301,7 @@ export async function duplicatePriceList(args: {
     if (source.items.length > 0) {
       await tx.qcfPriceListItem.createMany({
         data: source.items.map((it) => ({
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           priceListId: created.id,
           productId: it.productId,
           unitPrice: it.unitPrice,
@@ -321,7 +321,7 @@ export async function duplicatePriceList(args: {
     });
 
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: created.id,
       action: "list_duplicated",
       summary: `Duplicated from "${source.name}"`,
@@ -335,18 +335,18 @@ export async function duplicatePriceList(args: {
 }
 
 export async function softDeletePriceList(args: {
-  tenantId: string;
+  orgId: string;
   id: string;
   userId: string;
   userName?: string | null;
 }): Promise<void> {
   await db.$transaction(async (tx) => {
     const pl = await tx.qcfPriceList.update({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, orgId: args.orgId },
       data: { deletedAt: new Date(), isDefault: false },
     });
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.id,
       action: "list_deleted",
       summary: `Moved "${pl.name}" to trash`,
@@ -358,18 +358,18 @@ export async function softDeletePriceList(args: {
 }
 
 export async function restorePriceList(args: {
-  tenantId: string;
+  orgId: string;
   id: string;
   userId: string;
   userName?: string | null;
 }): Promise<void> {
   await db.$transaction(async (tx) => {
     const pl = await tx.qcfPriceList.update({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, orgId: args.orgId },
       data: { deletedAt: null },
     });
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.id,
       action: "list_restored",
       summary: `Restored "${pl.name}"`,
@@ -380,10 +380,10 @@ export async function restorePriceList(args: {
   });
 }
 
-export async function permanentDeletePriceList(tenantId: string, id: string): Promise<void> {
+export async function permanentDeletePriceList(orgId: string, id: string): Promise<void> {
   await db.$transaction(async (tx) => {
     const existing = await tx.qcfPriceList.findFirst({
-      where: { id, tenantId, deletedAt: { not: null } },
+      where: { id, orgId, deletedAt: { not: null } },
       select: { id: true },
     });
     if (!existing) {
@@ -392,15 +392,15 @@ export async function permanentDeletePriceList(tenantId: string, id: string): Pr
       throw err;
     }
     await tx.qcfQuote.updateMany({
-      where: { tenantId, priceListId: id },
+      where: { orgId, priceListId: id },
       data: { priceListId: null },
     });
     await tx.qcfAccount.updateMany({
-      where: { tenantId, defaultPriceListId: id },
+      where: { orgId, defaultPriceListId: id },
       data: { defaultPriceListId: null },
     });
     await tx.qcfOpportunity.updateMany({
-      where: { tenantId, priceListId: id },
+      where: { orgId, priceListId: id },
       data: { priceListId: null },
     });
     await tx.qcfPriceList.delete({ where: { id } });
@@ -417,11 +417,11 @@ export class PriceListItemError extends Error {
 
 async function assertBracketAvailable(
   tx: DbClient,
-  args: { tenantId: string; priceListId: string; productId: string; minQuantity: number; excludeItemId?: string },
+  args: { orgId: string; priceListId: string; productId: string; minQuantity: number; excludeItemId?: string },
 ) {
   const clash = await tx.qcfPriceListItem.findFirst({
     where: activePriceListItemWhere({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.priceListId,
       productId: args.productId,
       minQuantity: args.minQuantity,
@@ -438,7 +438,7 @@ async function assertBracketAvailable(
 }
 
 export async function addPriceListItem(args: {
-  tenantId: string;
+  orgId: string;
   priceListId: string;
   userId: string;
   userName?: string | null;
@@ -448,11 +448,11 @@ export async function addPriceListItem(args: {
   return db.$transaction(async (tx) => {
     const [priceList, product] = await Promise.all([
       tx.qcfPriceList.findFirst({
-        where: { id: args.priceListId, tenantId: args.tenantId },
+        where: { id: args.priceListId, orgId: args.orgId },
         select: { id: true },
       }),
       tx.qcfProduct.findFirst({
-        where: { id: args.input.productId, tenantId: args.tenantId },
+        where: { id: args.input.productId, orgId: args.orgId },
         select: { id: true, listPrice: true },
       }),
     ]);
@@ -461,7 +461,7 @@ export async function addPriceListItem(args: {
 
     const minQuantity = args.input.minQuantity ?? 1;
     await assertBracketAvailable(tx, {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.priceListId,
       productId: args.input.productId,
       minQuantity,
@@ -476,7 +476,7 @@ export async function addPriceListItem(args: {
 
     const created = await tx.qcfPriceListItem.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         priceListId: args.priceListId,
         productId: args.input.productId,
         unitPrice: args.input.unitPrice,
@@ -489,7 +489,7 @@ export async function addPriceListItem(args: {
     });
 
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.priceListId,
       itemId: created.id,
       action: "item_added",
@@ -503,7 +503,7 @@ export async function addPriceListItem(args: {
 }
 
 export async function updatePriceListItem(args: {
-  tenantId: string;
+  orgId: string;
   itemId: string;
   userId: string;
   userName?: string | null;
@@ -512,14 +512,14 @@ export async function updatePriceListItem(args: {
 }) {
   return db.$transaction(async (tx) => {
     const existing = await tx.qcfPriceListItem.findFirst({
-      where: activePriceListItemWhere({ id: args.itemId, tenantId: args.tenantId }),
+      where: activePriceListItemWhere({ id: args.itemId, orgId: args.orgId }),
     });
     if (!existing) throw new PriceListItemError("Price list item not found", 404);
 
     const nextMinQty = args.input.minQuantity ?? existing.minQuantity;
     if (args.input.minQuantity !== undefined || args.input.productId !== undefined) {
       await assertBracketAvailable(tx, {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         priceListId: existing.priceListId,
         productId: args.input.productId ?? existing.productId,
         minQuantity: nextMinQty,
@@ -553,7 +553,7 @@ export async function updatePriceListItem(args: {
     });
 
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: existing.priceListId,
       itemId: existing.id,
       action: "item_updated",
@@ -567,19 +567,19 @@ export async function updatePriceListItem(args: {
 }
 
 export async function duplicatePriceListItem(args: {
-  tenantId: string;
+  orgId: string;
   itemId: string;
   userId: string;
   userName?: string | null;
 }) {
   const source = await db.qcfPriceListItem.findFirst({
-    where: activePriceListItemWhere({ id: args.itemId, tenantId: args.tenantId }),
+    where: activePriceListItemWhere({ id: args.itemId, orgId: args.orgId }),
   });
   if (!source) throw new PriceListItemError("Price list item not found", 404);
 
   const nextMin = source.minQuantity + 1;
   return addPriceListItem({
-    tenantId: args.tenantId,
+    orgId: args.orgId,
     priceListId: source.priceListId,
     userId: args.userId,
     userName: args.userName,
@@ -595,14 +595,14 @@ export async function duplicatePriceListItem(args: {
 }
 
 export async function deletePriceListItem(args: {
-  tenantId: string;
+  orgId: string;
   itemId: string;
   userId: string;
   userName?: string | null;
 }): Promise<void> {
   await db.$transaction(async (tx) => {
     const existing = await tx.qcfPriceListItem.findFirst({
-      where: activePriceListItemWhere({ id: args.itemId, tenantId: args.tenantId }),
+      where: activePriceListItemWhere({ id: args.itemId, orgId: args.orgId }),
     });
     if (!existing) return;
     if (priceListItemSoftDeleteEnabled()) {
@@ -612,11 +612,11 @@ export async function deletePriceListItem(args: {
       });
     } else {
       await tx.qcfPriceListItem.deleteMany({
-        where: { id: args.itemId, tenantId: args.tenantId },
+        where: { id: args.itemId, orgId: args.orgId },
       });
     }
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: existing.priceListId,
       itemId: existing.id,
       action: "item_deleted",
@@ -629,7 +629,7 @@ export async function deletePriceListItem(args: {
 }
 
 export async function restorePriceListItem(args: {
-  tenantId: string;
+  orgId: string;
   itemId: string;
   userId: string;
   userName?: string | null;
@@ -639,11 +639,11 @@ export async function restorePriceListItem(args: {
       throw new PriceListItemError("Item restore requires the price list migration", 501);
     }
     const existing = await tx.qcfPriceListItem.findFirst({
-      where: { id: args.itemId, tenantId: args.tenantId, deletedAt: { not: null } },
+      where: { id: args.itemId, orgId: args.orgId, deletedAt: { not: null } },
     });
     if (!existing) throw new PriceListItemError("Trashed item not found", 404);
     await assertBracketAvailable(tx, {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: existing.priceListId,
       productId: existing.productId,
       minQuantity: existing.minQuantity,
@@ -654,7 +654,7 @@ export async function restorePriceListItem(args: {
       data: { deletedAt: null },
     });
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: existing.priceListId,
       itemId: existing.id,
       action: "item_restored",
@@ -669,7 +669,7 @@ export async function restorePriceListItem(args: {
 export type BulkPriceAdjustMode = "percent" | "absolute";
 
 export async function bulkUpdatePriceListItems(args: {
-  tenantId: string;
+  orgId: string;
   priceListId: string;
   userId: string;
   userName?: string | null;
@@ -681,7 +681,7 @@ export async function bulkUpdatePriceListItems(args: {
   return db.$transaction(async (tx) => {
     const items = await tx.qcfPriceListItem.findMany({
       where: activePriceListItemWhere({
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         priceListId: args.priceListId,
         id: { in: args.itemIds },
       }),
@@ -700,7 +700,7 @@ export async function bulkUpdatePriceListItems(args: {
       });
     }
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.priceListId,
       action: "items_bulk_updated",
       summary: `Bulk adjusted ${items.length} item(s)`,
@@ -722,7 +722,7 @@ export type ImportRow = {
 };
 
 export async function importPriceListItems(args: {
-  tenantId: string;
+  orgId: string;
   priceListId: string;
   userId: string;
   userName?: string | null;
@@ -735,7 +735,7 @@ export async function importPriceListItems(args: {
     const row = args.rows[i]!;
     try {
       const product = await db.qcfProduct.findFirst({
-        where: { tenantId: args.tenantId, sku: row.sku, deletedAt: null },
+        where: { orgId: args.orgId, sku: row.sku, deletedAt: null },
         select: { id: true },
       });
       if (!product) {
@@ -745,7 +745,7 @@ export async function importPriceListItems(args: {
       const minQuantity = row.minQuantity ?? 1;
       const existing = await db.qcfPriceListItem.findFirst({
         where: activePriceListItemWhere({
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           priceListId: args.priceListId,
           productId: product.id,
           minQuantity,
@@ -753,7 +753,7 @@ export async function importPriceListItems(args: {
       });
       if (existing) {
         await updatePriceListItem({
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           itemId: existing.id,
           userId: args.userId,
           userName: args.userName,
@@ -767,7 +767,7 @@ export async function importPriceListItems(args: {
         });
       } else {
         await addPriceListItem({
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           priceListId: args.priceListId,
           userId: args.userId,
           userName: args.userName,
@@ -792,7 +792,7 @@ export async function importPriceListItems(args: {
   }
   if (upserted > 0) {
     await logPriceListAudit({
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       priceListId: args.priceListId,
       action: "items_imported",
       summary: `Imported ${upserted} row(s)`,
@@ -803,8 +803,8 @@ export async function importPriceListItems(args: {
   return { upserted, errors };
 }
 
-export async function exportPriceListItems(tenantId: string, priceListId: string) {
-  const pl = await getPriceList(tenantId, priceListId);
+export async function exportPriceListItems(orgId: string, priceListId: string) {
+  const pl = await getPriceList(orgId, priceListId);
   if (!pl) return null;
   return pl.items.map((it) => ({
     sku: it.product?.sku ?? "",
@@ -828,7 +828,7 @@ function isPriceListInWindow(
 }
 
 export async function loadPriceListItemMap(
-  tenantId: string,
+  orgId: string,
   priceListId: string,
   now: Date = new Date(),
 ): Promise<Array<{
@@ -838,13 +838,13 @@ export async function loadPriceListItemMap(
   minQuantity: number;
 }>> {
   const pl = await db.qcfPriceList.findFirst({
-    where: { id: priceListId, tenantId },
+    where: { id: priceListId, orgId },
     select: { effectiveFrom: true, effectiveTo: true, isActive: true },
   });
   if (!pl || !pl.isActive || !isPriceListInWindow(pl, now)) return [];
 
   const rows = await db.qcfPriceListItem.findMany({
-    where: activePriceListItemWhere({ tenantId, priceListId }),
+    where: activePriceListItemWhere({ orgId, priceListId }),
     select: {
       productId: true,
       unitPrice: true,
@@ -861,7 +861,7 @@ export async function loadPriceListItemMap(
 }
 
 export async function resolvePriceForProduct(args: {
-  tenantId: string;
+  orgId: string;
   productId: string;
   priceListId?: string | null;
   quantity: number;
@@ -869,7 +869,7 @@ export async function resolvePriceForProduct(args: {
 }): Promise<{ unitPrice: number; discountPct: number; catalogListPrice: number } | null> {
   const now = args.now ?? new Date();
   const product = await db.qcfProduct.findFirst({
-    where: { id: args.productId, tenantId: args.tenantId },
+    where: { id: args.productId, orgId: args.orgId },
     select: { listPrice: true },
   });
   if (!product) return null;
@@ -877,13 +877,13 @@ export async function resolvePriceForProduct(args: {
 
   if (args.priceListId) {
     const pl = await db.qcfPriceList.findFirst({
-      where: { id: args.priceListId, tenantId: args.tenantId },
+      where: { id: args.priceListId, orgId: args.orgId },
       select: { effectiveFrom: true, effectiveTo: true, isActive: true },
     });
     if (pl && pl.isActive && isPriceListInWindow(pl, now)) {
       const items = await db.qcfPriceListItem.findMany({
         where: activePriceListItemWhere({
-          tenantId: args.tenantId,
+          orgId: args.orgId,
           priceListId: args.priceListId,
           productId: args.productId,
           minQuantity: { lte: Math.max(1, Math.floor(args.quantity)) },

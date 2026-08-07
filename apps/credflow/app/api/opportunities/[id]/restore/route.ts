@@ -30,13 +30,13 @@ export async function POST(
     // fields in `where`.
     const opp = await db.qcfOpportunity.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, accountId: true, deletedAt: true },
+      select: { id: true, orgId: true, accountId: true, deletedAt: true },
     });
-    if (!opp || opp.tenantId !== user.tenantId) return err("Not found", 404);
+    if (!opp || opp.orgId !== user.orgId) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
     if (!opp.deletedAt) return err("Opportunity is not in trash", 400);
 
-    await restore(user.tenantId, id);
+    await restore(user.orgId, id);
     return NextResponse.json({ success: true, data: { id, restored: true } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to restore opportunity";

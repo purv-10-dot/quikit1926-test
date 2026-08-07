@@ -48,9 +48,9 @@ function toOpts(values: string[]): FieldValueOption[] {
 
 /** Read the tenant's configured pipeline stages / statuses / substatuses. */
 async function readPipeline(
-  tenantId: string,
+  orgId: string,
 ): Promise<{ stages: string[]; statuses: string[]; substatuses: string[] }> {
-  const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   const settings = (ws?.settings as Record<string, unknown> | null) ?? {};
   const cfg =
     (settings.leadPipelineConfig as
@@ -71,11 +71,11 @@ async function readPipeline(
  * and the caller has already validated it (isValidFieldKey + it exists in the
  * org's field defs). Live leads only (deletedAt IS NULL), tenant-scoped.
  */
-async function distinctDynamicValues(tenantId: string, key: string): Promise<string[]> {
+async function distinctDynamicValues(orgId: string, key: string): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ v: string | null; n: number }[]>`
     SELECT "dynamicFields" ->> ${key} AS v, count(*)::int AS n
     FROM app_quikcredflow."CrmLead"
-    WHERE "tenantId" = ${tenantId}
+    WHERE "orgId" = ${orgId}
       AND "deletedAt" IS NULL
       AND nullif("dynamicFields" ->> ${key}, '') IS NOT NULL
     GROUP BY 1
@@ -114,7 +114,7 @@ const REAL_COLUMN_DISTINCT = new Set([
  * from REAL_COLUMN_DISTINCT (never caller input) and each maps to a fixed query,
  * so there is no SQL injection surface. Live leads only, tenant-scoped, capped.
  */
-async function distinctRealColumn(tenantId: string, column: string): Promise<string[]> {
+async function distinctRealColumn(orgId: string, column: string): Promise<string[]> {
   // Hard-coded per-column queries — no identifier interpolation.
   const q = (rows: { v: string | null }[]) =>
     rows.map((r) => r.v).filter((v): v is string => v != null && v !== "");
@@ -122,37 +122,37 @@ async function distinctRealColumn(tenantId: string, column: string): Promise<str
     case "source":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT source AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(source, '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif(source, '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "leadQuality":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT "leadQuality" AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("leadQuality", '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif("leadQuality", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "industry":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT industry AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(industry, '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif(industry, '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "country":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT country AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(country, '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif(country, '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "cityName":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT "cityName" AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("cityName", '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif("cityName", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "stateName":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT "stateName" AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("stateName", '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif("stateName", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "jobTitle":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
         SELECT "jobTitle" AS v FROM app_quikcredflow."CrmLead"
-        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("jobTitle", '') IS NOT NULL
+        WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND nullif("jobTitle", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     default:
       return [];
@@ -164,9 +164,9 @@ async function distinctRealColumn(tenantId: string, column: string): Promise<str
  * source for people fields like `ownerId`. Owner conditions store the user id,
  * so the picker shows names/emails while the stored value stays the id.
  */
-async function ownerUserOptions(tenantId: string): Promise<FieldValueOption[]> {
+async function ownerUserOptions(orgId: string): Promise<FieldValueOption[]> {
   const members = await prisma.orgMember.findMany({
-    where: { orgId: tenantId, status: "active" },
+    where: { orgId: orgId, status: "active" },
     select: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -181,12 +181,12 @@ async function ownerUserOptions(tenantId: string): Promise<FieldValueOption[]> {
 }
 
 export async function resolveFieldValues(
-  tenantId: string,
+  orgId: string,
   fieldKey: string,
 ): Promise<FieldValuesResult> {
   // 1) Standard pipeline-backed fields.
   if (fieldKey === "stage" || fieldKey === "status" || fieldKey === "substatus") {
-    const p = await readPipeline(tenantId);
+    const p = await readPipeline(orgId);
     const values = fieldKey === "stage" ? p.stages : fieldKey === "status" ? p.statuses : p.substatuses;
     if (values.length === 0) return { source: "none", values: null, reason: "free_text" };
     return { source: "pipeline", values: toOpts(values) };
@@ -194,7 +194,7 @@ export async function resolveFieldValues(
 
   // 1b) People fields — ownerId resolves to the tenant's user list (id → name).
   if (fieldKey === "ownerId") {
-    const opts = await ownerUserOptions(tenantId);
+    const opts = await ownerUserOptions(orgId);
     if (opts.length === 0) return { source: "none", values: null, reason: "free_text" };
     return { source: "distinct", values: opts };
   }
@@ -203,7 +203,7 @@ export async function resolveFieldValues(
   //     DB-distinct on the actual column. This is what gives Source its picker
   //     in both the advanced filter and automation conditions.
   if (REAL_COLUMN_DISTINCT.has(fieldKey)) {
-    const values = await distinctRealColumn(tenantId, fieldKey);
+    const values = await distinctRealColumn(orgId, fieldKey);
     if (values.length === 0 || values.length > PICKER_MAX) {
       return { source: "none", values: null, reason: "free_text" };
     }
@@ -213,7 +213,7 @@ export async function resolveFieldValues(
   // Custom (dynamicFields) fields — resolve against the org's LIVE defs so an
   // unknown/removed key can't reach the raw query.
   if (!isValidFieldKey(fieldKey)) return { source: "none", values: null, reason: "unknown_field" };
-  const customs = await listCustomFields(tenantId);
+  const customs = await listCustomFields(orgId);
   const def = customs.find((d) => d.key === fieldKey);
   if (!def) return { source: "none", values: null, reason: "unknown_field" };
 
@@ -229,7 +229,7 @@ export async function resolveFieldValues(
   }
 
   // 4) Capped DB-distinct. Empty or too-many → free-text.
-  const values = await distinctDynamicValues(tenantId, fieldKey);
+  const values = await distinctDynamicValues(orgId, fieldKey);
   if (values.length === 0 || values.length > PICKER_MAX) {
     return { source: "none", values: null, reason: "free_text" };
   }

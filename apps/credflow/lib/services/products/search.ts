@@ -2,7 +2,7 @@ import type { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 
 export interface ProductSearchFilters {
-  tenantId: string;
+  orgId: string;
   q?: string;
   sku?: string;
   barcode?: string;
@@ -23,7 +23,7 @@ export interface ProductSearchParams extends ProductSearchFilters {
 
 export function buildProductSearchWhere(p: ProductSearchFilters): Prisma.QcfProductWhereInput {
   const and: Prisma.QcfProductWhereInput[] = [
-    { tenantId: p.tenantId },
+    { orgId: p.orgId },
     { deletedAt: p.trashed ? { not: null } : null },
   ];
   if (p.isActive !== undefined) and.push({ isActive: p.isActive });

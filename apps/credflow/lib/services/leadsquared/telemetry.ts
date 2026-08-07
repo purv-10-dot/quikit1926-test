@@ -3,7 +3,7 @@
  * counters. Intentionally dependency-free — a seam to wire a real metrics
  * backend (StatsD/Prometheus/OTel) later without touching call sites.
  *
- * IMPORTANT: callers must pass IDENTIFIERS ONLY (leadId, prospectId, tenantId,
+ * IMPORTANT: callers must pass IDENTIFIERS ONLY (leadId, prospectId, orgId,
  * jobId, action). Never pass raw payloads, field values, emails/phones, or the
  * webhook secret — these logs may ship to aggregators.
  *

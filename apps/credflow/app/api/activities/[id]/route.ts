@@ -14,11 +14,11 @@ import { readTzFromCookieHeader } from "@/lib/services/reports/csv-columns";
 export const runtime = "nodejs";
 
 async function loadAndAssertAccess(
-  tenantId: string,
+  orgId: string,
   id: string,
   user: Parameters<typeof assertAccountAccess>[0],
 ) {
-  const item = await prisma.qcfActivity.findFirst({ where: { id, tenantId } });
+  const item = await prisma.qcfActivity.findFirst({ where: { id, orgId } });
   if (!item) {
     const err = new Error("Activity not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -27,7 +27,7 @@ async function loadAndAssertAccess(
   // Soft-orphaned rows skip ACL — they're audit trail and visible to anyone
   // with the activities:view perm.
   if (!item.relatedOrphanedAt) {
-    const accountId = await getRelatedAccountId(tenantId, item.relatedKind, item.relatedObjectId);
+    const accountId = await getRelatedAccountId(orgId, item.relatedKind, item.relatedObjectId);
     await assertAccountAccess(user, accountId);
   }
   return item;
@@ -39,9 +39,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "activities", "view");
-    const item = await loadAndAssertAccess(user.tenantId, id, user);
+    const item = await loadAndAssertAccess(user.orgId, id, user);
     const tz = readTzFromCookieHeader(_req.headers.get("cookie"));
-    const row = await toListRow(user.tenantId, item, tz);
+    const row = await toListRow(user.orgId, item, tz);
     return NextResponse.json({ success: true, data: row });
   } catch (e) {
     return errorResponse(e);
@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "activities", "edit");
 
-    const existing = await loadAndAssertAccess(user.tenantId, id, user);
+    const existing = await loadAndAssertAccess(user.orgId, id, user);
 
     const parsed = updateActivitySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
@@ -78,8 +78,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const newKind = dto.relatedKind ?? existing.relatedKind;
     const newId = dto.relatedObjectId ?? existing.relatedObjectId;
     if (newKind !== existing.relatedKind || newId !== existing.relatedObjectId) {
-      await assertActivityTargetExists(user.tenantId, newKind, newId);
-      const newAccount = await getRelatedAccountId(user.tenantId, newKind, newId);
+      await assertActivityTargetExists(user.orgId, newKind, newId);
+      const newAccount = await getRelatedAccountId(user.orgId, newKind, newId);
       await assertAccountAccess(user, newAccount);
     }
 
@@ -92,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       data: data as Parameters<typeof prisma.qcfActivity.update>[0]["data"],
     });
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
-    const row = await toListRow(user.tenantId, updated, tz);
+    const row = await toListRow(user.orgId, updated, tz);
     return NextResponse.json({ success: true, data: row });
   } catch (e) {
     return errorResponse(e);
@@ -105,7 +105,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "activities", "delete");
-    await loadAndAssertAccess(user.tenantId, id, user);
+    await loadAndAssertAccess(user.orgId, id, user);
     await prisma.qcfActivity.delete({ where: { id } });
     return NextResponse.json({ success: true, data: { ok: true } });
   } catch (e) {

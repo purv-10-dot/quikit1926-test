@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     const acl = await accountScopeFilter(user);
 
     const baseAnd: Record<string, unknown>[] = [
-      applyContactListWhere({ tenantId: user.tenantId }, { trashed: onlyDeleted }),
+      applyContactListWhere({ orgId: user.orgId }, { trashed: onlyDeleted }),
     ];
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     const searchOr = search?.trim() ? buildContactSearchOr(search.trim()) : [];
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       prisma.qcfContact.count({ where }),
     ]);
 
-    const items = await attachAccountNames(user.tenantId, rows);
+    const items = await attachAccountNames(user.orgId, rows);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     return NextResponse.json({
       success: true,

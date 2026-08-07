@@ -1,15 +1,15 @@
 import { db } from "@/lib/db";
 
-export async function listQuoteComments(tenantId: string, quoteId: string) {
+export async function listQuoteComments(orgId: string, quoteId: string) {
   return db.qcfQuoteComment.findMany({
-    where: { tenantId, quoteId, isInternal: true },
+    where: { orgId, quoteId, isInternal: true },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
 }
 
 export async function addQuoteComment(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   body: string;
   authorId: string;
@@ -19,7 +19,7 @@ export async function addQuoteComment(args: {
   const row = await db.$transaction(async (tx) => {
     const comment = await tx.qcfQuoteComment.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         quoteId: args.quoteId,
         body: args.body,
         authorId: args.authorId,
@@ -30,7 +30,7 @@ export async function addQuoteComment(args: {
     });
     await tx.qcfActivity.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         type: "QuoteComment",
         relatedKind: "Quote",
         relatedObjectId: args.quoteId,

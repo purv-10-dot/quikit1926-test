@@ -14,9 +14,9 @@ function err(message: string, status = 500) {
   return NextResponse.json({ success: false, error: message }, { status });
 }
 
-async function loadOpp(tenantId: string, id: string) {
+async function loadOpp(orgId: string, id: string) {
   return db.qcfOpportunity.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     select: { id: true, accountId: true },
   });
 }
@@ -31,12 +31,12 @@ export async function GET(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "view");
 
-    const opp = await loadOpp(user.tenantId, id);
+    const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
     const products = await db.qcfOpportunityProduct.findMany({
-      where: { tenantId: user.tenantId, opportunityId: id },
+      where: { orgId: user.orgId, opportunityId: id },
       orderBy: { sortOrder: "asc" },
     });
     return NextResponse.json({
@@ -64,7 +64,7 @@ export async function POST(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "edit");
 
-    const opp = await loadOpp(user.tenantId, id);
+    const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
@@ -86,7 +86,7 @@ export async function POST(
 
     const created = await db.qcfOpportunityProduct.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         opportunityId: id,
         productName: parsed.data.productName,
         quantity: parsed.data.quantity,
@@ -126,11 +126,11 @@ export async function PUT(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "edit");
 
-    const opp = await loadOpp(user.tenantId, id);
+    const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
-    const result = await recalculateFromProducts(user.tenantId, id);
+    const result = await recalculateFromProducts(user.orgId, id);
     return NextResponse.json({ success: true, data: result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to recalculate";

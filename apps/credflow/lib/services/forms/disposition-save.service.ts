@@ -18,9 +18,9 @@ import { applyFormRules, type ApplyResult } from "@/lib/services/forms/form-rule
 export type DispositionFieldValue = string | string[] | number | null;
 
 /** The live (currently published) call_disposition form version for a tenant, or null. */
-export async function getLiveDispositionVersionId(tenantId: string): Promise<string | null> {
+export async function getLiveDispositionVersionId(orgId: string): Promise<string | null> {
   const set = await prisma.qcfFormSet.findFirst({
-    where: { tenantId, surface: "call_disposition", isDefault: true },
+    where: { orgId, surface: "call_disposition", isDefault: true },
     select: { currentVersionId: true },
   });
   return set?.currentVersionId ?? null;
@@ -33,7 +33,7 @@ export async function getLiveDispositionVersionId(tenantId: string): Promise<str
  * owns valueFileId, keyed to the same activity).
  */
 export async function saveDispositionFieldValues(input: {
-  tenantId: string;
+  orgId: string;
   activityId: string;
   formSetVersionId: string;
   fieldValues: Record<string, DispositionFieldValue>;
@@ -77,7 +77,7 @@ export async function saveDispositionFieldValues(input: {
     await prisma.qcfFieldValue.upsert({
       where: { activityId_fieldKey: { activityId: input.activityId, fieldKey } },
       create: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         activityId: input.activityId,
         formSetVersionId: input.formSetVersionId,
         fieldKey,
@@ -98,23 +98,23 @@ export interface DispositionSaveResult extends ApplyResult {
  * has no live form set (legacy-only path — caller keeps today's behaviour).
  */
 export async function saveAndApplyDisposition(input: {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   activityId: string;
   fieldValues: Record<string, DispositionFieldValue>;
 }): Promise<DispositionSaveResult | null> {
-  const versionId = await getLiveDispositionVersionId(input.tenantId);
+  const versionId = await getLiveDispositionVersionId(input.orgId);
   if (!versionId) return null;
 
   await saveDispositionFieldValues({
-    tenantId: input.tenantId,
+    orgId: input.orgId,
     activityId: input.activityId,
     formSetVersionId: versionId,
     fieldValues: input.fieldValues,
   });
 
   const applied = await applyFormRules({
-    tenantId: input.tenantId,
+    orgId: input.orgId,
     leadId: input.leadId,
     activityId: input.activityId,
     formSetVersionId: versionId,

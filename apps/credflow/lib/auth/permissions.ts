@@ -164,7 +164,7 @@ export async function assertModule(
 
   // Default-deny: the matrix is always populated from the role baseline for a
   // known role, so an empty/missing row means the action is genuinely denied.
-  const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+  const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
   const row = matrix.find((r) => r.module === module);
   if (!row || !row.actions.includes(action)) {
     const err = new Error(`Forbidden: ${action} on ${module}`) as Error & {
@@ -180,7 +180,7 @@ export async function maskHiddenLeadFields<T extends Record<string, unknown>>(
   record: T,
 ): Promise<T> {
   if (isAdminRole(user.role)) return record;
-  const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+  const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
   const row = matrix.find((r) => r.module === "leads");
   if (!row || row.hiddenFields.length === 0) return record;
   const out: Record<string, unknown> = { ...record };
@@ -193,7 +193,7 @@ export async function filterRestrictedLeadFields<T extends Record<string, unknow
   payload: T,
 ): Promise<Partial<T>> {
   if (isAdminRole(user.role)) return payload;
-  const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+  const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
   const row = matrix.find((r) => r.module === "leads");
   if (!row || row.restrictedFields.length === 0) return payload;
   const out = { ...payload } as Partial<T>;

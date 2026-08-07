@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -16,7 +16,7 @@ function adminSession() {
 function makeContact(overrides: Record<string, unknown> = {}) {
   return {
     id: "c1",
-    tenantId: "t1",
+    orgId: "t1",
     firstName: "John",
     lastName: "Doe",
     email: "john@acme.test",

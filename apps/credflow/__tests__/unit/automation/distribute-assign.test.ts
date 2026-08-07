@@ -31,7 +31,7 @@ const db = mockDb();
 const write = vi.mocked(applyAutomatedLeadWrite);
 
 function lead(overrides: Record<string, unknown> = {}): QcfLead {
-  return { id: "lead-1", tenantId: "t1", stage: "New", status: "Open", ownerId: "u0", ...overrides } as unknown as QcfLead;
+  return { id: "lead-1", orgId: "t1", stage: "New", status: "Open", ownerId: "u0", ...overrides } as unknown as QcfLead;
 }
 
 describe("resolveAssignment · sequential first-match + default", () => {
@@ -82,7 +82,7 @@ describe("workflow-engine · distribute_lead rewire", () => {
   function defWith(config: DistributeConfig) {
     db.qcfWorkflowDefinition.findFirst.mockResolvedValue({
       id: "wf1",
-      tenantId: "t1",
+      orgId: "t1",
       status: "Active",
       triggerType: "trigger_lead_updated",
       graphNodes: [{ id: "n1", kind: "distribute_lead", config }],
@@ -105,7 +105,7 @@ describe("workflow-engine · distribute_lead rewire", () => {
 
     expect(write).toHaveBeenCalledTimes(1);
     expect(write).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: "t1", field: "ownerId", value: "u5", nodeId: "n1", workflowId: "wf1" }),
+      expect.objectContaining({ orgId: "t1", field: "ownerId", value: "u5", nodeId: "n1", workflowId: "wf1" }),
     );
     // The raw owner write is gone — the helper owns the write path.
     expect(db.qcfLead.update).not.toHaveBeenCalled();

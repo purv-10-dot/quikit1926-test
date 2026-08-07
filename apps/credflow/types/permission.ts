@@ -18,7 +18,7 @@ export type PermissionMatrix = ModulePermRow[];
 
 export interface SessionUser {
   userId: string;
-  tenantId: string;
+  orgId: string;
   role: string;
   email: string;
   name: string;

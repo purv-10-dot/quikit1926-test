@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
         const tz = readTzFromCookieHeader(req.headers.get("cookie"));
         const cursor = createPrismaCursorIterator<CallLogCsvRow>({
           delegate: prisma.qcfCallLog as unknown as PrismaListDelegate<CallLogCsvRow>,
-          where: { tenantId: user.tenantId },
+          where: { orgId: user.orgId },
           select: CALL_LOG_CSV_SELECT,
         });
         return dispatchExport({
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
         });
       }
       const items = await prisma.qcfCallLog.findMany({
-        where: { tenantId: user.tenantId },
+        where: { orgId: user.orgId },
         orderBy: { createdAt: "desc" },
         take: 200,
       });
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     if (contactId) {
       const contact = await prisma.qcfContact.findFirst({
         // QcfContact isn't middleware-protected — don't resolve a trashed contact.
-        where: { id: contactId, tenantId: user.tenantId, deletedAt: null },
+        where: { id: contactId, orgId: user.orgId, deletedAt: null },
         select: { phone: true },
       });
       const tails = [lastTen(contact?.phone)].filter((t) => t.length === 10);
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
         orClauses.push({ sourceNumber: { endsWith: t } });
       }
       const items = await prisma.qcfCallLog.findMany({
-        where: { tenantId: user.tenantId, OR: orClauses },
+        where: { orgId: user.orgId, OR: orClauses },
         orderBy: { createdAt: "desc" },
         take: 200,
       });
@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
     // narrowing assertion keeps the Prisma `where` typing happy.
     if (!leadId) return NextResponse.json({ items: [] });
     const lead = await prisma.qcfLead.findFirst({
-      where: { id: leadId, tenantId: user.tenantId },
+      where: { id: leadId, orgId: user.orgId },
       select: { phone: true, mobile: true },
     });
 
@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
     }
 
     const items = await prisma.qcfCallLog.findMany({
-      where: { tenantId: user.tenantId, OR: orClauses },
+      where: { orgId: user.orgId, OR: orClauses },
       orderBy: { createdAt: "desc" },
       take: 200,
     });
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const result = await createCallLog(
-      user.tenantId,
+      user.orgId,
       user.userId,
       user.name || user.email,
       parsed.data,

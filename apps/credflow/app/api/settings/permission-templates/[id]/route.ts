@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     assertAdmin(user);
-    const item = await getTemplate(user.tenantId, id);
+    const item = await getTemplate(user.orgId, id);
     if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(item);
   } catch (e) {

@@ -17,7 +17,7 @@ export async function GET() {
   if (isResponse(user)) return user;
 
   const userId = user.userId;
-  let orgId: string | undefined = user.tenantId;
+  let orgId: string | undefined = user.orgId;
 
   if (!orgId) {
     const membership = await db.orgMember.findFirst({

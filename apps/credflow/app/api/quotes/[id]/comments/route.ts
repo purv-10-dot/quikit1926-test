@@ -23,7 +23,7 @@ export async function GET(
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const data = await listQuoteComments(user.tenantId, id);
+    const data = await listQuoteComments(user.orgId, id);
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to list comments";
@@ -46,7 +46,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Validation failed" }, { status: 400 });
     }
     const data = await addQuoteComment({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       quoteId: id,
       body: parsed.data.body,
       authorId: user.userId,

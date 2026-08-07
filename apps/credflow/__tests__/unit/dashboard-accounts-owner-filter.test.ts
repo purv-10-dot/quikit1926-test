@@ -1,7 +1,7 @@
 /**
  * Bug 7 regression — Accounts KPI honours the Owner dropdown.
  *
- * The crmAccount.count calls used to hardcode { tenantId, createdAt }
+ * The crmAccount.count calls used to hardcode { orgId, createdAt }
  * and ignored the resolvedOwnerId from filters. This test fails if
  * the Accounts KPI ever bypasses tenantOwnerWhere again.
  */
@@ -19,7 +19,7 @@ const RANGE = {
   to: new Date("2026-05-01T23:59:59.999Z"),
   tz: "UTC",
 };
-const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
+const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
 
 function armPrismaDefaults(): void {
   db.qcfLead.count.mockResolvedValue(0);

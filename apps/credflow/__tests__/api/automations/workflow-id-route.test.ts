@@ -4,12 +4,12 @@ import { mockDb, setSession } from "../../helpers/mockDb";
 const db = mockDb();
 
 function adminSession() {
-  setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@b.co", name: "Alice" });
+  setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@b.co", name: "Alice" });
 }
 
 const draftDef = {
   id: "wf1",
-  tenantId: "t1",
+  orgId: "t1",
   name: "Welcome flow",
   status: "Draft",
   triggerType: "trigger_lead_created",
@@ -47,7 +47,7 @@ describe("GET /api/automations/workflows/[id]", () => {
     const res = await GET(req as never, { params: Promise.resolve({ id: "wf1" }) });
     expect(res.status).toBe(404);
     const where = db.qcfWorkflowDefinition.findFirst.mock.calls[0]![0]!.where as Record<string, unknown>;
-    expect(where.tenantId).toBe("t1");
+    expect(where.orgId).toBe("t1");
     expect(where.deletedAt).toBeNull();
   });
 
@@ -95,7 +95,7 @@ describe("PATCH /api/automations/workflows/[id]", () => {
     expect(res.status).toBe(404);
     expect(db.qcfWorkflowDefinition.update).not.toHaveBeenCalled();
     const where = db.qcfWorkflowDefinition.findFirst.mock.calls[0]![0]!.where as Record<string, unknown>;
-    expect(where.tenantId).toBe("t1");
+    expect(where.orgId).toBe("t1");
   });
 
   it("persists structural edits on a Draft (happy path)", async () => {

@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const targets = await prisma.qcfLead.findMany({
       where: {
         id: { in: leadIds },
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         accountId,
         deletedAt: null,
       },
@@ -60,12 +60,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const [result] = await prisma.$transaction([
       prisma.qcfLead.updateMany({
-        where: { id: { in: targetIds }, tenantId: user.tenantId },
+        where: { id: { in: targetIds }, orgId: user.orgId },
         data: { ownerId, ownerName },
       }),
       prisma.qcfActivity.create({
         data: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           type: "BulkOwnershipChange",
           relatedKind: "Account",
           relatedObjectId: accountId,
@@ -81,13 +81,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Fire-and-forget. NOTE: fans out one job per lead — a very large bulk
     // assign enqueues many jobs; throttling may be needed later (not built now).
     for (const id of targetIds) {
-      triggerOutboundSync({ tenantId: user.tenantId, crmLeadId: id });
+      triggerOutboundSync({ orgId: user.orgId, crmLeadId: id });
     }
 
     await Promise.all(
       targets.map((before) =>
         recordLeadChange({
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           userId: user.userId,
           leadId: before.id,
           action: "UPDATE",

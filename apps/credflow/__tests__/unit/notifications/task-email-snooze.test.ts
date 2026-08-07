@@ -20,7 +20,7 @@ describe("buildEmailContent — task deep-links", () => {
   });
 
   const base: Omit<NotificationPayload, "type" | "metadata"> = {
-    tenantId: "t1",
+    orgId: "t1",
     userId: "u1",
     category: "lead",
     title: "Task assigned to you",

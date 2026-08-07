@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -58,8 +58,8 @@ describe("GET /api/price-lists", () => {
     const res = await GET(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const where = db.qcfPriceList.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
-    expect(where.tenantId).toBe("t1");
+    const where = db.qcfPriceList.findMany.mock.calls[0]![0]!.where as { orgId?: string };
+    expect(where.orgId).toBe("t1");
   });
 });
 

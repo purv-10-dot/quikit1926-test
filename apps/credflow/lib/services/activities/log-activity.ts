@@ -3,7 +3,7 @@
 // `tx` argument.
 //
 // Idempotency: when both `externalId` and `sourceSystem` are non-empty,
-// upsert on the unique partial index (tenantId, sourceSystem, externalId).
+// upsert on the unique partial index (orgId, sourceSystem, externalId).
 // Replays from external systems (dialer webhooks, email sync, calendar)
 // dedupe naturally.
 //
@@ -17,7 +17,7 @@ import { touchLeadLastActivity } from "@/lib/services/leads/touch-last-activity"
 type Tx = PrismaClient | Prisma.TransactionClient;
 
 export type LogActivityInput = {
-  tenantId: string;
+  orgId: string;
   userId?: string;
   ownerId?: string;
   type: string;
@@ -61,7 +61,7 @@ export async function logActivity(input: LogActivityInput): Promise<QcfActivity>
   const ownerName = input.ownerName?.trim() || owner.name;
 
   const data = {
-    tenantId: input.tenantId,
+    orgId: input.orgId,
     type: input.type,
     relatedKind: input.relatedKind,
     relatedObjectId: input.relatedObjectId,
@@ -88,8 +88,8 @@ export async function logActivity(input: LogActivityInput): Promise<QcfActivity>
     input.externalId && input.sourceSystem
       ? await tx.qcfActivity.upsert({
           where: {
-            tenantId_sourceSystem_externalId: {
-              tenantId: input.tenantId,
+            orgId_sourceSystem_externalId: {
+              orgId: input.orgId,
               sourceSystem: input.sourceSystem,
               externalId: input.externalId,
             },
@@ -111,7 +111,7 @@ export async function logActivity(input: LogActivityInput): Promise<QcfActivity>
     data.leadId ?? (input.relatedKind === "Lead" ? input.relatedObjectId : null);
   if (stampLeadId) {
     await touchLeadLastActivity({
-      tenantId: input.tenantId,
+      orgId: input.orgId,
       leadId: stampLeadId,
       when: data.occurredAt,
       label: input.type,

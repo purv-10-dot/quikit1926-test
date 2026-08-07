@@ -20,7 +20,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await assertAccountAccess(user, id);
 
     const existing = await prisma.qcfAccount.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: { not: null } },
+      where: { id, orgId: user.orgId, deletedAt: { not: null } },
       select: { id: true, name: true },
     });
     if (!existing) return NextResponse.json({ error: "Not found in trash" }, { status: 404 });
@@ -31,7 +31,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     });
     await prisma.qcfActivity.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         type: "AccountChange",
         relatedKind: "Account",
         relatedObjectId: id,

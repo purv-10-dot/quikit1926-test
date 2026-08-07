@@ -22,7 +22,7 @@ export async function GET() {
     if (isResponse(user)) return user;
     await assertModule(user, "automations", "view");
     const items = await prisma.qcfWorkflowDefinition.findMany({
-      where: { tenantId: user.tenantId },
+      where: { orgId: user.orgId },
       orderBy: { updatedAt: "desc" },
     });
     return NextResponse.json({ items });
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const wf = await prisma.qcfWorkflowDefinition.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         name: parsed.data.name,
         status: parsed.data.status ?? "Draft",
         triggerType: parsed.data.triggerType ?? null,

@@ -2,14 +2,14 @@ import { prisma } from "@/lib/db/prisma";
 
 /** Resolve display names for uploader user ids within a tenant. */
 export async function resolveUploaderNames(
-  tenantId: string,
+  orgId: string,
   userIds: string[],
 ): Promise<Map<string, string>> {
   const unique = [...new Set(userIds.filter(Boolean))];
   if (unique.length === 0) return new Map();
 
   const members = await prisma.orgMember.findMany({
-    where: { orgId: tenantId, userId: { in: unique } },
+    where: { orgId: orgId, userId: { in: unique } },
     select: {
       userId: true,
       user: { select: { firstName: true, lastName: true, email: true } },

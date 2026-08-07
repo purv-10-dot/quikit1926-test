@@ -41,14 +41,14 @@ export async function PATCH(
         config === null ? Prisma.JsonNull : (config as Prisma.InputJsonValue);
     }
     const updated = await prisma.qcfCallDisposition.updateMany({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       data,
     });
     if (updated.count === 0) {
       return NextResponse.json({ error: "Disposition not found" }, { status: 404 });
     }
     const item = await prisma.qcfCallDisposition.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
     });
     return NextResponse.json({ item });
   } catch (e) {
@@ -66,7 +66,7 @@ export async function DELETE(
     await assertModule(user, "settings", "delete");
     const { id } = await params;
     const deleted = await prisma.qcfCallDisposition.deleteMany({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
     });
     if (deleted.count === 0) {
       return NextResponse.json({ error: "Disposition not found" }, { status: 404 });

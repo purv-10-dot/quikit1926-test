@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const job = await prisma.qcfLeadImportJob.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         entityType: "leads",
         sourceType: "csv",
         fileName: parsed.data.fileName,
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     // If a worker IS running it may also pick the job up, but executeImportJob's
     // atomic "queued → processing" claim makes any double-run a safe no-op.
     const bullJobId = await enqueueImportSafe({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       jobId: job.id,
       entityType: "leads",
       batchId: parsed.data.batchId ?? undefined,
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     }
 
     const run = await executeImportJob({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       jobId: job.id,
       entityType: "leads",
       batchId: parsed.data.batchId ?? undefined,

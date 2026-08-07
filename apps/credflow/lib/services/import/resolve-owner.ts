@@ -31,7 +31,7 @@ export interface ResolvedOwner {
  * match, or null when email is empty / no active member has that email.
  */
 export async function resolveOwnerByEmail(
-  tenantId: string,
+  orgId: string,
   email: string | null | undefined,
 ): Promise<ResolvedOwner | null> {
   const normalized = (email ?? "").trim().toLowerCase();
@@ -39,7 +39,7 @@ export async function resolveOwnerByEmail(
 
   const member = await prisma.orgMember.findFirst({
     where: {
-      orgId: tenantId,
+      orgId: orgId,
       status: "active",
       user: { is: { email: { equals: normalized, mode: "insensitive" } } },
     },
@@ -63,10 +63,10 @@ export async function resolveOwnerByEmail(
  * owner email against it (keys are lowercased).
  */
 export async function buildOwnerEmailIndex(
-  tenantId: string,
+  orgId: string,
 ): Promise<Map<string, ResolvedOwner>> {
   const members = await prisma.orgMember.findMany({
-    where: { orgId: tenantId, status: "active" },
+    where: { orgId: orgId, status: "active" },
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
 

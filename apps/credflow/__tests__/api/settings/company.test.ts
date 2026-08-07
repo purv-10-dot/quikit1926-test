@@ -22,7 +22,7 @@ describe("GET /api/settings/company", () => {
   it("returns company profile for authenticated user", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@x.co",
       name: "A",
@@ -68,7 +68,7 @@ describe("PATCH /api/settings/company", () => {
   it("upserts profile with tenantId", async () => {
     setSession({
       userId: "u1",
-      tenantId: "tenant-A",
+      orgId: "tenant-A",
       role: "Administrator",
       email: "a@x.co",
       name: "A",
@@ -99,6 +99,6 @@ describe("PATCH /api/settings/company", () => {
     expect(res.status).toBe(200);
     expect(db.qcfCompanyProfile.upsert).toHaveBeenCalled();
     const args = db.qcfCompanyProfile.upsert.mock.calls[0]?.[0];
-    expect(args?.where.tenantId).toBe("tenant-A");
+    expect(args?.where.orgId).toBe("tenant-A");
   });
 });

@@ -24,14 +24,14 @@ export async function GET() {
 
     const [total, unread, today] = await Promise.all([
       prisma.qcfNotification.count({
-        where: { tenantId: user.tenantId },
+        where: { orgId: user.orgId },
       }),
       prisma.qcfNotification.count({
-        where: { tenantId: user.tenantId, readAt: null },
+        where: { orgId: user.orgId, readAt: null },
       }),
       prisma.qcfNotification.count({
         where: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           createdAt: { gte: todayStart },
         },
       }),

@@ -10,15 +10,15 @@ interface SettingsTree {
   [k: string]: unknown;
 }
 
-async function readTree(tenantId: string): Promise<SettingsTree> {
-  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+async function readTree(orgId: string): Promise<SettingsTree> {
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   return ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
 }
 
-async function writeTree(tenantId: string, next: SettingsTree): Promise<void> {
+async function writeTree(orgId: string, next: SettingsTree): Promise<void> {
   await prisma.qcfOrgWorkspaceSettings.upsert({
-    where: { tenantId },
-    create: { tenantId, settings: next as object },
+    where: { orgId },
+    create: { orgId, settings: next as object },
     update: { settings: next as object },
   });
 }
@@ -29,17 +29,17 @@ function parseConfig(raw: unknown): LeadScoringConfig {
   return parsed.data;
 }
 
-export async function getLeadScoringConfig(tenantId: string): Promise<LeadScoringConfig> {
-  const tree = await readTree(tenantId);
+export async function getLeadScoringConfig(orgId: string): Promise<LeadScoringConfig> {
+  const tree = await readTree(orgId);
   return parseConfig(tree.leadScoring ?? DEFAULT_LEAD_SCORING_CONFIG);
 }
 
 export async function setLeadScoringConfig(
-  tenantId: string,
+  orgId: string,
   patch: Partial<LeadScoringConfig>,
 ): Promise<LeadScoringConfig> {
-  const tree = await readTree(tenantId);
-  const current = await getLeadScoringConfig(tenantId);
+  const tree = await readTree(orgId);
+  const current = await getLeadScoringConfig(orgId);
   const merged: LeadScoringConfig = {
     enabled: patch.enabled ?? current.enabled,
     autoRecalculate: patch.autoRecalculate ?? current.autoRecalculate,
@@ -48,7 +48,7 @@ export async function setLeadScoringConfig(
     behavior: patch.behavior ?? current.behavior,
   };
   const validated = parseConfig(merged);
-  await writeTree(tenantId, { ...tree, leadScoring: validated });
+  await writeTree(orgId, { ...tree, leadScoring: validated });
   return validated;
 }
 

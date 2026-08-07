@@ -8,10 +8,10 @@ const asMock = <T>(fn: T): Mock => fn as unknown as Mock;
 
 function ctx(overrides: Partial<ReportRunContext> = {}): ReportRunContext {
   return {
-    tenantId: "t1",
+    orgId: "t1",
     session: {
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@x.co",
       name: "A",

@@ -20,7 +20,7 @@ export const runtime = "nodejs";
  *   - No pagination cap — returns the full active team (the settings endpoint
  *     defaults to pageSize 50, which would silently truncate a larger team).
  *
- * Tenant scoping: orgMember.orgId === tenantId (same join the users service uses).
+ * Tenant scoping: orgMember.orgId === orgId (same join the users service uses).
  */
 export async function GET() {
   try {
@@ -29,7 +29,7 @@ export async function GET() {
     await assertModule(user, "leads", "view");
 
     const members = await prisma.orgMember.findMany({
-      where: { orgId: user.tenantId, status: "active" },
+      where: { orgId: user.orgId, status: "active" },
       include: { user: { select: { firstName: true, lastName: true, email: true } } },
       orderBy: { createdAt: "asc" },
     });

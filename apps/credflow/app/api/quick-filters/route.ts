@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     if (isResponse(user)) return user;
     const { searchParams } = new URL(req.url);
     const module = searchParams.get("module") || undefined;
-    const where: Record<string, unknown> = { tenantId: user.tenantId, userId: user.userId };
+    const where: Record<string, unknown> = { orgId: user.orgId, userId: user.userId };
     if (module) where.module = module;
     const items = await prisma.qcfQuickFilter.findMany({ where, orderBy: { updatedAt: "desc" } });
     return NextResponse.json({ items });
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const item = await prisma.qcfQuickFilter.create({
       data: {
         ...parsed.data,
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
       } as Prisma.QcfQuickFilterUncheckedCreateInput,
     });
@@ -53,7 +53,7 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-    await prisma.qcfQuickFilter.deleteMany({ where: { id, tenantId: user.tenantId, userId: user.userId } });
+    await prisma.qcfQuickFilter.deleteMany({ where: { id, orgId: user.orgId, userId: user.userId } });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

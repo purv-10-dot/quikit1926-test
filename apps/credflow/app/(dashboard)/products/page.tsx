@@ -13,12 +13,12 @@ import {
  * reflects ALL products in the tenant — the filters the client applies
  * (search, active/inactive) don't change these aggregate counts.
  */
-async function computeProductStats(tenantId: string): Promise<ProductsStats> {
+async function computeProductStats(orgId: string): Promise<ProductsStats> {
   const [total, active, categoryRows] = await Promise.all([
-    db.qcfProduct.count({ where: { tenantId } }),
-    db.qcfProduct.count({ where: { tenantId, isActive: true } }),
+    db.qcfProduct.count({ where: { orgId } }),
+    db.qcfProduct.count({ where: { orgId, isActive: true } }),
     db.qcfProduct.findMany({
-      where: { tenantId, category: { not: null } },
+      where: { orgId, category: { not: null } },
       select: { category: true },
       distinct: ["category"],
     }),
@@ -33,7 +33,7 @@ async function computeProductStats(tenantId: string): Promise<ProductsStats> {
 
 export default async function ProductsPage() {
   const user = await requireUser();
-  const stats = await computeProductStats(user.tenantId);
+  const stats = await computeProductStats(user.orgId);
   return (
     <PageContainer size="wide">
       <PageHeader

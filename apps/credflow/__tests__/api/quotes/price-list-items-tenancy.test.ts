@@ -5,8 +5,8 @@
  * Before the fix:
  *   - addPriceListItem trusted productId / priceListId blindly â€” a caller
  *     could attach any product (across tenants) by passing its ID.
- *   - updatePriceListItem cast { id, tenantId } into a unique-where; Prisma
- *     silently ignored tenantId because it's not part of any unique index,
+ *   - updatePriceListItem cast { id, orgId } into a unique-where; Prisma
+ *     silently ignored orgId because it's not part of any unique index,
  *     so cross-tenant updates by ID would have succeeded.
  *
  * Both are now blocked at the service layer via explicit findFirst checks
@@ -20,7 +20,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",

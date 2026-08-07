@@ -136,7 +136,7 @@ export interface ApplyResult {
  * carries a STAGE name; see form-rule-action.service.ts validation.)
  */
 export async function applyFormRules(input: {
-  tenantId: string;
+  orgId: string;
   leadId: string;
   activityId: string | null;
   formSetVersionId: string;
@@ -173,17 +173,17 @@ export async function applyFormRules(input: {
     if (process.env.FRRE_APPLY_STAGE === "1") {
       // The ONLY mutation — a plain terminal update (no hook -> no re-trigger).
       await prisma.qcfLead.update({
-        where: { id: input.leadId, tenantId: input.tenantId },
+        where: { id: input.leadId, orgId: input.orgId },
         data: { stage: newStage },
       });
       // Outbound sync (stage changed). Fire-and-forget.
-      triggerOutboundSync({ tenantId: input.tenantId, crmLeadId: input.leadId });
+      triggerOutboundSync({ orgId: input.orgId, crmLeadId: input.leadId });
 
       // Traceability (FR-D5 discipline). Generic actor — 6a stays sealed, so the
       // source rule id is not threaded; add it later only if an audit view needs it.
       await prisma.qcfAuditLog.create({
         data: {
-          tenantId: input.tenantId,
+          orgId: input.orgId,
           userId: null,
           module: "leads",
           action: "stage_changed",

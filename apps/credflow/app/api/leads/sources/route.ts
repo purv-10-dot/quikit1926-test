@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     if (isResponse(user)) return user;
     const includeInactive = new URL(req.url).searchParams.get("includeInactive") === "true";
     const items = await prisma.qcfLeadSource.findMany({
-      where: { tenantId: user.tenantId, ...(includeInactive ? {} : { active: true }) },
+      where: { orgId: user.orgId, ...(includeInactive ? {} : { active: true }) },
       orderBy: { name: "asc" },
     });
     return NextResponse.json({ items });
@@ -50,14 +50,14 @@ export async function POST(req: NextRequest) {
       );
     }
     const existing = await prisma.qcfLeadSource.findFirst({
-      where: { tenantId: user.tenantId, name: { equals: parsed.data.name, mode: "insensitive" } },
+      where: { orgId: user.orgId, name: { equals: parsed.data.name, mode: "insensitive" } },
     });
     if (existing) {
       return NextResponse.json({ error: "A source with that name already exists." }, { status: 409 });
     }
     const created = await prisma.qcfLeadSource.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         name: parsed.data.name,
         type: parsed.data.type ?? null,
         active: parsed.data.active ?? true,

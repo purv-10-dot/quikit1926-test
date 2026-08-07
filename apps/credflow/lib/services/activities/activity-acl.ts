@@ -23,7 +23,7 @@ export async function buildActivityAclWhere(
   const scope = await getScope(user);
   if (scope.unrestricted) return null;
 
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
   const allowed = scope.allowedAccountIds;
 
   // No allowed accounts → the user can see only orphaned rows that they
@@ -35,17 +35,17 @@ export async function buildActivityAclWhere(
 
   const [leads, opps, contacts] = await Promise.all([
     prisma.qcfLead.findMany({
-      where: { tenantId, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
+      where: { orgId, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
       select: { id: true },
     }),
     prisma.qcfOpportunity.findMany({
-      where: { tenantId, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
+      where: { orgId, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
       select: { id: true },
     }),
     prisma.qcfContact.findMany({
       // QcfContact isn't middleware-protected; exclude trashed so activities tied
       // to deleted contacts don't leak into the visibility scope.
-      where: { tenantId, deletedAt: null, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
+      where: { orgId, deletedAt: null, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
       select: { id: true },
     }),
   ]);

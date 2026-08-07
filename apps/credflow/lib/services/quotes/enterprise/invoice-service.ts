@@ -2,12 +2,12 @@ import { db } from "@/lib/db";
 import { toNumber } from "@/lib/services/quotes/decimal";
 import { QuoteError } from "@/lib/services/quotes/quote-service";
 
-async function nextInvoiceNumber(tenantId: string): Promise<string> {
+async function nextInvoiceNumber(orgId: string): Promise<string> {
   const year = new Date().getFullYear();
   const name = `invoice-${year}`;
   const row = await db.qcfSequence.upsert({
-    where: { sequence_uk: { tenantId, name } },
-    create: { tenantId, name, counter: 1 },
+    where: { sequence_uk: { orgId, name } },
+    create: { orgId, name, counter: 1 },
     update: { counter: { increment: 1 } },
   });
   const n = String(row.counter).padStart(4, "0");
@@ -15,25 +15,25 @@ async function nextInvoiceNumber(tenantId: string): Promise<string> {
 }
 
 export async function createInvoiceFromQuote(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   userId: string;
   userName: string | null;
   dueInDays?: number;
 }): Promise<{ invoiceId: string; invoiceNumber: string }> {
   const quote = await db.qcfQuote.findFirst({
-    where: { id: args.quoteId, tenantId: args.tenantId, deletedAt: null, status: "Won" },
+    where: { id: args.quoteId, orgId: args.orgId, deletedAt: null, status: "Won" },
   });
   if (!quote) throw new QuoteError("Won quote required to create invoice", 400);
 
   const existing = await db.qcfInvoice.findFirst({
-    where: { tenantId: args.tenantId, quoteId: args.quoteId },
+    where: { orgId: args.orgId, quoteId: args.quoteId },
   });
   if (existing) {
     return { invoiceId: existing.id, invoiceNumber: existing.invoiceNumber };
   }
 
-  const invoiceNumber = await nextInvoiceNumber(args.tenantId);
+  const invoiceNumber = await nextInvoiceNumber(args.orgId);
   const dueDate =
     args.dueInDays && args.dueInDays > 0
       ? new Date(Date.now() + args.dueInDays * 86_400_000)
@@ -42,7 +42,7 @@ export async function createInvoiceFromQuote(args: {
   const invoice = await db.$transaction(async (tx) => {
     const row = await tx.qcfInvoice.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         invoiceNumber,
         quoteId: quote.id,
         accountId: quote.accountId,
@@ -66,7 +66,7 @@ export async function createInvoiceFromQuote(args: {
     });
     await tx.qcfActivity.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         type: "InvoiceCreated",
         relatedKind: "Quote",
         relatedObjectId: quote.id,
@@ -81,16 +81,16 @@ export async function createInvoiceFromQuote(args: {
   return { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber };
 }
 
-export async function listInvoices(tenantId: string, page = 1, pageSize = 25) {
+export async function listInvoices(orgId: string, page = 1, pageSize = 25) {
   const skip = (page - 1) * pageSize;
   const [items, total] = await Promise.all([
     db.qcfInvoice.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       orderBy: { createdAt: "desc" },
       skip,
       take: pageSize,
     }),
-    db.qcfInvoice.count({ where: { tenantId, deletedAt: null } }),
+    db.qcfInvoice.count({ where: { orgId, deletedAt: null } }),
   ]);
   return {
     items: items.map((i) => ({

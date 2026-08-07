@@ -25,12 +25,12 @@ const PAST_DT = new Date("2026-06-01T08:00:00.000Z");
 
 beforeAll(async () => {
   const disposition = await integrationPrisma.qcfCallDisposition.create({
-    data: { tenantId: TENANT, code: "interested_int", label: "Interested" },
+    data: { orgId: TENANT, code: "interested_int", label: "Interested" },
   });
   dispositionId = disposition.id;
 
   const lead = await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: "FR-D2 Integration Lead" },
+    data: { orgId: TENANT, name: "FR-D2 Integration Lead" },
   });
   leadId = lead.id;
 });
@@ -51,7 +51,7 @@ describe("FR-D2 — Activity DateTime wiring (integration)", () => {
     });
 
     const activity = await integrationPrisma.qcfActivity.findFirst({
-      where: { tenantId: TENANT, type: "Call", leadId },
+      where: { orgId: TENANT, type: "Call", leadId },
       orderBy: { createdAt: "desc" },
       select: { occurredAt: true },
     });
@@ -63,7 +63,7 @@ describe("FR-D2 — Activity DateTime wiring (integration)", () => {
 
   it("INT-D2-2: a future activityDateTime is rejected before any DB write", async () => {
     const before = await integrationPrisma.qcfActivity.count({
-      where: { tenantId: TENANT },
+      where: { orgId: TENANT },
     });
 
     await expect(
@@ -77,7 +77,7 @@ describe("FR-D2 — Activity DateTime wiring (integration)", () => {
     ).rejects.toMatchObject({ statusCode: 422 });
 
     const after = await integrationPrisma.qcfActivity.count({
-      where: { tenantId: TENANT },
+      where: { orgId: TENANT },
     });
 
     // Exactly zero new activities written — the 422 fires before any create.

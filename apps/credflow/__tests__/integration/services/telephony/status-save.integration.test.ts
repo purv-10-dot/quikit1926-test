@@ -38,14 +38,14 @@ let realDispositionId: string;
 
 beforeAll(async () => {
   const lead = await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: "Stage 3-A Lead" },
+    data: { orgId: TENANT, name: "Stage 3-A Lead" },
   });
   leadId = lead.id;
 
   // A real disposition only so the no-regression / actor-time-on-existing-path
   // checks have something to call. The Option-Y save path must NOT need this.
   const disp = await integrationPrisma.qcfCallDisposition.create({
-    data: { tenantId: TENANT, code: "interested_s3a", label: "Interested", name: "Interested" },
+    data: { orgId: TENANT, code: "interested_s3a", label: "Interested", name: "Interested" },
   });
   realDispositionId = disp.id;
 });
@@ -80,7 +80,7 @@ describe("FR-RE Stage 3-A — save from Status (Option Y)", () => {
     });
 
     const activity = await integrationPrisma.qcfActivity.findFirst({
-      where: { tenantId: TENANT, type: "Call", leadId },
+      where: { orgId: TENANT, type: "Call", leadId },
       orderBy: { createdAt: "desc" },
       select: { type: true, subject: true, outcome: true, ownerName: true, occurredAt: true },
     });
@@ -108,7 +108,7 @@ describe("FR-RE Stage 3-A — save from Status (Option Y)", () => {
     });
 
     const activity = await integrationPrisma.qcfActivity.findFirst({
-      where: { tenantId: TENANT, type: "Call", leadId },
+      where: { orgId: TENANT, type: "Call", leadId },
       orderBy: { createdAt: "desc" },
       select: { ownerName: true, occurredAt: true },
     });

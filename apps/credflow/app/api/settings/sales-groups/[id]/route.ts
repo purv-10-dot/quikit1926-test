@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await requirePermission(user, "settings", "view");
-    const item = await getGroup(user.tenantId, id);
+    const item = await getGroup(user.orgId, id);
     if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(item);
   } catch (e) {

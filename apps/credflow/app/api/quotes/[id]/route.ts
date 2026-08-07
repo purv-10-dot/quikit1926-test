@@ -64,7 +64,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const q = await getQuote(user.tenantId, id);
+    const q = await getQuote(user.orgId, id);
     if (!q) return fail(404, "Quote not found");
 
     // If this quote is bound to a price list, fetch the list's items so
@@ -74,13 +74,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // product default prices. Decimal → number coercion is handled
     // inside the service.
     const priceListItems = q.priceListId
-      ? await loadPriceListItemMap(user.tenantId, q.priceListId)
+      ? await loadPriceListItemMap(user.orgId, q.priceListId)
       : [];
 
     // Revision chain (audit finding W-10). Walks parent links to surface
     // V1 → V2 → V3 history alongside the quote. Cheap because chains are
     // shallow (typically <5 versions even on heavily-negotiated deals).
-    const revisionChain = await loadRevisionChain(user.tenantId, q.id, q.parentQuoteId);
+    const revisionChain = await loadRevisionChain(user.orgId, q.id, q.parentQuoteId);
 
     return ok({
       ...serialise(q),
@@ -114,7 +114,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     try {
       const updated = await updateQuote({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         id,
         input: parsed.data,
       });
@@ -122,7 +122,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         event: "updated",
         entityType: "quote",
         entityId: id,
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         actorUserId: user.userId,
         actorName: user.name || user.email,
         after: updated as unknown as Record<string, unknown>,
@@ -150,9 +150,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
 
-    const existing = await getQuote(user.tenantId, id);
+    const existing = await getQuote(user.orgId, id);
     if (!existing) return fail(404, "Quote not found");
-    await softDeleteQuote(user.tenantId, id);
+    await softDeleteQuote(user.orgId, id);
     return ok({ ok: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to delete quote";

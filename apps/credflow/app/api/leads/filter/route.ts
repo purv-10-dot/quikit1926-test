@@ -11,7 +11,7 @@ import { listCustomFields } from "@/lib/services/fields/repo";
 export const runtime = "nodejs";
 const leadFilterSelect = {
   id: true,
-  tenantId: true,
+  orgId: true,
   name: true,
   email: true,
   phone: true,
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const { filter, page, pageSize, sortBy, sortDir } = parsed.data;
-    const customDefs = await listCustomFields(user.tenantId);
+    const customDefs = await listCustomFields(user.orgId);
     const filterWhere = translateFilterToPrismaWhere(filter, customDefs);
     const acl = await accountScopeFilter(user);
     // Owner-based visibility: when the user's role is restricted to owned leads,
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     // targets another owner intersects to empty, so it can't be used to escape.
     const ownerScope = await ownerScopeFilter(user);
 
-    const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+    const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     if (acl) baseAnd.push(acl);
     if (ownerScope) baseAnd.push(ownerScope);

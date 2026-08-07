@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -33,7 +33,7 @@ describe("GET /api/contacts", () => {
     db.qcfContact.findMany.mockResolvedValue([
       {
         id: "c1",
-        tenantId: "t1",
+        orgId: "t1",
         firstName: "John",
         lastName: "Doe",
         email: "john@acme.test",
@@ -76,8 +76,8 @@ describe("GET /api/contacts", () => {
     const req = new Request("http://test/api/contacts");
     await GET(req as unknown as import("next/server").NextRequest);
 
-    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
-    expect(where.tenantId).toBe("t1");
+    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as { orgId?: string };
+    expect(where.orgId).toBe("t1");
   });
 
   it("searches across the expanded text field set (incl. city) on ?q=", async () => {
@@ -180,7 +180,7 @@ describe("POST /api/contacts", () => {
     db.qcfContact.findFirst.mockResolvedValue(null);
     db.qcfContact.create.mockResolvedValue({
       id: "c1",
-      tenantId: "t1",
+      orgId: "t1",
       firstName: "Jane",
       lastName: "Doe",
       email: null,

@@ -77,43 +77,43 @@ export interface FullAccountRecord {
   scoreHistory: AccountScoreHistoryBundle;
 }
 
-async function loadActivities(tenantId: string, ids: AccountRollupIds) {
+async function loadActivities(orgId: string, ids: AccountRollupIds) {
   return prisma.qcfActivity.findMany({
-    where: buildAccountActivityWhere(tenantId, ids),
+    where: buildAccountActivityWhere(orgId, ids),
     orderBy: { occurredAt: "desc" },
     take: 100,
   });
 }
 
-async function loadTasks(tenantId: string, ids: AccountRollupIds) {
+async function loadTasks(orgId: string, ids: AccountRollupIds) {
   return prisma.qcfTask.findMany({
-    where: buildAccountTaskWhere(tenantId, ids),
+    where: buildAccountTaskWhere(orgId, ids),
     orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     take: 100,
   });
 }
 
-async function loadNotes(tenantId: string, ids: AccountRollupIds) {
+async function loadNotes(orgId: string, ids: AccountRollupIds) {
   return prisma.qcfNote.findMany({
-    where: buildAccountNoteWhere(tenantId, ids),
+    where: buildAccountNoteWhere(orgId, ids),
     orderBy: { createdAt: "desc" },
     take: 50,
   });
 }
 
-async function loadCallLogs(tenantId: string, leadIds: string[]) {
+async function loadCallLogs(orgId: string, leadIds: string[]) {
   if (leadIds.length === 0) return [];
   return prisma.qcfCallLog.findMany({
-    where: { tenantId, leadId: { in: leadIds } },
+    where: { orgId, leadId: { in: leadIds } },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
 }
 
-async function loadAttachments(tenantId: string, accountId: string) {
+async function loadAttachments(orgId: string, accountId: string) {
   return prisma.qcfDocument.findMany({
     where: {
-      tenantId,
+      orgId,
       refType: "account",
       refId: accountId,
       deletedAt: null,
@@ -128,7 +128,7 @@ export async function getFullAccountRecord(opts: {
 }): Promise<FullAccountRecord | null> {
   const { user, accountId } = opts;
   const account = await findFirstAccountRow({
-    where: { id: accountId, tenantId: user.tenantId },
+    where: { id: accountId, orgId: user.orgId },
   });
   if (!account) return null;
   await assertAccountAccess(user, accountId);
@@ -138,20 +138,20 @@ export async function getFullAccountRecord(opts: {
       ? prisma.qcfAccount.findFirst({
           where: {
             id: account.parentAccountId,
-            tenantId: user.tenantId,
+            orgId: user.orgId,
             deletedAt: null,
           },
           select: { id: true, name: true },
         })
       : Promise.resolve(null),
     prisma.qcfAccount.findMany({
-      where: { tenantId: user.tenantId, parentAccountId: accountId, deletedAt: null },
+      where: { orgId: user.orgId, parentAccountId: accountId, deletedAt: null },
       select: { id: true, name: true, status: true },
       orderBy: { name: "asc" },
       take: 50,
     }),
     prisma.qcfLead.findMany({
-      where: { tenantId: user.tenantId, accountId, deletedAt: null },
+      where: { orgId: user.orgId, accountId, deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -164,7 +164,7 @@ export async function getFullAccountRecord(opts: {
       take: 100,
     }),
     prisma.qcfContact.findMany({
-      where: { tenantId: user.tenantId, accountId, deletedAt: null },
+      where: { orgId: user.orgId, accountId, deletedAt: null },
       select: {
         id: true,
         firstName: true,
@@ -178,12 +178,12 @@ export async function getFullAccountRecord(opts: {
       take: 100,
     }),
     prisma.qcfOpportunity.findMany({
-      where: { tenantId: user.tenantId, accountId, deletedAt: null },
+      where: { orgId: user.orgId, accountId, deletedAt: null },
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
     prisma.qcfQuote.findMany({
-      where: { tenantId: user.tenantId, accountId },
+      where: { orgId: user.orgId, accountId },
       select: {
         id: true,
         quoteNumber: true,
@@ -206,11 +206,11 @@ export async function getFullAccountRecord(opts: {
   };
 
   const [activities, tasks, notes, callLogs, attachments] = await Promise.all([
-    loadActivities(user.tenantId, rollupIds),
-    loadTasks(user.tenantId, rollupIds),
-    loadNotes(user.tenantId, rollupIds),
-    loadCallLogs(user.tenantId, rollupIds.leadIds),
-    loadAttachments(user.tenantId, accountId),
+    loadActivities(user.orgId, rollupIds),
+    loadTasks(user.orgId, rollupIds),
+    loadNotes(user.orgId, rollupIds),
+    loadCallLogs(user.orgId, rollupIds.leadIds),
+    loadAttachments(user.orgId, accountId),
   ]);
 
   const snapshot = buildAccountDashboardSnapshot({

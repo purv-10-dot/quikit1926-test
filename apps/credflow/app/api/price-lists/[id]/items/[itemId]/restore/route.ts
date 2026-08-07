@@ -27,7 +27,7 @@ export async function POST(
 
     try {
       await restorePriceListItem({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         itemId,
         userId: user.userId,
         userName: user.name,

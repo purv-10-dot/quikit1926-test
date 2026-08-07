@@ -35,12 +35,12 @@ const BUILT_IN_TEMPLATES = [
   },
 ] as const;
 
-export async function ensureDefaultQuoteTemplates(tenantId: string): Promise<void> {
-  const count = await db.qcfQuoteTemplate.count({ where: { tenantId } });
+export async function ensureDefaultQuoteTemplates(orgId: string): Promise<void> {
+  const count = await db.qcfQuoteTemplate.count({ where: { orgId } });
   if (count > 0) return;
   await db.qcfQuoteTemplate.createMany({
     data: BUILT_IN_TEMPLATES.map((t) => ({
-      tenantId,
+      orgId,
       key: t.key,
       name: t.name,
       description: t.description,
@@ -54,17 +54,17 @@ export async function ensureDefaultQuoteTemplates(tenantId: string): Promise<voi
   });
 }
 
-export async function listQuoteTemplates(tenantId: string) {
-  await ensureDefaultQuoteTemplates(tenantId);
+export async function listQuoteTemplates(orgId: string) {
+  await ensureDefaultQuoteTemplates(orgId);
   return db.qcfQuoteTemplate.findMany({
-    where: { tenantId, isActive: true },
+    where: { orgId, isActive: true },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
   });
 }
 
-export async function getQuoteTemplate(tenantId: string, key: string) {
-  await ensureDefaultQuoteTemplates(tenantId);
+export async function getQuoteTemplate(orgId: string, key: string) {
+  await ensureDefaultQuoteTemplates(orgId);
   return db.qcfQuoteTemplate.findFirst({
-    where: { tenantId, key, isActive: true },
+    where: { orgId, key, isActive: true },
   });
 }

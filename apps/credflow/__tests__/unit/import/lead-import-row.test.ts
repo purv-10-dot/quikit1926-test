@@ -20,7 +20,7 @@ describe("upsertImportedLeadRow", () => {
     db.qcfLead.findUnique.mockResolvedValue(null);
     createCrmLead.mockResolvedValue({
       id: "lead-1",
-      tenantId: "t1",
+      orgId: "t1",
       source: "Web",
       createdAt: new Date(),
     });
@@ -28,13 +28,13 @@ describe("upsertImportedLeadRow", () => {
 
   it("creates via createCrmLead with csv_import channel on new row", async () => {
     const res = await upsertImportedLeadRow(
-      { tenantId: "t1", name: "Import Lead", source: "Web" },
+      { orgId: "t1", name: "Import Lead", source: "Web" },
       { channel: "csv_import", fileName: "batch.csv", userId: "u1" },
     );
     expect(res.action).toBe("created");
 
     expect(createCrmLead).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Import Lead", tenantId: "t1" }),
+      expect.objectContaining({ name: "Import Lead", orgId: "t1" }),
       expect.objectContaining({
         creation: expect.objectContaining({
           channel: "csv_import",
@@ -47,7 +47,7 @@ describe("upsertImportedLeadRow", () => {
   it("writes dynamicFields and extra standard columns onto the created lead", async () => {
     await upsertImportedLeadRow(
       {
-        tenantId: "t1",
+        orgId: "t1",
         name: "Dyn Lead",
         standardExtra: { industry: "SaaS", stage: "Qualified" },
         dynamicFields: { budget: 5000, interests: ["X", "Y"] },
@@ -63,7 +63,7 @@ describe("upsertImportedLeadRow", () => {
 
   it("omits dynamicFields entirely when there are no custom values", async () => {
     await upsertImportedLeadRow(
-      { tenantId: "t1", name: "No Dyn", dynamicFields: {} },
+      { orgId: "t1", name: "No Dyn", dynamicFields: {} },
       { channel: "csv_import", userId: "u1" },
     );
     const row = createCrmLead.mock.calls[0]![0] as Record<string, unknown>;

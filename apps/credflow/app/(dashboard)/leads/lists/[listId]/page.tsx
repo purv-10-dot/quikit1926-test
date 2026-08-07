@@ -17,14 +17,14 @@ export default async function LeadListDetailPage({ params }: { params: Promise<{
   const { listId } = await params;
   const user = await requireUser();
   const list = await prisma.qcfLeadListView.findFirst({
-    where: { id: listId, tenantId: user.tenantId, userId: user.userId },
+    where: { id: listId, orgId: user.orgId, userId: user.userId },
   });
   if (!list) notFound();
   const parsed = filterPayloadSchema.safeParse(list.filters);
-  const customDefs = await listCustomFields(user.tenantId);
+  const customDefs = await listCustomFields(user.orgId);
   const filterWhere = parsed.success ? translateFilterToPrismaWhere(parsed.data, customDefs) : {};
   const acl = await accountScopeFilter(user);
-  const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+  const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
   if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
   if (acl) baseAnd.push(acl);
   const where = { AND: baseAnd };

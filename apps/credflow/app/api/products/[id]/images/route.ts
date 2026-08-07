@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
     const items = await prisma.qcfProductImage.findMany({
-      where: { tenantId: user.tenantId, productId: id },
+      where: { orgId: user.orgId, productId: id },
       orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
     });
     return NextResponse.json({ success: true, data: items });
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "edit");
-    const p = await getProduct(user.tenantId, id);
+    const p = await getProduct(user.orgId, id);
     if (!p) return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
 
     const parsed = productImageSchema.safeParse(await req.json().catch(() => null));
@@ -40,14 +40,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (parsed.data.isPrimary) {
       await prisma.qcfProductImage.updateMany({
-        where: { tenantId: user.tenantId, productId: id },
+        where: { orgId: user.orgId, productId: id },
         data: { isPrimary: false },
       });
     }
 
     const created = await prisma.qcfProductImage.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         productId: id,
         url: parsed.data.url,
         label: parsed.data.label ?? null,

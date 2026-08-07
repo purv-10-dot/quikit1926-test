@@ -29,7 +29,7 @@ export async function listGlobalDocuments(
   query: GlobalDocumentsQuery,
 ): Promise<GlobalDocumentsResult> {
   const where: Prisma.QcfDocumentWhereInput = {
-    tenantId: user.tenantId,
+    orgId: user.orgId,
     deletedAt: null,
   };
 
@@ -56,7 +56,7 @@ export async function listGlobalDocuments(
   ]);
 
   const names = await resolveUploaderNames(
-    user.tenantId,
+    user.orgId,
     rows.map((r) => r.uploadedBy),
   );
 
@@ -64,7 +64,7 @@ export async function listGlobalDocuments(
     const dto = toDocumentDto(r, names.get(r.uploadedBy) ?? null);
     return { ...dto, downloadUrl: toGlobalDocumentDownloadPath(r.id) };
   });
-  const items = await enrichRelatedLabels(user.tenantId, base);
+  const items = await enrichRelatedLabels(user.orgId, base);
 
   return {
     items,

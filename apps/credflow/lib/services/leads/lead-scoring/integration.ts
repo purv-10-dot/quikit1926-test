@@ -5,10 +5,10 @@ import { recalculateLeadScore } from "@/lib/services/leads/lead-scoring/apply-sc
  * When true, the API should omit manual score and run auto-calculation instead.
  */
 export async function shouldUseAutoLeadScore(
-  tenantId: string,
+  orgId: string,
   hasExplicitScore: boolean,
 ): Promise<boolean> {
-  const config = await getLeadScoringConfig(tenantId);
+  const config = await getLeadScoringConfig(orgId);
   if (!config.enabled || !config.autoRecalculate) return false;
   if (config.allowManualOverride && hasExplicitScore) return false;
   return true;
@@ -16,9 +16,9 @@ export async function shouldUseAutoLeadScore(
 
 /** Recompute score and return the new value (or undefined if scoring off). */
 export async function syncLeadScoreAfterChange(
-  tenantId: string,
+  orgId: string,
   leadId: string,
 ): Promise<number | undefined> {
-  const result = await recalculateLeadScore(tenantId, leadId);
+  const result = await recalculateLeadScore(orgId, leadId);
   return result?.score;
 }

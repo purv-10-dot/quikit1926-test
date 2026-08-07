@@ -36,7 +36,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     const existing = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!existing || existing.tenantId !== user.tenantId) {
+    if (!existing || existing.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -56,7 +56,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       // unified Activities timeline.
       await tx.qcfActivity.updateMany({
         where: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           relatedObjectId: id,
           relatedKind: { in: ["Lead", "lead"] },
           relatedOrphanedAt: null,
@@ -66,14 +66,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       await tx.qcfLead.delete({ where: { id } });
     });
     await recordLeadChange({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       leadId: id,
       action: "PERMANENT_DELETE",
       before: existing as unknown as Record<string, unknown>,
       after: null,
     });
-    publishLeadEvent(user.tenantId, { type: "deleted", leadId: id }).catch(() => {});
+    publishLeadEvent(user.orgId, { type: "deleted", leadId: id }).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

@@ -50,7 +50,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
   // Read the org's LIVE field definitions so the import maps to whatever standard
   // + custom fields currently exist — a field added later imports with no code
   // change. An optional columnMap (from the mapping UI) overrides header matching.
-  const defs = await listLeadFields(job.tenantId);
+  const defs = await listLeadFields(job.orgId);
   const columnMap = parseColumnMap(job.payloadJsonText);
 
   // Load the tenant's configured pipeline once so incoming stage/status/substatus
@@ -58,7 +58,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
   // spacing + numeric-prefix variants that otherwise land invalid). Also load the
   // source values already present, so "Mobile Signup" collapses onto an existing
   // "mobile signup" (source is free-text, no configured list to match against).
-  const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId: job.tenantId } });
+  const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId: job.orgId } });
   const pipelineCfg = ((ws?.settings as Record<string, unknown> | null) ?? {})["leadPipelineConfig"] as
     | { stages?: string[]; statuses?: string[]; substatuses?: string[] }
     | undefined;
@@ -68,7 +68,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
     substatuses: Array.isArray(pipelineCfg?.substatuses) ? pipelineCfg!.substatuses! : [],
   });
   const existingSourceRows = await prisma.qcfLead.findMany({
-    where: { tenantId: job.tenantId, deletedAt: null, source: { not: null } },
+    where: { orgId: job.orgId, deletedAt: null, source: { not: null } },
     select: { source: true },
     distinct: ["source"],
   });
@@ -85,7 +85,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
   // to its actual owner (ownerId), not just carry owner text. Owner email comes
   // from the mapped `owner_email` custom field on each row (see below). Built
   // once here to avoid a per-row user query.
-  const ownerIndex = await buildOwnerEmailIndex(job.tenantId);
+  const ownerIndex = await buildOwnerEmailIndex(job.orgId);
 
   const errors: RowError[] = [];
   let created = 0;
@@ -155,7 +155,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
     try {
       const { action } = await upsertImportedLeadRow(
         {
-          tenantId: job.tenantId,
+          orgId: job.orgId,
           name,
           email: email || null,
           phone: phone || null,
@@ -236,7 +236,7 @@ export async function processActivitiesImport(job: LeadImportJob): Promise<Proce
     }
     try {
       await logActivity({
-        tenantId: job.tenantId,
+        orgId: job.orgId,
         type: r.type,
         relatedKind: r.relatedKind,
         relatedObjectId: r.relatedObjectId,
@@ -268,7 +268,7 @@ export async function processWorkflowsImport(job: LeadImportJob): Promise<Proces
     try {
       await prisma.qcfWorkflowDefinition.create({
         data: {
-          tenantId: job.tenantId,
+          orgId: job.orgId,
           name: String(r.name ?? `Imported workflow #${i}`),
           status: (r.status as "Draft" | "Active") ?? "Draft",
           triggerType: (r.triggerType as string) ?? null,
@@ -299,7 +299,7 @@ export async function processSlaImport(job: LeadImportJob): Promise<ProcessorRes
     try {
       await prisma.qcfSlaRule.create({
         data: {
-          tenantId: job.tenantId,
+          orgId: job.orgId,
           name: String(r.name ?? `Rule #${i}`),
           targetHours: Number(r.targetHours ?? 24),
           appliesTo: (r.appliesTo as string) ?? null,

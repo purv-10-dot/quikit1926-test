@@ -29,7 +29,7 @@ async function callRoute(req: NextRequest): Promise<Response> {
 }
 
 beforeEach(() => {
-  setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
+  setSession({ userId: "u1", orgId: "t1", role: "SalesUser" });
   // Arm every prisma call buildSummary won't reach but at-risk does.
   db.qcfTask.count.mockResolvedValue(0);
   db.qcfTask.findMany.mockResolvedValue([]);

@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
     if (format) {
       const tz = readTzFromCookieHeader(req.headers.get("cookie"));
       const where = buildOpportunityListWhere({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         trashed: parsed.data.trashed,
         leadId: parsed.data.leadId,
         stage: parsed.data.stage,
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await listOpportunities({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       trashed: parsed.data.trashed,
@@ -150,20 +150,20 @@ export async function POST(req: NextRequest) {
     // Confirm the account exists in this tenant — assertAccountAccess only
     // checks scope, not existence.
     const account = await db.qcfAccount.findFirst({
-      where: { id: parsed.data.accountId, tenantId: user.tenantId },
+      where: { id: parsed.data.accountId, orgId: user.orgId },
       select: { id: true },
     });
     if (!account) return err("Account not found", 404);
 
     const created = await createOpportunity({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       input: parsed.data,
     });
 
     // Dedicated opportunity created notification (owner + managers).
     notifyOpportunityCreated({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       opportunityId: created.id,
       opportunityName: created.name,
       ownerId: created.ownerId,
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
       event: "created",
       entityType: "opportunity",
       entityId: created.id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       after: created as unknown as Record<string, unknown>,

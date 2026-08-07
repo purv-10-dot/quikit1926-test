@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
     const acl = await accountScopeFilter(user);
     const ownerScope = await ownerScopeFilter(user);
-    const baseWhere: Record<string, unknown> = { tenantId: user.tenantId };
+    const baseWhere: Record<string, unknown> = { orgId: user.orgId };
     if (q) {
       baseWhere.OR = [
         { name: { contains: q, mode: "insensitive" } },

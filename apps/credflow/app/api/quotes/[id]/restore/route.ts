@@ -19,12 +19,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
 
-    const existing = await getQuote(user.tenantId, id);
+    const existing = await getQuote(user.orgId, id);
     if (!existing || !existing.deletedAt) {
       return fail(404, "Quote not found in trash");
     }
 
-    await restoreQuote(user.tenantId, id);
+    await restoreQuote(user.orgId, id);
     return ok({ ok: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to restore quote";

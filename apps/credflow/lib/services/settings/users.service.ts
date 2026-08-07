@@ -61,7 +61,7 @@ const ADMIN_ROLE = "Administrator";
 /** Public-facing user shape returned by this service. Compat with legacy callers. */
 export interface SettingsUserView {
   id: string;
-  tenantId: string;
+  orgId: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -77,11 +77,11 @@ export interface SettingsUserView {
 }
 
 async function fetchUserView(
-  tenantId: string,
+  orgId: string,
   userId: string,
 ): Promise<SettingsUserView | null> {
   const m = await prisma.orgMember.findUnique({
-    where: { orgId_userId: { orgId: tenantId, userId } },
+    where: { orgId_userId: { orgId: orgId, userId } },
     include: {
       user: {
         select: {
@@ -102,7 +102,7 @@ async function fetchUserView(
     appId && isCrmRbacClientReady()
       // rbacDb() is non-null here because isCrmRbacClientReady() returned true
       ? rbacDb()!.crmUserAppRole.findMany({
-          where: { userId, orgId: tenantId, role: { appId } },
+          where: { userId, orgId: orgId, role: { appId } },
         })
       : Promise.resolve([]),
     prisma.qcfUserAccountAccess.findMany({
@@ -112,7 +112,7 @@ async function fetchUserView(
   ]);
   return {
     id: userId,
-    tenantId,
+    orgId,
     firstName: m.user.firstName,
     lastName: m.user.lastName,
     email: m.user.email,
@@ -133,7 +133,7 @@ async function fetchUserView(
 }
 
 export async function listUsers(opts: {
-  tenantId: string;
+  orgId: string;
   q?: string;
   status?: "Active" | "Inactive" | "active" | "inactive";
   role?: string;
@@ -141,7 +141,7 @@ export async function listUsers(opts: {
   pageSize: number;
 }) {
   // Build a Membership where filter; join the User for free-text search.
-  const where: Record<string, unknown> = { orgId: opts.tenantId };
+  const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status) {
     where.status = opts.status.toLowerCase() === "active" ? "active" : "inactive";
   }
@@ -178,7 +178,7 @@ export async function listUsers(opts: {
     }),
     appId && isCrmRbacClientReady()
       ? rbacDb()!.crmUserAppRole.findMany({
-          where: { userId: { in: userIds }, orgId: opts.tenantId, role: { appId } },
+          where: { userId: { in: userIds }, orgId: opts.orgId, role: { appId } },
         })
       : Promise.resolve([]),
     prisma.qcfUserAccountAccess.findMany({
@@ -207,7 +207,7 @@ export async function listUsers(opts: {
 
   const items: SettingsUserView[] = memberships.map((m) => ({
     id: m.userId,
-    tenantId: m.orgId,
+    orgId: m.orgId,
     firstName: m.user.firstName,
     lastName: m.user.lastName,
     email: m.user.email,
@@ -225,8 +225,8 @@ export async function listUsers(opts: {
   return { items, total, page: opts.page, pageSize: opts.pageSize };
 }
 
-export async function getUser(tenantId: string, id: string) {
-  return fetchUserView(tenantId, id);
+export async function getUser(orgId: string, id: string) {
+  return fetchUserView(orgId, id);
 }
 
 export async function createUser(opts: {
@@ -269,7 +269,7 @@ export async function createUser(opts: {
   const effectivePassword = usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : data.password;
 
   const tenantTemplates = await prisma.qcfPermissionTemplate.findMany({
-    where: { tenantId: actor.tenantId },
+    where: { orgId: actor.orgId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -286,7 +286,7 @@ export async function createUser(opts: {
   await prisma.$transaction(async (tx) => {
     if (data.linkExistingUserId) {
       const member = await tx.orgMember.findUnique({
-        where: { orgId_userId: { orgId: actor.tenantId, userId: data.linkExistingUserId } },
+        where: { orgId_userId: { orgId: actor.orgId, userId: data.linkExistingUserId } },
         select: { userId: true },
       });
       if (!member) {
@@ -298,7 +298,7 @@ export async function createUser(opts: {
 
       if (existingUser) {
         const existingMembership = await tx.orgMember.findUnique({
-          where: { orgId_userId: { orgId: actor.tenantId, userId: existingUser.id } },
+          where: { orgId_userId: { orgId: actor.orgId, userId: existingUser.id } },
         });
         if (existingMembership) {
           throw new SettingsConflictError(
@@ -309,7 +309,7 @@ export async function createUser(opts: {
         invitationToken = crypto.randomUUID();
         await tx.orgMember.create({
           data: {
-            orgId: actor.tenantId,
+            orgId: actor.orgId,
             userId: existingUser.id,
             role: data.role,
             status: membershipStatus,
@@ -340,7 +340,7 @@ export async function createUser(opts: {
         invitationToken = crypto.randomUUID();
         await tx.orgMember.create({
           data: {
-            orgId: actor.tenantId,
+            orgId: actor.orgId,
             userId: user.id,
             role: data.role,
             status: membershipStatus,
@@ -377,7 +377,7 @@ export async function createUser(opts: {
 
     await audit(
       {
-        tenantId: actor.tenantId,
+        orgId: actor.orgId,
         userId: actor.userId,
         module: MODULE,
         action: "create",
@@ -395,17 +395,17 @@ export async function createUser(opts: {
 
   await ensureQuikCrmAppAccess({
     userId: newUserId,
-    orgId: actor.tenantId,
+    orgId: actor.orgId,
     grantedBy: actor.userId,
   });
 
-  await syncUserCrmAppRole(newUserId, actor.tenantId, data.role, actor.userId);
+  await syncUserCrmAppRole(newUserId, actor.orgId, data.role, actor.userId);
 
   if (shouldSendInviteEmail({ linkExistingUserId: data.linkExistingUserId, invitationToken })) {
     try {
       const [org, inviter, appRow] = await Promise.all([
         prisma.org.findUnique({
-          where: { id: actor.tenantId },
+          where: { id: actor.orgId },
           select: { name: true, brandColor: true },
         }),
         prisma.user.findUnique({
@@ -448,7 +448,7 @@ export async function createUser(opts: {
     }
   }
 
-  const view = await fetchUserView(actor.tenantId, newUserId);
+  const view = await fetchUserView(actor.orgId, newUserId);
   if (!view) {
     throw new SettingsConflictError("User was created but could not be loaded", 500);
   }
@@ -475,7 +475,7 @@ export async function updateUser(opts: {
   const { actor, id, patch } = opts;
 
   const result = await prisma.$transaction(async (tx) => {
-    const before = await fetchUserView(actor.tenantId, id);
+    const before = await fetchUserView(actor.orgId, id);
     if (!before) throw new SettingsConflictError("User not found", 404);
 
     // `before.role` is the raw membership string ("admin", "owner",
@@ -504,7 +504,7 @@ export async function updateUser(opts: {
       // by a casing/spelling mismatch.
       const otherActiveMembers = await tx.orgMember.findMany({
         where: {
-          orgId: actor.tenantId,
+          orgId: actor.orgId,
           status: "active",
           userId: { not: id },
         },
@@ -537,7 +537,7 @@ export async function updateUser(opts: {
     }
     if (Object.keys(membershipPatch).length > 0) {
       await tx.orgMember.update({
-        where: { orgId_userId: { orgId: actor.tenantId, userId: id } },
+        where: { orgId_userId: { orgId: actor.orgId, userId: id } },
         data: membershipPatch,
       });
     }
@@ -567,14 +567,14 @@ export async function updateUser(opts: {
       }
     }
 
-    const after = await fetchUserView(actor.tenantId, id);
+    const after = await fetchUserView(actor.orgId, id);
     const diff = diffShallow(
       JSON.parse(JSON.stringify(before)) as Record<string, unknown>,
       JSON.parse(JSON.stringify(after)) as Record<string, unknown>,
     );
     await audit(
       {
-        tenantId: actor.tenantId,
+        orgId: actor.orgId,
         userId: actor.userId,
         module: MODULE,
         action: "update",
@@ -589,7 +589,7 @@ export async function updateUser(opts: {
   });
 
   if (patch.role !== undefined) {
-    await syncUserCrmAppRole(id, actor.tenantId, patch.role, actor.userId);
+    await syncUserCrmAppRole(id, actor.orgId, patch.role, actor.userId);
   }
 
   return result;
@@ -603,7 +603,7 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
 
   return prisma.$transaction(async (tx) => {
     const target = await tx.orgMember.findUnique({
-      where: { orgId_userId: { orgId: actor.tenantId, userId: id } },
+      where: { orgId_userId: { orgId: actor.orgId, userId: id } },
       include: { user: { select: { email: true } } },
     });
     if (!target) throw new SettingsConflictError("User not found", 404);
@@ -611,7 +611,7 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
     if (target.role === ADMIN_ROLE) {
       const otherAdmins = await tx.orgMember.count({
         where: {
-          orgId: actor.tenantId,
+          orgId: actor.orgId,
           role: ADMIN_ROLE,
           status: "active",
           userId: { not: id },
@@ -623,9 +623,9 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
     }
 
     const [leadCount, accountCount, oppCount] = await Promise.all([
-      tx.qcfLead.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
-      tx.qcfAccount.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
-      tx.qcfOpportunity.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
+      tx.qcfLead.count({ where: { orgId: actor.orgId, ownerId: id } }),
+      tx.qcfAccount.count({ where: { orgId: actor.orgId, ownerId: id } }),
+      tx.qcfOpportunity.count({ where: { orgId: actor.orgId, ownerId: id } }),
     ]);
     if (leadCount + accountCount + oppCount > 0) {
       throw new SettingsConflictError(
@@ -635,7 +635,7 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
 
     // Remove only the membership — the global User row stays (might belong to other tenants).
     await tx.orgMember.delete({
-      where: { orgId_userId: { orgId: actor.tenantId, userId: id } },
+      where: { orgId_userId: { orgId: actor.orgId, userId: id } },
     });
     await tx.qcfUserPermissionTemplate.deleteMany({ where: { userId: id } });
     await tx.qcfUserAccountAccess.deleteMany({ where: { userId: id } });
@@ -643,20 +643,20 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
       // tx cast: these RBAC models aren't in the schema yet; isCrmRbacClientReady()
       // always returns false so this block never executes at runtime.
       const rbacTx = tx as unknown as CrmRbacDb;
-      await rbacTx.crmUserAppRole.deleteMany({ where: { userId: id, orgId: actor.tenantId } });
-      await rbacTx.crmUserPermissionExtra.deleteMany({ where: { userId: id, orgId: actor.tenantId } });
+      await rbacTx.crmUserAppRole.deleteMany({ where: { userId: id, orgId: actor.orgId } });
+      await rbacTx.crmUserPermissionExtra.deleteMany({ where: { userId: id, orgId: actor.orgId } });
     }
 
     const appId = await getQuikCrmAppId();
     if (appId) {
       await tx.userAppAccess.deleteMany({
-        where: { orgId: actor.tenantId, appId, userId: id },
+        where: { orgId: actor.orgId, appId, userId: id },
       });
     }
 
     await audit(
       {
-        tenantId: actor.tenantId,
+        orgId: actor.orgId,
         userId: actor.userId,
         module: MODULE,
         action: "delete",

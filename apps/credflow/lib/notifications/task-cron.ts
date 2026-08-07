@@ -81,7 +81,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
       },
       select: {
         id: true,
-        tenantId: true,
+        orgId: true,
         subject: true,
         priority: true,
         dueDate: true,
@@ -96,7 +96,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
       },
       select: {
         id: true,
-        tenantId: true,
+        orgId: true,
         subject: true,
         priority: true,
         dueDate: true,
@@ -114,7 +114,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
   for (const task of dueToday) {
     try {
       const alreadySent = await hasNotificationBeenSent(
-        task.tenantId,
+        task.orgId,
         task.assignedToUserId!,
         { type: "task_due_today", taskId: task.id },
         dayStart,
@@ -122,7 +122,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
       if (alreadySent) continue;
 
       await createNotification({
-        tenantId: task.tenantId,
+        orgId: task.orgId,
         userId: task.assignedToUserId!,
         type: "lead_stage_changed",  // violet arrow — "deadline" icon
         category: "lead",
@@ -147,7 +147,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
   for (const task of dueTomorrow) {
     try {
       const alreadySent = await hasNotificationBeenSent(
-        task.tenantId,
+        task.orgId,
         task.assignedToUserId!,
         { type: "task_due_tomorrow", taskId: task.id },
         dayStart,
@@ -155,7 +155,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
       if (alreadySent) continue;
 
       await createNotification({
-        tenantId: task.tenantId,
+        orgId: task.orgId,
         userId: task.assignedToUserId!,
         type: "lead_stage_changed",
         category: "lead",
@@ -208,7 +208,7 @@ export async function runEveningTaskNotifications(): Promise<EveningSweepResult>
     },
     select: {
       id: true,
-      tenantId: true,
+      orgId: true,
       subject: true,
       priority: true,
       dueDate: true,
@@ -223,7 +223,7 @@ export async function runEveningTaskNotifications(): Promise<EveningSweepResult>
   for (const task of overdueTasks) {
     try {
       const alreadySent = await hasNotificationBeenSent(
-        task.tenantId,
+        task.orgId,
         task.assignedToUserId!,
         { type: "task_overdue", taskId: task.id },
       );
@@ -234,7 +234,7 @@ export async function runEveningTaskNotifications(): Promise<EveningSweepResult>
       }
 
       await createNotification({
-        tenantId: task.tenantId,
+        orgId: task.orgId,
         userId: task.assignedToUserId!,
         type: "lead_reassigned",   // amber UserCheck — "warning" icon
         category: "lead",
@@ -278,14 +278,14 @@ export async function runEveningTaskNotifications(): Promise<EveningSweepResult>
  * names always match the generated client.
  */
 async function hasNotificationBeenSent(
-  tenantId: string,
+  orgId: string,
   userId: string,
   match: Record<string, string>,
   since?: Date,
 ): Promise<boolean> {
   const count = await prisma.qcfNotification.count({
     where: {
-      tenantId,
+      orgId,
       userId,
       ...(since ? { createdAt: { gte: since } } : {}),
       AND: Object.entries(match).map(([key, value]) => ({

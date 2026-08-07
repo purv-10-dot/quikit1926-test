@@ -20,7 +20,7 @@ export async function POST() {
 
     // Pull every account with a non-null ownerId for this tenant.
     const accounts = await prisma.qcfAccount.findMany({
-      where: { tenantId: user.tenantId, ownerId: { not: null } },
+      where: { orgId: user.orgId, ownerId: { not: null } },
       select: { id: true, ownerId: true, ownerName: true },
     });
 

@@ -42,7 +42,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     assertAdmin(user);
-    const overrides = await getRoleOverrides(user.tenantId);
+    const overrides = await getRoleOverrides(user.orgId);
     // Return a normalized view for the UI: every configurable role with its
     // current restrictToOwnedLeads value (defaulting to false when unset).
     const roles = CONFIGURABLE_ROLES.map((role) => ({
@@ -68,7 +68,7 @@ export async function PUT(req: NextRequest) {
       );
     }
     const { role, restrictToOwnedLeads } = parsed.data;
-    await setRoleOverride(user.tenantId, role, { restrictToOwnedLeads });
+    await setRoleOverride(user.orgId, role, { restrictToOwnedLeads });
     return NextResponse.json({ ok: true, role, restrictToOwnedLeads });
   } catch (e) {
     return errorResponse(e);

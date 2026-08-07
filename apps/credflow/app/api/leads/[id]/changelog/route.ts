@@ -46,7 +46,7 @@ export async function GET(
     await assertModule(user, "leads", "view");
 
     const lead = await prisma.qcfLead.findUnique({ where: { id } });
-    if (!lead || lead.tenantId !== user.tenantId) {
+    if (!lead || lead.orgId !== user.orgId) {
       return NextResponse.json(
         { success: false, error: "Not found" },
         { status: 404 },
@@ -70,7 +70,7 @@ export async function GET(
     const q = parsed.data;
 
     const where: Record<string, unknown> = {
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       module: LEAD_CHANGE_LOG_MODULE,
       resourceId: id,
     };
@@ -134,14 +134,14 @@ export async function GET(
         : Promise.resolve([]),
       accountIds.size
         ? prisma.qcfAccount.findMany({
-            where: { tenantId: user.tenantId, id: { in: Array.from(accountIds) } },
+            where: { orgId: user.orgId, id: { in: Array.from(accountIds) } },
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
       contactIds.size
         ? prisma.qcfContact.findMany({
             // QcfContact isn't middleware-protected — exclude trashed from labels.
-            where: { tenantId: user.tenantId, id: { in: Array.from(contactIds) }, deletedAt: null },
+            where: { orgId: user.orgId, id: { in: Array.from(contactIds) }, deletedAt: null },
             select: { id: true, firstName: true, lastName: true, email: true },
           })
         : Promise.resolve([]),

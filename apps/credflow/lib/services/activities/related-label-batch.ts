@@ -23,7 +23,7 @@ function normalizeKind(k: string): "lead" | "opportunity" | "contact" | "account
 }
 
 export async function resolveRelatedLabels(
-  tenantId: string,
+  orgId: string,
   rows: ReadonlyArray<RowLike>,
 ): Promise<Map<string, string>> {
   const live = rows.filter((r) => !r.relatedOrphanedAt);
@@ -42,13 +42,13 @@ export async function resolveRelatedLabels(
   const [leads, opps, contacts, accounts] = await Promise.all([
     byKind.lead.size
       ? prisma.qcfLead.findMany({
-          where: { tenantId, id: { in: [...byKind.lead] } },
+          where: { orgId, id: { in: [...byKind.lead] } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
     byKind.opportunity.size
       ? prisma.qcfOpportunity.findMany({
-          where: { tenantId, id: { in: [...byKind.opportunity] } },
+          where: { orgId, id: { in: [...byKind.opportunity] } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
@@ -56,13 +56,13 @@ export async function resolveRelatedLabels(
       ? prisma.qcfContact.findMany({
           // QcfContact isn't middleware-protected; exclude trashed so labels match
           // the soft-delete behaviour the other (registered) models get for free.
-          where: { tenantId, id: { in: [...byKind.contact] }, deletedAt: null },
+          where: { orgId, id: { in: [...byKind.contact] }, deletedAt: null },
           select: { id: true, firstName: true, lastName: true },
         })
       : Promise.resolve([]),
     byKind.account.size
       ? prisma.qcfAccount.findMany({
-          where: { tenantId, id: { in: [...byKind.account] } },
+          where: { orgId, id: { in: [...byKind.account] } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),

@@ -53,12 +53,12 @@ function trendFrom(current: number, prior: number): "up" | "down" | "flat" {
 }
 
 function leadWhere(
-  tenantId: string,
+  orgId: string,
   ext: ExtendedOverviewFilters,
   ownerScope: OwnerScope | null,
 ): Record<string, unknown> {
   const w: Record<string, unknown> = {
-    tenantId,
+    orgId,
     deletedAt: null,
     ...spreadOwnerFilter(ownerScope),
   };
@@ -69,12 +69,12 @@ function leadWhere(
 }
 
 function oppWhere(
-  tenantId: string,
+  orgId: string,
   ext: ExtendedOverviewFilters,
   ownerScope: OwnerScope | null,
 ): Record<string, unknown> {
   const w: Record<string, unknown> = {
-    tenantId,
+    orgId,
     deletedAt: null,
     ...spreadOwnerFilter(ownerScope),
   };
@@ -84,7 +84,7 @@ function oppWhere(
 }
 
 export async function buildAdvancedOverview(input: {
-  tenantId: string;
+  orgId: string;
   range: DateRange;
   ext: ExtendedOverviewFilters;
   memberIds: string[];
@@ -106,7 +106,7 @@ export async function buildAdvancedOverview(input: {
   channels: { channel: string; leadCount: number }[];
   insightsBase: OverviewInsight[];
 }): Promise<ExecutiveOverviewAdvanced> {
-  const { tenantId, range, ext, orgMembers, leaderboard, usage } = input;
+  const { orgId, range, ext, orgMembers, leaderboard, usage } = input;
   const now = new Date();
   const tz = range.tz;
   const startToday = startOfDayInTz(now, tz);
@@ -133,8 +133,8 @@ export async function buildAdvancedOverview(input: {
   });
   const ownerActivityFilter = spreadOwnerFilter(ownerScope);
 
-  const leadBase = leadWhere(tenantId, ext, ownerScope);
-  const oppBase = oppWhere(tenantId, ext, ownerScope);
+  const leadBase = leadWhere(orgId, ext, ownerScope);
+  const oppBase = oppWhere(orgId, ext, ownerScope);
 
   const [
     newLeadsToday,
@@ -186,21 +186,21 @@ export async function buildAdvancedOverview(input: {
     }),
     prisma.qcfCallLog.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: startToday, lte: endToday },
         ...ownerCallFilter,
       },
     }),
     prisma.qcfCallLog.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: startYesterday, lte: endYesterday },
         ...ownerCallFilter,
       },
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: startToday, lte: endToday },
         ...ownerTaskFilter,
@@ -208,7 +208,7 @@ export async function buildAdvancedOverview(input: {
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: startYesterday, lte: endYesterday },
         ...ownerTaskFilter,
@@ -245,11 +245,11 @@ export async function buildAdvancedOverview(input: {
       select: { amount: true },
     }),
     prisma.qcfActivity.findMany({
-      where: { tenantId, occurredAt: { gte: startToday, lte: endToday } },
+      where: { orgId, occurredAt: { gte: startToday, lte: endToday } },
       select: { type: true, activityCode: true, outcome: true },
     }),
     prisma.qcfActivity.findMany({
-      where: { tenantId, occurredAt: { gte: startYesterday, lte: endYesterday } },
+      where: { orgId, occurredAt: { gte: startYesterday, lte: endYesterday } },
       select: { type: true, activityCode: true },
     }),
     prisma.qcfLead.findMany({
@@ -258,18 +258,18 @@ export async function buildAdvancedOverview(input: {
     }),
     prisma.qcfActivity.findMany({
       where: {
-        tenantId,
+        orgId,
         followUpAt: { not: null },
         ...ownerActivityFilter,
       },
       select: { followUpAt: true, occurredAt: true, outcome: true, ownerId: true },
     }),
     prisma.qcfQuote.count({
-      where: { tenantId, deletedAt: null, approvalStatus: "Pending" },
+      where: { orgId, deletedAt: null, approvalStatus: "Pending" },
     }),
     prisma.qcfQuote.count({
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         approvalStatus: "Pending",
         createdAt: { gte: new Date(now.getTime() - 7 * MS_DAY) },
@@ -328,7 +328,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfTask.groupBy({
       by: ["assignedToUserId"],
       where: {
-        tenantId,
+        orgId,
         status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         assignedToUserId: { in: filteredMemberIds },
       },
@@ -337,7 +337,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfActivity.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         followUpAt: { gte: now },
         ownerId: { in: filteredMemberIds },
       },
@@ -346,7 +346,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfNote.groupBy({
       by: ["createdByUserId"],
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: range.from, lte: range.to },
         createdByUserId: { in: filteredMemberIds },
       },
@@ -355,7 +355,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfActivity.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         occurredAt: { gte: range.from, lte: range.to },
         ownerId: { in: filteredMemberIds },
         OR: [
@@ -368,7 +368,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfActivity.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         occurredAt: { gte: range.from, lte: range.to },
         ownerId: { in: filteredMemberIds },
         OR: [
@@ -381,7 +381,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfCallLog.groupBy({
       by: ["agentUserId"],
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: range.from, lte: range.to },
         agentUserId: { in: filteredMemberIds },
       },
@@ -390,7 +390,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         updatedAt: { gte: range.from, lte: range.to },
         ownerId: { in: filteredMemberIds },
@@ -400,7 +400,7 @@ export async function buildAdvancedOverview(input: {
     prisma.sessionEvent.groupBy({
       by: ["userId"],
       where: {
-        orgId: tenantId,
+        orgId: orgId,
         appSlug: "quikcrm",
         event: "login",
         createdAt: { gte: range.from, lte: range.to },
@@ -409,19 +409,19 @@ export async function buildAdvancedOverview(input: {
       _count: true,
     }),
     prisma.qcfAccount.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       select: { id: true, updatedAt: true },
     }),
     prisma.qcfActivity.findMany({
       where: {
-        tenantId,
+        orgId,
         occurredAt: { gte: weekStart, lte: now },
         relatedKind: { in: ["account", "Account", "crm_account"] },
       },
       select: { relatedObjectId: true },
     }),
     prisma.qcfQuoteApproval.findMany({
-      where: { tenantId },
+      where: { orgId },
       orderBy: { requestedAt: "desc" },
       take: 20,
       select: {
@@ -433,23 +433,23 @@ export async function buildAdvancedOverview(input: {
         quote: { select: { quoteNumber: true, grandTotal: true, currency: true } },
       },
     }),
-    prisma.qcfQuoteApproval.count({ where: { tenantId, status: "Pending" } }),
+    prisma.qcfQuoteApproval.count({ where: { orgId, status: "Pending" } }),
     prisma.qcfQuoteApproval.count({
-      where: { tenantId, status: "Approved", decidedAt: { gte: range.from, lte: range.to } },
+      where: { orgId, status: "Approved", decidedAt: { gte: range.from, lte: range.to } },
     }),
     prisma.qcfQuoteApproval.count({
-      where: { tenantId, status: "Rejected", decidedAt: { gte: range.from, lte: range.to } },
+      where: { orgId, status: "Rejected", decidedAt: { gte: range.from, lte: range.to } },
     }),
     prisma.qcfAccount.count({
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         updatedAt: { lt: new Date(now.getTime() - 30 * MS_DAY) },
       },
     }),
     prisma.qcfActivity.count({
       where: {
-        tenantId,
+        orgId,
         occurredAt: { gte: weekStart, lte: now },
         OR: [
           { type: { contains: "meeting", mode: "insensitive" } },
@@ -459,7 +459,7 @@ export async function buildAdvancedOverview(input: {
     }),
     prisma.sessionEvent.findMany({
       where: {
-        orgId: tenantId,
+        orgId: orgId,
         appSlug: "quikcrm",
         userId: { in: filteredMemberIds },
         createdAt: { gte: new Date(now.getTime() - 30 * MS_DAY) },
@@ -470,7 +470,7 @@ export async function buildAdvancedOverview(input: {
     prisma.qcfTask.groupBy({
       by: ["assignedToUserId"],
       where: {
-        tenantId,
+        orgId,
         status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: range.from, lte: range.to },
         assignedToUserId: { in: filteredMemberIds },
@@ -777,7 +777,7 @@ export async function buildAdvancedOverview(input: {
   );
   const renewalSoon = await prisma.qcfOpportunity.count({
     where: {
-      tenantId,
+      orgId,
       deletedAt: null,
       closeDate: { gte: now, lte: new Date(now.getTime() + 30 * MS_DAY) },
     },

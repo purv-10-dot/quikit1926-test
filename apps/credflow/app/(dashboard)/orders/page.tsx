@@ -9,10 +9,10 @@ import { OrdersListClient, type OrdersStats } from "@/components/orders/orders-l
  * computeQuoteStats — single groupBy, no extra HTTP round-trip, stats
  * reflect ALL orders in the tenant (not filtered).
  */
-async function computeOrderStats(tenantId: string): Promise<OrdersStats> {
+async function computeOrderStats(orgId: string): Promise<OrdersStats> {
   const grouped = await db.qcfOrder.groupBy({
     by: ["status"],
-    where: { tenantId },
+    where: { orgId },
     _count: { _all: true },
     _sum: { grandTotal: true },
   });
@@ -36,7 +36,7 @@ async function computeOrderStats(tenantId: string): Promise<OrdersStats> {
 
 export default async function OrdersPage() {
   const user = await requireUser();
-  const stats = await computeOrderStats(user.tenantId);
+  const stats = await computeOrderStats(user.orgId);
   return (
     <PageContainer size="wide">
       <PageHeader

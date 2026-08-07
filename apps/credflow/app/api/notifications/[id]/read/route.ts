@@ -10,7 +10,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const updated = await prisma.qcfNotification.updateMany({
-      where: { id, tenantId: user.tenantId, userId: user.userId },
+      where: { id, orgId: user.orgId, userId: user.userId },
       data: { readAt: new Date() },
     });
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });

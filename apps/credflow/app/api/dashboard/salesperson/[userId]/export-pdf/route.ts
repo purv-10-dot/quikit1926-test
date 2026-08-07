@@ -41,7 +41,7 @@ export async function GET(
     const { userId } = await params;
     const parsed = parseOverviewFilters(req, user);
 
-    const data = await getSalespersonDetail(user.tenantId, userId, parsed.range);
+    const data = await getSalespersonDetail(user.orgId, userId, parsed.range);
 
     if (!data) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });

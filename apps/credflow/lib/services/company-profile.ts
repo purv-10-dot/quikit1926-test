@@ -22,18 +22,18 @@ const FALLBACK_NAME = "Your Company";
 /**
  * Branding shown on quote PDFs and settings.
  * Primary: QcfCompanyProfile (Settings → Company).
- * Fallback: QuikIT org name (tenantId === org.id).
+ * Fallback: QuikIT org name (orgId === org.id).
  */
 export async function getTenantCompanyBranding(
-  tenantId: string,
+  orgId: string,
 ): Promise<TenantCompanyBranding> {
   const [profile, org] = await Promise.all([
     db.qcfCompanyProfile.findUnique({
-      where: { tenantId },
+      where: { orgId },
       select: { companyName: true, logoUrl: true, website: true, phone: true },
     }),
     db.org.findUnique({
-      where: { id: tenantId },
+      where: { id: orgId },
       select: { name: true, logoUrl: true },
     }),
   ]);
@@ -51,11 +51,11 @@ export async function getTenantCompanyBranding(
 
 /** Settings form — merges profile row with org fallbacks for display defaults. */
 export async function getCompanyProfileForSettings(
-  tenantId: string,
+  orgId: string,
 ): Promise<CompanyProfileDto> {
   const [profile, org] = await Promise.all([
-    db.qcfCompanyProfile.findUnique({ where: { tenantId } }),
-    db.org.findUnique({ where: { id: tenantId }, select: { name: true, logoUrl: true } }),
+    db.qcfCompanyProfile.findUnique({ where: { orgId } }),
+    db.org.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
   ]);
   const orgName = org?.name?.trim() || FALLBACK_NAME;
   return {
@@ -69,13 +69,13 @@ export async function getCompanyProfileForSettings(
 }
 
 export async function upsertCompanyProfile(
-  tenantId: string,
+  orgId: string,
   input: CompanyProfilePatchInput,
 ): Promise<CompanyProfileDto> {
   const row = await db.qcfCompanyProfile.upsert({
-    where: { tenantId },
+    where: { orgId },
     create: {
-      tenantId,
+      orgId,
       companyName: input.companyName,
       industry: input.industry,
       website: input.website,

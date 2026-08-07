@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     await assertModule(user, "dashboard", "view");
 
     const filters = await applyOwnerRestriction(parseFilters(req, user), user);
-    const cfg = await getDashboardConfig(user.tenantId);
+    const cfg = await getDashboardConfig(user.orgId);
 
     const where = {
       ...tenantOwnerWhere(user, filters.resolvedOwnerId),

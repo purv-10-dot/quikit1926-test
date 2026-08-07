@@ -12,7 +12,7 @@ const ENQUEUE_TIMEOUT = Symbol("enqueue-timeout");
  * `tenantId` is resolved from env at enqueue time (single-client setup).
  */
 export interface LeadSquaredInboundJobData {
-  tenantId: string;
+  orgId: string;
   payload: unknown;
 }
 
@@ -53,7 +53,7 @@ export async function enqueueLeadSquaredInboundSafe(
   if (!isRedisEnabled()) return null; // caller (route) falls back to inline processing
   const attempt = enqueueLeadSquaredInbound(data).catch((err: unknown) => {
     logSync("error", "inbound.enqueue.error", {
-      tenantId: data.tenantId,
+      orgId: data.orgId,
       message: err instanceof Error ? err.message : String(err),
     });
     return null;
@@ -66,7 +66,7 @@ export async function enqueueLeadSquaredInboundSafe(
   const jobId = typeof raced === "string" ? raced : null;
   if (!jobId) {
     logSync("warn", "inbound.enqueue.dropped", {
-      tenantId: data.tenantId,
+      orgId: data.orgId,
       reason: raced === ENQUEUE_TIMEOUT ? "timeout" : "error",
     });
     incr("inbound.enqueue.dropped");

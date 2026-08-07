@@ -2,7 +2,7 @@ import { Queue } from "bullmq";
 import { getQueueRedis } from "@/lib/db/redis";
 
 export interface ImportJobData {
-  tenantId: string;
+  orgId: string;
   jobId: string; // LeadImportJob.id (Postgres)
   entityType: "leads" | "activities" | "workflows" | "sla";
   batchId?: string;

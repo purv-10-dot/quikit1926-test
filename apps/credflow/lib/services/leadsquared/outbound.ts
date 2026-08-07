@@ -33,7 +33,7 @@ import { LeadSquaredClient, LeadSquaredError } from "@/lib/services/leadsquared/
 import { logSync } from "@/lib/services/leadsquared/telemetry";
 
 export interface OutboundSyncInput {
-  tenantId: string;
+  orgId: string;
   /** The QcfLead id — the stable link key in the mapping table. */
   crmLeadId: string;
   /** Mapped lead fields (+ optional transient status remarks). */
@@ -104,7 +104,7 @@ export async function syncLeadOutbound(
   const attributes = buildLeadSquaredAttributes(input.lead, fieldMap, {
     onSkip: (field, value) =>
       logSync("warn", "outbound.picklist.value_skipped", {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         crmLeadId: input.crmLeadId,
         field,
         value,
@@ -123,7 +123,7 @@ export async function syncLeadOutbound(
 
   // 2. Load the existing mapping (tenant-scoped per rule #5).
   const existing = await db.qcfLeadSquaredSyncMap.findFirst({
-    where: { crmLeadId: input.crmLeadId, tenantId: input.tenantId },
+    where: { crmLeadId: input.crmLeadId, orgId: input.orgId },
   });
 
   // 3. Loop guard.
@@ -169,7 +169,7 @@ export async function syncLeadOutbound(
       // fails — treat "already exists" as NON-FATAL (log + return) so the job
       // doesn't exhaust its BullMQ retries on a permanent condition.
       logSync("warn", "outbound.duplicate_email", {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         crmLeadId: input.crmLeadId,
       });
       const email = typeof input.lead.email === "string" ? input.lead.email.trim() : "";
@@ -179,7 +179,7 @@ export async function syncLeadOutbound(
           : null;
       if (!recoveredId) {
         logSync("warn", "outbound.duplicate_unresolved", {
-          tenantId: input.tenantId,
+          orgId: input.orgId,
           crmLeadId: input.crmLeadId,
           reason: !email ? "no-email" : !client.getLeadByEmail ? "lookup-unavailable" : "not-found",
         });
@@ -191,7 +191,7 @@ export async function syncLeadOutbound(
         prospectId = res.prospectId;
       } catch {
         logSync("warn", "outbound.duplicate_update_failed", {
-          tenantId: input.tenantId,
+          orgId: input.orgId,
           crmLeadId: input.crmLeadId,
         });
         return { pushed: false, prospectId: recoveredId, warning: "duplicate-email" };
@@ -199,14 +199,14 @@ export async function syncLeadOutbound(
     }
   }
 
-  // 5. Record the successful sync. Tenant-scoped; tenantId is immutable so it
+  // 5. Record the successful sync. Tenant-scoped; orgId is immutable so it
   //    is only set on create.
   const syncedAt = now();
   try {
     await db.qcfLeadSquaredSyncMap.upsert({
       where: { crmLeadId: input.crmLeadId },
       create: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         crmLeadId: input.crmLeadId,
         lsqProspectId: prospectId,
         syncOrigin: "crm" satisfies SyncOrigin,
@@ -221,14 +221,14 @@ export async function syncLeadOutbound(
       },
     });
   } catch (e: unknown) {
-    // The [tenantId, lsqProspectId] unique blew up: this ProspectId is already
+    // The [orgId, lsqProspectId] unique blew up: this ProspectId is already
     // mapped to a DIFFERENT crmLead — LeadSquared merged two CRM duplicates
     // into one prospect. The push already succeeded; don't dead-letter the job.
     // Surface it loudly so the duplicate CRM leads can be reconciled by hand.
     if (isUniqueConstraintError(e)) {
       console.warn(
         `[leadsquared] prospect-id conflict: ProspectId ${prospectId} is already mapped to ` +
-          `another lead in tenant ${input.tenantId}; skipped mapping write for crmLead ` +
+          `another lead in tenant ${input.orgId}; skipped mapping write for crmLead ` +
           `${input.crmLeadId}. Likely a LeadSquared-side merge of duplicate leads.`,
       );
       return { pushed: true, prospectId, warning: "prospect-id-conflict" };

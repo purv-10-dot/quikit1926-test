@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const job = await prisma.qcfLeadImportJob.create({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         entityType: "activities",
         sourceType: "json",
         fileName: parsed.data.fileName,
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       },
     });
     const bullJobId = await enqueueImport({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       jobId: job.id,
       entityType: "activities",
       batchId: parsed.data.batchId ?? undefined,

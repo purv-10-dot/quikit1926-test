@@ -27,7 +27,7 @@ export async function GET(
     await assertModule(user, "opportunities", "view");
 
     const opp = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
     });
     // Tenant isolation: cross-tenant requests get 404 (not 403) to avoid
     // existence disclosure.
@@ -69,7 +69,7 @@ export async function PATCH(
     }
 
     const existing = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       select: { id: true, accountId: true, ownerId: true, amount: true, probability: true },
     });
     if (!existing) return err("Not found", 404);
@@ -80,7 +80,7 @@ export async function PATCH(
     }
 
     const updated = await updateOpportunity({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       id,
       input: parsed.data,
@@ -94,7 +94,7 @@ export async function PATCH(
       event: "updated",
       entityType: "opportunity",
       entityId: id,
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       actorUserId: user.userId,
       actorName: user.name || user.email,
       before: existing as unknown as Record<string, unknown>,
@@ -120,13 +120,13 @@ export async function DELETE(
     await assertModule(user, "opportunities", "delete");
 
     const existing = await db.qcfOpportunity.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       select: { id: true, accountId: true },
     });
     if (!existing) return err("Not found", 404);
     await assertAccountAccess(user, existing.accountId);
 
-    await softDelete(user.tenantId, id);
+    await softDelete(user.orgId, id);
     return NextResponse.json({ success: true, data: { id, deleted: true } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to delete opportunity";

@@ -8,34 +8,34 @@ import type { ModuleAction, SessionUser } from "@/types/permission";
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
  *
- * `tenantId` is read directly from the OAuth-issued JWT (the QuikIT IdP stamps
- * it onto `session.user.tenantId` after the user picks an org). No DB lookup
+ * `orgId` is read directly from the OAuth-issued JWT (the QuikIT IdP stamps
+ * it onto `session.user.orgId` after the user picks an org). No DB lookup
  * needed at request time — that's what makes this fast.
  */
 export interface TenantAuthContext {
   session: Session;
   userId: string;
-  tenantId: string;
+  orgId: string;
 }
 
 /**
- * Higher-order wrapper that runs the standard auth + tenantId + error-handling
+ * Higher-order wrapper that runs the standard auth + orgId + error-handling
  * boilerplate around a route handler.
  *
  * Replaces the boilerplate repeated across every API route:
  *   - session check  → 401
- *   - tenantId check → 403
+ *   - orgId check → 403
  *   - try/catch      → 500 with `{ success: false, error }`
  *
  * Usage:
- *   export const GET = withTenantAuth(async ({ tenantId }, req) => {
- *     const data = await db.qcfLead.findMany({ where: { tenantId } });
+ *   export const GET = withTenantAuth(async ({ orgId }, req) => {
+ *     const data = await db.qcfLead.findMany({ where: { orgId } });
  *     return NextResponse.json({ success: true, data });
  *   });
  *
  *   // Dynamic route segments still work — pass them through as `params`:
  *   export const GET = withTenantAuth<{ id: string }>(
- *     async ({ tenantId }, req, { params }) => { ... }
+ *     async ({ orgId }, req, { params }) => { ... }
  *   );
  */
 export interface WithTenantAuthOptions {
@@ -63,15 +63,15 @@ export function withTenantAuth<Params = Record<string, never>>(
           { status: 401 },
         );
       }
-      const tenantId = session.user.orgId;
-      if (!tenantId) {
+      const orgId = session.user.orgId;
+      if (!orgId) {
         return NextResponse.json(
           { success: false, error: "No active membership" },
           { status: 403 },
         );
       }
       return await handler(
-        { session, userId: session.user.id, tenantId },
+        { session, userId: session.user.id, orgId },
         req,
         routeCtx ?? ({ params: {} as Params }),
       );
@@ -123,7 +123,7 @@ export function withTenantAuthForModule(moduleKey: string | null) {
         const action = METHOD_ACTION[(req.method ?? "GET").toUpperCase()] ?? "view";
         const user: SessionUser = {
           userId: ctx.userId,
-          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
           role: mapMembershipToCrmRole(ctx.session.user?.membershipRole),
           email: ctx.session.user?.email ?? "",
           name: ctx.session.user?.name ?? "",

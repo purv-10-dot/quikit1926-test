@@ -34,12 +34,12 @@ export async function GET(req: NextRequest) {
 
     const counts = await Promise.all(
       buckets.map((b) => {
-        const tenantId = user.tenantId;
+        const orgId = user.orgId;
         const ownerId = filters.resolvedOwnerId;
         if (metric === "calls") {
           return prisma.qcfCallLog.count({
             where: {
-              tenantId,
+              orgId,
               createdAt: { gte: b.start, lte: b.end },
               ...(ownerId ? { agentUserId: ownerId } : {}),
             },
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
         if (metric === "leads-created") {
           return prisma.qcfLead.count({
             where: {
-              tenantId,
+              orgId,
               createdAt: { gte: b.start, lte: b.end },
               ...(ownerId ? { ownerId } : {}),
             },
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
         }
         return prisma.qcfActivity.count({
           where: {
-            tenantId,
+            orgId,
             occurredAt: { gte: b.start, lte: b.end },
             ...(ownerId ? { ownerId } : {}),
           },

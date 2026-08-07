@@ -32,7 +32,7 @@ describe("fireTrigger · trigger-time snapshot payload", () => {
       },
     ] as unknown as QcfWorkflowDefinition[]);
     db.qcfLead.findFirst.mockResolvedValue(
-      { id: "L1", tenantId: "t1", stage: "New Lead", substatus: "Negotiation" } as unknown as QcfLead,
+      { id: "L1", orgId: "t1", stage: "New Lead", substatus: "Negotiation" } as unknown as QcfLead,
     );
 
     const { onLeadUpdated } = await import("@/lib/services/automation/triggers");

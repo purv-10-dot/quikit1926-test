@@ -19,18 +19,18 @@ function toNum(v: unknown): number {
 }
 
 export async function buildProductAnalytics(
-  tenantId: string,
+  orgId: string,
   productId: string,
 ): Promise<ProductAnalyticsBundle> {
   const [quoteLines, orderLines] = await Promise.all([
     prisma.qcfQuoteLine.findMany({
-      where: { tenantId, productId },
+      where: { orgId, productId },
       select: { sku: true, productName: true, quantity: true, lineTotal: true },
       take: 500,
       orderBy: { createdAt: "desc" },
     }),
     prisma.qcfOrderLine.findMany({
-      where: { tenantId, productId },
+      where: { orgId, productId },
       select: { sku: true, productName: true, quantity: true, lineTotal: true },
       take: 500,
       orderBy: { createdAt: "desc" },
@@ -69,16 +69,16 @@ function aggregateLines(
   return [...map.values()].sort((a, b) => b.revenue - a.revenue);
 }
 
-export async function buildCatalogAnalytics(tenantId: string) {
+export async function buildCatalogAnalytics(orgId: string) {
   const [byCategory, topProducts] = await Promise.all([
     prisma.qcfProduct.groupBy({
       by: ["categoryId"],
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       _count: { id: true },
     }),
     prisma.qcfOrderLine.groupBy({
       by: ["productId"],
-      where: { tenantId, productId: { not: null } },
+      where: { orgId, productId: { not: null } },
       _sum: { lineTotal: true },
       _count: { id: true },
       orderBy: { _sum: { lineTotal: "desc" } },

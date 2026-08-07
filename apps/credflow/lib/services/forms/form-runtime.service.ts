@@ -38,13 +38,13 @@ export interface FormRuntime {
 }
 
 /** The live form payload for a version, scoped to the caller's tenant. */
-export async function getFormRuntime(versionId: string, tenantId: string): Promise<FormRuntime> {
+export async function getFormRuntime(versionId: string, orgId: string): Promise<FormRuntime> {
   const version = await prisma.qcfFormSetVersion.findUnique({
     where: { id: versionId },
-    select: { id: true, formSet: { select: { tenantId: true } } },
+    select: { id: true, formSet: { select: { orgId: true } } },
   });
   // Not found OR belongs to another tenant -> 404 (don't reveal existence).
-  if (!version || version.formSet.tenantId !== tenantId) {
+  if (!version || version.formSet.orgId !== orgId) {
     throw new FormStructureError("Form version not found", 404);
   }
 
@@ -62,8 +62,8 @@ export async function getFormRuntime(versionId: string, tenantId: string): Promi
  * runtime, or null when no form is live. Lets the agent client fetch the form to
  * render + evaluate without knowing the versionId (and without admin access).
  */
-export async function getCurrentDispositionRuntime(tenantId: string): Promise<FormRuntime | null> {
-  const versionId = await getLiveDispositionVersionId(tenantId);
+export async function getCurrentDispositionRuntime(orgId: string): Promise<FormRuntime | null> {
+  const versionId = await getLiveDispositionVersionId(orgId);
   if (!versionId) return null;
-  return getFormRuntime(versionId, tenantId);
+  return getFormRuntime(versionId, orgId);
 }

@@ -7,7 +7,7 @@ import { AUTH_LOGIN_PATH } from "@/lib/auth/routes";
 
 export interface AuthUser {
   id: string;
-  tenantId: string;
+  orgId: string;
   email: string;
   firstName: string;
   lastName: string;

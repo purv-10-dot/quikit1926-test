@@ -102,11 +102,11 @@ function parseStringBody(text: string): AnyRecord {
  * their own row, but identical replays must collapse.
  */
 export function computeDedupeKey(
-  tenantId: string,
+  orgId: string,
   payload: Record<string, string>,
 ): string {
   const parts = [
-    tenantId,
+    orgId,
     pick(payload, "CallSid", "callSid", "callsid", "uniqueid"),
     pick(payload, "campid", "Campid", "campId"),
     pick(payload, "Status", "status"),

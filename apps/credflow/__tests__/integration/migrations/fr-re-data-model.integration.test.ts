@@ -113,7 +113,7 @@ describe("FR-RE Unit 1 — data-model shape", () => {
       expect(section.has(c), `CrmFormSection.${c}`).toBe(true);
     }
     const file = await columnsOf("CrmFileAttachment");
-    for (const c of ["tenantId", "activityId", "storageKey", "filename", "contentType", "sizeBytes", "uploadedBy"]) {
+    for (const c of ["orgId", "activityId", "storageKey", "filename", "contentType", "sizeBytes", "uploadedBy"]) {
       expect(file.has(c), `CrmFileAttachment.${c}`).toBe(true);
     }
   });

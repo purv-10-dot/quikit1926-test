@@ -32,7 +32,7 @@ describe("POST /api/opportunities/[id]/transition", () => {
   });
 
   it("returns 404 cross-tenant (opp not found in user's tenant)", async () => {
-    setSession({ userId: "u1", tenantId: "t-A", role: "admin", email: "a@b.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t-A", role: "admin", email: "a@b.co", name: "A" });
     db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
     db.qcfOpportunity.findFirst.mockResolvedValue(null);
     const res = await callTransition("opp-from-t-B", { toStage: "Qualification" });
@@ -40,7 +40,7 @@ describe("POST /api/opportunities/[id]/transition", () => {
   });
 
   it("rejects closing without a closeReasonCategory (still enforced after full-relax)", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "user", email: "a@b.co", name: "A" });
+    setSession({ userId: "u1", orgId: "t1", role: "user", email: "a@b.co", name: "A" });
     db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
     db.qcfOpportunity.findFirst.mockResolvedValue({
       id: "opp1",
@@ -56,7 +56,7 @@ describe("POST /api/opportunities/[id]/transition", () => {
   });
 
   it("happy path: Negotiation → ClosedWon writes audit + activity rows", async () => {
-    setSession({ userId: "u1", tenantId: "t1", role: "admin", email: "a@b.co", name: "Alice" });
+    setSession({ userId: "u1", orgId: "t1", role: "admin", email: "a@b.co", name: "Alice" });
     db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
     db.qcfOpportunity.findFirst.mockResolvedValue({
       id: "opp1",
@@ -68,7 +68,7 @@ describe("POST /api/opportunities/[id]/transition", () => {
     db.qcfOpportunity.update.mockResolvedValue({
       id: "opp1",
       stage: "ClosedWon",
-      tenantId: "t1",
+      orgId: "t1",
     } as never);
 
     const res = await callTransition("opp1", {

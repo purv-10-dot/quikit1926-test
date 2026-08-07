@@ -50,7 +50,7 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const rules = await listRules(user.tenantId);
+    const rules = await listRules(user.orgId);
     return NextResponse.json({ rules });
   } catch (e) {
     return errorResponse(e);
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rule = await createRule({ tenantId: user.tenantId, ...parsed.data });
+    const rule = await createRule({ orgId: user.orgId, ...parsed.data });
     return NextResponse.json({ rule }, { status: 201 });
   } catch (e) {
     return errorResponse(e);

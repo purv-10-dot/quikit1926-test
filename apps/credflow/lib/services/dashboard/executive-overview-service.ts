@@ -152,7 +152,7 @@ export async function buildExecutiveOverview(
 ): Promise<ExecutiveOverviewDto> {
   const { range, resolvedOwnerId, source, extended } = filters;
   const prior = priorRange(range);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
   const now = new Date();
   const startToday = startOfDayInTz(now, range.tz);
   const endToday = endOfDayInTz(now, range.tz);
@@ -176,25 +176,25 @@ export async function buildExecutiveOverview(
   });
 
   const leadBase: Record<string, unknown> = {
-    tenantId,
+    orgId,
     deletedAt: null,
     ...ownerLeadFilter,
   };
   if (source) leadBase.source = source;
 
   const oppBase: Record<string, unknown> = {
-    tenantId,
+    orgId,
     deletedAt: null,
     ...ownerOppFilter,
   };
 
   const activityBase: Record<string, unknown> = {
-    tenantId,
+    orgId,
     occurredAt: { gte: range.from, lte: range.to },
     ...ownerActivityFilter,
   };
 
-  const dashCfg = await getDashboardConfig(tenantId);
+  const dashCfg = await getDashboardConfig(orgId);
   const dayBuckets = buildDayBuckets(range);
 
   const [
@@ -323,7 +323,7 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfActivity.findMany({
       where: {
-        tenantId,
+        orgId,
         occurredAt: { gte: prior.from, lte: prior.to },
         ...ownerActivityFilter,
       },
@@ -331,21 +331,21 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfCallLog.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: range.from, lte: range.to },
         ...ownerCallFilter,
       },
     }),
     prisma.qcfCallLog.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: prior.from, lte: prior.to },
         ...ownerCallFilter,
       },
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: range.from, lte: range.to },
         ...ownerTaskFilter,
@@ -353,7 +353,7 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: prior.from, lte: prior.to },
         ...ownerTaskFilter,
@@ -361,26 +361,26 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfNote.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: range.from, lte: range.to },
       },
     }),
     prisma.qcfNote.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: prior.from, lte: prior.to },
       },
     }),
     prisma.qcfQuote.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: range.from, lte: range.to },
         ...ownerActivityFilter,
       },
     }),
     prisma.qcfQuote.count({
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: prior.from, lte: prior.to },
         ...ownerActivityFilter,
       },
@@ -401,7 +401,7 @@ export async function buildExecutiveOverview(
       _count: true,
     }),
     prisma.qcfActivity.findMany({
-      where: { tenantId },
+      where: { orgId },
       orderBy: { occurredAt: "desc" },
       take: 15,
       select: {
@@ -415,14 +415,14 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         ...ownerTaskFilter,
       },
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         dueDate: { lt: now },
         ...ownerTaskFilter,
@@ -430,7 +430,7 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfTask.count({
       where: {
-        tenantId,
+        orgId,
         status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: startToday, lte: endToday },
         ...ownerTaskFilter,
@@ -438,13 +438,13 @@ export async function buildExecutiveOverview(
     }),
     prisma.qcfActivity.count({
       where: {
-        tenantId,
+        orgId,
         followUpAt: { gte: now },
         ...ownerActivityFilter,
       },
     }),
     prisma.orgMember.findMany({
-      where: { orgId: tenantId, status: "active" },
+      where: { orgId: orgId, status: "active" },
       select: {
         userId: true,
         role: true,
@@ -471,7 +471,7 @@ export async function buildExecutiveOverview(
       },
     }),
     prisma.qcfAccount.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       take: 8,
       orderBy: { updatedAt: "desc" },
       select: {
@@ -483,7 +483,7 @@ export async function buildExecutiveOverview(
       },
     }),
     prisma.sessionEvent.findMany({
-      where: { orgId: tenantId, appSlug: "quikcrm" },
+      where: { orgId: orgId, appSlug: "quikcrm" },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: { userId: true, createdAt: true, event: true },
@@ -519,7 +519,7 @@ export async function buildExecutiveOverview(
       const to = endOfDayInTz(from, range.tz);
       const count = await prisma.qcfActivity.count({
         where: {
-          tenantId,
+          orgId,
           occurredAt: { gte: from, lte: to },
           ...ownerActivityFilter,
         },
@@ -534,7 +534,7 @@ export async function buildExecutiveOverview(
       const to = endOfDayInTz(from, range.tz);
       const count = await prisma.qcfLead.count({
         where: {
-          tenantId,
+          orgId,
           deletedAt: null,
           createdAt: { gte: from, lte: to },
           ...ownerLeadFilter,
@@ -565,7 +565,7 @@ export async function buildExecutiveOverview(
     prisma.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         createdAt: { gte: range.from, lte: range.to },
         ownerId: { in: memberIds },
@@ -575,7 +575,7 @@ export async function buildExecutiveOverview(
     prisma.qcfCallLog.groupBy({
       by: ["agentUserId"],
       where: {
-        tenantId,
+        orgId,
         createdAt: { gte: range.from, lte: range.to },
         agentUserId: { in: memberIds },
       },
@@ -584,7 +584,7 @@ export async function buildExecutiveOverview(
     prisma.qcfActivity.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         occurredAt: { gte: range.from, lte: range.to },
         ownerId: { in: memberIds },
       },
@@ -593,7 +593,7 @@ export async function buildExecutiveOverview(
     prisma.qcfOpportunity.groupBy({
       by: ["ownerId"],
       where: {
-        tenantId,
+        orgId,
         deletedAt: null,
         stage: "ClosedWon",
         updatedAt: { gte: range.from, lte: range.to },
@@ -663,7 +663,7 @@ export async function buildExecutiveOverview(
   // Usage / last activity
   const lastActByUser = await prisma.qcfActivity.groupBy({
     by: ["ownerId"],
-    where: { tenantId, ownerId: { in: memberIds } },
+    where: { orgId, ownerId: { in: memberIds } },
     _max: { occurredAt: true },
   });
   const lastActMap = new Map(
@@ -740,7 +740,7 @@ export async function buildExecutiveOverview(
       const to = endOfDayInTz(from, range.tz);
       const rows = await prisma.qcfOpportunity.findMany({
         where: {
-          tenantId,
+          orgId,
           stage: "ClosedWon",
           updatedAt: { gte: from, lte: to },
           deletedAt: null,
@@ -777,7 +777,7 @@ export async function buildExecutiveOverview(
   let advanced = emptyExecutiveOverviewAdvanced();
   try {
     advanced = await buildAdvancedOverview({
-      tenantId,
+      orgId,
       range,
       ext: extended,
       memberIds,

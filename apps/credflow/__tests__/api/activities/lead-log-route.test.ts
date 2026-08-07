@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -60,7 +60,7 @@ describe("POST /api/activities/lead-log", () => {
     } as never);
     const created = {
       id: "act1",
-      tenantId: "t1",
+      orgId: "t1",
       type: "01. Call Conversation",
       relatedKind: "Lead",
       relatedObjectId: "L1",

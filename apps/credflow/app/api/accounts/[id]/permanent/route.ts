@@ -28,7 +28,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await assertAccountAccess(user, id);
 
     const existing = await prisma.qcfAccount.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       select: { id: true, name: true, deletedAt: true },
     });
     if (!existing) {
@@ -45,19 +45,19 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await prisma.$transaction(async (tx) => {
       await tx.qcfLead.updateMany({
-        where: { tenantId: user.tenantId, accountId: id },
+        where: { orgId: user.orgId, accountId: id },
         data: { accountId: null },
       });
       await tx.qcfContact.updateMany({
-        where: { tenantId: user.tenantId, accountId: id },
+        where: { orgId: user.orgId, accountId: id },
         data: { accountId: null },
       });
       await tx.qcfOpportunity.updateMany({
-        where: { tenantId: user.tenantId, accountId: id },
+        where: { orgId: user.orgId, accountId: id },
         data: { accountId: null },
       });
       await tx.qcfAccount.updateMany({
-        where: { tenantId: user.tenantId, parentAccountId: id },
+        where: { orgId: user.orgId, parentAccountId: id },
         data: { parentAccountId: null },
       });
       await tx.qcfAccount.delete({ where: { id } });

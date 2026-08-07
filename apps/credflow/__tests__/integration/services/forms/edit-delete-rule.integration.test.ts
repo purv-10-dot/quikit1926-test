@@ -44,7 +44,7 @@ let tabB: string;
 beforeAll(async () => {
   // Set 1 — the draft cases (never published).
   const draftSet = await db.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Draft Set ${STAMP}`, isDefault: true },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Draft Set ${STAMP}`, isDefault: true },
   });
   draftSetId = draftSet.id;
   draftVersionId = (await db.qcfFormSetVersion.create({
@@ -55,7 +55,7 @@ beforeAll(async () => {
 
   // Set 2 — the publish/draft-guard case, isolated so publishing can't disturb set 1.
   const pubSet = await db.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Pub Set ${STAMP}`, isDefault: false },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Pub Set ${STAMP}`, isDefault: false },
   });
   pubSetId = pubSet.id;
   pubVersionId = (await db.qcfFormSetVersion.create({

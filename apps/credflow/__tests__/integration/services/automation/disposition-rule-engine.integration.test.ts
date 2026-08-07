@@ -36,14 +36,14 @@ const ACTIVITY_DT = new Date("2026-06-18T10:00:00Z");
 beforeAll(async () => {
   // Create the minimal QcfLead the engine will update.
   const lead = await integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: "Integration Test Lead", status: INITIAL_STATUS },
+    data: { orgId: TENANT, name: "Integration Test Lead", status: INITIAL_STATUS },
   });
   leadId = lead.id;
 
   // Create a stub QcfActivity (engine receives its ID; doesn't create it).
   const activity = await integrationPrisma.qcfActivity.create({
     data: {
-      tenantId: TENANT,
+      orgId: TENANT,
       type: "Call",
       relatedKind: "Lead",
       relatedObjectId: leadId,
@@ -57,7 +57,7 @@ beforeAll(async () => {
   // Create the automation rule under test.
   const rule = await integrationPrisma.qcfAutomationRule.create({
     data: {
-      tenantId: TENANT,
+      orgId: TENANT,
       name: "Integration: not_interested → Disqualified",
       trigger: { type: "activity_logged", activity_type: "call", disposition: DISPOSITION_CODE },
       action: { type: "set_lead_status", status: TARGET_STATUS },
@@ -78,7 +78,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
 
   it("INT-D3-1: updates CrmLead.status in the database when disposition matches", async () => {
     await runAfterActivityLogged({
-      tenantId: TENANT,
+      orgId: TENANT,
       leadId,
       activityId,
       dispositionCode: DISPOSITION_CODE,
@@ -114,7 +114,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
     });
 
     await runAfterActivityLogged({
-      tenantId: TENANT,
+      orgId: TENANT,
       leadId,
       activityId,
       dispositionCode: DISPOSITION_CODE,
@@ -125,7 +125,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
     // Find the audit row written for this status change.
     const auditRow = await integrationPrisma.qcfAuditLog.findFirst({
       where: {
-        tenantId: TENANT,
+        orgId: TENANT,
         module: "leads",
         action: "status_changed",
         resourceId: leadId,

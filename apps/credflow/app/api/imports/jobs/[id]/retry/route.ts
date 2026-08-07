@@ -12,14 +12,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "imports", "import");
-    const job = await prisma.qcfLeadImportJob.findFirst({ where: { id, tenantId: user.tenantId } });
+    const job = await prisma.qcfLeadImportJob.findFirst({ where: { id, orgId: user.orgId } });
     if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
     await prisma.qcfLeadImportJob.update({
       where: { id },
       data: { status: "queued", attempts: 0, lastError: null, deadLetteredAt: null, queuedAt: new Date() },
     });
     const bullJobId = await enqueueImport({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       jobId: job.id,
       entityType: job.entityType,
       batchId: job.batchId ?? undefined,

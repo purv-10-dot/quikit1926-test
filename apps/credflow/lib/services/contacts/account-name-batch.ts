@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db/prisma";
  * Mirrors the legacy NestJS contacts.service.toRowsWithAccountName() helper.
  */
 export async function attachAccountNames<T extends { accountId: string | null | undefined }>(
-  tenantId: string,
+  orgId: string,
   rows: T[],
 ): Promise<(T & { accountName: string | null })[]> {
   if (rows.length === 0) return [];
@@ -18,7 +18,7 @@ export async function attachAccountNames<T extends { accountId: string | null | 
     return rows.map((r) => ({ ...r, accountName: null }));
   }
   const accounts = await prisma.qcfAccount.findMany({
-    where: { tenantId, id: { in: ids } },
+    where: { orgId, id: { in: ids } },
     select: { id: true, name: true },
   });
   const byId = new Map(accounts.map((a) => [a.id, a.name]));

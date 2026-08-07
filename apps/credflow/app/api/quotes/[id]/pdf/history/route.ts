@@ -14,7 +14,7 @@ export async function GET(
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const items = await listQuotePdfSnapshots(user.tenantId, id);
+    const items = await listQuotePdfSnapshots(user.orgId, id);
     return NextResponse.json({ success: true, data: items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to list PDF history";

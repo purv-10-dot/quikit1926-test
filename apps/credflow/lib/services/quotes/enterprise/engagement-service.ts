@@ -12,7 +12,7 @@ export type EngagementEventType =
   | "quote_commented";
 
 export async function recordQuoteEngagement(args: {
-  tenantId: string;
+  orgId: string;
   quoteId: string;
   eventType: EngagementEventType;
   ipAddress?: string | null;
@@ -21,7 +21,7 @@ export async function recordQuoteEngagement(args: {
 }): Promise<void> {
   await db.qcfQuoteEngagementEvent.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       quoteId: args.quoteId,
       eventType: args.eventType,
       ipAddress: args.ipAddress ?? null,
@@ -43,7 +43,7 @@ export async function recordQuoteEngagement(args: {
   if (!nextStatus) return;
 
   const quote = await db.qcfQuote.findFirst({
-    where: { id: args.quoteId, tenantId: args.tenantId },
+    where: { id: args.quoteId, orgId: args.orgId },
     select: { engagementStatus: true, firstViewedAt: true },
   });
   if (!quote) return;
@@ -65,7 +65,7 @@ export async function recordQuoteEngagement(args: {
 
   await db.qcfActivity.create({
     data: {
-      tenantId: args.tenantId,
+      orgId: args.orgId,
       type: "QuoteEngagement",
       relatedKind: "Quote",
       relatedObjectId: args.quoteId,
@@ -76,9 +76,9 @@ export async function recordQuoteEngagement(args: {
   });
 }
 
-export async function listQuoteEngagements(tenantId: string, quoteId: string) {
+export async function listQuoteEngagements(orgId: string, quoteId: string) {
   return db.qcfQuoteEngagementEvent.findMany({
-    where: { tenantId, quoteId },
+    where: { orgId, quoteId },
     orderBy: { createdAt: "desc" },
     take: 100,
   });

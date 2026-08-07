@@ -11,16 +11,16 @@
  *   1. OUTBOUND create: createCrmLead(unique repeattest+<i>+<ts>@example.com,
  *      stage "New Lead", source "FB Lead Ads") in the target tenant. This
  *      enqueues an outbound push; the worker syncs to LSQ and stamps the
- *      LeadSquaredSyncMap row (syncOrigin='crm' + real lsqProspectId). We poll
+ *      QcfLeadSquaredSyncMap row (syncOrigin='crm' + real lsqProspectId). We poll
  *      that row (10s timeout) and record create latency.
  *   2. OUTBOUND update: updateCrmLead(stage -> "Demo Scheduled") -> re-push ->
  *      poll until the mapping's lastSyncedAt advances past the create time.
  *   3. INBOUND update: POST a Before/After webhook for that SAME lsqProspectId
- *      with After.FirstName changed -> poll the CrmLead until firstName reflects
+ *      with After.FirstName changed -> poll the QcfLead until firstName reflects
  *      it (10s timeout), proving inbound update on the already-synced lead with
- *      NO duplicate (same CrmLead id throughout).
+ *      NO duplicate (same QcfLead id throughout).
  *
- * Cleanup: deletes every repeattest+ CrmLead it created and their sync-map rows.
+ * Cleanup: deletes every repeattest+ QcfLead it created and their sync-map rows.
  * TEMP — delete this script after use.
  */
 // tsx transpiles these .ts modules to CJS; Node's ESM named-export detection
@@ -105,7 +105,7 @@ async function runIteration(i) {
   let lead;
   try {
     lead = await createCrmLead({
-      tenantId: TENANT_ID,
+      orgId: TENANT_ID,
       name: `RepeatTest ${i} ${TS}`,
       firstName: `RepeatTest${i}`,
       email,
@@ -120,8 +120,8 @@ async function runIteration(i) {
 
   // Poll the mapping for a CRM-origin row with a real ProspectId.
   const mapCreated = await poll(async () => {
-    const m = await prisma.leadSquaredSyncMap.findFirst({
-      where: { crmLeadId: lead.id, tenantId: TENANT_ID },
+    const m = await prisma.qcfLeadSquaredSyncMap.findFirst({
+      where: { crmLeadId: lead.id, orgId: TENANT_ID },
     });
     return m && m.syncOrigin === "crm" && m.lsqProspectId ? m : null;
   });
@@ -146,8 +146,8 @@ async function runIteration(i) {
   }
 
   const mapUpdated = await poll(async () => {
-    const m = await prisma.leadSquaredSyncMap.findFirst({
-      where: { crmLeadId: lead.id, tenantId: TENANT_ID },
+    const m = await prisma.qcfLeadSquaredSyncMap.findFirst({
+      where: { crmLeadId: lead.id, orgId: TENANT_ID },
     });
     const t = m && m.lastSyncedAt ? new Date(m.lastSyncedAt).getTime() : 0;
     return m && t > createSyncedAt ? m : null;
@@ -170,7 +170,7 @@ async function runIteration(i) {
   }
 
   const inboundApplied = await poll(async () => {
-    const l = await prisma.crmLead.findUnique({
+    const l = await prisma.qcfLead.findUnique({
       where: { id: lead.id },
       select: { id: true, firstName: true },
     });
@@ -178,10 +178,10 @@ async function runIteration(i) {
   });
   if (inboundApplied.ok) {
     result.inboundUpdate = "PASS";
-    // Confirm no duplicate: same CrmLead id still owns this ProspectId.
-    const dupes = await prisma.crmLead.count({
+    // Confirm no duplicate: same QcfLead id still owns this ProspectId.
+    const dupes = await prisma.qcfLead.count({
       where: {
-        tenantId: TENANT_ID,
+        orgId: TENANT_ID,
         sourceSystem: "leadsquared",
         externalId: prospectId,
       },
@@ -212,9 +212,9 @@ async function cleanup() {
   // Delete by tracked ids AND by the email pattern (backstop for any created
   // outside the id list). deleteMany is a HARD delete (soft-delete middleware
   // only rewrites reads). Sync-map rows first to respect the FK.
-  const leads = await prisma.crmLead.findMany({
+  const leads = await prisma.qcfLead.findMany({
     where: {
-      tenantId: TENANT_ID,
+      orgId: TENANT_ID,
       OR: [
         { id: { in: createdLeadIds.length ? createdLeadIds : ["__none__"] } },
         { email: { startsWith: "repeattest+" } },
@@ -224,11 +224,11 @@ async function cleanup() {
   });
   const ids = [...new Set([...createdLeadIds, ...leads.map((l) => l.id)])];
   if (!ids.length) return { maps: 0, leads: 0 };
-  const maps = await prisma.leadSquaredSyncMap.deleteMany({
-    where: { tenantId: TENANT_ID, crmLeadId: { in: ids } },
+  const maps = await prisma.qcfLeadSquaredSyncMap.deleteMany({
+    where: { orgId: TENANT_ID, crmLeadId: { in: ids } },
   });
-  const delLeads = await prisma.crmLead.deleteMany({
-    where: { tenantId: TENANT_ID, id: { in: ids } },
+  const delLeads = await prisma.qcfLead.deleteMany({
+    where: { orgId: TENANT_ID, id: { in: ids } },
   });
   return { maps: maps.count, leads: delLeads.count };
 }
@@ -266,7 +266,7 @@ async function main() {
 
   // Cleanup (always).
   const cleaned = await cleanup();
-  console.log(`\nCleanup: deleted ${cleaned.leads} CrmLead(s) + ${cleaned.maps} sync-map row(s).`);
+  console.log(`\nCleanup: deleted ${cleaned.leads} QcfLead(s) + ${cleaned.maps} sync-map row(s).`);
 
   const allPass = passCreate === ITERATIONS && passUpdate === ITERATIONS && passInbound === ITERATIONS;
   console.log(allPass ? "\n✔ ALL iterations passed in both directions." : "\n⚠ Some iterations failed — see notes.");

@@ -38,7 +38,7 @@ function formatDate(date: Date | null | undefined): string {
 // ─── Task Assigned ────────────────────────────────────────────────────────────
 
 export interface TaskAssignedParams {
-  tenantId: string;
+  orgId: string;
   taskId: string;
   taskSubject: string;
   /** The userId being assigned (new assignee). */
@@ -63,7 +63,7 @@ export async function notifyTaskAssigned(
   params: TaskAssignedParams,
 ): Promise<void> {
   const {
-    tenantId, taskId, taskSubject,
+    orgId, taskId, taskSubject,
     newAssigneeId, oldAssigneeId,
     actorUserId, actorName,
     dueDate, priority,
@@ -78,7 +78,7 @@ export async function notifyTaskAssigned(
   const due = formatDate(dueDate);
 
   await createNotification({
-    tenantId,
+    orgId,
     userId: newAssigneeId,
     // Reuse lead_assigned type → blue UserPlus icon in notification center.
     type: "lead_assigned",
@@ -102,7 +102,7 @@ export async function notifyTaskAssigned(
 // ─── Task Completed ───────────────────────────────────────────────────────────
 
 export interface TaskCompletedParams {
-  tenantId: string;
+  orgId: string;
   taskId: string;
   taskSubject: string;
   /** The user who marked the task complete (the actor). */
@@ -123,7 +123,7 @@ export async function notifyTaskCompleted(
   params: TaskCompletedParams,
 ): Promise<void> {
   const {
-    tenantId, taskId, taskSubject,
+    orgId, taskId, taskSubject,
     completedByUserId, completedByName,
     taskCreatorUserId,
   } = params;
@@ -133,7 +133,7 @@ export async function notifyTaskCompleted(
   if (taskCreatorUserId === completedByUserId) return;
 
   await createNotification({
-    tenantId,
+    orgId,
     userId: taskCreatorUserId,
     // Emerald CheckCircle2 icon — "done" semantic.
     type: "lead_converted",

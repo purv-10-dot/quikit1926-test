@@ -21,7 +21,7 @@ import { NotificationItem } from "@/components/notifications/notification-item";
 function row(overrides: Partial<NotificationRow>): NotificationRow {
   return {
     id: "n1",
-    tenantId: "t1",
+    orgId: "t1",
     userId: "u1",
     title: "Fallback title",
     body: "Fallback body",

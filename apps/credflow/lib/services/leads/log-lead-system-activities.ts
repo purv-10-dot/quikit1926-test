@@ -180,7 +180,7 @@ export async function logLeadSystemActivitiesOnCreate(
 
   for (const ev of events) {
     await logActivity({
-      tenantId: lead.tenantId,
+      orgId: lead.orgId,
       userId: ctx.userId,
       ownerId: ctx.userId ?? lead.ownerId ?? undefined,
       type: ev.type,

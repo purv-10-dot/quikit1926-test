@@ -42,31 +42,31 @@ function post(body: unknown): NextRequest {
 
 beforeEach(() => {
   trigger.mockReset();
-  setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@b.co", name: "A" });
+  setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@b.co", name: "A" });
 });
 
 describe("workflow-engine · distribute_lead (owner update)", () => {
   it("triggers outbound sync after the owner update commits", async () => {
     db.qcfWorkflowDefinition.findFirst.mockResolvedValue({
       id: "wf1",
-      tenantId: "t1",
+      orgId: "t1",
       status: "Active",
       graphNodes: [{ id: "n1", kind: "distribute_lead", config: { candidateUserIds: ["u2"] } }],
       graphEdges: [],
     } as unknown as QcfWorkflowDefinition);
-    db.qcfLead.findFirst.mockResolvedValue({ id: "lead-1", tenantId: "t1", ownerId: null } as unknown as QcfLead);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "lead-1", orgId: "t1", ownerId: null } as unknown as QcfLead);
     db.qcfLead.update.mockResolvedValue({} as never);
     vi.mocked(pickNextUser).mockResolvedValue("u2");
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-1", "n1");
 
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "lead-1" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "lead-1" });
   });
 });
 
 describe("convert route (transaction path)", () => {
-  const lead = { id: "lead-1", tenantId: "t1", linkedContactId: null, status: "New", accountId: null };
+  const lead = { id: "lead-1", orgId: "t1", linkedContactId: null, status: "New", accountId: null };
 
   it("triggers outbound sync AFTER the transaction commits (successful convert)", async () => {
     db.qcfLead.findFirst.mockResolvedValue(lead as unknown as QcfLead);
@@ -82,7 +82,7 @@ describe("convert route (transaction path)", () => {
     const { POST } = await import("@/app/api/leads/[id]/convert/route");
     await POST(post({}), { params: Promise.resolve({ id: "lead-1" }) });
 
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "lead-1" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "lead-1" });
   });
 
   it("does NOT enqueue when the transaction ROLLS BACK", async () => {
@@ -118,9 +118,9 @@ describe("form-rule-apply · applyFormRules (set_stage → status/substatus)", (
     } as never);
 
     const { applyFormRules } = await import("@/lib/services/forms/form-rule-apply.service");
-    await applyFormRules({ tenantId: "t1", leadId: "lead-9", activityId: null, formSetVersionId: "v1" });
+    await applyFormRules({ orgId: "t1", leadId: "lead-9", activityId: null, formSetVersionId: "v1" });
 
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "lead-9" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "lead-9" });
   });
 });
 
@@ -140,38 +140,38 @@ describe("bulk-assign route (updateMany fan-out)", () => {
     });
 
     expect(trigger).toHaveBeenCalledTimes(2);
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "l1" });
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "l2" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "l1" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "l2" });
   });
 });
 
 describe("bulk import (upsertImportedLeadRow · dedupe update)", () => {
   it("triggers outbound sync after an externalId-match UPDATE", async () => {
     db.qcfLead.findUnique.mockResolvedValue({ id: "imp-1", dynamicFields: null } as never);
-    db.qcfLead.update.mockResolvedValue({ id: "imp-1", tenantId: "t1" } as never);
+    db.qcfLead.update.mockResolvedValue({ id: "imp-1", orgId: "t1" } as never);
 
     const { upsertImportedLeadRow } = await import("@/lib/services/import/lead-import-row");
     const res = await upsertImportedLeadRow(
-      { tenantId: "t1", name: "Imp One", email: "imp1@x.co", externalId: "EXT-1", sourceSystem: "leadsquared" },
+      { orgId: "t1", name: "Imp One", email: "imp1@x.co", externalId: "EXT-1", sourceSystem: "leadsquared" },
       { userId: "u1" },
     );
 
     expect(res.action).toBe("updated");
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "imp-1" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "imp-1" });
   });
 
   it("triggers outbound sync after an email/phone dedupe-match UPDATE", async () => {
     vi.mocked(findDuplicateLeadRecord).mockResolvedValue({ id: "imp-2" } as never);
     db.qcfLead.findUnique.mockResolvedValue({ dynamicFields: null } as never); // dupe.id fetch
-    db.qcfLead.update.mockResolvedValue({ id: "imp-2", tenantId: "t1" } as never);
+    db.qcfLead.update.mockResolvedValue({ id: "imp-2", orgId: "t1" } as never);
 
     const { upsertImportedLeadRow } = await import("@/lib/services/import/lead-import-row");
     const res = await upsertImportedLeadRow(
-      { tenantId: "t1", name: "Imp Two", email: "imp2@x.co" }, // no externalId → dedupe branch
+      { orgId: "t1", name: "Imp Two", email: "imp2@x.co" }, // no externalId → dedupe branch
       { userId: "u1" },
     );
 
     expect(res.action).toBe("updated");
-    expect(trigger).toHaveBeenCalledWith({ tenantId: "t1", crmLeadId: "imp-2" });
+    expect(trigger).toHaveBeenCalledWith({ orgId: "t1", crmLeadId: "imp-2" });
   });
 });

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const created = await addQuoteLine({
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         quoteId: id,
         input: {
           productId: parsed.data.productId ?? null,

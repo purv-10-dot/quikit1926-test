@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     );
 
     const acl = await accountScopeFilter(user);
-    const baseWhere: Record<string, unknown> = { tenantId: user.tenantId, deletedAt: null };
+    const baseWhere: Record<string, unknown> = { orgId: user.orgId, deletedAt: null };
     if (q) {
       baseWhere.OR = [
         { firstName: { contains: q, mode: "insensitive" } },

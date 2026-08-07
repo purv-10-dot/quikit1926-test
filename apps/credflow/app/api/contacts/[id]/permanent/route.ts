@@ -25,7 +25,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     const existing = await prisma.qcfContact.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, orgId: user.orgId },
       select: { id: true, deletedAt: true, leadId: true },
     });
     if (!existing) {
@@ -46,7 +46,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await prisma.$transaction(async (tx) => {
       await tx.qcfLead.updateMany({
-        where: { tenantId: user.tenantId, OR: leadOr },
+        where: { orgId: user.orgId, OR: leadOr },
         data: { status: "Open", convertedAt: null, linkedContactId: null },
       });
       await tx.qcfContact.delete({ where: { id } });

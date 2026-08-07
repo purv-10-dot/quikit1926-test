@@ -50,7 +50,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
     where: { id: leadId },
     include: { account: { select: { id: true, name: true } } },
   });
-  if (!lead || lead.tenantId !== user.tenantId) return null;
+  if (!lead || lead.orgId !== user.orgId) return null;
   await assertAccountAccess(user, lead.accountId);
   // Owner-restricted roles: a non-owned lead reads as "not found" (null), matching
   // this function's existing no-access contract (the route/page render 404).
@@ -72,7 +72,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
     await Promise.all([
     prisma.qcfActivity.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         OR: [
           { leadId },
           { relatedKind: "lead", relatedObjectId: leadId },
@@ -84,7 +84,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
     }),
     prisma.qcfTask.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         OR: [
           { leadId },
           { relatedKind: "lead", relatedObjectId: leadId },
@@ -96,7 +96,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
     }),
     prisma.qcfNote.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         OR: [
           { leadId },
           { relatedKind: "lead", relatedObjectId: leadId },
@@ -107,13 +107,13 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       take: 50,
     }),
     prisma.qcfOpportunity.findMany({
-      where: { tenantId: user.tenantId, leadId },
+      where: { orgId: user.orgId, leadId },
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
     prisma.qcfCallLog.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         OR: [
           { leadId },
           ...callTails.flatMap((t) => [
@@ -127,7 +127,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
     }),
     prisma.qcfDocument.findMany({
       where: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         refType: "lead",
         refId: leadId,
         deletedAt: null,
@@ -135,7 +135,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       orderBy: { createdAt: "desc" },
     }),
     prisma.qcfSlaLeadTracking.findMany({
-      where: { tenantId: user.tenantId, leadId },
+      where: { orgId: user.orgId, leadId },
       orderBy: { updatedAt: "desc" },
       take: 20,
     }),
@@ -176,7 +176,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
     callLogs,
   });
 
-  const pipeline = await getPipelineConfig(user.tenantId);
+  const pipeline = await getPipelineConfig(user.orgId);
   const analytics = buildLeadAnalytics({
     createdAt: lead.createdAt,
     score: lead.score,

@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     }
 
     const where: Prisma.QcfAccountWhereInput = applyAccountListWhere(
-      { tenantId: user.tenantId },
+      { orgId: user.orgId },
       {
         trashed,
         allowedAccountIds,
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
 
     const created = await createAccountRow({
       data: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         name: dto.name,
         segment: segmentText,
         segmentEnum: dto.segmentEnum ?? null,
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
     });
 
     await writeAccountActivity({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       accountId: created.id,
       accountName: created.name,
       outcome: `Account created${ownerName ? ` · Owner: ${ownerName}` : ""}`,

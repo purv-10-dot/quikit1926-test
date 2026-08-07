@@ -27,7 +27,7 @@ describe("POST /api/reports/custom/run", () => {
   it("runs a valid custom lead report", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@x.co",
       name: "A",

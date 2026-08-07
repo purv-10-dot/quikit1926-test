@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db/prisma";
  * Returns `null` if the email is empty, falsy, or has no match.
  */
 export async function findDuplicateContactByEmail(
-  tenantId: string,
+  orgId: string,
   email: string | null | undefined,
   excludeId?: string,
 ): Promise<{ id: string; firstName: string; lastName: string | null } | null> {
@@ -16,7 +16,7 @@ export async function findDuplicateContactByEmail(
   if (!normalised) return null;
   const dup = await prisma.qcfContact.findFirst({
     where: {
-      tenantId,
+      orgId,
       deletedAt: null,
       email: { equals: normalised, mode: "insensitive" },
       ...(excludeId ? { id: { not: excludeId } } : {}),

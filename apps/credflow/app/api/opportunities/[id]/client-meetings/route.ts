@@ -11,9 +11,9 @@ function err(message: string, status = 500) {
   return NextResponse.json({ success: false, error: message }, { status });
 }
 
-async function loadOpp(tenantId: string, id: string) {
+async function loadOpp(orgId: string, id: string) {
   return db.qcfOpportunity.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     select: { id: true, accountId: true, name: true },
   });
 }
@@ -28,12 +28,12 @@ export async function GET(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "view");
 
-    const opp = await loadOpp(user.tenantId, id);
+    const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
     const meetings = await db.qcfOpportunityClientMeeting.findMany({
-      where: { tenantId: user.tenantId, opportunityId: id },
+      where: { orgId: user.orgId, opportunityId: id },
       orderBy: { meetingAt: "desc" },
     });
     return NextResponse.json({ success: true, data: meetings });
@@ -54,7 +54,7 @@ export async function POST(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "edit");
 
-    const opp = await loadOpp(user.tenantId, id);
+    const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
@@ -71,7 +71,7 @@ export async function POST(
     const created = await db.$transaction(async (tx) => {
       const meeting = await tx.qcfOpportunityClientMeeting.create({
         data: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           opportunityId: id,
           subject: parsed.data.subject,
           meetingAt: new Date(parsed.data.meetingAt),
@@ -87,7 +87,7 @@ export async function POST(
       });
       await tx.qcfActivity.create({
         data: {
-          tenantId: user.tenantId,
+          orgId: user.orgId,
           type: "OpportunityClientMeeting",
           relatedKind: "Opportunity",
           relatedObjectId: id,
@@ -100,7 +100,7 @@ export async function POST(
       });
       // Touch parent for the at-risk widget.
       await tx.qcfOpportunity.update({
-        where: { id, tenantId: user.tenantId },
+        where: { id, orgId: user.orgId },
         data: { lastActivityAt: new Date() },
       });
       return meeting;

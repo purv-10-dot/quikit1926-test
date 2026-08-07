@@ -24,19 +24,19 @@ export async function GET() {
     if (isResponse(user)) return user;
 
     const views = await prisma.qcfLeadListView.findMany({
-      where: { tenantId: user.tenantId, userId: user.userId },
+      where: { orgId: user.orgId, userId: user.userId },
       select: { id: true, filters: true },
     });
     const acl = await accountScopeFilter(user);
     const ownerScope = await ownerScopeFilter(user);
-    const customDefs = await listCustomFields(user.tenantId);
+    const customDefs = await listCustomFields(user.orgId);
 
     const entries = await Promise.all(
       views.map(async (v) => {
         const parsed = filterPayloadSchema.safeParse(v.filters);
         if (!parsed.success) return [v.id, 0] as const;
         const filterWhere = translateFilterToPrismaWhere(parsed.data, customDefs);
-        const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+        const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
         if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
         if (acl) baseAnd.push(acl);
         if (ownerScope) baseAnd.push(ownerScope);

@@ -22,7 +22,7 @@ const TENANT = `int_b2_${Date.now()}`;
 
 async function mkLead(overrides: Partial<QcfLead>): Promise<QcfLead> {
   return integrationPrisma.qcfLead.create({
-    data: { tenantId: TENANT, name: "B2 Lead", stage: "New", status: "Open", ...overrides } as never,
+    data: { orgId: TENANT, name: "B2 Lead", stage: "New", status: "Open", ...overrides } as never,
   });
 }
 
@@ -31,8 +31,8 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.qcfOutboundMessageLog.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfOutboundMessageLog.deleteMany({ where: { orgId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { orgId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 
@@ -40,7 +40,7 @@ describe("B2 send_email action · real DB (captured transport)", () => {
   it("renders {merge} fields per-lead and sends a mailable lead", async () => {
     const lead = await mkLead({ firstName: "Ada", email: "ada+b2@example.test" });
     const res = await executeSendEmail({
-      tenantId: TENANT,
+      orgId: TENANT,
       lead,
       cfg: { subject: "Hello {firstName}", body: "Your name is {name}." },
     });
@@ -55,7 +55,7 @@ describe("B2 send_email action · real DB (captured transport)", () => {
 
   it("SKIPS a Do-Not-Email lead — recorded, not dispatched", async () => {
     const lead = await mkLead({ email: "dne+b2@example.test", doNotEmail: true });
-    const res = await executeSendEmail({ tenantId: TENANT, lead, cfg: { subject: "s", body: "b" } });
+    const res = await executeSendEmail({ orgId: TENANT, lead, cfg: { subject: "s", body: "b" } });
     expect(res).toMatchObject({ status: "skipped", reason: "do-not-email" });
     const row = await integrationPrisma.qcfOutboundMessageLog.findUnique({ where: { id: res.logId } });
     expect(row?.status).toBe("skipped");
@@ -64,13 +64,13 @@ describe("B2 send_email action · real DB (captured transport)", () => {
 
   it("SKIPS an unsubscribed lead", async () => {
     const lead = await mkLead({ email: "unsub+b2@example.test", unsubscribed: true });
-    const res = await executeSendEmail({ tenantId: TENANT, lead, cfg: {} });
+    const res = await executeSendEmail({ orgId: TENANT, lead, cfg: {} });
     expect(res).toMatchObject({ status: "skipped", reason: "unsubscribed" });
   });
 
   it("SKIPS a lead with no valid email", async () => {
     const lead = await mkLead({ email: null });
-    const res = await executeSendEmail({ tenantId: TENANT, lead, cfg: {} });
+    const res = await executeSendEmail({ orgId: TENANT, lead, cfg: {} });
     expect(res).toMatchObject({ status: "skipped", reason: "no-valid-email" });
   });
 });

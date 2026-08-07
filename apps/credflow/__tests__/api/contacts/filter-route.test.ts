@@ -14,7 +14,7 @@ describe("POST /api/contacts/filter", () => {
   it("translates contains conditions and applies tenant scope", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@b.co",
       name: "Alice",
@@ -45,7 +45,7 @@ describe("POST /api/contacts/filter", () => {
       AND: Array<Record<string, unknown>>;
     };
     expect(Array.isArray(where.AND)).toBe(true);
-    expect(where.AND[0]).toMatchObject({ tenantId: "t1" });
+    expect(where.AND[0]).toMatchObject({ orgId: "t1" });
     // Filter fragment should appear next.
     const filterFrag = where.AND[1] as { email?: { contains?: string } };
     expect(filterFrag.email?.contains).toBe("@acme.test");
@@ -54,7 +54,7 @@ describe("POST /api/contacts/filter", () => {
   it("merges search with advanced filter conditions", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@b.co",
       name: "Alice",
@@ -91,7 +91,7 @@ describe("POST /api/contacts/filter", () => {
   it("returns 400 for an invalid payload", async () => {
     setSession({
       userId: "u1",
-      tenantId: "t1",
+      orgId: "t1",
       role: "Administrator",
       email: "a@b.co",
       name: "Alice",

@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     await assertModule(user, "quotes", "view");
 
     const items = await prisma.qcfProduct.findMany({
-      where: { tenantId: user.tenantId, deletedAt: null },
+      where: { orgId: user.orgId, deletedAt: null },
       include: {
         categoryRef: { select: { id: true, name: true } },
         brandRef: { select: { id: true, name: true } },

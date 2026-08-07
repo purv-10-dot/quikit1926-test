@@ -68,26 +68,26 @@ console.log(`Sample — "Demo Completed-demo Syncing" ->`, stageToStatuses["Demo
 // ── resolve the target tenant ─────────────────────────────────────────────────
 async function resolveTenant() {
   if (process.env.TENANT_ID) return process.env.TENANT_ID;
-  const sets = await prisma.crmFormSet.findMany({
+  const sets = await prisma.qcfFormSet.findMany({
     where: { surface: "call_disposition", isDefault: true },
-    select: { tenantId: true, name: true },
+    select: { orgId: true, name: true },
   });
-  const tenants = [...new Set(sets.map((s) => s.tenantId))];
+  const tenants = [...new Set(sets.map((s) => s.orgId))];
   if (tenants.length === 1) return tenants[0];
   console.log("Multiple / zero default call_disposition tenants found:", tenants);
   console.log("Re-run with TENANT_ID=<id> to pick one.");
   return null;
 }
 
-const tenantId = await resolveTenant();
-if (!tenantId) {
+const orgId = await resolveTenant();
+if (!orgId) {
   await prisma.$disconnect();
   process.exit(1);
 }
-console.log(`\nTarget tenant: ${tenantId}`);
+console.log(`\nTarget tenant: ${orgId}`);
 
 // ── merge into pipeline config ────────────────────────────────────────────────
-const cfg = await getPipelineConfig(tenantId);
+const cfg = await getPipelineConfig(orgId);
 const mergedStages = [...new Set([...(cfg.stages ?? []), ...stagesOrder])];
 const nextDependentRules = { ...cfg.dependentRules, stageToStatuses };
 
@@ -100,7 +100,7 @@ if (!APPLY) {
   process.exit(0);
 }
 
-await setPipelineConfig(tenantId, {
+await setPipelineConfig(orgId, {
   stages: mergedStages,
   dependentRules: nextDependentRules,
 });
@@ -110,7 +110,7 @@ console.log("\n✔ Written to leadPipelineConfig.");
 const _ds = await import("../lib/services/forms/disposition-statuses.service");
 const { getDispositionStatuses } = _ds.default ?? _ds;
 for (const s of ["Demo Completed-demo Syncing", "Negotiation", "Renewal Due"]) {
-  const got = await getDispositionStatuses(tenantId, s);
+  const got = await getDispositionStatuses(orgId, s);
   console.log(`  getDispositionStatuses("${s}") -> ${got.length} statuses`);
 }
 

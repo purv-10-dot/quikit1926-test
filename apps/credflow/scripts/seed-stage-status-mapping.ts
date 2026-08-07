@@ -1,7 +1,7 @@
 /**
  * Seed: Stage → Status mapping into leadPipelineConfig.
  *
- *   npm run seed:stage-status -- <tenantId>
+ *   npm run seed:stage-status -- <orgId>
  *   SEED_TENANT_ID=xxx npx tsx scripts/seed-stage-status-mapping.ts
  *
  * Idempotent — merges into existing config, never deletes existing entries.

@@ -35,9 +35,9 @@ export async function assertDocumentParent(
   refType: DocumentRefType | "global",
   refId: string,
 ): Promise<void> {
-  const { tenantId } = user;
+  const { orgId } = user;
   if (refType === "global") {
-    if (refId !== tenantId) {
+    if (refId !== orgId) {
       throw new DocumentParentError("Forbidden", 403);
     }
     return;
@@ -45,7 +45,7 @@ export async function assertDocumentParent(
   switch (refType) {
     case "lead": {
       const lead = await prisma.qcfLead.findFirst({
-        where: { id: refId, tenantId },
+        where: { id: refId, orgId },
         select: { accountId: true },
       });
       if (!lead) throw new DocumentParentError("Lead not found");
@@ -54,7 +54,7 @@ export async function assertDocumentParent(
     }
     case "account": {
       const acc = await prisma.qcfAccount.findFirst({
-        where: { id: refId, tenantId },
+        where: { id: refId, orgId },
         select: { id: true },
       });
       if (!acc) throw new DocumentParentError("Account not found");
@@ -63,7 +63,7 @@ export async function assertDocumentParent(
     }
     case "opportunity": {
       const opp = await prisma.qcfOpportunity.findFirst({
-        where: { id: refId, tenantId },
+        where: { id: refId, orgId },
         select: { accountId: true },
       });
       if (!opp) throw new DocumentParentError("Opportunity not found");
@@ -72,7 +72,7 @@ export async function assertDocumentParent(
     }
     case "quote": {
       const quote = await prisma.qcfQuote.findFirst({
-        where: { id: refId, tenantId },
+        where: { id: refId, orgId },
         select: { id: true },
       });
       if (!quote) throw new DocumentParentError("Quote not found");
@@ -80,7 +80,7 @@ export async function assertDocumentParent(
     }
     case "order": {
       const order = await prisma.qcfOrder.findFirst({
-        where: { id: refId, tenantId },
+        where: { id: refId, orgId },
         select: { id: true },
       });
       if (!order) throw new DocumentParentError("Order not found");

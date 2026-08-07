@@ -34,7 +34,7 @@ const u: Record<string, { id: string; email: string }> = {};
 function asSession(key: string, role: string): SessionUser {
   return {
     userId: u[key]!.id,
-    tenantId: orgId,
+    orgId: orgId,
     role,
     email: u[key]!.email,
     name: key,
@@ -74,10 +74,10 @@ beforeAll(async () => {
 
   // Two disjoint sales groups (teams).
   const teamA = await integrationPrisma.qcfSalesGroup.create({
-    data: { tenantId: orgId, name: `Team A ${STAMP}` },
+    data: { orgId: orgId, name: `Team A ${STAMP}` },
   });
   const teamB = await integrationPrisma.qcfSalesGroup.create({
-    data: { tenantId: orgId, name: `Team B ${STAMP}` },
+    data: { orgId: orgId, name: `Team B ${STAMP}` },
   });
   teamAId = teamA.id;
   teamBId = teamB.id;

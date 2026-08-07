@@ -28,7 +28,7 @@ export default async function LeadDetailPage({ params }: Props) {
   const [record, dispositions] = await Promise.all([
     getFullLeadRecord({ user, leadId: id }),
     prisma.qcfCallDisposition.findMany({
-      where: { tenantId: user.tenantId },
+      where: { orgId: user.orgId },
       orderBy: { code: "asc" },
       select: { id: true, code: true, label: true },
     }),
@@ -42,7 +42,7 @@ export default async function LeadDetailPage({ params }: Props) {
   let canEdit = isAdmin;
   let canLogActivity = isAdmin;
   if (!isAdmin) {
-    const matrix = await getEffectiveMatrix(user.userId, user.tenantId, user.role);
+    const matrix = await getEffectiveMatrix(user.userId, user.orgId, user.role);
     const leadsRow = matrix.find((r) => r.module === "leads");
     canEdit = !!leadsRow?.actions.includes("edit");
     const activitiesRow = matrix.find((r) => r.module === "activities");

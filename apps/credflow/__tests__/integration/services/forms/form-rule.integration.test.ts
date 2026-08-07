@@ -27,7 +27,7 @@ let versionId: string;
 
 beforeAll(async () => {
   const set = await integrationPrisma.qcfFormSet.create({
-    data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
+    data: { orgId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
   const version = await integrationPrisma.qcfFormSetVersion.create({
@@ -134,7 +134,7 @@ describe("form-rule builder (FR-RE-1/2)", () => {
 
   it("rejects mutating a PUBLISHED version (draft-only guard)", async () => {
     const set = await integrationPrisma.qcfFormSet.create({
-      data: { tenantId: TENANT, surface: "call_disposition", name: `Pub ${STAMP}` },
+      data: { orgId: TENANT, surface: "call_disposition", name: `Pub ${STAMP}` },
     });
     const published = await integrationPrisma.qcfFormSetVersion.create({
       data: { formSetId: set.id, versionNumber: 1, status: "published" },

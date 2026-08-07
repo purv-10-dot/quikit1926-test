@@ -3,9 +3,9 @@
  * IndiaVoice webhook pipeline.
  *
  *   1. Secret validation (mandatory in prod or when WEBHOOK_REQUIRE_SECRET=true)
- *   2. Resolve tenantId (env override → payload → DEFAULT_ORG_ID → ?tenantId=)
+ *   2. Resolve orgId (env override → payload → DEFAULT_ORG_ID → ?orgId=)
  *   3. Idempotent audit row upsert into QcfIndiaVoiceWebhookLog, keyed by
- *      (tenantId, processDedupeKey). Replays of the same event return early.
+ *      (orgId, processDedupeKey). Replays of the same event return early.
  *   4. Skip mid-call match attempts (transferring/ringing/etc with no terminal
  *      data) so ringing events don't mis-attribute to old call logs.
  *   5. Match a QcfCallLog by providerCallSid/callSid first, then by phone-tail
@@ -181,11 +181,11 @@ function resolveFields(flat: Record<string, string>): ResolvedView {
  * indicating whether a mid-call event was deliberately skipped from matching.
  */
 export async function processIndiaVoiceWebhook(
-  tenantId: string,
+  orgId: string,
   flat: Record<string, string>,
 ): Promise<{
   ok: true;
-  tenantId: string;
+  orgId: string;
   auditId: string;
   callLogId: string | null;
   matched: boolean;
@@ -193,22 +193,22 @@ export async function processIndiaVoiceWebhook(
   duplicate: boolean;
 }> {
   const r = resolveFields(flat);
-  const dedupeKey = computeDedupeKey(tenantId, flat);
+  const dedupeKey = computeDedupeKey(orgId, flat);
 
   // 1. Idempotent audit upsert. We do a findUnique first so we can detect a
   // replay and return early without re-running the (costly) match step.
   const existingAudit = await prisma.qcfIndiaVoiceWebhookLog.findUnique({
-    where: { tenantId_processDedupeKey: { tenantId, processDedupeKey: dedupeKey } },
+    where: { orgId_processDedupeKey: { orgId, processDedupeKey: dedupeKey } },
   });
   if (existingAudit) {
     console.log(
-      `[india-voice-webhook] duplicate replay (dedupeKey hit) tenant=${tenantId} sid=${maskForLog(
+      `[india-voice-webhook] duplicate replay (dedupeKey hit) tenant=${orgId} sid=${maskForLog(
         r.callSid || r.campid || "",
       )} audit=${existingAudit.id}`,
     );
     return {
       ok: true,
-      tenantId,
+      orgId,
       auditId: existingAudit.id,
       callLogId: existingAudit.matchedCallLogId,
       matched: !!existingAudit.matchedCallLogId,
@@ -219,7 +219,7 @@ export async function processIndiaVoiceWebhook(
 
   const audit = await prisma.qcfIndiaVoiceWebhookLog.create({
     data: {
-      tenantId,
+      orgId,
       callSid: r.callSid,
       campid: r.campid,
       vendorEventType: r.vendorEventType,
@@ -254,7 +254,7 @@ export async function processIndiaVoiceWebhook(
         r.callSid || r.campid || "",
       )} audit=${audit.id}`,
     );
-    return { ok: true, tenantId, auditId: audit.id, callLogId: null, matched: false, skipped: true, duplicate: false };
+    return { ok: true, orgId, auditId: audit.id, callLogId: null, matched: false, skipped: true, duplicate: false };
   }
 
   // 3. Primary match — within 24h, by providerCallSid OR legacy callSid.
@@ -271,7 +271,7 @@ export async function processIndiaVoiceWebhook(
     idCandidates.length > 0
       ? await prisma.qcfCallLog.findFirst({
           where: {
-            tenantId,
+            orgId,
             createdAt: { gte: since },
             OR: [
               { providerCallSid: { in: idCandidates } },
@@ -287,7 +287,7 @@ export async function processIndiaVoiceWebhook(
   if (!callLog && idCandidates.length > 0) {
     callLog = await prisma.qcfCallLog.findFirst({
       where: {
-        tenantId,
+        orgId,
         OR: [
           { providerCallSid: { in: idCandidates } },
           { callSid: { in: idCandidates } },
@@ -308,7 +308,7 @@ export async function processIndiaVoiceWebhook(
     if (tail) {
       callLog = await prisma.qcfCallLog.findFirst({
         where: {
-          tenantId,
+          orgId,
           createdAt: { gte: since },
           OR: [
             { destinationNumber: { endsWith: tail } },
@@ -363,7 +363,7 @@ export async function processIndiaVoiceWebhook(
 
   return {
     ok: true,
-    tenantId,
+    orgId,
     auditId: audit.id,
     callLogId,
     matched: !!callLog,
@@ -405,20 +405,23 @@ export async function handleWebhook(opts: {
   }
 
   // 2. Tenant resolution (env override → payload → DEFAULT_ORG_ID → query)
-  let tenantId = e.WEBHOOK_DEFAULT_ORG_ID || "";
-  if (!tenantId && e.WEBHOOK_TRUST_PAYLOAD_ORG_ID !== "false" && e.WEBHOOK_TRUST_PAYLOAD_ORG_ID !== "0") {
-    tenantId = String(flat.tenantId || flat.orgId || flat.org_id || "");
+  let orgId = e.WEBHOOK_DEFAULT_ORG_ID || "";
+  if (!orgId && e.WEBHOOK_TRUST_PAYLOAD_ORG_ID !== "false" && e.WEBHOOK_TRUST_PAYLOAD_ORG_ID !== "0") {
+    // `flat.*` keys come off the provider's inbound payload — that is an
+    // external wire contract, so keep accepting the legacy `tenantId` spelling
+    // alongside `orgId`/`org_id`. Only our own variable is renamed.
+    orgId = String(flat.tenantId || flat.orgId || flat.org_id || "");
   }
-  if (!tenantId) tenantId = e.DEFAULT_ORG_ID;
-  if (!tenantId) tenantId = String(flat.tenantId || "");
-  if (!tenantId) throw statusError("Could not resolve tenantId for webhook", 400);
-  tenantId = sanitizeOrgId(tenantId);
+  if (!orgId) orgId = e.DEFAULT_ORG_ID;
+  if (!orgId) orgId = String(flat.tenantId || flat.orgId || "");
+  if (!orgId) throw statusError("Could not resolve orgId for webhook", 400);
+  orgId = sanitizeOrgId(orgId);
 
   console.log(
-    `[india-voice-webhook] → tenant=${tenantId} type=${flat.type ?? flat.eventType ?? "?"} sid=${maskForLog(
+    `[india-voice-webhook] → tenant=${orgId} type=${flat.type ?? flat.eventType ?? "?"} sid=${maskForLog(
       flat.CallSid || flat.callSid || flat.campid || "",
     )}`,
   );
 
-  return processIndiaVoiceWebhook(tenantId, flat);
+  return processIndiaVoiceWebhook(orgId, flat);
 }

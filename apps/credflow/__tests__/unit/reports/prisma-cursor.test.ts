@@ -69,7 +69,7 @@ describe("createPrismaCursorIterator", () => {
 
   it("forwards the where + select args verbatim", async () => {
     const delegate = makeDelegate([]);
-    const where = { tenantId: "t1", deletedAt: null };
+    const where = { orgId: "t1", deletedAt: null };
     const select = { id: true, name: true };
     const iter = createPrismaCursorIterator<Row>({
       delegate,

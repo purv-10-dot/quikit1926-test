@@ -20,11 +20,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await assertModule(user, "automations", "edit");
 
     const wf = await prisma.qcfWorkflowDefinition.findFirst({
-      where: { id, tenantId: user.tenantId, deletedAt: null },
+      where: { id, orgId: user.orgId, deletedAt: null },
     });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const updated = await publish(user.tenantId, id);
+    const updated = await publish(user.orgId, id);
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof LifecycleError) return NextResponse.json({ error: e.message }, { status: 400 });

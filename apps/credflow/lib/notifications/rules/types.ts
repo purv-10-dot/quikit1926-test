@@ -35,7 +35,7 @@ export type RecipientType =
 
 export interface NotificationRule {
   id: string;
-  tenantId: string;
+  orgId: string;
   name: string;
   description: string | null;
   entityType: EntityType;
@@ -62,7 +62,7 @@ export interface RuleEventContext {
   event: string;                        // 'created' | 'updated' | 'stage_changed' | 'converted' | 'deleted'
   entityType: EntityType;
   entityId: string;
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   actorName: string;
   before?: Record<string, unknown>;     // Entity state before the change

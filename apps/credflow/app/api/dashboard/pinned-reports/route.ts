@@ -36,9 +36,9 @@ const deleteSchema = z.object({
   reportId: z.string().min(1).max(64),
 });
 
-async function loadPins(tenantId: string, userId: string): Promise<DashboardPin[]> {
+async function loadPins(orgId: string, userId: string): Promise<DashboardPin[]> {
   const rows = await prisma.qcfDashboardPin.findMany({
-    where: { tenantId, userId },
+    where: { orgId, userId },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     select: { id: true, reportId: true, sortOrder: true },
   });
@@ -50,7 +50,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "dashboard", "view");
-    const items = await loadPins(user.tenantId, user.userId);
+    const items = await loadPins(user.orgId, user.userId);
     return NextResponse.json({ items });
   } catch (e) {
     return errorResponse(e);
@@ -73,21 +73,21 @@ export async function POST(req: NextRequest) {
     }
 
     const max = await prisma.qcfDashboardPin.aggregate({
-      where: { tenantId: user.tenantId, userId: user.userId },
+      where: { orgId: user.orgId, userId: user.userId },
       _max: { sortOrder: true },
     });
     const nextOrder = (max._max.sortOrder ?? -1) + 1;
 
     await prisma.qcfDashboardPin.upsert({
       where: {
-        tenantId_userId_reportId: {
-          tenantId: user.tenantId,
+        orgId_userId_reportId: {
+          orgId: user.orgId,
           userId: user.userId,
           reportId: parsed.data.reportId,
         },
       },
       create: {
-        tenantId: user.tenantId,
+        orgId: user.orgId,
         userId: user.userId,
         reportId: parsed.data.reportId,
         sortOrder: nextOrder,
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       update: {},
     });
 
-    const items = await loadPins(user.tenantId, user.userId);
+    const items = await loadPins(user.orgId, user.userId);
     return NextResponse.json({ items }, { status: 201 });
   } catch (e) {
     return errorResponse(e);
@@ -115,10 +115,10 @@ export async function DELETE(req: NextRequest) {
     }
 
     await prisma.qcfDashboardPin.deleteMany({
-      where: { tenantId: user.tenantId, userId: user.userId, reportId: parsed.data.reportId },
+      where: { orgId: user.orgId, userId: user.userId, reportId: parsed.data.reportId },
     });
 
-    const items = await loadPins(user.tenantId, user.userId);
+    const items = await loadPins(user.orgId, user.userId);
     return NextResponse.json({ items });
   } catch (e) {
     return errorResponse(e);
@@ -140,13 +140,13 @@ export async function PATCH(req: NextRequest) {
     await prisma.$transaction(
       parsed.data.order.map((reportId, i) =>
         prisma.qcfDashboardPin.updateMany({
-          where: { tenantId: user.tenantId, userId: user.userId, reportId },
+          where: { orgId: user.orgId, userId: user.userId, reportId },
           data: { sortOrder: i },
         }),
       ),
     );
 
-    const items = await loadPins(user.tenantId, user.userId);
+    const items = await loadPins(user.orgId, user.userId);
     return NextResponse.json({ items });
   } catch (e) {
     return errorResponse(e);

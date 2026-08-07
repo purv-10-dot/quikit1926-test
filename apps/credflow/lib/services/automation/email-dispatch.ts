@@ -49,11 +49,11 @@ function mergeMetadata(
  * left alone and reported as "skipped" so a re-run/retry never double-sends.
  */
 export async function dispatchOutboundMessage(
-  tenantId: string,
+  orgId: string,
   logId: string,
 ): Promise<DispatchResult> {
   const log = await prisma.qcfOutboundMessageLog.findFirst({
-    where: { id: logId, tenantId },
+    where: { id: logId, orgId },
   });
   if (!log) return { outcome: "skipped", reason: "message log row not found for tenant" };
   if (log.status !== "queued") {

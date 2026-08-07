@@ -21,7 +21,7 @@ export type TelephonyRegistration = {
 
 export async function updateMeProfile(opts: {
   userId: string;
-  tenantId: string;
+  orgId: string;
   firstName: string;
   lastName: string;
   phone: string | null;
@@ -47,7 +47,7 @@ export async function updateMeProfile(opts: {
 
   const rawPhone = opts.phone?.trim() ?? "";
   if (!rawPhone) {
-    await setAgentPhoneForUser(opts.tenantId, opts.userId, null);
+    await setAgentPhoneForUser(opts.orgId, opts.userId, null);
     return { profile, telephony: null };
   }
 
@@ -58,7 +58,7 @@ export async function updateMeProfile(opts: {
     throw err;
   }
 
-  await setAgentPhoneForUser(opts.tenantId, opts.userId, num);
+  await setAgentPhoneForUser(opts.orgId, opts.userId, num);
 
   if (!isConfigured()) {
     return {

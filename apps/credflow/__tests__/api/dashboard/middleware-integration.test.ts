@@ -114,7 +114,7 @@ vi.doMock("@/lib/db/prisma", () => ({ prisma: wrapped }));
 vi.doMock("@/lib/auth/require", () => ({
   requireApiUser: vi.fn(async () => ({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "SalesUser",
     email: "u@example.com",
     name: "Test",
@@ -158,7 +158,7 @@ describe("dashboard middleware integration — counts exclude soft-deleted rows"
       "@/lib/services/dashboard/summary-service"
     );
     const summary = await buildSummary(
-      { userId: "u1", tenantId: "t1", role: "SalesUser" } as never,
+      { userId: "u1", orgId: "t1", role: "SalesUser" } as never,
       {
         range: {
           from: new Date("2026-04-25T00:00:00Z"),

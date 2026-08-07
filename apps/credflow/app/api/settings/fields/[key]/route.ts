@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
     const { key } = await params;
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const f = await getField(user.tenantId, key);
+    const f = await getField(user.orgId, key);
     if (!f) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(f);
   } catch (e) {
@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ke
         { status: 400 },
       );
     }
-    const updated = await updateCustomField(user.tenantId, key, parsed.data);
+    const updated = await updateCustomField(user.orgId, key, parsed.data);
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof FieldDefError) return NextResponse.json({ error: e.message }, { status: e.statusCode });
@@ -54,7 +54,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "settings", "delete");
-    await deleteCustomField(user.tenantId, key);
+    await deleteCustomField(user.orgId, key);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof FieldDefError) return NextResponse.json({ error: e.message }, { status: e.statusCode });

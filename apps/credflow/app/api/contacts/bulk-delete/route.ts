@@ -19,7 +19,7 @@ export async function POST(_req: NextRequest) {
 
     const acl = await accountScopeFilter(user);
     const scoped = applyContactListWhere(
-      { tenantId: user.tenantId },
+      { orgId: user.orgId },
       { trashed: false },
     );
     const where = acl ? { AND: [scoped, acl] } : scoped;

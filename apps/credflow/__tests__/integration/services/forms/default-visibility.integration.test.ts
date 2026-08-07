@@ -34,7 +34,7 @@ afterAll(async () => {
 
 describe("defaultVisibility — hidden field + rule_driven tab persist and serve in the runtime", () => {
   it("creates a hidden field and a rule_driven tab, both reflected in getFormRuntime", async () => {
-    const { set, version } = await createFormSet({ tenantId: TENANT, name: `Vis ${STAMP}` });
+    const { set, version } = await createFormSet({ orgId: TENANT, name: `Vis ${STAMP}` });
     setId = set.id;
     versionId = version.id;
 

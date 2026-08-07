@@ -23,7 +23,7 @@ import {
   enqueueLeadSquaredSyncSafe,
 } from "@/lib/queue/leadsquared-queue";
 
-const INPUT = { tenantId: "tenant-1", crmLeadId: "lead-1" };
+const INPUT = { orgId: "tenant-1", crmLeadId: "lead-1" };
 
 beforeEach(() => {
   // Global setup clears call history; re-establish default impls each test.
@@ -40,7 +40,7 @@ describe("enqueueLeadSquaredSync", () => {
     const [jobName, data] = h.addMock.mock.calls[0];
     expect(jobName).toBe("push");
     expect(data).toEqual({
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       crmLeadId: "lead-1",
       origin: "crm",
     });

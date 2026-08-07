@@ -39,7 +39,7 @@ describe("getCurrentDispositionRuntime", () => {
   });
 
   it("resolves the live published version's runtime (structure + EvalRule rules)", async () => {
-    const { set, version } = await createFormSet({ tenantId: TENANT, name: `Curr ${STAMP}` });
+    const { set, version } = await createFormSet({ orgId: TENANT, name: `Curr ${STAMP}` });
     setId = set.id;
     versionId = version.id;
     await createFormField({

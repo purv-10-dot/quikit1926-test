@@ -6,7 +6,7 @@ const db = mockDb();
 function adminSession() {
   setSession({
     userId: "u1",
-    tenantId: "t1",
+    orgId: "t1",
     role: "Administrator",
     email: "a@b.co",
     name: "Alice",
@@ -70,12 +70,12 @@ describe("GET /api/products", () => {
     const req = new Request("http://test/api/products");
     await GET(req as unknown as import("next/server").NextRequest);
 
-    // buildProductSearchWhere composes the query as { AND: [{ tenantId }, { deletedAt }, …] },
+    // buildProductSearchWhere composes the query as { AND: [{ orgId }, { deletedAt }, …] },
     // so tenant scope lives at AND[0] rather than the top level.
     const where = db.qcfProduct.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
-    expect(where.AND).toEqual(expect.arrayContaining([{ tenantId: "t1" }]));
+    expect(where.AND).toEqual(expect.arrayContaining([{ orgId: "t1" }]));
   });
 });
 
@@ -101,7 +101,7 @@ describe("POST /api/products", () => {
     adminSession();
     db.qcfProduct.create.mockResolvedValue({
       id: "p1",
-      tenantId: "t1",
+      orgId: "t1",
       name: "Dell Laptop",
       sku: "DELL-001",
       listPrice: "50000.00",

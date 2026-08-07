@@ -9,7 +9,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const memberships = await prisma.orgMember.findMany({
-      where: { orgId: user.tenantId, status: "active" },
+      where: { orgId: user.orgId, status: "active" },
       select: {
         userId: true,
         role: true,

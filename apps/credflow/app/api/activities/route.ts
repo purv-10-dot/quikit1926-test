@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     );
     const page = Math.max(parseInt(searchParams.get("page") ?? "1", 10) || 1, 1);
 
-    const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
+    const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
     if (relatedKind && relatedObjectId) {
       // For Opportunity reads, also OR over the direct `opportunityId` FK so
       // activities re-keyed to Contact during lead-convert (which carry
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
       take: pageSize,
     });
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
-    const rows = await toListRows(user.tenantId, items, tz);
+    const rows = await toListRows(user.orgId, items, tz);
     // Top-level `items` is kept for backwards compatibility with existing
     // consumers (LeadActivityTimeline, AccountDetailView). Newer callers
     // should read from `data.items`.
@@ -146,16 +146,16 @@ export async function POST(req: NextRequest) {
       await assertModule(user, "activities", "edit");
     }
 
-    await assertActivityTargetExists(user.tenantId, dto.relatedKind, dto.relatedObjectId);
+    await assertActivityTargetExists(user.orgId, dto.relatedKind, dto.relatedObjectId);
     const accountId = await getRelatedAccountId(
-      user.tenantId,
+      user.orgId,
       dto.relatedKind,
       dto.relatedObjectId,
     );
     await assertAccountAccess(user, accountId);
 
     const created = await logActivity({
-      tenantId: user.tenantId,
+      orgId: user.orgId,
       userId: user.userId,
       ownerId: dto.ownerId ?? user.userId,
       type: dto.type,
@@ -178,10 +178,10 @@ export async function POST(req: NextRequest) {
       relatedKind: dto.relatedKind,
       relatedObjectId: dto.relatedObjectId,
     });
-    if (leadIdForScore) scheduleLeadScoreRecalc(user.tenantId, leadIdForScore);
+    if (leadIdForScore) scheduleLeadScoreRecalc(user.orgId, leadIdForScore);
 
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
-    const row = await toListRow(user.tenantId, created, tz);
+    const row = await toListRow(user.orgId, created, tz);
     return NextResponse.json({ success: true, data: row }, { status: 201 });
   } catch (e) {
     return errorResponse(e);

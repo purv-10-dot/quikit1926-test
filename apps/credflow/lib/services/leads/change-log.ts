@@ -115,7 +115,7 @@ export function diffLead(
 }
 
 interface RecordParams {
-  tenantId: string;
+  orgId: string;
   userId: string | null;
   leadId: string;
   action: LeadChangeAction;
@@ -131,7 +131,7 @@ interface RecordParams {
  * never break the underlying mutation.
  */
 export async function recordLeadChange(params: RecordParams): Promise<void> {
-  const { tenantId, userId, leadId, action, before, after, metadata } = params;
+  const { orgId, userId, leadId, action, before, after, metadata } = params;
   // Prisma's `Json?` columns reject plain `null` — `Prisma.JsonNull` is the
   // sentinel that maps to a SQL NULL. We use it for actions where one side
   // of the snapshot is intentionally absent (CREATE has no `before`, DELETE
@@ -148,7 +148,7 @@ export async function recordLeadChange(params: RecordParams): Promise<void> {
       if (Object.keys(diff.after).length === 0) return;
       await prisma.qcfAuditLog.create({
         data: {
-          tenantId,
+          orgId,
           userId,
           module: MODULE,
           action,
@@ -162,7 +162,7 @@ export async function recordLeadChange(params: RecordParams): Promise<void> {
     }
     await prisma.qcfAuditLog.create({
       data: {
-        tenantId,
+        orgId,
         userId,
         module: MODULE,
         action,

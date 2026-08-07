@@ -21,8 +21,8 @@ interface PhoneSettingsTree {
  * permanent assumption — revisit (make it required / genuinely per-tenant) if
  * non-India tenants appear.
  */
-export async function getWorkspacePhoneDefaultCountry(tenantId: string): Promise<string> {
-  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+export async function getWorkspacePhoneDefaultCountry(orgId: string): Promise<string> {
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { orgId } });
   const settings = ((row?.settings as PhoneSettingsTree | null) ?? {}) as PhoneSettingsTree;
   const country = settings.phoneConfig?.defaultCountry;
   return typeof country === "string" && country.trim()
