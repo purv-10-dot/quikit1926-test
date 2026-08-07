@@ -18,6 +18,7 @@ import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
 import { IssueDevelopment } from "./issue-development";
+import { QuikTestResultsPanel } from "./quiktest-results-panel";
 import type { IssuePageData, IssueType } from "./types";
 import type { MentionItem } from "@/components/editor/mention";
 
@@ -177,6 +178,10 @@ export function IssueFullView({
             window.location.href = `/spaces/${projectId}/work/${id}`;
           }}
         />
+        {/* QuikTest — tests covering this item, and results that raised it as a
+            defect. Sits between Linked work items and Development, matching the
+            TestRail-for-Jira panel placement. */}
+        <QuikTestResultsPanel issueKey={issue.key} projectId={projectId} />
         <IssueDevelopment
           issueId={issue.id}
           issueKey={issue.key}
