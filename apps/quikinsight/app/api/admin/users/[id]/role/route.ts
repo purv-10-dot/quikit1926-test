@@ -15,6 +15,7 @@ export const PATCH = withAuth(async (req, ctx) => {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  
   const userId = ctx.params?.id;
   if (typeof userId !== "string" || !userId) {
     return NextResponse.json({ error: "Missing user id" }, { status: 400 });
