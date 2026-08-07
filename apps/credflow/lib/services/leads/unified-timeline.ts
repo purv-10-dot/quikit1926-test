@@ -30,6 +30,14 @@ export interface UnifiedTimelineItem {
   title: string;
   subtitle?: string | null;
   meta?: string | null;
+  /** The underlying CrmActivity id (activity-derived items only). Lets the row
+   *  fetch the saved custom disposition field values for the "See form details"
+   *  view. Absent on call-log / note / task / doc items. */
+  activityId?: string | null;
+  /** True only when this row represents a REAL call: either an actual call-log
+   *  row, or a "Call" activity linked to one (linkedCallLogId set). A manual
+   *  disposition update (no call) is false, so the row renders plain, not green. */
+  isRealCall?: boolean;
   /** Present only on call items that have a recording. Rendered as an inline
    *  audio player (through the same-origin /api/telephony/recording proxy) in
    *  the unified timeline, matching the Call Disposition tab. */
@@ -106,6 +114,7 @@ export function buildUnifiedTimeline(input: {
     createdAt: Date | string;
     activityCode?: string | null;
     detailNotes?: string | null;
+    linkedCallLogId?: string | null;
   }[];
   callLogs: {
     id: string;
@@ -152,6 +161,10 @@ export function buildUnifiedTimeline(input: {
     items.push({
       id: `act:${a.id}`,
       kind,
+      activityId: a.id,
+      // A "call"-classified activity is only a REAL call when it's linked to a
+      // call-log row; a manual disposition "Call" activity has no link.
+      isRealCall: kind === "call" && !!a.linkedCallLogId,
       at: new Date(at).toISOString(),
       title,
       subtitle,
@@ -179,6 +192,8 @@ export function buildUnifiedTimeline(input: {
     items.push({
       id: `call:${c.id}`,
       kind: "call",
+      // An actual call-log row is always a real call.
+      isRealCall: true,
       at: new Date(at).toISOString(),
       title: directionLabel,
       subtitle: null,

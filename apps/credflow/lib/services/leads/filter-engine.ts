@@ -208,6 +208,23 @@ function translateCondition(c: ConditionRowInput, def: FilterFieldDef): WhereFra
   }
 
   if (def.type === "text") {
+    // in / notIn: the value-picker lets enumerable text columns (e.g. source,
+    // industry, city) offer multi-select even though they're stored as plain
+    // text. Without this branch the operator fell through to `default: null`,
+    // the condition was dropped, and the query returned EVERY lead (the
+    // "Source in FB Lead Ads returns all 5098" bug). Mirror the select branch:
+    // translate to a real Prisma `in` / NOT-in over the column.
+    if (operator === "in" || operator === "notIn") {
+      const arr = Array.isArray(value)
+        ? (value as (string | number)[]).map((v) => String(v))
+        : value != null
+        ? [String(value)]
+        : [];
+      if (arr.length === 0) return null;
+      return operator === "in"
+        ? { [field]: { in: arr } }
+        : { NOT: { [field]: { in: arr } } };
+    }
     const s = typeof value === "string" ? value : value == null ? "" : String(value);
     switch (operator) {
       case "eq":          return { [field]: { equals: s, mode: "insensitive" } };

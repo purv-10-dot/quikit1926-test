@@ -1,18 +1,25 @@
 "use client";
 
 /**
- * FR-RE — shared rendering of the custom (non-protected) disposition fields:
- * unassigned fields flat, then each non-protected tab's fields, with a
- * rule-driven tab's group appearing only when a rule revealed it (show_tab) and
- * each field gated by fieldVisible (show_field / defaultVisibility).
+ * FR-RE — shared rendering primitives for the custom (non-protected) disposition
+ * fields, plus the tabbing helpers the clean form uses to build ONE top tab-bar.
  *
- * Extracted verbatim from call-disposition-modal so the clean FR-RE view and the
- * legacy fallback render through ONE implementation (extract-and-reuse). Pure
- * visibility logic lives in lib/services/forms/field-visibility.
+ * Layout (2026-08-06): the whole disposition modal is a tabbed interface owned by
+ * CleanDispositionForm — tab 1 is "Call Disposition" (the main form) and each
+ * rule-revealed custom tab follows it, auto-focused when a rule reveals it. This
+ * module exposes:
+ *   - <DispositionField>       — render one field (dropdown / user_picker / input)
+ *   - useVisibleDispositionTabs — the ordered list of rule-revealed tabs (with ≥1
+ *                                 visible field) + the unassigned-field list
+ *   - fieldsForTab / unassignedFields — field selectors gated by fieldVisible
+ *   - frreFieldMandatory
+ *
+ * Pure visibility logic lives in lib/services/forms/field-visibility.
  */
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { fieldVisible, tabVisible } from "@/lib/services/forms/field-visibility";
 import type { RuleDecision } from "@/lib/services/forms/form-rule-evaluator";
+import { UserPickerControl } from "@/components/leads/disposition/user-picker-control";
 
 export interface FrreFieldOption {
   valueKey: string;
@@ -44,6 +51,87 @@ export function frreFieldMandatory(field: FrreField, decision: RuleDecision | nu
   return field.requiredLevel === "hard" || decision?.fieldRequirement[field.fieldKey] === "mandatory";
 }
 
+/** Non-protected, currently-visible fields that belong to a given tab. */
+export function fieldsForTab(
+  fields: FrreField[],
+  tabId: string,
+  decision: RuleDecision | null,
+): FrreField[] {
+  return fields.filter((f) => !f.isProtected && f.formTabId === tabId && fieldVisible(f, decision));
+}
+
+/** Non-protected, currently-visible fields not assigned to any tab. */
+export function unassignedFields(fields: FrreField[], decision: RuleDecision | null): FrreField[] {
+  return fields.filter((f) => !f.isProtected && !f.formTabId && fieldVisible(f, decision));
+}
+
+/**
+ * The ordered custom tabs that should appear in the tab-bar: revealed by a rule
+ * (or default-visible) AND holding at least one currently-visible field. Recomputes
+ * as the decision changes so a rule that reveals a tab makes it appear.
+ */
+export function useVisibleDispositionTabs(
+  fields: FrreField[],
+  tabs: FrreTab[],
+  decision: RuleDecision | null,
+): FrreTab[] {
+  return useMemo(() => {
+    const custom = [...tabs].filter((t) => !t.isProtected).sort((a, b) => a.sortOrder - b.sortOrder);
+    return custom
+      .filter((t) => tabVisible(t, decision))
+      .filter((t) => fields.some((f) => !f.isProtected && f.formTabId === t.id && fieldVisible(f, decision)));
+  }, [fields, tabs, decision]);
+}
+
+/** Render a single disposition field (dropdown / user_picker / typed input). */
+export function DispositionField({
+  field: f,
+  decision,
+  values,
+  onChange,
+}: {
+  field: FrreField;
+  decision: RuleDecision | null;
+  values: Record<string, string | string[]>;
+  onChange: (fieldKey: string, value: string | string[]) => void;
+}) {
+  const raw = values[f.fieldKey];
+  const strValue = typeof raw === "string" ? raw : "";
+  return (
+    <label className="text-sm font-medium text-crm-text">
+      {f.label} {frreFieldMandatory(f, decision) ? <span className="text-red-600">*</span> : null}
+      {f.fieldType === "user_picker" ? (
+        <UserPickerControl field={f} value={raw} onChange={(v) => onChange(f.fieldKey, v)} />
+      ) : f.fieldType === "dropdown" ? (
+        <select
+          className="crm-input mt-1"
+          value={strValue}
+          onChange={(e) => onChange(f.fieldKey, e.target.value)}
+        >
+          <option value="">Select {f.label}</option>
+          {f.options.map((o) => (
+            <option key={o.valueKey} value={o.valueKey}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={f.fieldType === "number" ? "number" : f.fieldType === "datetime" ? "datetime-local" : "text"}
+          className="crm-input mt-1"
+          value={strValue}
+          onChange={(e) => onChange(f.fieldKey, e.target.value)}
+        />
+      )}
+    </label>
+  );
+}
+
+/**
+ * Backwards-compatible wrapper: renders unassigned fields inline followed by the
+ * revealed tabs' fields as stacked sections. The clean form now uses the tab-bar
+ * primitives above instead, but this is kept so any other caller keeps working.
+ */
 export function DispositionFieldGroups({
   fields,
   tabs,
@@ -57,135 +145,22 @@ export function DispositionFieldGroups({
   values: Record<string, string | string[]>;
   onChange: (fieldKey: string, value: string | string[]) => void;
 }) {
-  const nonProtected = fields.filter((f) => !f.isProtected);
-  const unassigned = nonProtected.filter((f) => !f.formTabId);
-  const customTabs = [...tabs].filter((t) => !t.isProtected).sort((a, b) => a.sortOrder - b.sortOrder);
-
-  function renderField(f: FrreField) {
-    // String-typed fields read a string from the widened map (a user_picker value
-    // may be string[], but those render via UserPickerControl, not here).
-    const raw = values[f.fieldKey];
-    const strValue = typeof raw === "string" ? raw : "";
-    return (
-      <label key={f.id} className="text-sm font-medium text-crm-text">
-        {f.label} {frreFieldMandatory(f, decision) ? <span className="text-red-600">*</span> : null}
-        {f.fieldType === "user_picker" ? (
-          <UserPickerControl field={f} value={raw} onChange={(v) => onChange(f.fieldKey, v)} />
-        ) : f.fieldType === "dropdown" ? (
-          <select
-            className="crm-input mt-1"
-            value={strValue}
-            onChange={(e) => onChange(f.fieldKey, e.target.value)}
-          >
-            <option value="">Select {f.label}</option>
-            {f.options.map((o) => (
-              <option key={o.valueKey} value={o.valueKey}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            type={f.fieldType === "number" ? "number" : f.fieldType === "datetime" ? "datetime-local" : "text"}
-            className="crm-input mt-1"
-            value={strValue}
-            onChange={(e) => onChange(f.fieldKey, e.target.value)}
-          />
-        )}
-      </label>
-    );
-  }
-
+  const visibleTabs = useVisibleDispositionTabs(fields, tabs, decision);
   return (
     <>
-      {unassigned.filter((f) => fieldVisible(f, decision)).map(renderField)}
-      {customTabs
-        .filter((t) => tabVisible(t, decision))
-        .map((tab) => {
-          const tabFields = nonProtected.filter((f) => f.formTabId === tab.id && fieldVisible(f, decision));
-          if (tabFields.length === 0) return null;
-          return (
-            <div key={tab.id} className="sm:col-span-2">
-              <p className="mb-2 mt-1 text-xs font-semibold uppercase tracking-wide text-crm-muted">{tab.name}</p>
-              <div className="grid gap-3 sm:grid-cols-2">{tabFields.map(renderField)}</div>
-            </div>
-          );
-        })}
-    </>
-  );
-}
-
-/**
- * user_picker control — RBAC-scoped user list from GET /api/forms/user-picker
- * (scope from the field config). Single mode -> a <select> storing one id (string);
- * multi mode -> a checkbox list storing string[]. The value shape (string vs
- * string[]) is what survives to CrmFieldValue.valueUserIds via the widened
- * field-values pipeline.
- */
-function UserPickerControl({
-  field,
-  value,
-  onChange,
-}: {
-  field: FrreField;
-  value: string | string[] | undefined;
-  onChange: (v: string | string[]) => void;
-}) {
-  const [options, setOptions] = useState<{ id: string; name: string; email: string }[]>([]);
-  const scope = field.userPickerScope ?? "all_users";
-  const isMulti = field.userPickerMode === "multi";
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/forms/user-picker?scope=${encodeURIComponent(scope)}`, {
-          credentials: "include",
-        });
-        const json = await res.json();
-        if (!cancelled && res.ok) setOptions(Array.isArray(json.data) ? json.data : []);
-      } catch {
-        if (!cancelled) setOptions([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [scope]);
-
-  if (isMulti) {
-    const selected = Array.isArray(value) ? value : value ? [value] : [];
-    return (
-      <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-crm-border p-2">
-        {options.length === 0 ? (
-          <p className="px-1 py-1 text-xs text-crm-muted">No users available.</p>
-        ) : (
-          options.map((u) => (
-            <label key={u.id} className="flex items-center gap-2 px-1 py-1 text-sm font-normal text-crm-text">
-              <input
-                type="checkbox"
-                checked={selected.includes(u.id)}
-                onChange={(e) =>
-                  onChange(e.target.checked ? [...selected, u.id] : selected.filter((id) => id !== u.id))
-                }
-              />
-              {u.name || u.email}
-            </label>
-          ))
-        )}
-      </div>
-    );
-  }
-
-  const single = typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
-  return (
-    <select className="crm-input mt-1" value={single} onChange={(e) => onChange(e.target.value)}>
-      <option value="">Select user</option>
-      {options.map((u) => (
-        <option key={u.id} value={u.id}>
-          {u.name || u.email}
-        </option>
+      {unassignedFields(fields, decision).map((f) => (
+        <DispositionField key={f.id} field={f} decision={decision} values={values} onChange={onChange} />
       ))}
-    </select>
+      {visibleTabs.map((tab) => (
+        <div key={tab.id} className="sm:col-span-2">
+          <p className="mb-2 mt-1 text-xs font-semibold uppercase tracking-wide text-crm-muted">{tab.name}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {fieldsForTab(fields, tab.id, decision).map((f) => (
+              <DispositionField key={f.id} field={f} decision={decision} values={values} onChange={onChange} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

@@ -416,7 +416,7 @@ export function LeadCallDispositionModal({
   const [selectedId, setSelectedId] = useState("");
   const [toNumber, setToNumber] = useState("");
   const [fromNumber, setFromNumber] = useState("");
-  const [durationSec, setDurationSec] = useState("60");
+  const [durationSec, setDurationSec] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
   const [selectedSubStage, setSelectedSubStage] = useState("");
   const [selectedReason, setSelectedReason] = useState("");
@@ -509,7 +509,7 @@ export function LeadCallDispositionModal({
     setErr(null);
     setSelectedId("");
     setFromNumber("");
-    setDurationSec("60");
+    setDurationSec("");
     setToNumber(defaultToNumber.trim());
     setSelectedStatus("");
     setSelectedSubStage("");
@@ -622,7 +622,7 @@ export function LeadCallDispositionModal({
         source,
         toNumber: to,
         fromNumber: fromNumber.trim() || null,
-        durationSec: Math.max(0, Math.floor(Number.parseFloat(durationSec) || 0)),
+        durationSec: durationSec.trim() ? Math.max(0, Math.floor(Number.parseFloat(durationSec) || 0)) : null,
         callDispositionId: selectedId,
         linkedLeadId: leadId,
         providerCallSid: providerCallSid?.trim() || null,
@@ -687,7 +687,9 @@ export function LeadCallDispositionModal({
         ...built.payload,
         source,
         fromNumber: fromNumber.trim() || null,
-        durationSec: Math.max(0, Math.floor(Number.parseFloat(durationSec) || 0)),
+        // No fabricated duration: only send a real one when the agent entered it
+        // (manual dispositions with no call leave this blank -> null).
+        durationSec: durationSec.trim() ? Math.max(0, Math.floor(Number.parseFloat(durationSec) || 0)) : null,
         providerCallSid: providerCallSid?.trim() || null,
       });
       setPendingCallLogId(row.id);
@@ -744,7 +746,7 @@ export function LeadCallDispositionModal({
       }}
     >
       <div
-        className="w-full max-w-4xl rounded-xl border border-crm-border bg-white p-4 shadow-xl"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-y-auto rounded-xl border border-crm-border bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {view === "menu" ? (

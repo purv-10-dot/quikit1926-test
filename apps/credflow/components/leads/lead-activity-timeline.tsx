@@ -6,6 +6,7 @@ import { LEAD_SYSTEM_ACTIVITY_CODE } from "@/lib/services/leads/log-lead-system-
 import { useToast } from "@/hooks/use-toast";
 import { formatDateTime } from "@/lib/utils/date-helpers";
 import { activityHeadline } from "@/lib/utils/activity-headline";
+import { DispositionFormDetails } from "@/components/leads/disposition/disposition-form-details";
 
 interface ActivityItem {
   id: string;
@@ -270,6 +271,14 @@ function ActivityEntry({ activity }: { activity: ActivityItem }) {
             {activity.followUpAt && (
               <div className="mt-1 text-xs text-amber-700">
                 Follow-up: {formatDateTime(activity.followUpAt)}
+              </div>
+            )}
+            {/* Custom disposition form values (Payment Form etc.) live in
+                CrmFieldValue keyed to this activity — offer a read-only view
+                for call/disposition entries, where such fields can exist. */}
+            {/call|disposition/i.test(`${activity.type} ${activity.activityCode ?? ""}`) && (
+              <div className="mt-2">
+                <DispositionFormDetails activityId={activity.id} />
               </div>
             )}
           </div>

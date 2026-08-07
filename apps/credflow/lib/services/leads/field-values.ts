@@ -89,6 +89,97 @@ async function distinctDynamicValues(tenantId: string, key: string): Promise<str
  *  their own inputs (spinner / date picker) and never a distinct-value picker. */
 const PICKABLE_CUSTOM_TYPES = new Set(["Select", "MultiSelect", "Text", "Email", "Phone"]);
 
+/**
+ * Real (non-dynamicFields) CrmLead columns that are enum-ish enough to offer a
+ * value picker via capped DB-distinct. These are standard columns like `source`
+ * that are NOT pipeline fields and NOT dynamicFields keys, so the pipeline and
+ * custom branches both miss them — this whitelist is what gives e.g. Source its
+ * `in` multiselect in both the advanced filter and automation conditions.
+ *
+ * SECURITY: this is an ALLOW-LIST of literal column identifiers. Each entry maps
+ * to a hard-coded query below — the field key is NEVER interpolated into SQL.
+ */
+const REAL_COLUMN_DISTINCT = new Set([
+  "source",
+  "leadQuality",
+  "industry",
+  "country",
+  "cityName",
+  "stateName",
+  "jobTitle",
+]);
+
+/**
+ * DISTINCT non-empty values for a whitelisted REAL column. The column is chosen
+ * from REAL_COLUMN_DISTINCT (never caller input) and each maps to a fixed query,
+ * so there is no SQL injection surface. Live leads only, tenant-scoped, capped.
+ */
+async function distinctRealColumn(tenantId: string, column: string): Promise<string[]> {
+  // Hard-coded per-column queries — no identifier interpolation.
+  const q = (rows: { v: string | null }[]) =>
+    rows.map((r) => r.v).filter((v): v is string => v != null && v !== "");
+  switch (column) {
+    case "source":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT source AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(source, '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    case "leadQuality":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT "leadQuality" AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("leadQuality", '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    case "industry":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT industry AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(industry, '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    case "country":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT country AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(country, '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    case "cityName":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT "cityName" AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("cityName", '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    case "stateName":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT "stateName" AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("stateName", '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    case "jobTitle":
+      return q(await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT "jobTitle" AS v FROM app_quikcrm."CrmLead"
+        WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("jobTitle", '') IS NOT NULL
+        GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
+    default:
+      return [];
+  }
+}
+
+/**
+ * Active tenant users as { value: userId, label: "Name (email)" } — the value
+ * source for people fields like `ownerId`. Owner conditions store the user id,
+ * so the picker shows names/emails while the stored value stays the id.
+ */
+async function ownerUserOptions(tenantId: string): Promise<FieldValueOption[]> {
+  const members = await prisma.orgMember.findMany({
+    where: { orgId: tenantId, status: "active" },
+    select: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  return members
+    .map((m) => m.user)
+    .filter((u): u is NonNullable<typeof u> => u != null)
+    .map((u) => {
+      const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+      const label = name ? (u.email ? `${name} (${u.email})` : name) : u.email;
+      return { value: u.id, label };
+    });
+}
+
 export async function resolveFieldValues(
   tenantId: string,
   fieldKey: string,
@@ -99,6 +190,24 @@ export async function resolveFieldValues(
     const values = fieldKey === "stage" ? p.stages : fieldKey === "status" ? p.statuses : p.substatuses;
     if (values.length === 0) return { source: "none", values: null, reason: "free_text" };
     return { source: "pipeline", values: toOpts(values) };
+  }
+
+  // 1b) People fields — ownerId resolves to the tenant's user list (id → name).
+  if (fieldKey === "ownerId") {
+    const opts = await ownerUserOptions(tenantId);
+    if (opts.length === 0) return { source: "none", values: null, reason: "free_text" };
+    return { source: "distinct", values: opts };
+  }
+
+  // 1c) Whitelisted REAL standard columns (source, leadQuality, …) — capped
+  //     DB-distinct on the actual column. This is what gives Source its picker
+  //     in both the advanced filter and automation conditions.
+  if (REAL_COLUMN_DISTINCT.has(fieldKey)) {
+    const values = await distinctRealColumn(tenantId, fieldKey);
+    if (values.length === 0 || values.length > PICKER_MAX) {
+      return { source: "none", values: null, reason: "free_text" };
+    }
+    return { source: "distinct", values: toOpts(values) };
   }
 
   // Custom (dynamicFields) fields — resolve against the org's LIVE defs so an

@@ -2,24 +2,25 @@
  * FR-RE Unit 3a (FR-RE-3) — user_picker field type.
  *
  * Two responsibilities:
- *   1. listUsersForPicker — the RBAC-scoped list of users an agent may pick.
+ *   1. listUsersForPicker — the user list an agent may pick for a user_picker field.
  *   2. validateUserPickerSelection — single/multi + dedup guard for the value
  *      written to CrmFieldValue.valueUserIds on save (full save wiring: Unit 6).
  *
- * RBAC model — the user-level analog of getScope (lib/auth/account-acl.ts),
- * reusing the SAME group tables (CrmSalesGroupMember + CrmSalesGroupManager):
- *   - Administrator  -> unrestricted (sees every active tenant user).
- *   - Any other user -> may only see their sales-group co-members (+ themselves).
+ * Scope model (2026-08-06):
+ *   - all_users -> every ACTIVE tenant user (the field is explicitly configured
+ *     as an org-wide picker, so it is NOT clamped to the caller's team; this is
+ *     what "add a user_picker showing all users" requires). Read-only identity
+ *     data (name + email) within the caller's own tenant — no cross-tenant leak.
+ *   - team       -> the caller's sales-group co-members (+ self); self-only if teamless.
+ *   - role       -> active tenant users holding the given role (no role => empty).
  *
- * Deliberate divergence from getScope: there, an empty ACL means "unrestricted"
- * (back-compat for ACCOUNT access). Here that would leak identities across
- * scopes (AC-RE-17), so a non-admin in NO sales group is FAIL-CLOSED to
- * themselves only — missing scope data must mean "see less", not "see all".
+ * The team/role clamps reuse the SAME group tables as getScope
+ * (CrmSalesGroupMember + CrmSalesGroupManager). Missing scope data fails CLOSED
+ * (see callerTeam) so a teamless non-admin never widens past themselves on the
+ * team scope. all_users is an intentional, config-driven org-wide list.
  */
 import { db } from "@/lib/db";
 import type { Prisma } from "@quikit/database";
-
-const ADMIN_ROLE = "Administrator";
 
 export type UserPickerScope = "all_users" | "team" | "role";
 export type UserPickerMode = "single" | "multi";
@@ -51,9 +52,7 @@ async function callerGroupIds(userId: string): Promise<string[]> {
     db.crmSalesGroupMember.findMany({ where: { userId }, select: { groupId: true } }),
     db.crmSalesGroupManager.findMany({ where: { userId }, select: { groupId: true } }),
   ]);
-  return [
-    ...new Set([...member.map((g) => g.groupId), ...manager.map((g) => g.groupId)]),
-  ];
+  return [...new Set([...member.map((g) => g.groupId), ...manager.map((g) => g.groupId)])];
 }
 
 /** Every user (member OR manager) who belongs to any of the given groups. */
@@ -69,10 +68,7 @@ async function usersInGroups(groupIds: string[]): Promise<Set<string>> {
       select: { userId: true },
     }),
   ]);
-  return new Set([
-    ...members.map((m) => m.userId),
-    ...managers.map((m) => m.userId),
-  ]);
+  return new Set([...members.map((m) => m.userId), ...managers.map((m) => m.userId)]);
 }
 
 /** Caller's own team co-members, always including the caller themselves. */
@@ -82,34 +78,65 @@ async function callerTeam(userId: string): Promise<Set<string>> {
   return team;
 }
 
+function toOptions(
+  members: { userId: string; user: { id: string; firstName: string | null; lastName: string | null; email: string } | null }[],
+): UserPickerOption[] {
+  return members
+    .filter((m): m is typeof m & { user: NonNullable<typeof m.user> } => m.user != null)
+    .map((m) => ({
+      id: m.user.id,
+      name: `${m.user.firstName ?? ""} ${m.user.lastName ?? ""}`.trim(),
+      email: m.user.email,
+    }));
+}
+
 /**
- * The RBAC-scoped user list for a user_picker field. The result is ALWAYS
- * clamped to what the calling user is permitted to see — an Administrator sees
- * everyone; anyone else sees only their team (fail-closed to self if teamless).
+ * The user list for a user_picker field, resolved by the field's configured
+ * scope. all_users returns every active tenant user (org-wide, by design);
+ * team/role are clamped to the caller's permitted set.
  */
 export async function listUsersForPicker(
   user: SessionLike,
   opts: { scope: UserPickerScope; role?: string | null },
 ): Promise<UserPickerOption[]> {
-  const isAdmin = user.role === ADMIN_ROLE;
-
-  // Permitted set (the security clamp). null === unrestricted (admin only).
-  const permitted = isAdmin ? null : await callerTeam(user.userId);
-
-  // Population by configured scope.
   const where: Prisma.OrgMemberWhereInput = {
     orgId: user.tenantId,
     status: "active",
   };
+
+  if (opts.scope === "all_users") {
+    // Org-wide, config-driven picker: all active users in the caller's tenant.
+    // No team clamp — the field is explicitly an all-users picker. Tenant scope
+    // (orgId) still prevents any cross-tenant exposure.
+    const members = await db.orgMember.findMany({
+      where,
+      select: {
+        userId: true,
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    return toOptions(members);
+  }
+
   if (opts.scope === "role") {
     // No role => no population (cannot widen past a missing filter).
     where.role = opts.role ?? "\0__no_such_role__";
-  }
-  if (opts.scope === "team") {
-    // "Your team" — resolved per-caller (admin included). Self-only if teamless.
-    where.userId = { in: [...(await callerTeam(user.userId))] };
+    const members = await db.orgMember.findMany({
+      where,
+      select: {
+        userId: true,
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    return toOptions(members);
   }
 
+  // scope === "team": the caller's sales-group co-members (+ self). Fail-closed
+  // to self when teamless — missing scope data means "see less", not "see all".
+  const team = await callerTeam(user.userId);
+  where.userId = { in: [...team] };
   const members = await db.orgMember.findMany({
     where,
     select: {
@@ -118,18 +145,7 @@ export async function listUsersForPicker(
     },
     orderBy: { createdAt: "asc" },
   });
-
-  const visible = permitted
-    ? members.filter((m) => permitted.has(m.userId))
-    : members;
-
-  return visible
-    .filter((m): m is typeof m & { user: NonNullable<typeof m.user> } => m.user != null)
-    .map((m) => ({
-      id: m.user.id,
-      name: `${m.user.firstName} ${m.user.lastName}`.trim(),
-      email: m.user.email,
-    }));
+  return toOptions(members);
 }
 
 /**
@@ -137,10 +153,7 @@ export async function listUsersForPicker(
  * CrmFieldValue.valueUserIds. Required-ness is enforced separately by the
  * field's requiredLevel, so an empty selection is allowed here.
  */
-export function validateUserPickerSelection(
-  mode: UserPickerMode,
-  userIds: string[],
-): void {
+export function validateUserPickerSelection(mode: UserPickerMode, userIds: string[]): void {
   if (new Set(userIds).size !== userIds.length) {
     throw new UserPickerValidationError("A user cannot be selected more than once.");
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ConditionBuilder } from "./condition-builder";
 import type { IfElseConfig } from "@/types/workflow";
 
@@ -9,6 +10,12 @@ import type { IfElseConfig } from "@/types/workflow";
  * through the A2 save path. Field/value routing for update_lead_field (stage →
  * transition-service, status/other → PATCH) is invisible to the author — the
  * engine decides per Constraint 1.3.
+ *
+ * UX (2026-08-06): update_lead_field's Field is now a DROPDOWN and its Value is
+ * a real picker (fed by /api/leads/field-values) for enumerable fields like
+ * stage/status/substatus/source — so authors don't hand-type values that
+ * contain spaces/parens (e.g. "Not Connected(New Lead)"). Free-text only for
+ * non-enumerable fields.
  *
  * send_email / distribute_lead (assign) config is authored here, but the engine
  * behaviour behind them is Track B's (B1–B3); per the §7 integration order those
@@ -28,7 +35,16 @@ export interface SelectedNode {
   config: Record<string, unknown>;
 }
 
-const LEAD_FIELDS = ["stage", "status", "substatus", "ownerId", "source", "email", "phone", "company", "name"];
+/** Selectable lead fields for update_lead_field (label shown, key stored). */
+const UPDATE_FIELD_OPTIONS: { key: string; label: string }[] = [
+  { key: "stage", label: "Stage" },
+  { key: "status", label: "Status" },
+  { key: "substatus", label: "Sub Status" },
+  { key: "source", label: "Source" },
+  { key: "leadQuality", label: "Lead Quality" },
+  { key: "ownerId", label: "Owner" },
+];
+
 const MERGE_FIELDS = ["name", "email", "company", "phone", "source"];
 
 const KIND_TITLE: Record<string, string> = {
@@ -42,6 +58,55 @@ const KIND_TITLE: Record<string, string> = {
   notify_user: "Notify User",
   send_email: "Send Email",
 };
+
+type FieldValuesResult =
+  | { source: "pipeline" | "options" | "distinct"; values: { value: string; label: string }[] }
+  | { source: "none"; values: null; reason?: string };
+
+const valueCache = new Map<string, { value: string; label: string }[]>();
+
+/** Fetch pickable values for a field from the shared field-values endpoint. */
+function useFieldValues(field: string): { options: { value: string; label: string }[]; loading: boolean } {
+  const [options, setOptions] = useState<{ value: string; label: string }[]>(() => valueCache.get(field) ?? []);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!field) {
+      setOptions([]);
+      return;
+    }
+    const cached = valueCache.get(field);
+    if (cached) {
+      setOptions(cached);
+      return;
+    }
+    setLoading(true);
+    setOptions([]);
+    fetch(`/api/leads/field-values?field=${encodeURIComponent(field)}`, { credentials: "include" })
+      .then((r) => (r.ok ? (r.json() as Promise<FieldValuesResult>) : null))
+      .then((json) => {
+        if (cancelled) return;
+        const list = json && json.source !== "none" && Array.isArray(json.values) ? json.values : [];
+        valueCache.set(field, list);
+        setOptions(list);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          valueCache.set(field, []);
+          setOptions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [field]);
+
+  return { options, loading };
+}
 
 export function NodeConfigPanel({
   node,
@@ -85,29 +150,12 @@ export function NodeConfigPanel({
         )}
 
         {node.kind === "update_lead_field" && (
-          <>
-            <Field label="Field">
-              <input
-                list="cfg-lead-fields"
-                value={str("field")}
-                onChange={(e) => set("field", e.target.value)}
-                placeholder="e.g. status"
-                className="crm-input"
-              />
-            </Field>
-            <Field label="Value">
-              <input value={str("value")} onChange={(e) => set("value", e.target.value)} className="crm-input" />
-            </Field>
-            <p className="text-xs text-crm-muted">
-              Stage changes route through the pipeline; status and other fields through the save path — handled
-              automatically.
-            </p>
-            <datalist id="cfg-lead-fields">
-              {LEAD_FIELDS.map((f) => (
-                <option key={f} value={f} />
-              ))}
-            </datalist>
-          </>
+          <UpdateLeadFieldConfig
+            field={str("field")}
+            value={str("value")}
+            onFieldChange={(field) => onChangeConfig({ ...cfg, field, value: "" })}
+            onValueChange={(value) => set("value", value)}
+          />
         )}
 
         {node.kind === "wait" && (
@@ -181,7 +229,7 @@ export function NodeConfigPanel({
                           )
                         }
                       />
-                      <span>{u.name}</span>
+                      <span>{userLabel(u)}</span>
                     </label>
                   );
                 })}
@@ -192,7 +240,7 @@ export function NodeConfigPanel({
                 <option value="">— select —</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.name}
+                    {userLabel(u)}
                   </option>
                 ))}
               </select>
@@ -214,7 +262,7 @@ export function NodeConfigPanel({
                 <option value="ownerId">Lead owner</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.name}
+                    {userLabel(u)}
                   </option>
                 ))}
               </select>
@@ -236,7 +284,7 @@ export function NodeConfigPanel({
                 <option value="">— select —</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.name}
+                    {userLabel(u)}
                   </option>
                 ))}
               </select>
@@ -251,6 +299,65 @@ export function NodeConfigPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+/** "Name <email>" so authors can disambiguate users (matches adv-filter people fields). */
+function userLabel(u: PanelUser): string {
+  return u.email ? `${u.name} <${u.email}>` : u.name;
+}
+
+/** update_lead_field: Field dropdown + value picker fed by /api/leads/field-values. */
+function UpdateLeadFieldConfig({
+  field,
+  value,
+  onFieldChange,
+  onValueChange,
+}: {
+  field: string;
+  value: string;
+  onFieldChange: (field: string) => void;
+  onValueChange: (value: string) => void;
+}) {
+  const { options, loading } = useFieldValues(field);
+  const hasPicker = options.length > 0;
+
+  return (
+    <>
+      <Field label="Field">
+        <select value={field} onChange={(e) => onFieldChange(e.target.value)} className="crm-input">
+          <option value="">— select field —</option>
+          {UPDATE_FIELD_OPTIONS.map((f) => (
+            <option key={f.key} value={f.key}>
+              {f.label}
+            </option>
+          ))}
+          {field && !UPDATE_FIELD_OPTIONS.some((f) => f.key === field) && <option value={field}>{field}</option>}
+        </select>
+      </Field>
+
+      <Field label="Value">
+        {loading && <p className="text-xs text-crm-muted">Loading values…</p>}
+        {!loading && hasPicker && (
+          <select value={value} onChange={(e) => onValueChange(e.target.value)} className="crm-input">
+            <option value="">— select value —</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {!loading && !hasPicker && (
+          <input value={value} onChange={(e) => onValueChange(e.target.value)} className="crm-input" placeholder="value" />
+        )}
+      </Field>
+
+      <p className="text-xs text-crm-muted">
+        Stage changes route through the pipeline; status and other fields through the save path — handled
+        automatically.
+      </p>
+    </>
   );
 }
 

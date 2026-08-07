@@ -25,6 +25,7 @@ import {
 import { LeadEmptyState } from "@/components/leads/dashboard/empty-state";
 import { TimelineSkeleton } from "@/components/leads/dashboard/skeleton";
 import { CallRecordingPlayer } from "@/components/telephony/call-recording-player";
+import { DispositionFormDetails } from "@/components/leads/disposition/disposition-form-details";
 
 const FILTERS: { key: TimelineFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -200,7 +201,10 @@ export function UnifiedTimeline({
 function TimelineRow({ item }: { item: UnifiedTimelineItem }) {
   const Icon = ICONS[item.kind];
   const isSystem = item.kind === "system";
-  const isCall = item.kind === "call";
+  // Green treatment is reserved for REAL calls (an actual call-log row or a
+  // "Call" activity linked to one). A manual disposition update is captured but
+  // rendered plain, so the timeline never implies a call that didn't happen.
+  const isCall = !!item.isRealCall;
   // Absolute entered time (occurredAt-based; item.at = occurredAt ?? createdAt),
   // app-standard formatDateTime — matches the Call Disposition tab by construction.
   // Replaces the relative "X ago" (A1: one unambiguous absolute time).
@@ -281,6 +285,14 @@ function TimelineRow({ item }: { item: UnifiedTimelineItem }) {
         {item.kind === "call" && item.recordingUrl ? (
           <div className="mt-2">
             <CallRecordingPlayer recordingUrl={item.recordingUrl} />
+          </div>
+        ) : null}
+        {/* Saved custom disposition form values live in CrmFieldValue keyed to
+            the activity — offer the read-only "See form details" view on
+            disposition-derived activity rows (call / stage-change / activity). */}
+        {item.activityId && (item.kind === "call" || item.kind === "stage" || item.kind === "activity") ? (
+          <div className="mt-2">
+            <DispositionFormDetails activityId={item.activityId} />
           </div>
         ) : null}
       </div>

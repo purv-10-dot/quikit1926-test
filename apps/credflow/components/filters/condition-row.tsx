@@ -53,7 +53,64 @@ function applyDynamicOptions(
   if (!def) return def;
   const opts = dynamicOptions[def.field];
   if (!opts || opts.length === 0) return def;
-  return { ...def, type: "select", options: opts };
+  // Promote to a select so `in` / `notIn` + the ChipsMultiSelect become
+  // available. Preserve any operators the catalog already declared, otherwise
+  // fall back to the select defaults (which include in / notIn).
+  return { ...def, type: "select", options: opts, operators: def.operators ?? DEFAULT_OPERATORS.select };
+}
+
+/**
+ * Lazily fetch pickable VALUES for a filter field from /api/leads/field-values
+ * (the same endpoint the value-picker uses elsewhere). Standard text columns
+ * with an enumerable value set (e.g. `source` once it's mapped, or any capped
+ * DB-distinct field) become a multiselect with in / notIn, instead of a bare
+ * text box. Fields that resolve to free-text ({ source: "none" }) are cached as
+ * [] and keep their normal text/date/number input. Module-level cache avoids
+ * refetching the same field across rows / re-opens.
+ */
+const fieldValuesCache = new Map<string, { value: string; label: string }[]>();
+
+type FieldValuesResponse =
+  | { source: "pipeline" | "options" | "distinct"; values: { value: string; label: string }[] }
+  | { source: "none"; values: null; reason?: string };
+
+function useFetchedFieldOptions(field: string): Record<string, { value: string; label: string }[]> {
+  const [options, setOptions] = useState<{ value: string; label: string }[] | null>(
+    () => fieldValuesCache.get(field) ?? null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!field) {
+      setOptions(null);
+      return;
+    }
+    const cached = fieldValuesCache.get(field);
+    if (cached) {
+      setOptions(cached);
+      return;
+    }
+    setOptions(null);
+    void fetch(`/api/leads/field-values?field=${encodeURIComponent(field)}`, { credentials: "include" })
+      .then((r) => (r.ok ? (r.json() as Promise<FieldValuesResponse>) : null))
+      .then((json) => {
+        if (cancelled || !json) return;
+        const list = json.source !== "none" && Array.isArray(json.values) ? json.values : [];
+        fieldValuesCache.set(field, list);
+        setOptions(list);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          fieldValuesCache.set(field, []);
+          setOptions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [field]);
+
+  return options && options.length > 0 ? { [field]: options } : {};
 }
 
 /** Uniform control height so field / operator / value line up. */
@@ -337,12 +394,17 @@ export function ConditionRowEditor({
 }: Props) {
   const allFields: FilterFieldDef[] = [...LEAD_FILTER_FIELDS, ...extraFields];
   const rawDef = allFields.find((f) => f.field === row.field) ?? getStaticField(row.field);
-  const def = applyDynamicOptions(rawDef, dynamicOptions);
+  // Lazily fetch real values for the selected field and merge them over the
+  // caller-supplied dynamicOptions (caller options win). This promotes standard
+  // enumerable columns (e.g. source) to a multiselect with in / notIn.
+  const fetchedOptions = useFetchedFieldOptions(row.field);
+  const mergedOptions = { ...fetchedOptions, ...dynamicOptions };
+  const def = applyDynamicOptions(rawDef, mergedOptions);
   const operators = def?.operators ?? (def ? DEFAULT_OPERATORS[def.type] : []);
 
   function setField(name: string) {
     const rawNewDef = allFields.find((f) => f.field === name);
-    const newDef = applyDynamicOptions(rawNewDef, dynamicOptions);
+    const newDef = applyDynamicOptions(rawNewDef, mergedOptions);
     const newOp = (newDef?.operators ?? (newDef ? DEFAULT_OPERATORS[newDef.type] : []))[0] ?? "eq";
     onChange({ field: name, operator: newOp, value: undefined, valueTo: undefined });
   }

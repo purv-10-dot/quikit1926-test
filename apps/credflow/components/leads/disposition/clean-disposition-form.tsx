@@ -1,22 +1,29 @@
 "use client";
 
 /**
- * FR-RE Stage 2b — the clean disposition form (rendered when a live FR-RE form
- * exists; otherwise the modal shows the legacy fallback). Pure FR-RE structure,
- * no legacy Section1/3 / demo block / STAGE_STATUS_OPTIONS / disposition picker.
+ * FR-RE Stage 2b — the clean disposition form, now a TABBED interface.
  *
- * ONE primary selection: Status, from the canonical stage-filtered source
- * (getDispositionStatuses via /api/forms/disposition-statuses) — the rule trigger.
- * Plus the 4 protected fields (Contact Stage read-only, Status, Sub-Stage, Notes)
- * and the custom fields + rule-driven tabs via the shared <DispositionFieldGroups>.
+ * The whole modal is one tab strip at the top:
+ *   Tab 1 "Call Disposition" — the main form (Contact Stage, Status, Sub-Stage,
+ *     Activity DateTime, Notes, and any unassigned custom fields). Status is the
+ *     rule trigger and always lives here.
+ *   Tab 2..N — each rule-revealed custom tab (e.g. "Payment Form"), in sortOrder,
+ *     appearing only once a rule reveals it (show_tab) and it has a visible field.
  *
- * Stage 3-C: it now owns its own Save button (Option Y), wired to the modal's
- * submitCleanDisposition via onSave (which builds the payload through the shared
- * buildCleanCallLogPayload + hard-required guard). Legacy view keeps its own Save.
+ * Auto-switch: when a rule reveals a NEW tab, the active tab jumps to it so the
+ * agent lands on the revealed form without clicking. If the current status
+ * reveals no custom tab, the active tab returns to "Call Disposition". The agent
+ * can always click back to "Call Disposition" to change Status.
+ *
+ * Save / Cancel / error / the "rule will set stage" hint sit BELOW the tab panel,
+ * always visible regardless of the active tab.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  DispositionFieldGroups,
+  DispositionField,
+  fieldsForTab,
+  unassignedFields,
+  useVisibleDispositionTabs,
   type FrreField,
   type FrreTab,
 } from "@/components/leads/disposition/disposition-field-groups";
@@ -27,6 +34,8 @@ interface CleanRuntime {
   tabs: FrreTab[];
   fields: FrreField[];
 }
+
+const MAIN_TAB_ID = "__call_disposition__";
 
 export function CleanDispositionForm({
   runtime,
@@ -101,95 +110,147 @@ export function CleanDispositionForm({
 
   const subOptions = subByStatus[selectedStatus] ?? [];
 
+  // The rule-revealed custom tabs (ordered), plus the always-present main tab.
+  const revealedTabs = useVisibleDispositionTabs(runtime.fields, runtime.tabs, decision);
+  const unassigned = unassignedFields(runtime.fields, decision);
+
+  const [activeTabId, setActiveTabId] = useState<string>(MAIN_TAB_ID);
+  // Track which revealed tabs we've already auto-jumped to, so re-renders don't
+  // keep yanking the agent back after they manually navigate. Only a NEWLY
+  // revealed tab (one not seen before) triggers an auto-switch.
+  const seenTabIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const currentIds = new Set(revealedTabs.map((t) => t.id));
+
+    // Find a newly-revealed tab (present now, not seen before).
+    const newlyRevealed = revealedTabs.find((t) => !seenTabIds.current.has(t.id));
+    if (newlyRevealed) {
+      setActiveTabId(newlyRevealed.id);
+    } else if (activeTabId !== MAIN_TAB_ID && !currentIds.has(activeTabId)) {
+      // The active custom tab got hidden (status changed) — fall back to main.
+      setActiveTabId(MAIN_TAB_ID);
+    }
+
+    seenTabIds.current = currentIds;
+  }, [revealedTabs, activeTabId]);
+
+  const activeCustomTab = revealedTabs.find((t) => t.id === activeTabId) ?? null;
+
   return (
-    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-      {/* Contact Stage — read-only (moved by rules/pipeline, not set here). */}
-      <div className="text-sm font-medium text-crm-text">
-        Contact Stage
-        <div className="mt-1 rounded-md bg-crm-panel px-3 py-2 text-sm text-crm-muted">
-          {leadStage || "—"}
-        </div>
+    <div className="mt-3">
+      {/* ── Top tab-bar: Call Disposition + revealed tabs ─────────────────── */}
+      <div role="tablist" aria-label="Disposition sections" className="flex flex-wrap gap-1 border-b border-crm-border">
+        <TabButton
+          label="Call Disposition"
+          active={activeTabId === MAIN_TAB_ID}
+          onClick={() => setActiveTabId(MAIN_TAB_ID)}
+        />
+        {revealedTabs.map((tab) => (
+          <TabButton
+            key={tab.id}
+            label={tab.name}
+            active={activeTabId === tab.id}
+            onClick={() => setActiveTabId(tab.id)}
+          />
+        ))}
       </div>
 
-      {/* Status — the single primary selection + rule trigger. */}
-      <label className="text-sm font-medium text-crm-text">
-        Status <span className="text-red-600">*</span>
-        <select
-          className="crm-input mt-1"
-          value={selectedStatus}
-          onChange={(e) => onStatusChange(e.target.value)}
-        >
-          <option value="">Select status…</option>
-          {statuses.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
+      {/* ── Tab panel ─────────────────────────────────────────────────────── */}
+      {activeTabId === MAIN_TAB_ID ? (
+        <div role="tabpanel" className="mt-3 grid gap-3 sm:grid-cols-2">
+          {/* Contact Stage — read-only (moved by rules/pipeline, not set here). */}
+          <div className="text-sm font-medium text-crm-text">
+            Contact Stage
+            <div className="mt-1 rounded-md bg-crm-panel px-3 py-2 text-sm text-crm-muted">
+              {leadStage || "—"}
+            </div>
+          </div>
+
+          {/* Status — the single primary selection + rule trigger. */}
+          <label className="text-sm font-medium text-crm-text">
+            Status <span className="text-red-600">*</span>
+            <select
+              className="crm-input mt-1"
+              value={selectedStatus}
+              onChange={(e) => onStatusChange(e.target.value)}
+            >
+              <option value="">Select status…</option>
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* Sub-Stage — sub-statuses valid for the selected status (canonical). */}
+          {subOptions.length > 0 && (
+            <label className="text-sm font-medium text-crm-text">
+              Sub-Stage
+              <select
+                className="crm-input mt-1"
+                value={selectedSubStage}
+                onChange={(e) => onSubStageChange(e.target.value)}
+              >
+                <option value="">Select sub-stage…</option>
+                {subOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Activity DateTime — load-bearing for the save (FR-D2). */}
+          <label className="text-sm font-medium text-crm-text">
+            Activity DateTime
+            <input
+              type="datetime-local"
+              className="crm-input mt-1"
+              value={dateTimeValue}
+              onChange={(e) => onDateTimeChange(e.target.value)}
+            />
+          </label>
+
+          {/* Notes — protected field. */}
+          <label className="text-sm font-medium text-crm-text sm:col-span-2">
+            Notes
+            <textarea
+              className="crm-input mt-1 min-h-[72px]"
+              value={notes}
+              onChange={(e) => onNotesChange(e.target.value)}
+            />
+          </label>
+
+          {/* Unassigned custom fields (not bound to any tab) render on the main tab. */}
+          {unassigned.map((f) => (
+            <DispositionField key={f.id} field={f} decision={decision} values={fieldValues} onChange={onFieldChange} />
           ))}
-        </select>
-      </label>
+        </div>
+      ) : activeCustomTab ? (
+        <div role="tabpanel" className="mt-3 grid gap-3 sm:grid-cols-2">
+          {fieldsForTab(runtime.fields, activeCustomTab.id, decision).map((f) => (
+            <DispositionField key={f.id} field={f} decision={decision} values={fieldValues} onChange={onFieldChange} />
+          ))}
+        </div>
+      ) : null}
 
-      {/* Sub-Stage — sub-statuses valid for the selected status (canonical). */}
-      {subOptions.length > 0 && (
-        <label className="text-sm font-medium text-crm-text">
-          Sub-Stage
-          <select
-            className="crm-input mt-1"
-            value={selectedSubStage}
-            onChange={(e) => onSubStageChange(e.target.value)}
-          >
-            <option value="">Select sub-stage…</option>
-            {subOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      {/* Activity DateTime — load-bearing for the save (FR-D2). */}
-      <label className="text-sm font-medium text-crm-text">
-        Activity DateTime
-        <input
-          type="datetime-local"
-          className="crm-input mt-1"
-          value={dateTimeValue}
-          onChange={(e) => onDateTimeChange(e.target.value)}
-        />
-      </label>
-
-      {/* Notes — protected field. */}
-      <label className="text-sm font-medium text-crm-text sm:col-span-2">
-        Notes
-        <textarea
-          className="crm-input mt-1 min-h-[72px]"
-          value={notes}
-          onChange={(e) => onNotesChange(e.target.value)}
-        />
-      </label>
-
-      {/* Custom fields + rule-driven tabs (show_field / show_tab) — shared render. */}
-      <DispositionFieldGroups
-        fields={runtime.fields}
-        tabs={runtime.tabs}
-        decision={decision}
-        values={fieldValues}
-        onChange={onFieldChange}
-      />
-
+      {/* ── Footer (always visible, below the tab panel) ──────────────────── */}
       {decision?.setStage && (
-        <div className="rounded-md bg-crm-blue-soft px-3 py-2 text-xs font-medium text-crm-blue sm:col-span-2">
+        <div className="mt-3 rounded-md bg-crm-blue-soft px-3 py-2 text-xs font-medium text-crm-blue">
           Rule will set Contact Stage → {decision.setStage.status}
         </div>
       )}
 
       {error && (
-        <div className="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 sm:col-span-2">
+        <div className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
           {error}
         </div>
       )}
 
-      <div className="mt-1 flex items-center justify-end gap-2 border-t border-crm-border pt-3 sm:col-span-2">
+      <div className="mt-3 flex items-center justify-end gap-2 border-t border-crm-border pt-3">
         <button
           type="button"
           className="rounded px-4 py-1.5 text-sm font-medium text-crm-muted hover:text-crm-text"
@@ -207,5 +268,22 @@ export function CleanDispositionForm({
         </button>
       </div>
     </div>
+  );
+}
+
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={
+        "-mb-px rounded-t-md border-b-2 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition " +
+        (active ? "border-crm-blue text-crm-blue" : "border-transparent text-crm-muted hover:text-crm-text")
+      }
+    >
+      {label}
+    </button>
   );
 }

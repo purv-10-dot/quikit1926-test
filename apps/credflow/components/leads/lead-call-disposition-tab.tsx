@@ -6,13 +6,17 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDateTime } from "@/lib/utils/date-helpers";
 import { activityHeadline } from "@/lib/utils/activity-headline";
 import { Button } from "@/components/ui/button";
+import { DispositionFormDetails } from "@/components/leads/disposition/disposition-form-details";
 import type { ActivityRow } from "@/lib/services/activities/to-list-row";
 
 // Aligned to the /api/activities contract (ActivityRow from to-list-row): the API
 // sends the timestamp as `occurredAtIso` (NOT `occurredAt`). Picking from the
 // shared type makes a future field rename a compile error here, not a silent
 // "—" on screen (the prior inline `occurredAt?` masked exactly that drift).
-type ActivityItem = Pick<ActivityRow, "id" | "type" | "subject" | "outcome" | "detailNotes" | "occurredAtIso">;
+type ActivityItem = Pick<
+  ActivityRow,
+  "id" | "type" | "subject" | "outcome" | "detailNotes" | "occurredAtIso" | "linkedCallLogId"
+>;
 
 interface CallLogItem {
   id: string;
@@ -155,10 +159,27 @@ export function LeadCallDispositionTab({
       <ol className="space-y-3">
         {rows.map((row) =>
           row.kind === "activity" ? (
-            <li key={`a:${row.id}`} className="border-l-4 border-emerald-300 bg-emerald-50/50 pl-3">
+            // Green = a REAL call happened (linkedCallLogId set). A manual
+            // disposition update (no call) is captured but rendered plain, so the
+            // feed doesn't imply a call took place when it didn't.
+            (() => {
+              const realCall = !!row.activity.linkedCallLogId;
+              return (
+            <li
+              key={`a:${row.id}`}
+              className={
+                "border-l-4 pl-3 " +
+                (realCall ? "border-emerald-300 bg-emerald-50/50" : "border-crm-border")
+              }
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-2">
-                  <span className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                  <span
+                    className={
+                      "mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full " +
+                      (realCall ? "bg-emerald-100 text-emerald-700" : "bg-crm-panel text-crm-muted")
+                    }
+                  >
                     <Phone size={14} />
                   </span>
                   <div>
@@ -174,6 +195,9 @@ export function LeadCallDispositionTab({
                         {row.activity.detailNotes}
                       </div>
                     ) : null}
+                    <div className="mt-2">
+                      <DispositionFormDetails activityId={row.activity.id} />
+                    </div>
                   </div>
                 </div>
                 <span className="shrink-0 text-xs text-crm-muted">
@@ -181,6 +205,8 @@ export function LeadCallDispositionTab({
                 </span>
               </div>
             </li>
+              );
+            })()
           ) : (
             <li key={`c:${row.id}`} className="border-l-4 border-emerald-300 bg-emerald-50/50 pl-3">
               <div className="flex items-start justify-between">
