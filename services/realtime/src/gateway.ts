@@ -372,9 +372,15 @@ export function dispatchFanout(io: IOServer, evt: FanoutEvent): void {
 
   // Per-user event: deliver to the recipient's user room (the gateway joins it
   // on connect). Room built from orgId/userId — never from the payload.
+  //
+  // `.local`: every replica subscribes to the fanout channel and runs this same
+  // function, so a cluster-wide emit here would double (triple, ...) deliver —
+  // one dispatch per replica, each reaching the whole cluster via the adapter.
+  // Restricting to `.local` makes each replica serve only its own sockets, so
+  // the cluster-wide total is exactly one per connected socket.
   if (event === "notification") {
     if (!evt.userId) return;
-    io.to(userRoom(orgId, evt.userId)).emit("notification", payload);
+    io.to(userRoom(orgId, evt.userId)).local.emit("notification", payload);
     return;
   }
 
@@ -396,7 +402,7 @@ export function dispatchFanout(io: IOServer, evt: FanoutEvent): void {
       ...(p.statusMessage ? { statusMessage: p.statusMessage } : {}),
       ...(p.statusExpiresAt ? { statusExpiresAt: p.statusExpiresAt } : {}),
     };
-    for (const cid of p.channelIds) io.to(channelRoom(orgId, cid)).emit("presence_status", out);
+    for (const cid of p.channelIds) io.to(channelRoom(orgId, cid)).local.emit("presence_status", out);
     return;
   }
 
@@ -405,7 +411,7 @@ export function dispatchFanout(io: IOServer, evt: FanoutEvent): void {
   if (event === "channel_updated") {
     const p = payload as { channelId?: string };
     if (!p?.channelId) return;
-    io.to(channelRoom(orgId, evt.channelId)).emit("channel_updated", payload);
+    io.to(channelRoom(orgId, evt.channelId)).local.emit("channel_updated", payload);
     return;
   }
 
@@ -415,7 +421,7 @@ export function dispatchFanout(io: IOServer, evt: FanoutEvent): void {
   if (event === "channel_deleted") {
     const p = payload as { channelId?: string };
     if (!p?.channelId) return;
-    io.to(channelRoom(orgId, evt.channelId)).emit("channel_deleted", payload);
+    io.to(channelRoom(orgId, evt.channelId)).local.emit("channel_deleted", payload);
     return;
   }
 
@@ -423,5 +429,5 @@ export function dispatchFanout(io: IOServer, evt: FanoutEvent): void {
   // `system` is delivered as a `message` (it already carries a full MessageDto);
   // `read` carries { channelId, userId, readAt } for live read-receipts.
   const emitEvent = event === "system" ? "message" : event;
-  io.to(channelRoom(orgId, evt.channelId)).emit(emitEvent, payload);
+  io.to(channelRoom(orgId, evt.channelId)).local.emit(emitEvent, payload);
 }
