@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { NumberInput, DateInput, Select, Field } from "@quikit/ui";
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +43,7 @@ export function CreateOpportunityModal({
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState<number | null>(null);
   const [closeDate, setCloseDate] = useState("");
-  const [stage, setStage] = useState<CrmOpportunityStage>("Prospecting");
+  const [stage, setStage] = useState<QcfOpportunityStage>("Prospecting");
   const [titleError, setTitleError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +143,7 @@ export function CreateOpportunityModal({
           <Select
             value={stage}
             onChange={(e) =>
-              setStage((e.target as HTMLSelectElement).value as CrmOpportunityStage)
+              setStage((e.target as HTMLSelectElement).value as QcfOpportunityStage)
             }
             options={STAGE_ORDER.map((s) => ({ value: s, label: STAGE_LABEL[s] }))}
           />

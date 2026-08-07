@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
 
-    const wf = await prisma.crmWorkflowDefinition.findFirst({
+    const wf = await prisma.qcfWorkflowDefinition.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });

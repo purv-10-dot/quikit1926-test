@@ -6,7 +6,7 @@
  * `ownerId === their user id`, across every user-facing lead read, and cannot
  * open/edit/act on a non-owned lead by URL.
  *
- * VERIFIED FOUNDATION: CrmLead.ownerId === auth.User.id === quikit.OrgMember.userId
+ * VERIFIED FOUNDATION: QcfLead.ownerId === auth.User.id === quikit.OrgMember.userId
  * === SessionUser.userId (confirmed against real data — 0 unmatched). So the
  * comparison `ownerId === user.userId` is correct.
  *

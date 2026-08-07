@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
       // digits-only reduction of the query so "98765 43210" / "9876543210"
       // still hit. Text fields keep the raw-q insensitive contains.
       const digits = q.q.replace(/\D/g, "");
-      const searchOr: Prisma.CrmLeadWhereInput[] = [
+      const searchOr: Prisma.QcfLeadWhereInput[] = [
         { name: { contains: q.q, mode: "insensitive" } },
         { email: { contains: q.q, mode: "insensitive" } },
         { company: { contains: q.q, mode: "insensitive" } },
@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
     if (format) {
       const tz = readTzFromCookieHeader(req.headers.get("cookie"));
       const cursor = createPrismaCursorIterator<LeadCsvRow>({
-        delegate: prisma.crmLead as unknown as PrismaListDelegate<LeadCsvRow>,
+        delegate: prisma.qcfLead as unknown as PrismaListDelegate<LeadCsvRow>,
         where: finalWhere,
         select: LEAD_CSV_SELECT,
       });
@@ -128,19 +128,19 @@ export async function GET(req: NextRequest) {
 
     // Always include `id desc` as a tiebreaker so pages are stable even when
     // many rows share the same primary sort value (e.g. createdAt to the second).
-    const orderBy: Prisma.CrmLeadOrderByWithRelationInput[] =
+    const orderBy: Prisma.QcfLeadOrderByWithRelationInput[] =
       q.sortBy === "id"
         ? [{ id: q.sortDir }]
-        : [{ [q.sortBy]: q.sortDir } as Prisma.CrmLeadOrderByWithRelationInput, { id: "desc" }];
+        : [{ [q.sortBy]: q.sortDir } as Prisma.QcfLeadOrderByWithRelationInput, { id: "desc" }];
 
     const [items, total] = await Promise.all([
-      prisma.crmLead.findMany({
+      prisma.qcfLead.findMany({
         where: finalWhere,
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
         orderBy,
       }),
-      prisma.crmLead.count({ where: finalWhere }),
+      prisma.qcfLead.count({ where: finalWhere }),
     ]);
 
     const masked = await Promise.all(items.map((l) => maskHiddenLeadFields(user, l)));
@@ -242,15 +242,15 @@ export async function POST(req: NextRequest) {
     }
 
     // The schema migration kept `ownerId`/`accountId` as plain scalar FKs
-    // (no Prisma `owner`/`account` relation declared on CrmLead — cross-schema
+    // (no Prisma `owner`/`account` relation declared on QcfLead — cross-schema
     // FK to public.User isn't wired). Use the Unchecked input form which
     // accepts the scalar columns directly.
-    // Strip fields that exist in the Zod schema but not on CrmLead.
+    // Strip fields that exist in the Zod schema but not on QcfLead.
     // They are collected for other purposes (e.g. contact creation on convert)
-    // but passing them to prisma.crmLead.create() causes an "Unknown argument" error.
+    // but passing them to prisma.qcfLead.create() causes an "Unknown argument" error.
     // firstName/lastName/leadType/contactLinkedinUrl/requirementDetails are now
-    // real nullable columns on CrmLead (added 2026-07-08), so they flow through
-    // to createData below. Only fields that are NOT columns on CrmLead are
+    // real nullable columns on QcfLead (added 2026-07-08), so they flow through
+    // to createData below. Only fields that are NOT columns on QcfLead are
     // stripped here: originChannel (used for channel logic), technology (folded
     // into requirementDetails), topic, sourceDetails.
     const {
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
       ...(effectiveOwnerId ? { ownerId: effectiveOwnerId } : {}),
       ...(accountId ? { accountId } : {}),
       ...(!useAutoScore && parsed.data.score !== undefined ? { score: parsed.data.score } : {}),
-    } as Prisma.CrmLeadUncheckedCreateInput;
+    } as Prisma.QcfLeadUncheckedCreateInput;
     const headerOrigin = req.headers.get("x-lead-origin")?.trim();
     const channel =
       headerOrigin && isLeadCreationChannel(headerOrigin)

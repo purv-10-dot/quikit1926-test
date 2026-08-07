@@ -45,23 +45,23 @@ export async function POST(req: NextRequest) {
       allowedAccountIds = scope.allowedAccountIds;
     }
 
-    const baseWhere: Prisma.CrmAccountWhereInput = applyAccountListWhere(
+    const baseWhere: Prisma.QcfAccountWhereInput = applyAccountListWhere(
       { tenantId: user.tenantId },
       { trashed: false, allowedAccountIds, viewMine: null },
     );
 
     const advanced = buildAdvancedAccountWhere(conditions, combinator);
     const searchOr = search?.trim() ? buildAccountSearchOr(search.trim()) : [];
-    const andParts: Prisma.CrmAccountWhereInput[] = [baseWhere];
+    const andParts: Prisma.QcfAccountWhereInput[] = [baseWhere];
     if (advanced) andParts.push(advanced);
     if (searchOr.length > 0) andParts.push({ OR: searchOr });
-    const where: Prisma.CrmAccountWhereInput =
+    const where: Prisma.QcfAccountWhereInput =
       andParts.length === 1 ? andParts[0]! : { AND: andParts };
     if (topLevelOnly) {
       // Wrap once more so the existing AND list (if any) is preserved.
       Object.assign(where, {
         AND: [
-          ...((where.AND as Prisma.CrmAccountWhereInput[] | undefined) ?? [where]),
+          ...((where.AND as Prisma.QcfAccountWhereInput[] | undefined) ?? [where]),
           { parentAccountId: null },
         ],
       });
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      prisma.crmAccount.count({ where }),
+      prisma.qcfAccount.count({ where }),
     ]);
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));

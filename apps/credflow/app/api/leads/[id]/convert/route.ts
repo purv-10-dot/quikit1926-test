@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const opts = parsed.data;
 
-    const lead = await prisma.crmLead.findFirst({ where: { id, tenantId: user.tenantId } });
+    const lead = await prisma.qcfLead.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
     // Fast-path rejection. Also checks `status === "Converted"` so account-only
     // converts (which never set linkedContactId) are caught here too. This is a
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Accounts from a double-click or retry). It also closes the account-only
       // re-convert hole: linkedContactId is never set on those, but status/
       // convertedAt are, so the claim guards them regardless of createContact.
-      const claim = await tx.crmLead.updateMany({
+      const claim = await tx.qcfLead.updateMany({
         where: { id: lead.id, tenantId: user.tenantId, status: { not: "Converted" }, convertedAt: null },
         data: { status: "Converted", convertedAt: new Date() },
       });
@@ -66,14 +66,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const companyName = lead.company?.trim();
         const accountName = companyName || (opts.createContact ? lead.name.trim() : "");
         if (accountName) {
-          const existing = await tx.crmAccount.findFirst({
+          const existing = await tx.qcfAccount.findFirst({
             where: { tenantId: user.tenantId, name: accountName, deletedAt: null },
             select: { id: true },
           });
           accountId =
             existing?.id ??
             (
-              await tx.crmAccount.create({
+              await tx.qcfAccount.create({
                 data: {
                   tenantId: user.tenantId,
                   name: accountName,
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           contactFirstName = first || lead.name;
           contactLastName = rest.join(" ") || null;
         }
-        const contact = await tx.crmContact.create({
+        const contact = await tx.qcfContact.create({
           data: {
             tenantId: user.tenantId,
             firstName: contactFirstName,
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       let opportunityId: string | null = null;
       if (opts.createOpportunity) {
-        const opp = await tx.crmOpportunity.create({
+        const opp = await tx.qcfOpportunity.create({
           data: {
             tenantId: user.tenantId,
             name: opts.opportunityTitle || `${lead.name} — Opportunity`,
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       let notesRelinked = 0;
       let callsRelinked = 0;
       if (contactId) {
-        const activityRes = await tx.crmActivity.updateMany({
+        const activityRes = await tx.qcfActivity.updateMany({
           where: { tenantId: user.tenantId, leadId: lead.id },
           data: {
             relatedKind: "Contact",
@@ -157,19 +157,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         });
         activitiesRelinked = activityRes.count;
 
-        const taskRes = await tx.crmTask.updateMany({
+        const taskRes = await tx.qcfTask.updateMany({
           where: { tenantId: user.tenantId, leadId: lead.id },
           data: { relatedKind: "Contact", relatedObjectId: contactId },
         });
         tasksRelinked = taskRes.count;
 
-        const noteRes = await tx.crmNote.updateMany({
+        const noteRes = await tx.qcfNote.updateMany({
           where: { tenantId: user.tenantId, leadId: lead.id },
           data: { relatedKind: "Contact", relatedObjectId: contactId },
         });
         notesRelinked = noteRes.count;
 
-        const callRes = await tx.crmCallLog.updateMany({
+        const callRes = await tx.qcfCallLog.updateMany({
           where: { tenantId: user.tenantId, leadId: lead.id },
           data: { linkedContactId: contactId },
         });
@@ -196,7 +196,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         );
       }
 
-      const updatedLead = await tx.crmLead.update({
+      const updatedLead = await tx.qcfLead.update({
         where: { id: lead.id },
         data: {
           status: "Converted",

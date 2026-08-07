@@ -24,7 +24,7 @@ import {
   type RuleDecision,
 } from "@/lib/services/forms/form-rule-evaluator";
 
-/** Map a stored CrmFieldValue row to its EvalContext value, by valueType. */
+/** Map a stored QcfFieldValue row to its EvalContext value, by valueType. */
 function resolveFieldValue(row: {
   valueType: string;
   valueText: string | null;
@@ -49,7 +49,7 @@ function resolveFieldValue(row: {
 
 /** Adapter: a version's ACTIVE rules (conditions + actions) -> pure EvalRule[]. */
 export async function loadEvalRules(formSetVersionId: string): Promise<EvalRule[]> {
-  const rules = await prisma.crmFormRule.findMany({
+  const rules = await prisma.qcfFormRule.findMany({
     where: { formSetVersionId, isActive: true },
     orderBy: { sortOrder: "asc" },
     include: {
@@ -84,14 +84,14 @@ export async function loadEvalContext(
   leadId: string,
   activityId: string | null,
 ): Promise<EvalContext> {
-  const lead = await prisma.crmLead.findUnique({
+  const lead = await prisma.qcfLead.findUnique({
     where: { id: leadId },
     select: { stage: true, status: true, substatus: true },
   });
 
   const fieldValues: EvalContext["fieldValues"] = {};
   if (activityId) {
-    const rows = await prisma.crmFieldValue.findMany({
+    const rows = await prisma.qcfFieldValue.findMany({
       where: { activityId },
       select: {
         fieldKey: true,
@@ -172,7 +172,7 @@ export async function applyFormRules(input: {
     // stage) — kept as an escape hatch, off by default.
     if (process.env.FRRE_APPLY_STAGE === "1") {
       // The ONLY mutation — a plain terminal update (no hook -> no re-trigger).
-      await prisma.crmLead.update({
+      await prisma.qcfLead.update({
         where: { id: input.leadId, tenantId: input.tenantId },
         data: { stage: newStage },
       });
@@ -181,7 +181,7 @@ export async function applyFormRules(input: {
 
       // Traceability (FR-D5 discipline). Generic actor — 6a stays sealed, so the
       // source rule id is not threaded; add it later only if an audit view needs it.
-      await prisma.crmAuditLog.create({
+      await prisma.qcfAuditLog.create({
         data: {
           tenantId: input.tenantId,
           userId: null,

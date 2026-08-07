@@ -32,7 +32,7 @@ export async function logPriceListAudit(args: {
     args.changes == null
       ? undefined
       : (args.changes as unknown as Prisma.InputJsonValue);
-  await client.crmPriceListAuditLog.create({
+  await client.qcfPriceListAuditLog.create({
     data: {
       tenantId: args.tenantId,
       priceListId: args.priceListId,
@@ -54,13 +54,13 @@ export async function listPriceListAudit(args: {
 }) {
   const where = { tenantId: args.tenantId, priceListId: args.priceListId };
   const [items, total] = await Promise.all([
-    db.crmPriceListAuditLog.findMany({
+    db.qcfPriceListAuditLog.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (args.page - 1) * args.pageSize,
       take: args.pageSize,
     }),
-    db.crmPriceListAuditLog.count({ where }),
+    db.qcfPriceListAuditLog.count({ where }),
   ]);
   return {
     items,

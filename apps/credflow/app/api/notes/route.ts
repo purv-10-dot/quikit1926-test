@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const objectId = searchParams.get("relatedObjectId");
     const where: Record<string, unknown> = { tenantId: user.tenantId };
     if (objectId) where.relatedObjectId = objectId;
-    const items = await prisma.crmNote.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
+    const items = await prisma.qcfNote.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
     return NextResponse.json({
       items: items.map((n) => {
         const decoded = decodeAccountNoteContent(n.content);
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       rest.relatedKind.toLowerCase() === "account" && noteCategory
         ? encodeAccountNoteContent(noteCategory as AccountNoteCategoryId, content)
         : content;
-    const note = await prisma.crmNote.create({
+    const note = await prisma.qcfNote.create({
       data: {
         ...rest,
         content: storedContent,

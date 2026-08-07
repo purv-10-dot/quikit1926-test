@@ -12,7 +12,7 @@ function err(message: string, status = 500) {
 }
 
 async function loadOpp(tenantId: string, id: string) {
-  return db.crmOpportunity.findFirst({
+  return db.qcfOpportunity.findFirst({
     where: { id, tenantId },
     select: { id: true, accountId: true, name: true },
   });
@@ -32,7 +32,7 @@ export async function GET(
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
-    const meetings = await db.crmOpportunityClientMeeting.findMany({
+    const meetings = await db.qcfOpportunityClientMeeting.findMany({
       where: { tenantId: user.tenantId, opportunityId: id },
       orderBy: { meetingAt: "desc" },
     });
@@ -69,7 +69,7 @@ export async function POST(
     }
 
     const created = await db.$transaction(async (tx) => {
-      const meeting = await tx.crmOpportunityClientMeeting.create({
+      const meeting = await tx.qcfOpportunityClientMeeting.create({
         data: {
           tenantId: user.tenantId,
           opportunityId: id,
@@ -85,7 +85,7 @@ export async function POST(
           notes: parsed.data.notes ?? null,
         },
       });
-      await tx.crmActivity.create({
+      await tx.qcfActivity.create({
         data: {
           tenantId: user.tenantId,
           type: "OpportunityClientMeeting",
@@ -99,7 +99,7 @@ export async function POST(
         },
       });
       // Touch parent for the at-risk widget.
-      await tx.crmOpportunity.update({
+      await tx.qcfOpportunity.update({
         where: { id, tenantId: user.tenantId },
         data: { lastActivityAt: new Date() },
       });

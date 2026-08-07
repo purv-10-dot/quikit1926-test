@@ -1,15 +1,15 @@
 /**
- * FR-RE Stage 3-D(a) — a CrmCallLog row must mean a real call happened.
+ * FR-RE Stage 3-D(a) — a QcfCallLog row must mean a real call happened.
  *
  * The save path is gated on an EXPLICIT source signal (not the providerCallSid
- * proxy): source="dialer" => a real call => write the CrmCallLog row as today;
+ * proxy): source="dialer" => a real call => write the QcfCallLog row as today;
  * source="manual" => a disposition update => activities only, NO call-log row.
  *
  * Manual saves must still write the Call + LeadStageChange activities intact
  * (subject/actor/time), move the lead's stage/status, and persist field values —
  * just without a fabricated 60s/outbound/completed call-log row.
  *
- * RED until Stage 3-D(a): createCallLog writes the CrmCallLog row
+ * RED until Stage 3-D(a): createCallLog writes the QcfCallLog row
  * unconditionally, so a manual save still produces 1 row.
  *
  * Requires: local Postgres + .env.local. Run: npm run test:integration
@@ -28,10 +28,10 @@ let manualLeadId: string;
 let dialerLeadId: string;
 
 beforeAll(async () => {
-  manualLeadId = (await integrationPrisma.crmLead.create({
+  manualLeadId = (await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: "Manual Lead", phone: "+919999999998", stage: "Old", status: "Old" },
   })).id;
-  dialerLeadId = (await integrationPrisma.crmLead.create({
+  dialerLeadId = (await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: "Dialer Lead", phone: "+919999999997", stage: "Old", status: "Old" },
   })).id;
 });
@@ -54,13 +54,13 @@ describe("FR-RE Stage 3-D(a) — call-log row gated on explicit source", () => {
     };
     await createCallLog(TENANT, OWNER_ID, OWNER_NAME, dto);
 
-    const callLogs = await integrationPrisma.crmCallLog.count({
+    const callLogs = await integrationPrisma.qcfCallLog.count({
       where: { tenantId: TENANT, leadId: manualLeadId },
     });
     expect(callLogs).toBe(0); // RED today: createCallLog writes one unconditionally
 
     // Activities still written intact.
-    const callAct = await integrationPrisma.crmActivity.findFirst({
+    const callAct = await integrationPrisma.qcfActivity.findFirst({
       where: { tenantId: TENANT, type: "Call", leadId: manualLeadId },
       select: { subject: true, ownerName: true, occurredAt: true, linkedCallLogId: true },
     });
@@ -71,7 +71,7 @@ describe("FR-RE Stage 3-D(a) — call-log row gated on explicit source", () => {
     expect(callAct!.linkedCallLogId).toBeNull(); // no call-log to link
 
     // Lead moved per status (FR-RE / mapping).
-    const lead = await integrationPrisma.crmLead.findUnique({
+    const lead = await integrationPrisma.qcfLead.findUnique({
       where: { id: manualLeadId },
       select: { status: true },
     });
@@ -91,7 +91,7 @@ describe("FR-RE Stage 3-D(a) — call-log row gated on explicit source", () => {
     };
     await createCallLog(TENANT, OWNER_ID, OWNER_NAME, dto);
 
-    const callLogs = await integrationPrisma.crmCallLog.count({
+    const callLogs = await integrationPrisma.qcfCallLog.count({
       where: { tenantId: TENANT, leadId: dialerLeadId },
     });
     expect(callLogs).toBe(1);

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     const includeInactive = new URL(req.url).searchParams.get("includeInactive") === "true";
-    const items = await prisma.crmLeadSource.findMany({
+    const items = await prisma.qcfLeadSource.findMany({
       where: { tenantId: user.tenantId, ...(includeInactive ? {} : { active: true }) },
       orderBy: { name: "asc" },
     });
@@ -49,13 +49,13 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const existing = await prisma.crmLeadSource.findFirst({
+    const existing = await prisma.qcfLeadSource.findFirst({
       where: { tenantId: user.tenantId, name: { equals: parsed.data.name, mode: "insensitive" } },
     });
     if (existing) {
       return NextResponse.json({ error: "A source with that name already exists." }, { status: 409 });
     }
-    const created = await prisma.crmLeadSource.create({
+    const created = await prisma.qcfLeadSource.create({
       data: {
         tenantId: user.tenantId,
         name: parsed.data.name,

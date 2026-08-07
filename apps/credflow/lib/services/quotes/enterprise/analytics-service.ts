@@ -19,20 +19,20 @@ export async function getQuoteAnalytics(tenantId: string): Promise<QuoteAnalytic
 
   const [byStatus, sentCount, wonRows, expiring, lineAgg, approvalDelays] =
     await Promise.all([
-      db.crmQuote.groupBy({
+      db.qcfQuote.groupBy({
         by: ["status"],
         where: { tenantId, deletedAt: null },
         _count: { _all: true },
         _sum: { grandTotal: true },
       }),
-      db.crmQuote.count({
+      db.qcfQuote.count({
         where: { tenantId, deletedAt: null, sentAt: { not: null } },
       }),
-      db.crmQuote.findMany({
+      db.qcfQuote.findMany({
         where: { tenantId, deletedAt: null, status: "Won" },
         select: { grandTotal: true, ownerName: true },
       }),
-      db.crmQuote.count({
+      db.qcfQuote.count({
         where: {
           tenantId,
           deletedAt: null,
@@ -40,7 +40,7 @@ export async function getQuoteAnalytics(tenantId: string): Promise<QuoteAnalytic
           effectiveTo: { gte: now, lte: weekEnd },
         },
       }),
-      db.crmQuoteLine.findMany({
+      db.qcfQuoteLine.findMany({
         where: {
           tenantId,
           quote: { status: { in: ["Active", "Won"] }, deletedAt: null },
@@ -48,7 +48,7 @@ export async function getQuoteAnalytics(tenantId: string): Promise<QuoteAnalytic
         select: { productName: true, lineTotal: true },
         take: 500,
       }),
-      db.crmQuoteApproval.findMany({
+      db.qcfQuoteApproval.findMany({
         where: { tenantId, status: "Approved", decidedAt: { not: null } },
         select: { requestedAt: true, decidedAt: true },
         take: 200,

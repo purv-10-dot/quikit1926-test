@@ -11,7 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead, CrmWorkflowDefinition } from "@quikit/database";
+import type { QcfLead, QcfWorkflowDefinition } from "@quikit/database";
 import type { DistributeConfig } from "@/types/workflow";
 
 vi.mock("@/lib/services/automation/automated-write", async () => {
@@ -30,8 +30,8 @@ import { applyAutomatedLeadWrite } from "@/lib/services/automation/automated-wri
 const db = mockDb();
 const write = vi.mocked(applyAutomatedLeadWrite);
 
-function lead(overrides: Record<string, unknown> = {}): CrmLead {
-  return { id: "lead-1", tenantId: "t1", stage: "New", status: "Open", ownerId: "u0", ...overrides } as unknown as CrmLead;
+function lead(overrides: Record<string, unknown> = {}): QcfLead {
+  return { id: "lead-1", tenantId: "t1", stage: "New", status: "Open", ownerId: "u0", ...overrides } as unknown as QcfLead;
 }
 
 describe("resolveAssignment · sequential first-match + default", () => {
@@ -80,25 +80,25 @@ describe("resolveAssignment · sequential first-match + default", () => {
 
 describe("workflow-engine · distribute_lead rewire", () => {
   function defWith(config: DistributeConfig) {
-    db.crmWorkflowDefinition.findFirst.mockResolvedValue({
+    db.qcfWorkflowDefinition.findFirst.mockResolvedValue({
       id: "wf1",
       tenantId: "t1",
       status: "Active",
       triggerType: "trigger_lead_updated",
       graphNodes: [{ id: "n1", kind: "distribute_lead", config }],
       graphEdges: [],
-    } as unknown as CrmWorkflowDefinition);
+    } as unknown as QcfWorkflowDefinition);
   }
 
   beforeEach(() => {
     write.mockClear();
     write.mockResolvedValue("written");
-    db.crmAutomationDistributionState.upsert.mockResolvedValue({ lastIndex: 0 } as never);
+    db.qcfAutomationDistributionState.upsert.mockResolvedValue({ lastIndex: 0 } as never);
   });
 
   it("routes the owner change through applyAutomatedLeadWrite (field ownerId), never a raw update", async () => {
     defWith({ rules: [{ conditions: [], candidateUserIds: ["u5"] }], defaultUserIds: ["dX"] });
-    db.crmLead.findFirst.mockResolvedValue(lead({ ownerId: "u0" }) as never);
+    db.qcfLead.findFirst.mockResolvedValue(lead({ ownerId: "u0" }) as never);
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-1", "n1");
@@ -108,12 +108,12 @@ describe("workflow-engine · distribute_lead rewire", () => {
       expect.objectContaining({ tenantId: "t1", field: "ownerId", value: "u5", nodeId: "n1", workflowId: "wf1" }),
     );
     // The raw owner write is gone — the helper owns the write path.
-    expect(db.crmLead.update).not.toHaveBeenCalled();
+    expect(db.qcfLead.update).not.toHaveBeenCalled();
   });
 
   it("does not write when nothing is assignable (no rule matched, no default)", async () => {
     defWith({ rules: [{ conditions: [{ field: "stage", op: "eq", value: "Hot" }], candidateUserIds: ["u5"] }] });
-    db.crmLead.findFirst.mockResolvedValue(lead({ stage: "Cold" }) as never);
+    db.qcfLead.findFirst.mockResolvedValue(lead({ stage: "Cold" }) as never);
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-1", "n1");

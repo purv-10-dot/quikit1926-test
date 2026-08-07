@@ -10,7 +10,7 @@
  *   - Activity-row writer for AccountChange events (P2.12)
  *   - Advanced-filter Prisma WHERE builder
  *
- * Side-effect-free except writeAccountActivity which writes one CrmActivity row.
+ * Side-effect-free except writeAccountActivity which writes one QcfActivity row.
  */
 import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
@@ -36,10 +36,10 @@ export function escapeSearchRegex(value: string): string {
 }
 
 /** Build the OR clause used by GET /api/accounts?search=…. */
-export function buildAccountSearchOr(search: string): Prisma.CrmAccountWhereInput[] {
+export function buildAccountSearchOr(search: string): Prisma.QcfAccountWhereInput[] {
   const escaped = escapeSearchRegex(search.trim());
   if (!escaped) return [];
-  return SEARCHABLE_FIELDS.map<Prisma.CrmAccountWhereInput>((field) => ({
+  return SEARCHABLE_FIELDS.map<Prisma.QcfAccountWhereInput>((field) => ({
     [field]: { contains: escaped, mode: "insensitive" } as Prisma.StringFilter,
   }));
 }
@@ -241,7 +241,7 @@ export async function assertNoParentCycle(
       throwBadRequest("parentAccountId would create a hierarchy cycle");
     }
     const next: { parentAccountId: string | null } | null =
-      await prisma.crmAccount.findFirst({
+      await prisma.qcfAccount.findFirst({
         where: { id: cursor, tenantId },
         select: { parentAccountId: true },
       });
@@ -268,9 +268,9 @@ interface ActivityWriteParams {
   ownerName: string | null;
 }
 
-/** Write one CrmActivity row of type "AccountChange" describing a change. */
+/** Write one QcfActivity row of type "AccountChange" describing a change. */
 export async function writeAccountActivity(p: ActivityWriteParams): Promise<void> {
-  await prisma.crmActivity.create({
+  await prisma.qcfActivity.create({
     data: {
       tenantId: p.tenantId,
       type: "AccountChange",
@@ -369,8 +369,8 @@ function endOfDay(d: Date): Date {
 export function buildAdvancedAccountWhere(
   conditions: RawCondition[],
   combinator: "AND" | "OR",
-): Prisma.CrmAccountWhereInput | null {
-  const built: Prisma.CrmAccountWhereInput[] = [];
+): Prisma.QcfAccountWhereInput | null {
+  const built: Prisma.QcfAccountWhereInput[] = [];
   for (const c of conditions) {
     if (!ALLOWED_FILTER_FIELDS.has(c.field)) continue;
     const fragment = buildSingleCondition(c);
@@ -380,7 +380,7 @@ export function buildAdvancedAccountWhere(
   return combinator === "OR" ? { OR: built } : { AND: built };
 }
 
-function buildSingleCondition(c: RawCondition): Prisma.CrmAccountWhereInput | null {
+function buildSingleCondition(c: RawCondition): Prisma.QcfAccountWhereInput | null {
   const { field, operator } = c;
 
   if (field === "tags") {
@@ -400,27 +400,27 @@ function buildSingleCondition(c: RawCondition): Prisma.CrmAccountWhereInput | nu
       case "eq": {
         const d = parseFilterDate(c.value);
         if (!d) return null;
-        return { [field]: { gte: startOfDay(d), lte: endOfDay(d) } } as Prisma.CrmAccountWhereInput;
+        return { [field]: { gte: startOfDay(d), lte: endOfDay(d) } } as Prisma.QcfAccountWhereInput;
       }
       case "gt": {
         const d = parseFilterDate(c.value);
         if (!d) return null;
-        return { [field]: { gt: endOfDay(d) } } as Prisma.CrmAccountWhereInput;
+        return { [field]: { gt: endOfDay(d) } } as Prisma.QcfAccountWhereInput;
       }
       case "gte": {
         const d = parseFilterDate(c.value);
         if (!d) return null;
-        return { [field]: { gte: startOfDay(d) } } as Prisma.CrmAccountWhereInput;
+        return { [field]: { gte: startOfDay(d) } } as Prisma.QcfAccountWhereInput;
       }
       case "lt": {
         const d = parseFilterDate(c.value);
         if (!d) return null;
-        return { [field]: { lt: startOfDay(d) } } as Prisma.CrmAccountWhereInput;
+        return { [field]: { lt: startOfDay(d) } } as Prisma.QcfAccountWhereInput;
       }
       case "lte": {
         const d = parseFilterDate(c.value);
         if (!d) return null;
-        return { [field]: { lte: endOfDay(d) } } as Prisma.CrmAccountWhereInput;
+        return { [field]: { lte: endOfDay(d) } } as Prisma.QcfAccountWhereInput;
       }
       case "between": {
         if (!Array.isArray(c.values) || c.values.length !== 2) return null;
@@ -430,7 +430,7 @@ function buildSingleCondition(c: RawCondition): Prisma.CrmAccountWhereInput | nu
         const [lo, hi] = a <= b ? [a, b] : [b, a];
         return {
           [field]: { gte: startOfDay(lo), lte: endOfDay(hi) },
-        } as Prisma.CrmAccountWhereInput;
+        } as Prisma.QcfAccountWhereInput;
       }
       default:
         return null;
@@ -442,49 +442,49 @@ function buildSingleCondition(c: RawCondition): Prisma.CrmAccountWhereInput | nu
       if (ACCOUNT_INSENSITIVE_EQ_FIELDS.has(field) && typeof c.value === "string") {
         return {
           [field]: { equals: c.value, mode: "insensitive" },
-        } as Prisma.CrmAccountWhereInput;
+        } as Prisma.QcfAccountWhereInput;
       }
-      return { [field]: c.value } as Prisma.CrmAccountWhereInput;
+      return { [field]: c.value } as Prisma.QcfAccountWhereInput;
     case "ne":
       if (ACCOUNT_INSENSITIVE_EQ_FIELDS.has(field) && typeof c.value === "string") {
         return {
           NOT: { [field]: { equals: c.value, mode: "insensitive" } },
-        } as Prisma.CrmAccountWhereInput;
+        } as Prisma.QcfAccountWhereInput;
       }
-      return { NOT: { [field]: c.value } } as Prisma.CrmAccountWhereInput;
+      return { NOT: { [field]: c.value } } as Prisma.QcfAccountWhereInput;
     case "contains":
       return {
         [field]: { contains: String(c.value ?? ""), mode: "insensitive" },
-      } as Prisma.CrmAccountWhereInput;
+      } as Prisma.QcfAccountWhereInput;
     case "startsWith":
       return {
         [field]: { startsWith: String(c.value ?? ""), mode: "insensitive" },
-      } as Prisma.CrmAccountWhereInput;
+      } as Prisma.QcfAccountWhereInput;
     case "endsWith":
       return {
         [field]: { endsWith: String(c.value ?? ""), mode: "insensitive" },
-      } as Prisma.CrmAccountWhereInput;
+      } as Prisma.QcfAccountWhereInput;
     case "in":
-      return { [field]: { in: c.values ?? [] } } as Prisma.CrmAccountWhereInput;
+      return { [field]: { in: c.values ?? [] } } as Prisma.QcfAccountWhereInput;
     case "notIn":
-      return { [field]: { notIn: c.values ?? [] } } as Prisma.CrmAccountWhereInput;
+      return { [field]: { notIn: c.values ?? [] } } as Prisma.QcfAccountWhereInput;
     case "gt":
-      return { [field]: { gt: c.value } } as Prisma.CrmAccountWhereInput;
+      return { [field]: { gt: c.value } } as Prisma.QcfAccountWhereInput;
     case "gte":
-      return { [field]: { gte: c.value } } as Prisma.CrmAccountWhereInput;
+      return { [field]: { gte: c.value } } as Prisma.QcfAccountWhereInput;
     case "lt":
-      return { [field]: { lt: c.value } } as Prisma.CrmAccountWhereInput;
+      return { [field]: { lt: c.value } } as Prisma.QcfAccountWhereInput;
     case "lte":
-      return { [field]: { lte: c.value } } as Prisma.CrmAccountWhereInput;
+      return { [field]: { lte: c.value } } as Prisma.QcfAccountWhereInput;
     case "between":
       if (!Array.isArray(c.values) || c.values.length !== 2) return null;
       return {
         [field]: { gte: c.values[0], lte: c.values[1] },
-      } as Prisma.CrmAccountWhereInput;
+      } as Prisma.QcfAccountWhereInput;
     case "isNull":
-      return { [field]: null } as Prisma.CrmAccountWhereInput;
+      return { [field]: null } as Prisma.QcfAccountWhereInput;
     case "notNull":
-      return { NOT: { [field]: null } } as Prisma.CrmAccountWhereInput;
+      return { NOT: { [field]: null } } as Prisma.QcfAccountWhereInput;
     default:
       return null;
   }
@@ -597,14 +597,14 @@ export {
 
 /** Wraps `where` with `deletedAt: null` plus optional ACL scope. Use everywhere. */
 export function applyAccountListWhere(
-  base: Prisma.CrmAccountWhereInput,
+  base: Prisma.QcfAccountWhereInput,
   options: {
     trashed?: boolean;
     allowedAccountIds?: string[] | null; // null = unrestricted
     viewMine?: { ownerId: string } | null;
   },
-): Prisma.CrmAccountWhereInput {
-  const where: Prisma.CrmAccountWhereInput = { ...base };
+): Prisma.QcfAccountWhereInput {
+  const where: Prisma.QcfAccountWhereInput = { ...base };
   where.deletedAt = options.trashed ? { not: null } : null;
   if (options.allowedAccountIds !== null && options.allowedAccountIds !== undefined) {
     where.id = { in: options.allowedAccountIds };

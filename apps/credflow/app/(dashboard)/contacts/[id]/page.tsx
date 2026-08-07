@@ -7,7 +7,7 @@ import { getEffectiveMatrix } from "@/lib/auth/permissions";
 import { ContactDashboardShell } from "@/components/contacts/contact-dashboard-shell";
 import { getFullContactRecord } from "@/lib/services/contacts/full-record";
 import { STAGE_LABEL } from "@/lib/services/opportunities/stage-labels";
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
 const ADMIN_ROLE = "Administrator";
 
@@ -78,7 +78,7 @@ export default async function ContactDetailPage({
     opportunities: record.opportunities.map((o) => ({
       id: o.id,
       name: o.name,
-      stage: STAGE_LABEL[o.stage as CrmOpportunityStage] ?? o.stage,
+      stage: STAGE_LABEL[o.stage as QcfOpportunityStage] ?? o.stage,
     })),
   };
 

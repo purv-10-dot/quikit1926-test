@@ -25,7 +25,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "delete");
 
-    const existing = await prisma.crmLead.findUnique({ where: { id } });
+    const existing = await prisma.qcfLead.findUnique({ where: { id } });
     if (!existing || existing.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -37,7 +37,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: true, alreadyActive: true });
     }
 
-    const restored = await prisma.crmLead.update({
+    const restored = await prisma.qcfLead.update({
       where: { id },
       data: { deletedAt: null },
     });

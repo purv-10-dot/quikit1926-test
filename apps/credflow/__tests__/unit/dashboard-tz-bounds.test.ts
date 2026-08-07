@@ -8,7 +8,7 @@
  *
  * Strategy: stub the system clock to a deterministic UTC instant, run
  * buildSummary with three IANA zones, and inspect the args sent to
- * prisma.crmActivity.count to find the "today" call. The today call is
+ * prisma.qcfActivity.count to find the "today" call. The today call is
  * uniquely identified by its `gte` matching startOfDayInTz(now, tz).
  */
 import {
@@ -40,14 +40,14 @@ const RANGE_BASE = {
 const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
 
 function armPrismaDefaults(): void {
-  db.crmLead.count.mockResolvedValue(0);
-  asMock(db.crmLead.groupBy).mockResolvedValue([]);
-  db.crmAccount.count.mockResolvedValue(0);
-  db.crmOpportunity.count.mockResolvedValue(0);
-  asMock(db.crmOpportunity.groupBy).mockResolvedValue([]);
-  db.crmTask.count.mockResolvedValue(0);
-  db.crmActivity.count.mockResolvedValue(0);
-  db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
+  db.qcfLead.count.mockResolvedValue(0);
+  asMock(db.qcfLead.groupBy).mockResolvedValue([]);
+  db.qcfAccount.count.mockResolvedValue(0);
+  db.qcfOpportunity.count.mockResolvedValue(0);
+  asMock(db.qcfOpportunity.groupBy).mockResolvedValue([]);
+  db.qcfTask.count.mockResolvedValue(0);
+  db.qcfActivity.count.mockResolvedValue(0);
+  db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
 }
 
 type ActivityCountArgs = {
@@ -57,7 +57,7 @@ type ActivityCountArgs = {
 function findTodayCall(
   expectedStart: Date,
 ): ActivityCountArgs | undefined {
-  const calls = (db.crmActivity.count as AnyMock).mock.calls;
+  const calls = (db.qcfActivity.count as AnyMock).mock.calls;
   return calls
     .map((c) => c[0] as ActivityCountArgs | undefined)
     .find(

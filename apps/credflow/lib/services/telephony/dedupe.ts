@@ -96,7 +96,7 @@ function parseStringBody(text: string): AnyRecord {
 
 /**
  * Stable per-event hash so the same provider event always resolves to the
- * same row when upserted into CrmIndiaVoiceWebhookLog. Includes both `CallSid`
+ * same row when upserted into QcfIndiaVoiceWebhookLog. Includes both `CallSid`
  * and `campid` because IndiaVoice uses one or the other depending on the
  * event type — different events about the same call should still each get
  * their own row, but identical replays must collapse.

@@ -3,10 +3,10 @@
  * for a given activity into a READABLE, display-ready shape for the "See form
  * details" view (timeline + disposition tab).
  *
- * The raw values live in CrmFieldValue keyed by (activityId, fieldKey), typed by
+ * The raw values live in QcfFieldValue keyed by (activityId, fieldKey), typed by
  * valueType. This service:
  *   1. loads those rows for the activity (tenant-scoped),
- *   2. resolves each fieldKey -> its human label + tab name (from CrmFormField),
+ *   2. resolves each fieldKey -> its human label + tab name (from QcfFormField),
  *   3. renders a type-aware display string (number / datetime / dropdown / text),
  *      and resolves user_picker IDs -> "Name (email)" via the users table,
  *   4. returns them ordered by the field's sortOrder, grouped-ready for the UI.
@@ -43,7 +43,7 @@ export async function getDispositionValues(
   tenantId: string,
   activityId: string,
 ): Promise<DispositionValueView[]> {
-  const rows = await prisma.crmFieldValue.findMany({
+  const rows = await prisma.qcfFieldValue.findMany({
     where: { tenantId, activityId },
     select: {
       fieldKey: true,
@@ -60,7 +60,7 @@ export async function getDispositionValues(
   // Resolve field labels + tab placement from the form definition. All rows for
   // one activity share a formSetVersionId, but group defensively in case not.
   const versionIds = [...new Set(rows.map((r) => r.formSetVersionId))];
-  const defs = await prisma.crmFormField.findMany({
+  const defs = await prisma.qcfFormField.findMany({
     where: { formSetVersionId: { in: versionIds } },
     select: {
       fieldKey: true,

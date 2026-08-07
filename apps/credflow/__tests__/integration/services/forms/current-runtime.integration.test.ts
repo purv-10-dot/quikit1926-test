@@ -22,15 +22,15 @@ let setId: string;
 let versionId: string;
 
 afterAll(async () => {
-  const tabs = await db.crmFormTab.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
-  const fields = await db.crmFormField.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
-  if (fields.length) await db.crmFormFieldOption.deleteMany({ where: { formFieldId: { in: fields.map((f) => f.id) } } });
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  if (tabs.length) await db.crmFormSection.deleteMany({ where: { formTabId: { in: tabs.map((t) => t.id) } } });
-  await db.crmFormTab.deleteMany({ where: { formSetVersionId: versionId } });
-  await db.crmFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  const tabs = await db.qcfFormTab.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  const fields = await db.qcfFormField.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  if (fields.length) await db.qcfFormFieldOption.deleteMany({ where: { formFieldId: { in: fields.map((f) => f.id) } } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  if (tabs.length) await db.qcfFormSection.deleteMany({ where: { formTabId: { in: tabs.map((t) => t.id) } } });
+  await db.qcfFormTab.deleteMany({ where: { formSetVersionId: versionId } });
+  await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("getCurrentDispositionRuntime", () => {

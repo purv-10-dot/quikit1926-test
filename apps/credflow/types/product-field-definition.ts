@@ -1,6 +1,6 @@
 /**
- * Product field definitions — stored on CrmOrgWorkspaceSettings.settings.productFieldDefinitions.
- * Values live on CrmProduct.dynamicFields.
+ * Product field definitions — stored on QcfOrgWorkspaceSettings.settings.productFieldDefinitions.
+ * Values live on QcfProduct.dynamicFields.
  */
 
 export type ProductFieldType =

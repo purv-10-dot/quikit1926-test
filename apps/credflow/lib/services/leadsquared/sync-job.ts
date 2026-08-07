@@ -2,7 +2,7 @@
  * Worker-side processor for the `leadsquared-sync` queue.
  *
  * Runs in the BullMQ worker process (see lib/queue/worker.ts), never in the
- * request/response path. It re-reads the current CrmLead (tenant-scoped),
+ * request/response path. It re-reads the current QcfLead (tenant-scoped),
  * resolves a LeadSquared client, and delegates to `syncLeadOutbound`, which
  * runs the loop guard and performs the push + mapping upsert.
  */
@@ -22,7 +22,7 @@ import type { LeadSquaredFieldMapConfig } from "@/lib/services/leadsquared/field
  */
 export function resolveLeadSquaredClient(_tenantId: string): LeadSquaredClient {
   // TODO(leadsquared): resolve per-tenant credentials here (e.g. from a
-  // CrmOrgWorkspaceSettings / secret store keyed by tenantId) instead of the
+  // QcfOrgWorkspaceSettings / secret store keyed by tenantId) instead of the
   // single env-based client.
   return LeadSquaredClient.fromEnv();
 }
@@ -57,7 +57,7 @@ export async function processLeadSquaredSyncJob(
   await lock(`${tenantId}:${crmLeadId}`, async () => {
     // Re-read the current lead, tenant-scoped. Skip soft-deleted / missing rows
     // (the lead may have been deleted between enqueue and processing).
-    const lead = await db.crmLead.findFirst({
+    const lead = await db.qcfLead.findFirst({
       where: { id: crmLeadId, tenantId },
     });
     if (!lead || lead.deletedAt) {

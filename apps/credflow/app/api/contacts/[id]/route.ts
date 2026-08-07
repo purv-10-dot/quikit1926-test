@@ -34,11 +34,11 @@ function fail(
 }
 
 async function loadOwn(tenantId: string, id: string) {
-  return prisma.crmContact.findFirst({ where: { id, tenantId } });
+  return prisma.qcfContact.findFirst({ where: { id, tenantId } });
 }
 
 async function loadActive(tenantId: string, id: string) {
-  return prisma.crmContact.findFirst({ where: { id, tenantId, deletedAt: null } });
+  return prisma.qcfContact.findFirst({ where: { id, tenantId, deletedAt: null } });
 }
 
 export async function GET(
@@ -136,7 +136,7 @@ export async function PATCH(
       }
     }
 
-    const updated = await prisma.crmContact.update({
+    const updated = await prisma.qcfContact.update({
       where: { id },
       data: updateData,
     });
@@ -175,7 +175,7 @@ export async function DELETE(
     const existing = await loadActive(user.tenantId, id);
     if (!existing) return fail(404, "Contact not found");
 
-    await prisma.crmContact.update({
+    await prisma.qcfContact.update({
       where: { id },
       data: { deletedAt: new Date() },
     });

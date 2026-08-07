@@ -21,11 +21,17 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import {
-  DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   renderInvitationEmail,
   type SsoProvider,
 } from "@quikit/shared";
+
+/**
+ * TODO(integration): the vendored @quikit/shared exported this; the monorepo's
+ * shared package does not. Kept app-local so the de-vendor doesn't require a
+ * change to the shared package — upstream it once the integration owner agrees.
+ */
+const DEFAULT_INVITE_PASSWORD = "Quikit123";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
 import { prisma } from "@/lib/db/prisma";
 import { syncUserCrmAppRole, isCrmRbacClientReady } from "@/lib/api/crm-rbac";
@@ -89,7 +95,7 @@ async function fetchUserView(
   if (!m) return null;
   const appId = await getQuikCrmAppId();
   const [permissionTemplates, appRoles, allowedAccounts] = await Promise.all([
-    prisma.crmUserPermissionTemplate.findMany({
+    prisma.qcfUserPermissionTemplate.findMany({
       where: { userId },
       include: { template: { select: { id: true, name: true } } },
     }),
@@ -99,7 +105,7 @@ async function fetchUserView(
           where: { userId, orgId: tenantId, role: { appId } },
         })
       : Promise.resolve([]),
-    prisma.crmUserAccountAccess.findMany({
+    prisma.qcfUserAccountAccess.findMany({
       where: { userId },
       select: { accountId: true },
     }),
@@ -166,7 +172,7 @@ export async function listUsers(opts: {
   const userIds = memberships.map((m) => m.userId);
   const appId = await getQuikCrmAppId();
   const [tpl, roles, acl] = await Promise.all([
-    prisma.crmUserPermissionTemplate.findMany({
+    prisma.qcfUserPermissionTemplate.findMany({
       where: { userId: { in: userIds } },
       include: { template: { select: { id: true, name: true } } },
     }),
@@ -175,7 +181,7 @@ export async function listUsers(opts: {
           where: { userId: { in: userIds }, orgId: opts.tenantId, role: { appId } },
         })
       : Promise.resolve([]),
-    prisma.crmUserAccountAccess.findMany({
+    prisma.qcfUserAccountAccess.findMany({
       where: { userId: { in: userIds } },
       select: { userId: true, accountId: true },
     }),
@@ -262,7 +268,7 @@ export async function createUser(opts: {
   const usedDefaultPassword = isNativeNewUser && !data.password;
   const effectivePassword = usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : data.password;
 
-  const tenantTemplates = await prisma.crmPermissionTemplate.findMany({
+  const tenantTemplates = await prisma.qcfPermissionTemplate.findMany({
     where: { tenantId: actor.tenantId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
@@ -351,7 +357,7 @@ export async function createUser(opts: {
     }
 
     if (templateIds.length > 0) {
-      await tx.crmUserPermissionTemplate.createMany({
+      await tx.qcfUserPermissionTemplate.createMany({
         data: templateIds.map((templateId) => ({
           userId: newUserId,
           templateId,
@@ -360,7 +366,7 @@ export async function createUser(opts: {
       });
     }
     if (data.allowedAccountIds.length > 0) {
-      await tx.crmUserAccountAccess.createMany({
+      await tx.qcfUserAccountAccess.createMany({
         data: data.allowedAccountIds.map((accountId) => ({
           userId: newUserId,
           accountId,
@@ -537,9 +543,9 @@ export async function updateUser(opts: {
     }
 
     if (patch.permissionTemplateIds !== undefined) {
-      await tx.crmUserPermissionTemplate.deleteMany({ where: { userId: id } });
+      await tx.qcfUserPermissionTemplate.deleteMany({ where: { userId: id } });
       if (patch.permissionTemplateIds.length > 0) {
-        await tx.crmUserPermissionTemplate.createMany({
+        await tx.qcfUserPermissionTemplate.createMany({
           data: patch.permissionTemplateIds.map((templateId) => ({
             userId: id,
             templateId,
@@ -549,9 +555,9 @@ export async function updateUser(opts: {
       }
     }
     if (patch.allowedAccountIds !== undefined) {
-      await tx.crmUserAccountAccess.deleteMany({ where: { userId: id } });
+      await tx.qcfUserAccountAccess.deleteMany({ where: { userId: id } });
       if (patch.allowedAccountIds.length > 0) {
-        await tx.crmUserAccountAccess.createMany({
+        await tx.qcfUserAccountAccess.createMany({
           data: patch.allowedAccountIds.map((accountId) => ({
             userId: id,
             accountId,
@@ -617,9 +623,9 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
     }
 
     const [leadCount, accountCount, oppCount] = await Promise.all([
-      tx.crmLead.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
-      tx.crmAccount.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
-      tx.crmOpportunity.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
+      tx.qcfLead.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
+      tx.qcfAccount.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
+      tx.qcfOpportunity.count({ where: { tenantId: actor.tenantId, ownerId: id } }),
     ]);
     if (leadCount + accountCount + oppCount > 0) {
       throw new SettingsConflictError(
@@ -631,8 +637,8 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
     await tx.orgMember.delete({
       where: { orgId_userId: { orgId: actor.tenantId, userId: id } },
     });
-    await tx.crmUserPermissionTemplate.deleteMany({ where: { userId: id } });
-    await tx.crmUserAccountAccess.deleteMany({ where: { userId: id } });
+    await tx.qcfUserPermissionTemplate.deleteMany({ where: { userId: id } });
+    await tx.qcfUserAccountAccess.deleteMany({ where: { userId: id } });
     if (isCrmRbacClientReady()) {
       // tx cast: these RBAC models aren't in the schema yet; isCrmRbacClientReady()
       // always returns false so this block never executes at runtime.

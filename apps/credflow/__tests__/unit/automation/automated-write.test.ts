@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
 vi.mock("@/lib/services/leads/transition-service", () => ({
   transitionLead: vi.fn().mockResolvedValue({}),
@@ -45,8 +45,8 @@ const sync = vi.mocked(triggerOutboundSync);
 const guard = vi.mocked(recordWriteAndCheck);
 const attribution = vi.mocked(recordAttribution);
 
-function lead(overrides: Record<string, unknown> = {}): CrmLead {
-  return { id: "lead-1", tenantId: "t1", stage: "New Lead", status: "Open", ownerId: null, ...overrides } as unknown as CrmLead;
+function lead(overrides: Record<string, unknown> = {}): QcfLead {
+  return { id: "lead-1", tenantId: "t1", stage: "New Lead", status: "Open", ownerId: null, ...overrides } as unknown as QcfLead;
 }
 const base = {
   tenantId: "t1",

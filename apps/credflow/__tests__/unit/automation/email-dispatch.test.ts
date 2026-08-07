@@ -1,5 +1,5 @@
 /**
- * [P3.B1] Email dispatch — consume a queued CrmOutboundMessageLog row → send →
+ * [P3.B1] Email dispatch — consume a queued QcfOutboundMessageLog row → send →
  * transition queued→sent / queued→failed. SPEC §5.1 · SURVEY #7.
  *
  * SAFETY: `sendTransactionalEmail` is fully MOCKED here — no network call, no
@@ -36,14 +36,14 @@ function queuedRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   send.mockReset();
-  db.crmOutboundMessageLog.findFirst.mockReset();
-  db.crmOutboundMessageLog.update.mockReset();
-  db.crmOutboundMessageLog.update.mockResolvedValue({} as never);
+  db.qcfOutboundMessageLog.findFirst.mockReset();
+  db.qcfOutboundMessageLog.update.mockReset();
+  db.qcfOutboundMessageLog.update.mockResolvedValue({} as never);
 });
 
 describe("dispatchOutboundMessage · B1", () => {
   it("dispatches a queued email and transitions the row queued→sent", async () => {
-    db.crmOutboundMessageLog.findFirst.mockResolvedValue(queuedRow() as never);
+    db.qcfOutboundMessageLog.findFirst.mockResolvedValue(queuedRow() as never);
     const sentAt = new Date("2026-07-23T10:00:00Z");
     send.mockResolvedValue({ driver: "console", messageId: "mid-42", sentAt } as never);
 
@@ -51,7 +51,7 @@ describe("dispatchOutboundMessage · B1", () => {
 
     expect(res).toMatchObject({ outcome: "sent", driver: "console", messageId: "mid-42" });
     expect(send).toHaveBeenCalledWith({ to: ["captured@example.test"], subject: "Hi", text: "Body" });
-    expect(db.crmOutboundMessageLog.update).toHaveBeenCalledWith({
+    expect(db.qcfOutboundMessageLog.update).toHaveBeenCalledWith({
       where: { id: "log-1" },
       data: expect.objectContaining({
         status: "sent",
@@ -62,13 +62,13 @@ describe("dispatchOutboundMessage · B1", () => {
   });
 
   it("records a send FAILURE on the row and does NOT throw (run continues)", async () => {
-    db.crmOutboundMessageLog.findFirst.mockResolvedValue(queuedRow() as never);
+    db.qcfOutboundMessageLog.findFirst.mockResolvedValue(queuedRow() as never);
     send.mockRejectedValue(new Error("smtp exploded"));
 
     const res = await dispatchOutboundMessage("t1", "log-1");
 
     expect(res).toMatchObject({ outcome: "failed", reason: "smtp exploded" });
-    expect(db.crmOutboundMessageLog.update).toHaveBeenCalledWith({
+    expect(db.qcfOutboundMessageLog.update).toHaveBeenCalledWith({
       where: { id: "log-1" },
       data: expect.objectContaining({
         status: "failed",
@@ -78,25 +78,25 @@ describe("dispatchOutboundMessage · B1", () => {
   });
 
   it("skips a row that is not queued — never double-sends", async () => {
-    db.crmOutboundMessageLog.findFirst.mockResolvedValue(queuedRow({ status: "sent" }) as never);
+    db.qcfOutboundMessageLog.findFirst.mockResolvedValue(queuedRow({ status: "sent" }) as never);
     const res = await dispatchOutboundMessage("t1", "log-1");
     expect(res.outcome).toBe("skipped");
     expect(send).not.toHaveBeenCalled();
-    expect(db.crmOutboundMessageLog.update).not.toHaveBeenCalled();
+    expect(db.qcfOutboundMessageLog.update).not.toHaveBeenCalled();
   });
 
   it("skips (does not send) when the row is missing for the tenant", async () => {
-    db.crmOutboundMessageLog.findFirst.mockResolvedValue(null as never);
+    db.qcfOutboundMessageLog.findFirst.mockResolvedValue(null as never);
     const res = await dispatchOutboundMessage("t1", "missing");
     expect(res.outcome).toBe("skipped");
     expect(send).not.toHaveBeenCalled();
   });
 
   it("is tenant-scoped — loads the row with a tenantId filter", async () => {
-    db.crmOutboundMessageLog.findFirst.mockResolvedValue(queuedRow() as never);
+    db.qcfOutboundMessageLog.findFirst.mockResolvedValue(queuedRow() as never);
     send.mockResolvedValue({ driver: "console", messageId: "m", sentAt: new Date() } as never);
     await dispatchOutboundMessage("t1", "log-1");
-    expect(db.crmOutboundMessageLog.findFirst).toHaveBeenCalledWith({
+    expect(db.qcfOutboundMessageLog.findFirst).toHaveBeenCalledWith({
       where: { id: "log-1", tenantId: "t1" },
     });
   });

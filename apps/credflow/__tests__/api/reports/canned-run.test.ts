@@ -9,12 +9,12 @@ const asMock = <T>(fn: T): Mock => fn as unknown as Mock;
 
 describe("GET /api/reports/canned/[id]", () => {
   beforeEach(() => {
-    asMock(db.crmOpportunity.groupBy).mockReset();
-    db.crmOpportunity.findMany.mockReset();
-    asMock(db.crmLead.groupBy).mockReset();
-    asMock(db.crmActivity.groupBy).mockReset();
-    asMock(db.crmCallLog.groupBy).mockReset();
-    db.crmCallLog.findMany.mockReset();
+    asMock(db.qcfOpportunity.groupBy).mockReset();
+    db.qcfOpportunity.findMany.mockReset();
+    asMock(db.qcfLead.groupBy).mockReset();
+    asMock(db.qcfActivity.groupBy).mockReset();
+    asMock(db.qcfCallLog.groupBy).mockReset();
+    db.qcfCallLog.findMany.mockReset();
     setSession(null);
     vi.mocked(assertModule).mockReset();
     vi.mocked(assertModule).mockResolvedValue(undefined);
@@ -43,7 +43,7 @@ describe("GET /api/reports/canned/[id]", () => {
 
   it("forwards the caller's tenantId into the run query", async () => {
     setSession({ userId: "u1", tenantId: "tenant-A", role: "Administrator", email: "a@x.co", name: "A" });
-    asMock(db.crmOpportunity.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfOpportunity.groupBy).mockResolvedValueOnce([] as never);
 
     const { GET } = await import("@/app/api/reports/canned/[id]/route");
     const req = new Request("http://test/api/reports/canned/pipeline-by-stage");
@@ -52,8 +52,8 @@ describe("GET /api/reports/canned/[id]", () => {
     });
     expect(res.status).toBe(200);
 
-    expect(asMock(db.crmOpportunity.groupBy)).toHaveBeenCalled();
-    const args = asMock(db.crmOpportunity.groupBy).mock.calls[0]?.[0];
+    expect(asMock(db.qcfOpportunity.groupBy)).toHaveBeenCalled();
+    const args = asMock(db.qcfOpportunity.groupBy).mock.calls[0]?.[0];
     expect(args).toBeDefined();
     const where = args!.where as Record<string, unknown>;
     expect(where.tenantId).toBe("tenant-A");
@@ -61,7 +61,7 @@ describe("GET /api/reports/canned/[id]", () => {
 
   it("happy path: runs pipeline-by-stage and returns the spec'd shape", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
-    asMock(db.crmOpportunity.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfOpportunity.groupBy).mockResolvedValueOnce([
       {
         stage: "Prospecting",
         _count: { _all: 5 },

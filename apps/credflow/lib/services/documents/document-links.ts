@@ -72,7 +72,7 @@ export async function createDocumentLink(
   user: SessionUser,
   input: CreateDocumentLinkInput,
 ): Promise<DocumentLinkDto> {
-  const source = await prisma.crmDocument.findFirst({
+  const source = await prisma.qcfDocument.findFirst({
     where: { id: input.sourceDocumentId, tenantId: user.tenantId, deletedAt: null },
   });
   if (!source) throw new FolderServiceError("Source document not found", 404);
@@ -88,7 +88,7 @@ export async function createDocumentLink(
   const refId = input.refId ?? null;
 
   if (targetFolderId) {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: targetFolderId, tenantId: user.tenantId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Target folder not found", 404);
@@ -203,7 +203,7 @@ export async function listLinkedDocumentsForFolder(
   }
   if (links.length === 0) return [];
 
-  const sources = await prisma.crmDocument.findMany({
+  const sources = await prisma.qcfDocument.findMany({
     where: {
       id: { in: links.map((l) => l.sourceDocumentId) },
       tenantId: user.tenantId,

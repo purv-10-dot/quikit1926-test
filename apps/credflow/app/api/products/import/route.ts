@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       // skipDuplicates relies on the @@unique([tenantId, sku]) index —
       // if a SKU is re-imported, Prisma silently skips it. This is the
       // "safe to re-run" property we want for bulk CSV imports.
-      const result = await db.crmProduct.createMany({
+      const result = await db.qcfProduct.createMany({
         data: validRows,
         skipDuplicates: true,
       });

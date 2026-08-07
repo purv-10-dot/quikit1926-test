@@ -40,15 +40,15 @@ function reportById(id: string) {
 
 describe("reports honor the selected date range", () => {
   beforeEach(() => {
-    asMock(db.crmCallLog.groupBy).mockReset();
-    db.crmCallLog.findMany.mockReset();
-    asMock(db.crmActivity.groupBy).mockReset();
+    asMock(db.qcfCallLog.groupBy).mockReset();
+    db.qcfCallLog.findMany.mockReset();
+    asMock(db.qcfActivity.groupBy).mockReset();
   });
 
   it("calls-by-user filters createdAt from ctx.from (not a 7-day cutoff)", async () => {
-    asMock(db.crmCallLog.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfCallLog.groupBy).mockResolvedValueOnce([] as never);
     await reportById("calls-by-user").run(ctx());
-    const where = asMock(db.crmCallLog.groupBy).mock.calls[0]?.[0].where as {
+    const where = asMock(db.qcfCallLog.groupBy).mock.calls[0]?.[0].where as {
       createdAt: { gte: Date; lte: Date };
     };
     expect(where.createdAt.gte.getTime()).toBe(FROM.getTime());
@@ -56,9 +56,9 @@ describe("reports honor the selected date range", () => {
   });
 
   it("activity-leaderboard filters occurredAt from ctx.from", async () => {
-    asMock(db.crmActivity.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfActivity.groupBy).mockResolvedValueOnce([] as never);
     await reportById("activity-leaderboard").run(ctx());
-    const where = asMock(db.crmActivity.groupBy).mock.calls[0]?.[0].where as {
+    const where = asMock(db.qcfActivity.groupBy).mock.calls[0]?.[0].where as {
       occurredAt: { gte: Date; lte: Date };
     };
     expect(where.occurredAt.gte.getTime()).toBe(FROM.getTime());
@@ -66,7 +66,7 @@ describe("reports honor the selected date range", () => {
   });
 
   it("calls-by-day pre-fills a bucket per day across the whole range", async () => {
-    db.crmCallLog.findMany.mockResolvedValueOnce([] as never);
+    db.qcfCallLog.findMany.mockResolvedValueOnce([] as never);
     const result = await reportById("calls-by-day").run(
       ctx({ from: new Date("2026-04-01T00:00:00Z"), to: new Date("2026-04-05T23:59:59Z") }),
     );

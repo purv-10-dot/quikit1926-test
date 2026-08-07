@@ -10,7 +10,7 @@
  * Encoding the state machine once (here) is why the shared foundation lands
  * before the A/B split — see the build plan §4 "the conflict, precisely".
  *
- * State machine (status column on CrmWorkflowDefinition; enum extended
+ * State machine (status column on QcfWorkflowDefinition; enum extended
  * additively in S1 — Draft/Active/Paused/Archived pre-existed):
  *
  *   Draft ──publish──▶ Active ──unpublish(delayed)──▶ Draining
@@ -28,7 +28,7 @@
  * tenant-scoped (Constraint 1.4).
  */
 import { prisma } from "@/lib/db/prisma";
-import type { CrmWorkflowStatus, CrmWorkflowDefinition } from "@quikit/database";
+import type { QcfWorkflowStatus, QcfWorkflowDefinition } from "@quikit/database";
 import { detectPublishLoop } from "@/lib/services/automation/loop-detect";
 import type { WorkflowEdge, WorkflowGraph, WorkflowNode } from "@/types/workflow";
 
@@ -49,34 +49,34 @@ export type UnpublishMode = "immediate" | "delayed";
 
 /** The only status a NEW lead may enter. Draining admits nothing new; that is
  *  the whole point of Delayed unpublish. Used by the trigger emitter. */
-export const ADMIT_NEW_STATUS: CrmWorkflowStatus = "Active";
+export const ADMIT_NEW_STATUS: QcfWorkflowStatus = "Active";
 
 /** New leads may ONLY enter an Active automation. */
-export function canAdmitNewLead(status: CrmWorkflowStatus): boolean {
+export function canAdmitNewLead(status: QcfWorkflowStatus): boolean {
   return status === "Active";
 }
 
 /** In-flight (mid-Wait) leads still resume under Active OR Draining — a Drain
  *  lets already-entered leads finish. Stopped/Deleted/Draft never resume. */
-export function canResumeInFlight(status: CrmWorkflowStatus): boolean {
+export function canResumeInFlight(status: QcfWorkflowStatus): boolean {
   return status === "Active" || status === "Draining";
 }
 
 /** Structure (add/remove nodes) is editable only in Draft. Once published the
  *  canvas locks; content-only Live Edit is a separate allowance (Track A A1/A3).
  *  Backs both A's canvas-lock and B's immutability enforcement. SPEC §7. */
-export function canEditStructure(status: CrmWorkflowStatus): boolean {
+export function canEditStructure(status: QcfWorkflowStatus): boolean {
   return status === "Draft";
 }
 
 // ── Transition rules ────────────────────────────────────────────────────────
 
-const PUBLISH_FROM: CrmWorkflowStatus[] = ["Draft"];
-const UNPUBLISH_FROM: CrmWorkflowStatus[] = ["Active"];
+const PUBLISH_FROM: QcfWorkflowStatus[] = ["Draft"];
+const UNPUBLISH_FROM: QcfWorkflowStatus[] = ["Active"];
 // Draining is intentionally excluded — see softDelete(). Deleted excluded (already gone).
-const DELETE_FROM: CrmWorkflowStatus[] = ["Draft", "Active", "Stopped", "Paused", "Archived"];
+const DELETE_FROM: QcfWorkflowStatus[] = ["Draft", "Active", "Stopped", "Paused", "Archived"];
 
-function assertFrom(current: CrmWorkflowStatus, allowed: CrmWorkflowStatus[], op: string): void {
+function assertFrom(current: QcfWorkflowStatus, allowed: QcfWorkflowStatus[], op: string): void {
   if (!allowed.includes(current)) {
     throw new LifecycleError(`Cannot ${op} an automation in status "${current}" (allowed from: ${allowed.join(", ")}).`);
   }
@@ -87,8 +87,8 @@ async function loadDef(
   tenantId: string,
   id: string,
   { includeDeleted = false }: { includeDeleted?: boolean } = {},
-): Promise<CrmWorkflowDefinition> {
-  const def = await prisma.crmWorkflowDefinition.findFirst({
+): Promise<QcfWorkflowDefinition> {
+  const def = await prisma.qcfWorkflowDefinition.findFirst({
     where: { id, tenantId, ...(includeDeleted ? {} : { deletedAt: null }) },
   });
   if (!def) throw new LifecycleError(`Workflow "${id}" not found for this tenant.`);
@@ -101,7 +101,7 @@ async function loadDef(
  *  first — a self-looping definition is rejected here (LifecycleError) so the
  *  block surfaces uniformly to every caller (Track A's Publish button and any
  *  lifecycle route both call THIS function). SPEC §6, §7. */
-export async function publish(tenantId: string, id: string): Promise<CrmWorkflowDefinition> {
+export async function publish(tenantId: string, id: string): Promise<QcfWorkflowDefinition> {
   const def = await loadDef(tenantId, id);
   assertFrom(def.status, PUBLISH_FROM, "publish");
 
@@ -115,7 +115,7 @@ export async function publish(tenantId: string, id: string): Promise<CrmWorkflow
   const finding = detectPublishLoop(graph, def.triggerType);
   if (finding.loops) throw new LifecycleError(finding.reason ?? "Publishing would create a loop.");
 
-  return prisma.crmWorkflowDefinition.update({
+  return prisma.qcfWorkflowDefinition.update({
     where: { id: def.id }, // tenant ownership already asserted by loadDef
     data: { status: "Active", lastPublishedOn: new Date() },
   });
@@ -126,17 +126,17 @@ export async function unpublish(
   tenantId: string,
   id: string,
   mode: UnpublishMode,
-): Promise<CrmWorkflowDefinition> {
+): Promise<QcfWorkflowDefinition> {
   const def = await loadDef(tenantId, id);
   assertFrom(def.status, UNPUBLISH_FROM, "unpublish");
-  const status: CrmWorkflowStatus = mode === "immediate" ? "Stopped" : "Draining";
-  return prisma.crmWorkflowDefinition.update({ where: { id: def.id }, data: { status } });
+  const status: QcfWorkflowStatus = mode === "immediate" ? "Stopped" : "Draining";
+  return prisma.qcfWorkflowDefinition.update({ where: { id: def.id }, data: { status } });
 }
 
 /** Soft-delete → Deleted + `deletedAt`. Recoverable via restore(). Never a hard
  *  delete (SPEC §7). Rejected while Draining — the automation is still draining
  *  in-flight leads and must be Stopped (Immediate) first. */
-export async function softDelete(tenantId: string, id: string): Promise<CrmWorkflowDefinition> {
+export async function softDelete(tenantId: string, id: string): Promise<QcfWorkflowDefinition> {
   const def = await loadDef(tenantId, id);
   if (def.status === "Draining") {
     throw new LifecycleError(
@@ -144,7 +144,7 @@ export async function softDelete(tenantId: string, id: string): Promise<CrmWorkf
     );
   }
   assertFrom(def.status, DELETE_FROM, "delete");
-  return prisma.crmWorkflowDefinition.update({
+  return prisma.qcfWorkflowDefinition.update({
     where: { id: def.id },
     data: { status: "Deleted", deletedAt: new Date() },
   });
@@ -152,12 +152,12 @@ export async function softDelete(tenantId: string, id: string): Promise<CrmWorkf
 
 /** Deleted → Draft. Clears `deletedAt`. Restores as an inert Draft (re-publish
  *  is an explicit subsequent action). */
-export async function restore(tenantId: string, id: string): Promise<CrmWorkflowDefinition> {
+export async function restore(tenantId: string, id: string): Promise<QcfWorkflowDefinition> {
   const def = await loadDef(tenantId, id, { includeDeleted: true });
   if (def.status !== "Deleted") {
     throw new LifecycleError("Only a soft-deleted automation can be restored.");
   }
-  return prisma.crmWorkflowDefinition.update({
+  return prisma.qcfWorkflowDefinition.update({
     where: { id: def.id },
     data: { status: "Draft", deletedAt: null },
   });
@@ -170,8 +170,8 @@ export async function restore(tenantId: string, id: string): Promise<CrmWorkflow
 export async function listAutomations(
   tenantId: string,
   { includeDeleted = false }: { includeDeleted?: boolean } = {},
-): Promise<CrmWorkflowDefinition[]> {
-  return prisma.crmWorkflowDefinition.findMany({
+): Promise<QcfWorkflowDefinition[]> {
+  return prisma.qcfWorkflowDefinition.findMany({
     where: { tenantId, ...(includeDeleted ? {} : { deletedAt: null }) },
     orderBy: { updatedAt: "desc" },
   });
@@ -181,7 +181,7 @@ export async function listAutomations(
  *  processing steps). Backs A5's "non-deletable until drained" affordance and a
  *  future drain-completion sweep. Tenant-scoped. */
 export async function isDrained(tenantId: string, id: string): Promise<boolean> {
-  const outstanding = await prisma.crmAutomationPendingStep.count({
+  const outstanding = await prisma.qcfAutomationPendingStep.count({
     where: { tenantId, workflowId: id, status: { in: ["pending", "processing"] } },
   });
   return outstanding === 0;

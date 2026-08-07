@@ -11,12 +11,12 @@ interface SettingsTree {
 }
 
 async function readTree(tenantId: string): Promise<SettingsTree> {
-  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   return ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
 }
 
 async function writeTree(tenantId: string, next: SettingsTree): Promise<void> {
-  await prisma.crmOrgWorkspaceSettings.upsert({
+  await prisma.qcfOrgWorkspaceSettings.upsert({
     where: { tenantId },
     create: { tenantId, settings: next as object },
     update: { settings: next as object },

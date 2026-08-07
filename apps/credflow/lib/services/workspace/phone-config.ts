@@ -2,7 +2,7 @@
  * Workspace phone configuration — reads the default country used to parse bare
  * (country-code-less) phone numbers.
  *
- * Stored on CrmOrgWorkspaceSettings.settings.phoneConfig.defaultCountry — the
+ * Stored on QcfOrgWorkspaceSettings.settings.phoneConfig.defaultCountry — the
  * SAME JSON blob the lead pipeline config lives in (see pipeline-config.ts).
  * This is a plain JSON key read: no dedicated Prisma column or migration.
  */
@@ -22,7 +22,7 @@ interface PhoneSettingsTree {
  * non-India tenants appear.
  */
 export async function getWorkspacePhoneDefaultCountry(tenantId: string): Promise<string> {
-  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   const settings = ((row?.settings as PhoneSettingsTree | null) ?? {}) as PhoneSettingsTree;
   const country = settings.phoneConfig?.defaultCountry;
   return typeof country === "string" && country.trim()

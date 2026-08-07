@@ -19,7 +19,7 @@ export type DispositionFieldValue = string | string[] | number | null;
 
 /** The live (currently published) call_disposition form version for a tenant, or null. */
 export async function getLiveDispositionVersionId(tenantId: string): Promise<string | null> {
-  const set = await prisma.crmFormSet.findFirst({
+  const set = await prisma.qcfFormSet.findFirst({
     where: { tenantId, surface: "call_disposition", isDefault: true },
     select: { currentVersionId: true },
   });
@@ -41,7 +41,7 @@ export async function saveDispositionFieldValues(input: {
   const keys = Object.keys(input.fieldValues);
   if (keys.length === 0) return;
 
-  const defs = await prisma.crmFormField.findMany({
+  const defs = await prisma.qcfFormField.findMany({
     where: { formSetVersionId: input.formSetVersionId, fieldKey: { in: keys } },
     select: { fieldKey: true, fieldType: true },
   });
@@ -74,7 +74,7 @@ export async function saveDispositionFieldValues(input: {
         data.valueText = raw == null ? null : String(raw);
     }
 
-    await prisma.crmFieldValue.upsert({
+    await prisma.qcfFieldValue.upsert({
       where: { activityId_fieldKey: { activityId: input.activityId, fieldKey } },
       create: {
         tenantId: input.tenantId,

@@ -4,13 +4,13 @@
  *
  *   1. Secret validation (mandatory in prod or when WEBHOOK_REQUIRE_SECRET=true)
  *   2. Resolve tenantId (env override → payload → DEFAULT_ORG_ID → ?tenantId=)
- *   3. Idempotent audit row upsert into CrmIndiaVoiceWebhookLog, keyed by
+ *   3. Idempotent audit row upsert into QcfIndiaVoiceWebhookLog, keyed by
  *      (tenantId, processDedupeKey). Replays of the same event return early.
  *   4. Skip mid-call match attempts (transferring/ringing/etc with no terminal
  *      data) so ringing events don't mis-attribute to old call logs.
- *   5. Match a CrmCallLog by providerCallSid/callSid first, then by phone-tail
+ *   5. Match a QcfCallLog by providerCallSid/callSid first, then by phone-tail
  *      fallback within a 24h window.
- *   6. Update the matched CrmCallLog with duration/recording/status/etc.
+ *   6. Update the matched QcfCallLog with duration/recording/status/etc.
  *   7. Back-link the audit row by setting matchedCallLogId.
  *
  * Mid-call event types that must NEVER match by phone-tail (otherwise an old
@@ -197,7 +197,7 @@ export async function processIndiaVoiceWebhook(
 
   // 1. Idempotent audit upsert. We do a findUnique first so we can detect a
   // replay and return early without re-running the (costly) match step.
-  const existingAudit = await prisma.crmIndiaVoiceWebhookLog.findUnique({
+  const existingAudit = await prisma.qcfIndiaVoiceWebhookLog.findUnique({
     where: { tenantId_processDedupeKey: { tenantId, processDedupeKey: dedupeKey } },
   });
   if (existingAudit) {
@@ -217,7 +217,7 @@ export async function processIndiaVoiceWebhook(
     };
   }
 
-  const audit = await prisma.crmIndiaVoiceWebhookLog.create({
+  const audit = await prisma.qcfIndiaVoiceWebhookLog.create({
     data: {
       tenantId,
       callSid: r.callSid,
@@ -269,7 +269,7 @@ export async function processIndiaVoiceWebhook(
 
   let callLog =
     idCandidates.length > 0
-      ? await prisma.crmCallLog.findFirst({
+      ? await prisma.qcfCallLog.findFirst({
           where: {
             tenantId,
             createdAt: { gte: since },
@@ -285,7 +285,7 @@ export async function processIndiaVoiceWebhook(
   // 3b. Retry without the 24h window — handles clock skew or cases where
   // the stub row was created before the window boundary.
   if (!callLog && idCandidates.length > 0) {
-    callLog = await prisma.crmCallLog.findFirst({
+    callLog = await prisma.qcfCallLog.findFirst({
       where: {
         tenantId,
         OR: [
@@ -306,7 +306,7 @@ export async function processIndiaVoiceWebhook(
   if (!callLog) {
     const tail = lastTen(r.sourceNumber || r.dialWhomNumber || "");
     if (tail) {
-      callLog = await prisma.crmCallLog.findFirst({
+      callLog = await prisma.qcfCallLog.findFirst({
         where: {
           tenantId,
           createdAt: { gte: since },
@@ -324,7 +324,7 @@ export async function processIndiaVoiceWebhook(
   let callLogId: string | null = null;
   if (callLog) {
     const inferredEndedBy = inferEndedBy(r.status, r.callDurationSec ?? r.talkDurationSec);
-    const updated = await prisma.crmCallLog.update({
+    const updated = await prisma.qcfCallLog.update({
       where: { id: callLog.id },
       data: {
         durationSec: r.callDurationSec ?? r.talkDurationSec ?? callLog.durationSec ?? null,
@@ -344,7 +344,7 @@ export async function processIndiaVoiceWebhook(
       },
     });
     callLogId = updated.id;
-    await prisma.crmIndiaVoiceWebhookLog.update({
+    await prisma.qcfIndiaVoiceWebhookLog.update({
       where: { id: audit.id },
       data: { matchedCallLogId: updated.id },
     });

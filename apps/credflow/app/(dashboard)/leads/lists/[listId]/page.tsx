@@ -16,7 +16,7 @@ import { LeadTable } from "@/components/leads/lead-table";
 export default async function LeadListDetailPage({ params }: { params: Promise<{ listId: string }> }) {
   const { listId } = await params;
   const user = await requireUser();
-  const list = await prisma.crmLeadListView.findFirst({
+  const list = await prisma.qcfLeadListView.findFirst({
     where: { id: listId, tenantId: user.tenantId, userId: user.userId },
   });
   if (!list) notFound();
@@ -29,7 +29,7 @@ export default async function LeadListDetailPage({ params }: { params: Promise<{
   if (acl) baseAnd.push(acl);
   const where = { AND: baseAnd };
   const [items, total] = await Promise.all([
-    prisma.crmLead.findMany({
+    prisma.qcfLead.findMany({
       where,
       orderBy: { createdAt: "desc" },
       take: 25,
@@ -46,7 +46,7 @@ export default async function LeadListDetailPage({ params }: { params: Promise<{
         isStarred: true,
       },
     }),
-    prisma.crmLead.count({ where }),
+    prisma.qcfLead.count({ where }),
   ]);
   const masked = await Promise.all(items.map((l) => maskHiddenLeadFields(user, l)));
 

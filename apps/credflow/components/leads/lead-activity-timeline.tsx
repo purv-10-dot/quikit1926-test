@@ -274,7 +274,7 @@ function ActivityEntry({ activity }: { activity: ActivityItem }) {
               </div>
             )}
             {/* Custom disposition form values (Payment Form etc.) live in
-                CrmFieldValue keyed to this activity — offer a read-only view
+                QcfFieldValue keyed to this activity — offer a read-only view
                 for call/disposition entries, where such fields can exist. */}
             {/call|disposition/i.test(`${activity.type} ${activity.activityCode ?? ""}`) && (
               <div className="mt-2">

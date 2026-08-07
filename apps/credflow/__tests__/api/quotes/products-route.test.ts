@@ -15,8 +15,8 @@ function adminSession() {
 
 describe("GET /api/products", () => {
   beforeEach(() => {
-    db.crmProduct.findMany.mockReset();
-    db.crmProduct.count.mockReset();
+    db.qcfProduct.findMany.mockReset();
+    db.qcfProduct.count.mockReset();
     setSession(null);
   });
 
@@ -29,7 +29,7 @@ describe("GET /api/products", () => {
 
   it("returns the {success, data} envelope", async () => {
     adminSession();
-    db.crmProduct.findMany.mockResolvedValue([
+    db.qcfProduct.findMany.mockResolvedValue([
       {
         id: "p1",
         name: "Dell Laptop",
@@ -48,7 +48,7 @@ describe("GET /api/products", () => {
         updatedAt: new Date(),
       } as never,
     ]);
-    db.crmProduct.count.mockResolvedValue(1);
+    db.qcfProduct.count.mockResolvedValue(1);
 
     const { GET } = await import("@/app/api/products/route");
     const req = new Request("http://test/api/products");
@@ -63,8 +63,8 @@ describe("GET /api/products", () => {
 
   it("scopes the where clause by tenantId", async () => {
     adminSession();
-    db.crmProduct.findMany.mockResolvedValue([]);
-    db.crmProduct.count.mockResolvedValue(0);
+    db.qcfProduct.findMany.mockResolvedValue([]);
+    db.qcfProduct.count.mockResolvedValue(0);
 
     const { GET } = await import("@/app/api/products/route");
     const req = new Request("http://test/api/products");
@@ -72,7 +72,7 @@ describe("GET /api/products", () => {
 
     // buildProductSearchWhere composes the query as { AND: [{ tenantId }, { deletedAt }, …] },
     // so tenant scope lives at AND[0] rather than the top level.
-    const where = db.crmProduct.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfProduct.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
     expect(where.AND).toEqual(expect.arrayContaining([{ tenantId: "t1" }]));
@@ -81,7 +81,7 @@ describe("GET /api/products", () => {
 
 describe("POST /api/products", () => {
   beforeEach(() => {
-    db.crmProduct.create.mockReset();
+    db.qcfProduct.create.mockReset();
     setSession(null);
   });
 
@@ -99,7 +99,7 @@ describe("POST /api/products", () => {
 
   it("creates a product with happy-path payload", async () => {
     adminSession();
-    db.crmProduct.create.mockResolvedValue({
+    db.qcfProduct.create.mockResolvedValue({
       id: "p1",
       tenantId: "t1",
       name: "Dell Laptop",
@@ -135,7 +135,7 @@ describe("POST /api/products", () => {
 
   it("returns 409 on duplicate SKU", async () => {
     adminSession();
-    db.crmProduct.create.mockRejectedValue({ code: "P2002" } as never);
+    db.qcfProduct.create.mockRejectedValue({ code: "P2002" } as never);
 
     const { POST } = await import("@/app/api/products/route");
     const req = new Request("http://test/api/products", {

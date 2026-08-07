@@ -10,10 +10,10 @@
 import { STANDARD_KEYS, type LeadFieldDefinition } from "@/types/field-definition";
 
 /**
- * Standard Lead-form keys that are genuine scalar columns on CrmLead and safe to
+ * Standard Lead-form keys that are genuine scalar columns on QcfLead and safe to
  * write straight through on import. Deliberately EXCLUDES form-only or
  * collected-but-stripped keys (firstName, lastName, topic, technology, leadType,
- * score, …) that are not Lead columns — writing those to prisma.crmLead.create
+ * score, …) that are not Lead columns — writing those to prisma.qcfLead.create
  * would throw "Unknown argument". Custom (dynamic) fields go to Lead.dynamicFields
  * instead and never appear here.
  */

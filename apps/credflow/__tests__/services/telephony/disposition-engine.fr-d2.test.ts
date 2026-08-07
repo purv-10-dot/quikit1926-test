@@ -11,7 +11,7 @@
  *   3. disposition-engine uses dto.activityDateTime ?? now for occurredAt
  *   4. The same datetime is forwarded as activityDatetime to runAfterActivityLogged
  *
- * FR-D2-1  A supplied activityDateTime propagates to CrmActivity.occurredAt.
+ * FR-D2-1  A supplied activityDateTime propagates to QcfActivity.occurredAt.
  * FR-D2-2  The same datetime is forwarded to runAfterActivityLogged (so
  *          create_task rules get the right due date — AC-5 end-to-end).
  * FR-D2-3  When activityDateTime is omitted, occurredAt is still set to a
@@ -63,27 +63,27 @@ const fakeActivity = { id: "act_d2" } as any;
 
 function setupHappyPathMocks() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db.crmCallDisposition.findFirst.mockResolvedValueOnce(fakeDisposition as any);
-  db.crmIndiaVoiceWebhookLog.findFirst.mockResolvedValueOnce(null);
+  db.qcfCallDisposition.findFirst.mockResolvedValueOnce(fakeDisposition as any);
+  db.qcfIndiaVoiceWebhookLog.findFirst.mockResolvedValueOnce(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db.crmLead.findFirst.mockResolvedValue(fakeLead as any);
-  db.crmCallLog.findFirst.mockResolvedValueOnce(null); // no orphan stub
-  db.crmCallLog.create.mockResolvedValueOnce(fakeCallLog);
-  db.crmActivity.create.mockResolvedValue(fakeActivity);
+  db.qcfLead.findFirst.mockResolvedValue(fakeLead as any);
+  db.qcfCallLog.findFirst.mockResolvedValueOnce(null); // no orphan stub
+  db.qcfCallLog.create.mockResolvedValueOnce(fakeCallLog);
+  db.qcfActivity.create.mockResolvedValue(fakeActivity);
   // engine: no rules to fire (keeps test focused on FR-D2)
-  db.crmAutomationRule.findMany.mockResolvedValue([]);
+  db.qcfAutomationRule.findMany.mockResolvedValue([]);
 }
 
 beforeEach(() => {
-  db.crmCallDisposition.findFirst.mockReset();
-  db.crmIndiaVoiceWebhookLog.findFirst.mockReset();
-  db.crmLead.findFirst.mockReset();
-  db.crmCallLog.findFirst.mockReset();
-  db.crmCallLog.create.mockReset();
-  db.crmCallLog.update.mockReset();
-  db.crmActivity.create.mockReset();
-  db.crmAutomationRule.findMany.mockReset();
-  db.crmLead.findUnique.mockReset();
+  db.qcfCallDisposition.findFirst.mockReset();
+  db.qcfIndiaVoiceWebhookLog.findFirst.mockReset();
+  db.qcfLead.findFirst.mockReset();
+  db.qcfCallLog.findFirst.mockReset();
+  db.qcfCallLog.create.mockReset();
+  db.qcfCallLog.update.mockReset();
+  db.qcfActivity.create.mockReset();
+  db.qcfAutomationRule.findMany.mockReset();
+  db.qcfLead.findUnique.mockReset();
   engineSpy.mockClear();
 });
 
@@ -104,7 +104,7 @@ describe("FR-D2 — Activity DateTime wiring", () => {
     });
 
     // The Call activity create must use the provided datetime, not new Date().
-    const activityCreateCalls = db.crmActivity.create.mock.calls;
+    const activityCreateCalls = db.qcfActivity.create.mock.calls;
     const callActivityCall = activityCreateCalls.find(
       (call) => call[0]?.data?.type === "Call",
     );
@@ -150,7 +150,7 @@ describe("FR-D2 — Activity DateTime wiring", () => {
     ).rejects.toMatchObject({ statusCode: 422, message: expect.stringContaining("future") });
 
     // No DB writes should have happened — the error fires before any activity create.
-    expect(db.crmActivity.create).not.toHaveBeenCalled();
+    expect(db.qcfActivity.create).not.toHaveBeenCalled();
   });
 
   it("FR-D2-3: omitting activityDateTime still sets occurredAt to a valid Date (default-to-now not broken)", async () => {
@@ -167,7 +167,7 @@ describe("FR-D2 — Activity DateTime wiring", () => {
 
     const after = Date.now();
 
-    const activityCreateCalls = db.crmActivity.create.mock.calls;
+    const activityCreateCalls = db.qcfActivity.create.mock.calls;
     const callActivityCall = activityCreateCalls.find(
       (call) => call[0]?.data?.type === "Call",
     );

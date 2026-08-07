@@ -17,7 +17,7 @@ const db = prisma as unknown as ReturnType<typeof mockDeep<PrismaClient>>;
 describe("upsertImportedLeadRow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    db.crmLead.findUnique.mockResolvedValue(null);
+    db.qcfLead.findUnique.mockResolvedValue(null);
     createCrmLead.mockResolvedValue({
       id: "lead-1",
       tenantId: "t1",

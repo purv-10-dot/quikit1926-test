@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const items = await prisma.crmProductVariant.findMany({
+    const items = await prisma.qcfProductVariant.findMany({
       where: { tenantId: user.tenantId, productId: id },
       orderBy: { sku: "asc" },
     });
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: false, error: "Invalid variant" }, { status: 400 });
     }
 
-    const created = await prisma.crmProductVariant.create({
+    const created = await prisma.qcfProductVariant.create({
       data: {
         tenantId: user.tenantId,
         productId: id,

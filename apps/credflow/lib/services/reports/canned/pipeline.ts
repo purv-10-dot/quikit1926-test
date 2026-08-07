@@ -30,15 +30,15 @@ const STAGE_LABEL: Record<string, string> = {
   ClosedLost: "Lost",
 };
 
-async function aclWhere(ctx: ReportRunContext): Promise<Prisma.CrmOpportunityWhereInput> {
+async function aclWhere(ctx: ReportRunContext): Promise<Prisma.QcfOpportunityWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
-  const base: Prisma.CrmOpportunityWhereInput = {
+  const base: Prisma.QcfOpportunityWhereInput = {
     tenantId: ctx.tenantId,
     deletedAt: null,
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
   if (!acl) return base;
-  return { AND: [base, acl as Prisma.CrmOpportunityWhereInput] };
+  return { AND: [base, acl as Prisma.QcfOpportunityWhereInput] };
 }
 
 const pipelineByStage: CannedReport = {
@@ -58,7 +58,7 @@ const pipelineByStage: CannedReport = {
   },
   async run(ctx) {
     const where = await aclWhere(ctx);
-    const rows = await db.crmOpportunity.groupBy({
+    const rows = await db.qcfOpportunity.groupBy({
       by: ["stage"],
       where: { ...where, createdAt: { gte: ctx.from, lte: ctx.to } },
       _count: { _all: true },
@@ -110,7 +110,7 @@ const pipelineByOwner: CannedReport = {
   },
   async run(ctx) {
     const where = await aclWhere(ctx);
-    const rows = await db.crmOpportunity.groupBy({
+    const rows = await db.qcfOpportunity.groupBy({
       by: ["ownerId", "ownerName"],
       where: {
         ...where,
@@ -161,7 +161,7 @@ const stuckDeals: CannedReport = {
   async run(ctx) {
     const where = await aclWhere(ctx);
     const cutoff = daysAgoStartOfDay(30, ctx.tz);
-    const opps = await db.crmOpportunity.findMany({
+    const opps = await db.qcfOpportunity.findMany({
       where: {
         ...where,
         stage: { notIn: [...CLOSED_STAGES] },
@@ -220,7 +220,7 @@ const closingThisMonth: CannedReport = {
   },
   async run(ctx) {
     const where = await aclWhere(ctx);
-    const opps = await db.crmOpportunity.findMany({
+    const opps = await db.qcfOpportunity.findMany({
       where: {
         ...where,
         stage: { notIn: [...CLOSED_STAGES] },

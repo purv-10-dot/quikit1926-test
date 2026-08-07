@@ -36,7 +36,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // findUnique bypasses the soft-delete middleware so deleted leads can be
     // viewed in read-only mode (URL access, restore flow). The response carries
     // the `deletedAt` timestamp so the client can render the read-only banner.
-    const lead = await prisma.crmLead.findUnique({ where: { id } });
+    const lead = await prisma.qcfLead.findUnique({ where: { id } });
     if (!lead || lead.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "edit");
-    const existing = await prisma.crmLead.findUnique({ where: { id } });
+    const existing = await prisma.qcfLead.findUnique({ where: { id } });
     if (!existing || existing.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -153,11 +153,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       mergedDyn = values;
     }
 
-    // CrmLead has no `owner` relation declared (ownerId is a plain scalar FK to
+    // QcfLead has no `owner` relation declared (ownerId is a plain scalar FK to
     // public.User across schemas); `account` IS a declared relation. Use the
     // Unchecked update input so we can set both scalar columns directly.
     // undefined = leave field untouched, null = clear the FK, string = set it.
-    // Strip fields present in the Zod schema but absent from CrmLead.
+    // Strip fields present in the Zod schema but absent from QcfLead.
     const {
       ownerId,
       accountId,
@@ -183,7 +183,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(ownerId === undefined ? {} : { ownerId }),
       ...(accountId === undefined ? {} : { accountId }),
       ...(!useAutoScore && manualScore !== undefined ? { score: manualScore } : {}),
-    } as Prisma.CrmLeadUncheckedUpdateInput;
+    } as Prisma.QcfLeadUncheckedUpdateInput;
     let updated = await updateCrmLead(id, updateData);
     if (useAutoScore) {
       const computedScore = await syncLeadScoreAfterChange(user.tenantId, id);
@@ -261,7 +261,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await assertModule(user, "leads", "delete");
     // findUnique bypasses the soft-delete middleware (only findMany/findFirst/count
     // are intercepted) — lets us locate an already-trashed lead for idempotent re-delete.
-    const existing = await prisma.crmLead.findUnique({ where: { id } });
+    const existing = await prisma.qcfLead.findUnique({ where: { id } });
     if (!existing || existing.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -271,7 +271,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       // Already in trash — idempotent success.
       return NextResponse.json({ ok: true, alreadyDeleted: true });
     }
-    await prisma.crmLead.update({
+    await prisma.qcfLead.update({
       where: { id },
       data: { deletedAt: new Date() },
     });

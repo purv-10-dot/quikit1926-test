@@ -78,7 +78,7 @@ export interface FullAccountRecord {
 }
 
 async function loadActivities(tenantId: string, ids: AccountRollupIds) {
-  return prisma.crmActivity.findMany({
+  return prisma.qcfActivity.findMany({
     where: buildAccountActivityWhere(tenantId, ids),
     orderBy: { occurredAt: "desc" },
     take: 100,
@@ -86,7 +86,7 @@ async function loadActivities(tenantId: string, ids: AccountRollupIds) {
 }
 
 async function loadTasks(tenantId: string, ids: AccountRollupIds) {
-  return prisma.crmTask.findMany({
+  return prisma.qcfTask.findMany({
     where: buildAccountTaskWhere(tenantId, ids),
     orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     take: 100,
@@ -94,7 +94,7 @@ async function loadTasks(tenantId: string, ids: AccountRollupIds) {
 }
 
 async function loadNotes(tenantId: string, ids: AccountRollupIds) {
-  return prisma.crmNote.findMany({
+  return prisma.qcfNote.findMany({
     where: buildAccountNoteWhere(tenantId, ids),
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -103,7 +103,7 @@ async function loadNotes(tenantId: string, ids: AccountRollupIds) {
 
 async function loadCallLogs(tenantId: string, leadIds: string[]) {
   if (leadIds.length === 0) return [];
-  return prisma.crmCallLog.findMany({
+  return prisma.qcfCallLog.findMany({
     where: { tenantId, leadId: { in: leadIds } },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -111,7 +111,7 @@ async function loadCallLogs(tenantId: string, leadIds: string[]) {
 }
 
 async function loadAttachments(tenantId: string, accountId: string) {
-  return prisma.crmDocument.findMany({
+  return prisma.qcfDocument.findMany({
     where: {
       tenantId,
       refType: "account",
@@ -135,7 +135,7 @@ export async function getFullAccountRecord(opts: {
 
   const [parent, subsidiaries, leads, contacts, opportunities, quotes] = await Promise.all([
     account.parentAccountId
-      ? prisma.crmAccount.findFirst({
+      ? prisma.qcfAccount.findFirst({
           where: {
             id: account.parentAccountId,
             tenantId: user.tenantId,
@@ -144,13 +144,13 @@ export async function getFullAccountRecord(opts: {
           select: { id: true, name: true },
         })
       : Promise.resolve(null),
-    prisma.crmAccount.findMany({
+    prisma.qcfAccount.findMany({
       where: { tenantId: user.tenantId, parentAccountId: accountId, deletedAt: null },
       select: { id: true, name: true, status: true },
       orderBy: { name: "asc" },
       take: 50,
     }),
-    prisma.crmLead.findMany({
+    prisma.qcfLead.findMany({
       where: { tenantId: user.tenantId, accountId, deletedAt: null },
       select: {
         id: true,
@@ -163,7 +163,7 @@ export async function getFullAccountRecord(opts: {
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
-    prisma.crmContact.findMany({
+    prisma.qcfContact.findMany({
       where: { tenantId: user.tenantId, accountId, deletedAt: null },
       select: {
         id: true,
@@ -177,12 +177,12 @@ export async function getFullAccountRecord(opts: {
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: { tenantId: user.tenantId, accountId, deletedAt: null },
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
-    prisma.crmQuote.findMany({
+    prisma.qcfQuote.findMany({
       where: { tenantId: user.tenantId, accountId },
       select: {
         id: true,

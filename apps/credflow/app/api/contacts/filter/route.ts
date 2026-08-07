@@ -65,13 +65,13 @@ export async function POST(req: NextRequest) {
         : [{ [safeSortBy]: sortDir }, { id: "desc" as const }];
 
     const [rows, total] = await Promise.all([
-      prisma.crmContact.findMany({
+      prisma.qcfContact.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy,
       }),
-      prisma.crmContact.count({ where }),
+      prisma.qcfContact.count({ where }),
     ]);
 
     const items = await attachAccountNames(user.tenantId, rows);

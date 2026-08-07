@@ -18,7 +18,7 @@ async function loadAndAssertAccess(
   id: string,
   user: Parameters<typeof assertAccountAccess>[0],
 ) {
-  const item = await prisma.crmActivity.findFirst({ where: { id, tenantId } });
+  const item = await prisma.qcfActivity.findFirst({ where: { id, tenantId } });
   if (!item) {
     const err = new Error("Activity not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -87,9 +87,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (dto.occurredAt) data.occurredAt = new Date(dto.occurredAt);
     if (dto.followUpAt) data.followUpAt = new Date(dto.followUpAt);
 
-    const updated = await prisma.crmActivity.update({
+    const updated = await prisma.qcfActivity.update({
       where: { id },
-      data: data as Parameters<typeof prisma.crmActivity.update>[0]["data"],
+      data: data as Parameters<typeof prisma.qcfActivity.update>[0]["data"],
     });
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));
     const row = await toListRow(user.tenantId, updated, tz);
@@ -106,7 +106,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "activities", "delete");
     await loadAndAssertAccess(user.tenantId, id, user);
-    await prisma.crmActivity.delete({ where: { id } });
+    await prisma.qcfActivity.delete({ where: { id } });
     return NextResponse.json({ success: true, data: { ok: true } });
   } catch (e) {
     return errorResponse(e);

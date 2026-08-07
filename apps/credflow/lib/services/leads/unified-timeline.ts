@@ -30,7 +30,7 @@ export interface UnifiedTimelineItem {
   title: string;
   subtitle?: string | null;
   meta?: string | null;
-  /** The underlying CrmActivity id (activity-derived items only). Lets the row
+  /** The underlying QcfActivity id (activity-derived items only). Lets the row
    *  fetch the saved custom disposition field values for the "See form details"
    *  view. Absent on call-log / note / task / doc items. */
   activityId?: string | null;

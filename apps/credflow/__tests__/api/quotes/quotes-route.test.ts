@@ -15,9 +15,9 @@ function adminSession() {
 
 describe("GET /api/quotes", () => {
   beforeEach(() => {
-    db.crmQuote.findMany.mockReset();
-    db.crmQuote.count.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfQuote.findMany.mockReset();
+    db.qcfQuote.count.mockReset();
+    db.qcfAccount.findMany.mockReset();
     setSession(null);
   });
 
@@ -30,7 +30,7 @@ describe("GET /api/quotes", () => {
 
   it("returns paginated list scoped by tenantId", async () => {
     adminSession();
-    db.crmQuote.findMany.mockResolvedValue([
+    db.qcfQuote.findMany.mockResolvedValue([
       {
         id: "q1",
         quoteNumber: "QT-2026-0001",
@@ -54,10 +54,10 @@ describe("GET /api/quotes", () => {
         deletedAt: null,
       } as never,
     ]);
-    db.crmQuote.count.mockResolvedValue(1);
+    db.qcfQuote.count.mockResolvedValue(1);
     // The list service now batch-resolves account names. Empty array is
     // a valid response shape â€” the row's accountName will be null.
-    db.crmAccount.findMany.mockResolvedValue([
+    db.qcfAccount.findMany.mockResolvedValue([
       { id: "a1", name: "Acme Corp" } as never,
     ]);
 
@@ -70,7 +70,7 @@ describe("GET /api/quotes", () => {
     expect(body.data.items).toHaveLength(1);
     expect(body.data.items[0].grandTotal).toBe(1180);
 
-    const where = db.crmQuote.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
+    const where = db.qcfQuote.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
     expect(where.tenantId).toBe("t1");
   });
 });
@@ -104,10 +104,10 @@ describe("POST /api/quotes", () => {
     // createQuote now validates that accountId belongs to the requesting
     // tenant before minting a quote number (refactor/quotes-feature-hardening).
     // Mock the FK check first; without this the service returns 404.
-    db.crmAccount.findFirst.mockResolvedValue({ id: "a1" } as never);
-    db.crmSequence.upsert.mockResolvedValue({ counter: 1 } as never);
-    db.crmQuote.create.mockResolvedValue({ id: "q1" } as never);
-    db.crmActivity.create.mockResolvedValue({} as never);
+    db.qcfAccount.findFirst.mockResolvedValue({ id: "a1" } as never);
+    db.qcfSequence.upsert.mockResolvedValue({ counter: 1 } as never);
+    db.qcfQuote.create.mockResolvedValue({ id: "q1" } as never);
+    db.qcfActivity.create.mockResolvedValue({} as never);
 
     const { POST } = await import("@/app/api/quotes/route");
     const req = new Request("http://test/api/quotes", {
@@ -129,7 +129,7 @@ describe("POST /api/quotes", () => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
     // FK validation: simulate the account being in a different tenant.
-    db.crmAccount.findFirst.mockResolvedValue(null);
+    db.qcfAccount.findFirst.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/quotes/route");
     const req = new Request("http://test/api/quotes", {
@@ -142,6 +142,6 @@ describe("POST /api/quotes", () => {
     const body = await res.json();
     expect(body.success).toBe(false);
     // No quote should have been minted.
-    expect(db.crmQuote.create).not.toHaveBeenCalled();
+    expect(db.qcfQuote.create).not.toHaveBeenCalled();
   });
 });

@@ -28,7 +28,7 @@ export async function listGlobalDocuments(
   user: SessionUser,
   query: GlobalDocumentsQuery,
 ): Promise<GlobalDocumentsResult> {
-  const where: Prisma.CrmDocumentWhereInput = {
+  const where: Prisma.QcfDocumentWhereInput = {
     tenantId: user.tenantId,
     deletedAt: null,
   };
@@ -39,20 +39,20 @@ export async function listGlobalDocuments(
     where.fileName = { contains: query.q.trim(), mode: "insensitive" };
   }
 
-  const orderBy: Prisma.CrmDocumentOrderByWithRelationInput = {
+  const orderBy: Prisma.QcfDocumentOrderByWithRelationInput = {
     [query.sortBy]: query.sortDir,
   };
 
   const skip = (query.page - 1) * query.pageSize;
 
   const [rows, total] = await Promise.all([
-    prisma.crmDocument.findMany({
+    prisma.qcfDocument.findMany({
       where,
       orderBy,
       skip,
       take: query.pageSize,
     }),
-    prisma.crmDocument.count({ where }),
+    prisma.qcfDocument.count({ where }),
   ]);
 
   const names = await resolveUploaderNames(

@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       await assertModule(user, "activities", "edit");
     }
 
-    const lead = await prisma.crmLead.findFirst({
+    const lead = await prisma.qcfLead.findFirst({
       where: { id: dto.leadId, tenantId: user.tenantId },
       select: { id: true, accountId: true },
     });
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       });
       // Side-effect: patch the parent lead's country + followupPriority.
       // The reference does this unconditionally on every outreach save.
-      await tx.crmLead.update({
+      await tx.qcfLead.update({
         where: { id: dto.leadId },
         data: {
           country: dto.country,

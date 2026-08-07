@@ -10,7 +10,7 @@ import { OrdersListClient, type OrdersStats } from "@/components/orders/orders-l
  * reflect ALL orders in the tenant (not filtered).
  */
 async function computeOrderStats(tenantId: string): Promise<OrdersStats> {
-  const grouped = await db.crmOrder.groupBy({
+  const grouped = await db.qcfOrder.groupBy({
     by: ["status"],
     where: { tenantId },
     _count: { _all: true },

@@ -16,17 +16,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ vi
 
     const updated = await prisma.$transaction(async (tx) => {
       // Ownership check
-      const existing = await tx.crmLeadListView.findFirst({
+      const existing = await tx.qcfLeadListView.findFirst({
         where: { id: viewId, tenantId: user.tenantId, userId: user.userId },
       });
       if (!existing) return null;
       if (parsed.data.isDefault) {
-        await tx.crmLeadListView.updateMany({
+        await tx.qcfLeadListView.updateMany({
           where: { tenantId: user.tenantId, userId: user.userId, isDefault: true, id: { not: viewId } },
           data: { isDefault: false },
         });
       }
-      return tx.crmLeadListView.update({
+      return tx.qcfLeadListView.update({
         where: { id: viewId },
         data: {
           name: parsed.data.name ?? undefined,
@@ -56,7 +56,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const { viewId } = await params;
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const result = await prisma.crmLeadListView.deleteMany({
+    const result = await prisma.qcfLeadListView.deleteMany({
       where: { id: viewId, tenantId: user.tenantId, userId: user.userId },
     });
     if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });

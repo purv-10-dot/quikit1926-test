@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Owner-restricted roles can only star leads they own: fold the owner scope
     // into the where, so a non-owned lead matches 0 rows → 404 below.
     const ownerScope = await ownerScopeFilter(user);
-    const updated = await prisma.crmLead.updateMany({
+    const updated = await prisma.qcfLead.updateMany({
       where: { id, tenantId: user.tenantId, ...(ownerScope ?? {}) },
       data: { isStarred: parsed.data.isStarred },
     });

@@ -15,8 +15,8 @@ function adminSession() {
 
 describe("GET /api/price-lists", () => {
   beforeEach(() => {
-    db.crmPriceList.findMany.mockReset();
-    db.crmPriceList.count.mockReset();
+    db.qcfPriceList.findMany.mockReset();
+    db.qcfPriceList.count.mockReset();
     setSession(null);
   });
 
@@ -29,7 +29,7 @@ describe("GET /api/price-lists", () => {
 
   it("returns the {success, data} envelope scoped by tenant", async () => {
     adminSession();
-    db.crmPriceList.findMany.mockResolvedValue([
+    db.qcfPriceList.findMany.mockResolvedValue([
       {
         id: "pl1",
         name: "Standard",
@@ -51,14 +51,14 @@ describe("GET /api/price-lists", () => {
         _count: { items: 7 },
       } as never,
     ]);
-    db.crmPriceList.count.mockResolvedValue(1);
+    db.qcfPriceList.count.mockResolvedValue(1);
 
     const { GET } = await import("@/app/api/price-lists/route");
     const req = new Request("http://test/api/price-lists");
     const res = await GET(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const where = db.crmPriceList.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
+    const where = db.qcfPriceList.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
     expect(where.tenantId).toBe("t1");
   });
 });
@@ -74,10 +74,10 @@ describe("POST /api/price-lists", () => {
     db.$transaction.mockImplementation(async (cb: unknown) => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
-    db.crmPriceList.updateMany.mockResolvedValue({ count: 0 } as never);
-    db.crmPriceListAuditLog = db.crmPriceListAuditLog ?? { create: vi.fn() };
-    db.crmPriceListAuditLog.create.mockResolvedValue({ id: "a1" } as never);
-    db.crmPriceList.create.mockResolvedValue({
+    db.qcfPriceList.updateMany.mockResolvedValue({ count: 0 } as never);
+    db.qcfPriceListAuditLog = db.qcfPriceListAuditLog ?? { create: vi.fn() };
+    db.qcfPriceListAuditLog.create.mockResolvedValue({ id: "a1" } as never);
+    db.qcfPriceList.create.mockResolvedValue({
       id: "pl1",
       name: "Enterprise 2026",
       isDefault: true,
@@ -92,7 +92,7 @@ describe("POST /api/price-lists", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(201);
     // The default-clearing branch must be exercised.
-    expect(db.crmPriceList.updateMany).toHaveBeenCalled();
+    expect(db.qcfPriceList.updateMany).toHaveBeenCalled();
   });
 
   it("returns 409 on duplicate name", async () => {

@@ -13,8 +13,8 @@ async function readBodyWithBom(res: Response): Promise<string> {
 
 describe("GET /api/opportunities?format=csv", () => {
   beforeEach(() => {
-    db.crmOpportunity.findMany.mockReset();
-    db.crmOpportunity.count.mockReset();
+    db.qcfOpportunity.findMany.mockReset();
+    db.qcfOpportunity.count.mockReset();
     setSession(null);
     vi.mocked(assertModule).mockReset();
     vi.mocked(assertModule).mockResolvedValue(undefined);
@@ -50,7 +50,7 @@ describe("GET /api/opportunities?format=csv", () => {
 
   it("streams CSV with curated columns on happy path", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
-    db.crmOpportunity.findMany.mockResolvedValueOnce([
+    db.qcfOpportunity.findMany.mockResolvedValueOnce([
       {
         id: "o1",
         name: "Acme Q4",
@@ -66,7 +66,7 @@ describe("GET /api/opportunities?format=csv", () => {
         createdAt: new Date("2025-01-15T10:00:00Z"),
       } as never,
     ]);
-    db.crmOpportunity.findMany.mockResolvedValueOnce([]);
+    db.qcfOpportunity.findMany.mockResolvedValueOnce([]);
 
     const { GET } = await import("@/app/api/opportunities/route");
     const req = new Request("http://test/api/opportunities?format=csv");
@@ -90,14 +90,14 @@ describe("GET /api/opportunities?format=csv", () => {
     vi.mocked(accountScopeFilter).mockResolvedValueOnce({
       OR: [{ accountId: { in: ["acct-allowed"] } }, { accountId: null }],
     });
-    db.crmOpportunity.findMany.mockResolvedValueOnce([]);
+    db.qcfOpportunity.findMany.mockResolvedValueOnce([]);
 
     const { GET } = await import("@/app/api/opportunities/route");
     const req = new Request("http://test/api/opportunities?format=csv");
     const res = await GET(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const call = db.crmOpportunity.findMany.mock.calls[0]?.[0];
+    const call = db.qcfOpportunity.findMany.mock.calls[0]?.[0];
     expect(call).toBeDefined();
     const where = call!.where as Record<string, unknown>;
     expect(where.tenantId).toBe("t1");

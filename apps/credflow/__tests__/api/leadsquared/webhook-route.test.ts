@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
 import type { NextRequest } from "next/server";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
-const asLead = (partial: Partial<CrmLead>): CrmLead => partial as unknown as CrmLead;
+const asLead = (partial: Partial<QcfLead>): QcfLead => partial as unknown as QcfLead;
 
 const db = mockDb();
 
@@ -46,8 +46,8 @@ describe("POST /api/leadsquared/webhook", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, verification: true });
-    expect(db.leadSquaredSyncMap.findFirst).not.toHaveBeenCalled();
-    expect(db.crmLead.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.findFirst).not.toHaveBeenCalled();
+    expect(db.qcfLead.upsert).not.toHaveBeenCalled();
   });
 
   it("returns 200 for an empty payload EVEN when a secret is required (verification must pass)", async () => {
@@ -66,7 +66,7 @@ describe("POST /api/leadsquared/webhook", () => {
 
     const res = await POST(post({ ProspectID: "P1", EmailAddress: "a@b.co" }));
     expect(res.status).toBe(401);
-    expect(db.crmLead.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLead.upsert).not.toHaveBeenCalled();
   });
 
   it("rejects a wrong secret when the secret is required", async () => {
@@ -83,8 +83,8 @@ describe("POST /api/leadsquared/webhook", () => {
   it("processes inline (Redis disabled) with a valid secret and returns 200", async () => {
     process.env.LEADSQUARED_WEBHOOK_SECRET = "s3cret";
     process.env.WEBHOOK_REQUIRE_SECRET = "true";
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.crmLead.upsert.mockResolvedValue(asLead({ id: "lead-new", tenantId: "shield" }));
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLead.upsert.mockResolvedValue(asLead({ id: "lead-new", tenantId: "shield" }));
 
     const { POST } = await import("@/app/api/leadsquared/webhook/route");
     const res = await POST(
@@ -96,15 +96,15 @@ describe("POST /api/leadsquared/webhook", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, action: "created", crmLeadId: "lead-new" });
-    expect(db.leadSquaredSyncMap.upsert).toHaveBeenCalled();
-    expect(db.leadSquaredSyncMap.upsert.mock.calls[0][0].create).toMatchObject({
+    expect(db.qcfLeadSquaredSyncMap.upsert).toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0].create).toMatchObject({
       syncOrigin: "leadsquared",
     });
   });
 
   it("allows processing in dev when no secret is configured (not required)", async () => {
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.crmLead.upsert.mockResolvedValue(asLead({ id: "lead-dev", tenantId: "shield" }));
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLead.upsert.mockResolvedValue(asLead({ id: "lead-dev", tenantId: "shield" }));
 
     const { POST } = await import("@/app/api/leadsquared/webhook/route");
     const res = await POST(post({ ProspectID: "P2", EmailAddress: "d@e.co" }));
@@ -123,7 +123,7 @@ describe("POST /api/leadsquared/webhook", () => {
       // No secret configured on the server → fail closed (503).
       const res = await POST(post({ ProspectID: "P3", EmailAddress: "s@e.co" }));
       expect(res.status).toBe(503);
-      expect(db.crmLead.upsert).not.toHaveBeenCalled();
+      expect(db.qcfLead.upsert).not.toHaveBeenCalled();
     } finally {
       mutableEnv.NODE_ENV = savedEnv;
     }
@@ -141,9 +141,9 @@ describe("POST /api/leadsquared/webhook", () => {
   });
 
   it("processes a batch array and returns a batch summary", async () => {
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.crmLead.findUnique.mockResolvedValue(null);
-    db.crmLead.upsert
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLead.findUnique.mockResolvedValue(null);
+    db.qcfLead.upsert
       .mockResolvedValueOnce(asLead({ id: "lead-a", tenantId: "shield" }))
       .mockResolvedValueOnce(asLead({ id: "lead-b", tenantId: "shield" }));
 

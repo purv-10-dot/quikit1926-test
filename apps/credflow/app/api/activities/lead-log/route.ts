@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       await assertModule(user, "activities", "edit");
     }
 
-    const lead = await prisma.crmLead.findFirst({
+    const lead = await prisma.qcfLead.findFirst({
       where: { id: dto.leadId, tenantId: user.tenantId },
       select: { id: true, accountId: true },
     });
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     await assertAccountAccess(user, lead.accountId);
 
     if (dto.opportunityId) {
-      const opp = await prisma.crmOpportunity.findFirst({
+      const opp = await prisma.qcfOpportunity.findFirst({
         where: { id: dto.opportunityId, tenantId: user.tenantId },
         select: { id: true },
       });

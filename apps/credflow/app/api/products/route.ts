@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       trashed: parsed.data.trashed,
     });
 
-    const enriched = await prisma.crmProduct.findMany({
+    const enriched = await prisma.qcfProduct.findMany({
       where: { tenantId: user.tenantId, id: { in: result.items.map((i) => i.id) } },
       include: {
         categoryRef: { select: { id: true, name: true } },
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
         userId: user.userId,
         input: { ...parsed.data, dynamicFields: dyn },
       });
-      const full = await prisma.crmProduct.findFirst({
+      const full = await prisma.qcfProduct.findFirst({
         where: { id: created.id, tenantId: user.tenantId },
         include: {
           categoryRef: { select: { id: true, name: true } },

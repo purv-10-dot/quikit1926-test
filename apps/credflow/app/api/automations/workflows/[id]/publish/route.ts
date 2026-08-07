@@ -19,7 +19,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "automations", "edit");
 
-    const wf = await prisma.crmWorkflowDefinition.findFirst({
+    const wf = await prisma.qcfWorkflowDefinition.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });

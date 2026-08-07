@@ -16,7 +16,7 @@ export async function listFolderTreeChildren(
     await assertDocumentParent(user, refType, refId);
   }
 
-  const rows = await prisma.crmDocumentFolder.findMany({
+  const rows = await prisma.qcfDocumentFolder.findMany({
     where: {
       ...scopeWhere(user.tenantId, scope),
       parentFolderId,
@@ -53,7 +53,7 @@ export async function searchFolders(
   q: string,
   limit = 50,
 ): Promise<FolderTreeNodeDto[]> {
-  const rows = await prisma.crmDocumentFolder.findMany({
+  const rows = await prisma.qcfDocumentFolder.findMany({
     where: {
       ...scopeWhere(tenantId, scope),
       name: { contains: q.trim(), mode: "insensitive" },
@@ -90,7 +90,7 @@ export async function assertFolderInScope(
   folderId: string,
   scope: FolderScope,
 ): Promise<{ refType: DocumentRefType | null; refId: string | null }> {
-  const folder = await prisma.crmDocumentFolder.findFirst({
+  const folder = await prisma.qcfDocumentFolder.findFirst({
     where: { id: folderId, tenantId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);

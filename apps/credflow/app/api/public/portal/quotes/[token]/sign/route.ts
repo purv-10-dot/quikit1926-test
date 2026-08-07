@@ -30,7 +30,7 @@ export async function POST(
     }
 
     const now = new Date();
-    await db.crmQuote.update({
+    await db.qcfQuote.update({
       where: { id: resolved.quoteId },
       data: {
         signedAt: now,

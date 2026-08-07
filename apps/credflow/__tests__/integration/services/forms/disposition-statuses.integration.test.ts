@@ -30,17 +30,17 @@ const ST_B = `ZZ_S1B_${STAMP}`;
 const STAGE_A = `frre stage a ${STAMP}`;
 
 beforeAll(async () => {
-  // Two global statuses we can assert on (CrmLeadStatus is global; getPipelineConfig
+  // Two global statuses we can assert on (QcfLeadStatus is global; getPipelineConfig
   // derives cfg.statuses from it).
-  await db.crmLeadStatus.create({ data: { name: ST_A } });
-  await db.crmLeadStatus.create({ data: { name: ST_B } });
+  await db.qcfLeadStatus.create({ data: { name: ST_A } });
+  await db.qcfLeadStatus.create({ data: { name: ST_B } });
   // TENANT: a known stage->status mapping for the wrapper behaviour tests.
   await setPipelineConfig(TENANT, { dependentRules: { stageToStatuses: { [STAGE_A]: [ST_A] }, statusToSubstatuses: {} } });
 });
 
 afterAll(async () => {
-  await db.crmOrgWorkspaceSettings.deleteMany({ where: { tenantId: { in: [TENANT, SEED_TENANT] } } });
-  await db.crmLeadStatus.deleteMany({ where: { name: { in: [ST_A, ST_B] } } });
+  await db.qcfOrgWorkspaceSettings.deleteMany({ where: { tenantId: { in: [TENANT, SEED_TENANT] } } });
+  await db.qcfLeadStatus.deleteMany({ where: { name: { in: [ST_A, ST_B] } } });
 });
 
 describe("getDispositionStatuses", () => {

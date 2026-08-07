@@ -50,7 +50,7 @@ function toOpts(values: string[]): FieldValueOption[] {
 async function readPipeline(
   tenantId: string,
 ): Promise<{ stages: string[]; statuses: string[]; substatuses: string[] }> {
-  const ws = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   const settings = (ws?.settings as Record<string, unknown> | null) ?? {};
   const cfg =
     (settings.leadPipelineConfig as
@@ -74,7 +74,7 @@ async function readPipeline(
 async function distinctDynamicValues(tenantId: string, key: string): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ v: string | null; n: number }[]>`
     SELECT "dynamicFields" ->> ${key} AS v, count(*)::int AS n
-    FROM app_quikcrm."CrmLead"
+    FROM app_quikcredflow."CrmLead"
     WHERE "tenantId" = ${tenantId}
       AND "deletedAt" IS NULL
       AND nullif("dynamicFields" ->> ${key}, '') IS NOT NULL
@@ -90,7 +90,7 @@ async function distinctDynamicValues(tenantId: string, key: string): Promise<str
 const PICKABLE_CUSTOM_TYPES = new Set(["Select", "MultiSelect", "Text", "Email", "Phone"]);
 
 /**
- * Real (non-dynamicFields) CrmLead columns that are enum-ish enough to offer a
+ * Real (non-dynamicFields) QcfLead columns that are enum-ish enough to offer a
  * value picker via capped DB-distinct. These are standard columns like `source`
  * that are NOT pipeline fields and NOT dynamicFields keys, so the pipeline and
  * custom branches both miss them — this whitelist is what gives e.g. Source its
@@ -121,37 +121,37 @@ async function distinctRealColumn(tenantId: string, column: string): Promise<str
   switch (column) {
     case "source":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT source AS v FROM app_quikcrm."CrmLead"
+        SELECT source AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(source, '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "leadQuality":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT "leadQuality" AS v FROM app_quikcrm."CrmLead"
+        SELECT "leadQuality" AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("leadQuality", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "industry":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT industry AS v FROM app_quikcrm."CrmLead"
+        SELECT industry AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(industry, '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "country":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT country AS v FROM app_quikcrm."CrmLead"
+        SELECT country AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif(country, '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "cityName":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT "cityName" AS v FROM app_quikcrm."CrmLead"
+        SELECT "cityName" AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("cityName", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "stateName":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT "stateName" AS v FROM app_quikcrm."CrmLead"
+        SELECT "stateName" AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("stateName", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     case "jobTitle":
       return q(await prisma.$queryRaw<{ v: string | null }[]>`
-        SELECT "jobTitle" AS v FROM app_quikcrm."CrmLead"
+        SELECT "jobTitle" AS v FROM app_quikcredflow."CrmLead"
         WHERE "tenantId" = ${tenantId} AND "deletedAt" IS NULL AND nullif("jobTitle", '') IS NOT NULL
         GROUP BY 1 ORDER BY count(*) DESC LIMIT ${PICKER_MAX + 1}`);
     default:

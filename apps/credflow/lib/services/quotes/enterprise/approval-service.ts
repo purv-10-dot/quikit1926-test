@@ -1,4 +1,4 @@
-import type { CrmQuoteApprovalStatus } from "@quikit/database";
+import type { QcfQuoteApprovalStatus } from "@quikit/database";
 import { db } from "@/lib/db";
 import { toNumber } from "@/lib/services/quotes/decimal";
 import { getQuoteEnterpriseSettings } from "./settings";
@@ -21,7 +21,7 @@ export async function evaluateQuoteApproval(
   quoteId: string,
 ): Promise<ApprovalEvaluation> {
   const rules = (await getQuoteEnterpriseSettings(tenantId)).approval;
-  const quote = await db.crmQuote.findFirst({
+  const quote = await db.qcfQuote.findFirst({
     where: { id: quoteId, tenantId, deletedAt: null },
     include: { lines: true },
   });
@@ -62,7 +62,7 @@ export async function requestQuoteApproval(args: {
     throw new QuoteApprovalError("This quote does not require approval.", 400);
   }
 
-  const quote = await db.crmQuote.findFirst({
+  const quote = await db.qcfQuote.findFirst({
     where: { id: args.quoteId, tenantId: args.tenantId },
     select: { approvalStatus: true },
   });
@@ -73,7 +73,7 @@ export async function requestQuoteApproval(args: {
 
   const triggerReason = evaluation.reasons.join("; ");
   const row = await db.$transaction(async (tx) => {
-    const approval = await tx.crmQuoteApproval.create({
+    const approval = await tx.qcfQuoteApproval.create({
       data: {
         tenantId: args.tenantId,
         quoteId: args.quoteId,
@@ -83,11 +83,11 @@ export async function requestQuoteApproval(args: {
         requestedByName: args.userName,
       },
     });
-    await tx.crmQuote.update({
+    await tx.qcfQuote.update({
       where: { id: args.quoteId },
       data: { approvalStatus: "Pending" },
     });
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteApprovalRequested",
@@ -114,7 +114,7 @@ export async function decideQuoteApproval(args: {
   userName: string | null;
   notes?: string | null;
 }): Promise<void> {
-  const approval = await db.crmQuoteApproval.findFirst({
+  const approval = await db.qcfQuoteApproval.findFirst({
     where: {
       id: args.approvalId,
       quoteId: args.quoteId,
@@ -124,9 +124,9 @@ export async function decideQuoteApproval(args: {
   });
   if (!approval) throw new QuoteApprovalError("Pending approval not found", 404);
 
-  const status: CrmQuoteApprovalStatus = args.decision;
+  const status: QcfQuoteApprovalStatus = args.decision;
   await db.$transaction(async (tx) => {
-    await tx.crmQuoteApproval.update({
+    await tx.qcfQuoteApproval.update({
       where: { id: approval.id },
       data: {
         status,
@@ -136,11 +136,11 @@ export async function decideQuoteApproval(args: {
         decidedAt: new Date(),
       },
     });
-    await tx.crmQuote.update({
+    await tx.qcfQuote.update({
       where: { id: args.quoteId },
       data: { approvalStatus: status },
     });
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteApprovalDecided",
@@ -156,7 +156,7 @@ export async function decideQuoteApproval(args: {
 }
 
 export async function listApprovalInbox(tenantId: string) {
-  return db.crmQuoteApproval.findMany({
+  return db.qcfQuoteApproval.findMany({
     where: { tenantId, status: "Pending" },
     orderBy: { requestedAt: "asc" },
     include: {
@@ -180,7 +180,7 @@ export async function assertQuoteApprovedForSend(
 ): Promise<void> {
   const evaluation = await evaluateQuoteApproval(tenantId, quoteId);
   if (!evaluation.required) return;
-  const quote = await db.crmQuote.findFirst({
+  const quote = await db.qcfQuote.findFirst({
     where: { id: quoteId, tenantId },
     select: { approvalStatus: true },
   });

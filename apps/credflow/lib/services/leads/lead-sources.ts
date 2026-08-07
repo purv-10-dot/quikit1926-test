@@ -9,10 +9,10 @@ export type { DefaultLeadSource } from "@/lib/leads/lead-sources-defaults";
  * (same pattern as call dispositions and pipeline stage defaults).
  */
 export async function ensureDefaultLeadSources(tenantId: string): Promise<void> {
-  const count = await prisma.crmLeadSource.count({ where: { tenantId } });
+  const count = await prisma.qcfLeadSource.count({ where: { tenantId } });
   if (count > 0) return;
 
-  await prisma.crmLeadSource.createMany({
+  await prisma.qcfLeadSource.createMany({
     data: DEFAULT_LEAD_SOURCES.map((name) => ({
       tenantId,
       name,

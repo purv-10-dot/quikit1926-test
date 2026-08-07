@@ -18,13 +18,13 @@ export async function moduleHasDocuments(
   const { tenantId } = user;
   const base = { tenantId, refType, deletedAt: null as null };
 
-  const doc = await prisma.crmDocument.findFirst({
+  const doc = await prisma.qcfDocument.findFirst({
     where: base,
     select: { id: true },
   });
   if (doc) return true;
 
-  const folder = await prisma.crmDocumentFolder.findFirst({
+  const folder = await prisma.qcfDocumentFolder.findFirst({
     where: { ...base, refId: { not: null } },
     select: { id: true },
   });
@@ -53,7 +53,7 @@ export async function listVisibleExplorerModules(
 }
 
 export async function globalModuleHasTreeChildren(user: SessionUser): Promise<boolean> {
-  const folder = await prisma.crmDocumentFolder.findFirst({
+  const folder = await prisma.qcfDocumentFolder.findFirst({
     where: {
       tenantId: user.tenantId,
       refType: null,

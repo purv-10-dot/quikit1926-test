@@ -16,12 +16,12 @@ process.env.EMAIL_PROVIDER = "console"; // GUARD: captured transport before any 
 
 import { integrationPrisma } from "../../helpers/integrationDb";
 import { executeSendEmail } from "@/lib/services/automation/email-action";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
 const TENANT = `int_b2_${Date.now()}`;
 
-async function mkLead(overrides: Partial<CrmLead>): Promise<CrmLead> {
-  return integrationPrisma.crmLead.create({
+async function mkLead(overrides: Partial<QcfLead>): Promise<QcfLead> {
+  return integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: "B2 Lead", stage: "New", status: "Open", ...overrides } as never,
   });
 }
@@ -31,8 +31,8 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmOutboundMessageLog.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfOutboundMessageLog.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 
@@ -46,7 +46,7 @@ describe("B2 send_email action · real DB (captured transport)", () => {
     });
 
     expect(res.status).toBe("sent");
-    const row = await integrationPrisma.crmOutboundMessageLog.findUnique({ where: { id: res.logId } });
+    const row = await integrationPrisma.qcfOutboundMessageLog.findUnique({ where: { id: res.logId } });
     expect(row?.subject).toBe("Hello Ada");
     expect(row?.body).toBe("Your name is B2 Lead.");
     expect(row?.status).toBe("sent");
@@ -57,7 +57,7 @@ describe("B2 send_email action · real DB (captured transport)", () => {
     const lead = await mkLead({ email: "dne+b2@example.test", doNotEmail: true });
     const res = await executeSendEmail({ tenantId: TENANT, lead, cfg: { subject: "s", body: "b" } });
     expect(res).toMatchObject({ status: "skipped", reason: "do-not-email" });
-    const row = await integrationPrisma.crmOutboundMessageLog.findUnique({ where: { id: res.logId } });
+    const row = await integrationPrisma.qcfOutboundMessageLog.findUnique({ where: { id: res.logId } });
     expect(row?.status).toBe("skipped");
     expect(row?.sentAt).toBeNull();
   });

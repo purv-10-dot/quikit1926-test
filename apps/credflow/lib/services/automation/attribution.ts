@@ -1,7 +1,7 @@
 /**
  * [P2.2] Attribution for automated lead writes (SPEC §8 / Build-Plan Task 2.2).
  *
- * One CrmAutomationAttribution row per automated field write so "why did this
+ * One QcfAutomationAttribution row per automated field write so "why did this
  * lead change?" is a single read: engine source, automation + rule/node,
  * trigger event, before→after, and the trigger-time field snapshot. Written by
  * BOTH engines; `engineSource` discriminates "automation" vs "legacy-disposition".
@@ -11,7 +11,7 @@
  */
 import type { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
-import type { CrmLead as Lead } from "@prisma/client";
+import type { QcfLead as Lead } from "@prisma/client";
 
 /** Optional trigger context threaded from the emit site (Task 2.3) into runFrom.
  *  When absent, runFrom captures a run-start snapshot and generates an eventId. */
@@ -48,7 +48,7 @@ export async function recordAttribution(a: {
   snapshot?: Record<string, unknown> | null;
 }): Promise<void> {
   try {
-    await prisma.crmAutomationAttribution.create({
+    await prisma.qcfAutomationAttribution.create({
       data: {
         tenantId: a.tenantId,
         leadId: a.leadId,

@@ -8,7 +8,7 @@
  * matrix, which is what makes the default-deny gate in `assertModule` safe
  * (an empty matrix would otherwise lock everyone out).
  *
- * Permission templates (CrmPermissionTemplate) layer additively on top of this
+ * Permission templates (QcfPermissionTemplate) layer additively on top of this
  * baseline and carry field-level masking. See `getEffectiveMatrix`.
  */
 import {

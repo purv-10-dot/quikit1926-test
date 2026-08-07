@@ -399,7 +399,7 @@ export async function clickToCall(to: string, partyA?: string): Promise<ClickToC
   //   success: { type: "success", campid: 2920340, deskphone: "...", message: "..." }
   //   failure: { type: "error",   message: "Invalid Auth Code or use latest api version!" }
   // `campid` arrives as a NUMBER at the top level — coerce to string so it
-  // can flow into CrmCallLog.providerCallSid (the column is text). The legacy
+  // can flow into QcfCallLog.providerCallSid (the column is text). The legacy
   // `data.callsid` shape from the older /api/ endpoint is kept as a fallback
   // in case the provider switches it back.
   type ProviderResponse = {

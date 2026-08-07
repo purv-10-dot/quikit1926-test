@@ -6,7 +6,7 @@ import { getEffectiveMatrix } from "@/lib/auth/permissions";
 import { LeadDashboardShell } from "@/components/leads/lead-dashboard-shell";
 import { getFullLeadRecord } from "@/lib/services/leads/full-record";
 import { STAGE_LABEL } from "@/lib/services/opportunities/stage-labels";
-import type { CrmOpportunityStage } from "@prisma/client";
+import type { QcfOpportunityStage } from "@prisma/client";
 import { formatGeneric } from "@/lib/services/opportunities/currency";
 import { LeadDashboardSkeleton } from "@/components/leads/dashboard/skeleton";
 
@@ -27,7 +27,7 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const [record, dispositions] = await Promise.all([
     getFullLeadRecord({ user, leadId: id }),
-    prisma.crmCallDisposition.findMany({
+    prisma.qcfCallDisposition.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { code: "asc" },
       select: { id: true, code: true, label: true },
@@ -73,7 +73,7 @@ export default async function LeadDetailPage({ params }: Props) {
     opportunities: record.opportunities.map((o) => ({
       id: o.id,
       name: o.name,
-      stage: STAGE_LABEL[o.stage as CrmOpportunityStage] ?? o.stage,
+      stage: STAGE_LABEL[o.stage as QcfOpportunityStage] ?? o.stage,
       amountDisplay:
         o.amount != null ? formatGeneric(Number(o.amount), o.currency ?? "INR") : null,
     })),
@@ -117,7 +117,7 @@ export default async function LeadDetailPage({ params }: Props) {
     opportunities: record.opportunities.map((o) => ({
       id: o.id,
       name: o.name,
-      stage: STAGE_LABEL[o.stage as CrmOpportunityStage] ?? o.stage,
+      stage: STAGE_LABEL[o.stage as QcfOpportunityStage] ?? o.stage,
       createdAt: o.createdAt,
     })),
     documents: record.attachments.map((d) => ({

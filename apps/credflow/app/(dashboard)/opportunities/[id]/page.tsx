@@ -19,7 +19,7 @@ export default async function OpportunityDetailPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  const o = await prisma.crmOpportunity.findFirst({
+  const o = await prisma.qcfOpportunity.findFirst({
     where: { id, tenantId: user.tenantId },
     include: {
       account: true,
@@ -31,7 +31,7 @@ export default async function OpportunityDetailPage({
   if (!o) notFound();
 
   const lead = o.leadId
-    ? await prisma.crmLead.findFirst({
+    ? await prisma.qcfLead.findFirst({
         where: { id: o.leadId, tenantId: user.tenantId },
         select: {
           id: true,
@@ -56,12 +56,12 @@ export default async function OpportunityDetailPage({
   const linkedContact = lead?.contacts[0] ?? null;
 
   // Pull quotes linked to this opportunity. Separate query (not an include)
-  // because CrmQuote → CrmOpportunity isn't a typed Prisma relation —
+  // because QcfQuote → QcfOpportunity isn't a typed Prisma relation —
   // `opportunityId` is a bare String, same convention as the rest of the
-  // CRM (see schema.prisma CrmOpportunity.accountId comment for the
+  // CRM (see schema.prisma QcfOpportunity.accountId comment for the
   // cross-schema-FK rationale). Soft-delete is auto-filtered by the
   // middleware. Limited to 50 — enough for any sane Opportunity.
-  const quotes = await prisma.crmQuote.findMany({
+  const quotes = await prisma.qcfQuote.findMany({
     where: { tenantId: user.tenantId, opportunityId: o.id },
     select: {
       id: true,

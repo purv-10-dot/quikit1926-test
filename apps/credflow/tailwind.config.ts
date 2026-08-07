@@ -1,5 +1,5 @@
 import type { Config } from "tailwindcss";
-import baseConfig from "./packages/ui/tailwind.config";
+import baseConfig from "../../packages/ui/tailwind.config";
 
 /**
  * QuikCRM extends the monorepo's shared Tailwind config with the legacy

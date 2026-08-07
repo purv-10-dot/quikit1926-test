@@ -1,10 +1,10 @@
-import type { CrmProduct } from "@prisma/client";
+import type { QcfProduct } from "@prisma/client";
 import { resolveGstSplit } from "@/lib/services/products/gst";
 import { toNullableNumber, toNumber } from "@/lib/services/quotes/decimal";
 
 export type SerializedProduct = ReturnType<typeof serializeProduct>;
 
-export function serializeProduct(p: CrmProduct & {
+export function serializeProduct(p: QcfProduct & {
   categoryRef?: { id: string; name: string } | null;
   subcategoryRef?: { id: string; name: string } | null;
   brandRef?: { id: string; name: string } | null;

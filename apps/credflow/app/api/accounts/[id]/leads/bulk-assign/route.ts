@@ -40,7 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Owner user not found" }, { status: 400 });
     }
 
-    const targets = await prisma.crmLead.findMany({
+    const targets = await prisma.qcfLead.findMany({
       where: {
         id: { in: leadIds },
         tenantId: user.tenantId,
@@ -59,11 +59,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const targetIds = targets.map((t) => t.id);
 
     const [result] = await prisma.$transaction([
-      prisma.crmLead.updateMany({
+      prisma.qcfLead.updateMany({
         where: { id: { in: targetIds }, tenantId: user.tenantId },
         data: { ownerId, ownerName },
       }),
-      prisma.crmActivity.create({
+      prisma.qcfActivity.create({
         data: {
           tenantId: user.tenantId,
           type: "BulkOwnershipChange",

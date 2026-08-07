@@ -57,7 +57,7 @@ export default async function PrintQuotePage({
   // critical-path; we render placeholders if missing.
   const [account, contact, company] = await Promise.all([
     quote.accountId
-      ? db.crmAccount.findFirst({
+      ? db.qcfAccount.findFirst({
           where: { id: quote.accountId, tenantId: user.tenantId },
           select: {
             name: true,
@@ -70,7 +70,7 @@ export default async function PrintQuotePage({
         })
       : null,
     quote.contactId
-      ? db.crmContact.findFirst({
+      ? db.qcfContact.findFirst({
           where: { id: quote.contactId, tenantId: user.tenantId },
           select: { firstName: true, lastName: true, email: true, phone: true, title: true },
         })

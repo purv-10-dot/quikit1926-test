@@ -15,9 +15,9 @@ function adminSession() {
 
 describe("POST /api/activities/lead-log", () => {
   beforeEach(() => {
-    db.crmLead.findFirst.mockReset();
-    db.crmActivity.create.mockReset();
-    db.crmActivity.upsert.mockReset();
+    db.qcfLead.findFirst.mockReset();
+    db.qcfActivity.create.mockReset();
+    db.qcfActivity.upsert.mockReset();
     db.user.findUnique.mockReset();
     setSession(null);
   });
@@ -51,7 +51,7 @@ describe("POST /api/activities/lead-log", () => {
 
   it("creates an activity for a valid lead-log payload", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
     db.user.findUnique.mockResolvedValue({
       id: "u1",
       firstName: "Alice",
@@ -83,8 +83,8 @@ describe("POST /api/activities/lead-log", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    db.crmActivity.create.mockResolvedValue(created as never);
-    db.crmLead.findMany.mockResolvedValue([{ id: "L1", name: "ACME Lead" } as never]);
+    db.qcfActivity.create.mockResolvedValue(created as never);
+    db.qcfLead.findMany.mockResolvedValue([{ id: "L1", name: "ACME Lead" } as never]);
 
     const { POST } = await import("@/app/api/activities/lead-log/route");
     const req = new Request("http://test/api/activities/lead-log", {
@@ -106,7 +106,7 @@ describe("POST /api/activities/lead-log", () => {
 
   it("returns 404 when lead is missing", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue(null);
+    db.qcfLead.findFirst.mockResolvedValue(null);
     const { POST } = await import("@/app/api/activities/lead-log/route");
     const req = new Request("http://test/api/activities/lead-log", {
       method: "POST",

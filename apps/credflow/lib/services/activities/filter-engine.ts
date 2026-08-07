@@ -1,4 +1,4 @@
-// Translate the filter DSL into a Prisma `where` for CrmActivity.
+// Translate the filter DSL into a Prisma `where` for QcfActivity.
 // Mirrors lib/services/contacts/filter-engine.ts but adds JSON-path
 // handling for the embedded `outreach` document.
 import type { ConditionRowInput, FilterPayloadInput } from "@/lib/validators/lead-filter";

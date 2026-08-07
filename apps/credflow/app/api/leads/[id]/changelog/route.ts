@@ -45,7 +45,7 @@ export async function GET(
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "view");
 
-    const lead = await prisma.crmLead.findUnique({ where: { id } });
+    const lead = await prisma.qcfLead.findUnique({ where: { id } });
     if (!lead || lead.tenantId !== user.tenantId) {
       return NextResponse.json(
         { success: false, error: "Not found" },
@@ -85,13 +85,13 @@ export async function GET(
 
     const skip = (q.page - 1) * q.pageSize;
     const [rows, total] = await Promise.all([
-      prisma.crmAuditLog.findMany({
+      prisma.qcfAuditLog.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip,
         take: q.pageSize,
       }),
-      prisma.crmAuditLog.count({ where }),
+      prisma.qcfAuditLog.count({ where }),
     ]);
 
     // Field-name filtering happens in memory because the changed-fields are
@@ -133,14 +133,14 @@ export async function GET(
           })
         : Promise.resolve([]),
       accountIds.size
-        ? prisma.crmAccount.findMany({
+        ? prisma.qcfAccount.findMany({
             where: { tenantId: user.tenantId, id: { in: Array.from(accountIds) } },
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
       contactIds.size
-        ? prisma.crmContact.findMany({
-            // CrmContact isn't middleware-protected — exclude trashed from labels.
+        ? prisma.qcfContact.findMany({
+            // QcfContact isn't middleware-protected — exclude trashed from labels.
             where: { tenantId: user.tenantId, id: { in: Array.from(contactIds) }, deletedAt: null },
             select: { id: true, firstName: true, lastName: true, email: true },
           })

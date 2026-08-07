@@ -4,7 +4,7 @@
  * Two responsibilities:
  *   1. listUsersForPicker — the user list an agent may pick for a user_picker field.
  *   2. validateUserPickerSelection — single/multi + dedup guard for the value
- *      written to CrmFieldValue.valueUserIds on save (full save wiring: Unit 6).
+ *      written to QcfFieldValue.valueUserIds on save (full save wiring: Unit 6).
  *
  * Scope model (2026-08-06):
  *   - all_users -> every ACTIVE tenant user (the field is explicitly configured
@@ -15,7 +15,7 @@
  *   - role       -> active tenant users holding the given role (no role => empty).
  *
  * The team/role clamps reuse the SAME group tables as getScope
- * (CrmSalesGroupMember + CrmSalesGroupManager). Missing scope data fails CLOSED
+ * (QcfSalesGroupMember + QcfSalesGroupManager). Missing scope data fails CLOSED
  * (see callerTeam) so a teamless non-admin never widens past themselves on the
  * team scope. all_users is an intentional, config-driven org-wide list.
  */
@@ -49,8 +49,8 @@ interface SessionLike {
 /** The sales groups the caller belongs to (member OR manager). */
 async function callerGroupIds(userId: string): Promise<string[]> {
   const [member, manager] = await Promise.all([
-    db.crmSalesGroupMember.findMany({ where: { userId }, select: { groupId: true } }),
-    db.crmSalesGroupManager.findMany({ where: { userId }, select: { groupId: true } }),
+    db.qcfSalesGroupMember.findMany({ where: { userId }, select: { groupId: true } }),
+    db.qcfSalesGroupManager.findMany({ where: { userId }, select: { groupId: true } }),
   ]);
   return [...new Set([...member.map((g) => g.groupId), ...manager.map((g) => g.groupId)])];
 }
@@ -59,11 +59,11 @@ async function callerGroupIds(userId: string): Promise<string[]> {
 async function usersInGroups(groupIds: string[]): Promise<Set<string>> {
   if (groupIds.length === 0) return new Set();
   const [members, managers] = await Promise.all([
-    db.crmSalesGroupMember.findMany({
+    db.qcfSalesGroupMember.findMany({
       where: { groupId: { in: groupIds } },
       select: { userId: true },
     }),
-    db.crmSalesGroupManager.findMany({
+    db.qcfSalesGroupManager.findMany({
       where: { groupId: { in: groupIds } },
       select: { userId: true },
     }),
@@ -150,7 +150,7 @@ export async function listUsersForPicker(
 
 /**
  * Validate a user_picker selection before it is written to
- * CrmFieldValue.valueUserIds. Required-ness is enforced separately by the
+ * QcfFieldValue.valueUserIds. Required-ness is enforced separately by the
  * field's requiredLevel, so an empty selection is allowed here.
  */
 export function validateUserPickerSelection(mode: UserPickerMode, userIds: string[]): void {

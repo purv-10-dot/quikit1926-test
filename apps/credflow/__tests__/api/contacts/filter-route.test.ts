@@ -5,9 +5,9 @@ const db = mockDb();
 
 describe("POST /api/contacts/filter", () => {
   beforeEach(() => {
-    db.crmContact.findMany.mockReset();
-    db.crmContact.count.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfContact.findMany.mockReset();
+    db.qcfContact.count.mockReset();
+    db.qcfAccount.findMany.mockReset();
     setSession(null);
   });
 
@@ -19,9 +19,9 @@ describe("POST /api/contacts/filter", () => {
       email: "a@b.co",
       name: "Alice",
     });
-    db.crmContact.findMany.mockResolvedValue([]);
-    db.crmContact.count.mockResolvedValue(0);
-    db.crmAccount.findMany.mockResolvedValue([]);
+    db.qcfContact.findMany.mockResolvedValue([]);
+    db.qcfContact.count.mockResolvedValue(0);
+    db.qcfAccount.findMany.mockResolvedValue([]);
 
     const { POST } = await import("@/app/api/contacts/filter/route");
     const req = new Request("http://test/api/contacts/filter", {
@@ -41,7 +41,7 @@ describe("POST /api/contacts/filter", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
 
-    const where = db.crmContact.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
     expect(Array.isArray(where.AND)).toBe(true);
@@ -59,9 +59,9 @@ describe("POST /api/contacts/filter", () => {
       email: "a@b.co",
       name: "Alice",
     });
-    db.crmContact.findMany.mockResolvedValue([]);
-    db.crmContact.count.mockResolvedValue(0);
-    db.crmAccount.findMany.mockResolvedValue([]);
+    db.qcfContact.findMany.mockResolvedValue([]);
+    db.qcfContact.count.mockResolvedValue(0);
+    db.qcfAccount.findMany.mockResolvedValue([]);
 
     const { POST } = await import("@/app/api/contacts/filter/route");
     const req = new Request("http://test/api/contacts/filter", {
@@ -80,7 +80,7 @@ describe("POST /api/contacts/filter", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const where = db.crmContact.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
     const searchFrag = where.AND.find((p) => "OR" in p) as { OR: unknown[] } | undefined;

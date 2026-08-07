@@ -93,7 +93,7 @@ export async function listGlobalAggregatedTreeChildren(
 
   if (parsed.kind === "module" && parsed.module) {
     if (parsed.module === "global") {
-      const rows = await prisma.crmDocumentFolder.findMany({
+      const rows = await prisma.qcfDocumentFolder.findMany({
         where: {
           tenantId: user.tenantId,
           refType: null,
@@ -153,7 +153,7 @@ export async function listGlobalAggregatedTreeChildren(
 
   if (parsed.kind === "entity" && parsed.refType && parsed.refId) {
     await assertDocumentParent(user, parsed.refType, parsed.refId);
-    const rows = await prisma.crmDocumentFolder.findMany({
+    const rows = await prisma.qcfDocumentFolder.findMany({
       where: {
         tenantId: user.tenantId,
         refType: parsed.refType,
@@ -190,7 +190,7 @@ export async function listGlobalAggregatedTreeChildren(
   }
 
   if (parsed.kind === "folder" && parsed.folderId) {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: parsed.folderId, tenantId: user.tenantId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Folder not found", 404);
@@ -198,7 +198,7 @@ export async function listGlobalAggregatedTreeChildren(
       await assertDocumentParent(user, folder.refType as DocumentRefType, folder.refId);
     }
 
-    const rows = await prisma.crmDocumentFolder.findMany({
+    const rows = await prisma.qcfDocumentFolder.findMany({
       where: {
         tenantId: user.tenantId,
         refType: folder.refType,
@@ -274,7 +274,7 @@ export async function buildGlobalExplorerBreadcrumbs(
   }
 
   if (location.kind === "folder") {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
       select: { id: true, name: true, parentFolderId: true, refType: true, refId: true },
     });
@@ -294,7 +294,7 @@ export async function buildGlobalExplorerBreadcrumbs(
         if (seen.has(cur)) break;
         seen.add(cur);
         const row: { id: string; name: string; parentFolderId: string | null } | null =
-          await prisma.crmDocumentFolder.findFirst({
+          await prisma.qcfDocumentFolder.findFirst({
           where: { id: cur, tenantId: user.tenantId, deletedAt: null },
           select: { id: true, name: true, parentFolderId: true },
         });
@@ -324,7 +324,7 @@ export async function buildGlobalExplorerBreadcrumbs(
       if (seen.has(curId)) break;
       seen.add(curId);
       const row: { id: string; name: string; parentFolderId: string | null } | null =
-        await prisma.crmDocumentFolder.findFirst({
+        await prisma.qcfDocumentFolder.findFirst({
         where: { id: curId, tenantId: user.tenantId, deletedAt: null },
         select: { id: true, name: true, parentFolderId: true },
       });
@@ -342,7 +342,7 @@ export async function buildGlobalExplorerBreadcrumbs(
   return crumbs;
 }
 
-/** Global module panel: tenant-global folders + every CrmDocument (all modules). */
+/** Global module panel: tenant-global folders + every QcfDocument (all modules). */
 async function listGlobalAllDocumentsView(
   user: SessionUser,
   breadcrumbs: BreadcrumbItem[],
@@ -373,18 +373,18 @@ async function listGlobalAllDocumentsView(
   }
 
   const [folderRows, fileRows, totalFolders, totalFiles] = await Promise.all([
-    prisma.crmDocumentFolder.findMany({
+    prisma.qcfDocumentFolder.findMany({
       where: folderWhere,
       orderBy: { name: "asc" },
     }),
-    prisma.crmDocument.findMany({
+    prisma.qcfDocument.findMany({
       where: fileWhere,
       orderBy: { createdAt: "desc" },
       skip,
       take: pageSize,
     }),
-    prisma.crmDocumentFolder.count({ where: folderWhere }),
-    prisma.crmDocument.count({ where: fileWhere }),
+    prisma.qcfDocumentFolder.count({ where: folderWhere }),
+    prisma.qcfDocument.count({ where: fileWhere }),
   ]);
 
   const names = await resolveUploaderNames(
@@ -505,7 +505,7 @@ export async function listGlobalExplorerContents(
   }
 
   if (location.kind === "folder") {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Folder not found", 404);

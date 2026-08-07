@@ -6,7 +6,7 @@ import type { SessionUser } from "@/types/permission";
 const MODULE = "sales_groups";
 
 export async function listGroups(tenantId: string) {
-  return prisma.crmSalesGroup.findMany({
+  return prisma.qcfSalesGroup.findMany({
     where: { tenantId },
     orderBy: { name: "asc" },
     include: {
@@ -18,7 +18,7 @@ export async function listGroups(tenantId: string) {
 export async function getGroup(tenantId: string, id: string) {
   // Cross-schema relation to public.User isn't declared on the link tables —
   // fetch the user rows in a follow-up query and merge.
-  const group = await prisma.crmSalesGroup.findFirst({
+  const group = await prisma.qcfSalesGroup.findFirst({
     where: { id, tenantId },
     include: {
       members: true,
@@ -50,9 +50,9 @@ export async function getGroup(tenantId: string, id: string) {
 export async function createGroup(opts: { actor: SessionUser; data: { name: string } }) {
   const { actor, data } = opts;
   return prisma.$transaction(async (tx) => {
-    const dupe = await tx.crmSalesGroup.findFirst({ where: { tenantId: actor.tenantId, name: data.name } });
+    const dupe = await tx.qcfSalesGroup.findFirst({ where: { tenantId: actor.tenantId, name: data.name } });
     if (dupe) throw new SettingsConflictError(`Sales group "${data.name}" already exists`);
-    const created = await tx.crmSalesGroup.create({ data: { tenantId: actor.tenantId, name: data.name } });
+    const created = await tx.qcfSalesGroup.create({ data: { tenantId: actor.tenantId, name: data.name } });
     await audit(
       { tenantId: actor.tenantId, userId: actor.userId, module: MODULE, action: "create", resourceId: created.id, after: created },
       tx,
@@ -64,15 +64,15 @@ export async function createGroup(opts: { actor: SessionUser; data: { name: stri
 export async function updateGroup(opts: { actor: SessionUser; id: string; patch: { name?: string } }) {
   const { actor, id, patch } = opts;
   return prisma.$transaction(async (tx) => {
-    const before = await tx.crmSalesGroup.findFirst({ where: { id, tenantId: actor.tenantId } });
+    const before = await tx.qcfSalesGroup.findFirst({ where: { id, tenantId: actor.tenantId } });
     if (!before) throw new SettingsConflictError("Sales group not found", 404);
     if (patch.name && patch.name !== before.name) {
-      const dupe = await tx.crmSalesGroup.findFirst({
+      const dupe = await tx.qcfSalesGroup.findFirst({
         where: { tenantId: actor.tenantId, name: patch.name, id: { not: id } },
       });
       if (dupe) throw new SettingsConflictError(`Sales group "${patch.name}" already exists`);
     }
-    const updated = await tx.crmSalesGroup.update({ where: { id }, data: patch });
+    const updated = await tx.qcfSalesGroup.update({ where: { id }, data: patch });
     await audit(
       { tenantId: actor.tenantId, userId: actor.userId, module: MODULE, action: "update", resourceId: id, before, after: updated },
       tx,
@@ -84,10 +84,10 @@ export async function updateGroup(opts: { actor: SessionUser; id: string; patch:
 export async function deleteGroup(opts: { actor: SessionUser; id: string }) {
   const { actor, id } = opts;
   return prisma.$transaction(async (tx) => {
-    const target = await tx.crmSalesGroup.findFirst({ where: { id, tenantId: actor.tenantId } });
+    const target = await tx.qcfSalesGroup.findFirst({ where: { id, tenantId: actor.tenantId } });
     if (!target) throw new SettingsConflictError("Sales group not found", 404);
     // Cascade-deletes members/managers/accounts via FK onDelete: Cascade
-    await tx.crmSalesGroup.delete({ where: { id } });
+    await tx.qcfSalesGroup.delete({ where: { id } });
     await audit(
       { tenantId: actor.tenantId, userId: actor.userId, module: MODULE, action: "delete", resourceId: id, before: target },
       tx,
@@ -103,7 +103,7 @@ export async function addMembers(opts: {
 }) {
   const { actor, groupId, userIds, asManager } = opts;
   return prisma.$transaction(async (tx) => {
-    const grp = await tx.crmSalesGroup.findFirst({ where: { id: groupId, tenantId: actor.tenantId } });
+    const grp = await tx.qcfSalesGroup.findFirst({ where: { id: groupId, tenantId: actor.tenantId } });
     if (!grp) throw new SettingsConflictError("Sales group not found", 404);
     // Verify all users have an active membership in this tenant.
     const usersInOrg = await tx.orgMember.count({
@@ -113,12 +113,12 @@ export async function addMembers(opts: {
       throw new SettingsConflictError("One or more users are not in this org");
     }
     if (asManager) {
-      await tx.crmSalesGroupManager.createMany({
+      await tx.qcfSalesGroupManager.createMany({
         data: userIds.map((userId) => ({ groupId, userId })),
         skipDuplicates: true,
       });
     } else {
-      await tx.crmSalesGroupMember.createMany({
+      await tx.qcfSalesGroupMember.createMany({
         data: userIds.map((userId) => ({ groupId, userId })),
         skipDuplicates: true,
       });
@@ -146,9 +146,9 @@ export async function removeMember(opts: {
   const { actor, groupId, userId, asManager } = opts;
   return prisma.$transaction(async (tx) => {
     if (asManager) {
-      await tx.crmSalesGroupManager.deleteMany({ where: { groupId, userId } });
+      await tx.qcfSalesGroupManager.deleteMany({ where: { groupId, userId } });
     } else {
-      await tx.crmSalesGroupMember.deleteMany({ where: { groupId, userId } });
+      await tx.qcfSalesGroupMember.deleteMany({ where: { groupId, userId } });
     }
     await audit(
       {
@@ -167,13 +167,13 @@ export async function removeMember(opts: {
 export async function addAccounts(opts: { actor: SessionUser; groupId: string; accountIds: string[] }) {
   const { actor, groupId, accountIds } = opts;
   return prisma.$transaction(async (tx) => {
-    const grp = await tx.crmSalesGroup.findFirst({ where: { id: groupId, tenantId: actor.tenantId } });
+    const grp = await tx.qcfSalesGroup.findFirst({ where: { id: groupId, tenantId: actor.tenantId } });
     if (!grp) throw new SettingsConflictError("Sales group not found", 404);
-    const inOrg = await tx.crmAccount.count({ where: { tenantId: actor.tenantId, id: { in: accountIds } } });
+    const inOrg = await tx.qcfAccount.count({ where: { tenantId: actor.tenantId, id: { in: accountIds } } });
     if (inOrg !== accountIds.length) {
       throw new SettingsConflictError("One or more accounts are not in this org");
     }
-    await tx.crmSalesGroupAccount.createMany({
+    await tx.qcfSalesGroupAccount.createMany({
       data: accountIds.map((accountId) => ({ groupId, accountId })),
       skipDuplicates: true,
     });
@@ -194,7 +194,7 @@ export async function addAccounts(opts: { actor: SessionUser; groupId: string; a
 export async function removeAccount(opts: { actor: SessionUser; groupId: string; accountId: string }) {
   const { actor, groupId, accountId } = opts;
   return prisma.$transaction(async (tx) => {
-    await tx.crmSalesGroupAccount.deleteMany({ where: { groupId, accountId } });
+    await tx.qcfSalesGroupAccount.deleteMany({ where: { groupId, accountId } });
     await audit(
       {
         tenantId: actor.tenantId,

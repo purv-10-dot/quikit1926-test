@@ -15,7 +15,7 @@ export default async function WorkflowBuilderPage({
   // Tenant-scoped load-back of an existing definition (Constraint 1.4). A new
   // build (no id) starts empty.
   const def = id
-    ? await prisma.crmWorkflowDefinition.findFirst({
+    ? await prisma.qcfWorkflowDefinition.findFirst({
         where: { id, tenantId: user.tenantId, deletedAt: null },
       })
     : null;

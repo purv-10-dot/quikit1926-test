@@ -4,13 +4,13 @@
  */
 import { describe, expect, it } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { evalIfElse, evalCondition } from "@/lib/services/automation/workflow-engine";
 import type { IfElseConfig } from "@/types/workflow";
 
 mockDb(); // activate the @quikit/database mock so importing the engine is safe
 
-const lead = (over: Partial<Record<string, unknown>>) => over as unknown as CrmLead;
+const lead = (over: Partial<Record<string, unknown>>) => over as unknown as QcfLead;
 
 describe("evalIfElse · multi-value IN", () => {
   const cfg: IfElseConfig = {

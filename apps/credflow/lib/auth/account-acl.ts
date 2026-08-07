@@ -20,7 +20,7 @@ export type AclScope =
  * Compute the set of accounts a user can see.
  *
  * - Admin role: unrestricted.
- * - Others: union of (a) CrmUserAccountAccess rows + (b) accounts attached
+ * - Others: union of (a) QcfUserAccountAccess rows + (b) accounts attached
  *   to any sales group the user is a member or manager of.
  * - Backwards-compat: if no ACL rows AND no sales-group membership exists,
  *   returns unrestricted (matches the legacy "no ACL configured = full org access" behavior).
@@ -29,15 +29,15 @@ export async function getScope(user: SessionUser): Promise<AclScope> {
   if (user.role === ADMIN_ROLE) return { unrestricted: true };
 
   const [direct, groupMember, groupManager] = await Promise.all([
-    db.crmUserAccountAccess.findMany({
+    db.qcfUserAccountAccess.findMany({
       where: { userId: user.userId },
       select: { accountId: true },
     }),
-    db.crmSalesGroupMember.findMany({
+    db.qcfSalesGroupMember.findMany({
       where: { userId: user.userId },
       select: { groupId: true },
     }),
-    db.crmSalesGroupManager.findMany({
+    db.qcfSalesGroupManager.findMany({
       where: { userId: user.userId },
       select: { groupId: true },
     }),
@@ -50,7 +50,7 @@ export async function getScope(user: SessionUser): Promise<AclScope> {
     ]),
   ];
   const groupAccounts = groupIds.length
-    ? await db.crmSalesGroupAccount.findMany({
+    ? await db.qcfSalesGroupAccount.findMany({
         where: { groupId: { in: groupIds } },
         select: { accountId: true },
       })

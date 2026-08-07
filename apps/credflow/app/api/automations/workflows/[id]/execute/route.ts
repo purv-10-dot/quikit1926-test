@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
-    const wf = await prisma.crmWorkflowDefinition.findFirst({ where: { id, tenantId: user.tenantId } });
+    const wf = await prisma.qcfWorkflowDefinition.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const nodes = (wf.graphNodes as unknown as WorkflowNode[]) ?? [];

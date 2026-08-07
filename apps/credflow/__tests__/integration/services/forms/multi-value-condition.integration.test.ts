@@ -25,24 +25,24 @@ let setId: string;
 let versionId: string;
 
 beforeAll(async () => {
-  const set = await db.crmFormSet.create({
+  const set = await db.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
   });
   setId = set.id;
-  versionId = (await db.crmFormSetVersion.create({
+  versionId = (await db.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   })).id;
 });
 
 afterAll(async () => {
-  const rules = await db.crmFormRule.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  const rules = await db.qcfFormRule.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
   const rids = rules.map((r) => r.id);
   if (rids.length) {
-    await db.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
-    await db.crmFormRule.deleteMany({ where: { id: { in: rids } } });
+    await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
+    await db.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
   }
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("Phase 1 — is_any_of persists the full value SET (ordered)", () => {

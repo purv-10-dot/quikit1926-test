@@ -23,7 +23,7 @@ export interface AuditOptions {
 }
 
 export async function audit(opts: AuditOptions, tx: AnyTx = prisma): Promise<void> {
-  await tx.crmAuditLog.create({
+  await tx.qcfAuditLog.create({
     data: {
       tenantId: opts.tenantId,
       userId: opts.userId ?? null,

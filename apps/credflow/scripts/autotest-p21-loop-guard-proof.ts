@@ -27,23 +27,23 @@ async function main() {
 
   const day = loopDayKey();
   const stageChanges = (leadId: string) =>
-    prisma.crmActivity.count({ where: { tenantId: TENANT, leadId, type: "LeadStageChange" } });
+    prisma.qcfActivity.count({ where: { tenantId: TENANT, leadId, type: "LeadStageChange" } });
   const counter = (leadId: string) =>
-    prisma.crmAutomationLeadDayCount.findUnique({ where: { tenantId_leadId_day: { tenantId: TENANT, leadId, day } } });
+    prisma.qcfAutomationLeadDayCount.findUnique({ where: { tenantId_leadId_day: { tenantId: TENANT, leadId, day } } });
 
   const out: string[] = [];
   let allOk = true;
   const check = (n: string, ok: boolean, d: string) => { out.push(`${ok ? "PASS" : "FAIL"}  ${n} — ${d}`); allOk = allOk && ok; };
 
   // ─── fresh fixtures + counters ───
-  await prisma.crmAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
-  await prisma.crmActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
-  await prisma.crmLead.deleteMany({ where: { id: { in: [LOOP_LEAD, DUAL_LEAD] } } });
-  await prisma.crmLead.create({ data: { id: LOOP_LEAD, tenantId: TENANT, name: "P21 loop", stage: "New Lead", status: "Open", source: "p21" } });
-  await prisma.crmLead.create({ data: { id: DUAL_LEAD, tenantId: TENANT, name: "P21 dual", stage: "New Lead", status: "Open", source: "p21" } });
+  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
+  await prisma.qcfActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
+  await prisma.qcfLead.deleteMany({ where: { id: { in: [LOOP_LEAD, DUAL_LEAD] } } });
+  await prisma.qcfLead.create({ data: { id: LOOP_LEAD, tenantId: TENANT, name: "P21 loop", stage: "New Lead", status: "Open", source: "p21" } });
+  await prisma.qcfLead.create({ data: { id: DUAL_LEAD, tenantId: TENANT, name: "P21 dual", stage: "New Lead", status: "Open", source: "p21" } });
 
   // ─── 1. self-referential ping-pong ───
-  const wfA = await prisma.crmWorkflowDefinition.create({ data: {
+  const wfA = await prisma.qcfWorkflowDefinition.create({ data: {
     tenantId: TENANT, name: "P21 A New->NotConnected", status: "Active", triggerType: "trigger_lead_updated",
     graphNodes: [
       { id: "c", kind: "if_else", config: { conditions: [{ field: "stage", op: "in", value: ["New Lead"] }] } },
@@ -51,7 +51,7 @@ async function main() {
     ],
     graphEdges: [{ from: "c", to: "a", branch: "true" }],
   } });
-  const wfB = await prisma.crmWorkflowDefinition.create({ data: {
+  const wfB = await prisma.qcfWorkflowDefinition.create({ data: {
     tenantId: TENANT, name: "P21 B NotConnected->New", status: "Active", triggerType: "trigger_lead_updated",
     graphNodes: [
       { id: "c", kind: "if_else", config: { conditions: [{ field: "stage", op: "in", value: ["Not Connected"] }] } },
@@ -62,7 +62,7 @@ async function main() {
 
   // Simulate the cascade: alternate whichever rule matches. Run well past the cap.
   for (let i = 0; i < CAP + 5; i++) {
-    const l = await prisma.crmLead.findUnique({ where: { id: LOOP_LEAD } });
+    const l = await prisma.qcfLead.findUnique({ where: { id: LOOP_LEAD } });
     if (l?.stage === "New Lead") await runFrom(TENANT, wfA.id, LOOP_LEAD, "c");
     else if (l?.stage === "Not Connected") await runFrom(TENANT, wfB.id, LOOP_LEAD, "c");
   }
@@ -76,7 +76,7 @@ async function main() {
 
   // ─── 2. dual-engine counting on one lead/day ───
   // (a) automation write
-  const wfDual = await prisma.crmWorkflowDefinition.create({ data: {
+  const wfDual = await prisma.qcfWorkflowDefinition.create({ data: {
     tenantId: TENANT, name: "P21 dual automation", status: "Active", triggerType: "trigger_lead_updated",
     graphNodes: [{ id: "a", kind: "update_lead_field", config: { field: "status", value: "Not Interested" } }],
     graphEdges: [],
@@ -85,7 +85,7 @@ async function main() {
   const afterAutomation = await counter(DUAL_LEAD);
 
   // (b) real legacy-disposition write via the disposition engine
-  const rule = await prisma.crmAutomationRule.create({ data: {
+  const rule = await prisma.qcfAutomationRule.create({ data: {
     tenantId: TENANT, name: "P21 dispo", sortOrder: 1, isActive: true,
     trigger: { type: "activity_logged", activity_type: "call", disposition: "P21PROOF" },
     action: { type: "set_lead_status", status: "Future Lead" },
@@ -101,11 +101,11 @@ async function main() {
     `after legacy-disposition write, SAME counter=${afterDisposition?.count} (expected 2 — both engines incremented one row)`);
 
   // ─── cleanup ───
-  await prisma.crmWorkflowDefinition.deleteMany({ where: { id: { in: [wfA.id, wfB.id, wfDual.id] } } });
-  await prisma.crmAutomationRule.deleteMany({ where: { id: rule.id } });
-  await prisma.crmAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
-  await prisma.crmActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
-  await prisma.crmLead.deleteMany({ where: { id: { in: [LOOP_LEAD, DUAL_LEAD] } } });
+  await prisma.qcfWorkflowDefinition.deleteMany({ where: { id: { in: [wfA.id, wfB.id, wfDual.id] } } });
+  await prisma.qcfAutomationRule.deleteMany({ where: { id: rule.id } });
+  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
+  await prisma.qcfActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [LOOP_LEAD, DUAL_LEAD] } } });
+  await prisma.qcfLead.deleteMany({ where: { id: { in: [LOOP_LEAD, DUAL_LEAD] } } });
 
   console.log("\n" + out.join("\n"));
   console.log(`\n${allOk ? "ALL PASS" : "SOME FAILED"}`);

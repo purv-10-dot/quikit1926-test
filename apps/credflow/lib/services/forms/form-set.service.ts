@@ -6,7 +6,7 @@
  * its 4 protected fields (via seedProtectedDispositionTab from Unit 2).
  */
 import { prisma } from "@/lib/db/prisma";
-import type { CrmFormSet, CrmFormSetVersion } from "@quikit/database";
+import type { QcfFormSet, QcfFormSetVersion } from "@quikit/database";
 import { seedProtectedDispositionTab } from "@/lib/services/forms/form-structure.service";
 
 /** Create a call_disposition form set + its v1 draft + the protected tab/fields. */
@@ -14,8 +14,8 @@ export async function createFormSet(input: {
   tenantId: string;
   name: string;
   createdByUserId?: string | null;
-}): Promise<{ set: CrmFormSet; version: CrmFormSetVersion }> {
-  const set = await prisma.crmFormSet.create({
+}): Promise<{ set: QcfFormSet; version: QcfFormSetVersion }> {
+  const set = await prisma.qcfFormSet.create({
     data: {
       tenantId: input.tenantId,
       surface: "call_disposition",
@@ -24,7 +24,7 @@ export async function createFormSet(input: {
     },
   });
 
-  const version = await prisma.crmFormSetVersion.create({
+  const version = await prisma.qcfFormSetVersion.create({
     data: { formSetId: set.id, versionNumber: 1, status: "draft" },
   });
 
@@ -35,7 +35,7 @@ export async function createFormSet(input: {
 
 /** A tenant's call_disposition form sets, with their versions (draft/published). */
 export async function listFormSets(tenantId: string) {
-  return prisma.crmFormSet.findMany({
+  return prisma.qcfFormSet.findMany({
     where: { tenantId, surface: "call_disposition" },
     orderBy: { createdAt: "asc" },
     include: {

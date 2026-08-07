@@ -30,9 +30,9 @@ let srcTabId: string;
 let srcFieldId: string;
 
 beforeAll(async () => {
-  const set = await db.crmFormSet.create({ data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` } });
+  const set = await db.qcfFormSet.create({ data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` } });
   setId = set.id;
-  const version = await db.crmFormSetVersion.create({ data: { formSetId: setId, versionNumber: 1, status: "draft" } });
+  const version = await db.qcfFormSetVersion.create({ data: { formSetId: setId, versionNumber: 1, status: "draft" } });
   v1 = version.id;
 
   // Build a full structure on the draft: tab -> section, field (+options),
@@ -42,11 +42,11 @@ beforeAll(async () => {
   srcTabId = tab.id;
   const section = await createFormSection({ formTabId: srcTabId, name: "Bank", sortOrder: 0 });
 
-  const field = await db.crmFormField.create({
+  const field = await db.qcfFormField.create({
     data: { formSetVersionId: v1, tab: "call_disposition", formTabId: srcTabId, formSectionId: section.id, fieldKey: "payment_mode", label: "Payment Mode", fieldType: "dropdown", sortOrder: 0 },
   });
   srcFieldId = field.id;
-  await db.crmFormFieldOption.createMany({
+  await db.qcfFormFieldOption.createMany({
     data: [
       { formFieldId: srcFieldId, valueKey: "upi", label: "UPI", sortOrder: 0 },
       { formFieldId: srcFieldId, valueKey: "invoice", label: "Invoice", sortOrder: 1 },
@@ -58,7 +58,7 @@ beforeAll(async () => {
   await addRuleAction({ formRuleId: rule.id, actionType: "show_tab", targetKind: "tab", targetTabId: srcTabId, sortOrder: 0 });
 
   // A logged field value on v1 — record/history that must NOT be cloned.
-  await db.crmFieldValue.create({
+  await db.qcfFieldValue.create({
     data: { tenantId: TENANT, activityId: `act_${STAMP}`, formSetVersionId: v1, fieldKey: "payment_mode", valueType: "dropdown", valueText: "invoice" },
   });
 
@@ -67,28 +67,28 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const versions = await db.crmFormSetVersion.findMany({ where: { formSetId: setId }, select: { id: true } });
+  const versions = await db.qcfFormSetVersion.findMany({ where: { formSetId: setId }, select: { id: true } });
   const vids = versions.map((v) => v.id);
-  const tabs = await db.crmFormTab.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
-  const fields = await db.crmFormField.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
-  const rules = await db.crmFormRule.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
+  const tabs = await db.qcfFormTab.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
+  const fields = await db.qcfFormField.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
+  const rules = await db.qcfFormRule.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
   const fieldIds = fields.map((f) => f.id);
   const ruleIds = rules.map((r) => r.id);
   const tabIds = tabs.map((t) => t.id);
   // detach currentVersion so versions can be deleted
-  await db.crmFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
+  await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
   if (ruleIds.length) {
-    await db.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: ruleIds } } });
-    await db.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: ruleIds } } });
-    await db.crmFormRule.deleteMany({ where: { id: { in: ruleIds } } });
+    await db.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: ruleIds } } });
+    await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: ruleIds } } });
+    await db.qcfFormRule.deleteMany({ where: { id: { in: ruleIds } } });
   }
-  if (fieldIds.length) await db.crmFormFieldOption.deleteMany({ where: { formFieldId: { in: fieldIds } } });
-  await db.crmFieldValue.deleteMany({ where: { tenantId: TENANT } });
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
-  if (tabIds.length) await db.crmFormSection.deleteMany({ where: { formTabId: { in: tabIds } } });
-  await db.crmFormTab.deleteMany({ where: { formSetVersionId: { in: vids } } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  if (fieldIds.length) await db.qcfFormFieldOption.deleteMany({ where: { formFieldId: { in: fieldIds } } });
+  await db.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
+  if (tabIds.length) await db.qcfFormSection.deleteMany({ where: { formTabId: { in: tabIds } } });
+  await db.qcfFormTab.deleteMany({ where: { formSetVersionId: { in: vids } } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("cloneVersionToDraft — deep-copy completeness (the centerpiece)", () => {
@@ -102,10 +102,10 @@ describe("cloneVersionToDraft — deep-copy completeness (the centerpiece)", () 
 
     const cid = clone.id;
     const [tabs, sections, fields, rules] = await Promise.all([
-      db.crmFormTab.findMany({ where: { formSetVersionId: cid } }),
-      db.crmFormSection.findMany({ where: { tab: { formSetVersionId: cid } } }),
-      db.crmFormField.findMany({ where: { formSetVersionId: cid } }),
-      db.crmFormRule.findMany({ where: { formSetVersionId: cid }, include: { conditions: true, actions: true } }),
+      db.qcfFormTab.findMany({ where: { formSetVersionId: cid } }),
+      db.qcfFormSection.findMany({ where: { tab: { formSetVersionId: cid } } }),
+      db.qcfFormField.findMany({ where: { formSetVersionId: cid } }),
+      db.qcfFormRule.findMany({ where: { formSetVersionId: cid }, include: { conditions: true, actions: true } }),
     ]);
 
     expect(tabs).toHaveLength(1);
@@ -116,21 +116,21 @@ describe("cloneVersionToDraft — deep-copy completeness (the centerpiece)", () 
     expect(rules[0]!.actions).toHaveLength(1); // <- not silently lost
 
     // options copied with the field
-    const options = await db.crmFormFieldOption.findMany({ where: { formFieldId: fields[0]!.id } });
+    const options = await db.qcfFormFieldOption.findMany({ where: { formFieldId: fields[0]!.id } });
     expect(options).toHaveLength(2);
 
     // field values are record/history — pinned to v1, NEVER cloned
-    const clonedValues = await db.crmFieldValue.count({ where: { formSetVersionId: cid } });
+    const clonedValues = await db.qcfFieldValue.count({ where: { formSetVersionId: cid } });
     expect(clonedValues).toBe(0);
-    expect(await db.crmFieldValue.count({ where: { formSetVersionId: v1 } })).toBe(1);
+    expect(await db.qcfFieldValue.count({ where: { formSetVersionId: v1 } })).toBe(1);
   });
 
   it("remaps intra-version references: the cloned action.targetTabId points at the NEW tab, not the source's", async () => {
     const clone = await cloneVersionToDraft(v1);
     const cid = clone.id;
 
-    const newTab = await db.crmFormTab.findFirst({ where: { formSetVersionId: cid } });
-    const action = await db.crmFormRuleAction.findFirst({ where: { rule: { formSetVersionId: cid }, actionType: "show_tab" } });
+    const newTab = await db.qcfFormTab.findFirst({ where: { formSetVersionId: cid } });
+    const action = await db.qcfFormRuleAction.findFirst({ where: { rule: { formSetVersionId: cid }, actionType: "show_tab" } });
 
     expect(action!.targetTabId).toBe(newTab!.id);
     expect(action!.targetTabId).not.toBe(srcTabId); // the source tab must NOT leak into the clone
@@ -140,8 +140,8 @@ describe("cloneVersionToDraft — deep-copy completeness (the centerpiece)", () 
     const clone = await cloneVersionToDraft(v1);
     await createFormTab({ formSetVersionId: clone.id, name: "Extra", visibility: "always", sortOrder: 9 });
 
-    expect(await db.crmFormTab.count({ where: { formSetVersionId: clone.id } })).toBe(2);
-    expect(await db.crmFormTab.count({ where: { formSetVersionId: v1 } })).toBe(1); // source untouched
+    expect(await db.qcfFormTab.count({ where: { formSetVersionId: clone.id } })).toBe(2);
+    expect(await db.qcfFormTab.count({ where: { formSetVersionId: v1 } })).toBe(1); // source untouched
   });
 });
 
@@ -161,10 +161,10 @@ describe("publishVersion — lifecycle (draft -> published, previous retired, cu
     expect(published.status).toBe("published");
     expect(published.publishedAt).not.toBeNull();
 
-    const set = await db.crmFormSet.findUnique({ where: { id: setId }, select: { currentVersionId: true } });
+    const set = await db.qcfFormSet.findUnique({ where: { id: setId }, select: { currentVersionId: true } });
     expect(set!.currentVersionId).toBe(clone.id); // new current
 
-    const prev = await db.crmFormSetVersion.findUnique({ where: { id: v1 }, select: { status: true } });
+    const prev = await db.qcfFormSetVersion.findUnique({ where: { id: v1 }, select: { status: true } });
     expect(prev!.status).toBe("retired"); // the old published one is retired
   });
 

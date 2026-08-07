@@ -21,7 +21,7 @@
  */
 import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@quikit/database";
-import type { CrmFormSetVersion } from "@quikit/database";
+import type { QcfFormSetVersion } from "@quikit/database";
 import { FormStructureError } from "@/lib/services/forms/form-structure.service";
 
 /** A version's structure can be large-ish; give the deep-copy room to commit. */
@@ -37,8 +37,8 @@ function copyJson(v: Prisma.JsonValue | null): Prisma.InputJsonValue | typeof Pr
  * Deep-copy a version (any status) into a new DRAFT version of the same form set.
  * Returns the new draft. The source is left untouched.
  */
-export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmFormSetVersion> {
-  const source = await prisma.crmFormSetVersion.findUnique({
+export async function cloneVersionToDraft(sourceVersionId: string): Promise<QcfFormSetVersion> {
+  const source = await prisma.qcfFormSetVersion.findUnique({
     where: { id: sourceVersionId },
     select: { id: true, formSetId: true },
   });
@@ -46,11 +46,11 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
 
   return prisma.$transaction(
     async (tx) => {
-      const agg = await tx.crmFormSetVersion.aggregate({
+      const agg = await tx.qcfFormSetVersion.aggregate({
         where: { formSetId: source.formSetId },
         _max: { versionNumber: true },
       });
-      const draft = await tx.crmFormSetVersion.create({
+      const draft = await tx.qcfFormSetVersion.create({
         data: {
           formSetId: source.formSetId,
           versionNumber: (agg._max.versionNumber ?? 0) + 1,
@@ -60,12 +60,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
 
       // 1. tabs  (parent of sections + fields + target of actions)
       const tabMap = new Map<string, string>();
-      const srcTabs = await tx.crmFormTab.findMany({
+      const srcTabs = await tx.qcfFormTab.findMany({
         where: { formSetVersionId: sourceVersionId },
         orderBy: { sortOrder: "asc" },
       });
       for (const t of srcTabs) {
-        const nt = await tx.crmFormTab.create({
+        const nt = await tx.qcfFormTab.create({
           data: {
             formSetVersionId: draft.id,
             name: t.name,
@@ -80,12 +80,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
 
       // 2. sections  (child of tab; parent of fields)
       const sectionMap = new Map<string, string>();
-      const srcSections = await tx.crmFormSection.findMany({
+      const srcSections = await tx.qcfFormSection.findMany({
         where: { tab: { formSetVersionId: sourceVersionId } },
         orderBy: { sortOrder: "asc" },
       });
       for (const s of srcSections) {
-        const ns = await tx.crmFormSection.create({
+        const ns = await tx.qcfFormSection.create({
           data: { formTabId: tabMap.get(s.formTabId)!, name: s.name, sortOrder: s.sortOrder },
         });
         sectionMap.set(s.id, ns.id);
@@ -93,12 +93,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
 
       // 3. fields  (refs tab + section; parent of options)
       const fieldMap = new Map<string, string>();
-      const srcFields = await tx.crmFormField.findMany({
+      const srcFields = await tx.qcfFormField.findMany({
         where: { formSetVersionId: sourceVersionId },
         orderBy: { sortOrder: "asc" },
       });
       for (const f of srcFields) {
-        const nf = await tx.crmFormField.create({
+        const nf = await tx.qcfFormField.create({
           data: {
             formSetVersionId: draft.id,
             tab: f.tab,
@@ -120,12 +120,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
       }
 
       // 4. options  (child of field)
-      const srcOptions = await tx.crmFormFieldOption.findMany({
+      const srcOptions = await tx.qcfFormFieldOption.findMany({
         where: { field: { formSetVersionId: sourceVersionId } },
         orderBy: { sortOrder: "asc" },
       });
       for (const o of srcOptions) {
-        await tx.crmFormFieldOption.create({
+        await tx.qcfFormFieldOption.create({
           data: {
             formFieldId: fieldMap.get(o.formFieldId)!,
             valueKey: o.valueKey,
@@ -138,12 +138,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
 
       // 5. rules  (parent of conditions + actions)
       const ruleMap = new Map<string, string>();
-      const srcRules = await tx.crmFormRule.findMany({
+      const srcRules = await tx.qcfFormRule.findMany({
         where: { formSetVersionId: sourceVersionId },
         orderBy: { sortOrder: "asc" },
       });
       for (const r of srcRules) {
-        const nr = await tx.crmFormRule.create({
+        const nr = await tx.qcfFormRule.create({
           data: {
             formSetVersionId: draft.id,
             name: r.name,
@@ -157,12 +157,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
       }
 
       // 6. conditions  (child of rule)
-      const srcConditions = await tx.crmFormRuleCondition.findMany({
+      const srcConditions = await tx.qcfFormRuleCondition.findMany({
         where: { rule: { formSetVersionId: sourceVersionId } },
         orderBy: { sortOrder: "asc" },
       });
       for (const c of srcConditions) {
-        await tx.crmFormRuleCondition.create({
+        await tx.qcfFormRuleCondition.create({
           data: {
             formRuleId: ruleMap.get(c.formRuleId)!,
             subjectKind: c.subjectKind,
@@ -175,12 +175,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
       }
 
       // 7. actions  (child of rule; targetTabId ref remapped to the new tab)
-      const srcActions = await tx.crmFormRuleAction.findMany({
+      const srcActions = await tx.qcfFormRuleAction.findMany({
         where: { rule: { formSetVersionId: sourceVersionId } },
         orderBy: { sortOrder: "asc" },
       });
       for (const a of srcActions) {
-        await tx.crmFormRuleAction.create({
+        await tx.qcfFormRuleAction.create({
           data: {
             formRuleId: ruleMap.get(a.formRuleId)!,
             actionType: a.actionType,
@@ -195,12 +195,12 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
       }
 
       // 8. mappingRules  (version-owned JSON rules)
-      const srcMapping = await tx.crmFormSetMappingRule.findMany({
+      const srcMapping = await tx.qcfFormSetMappingRule.findMany({
         where: { formSetVersionId: sourceVersionId },
         orderBy: { sortOrder: "asc" },
       });
       for (const m of srcMapping) {
-        await tx.crmFormSetMappingRule.create({
+        await tx.qcfFormSetMappingRule.create({
           data: {
             formSetVersionId: draft.id,
             // trigger/action are NON-null Json columns; copy the stored value
@@ -225,9 +225,9 @@ export async function cloneVersionToDraft(sourceVersionId: string): Promise<CrmF
  * the previously-current version is retired. Records pinned to the old version
  * are unaffected (structure changes apply forward only).
  */
-export async function publishVersion(versionId: string): Promise<CrmFormSetVersion> {
+export async function publishVersion(versionId: string): Promise<QcfFormSetVersion> {
   return prisma.$transaction(async (tx) => {
-    const version = await tx.crmFormSetVersion.findUnique({
+    const version = await tx.qcfFormSetVersion.findUnique({
       where: { id: versionId },
       select: { id: true, status: true, formSetId: true },
     });
@@ -236,22 +236,22 @@ export async function publishVersion(versionId: string): Promise<CrmFormSetVersi
       throw new FormStructureError("Only a draft version can be published.", 409);
     }
 
-    const set = await tx.crmFormSet.findUnique({
+    const set = await tx.qcfFormSet.findUnique({
       where: { id: version.formSetId },
       select: { currentVersionId: true },
     });
     if (set?.currentVersionId && set.currentVersionId !== versionId) {
-      await tx.crmFormSetVersion.update({
+      await tx.qcfFormSetVersion.update({
         where: { id: set.currentVersionId },
         data: { status: "retired" },
       });
     }
 
-    const published = await tx.crmFormSetVersion.update({
+    const published = await tx.qcfFormSetVersion.update({
       where: { id: versionId },
       data: { status: "published", publishedAt: new Date() },
     });
-    await tx.crmFormSet.update({
+    await tx.qcfFormSet.update({
       where: { id: version.formSetId },
       data: { currentVersionId: versionId },
     });

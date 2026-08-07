@@ -1,6 +1,6 @@
 /**
  * Tenant-configurable lead scoring (0–100).
- * Rules live in CrmOrgWorkspaceSettings.settings.leadScoring.
+ * Rules live in QcfOrgWorkspaceSettings.settings.leadScoring.
  */
 
 export const LEAD_SCORING_OPERATORS = [

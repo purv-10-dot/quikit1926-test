@@ -58,7 +58,7 @@ function selectRows(where: unknown): LeadRow[] {
 }
 
 const fakePrisma = {
-  crmLead: {
+  qcfLead: {
     findMany: vi.fn(async (args: { where?: unknown; skip?: number; take?: number }) => {
       const rows = selectRows(args?.where);
       const skip = args?.skip ?? 0;
@@ -125,8 +125,8 @@ async function callFilterLeads(): Promise<Response> {
 
 describe("cross-tenant isolation — lead read paths", () => {
   beforeEach(() => {
-    fakePrisma.crmLead.findMany.mockClear();
-    fakePrisma.crmLead.count.mockClear();
+    fakePrisma.qcfLead.findMany.mockClear();
+    fakePrisma.qcfLead.count.mockClear();
     sessionRef.current = null;
   });
 
@@ -167,8 +167,8 @@ describe("cross-tenant isolation — lead read paths", () => {
     await callFilterLeads();
 
     const allCalls = [
-      ...fakePrisma.crmLead.findMany.mock.calls,
-      ...fakePrisma.crmLead.count.mock.calls,
+      ...fakePrisma.qcfLead.findMany.mock.calls,
+      ...fakePrisma.qcfLead.count.mock.calls,
     ];
     expect(allCalls.length).toBeGreaterThan(0);
     for (const [args] of allCalls) {

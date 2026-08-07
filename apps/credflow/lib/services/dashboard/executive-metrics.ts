@@ -2,7 +2,7 @@
  * Executive dashboard metrics — period-bound counts, "my work today", wins.
  */
 
-import type { CrmOpportunityStage, CrmTaskStatus } from "@prisma/client";
+import type { QcfOpportunityStage, QcfTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/types/permission";
 import {
@@ -56,7 +56,7 @@ export async function buildExecutiveSummary(
 
   const wonWhere = (from: Date, to: Date) => ({
     ...oppWhere,
-    stage: "ClosedWon" as CrmOpportunityStage,
+    stage: "ClosedWon" as QcfOpportunityStage,
     OR: [
       { lastStageChangeAt: { gte: from, lte: to } },
       { lastStageChangeAt: null, updatedAt: { gte: from, lte: to } },
@@ -74,23 +74,23 @@ export async function buildExecutiveSummary(
     tasksDueTodayRows,
     followUpRows,
   ] = await Promise.all([
-    prisma.crmCallLog.count({
+    prisma.qcfCallLog.count({
       where: {
         ...callWhere,
         createdAt: { gte: range.from, lte: range.to },
       },
     }),
-    prisma.crmCallLog.count({
+    prisma.qcfCallLog.count({
       where: {
         ...callWhere,
         createdAt: { gte: prior.from, lte: prior.to },
       },
     }),
-    prisma.crmActivity.findMany({
+    prisma.qcfActivity.findMany({
       where: activityBase,
       select: { type: true, activityCode: true },
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: wonWhere(range.from, range.to),
       select: {
         id: true,
@@ -104,34 +104,34 @@ export async function buildExecutiveSummary(
       orderBy: { updatedAt: "desc" },
       take: 8,
     }),
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: wonWhere(prior.from, prior.to),
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: {
         ...oppWhere,
-        stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+        stage: { notIn: ["ClosedWon", "ClosedLost"] as QcfOpportunityStage[] },
       },
       select: { amount: true, probability: true, currency: true },
     }),
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         ...taskWhere,
-        status: { notIn: ["Completed", "Cancelled"] as CrmTaskStatus[] },
+        status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         dueDate: { gte: startOfToday, lte: endOfToday },
       },
     }),
-    prisma.crmTask.findMany({
+    prisma.qcfTask.findMany({
       where: {
         ...taskWhere,
-        status: { notIn: ["Completed", "Cancelled"] as CrmTaskStatus[] },
+        status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         dueDate: { gte: startOfToday, lte: endOfToday },
       },
       orderBy: { dueDate: "asc" },
       take: 6,
       select: { id: true, subject: true, dueDate: true, leadId: true },
     }),
-    prisma.crmActivity.findMany({
+    prisma.qcfActivity.findMany({
       where: {
         tenantId: user.tenantId,
         followUpAt: { gte: startOfToday, lte: endOfToday },

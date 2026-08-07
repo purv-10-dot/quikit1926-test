@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.crmLeadImportJob.findMany({
+    const items = await prisma.qcfLeadImportJob.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { createdAt: "desc" },
       take: 200,

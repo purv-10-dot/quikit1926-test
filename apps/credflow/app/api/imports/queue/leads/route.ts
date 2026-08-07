@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     }
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const job = await prisma.crmLeadImportJob.create({
+    const job = await prisma.qcfLeadImportJob.create({
       data: {
         tenantId: user.tenantId,
         entityType: "leads",
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       batchId: parsed.data.batchId ?? undefined,
     });
     if (bullJobId) {
-      await prisma.crmLeadImportJob.update({ where: { id: job.id }, data: { bullJobId } });
+      await prisma.qcfLeadImportJob.update({ where: { id: job.id }, data: { bullJobId } });
     }
 
     const run = await executeImportJob({

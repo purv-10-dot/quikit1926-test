@@ -37,20 +37,20 @@ const terminalPayload: Record<string, string> = {
 describe("processIndiaVoiceWebhook matching", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    db.crmIndiaVoiceWebhookLog.findUnique.mockResolvedValue(null);
-    db.crmIndiaVoiceWebhookLog.create.mockResolvedValue({
+    db.qcfIndiaVoiceWebhookLog.findUnique.mockResolvedValue(null);
+    db.qcfIndiaVoiceWebhookLog.create.mockResolvedValue({
       id: "audit-new",
       tenantId: WEBHOOK_TENANT,
       matchedCallLogId: null,
     } as never);
-    db.crmCallLog.findFirst.mockResolvedValue(null);
-    db.crmCallLog.findMany.mockResolvedValue([]);
-    db.crmCallLog.update.mockResolvedValue({
+    db.qcfCallLog.findFirst.mockResolvedValue(null);
+    db.qcfCallLog.findMany.mockResolvedValue([]);
+    db.qcfCallLog.update.mockResolvedValue({
       ...callLogRow,
       recordingUrl: terminalPayload.CallRecordingUrl,
       webhookStatus: "ANSWER",
     } as never);
-    db.crmIndiaVoiceWebhookLog.update.mockResolvedValue({ id: "audit-new" } as never);
+    db.qcfIndiaVoiceWebhookLog.update.mockResolvedValue({ id: "audit-new" } as never);
   });
 
   it("matches a call log by sid within the same tenant", async () => {
@@ -58,18 +58,18 @@ describe("processIndiaVoiceWebhook matching", () => {
     // tenant the call log was created under, so the tenant-scoped primary sid
     // match (findFirst) resolves it. Cross-tenant matching does not exist by
     // design — every match path is gated by tenantId.
-    db.crmCallLog.findFirst.mockResolvedValueOnce(callLogRow as never);
+    db.qcfCallLog.findFirst.mockResolvedValueOnce(callLogRow as never);
 
     const result = await processIndiaVoiceWebhook(DIALER_TENANT, terminalPayload);
 
     expect(result.matched).toBe(true);
     expect(result.callLogId).toBe("call-log-1");
-    expect(db.crmCallLog.findFirst).toHaveBeenCalledWith(
+    expect(db.qcfCallLog.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ tenantId: DIALER_TENANT }),
       }),
     );
-    expect(db.crmCallLog.update).toHaveBeenCalledWith(
+    expect(db.qcfCallLog.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "call-log-1" },
         data: expect.objectContaining({
@@ -78,32 +78,32 @@ describe("processIndiaVoiceWebhook matching", () => {
         }),
       }),
     );
-    expect(db.crmIndiaVoiceWebhookLog.update).toHaveBeenCalledWith({
+    expect(db.qcfIndiaVoiceWebhookLog.update).toHaveBeenCalledWith({
       where: { id: "audit-new" },
       data: { matchedCallLogId: "call-log-1" },
     });
   });
 
   it("rematches on duplicate replay when the audit row was never linked", async () => {
-    db.crmIndiaVoiceWebhookLog.findUnique.mockResolvedValue({
+    db.qcfIndiaVoiceWebhookLog.findUnique.mockResolvedValue({
       id: "audit-existing",
       matchedCallLogId: null,
     } as never);
-    db.crmCallLog.findMany.mockResolvedValueOnce([callLogRow] as never);
+    db.qcfCallLog.findMany.mockResolvedValueOnce([callLogRow] as never);
 
     const result = await processIndiaVoiceWebhook(WEBHOOK_TENANT, terminalPayload);
 
     expect(result.duplicate).toBe(true);
     expect(result.matched).toBe(true);
-    expect(db.crmIndiaVoiceWebhookLog.create).not.toHaveBeenCalled();
-    expect(db.crmIndiaVoiceWebhookLog.update).toHaveBeenCalledWith({
+    expect(db.qcfIndiaVoiceWebhookLog.create).not.toHaveBeenCalled();
+    expect(db.qcfIndiaVoiceWebhookLog.update).toHaveBeenCalledWith({
       where: { id: "audit-existing" },
       data: { matchedCallLogId: "call-log-1" },
     });
   });
 
   it("returns early on duplicate when audit is already matched", async () => {
-    db.crmIndiaVoiceWebhookLog.findUnique.mockResolvedValue({
+    db.qcfIndiaVoiceWebhookLog.findUnique.mockResolvedValue({
       id: "audit-existing",
       matchedCallLogId: "already-linked",
     } as never);
@@ -112,7 +112,7 @@ describe("processIndiaVoiceWebhook matching", () => {
 
     expect(result.duplicate).toBe(true);
     expect(result.callLogId).toBe("already-linked");
-    expect(db.crmCallLog.findFirst).not.toHaveBeenCalled();
-    expect(db.crmCallLog.update).not.toHaveBeenCalled();
+    expect(db.qcfCallLog.findFirst).not.toHaveBeenCalled();
+    expect(db.qcfCallLog.update).not.toHaveBeenCalled();
   });
 });

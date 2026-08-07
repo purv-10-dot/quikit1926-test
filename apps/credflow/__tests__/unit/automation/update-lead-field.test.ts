@@ -10,7 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead, CrmWorkflowDefinition } from "@quikit/database";
+import type { QcfLead, QcfWorkflowDefinition } from "@quikit/database";
 
 vi.mock("@/lib/services/leads/transition-service", () => ({
   transitionLead: vi.fn().mockResolvedValue({}),
@@ -45,13 +45,13 @@ const guard = vi.mocked(recordWriteAndCheck);
 const attribution = vi.mocked(recordAttribution);
 
 function defWith(node: { id: string; kind: string; config: Record<string, unknown> }) {
-  db.crmWorkflowDefinition.findFirst.mockResolvedValue({
+  db.qcfWorkflowDefinition.findFirst.mockResolvedValue({
     id: "wf1",
     tenantId: "t1",
     status: "Active",
     graphNodes: [node],
     graphEdges: [],
-  } as unknown as CrmWorkflowDefinition);
+  } as unknown as QcfWorkflowDefinition);
 }
 
 beforeEach(() => {
@@ -66,7 +66,7 @@ beforeEach(() => {
 describe("workflow-engine · update_lead_field", () => {
   it("routes a STAGE change through transition-service with the automation actor", async () => {
     defWith({ id: "n1", kind: "update_lead_field", config: { field: "stage", value: "Negotiation" } });
-    db.crmLead.findFirst.mockResolvedValue({ id: "lead-1", tenantId: "t1", stage: "New Lead" } as unknown as CrmLead);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "lead-1", tenantId: "t1", stage: "New Lead" } as unknown as QcfLead);
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-1", "n1");
@@ -96,7 +96,7 @@ describe("workflow-engine · update_lead_field", () => {
 
   it("routes a STATUS change through the PATCH/save path (updateCrmLead), not transition-service", async () => {
     defWith({ id: "n1", kind: "update_lead_field", config: { field: "status", value: "Disqualified" } });
-    db.crmLead.findFirst.mockResolvedValue({ id: "lead-2", tenantId: "t1", status: "Open" } as unknown as CrmLead);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "lead-2", tenantId: "t1", status: "Open" } as unknown as QcfLead);
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-2", "n1");
@@ -110,7 +110,7 @@ describe("workflow-engine · update_lead_field", () => {
   it("skips the write when the loop guard reports the lead Terminated", async () => {
     guard.mockResolvedValue({ count: 51, terminated: true, cap: 50 });
     defWith({ id: "n1", kind: "update_lead_field", config: { field: "stage", value: "Negotiation" } });
-    db.crmLead.findFirst.mockResolvedValue({ id: "lead-9", tenantId: "t1", stage: "New Lead" } as unknown as CrmLead);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "lead-9", tenantId: "t1", stage: "New Lead" } as unknown as QcfLead);
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-9", "n1");
@@ -123,7 +123,7 @@ describe("workflow-engine · update_lead_field", () => {
 
   it("is a NO-OP when the target equals the current value (no write, no emit)", async () => {
     defWith({ id: "n1", kind: "update_lead_field", config: { field: "stage", value: "Negotiation" } });
-    db.crmLead.findFirst.mockResolvedValue({ id: "lead-3", tenantId: "t1", stage: "Negotiation" } as unknown as CrmLead);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "lead-3", tenantId: "t1", stage: "Negotiation" } as unknown as QcfLead);
 
     const { runFrom } = await import("@/lib/services/automation/workflow-engine");
     await runFrom("t1", "wf1", "lead-3", "n1");

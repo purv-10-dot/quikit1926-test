@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import type { CrmImportEntityType as ImportEntityType } from "@prisma/client";
+import type { QcfImportEntityType as ImportEntityType } from "@prisma/client";
 
 const ENTITY_RANK: Record<ImportEntityType, number> = {
   leads: 0,
@@ -16,10 +16,10 @@ const ENTITY_RANK: Record<ImportEntityType, number> = {
  * activities, activities before workflows, workflows before SLA.
  */
 export async function isBlocked(jobId: string): Promise<boolean> {
-  const job = await prisma.crmLeadImportJob.findUnique({ where: { id: jobId } });
+  const job = await prisma.qcfLeadImportJob.findUnique({ where: { id: jobId } });
   if (!job || !job.batchId) return false;
   const myRank = ENTITY_RANK[job.entityType];
-  const blockers = await prisma.crmLeadImportJob.count({
+  const blockers = await prisma.qcfLeadImportJob.count({
     where: {
       tenantId: job.tenantId,
       batchId: job.batchId,

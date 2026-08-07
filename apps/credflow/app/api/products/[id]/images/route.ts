@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
-    const items = await prisma.crmProductImage.findMany({
+    const items = await prisma.qcfProductImage.findMany({
       where: { tenantId: user.tenantId, productId: id },
       orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
     });
@@ -39,13 +39,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (parsed.data.isPrimary) {
-      await prisma.crmProductImage.updateMany({
+      await prisma.qcfProductImage.updateMany({
         where: { tenantId: user.tenantId, productId: id },
         data: { isPrimary: false },
       });
     }
 
-    const created = await prisma.crmProductImage.create({
+    const created = await prisma.qcfProductImage.create({
       data: {
         tenantId: user.tenantId,
         productId: id,

@@ -31,11 +31,11 @@ function reportById(id: string) {
 
 describe("pipeline-by-stage", () => {
   beforeEach(() => {
-    asMock(db.crmOpportunity.groupBy).mockReset();
+    asMock(db.qcfOpportunity.groupBy).mockReset();
   });
 
   it("rows total matches the sum of input groupBy counts", async () => {
-    asMock(db.crmOpportunity.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfOpportunity.groupBy).mockResolvedValueOnce([
       { stage: "Prospecting", _count: { _all: 5 }, _sum: { amount: 0, weightedAmount: 0 } },
       { stage: "Qualification", _count: { _all: 3 }, _sum: { amount: 0, weightedAmount: 0 } },
       { stage: "Proposal", _count: { _all: 2 }, _sum: { amount: 0, weightedAmount: 0 } },
@@ -57,16 +57,16 @@ describe("pipeline-by-stage", () => {
 
 describe("stuck-deals", () => {
   beforeEach(() => {
-    db.crmOpportunity.findMany.mockReset();
+    db.qcfOpportunity.findMany.mockReset();
   });
 
   it("filters at the 30-day threshold (lastStageChangeAt < cutoff)", async () => {
-    db.crmOpportunity.findMany.mockResolvedValueOnce([] as never);
+    db.qcfOpportunity.findMany.mockResolvedValueOnce([] as never);
 
     await reportById("stuck-deals").run(ctx({ tz: "UTC" }));
 
-    expect(db.crmOpportunity.findMany).toHaveBeenCalled();
-    const call = db.crmOpportunity.findMany.mock.calls[0]?.[0];
+    expect(db.qcfOpportunity.findMany).toHaveBeenCalled();
+    const call = db.qcfOpportunity.findMany.mock.calls[0]?.[0];
     const where = call!.where as Record<string, unknown>;
     // The where wraps base + ACL; stuck-deals adds lastStageChangeAt at the
     // top level of the merged where.
@@ -81,35 +81,35 @@ describe("stuck-deals", () => {
 
 describe("team-disposition-mix", () => {
   beforeEach(() => {
-    db.crmSalesGroupManager.findMany.mockReset();
-    db.crmSalesGroupMember.findMany.mockReset();
-    asMock(db.crmCallLog.groupBy).mockReset();
+    db.qcfSalesGroupManager.findMany.mockReset();
+    db.qcfSalesGroupMember.findMany.mockReset();
+    asMock(db.qcfCallLog.groupBy).mockReset();
   });
 
   it("returns empty rows when the caller manages no sales group", async () => {
-    db.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
+    db.qcfSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
 
     const result = await reportById("team-disposition-mix").run(ctx());
     expect(result.rows).toEqual([]);
-    expect(db.crmCallLog.groupBy).not.toHaveBeenCalled();
+    expect(db.qcfCallLog.groupBy).not.toHaveBeenCalled();
   });
 
   it("only counts dispositions for the manager's direct reports", async () => {
-    db.crmSalesGroupManager.findMany.mockResolvedValueOnce([
+    db.qcfSalesGroupManager.findMany.mockResolvedValueOnce([
       { groupId: "g1" },
     ] as never);
-    db.crmSalesGroupMember.findMany.mockResolvedValueOnce([
+    db.qcfSalesGroupMember.findMany.mockResolvedValueOnce([
       { userId: "report-1" },
       { userId: "report-2" },
     ] as never);
-    asMock(db.crmCallLog.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfCallLog.groupBy).mockResolvedValueOnce([
       { dispositionName: "Connected", _count: { _all: 8 } },
       { dispositionName: "Voicemail", _count: { _all: 4 } },
     ] as never);
 
     await reportById("team-disposition-mix").run(ctx());
 
-    const call = asMock(db.crmCallLog.groupBy).mock.calls[0]?.[0];
+    const call = asMock(db.qcfCallLog.groupBy).mock.calls[0]?.[0];
     const where = call!.where as Record<string, unknown>;
     expect(where.agentUserId).toEqual({ in: ["report-1", "report-2"] });
   });

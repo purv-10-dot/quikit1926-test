@@ -1,4 +1,4 @@
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma } from "@quikit/database";
 import { createCrmLead } from "@/lib/services/leads/create-record";
@@ -28,7 +28,7 @@ export type LeadImportRowInput = {
   /**
    * Additional whitelisted standard Lead columns beyond the explicit ones above
    * (e.g. industry, stage, status, website). Caller is responsible for only
-   * passing real CrmLead scalar columns — see IMPORTABLE_STANDARD_KEYS.
+   * passing real QcfLead scalar columns — see IMPORTABLE_STANDARD_KEYS.
    */
   standardExtra?: Record<string, unknown> | null;
   /**
@@ -111,7 +111,7 @@ function protectExistingPipeline(
 
 export type ImportRowAction = "created" | "updated";
 export interface ImportRowResult {
-  lead: CrmLead;
+  lead: QcfLead;
   /** Whether this row inserted a new lead or matched + updated an existing one (dedupe). */
   action: ImportRowAction;
 }
@@ -134,7 +134,7 @@ export async function upsertImportedLeadRow(
       ? { dynamicFields: data.dynamicFields as Prisma.InputJsonValue }
       : {};
 
-  const row: Prisma.CrmLeadUncheckedCreateInput = {
+  const row: Prisma.QcfLeadUncheckedCreateInput = {
     tenantId: data.tenantId,
     name: data.name,
     email: data.email || null,
@@ -152,7 +152,7 @@ export async function upsertImportedLeadRow(
   };
 
   if (row.externalId && row.sourceSystem) {
-    const existing = await prisma.crmLead.findUnique({
+    const existing = await prisma.qcfLead.findUnique({
       where: {
         lead_external_uk: {
           tenantId: row.tenantId,
@@ -166,7 +166,7 @@ export async function upsertImportedLeadRow(
       // Fill-blanks-only for pipeline fields: never overwrite a stage/status/
       // substatus the CRM already has (protects in-app work from a stale re-upload).
       const safeExtra = protectExistingPipeline(standardExtra, existing);
-      const lead = await prisma.crmLead.update({
+      const lead = await prisma.qcfLead.update({
         where: { id: existing.id },
         data: {
           name: row.name,
@@ -199,14 +199,14 @@ export async function upsertImportedLeadRow(
     phone: typeof row.phone === "string" ? row.phone : null,
   });
   if (dupe) {
-    const existing = await prisma.crmLead.findUnique({
+    const existing = await prisma.qcfLead.findUnique({
       where: { id: dupe.id },
       select: { dynamicFields: true, stage: true, status: true, substatus: true },
     });
     // Fill-blanks-only for pipeline fields (see externalId branch above): protect
     // any stage/status/substatus the CRM already has from a stale re-upload.
     const safeExtra = protectExistingPipeline(standardExtra, existing ?? {});
-    const lead = await prisma.crmLead.update({
+    const lead = await prisma.qcfLead.update({
       where: { id: dupe.id },
       data: {
         name: row.name,

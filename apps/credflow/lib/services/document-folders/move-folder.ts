@@ -17,7 +17,7 @@ export async function isFolderDescendant(
     if (seen.has(currentId)) return false;
     seen.add(currentId);
 
-    const row: FolderParentRow | null = await prisma.crmDocumentFolder.findFirst({
+    const row: FolderParentRow | null = await prisma.qcfDocumentFolder.findFirst({
       where: { id: currentId, tenantId, deletedAt: null },
       select: { parentFolderId: true },
     });
@@ -36,14 +36,14 @@ export async function validateFolderMove(
     throw new FolderServiceError("Cannot move a folder into itself");
   }
 
-  const folder = await prisma.crmDocumentFolder.findFirst({
+  const folder = await prisma.qcfDocumentFolder.findFirst({
     where: { id: folderId, tenantId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
 
   if (!newParentFolderId) return;
 
-  const parent = await prisma.crmDocumentFolder.findFirst({
+  const parent = await prisma.qcfDocumentFolder.findFirst({
     where: { id: newParentFolderId, tenantId, deletedAt: null },
   });
   if (!parent) throw new FolderServiceError("Parent folder not found", 404);

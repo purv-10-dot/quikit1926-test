@@ -20,7 +20,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "delete");
 
-    const existing = await db.crmPriceList.findFirst({
+    const existing = await db.qcfPriceList.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: { not: null } },
       select: { id: true },
     });

@@ -30,10 +30,10 @@ function pastIso(days = 1): string {
 
 describe("POST /api/contacts/[id]/opportunities", () => {
   beforeEach(() => {
-    db.crmContact.findFirst.mockReset();
-    db.crmOpportunity.create.mockReset();
-    db.crmActivity.create.mockReset();
-    db.crmAuditLog.create.mockReset();
+    db.qcfContact.findFirst.mockReset();
+    db.qcfOpportunity.create.mockReset();
+    db.qcfActivity.create.mockReset();
+    db.qcfAuditLog.create.mockReset();
     db.user.findUnique.mockReset();
     db.$transaction.mockReset();
     db.$transaction.mockImplementation(async (fn: unknown) => {
@@ -48,8 +48,8 @@ describe("POST /api/contacts/[id]/opportunities", () => {
       firstName: "Alice",
       lastName: "Doe",
     } as never);
-    db.crmActivity.create.mockResolvedValue({} as never);
-    db.crmAuditLog.create.mockResolvedValue({} as never);
+    db.qcfActivity.create.mockResolvedValue({} as never);
+    db.qcfAuditLog.create.mockResolvedValue({} as never);
     setSession(null);
   });
 
@@ -69,7 +69,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
   it("returns 404 when contact doesn't exist or wrong tenant", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
-    db.crmContact.findFirst.mockResolvedValueOnce(null);
+    db.qcfContact.findFirst.mockResolvedValueOnce(null);
 
     const res = await callPost("c-missing", { title: "Test" });
     expect(res.status).toBe(404);
@@ -80,7 +80,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
   it("returns 400 with a clear message when contact.accountId is null", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
-    db.crmContact.findFirst.mockResolvedValueOnce({
+    db.qcfContact.findFirst.mockResolvedValueOnce({
       id: "c1",
       accountId: null,
     } as never);
@@ -90,7 +90,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
     const json = await res.json();
     expect(json.success).toBe(false);
     expect(json.error).toMatch(/must be linked to an Account/i);
-    expect(db.crmOpportunity.create).not.toHaveBeenCalled();
+    expect(db.qcfOpportunity.create).not.toHaveBeenCalled();
   });
 
   it("returns 400 when title is missing", async () => {
@@ -119,11 +119,11 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
   it("creates a CrmOpportunity with correct fields and writes the audit row", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
-    db.crmContact.findFirst.mockResolvedValueOnce({
+    db.qcfContact.findFirst.mockResolvedValueOnce({
       id: "c1",
       accountId: "acc-1",
     } as never);
-    db.crmOpportunity.create.mockResolvedValueOnce({
+    db.qcfOpportunity.create.mockResolvedValueOnce({
       id: "opp-new",
       name: "Acme Deal",
       amount: 75000,
@@ -143,7 +143,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
     expect(json.data.opportunityId).toBe("opp-new");
 
     // Opportunity create call (via the service)
-    const oppArg = db.crmOpportunity.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    const oppArg = db.qcfOpportunity.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(oppArg.tenantId).toBe("t1");
     expect(oppArg.accountId).toBe("acc-1");
     expect(oppArg.leadId).toBeNull();
@@ -158,7 +158,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
     expect(oppArg.ownerName).toBe("Alice Doe");
 
     // Audit log
-    const auditArg = db.crmAuditLog.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    const auditArg = db.qcfAuditLog.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(auditArg.tenantId).toBe("t1");
     expect(auditArg.module).toBe("opportunities");
     expect(auditArg.action).toBe("create_from_contact");
@@ -173,11 +173,11 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
   it("defaults stage to Prospecting when none is provided", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
-    db.crmContact.findFirst.mockResolvedValueOnce({
+    db.qcfContact.findFirst.mockResolvedValueOnce({
       id: "c1",
       accountId: "acc-1",
     } as never);
-    db.crmOpportunity.create.mockResolvedValueOnce({
+    db.qcfOpportunity.create.mockResolvedValueOnce({
       id: "opp-x",
       name: "X",
       amount: null,
@@ -186,7 +186,7 @@ describe("POST /api/contacts/[id]/opportunities", () => {
 
     const res = await callPost("c1", { title: "X" });
     expect(res.status).toBe(201);
-    const oppArg = db.crmOpportunity.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    const oppArg = db.qcfOpportunity.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(oppArg.stage).toBe("Prospecting");
   });
 });

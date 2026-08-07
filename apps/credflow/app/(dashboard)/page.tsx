@@ -15,7 +15,7 @@ export default async function HomePage() {
   const userName = session?.user?.name ?? session?.user?.email ?? "";
 
   const [leadCount] = tenantId
-    ? await Promise.all([db.crmLead.count({ where: { tenantId } })])
+    ? await Promise.all([db.qcfLead.count({ where: { tenantId } })])
     : [0];
 
   return (

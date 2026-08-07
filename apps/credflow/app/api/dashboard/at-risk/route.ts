@@ -5,7 +5,7 @@
  */
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import type { CrmOpportunityStage, CrmTaskStatus } from "@prisma/client";
+import type { QcfOpportunityStage, QcfTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { db } from "@/lib/db";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
@@ -68,13 +68,13 @@ export async function GET(req: NextRequest) {
 
     const taskWhere = {
       ...tenantAssigneeWhere(user, filters.resolvedOwnerId),
-      status: { not: "Completed" as CrmTaskStatus },
+      status: { not: "Completed" as QcfTaskStatus },
       dueDate: { lt: asOf },
     };
 
     const leadWhere = {
       ...tenantOwnerWhere(user, filters.resolvedOwnerId),
-      // CrmLead has `deletedAt`; filter explicitly (no middleware coverage yet).
+      // QcfLead has `deletedAt`; filter explicitly (no middleware coverage yet).
       deletedAt: null,
       stage: { notIn: CLOSED_LEAD_STAGES },
       updatedAt: { lt: staleCutoff },
@@ -82,9 +82,9 @@ export async function GET(req: NextRequest) {
 
     const oppWhere = {
       ...tenantOwnerWhere(user, filters.resolvedOwnerId),
-      // CrmOpportunity has `deletedAt`; filter explicitly (no middleware coverage yet).
+      // QcfOpportunity has `deletedAt`; filter explicitly (no middleware coverage yet).
       deletedAt: null,
-      stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+      stage: { notIn: ["ClosedWon", "ClosedLost"] as QcfOpportunityStage[] },
       updatedAt: { lt: stuckCutoff },
     };
 
@@ -104,29 +104,29 @@ export async function GET(req: NextRequest) {
       callsMissingDispoCount,
       callsMissingDispoSamples,
     ] = await Promise.all([
-      prisma.crmTask.count({ where: taskWhere }),
-      prisma.crmTask.findMany({
+      prisma.qcfTask.count({ where: taskWhere }),
+      prisma.qcfTask.findMany({
         where: taskWhere,
         select: { id: true, subject: true, dueDate: true, assignedToUserId: true },
         orderBy: { dueDate: "asc" },
         take: SAMPLE_LIMIT,
       }),
-      prisma.crmLead.count({ where: leadWhere }),
-      prisma.crmLead.findMany({
+      prisma.qcfLead.count({ where: leadWhere }),
+      prisma.qcfLead.findMany({
         where: leadWhere,
         select: { id: true, name: true, stage: true, updatedAt: true, ownerId: true, ownerName: true },
         orderBy: { updatedAt: "asc" },
         take: SAMPLE_LIMIT,
       }),
-      prisma.crmOpportunity.count({ where: oppWhere }),
-      prisma.crmOpportunity.findMany({
+      prisma.qcfOpportunity.count({ where: oppWhere }),
+      prisma.qcfOpportunity.findMany({
         where: oppWhere,
         select: { id: true, name: true, stage: true, updatedAt: true, ownerId: true },
         orderBy: { updatedAt: "asc" },
         take: SAMPLE_LIMIT,
       }),
-      prisma.crmCallLog.count({ where: callWhere }),
-      prisma.crmCallLog.findMany({
+      prisma.qcfCallLog.count({ where: callWhere }),
+      prisma.qcfCallLog.findMany({
         where: callWhere,
         select: {
           id: true,

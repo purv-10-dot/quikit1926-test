@@ -1010,7 +1010,7 @@ function TriggerDebuggerSection() {
             ├─ notifyLeadAssigned({ newOwnerId })
             │    ├─ if (newOwnerId === actorUserId) RETURN            ←── guard ②
             │    └─ createNotification()
-            │         ├─ prisma.crmNotification.create()  (awaited)
+            │         ├─ prisma.qcfNotification.create()  (awaited)
             │         ├─ publishNotificationEvent()       (fire-and-forget)
             │         │    └─ redis.publish("quikcrm:notifications:{tenantId}:{userId}")
             │         │         └─ EventSource → badge updates (~100ms)

@@ -24,22 +24,22 @@ let setId: string;
 let versionId: string;
 
 beforeAll(async () => {
-  const set = await integrationPrisma.crmFormSet.create({
+  const set = await integrationPrisma.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${Date.now()}` },
   });
   setId = set.id;
-  const version = await integrationPrisma.crmFormSetVersion.create({
+  const version = await integrationPrisma.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   });
   versionId = version.id;
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  await integrationPrisma.crmFormSection.deleteMany({ where: { tab: { formSetVersionId: versionId } } });
-  await integrationPrisma.crmFormTab.deleteMany({ where: { formSetVersionId: versionId } });
-  await integrationPrisma.crmFormSetVersion.deleteMany({ where: { id: versionId } });
-  await integrationPrisma.crmFormSet.deleteMany({ where: { id: setId } });
+  await integrationPrisma.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  await integrationPrisma.qcfFormSection.deleteMany({ where: { tab: { formSetVersionId: versionId } } });
+  await integrationPrisma.qcfFormTab.deleteMany({ where: { formSetVersionId: versionId } });
+  await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { id: versionId } });
+  await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
   await integrationPrisma.$disconnect();
 });
 
@@ -67,7 +67,7 @@ describe("FR-RE-4 — form structure builder (integration)", () => {
     });
     const section = await createFormSection({ formTabId: tab.id, name: "Proof", sortOrder: 0 });
 
-    const field = await integrationPrisma.crmFormField.create({
+    const field = await integrationPrisma.qcfFormField.create({
       data: {
         formSetVersionId: versionId,
         tab: "call_disposition",

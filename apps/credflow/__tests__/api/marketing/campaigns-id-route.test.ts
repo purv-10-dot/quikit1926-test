@@ -15,7 +15,7 @@ function adminSession() {
 
 describe("GET /api/marketing/campaigns/[id]", () => {
   beforeEach(() => {
-    db.crmCampaign.findFirst.mockReset();
+    db.qcfCampaign.findFirst.mockReset();
     setSession(null);
   });
 
@@ -28,7 +28,7 @@ describe("GET /api/marketing/campaigns/[id]", () => {
 
   it("returns 404 for missing campaign", async () => {
     adminSession();
-    db.crmCampaign.findFirst.mockResolvedValue(null);
+    db.qcfCampaign.findFirst.mockResolvedValue(null);
     const { GET } = await import("@/app/api/marketing/campaigns/[id]/route");
     const req = new Request("http://test/api/marketing/campaigns/missing");
     const res = await GET(req as never, { params: Promise.resolve({ id: "missing" }) });
@@ -37,7 +37,7 @@ describe("GET /api/marketing/campaigns/[id]", () => {
 
   it("returns serialized campaign for tenant", async () => {
     adminSession();
-    db.crmCampaign.findFirst.mockResolvedValue({
+    db.qcfCampaign.findFirst.mockResolvedValue({
       id: "c1",
       tenantId: "t1",
       name: "Diwali Offer",
@@ -59,7 +59,7 @@ describe("GET /api/marketing/campaigns/[id]", () => {
     expect(body.budget).toBe(50000);
     expect(body.description).toBe("Promo");
 
-    const where = db.crmCampaign.findFirst.mock.calls[0]![0]!.where as {
+    const where = db.qcfCampaign.findFirst.mock.calls[0]![0]!.where as {
       id: string;
       tenantId: string;
     };

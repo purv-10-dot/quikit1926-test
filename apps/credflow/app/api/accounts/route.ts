@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
       allowedAccountIds = scope.allowedAccountIds;
     }
 
-    const where: Prisma.CrmAccountWhereInput = applyAccountListWhere(
+    const where: Prisma.QcfAccountWhereInput = applyAccountListWhere(
       { tenantId: user.tenantId },
       {
         trashed,
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     if (format) {
       const tz = readTzFromCookieHeader(req.headers.get("cookie"));
       const cursor = createPrismaCursorIterator<AccountCsvRow>({
-        delegate: prisma.crmAccount as unknown as PrismaListDelegate<AccountCsvRow>,
+        delegate: prisma.qcfAccount as unknown as PrismaListDelegate<AccountCsvRow>,
         where,
         select: ACCOUNT_CSV_SELECT,
       });
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     // "My accounts" sorts by renewalDate ASC NULLS LAST; otherwise alpha by name.
     // `id desc` tiebreaker → stable page boundaries when many rows share the same
     // primary sort value (lots of accounts named "Acme" or with the same renewalDate).
-    const orderBy: Prisma.CrmAccountOrderByWithRelationInput[] =
+    const orderBy: Prisma.QcfAccountOrderByWithRelationInput[] =
       view === "mine"
         ? [{ renewalDate: { sort: "asc", nulls: "last" } }, { name: "asc" }, { id: "desc" }]
         : [{ name: "asc" }, { id: "desc" }];
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      prisma.crmAccount.count({ where }),
+      prisma.qcfAccount.count({ where }),
     ]);
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));

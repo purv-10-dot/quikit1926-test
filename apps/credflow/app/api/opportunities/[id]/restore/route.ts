@@ -28,7 +28,7 @@ export async function POST(
     // leads-restore pattern at app/api/leads/[id]/restore/route.ts:27.
     // Tenant check runs post-lookup since findUnique only accepts unique
     // fields in `where`.
-    const opp = await db.crmOpportunity.findUnique({
+    const opp = await db.qcfOpportunity.findUnique({
       where: { id },
       select: { id: true, tenantId: true, accountId: true, deletedAt: true },
     });

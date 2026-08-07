@@ -24,7 +24,7 @@ export async function POST(_req: NextRequest) {
     );
     const where = acl ? { AND: [scoped, acl] } : scoped;
 
-    const result = await prisma.crmContact.updateMany({
+    const result = await prisma.qcfContact.updateMany({
       where,
       data: { deletedAt: new Date() },
     });

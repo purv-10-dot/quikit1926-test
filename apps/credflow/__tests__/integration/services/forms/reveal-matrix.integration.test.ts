@@ -43,11 +43,11 @@ let multiTabId: string; // #5 tab revealed alongside other effects
 let bothTabId: string; // #6 tab revealed alongside set_stage
 
 beforeAll(async () => {
-  const set = await db.crmFormSet.create({
+  const set = await db.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
   });
   setId = set.id;
-  const version = await db.crmFormSetVersion.create({
+  const version = await db.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   });
   versionId = version.id;
@@ -56,17 +56,17 @@ beforeAll(async () => {
   // config for this tenant -> getPipelineConfig falls back to DEFAULT_STAGES.
 
   // Rule-driven tabs.
-  ruleTabId = (await db.crmFormTab.create({
+  ruleTabId = (await db.qcfFormTab.create({
     data: { formSetVersionId: versionId, name: "Sub-Stage Tab", visibility: "rule_driven", sortOrder: 1 },
   })).id;
-  multiTabId = (await db.crmFormTab.create({
+  multiTabId = (await db.qcfFormTab.create({
     data: { formSetVersionId: versionId, name: "Multi Tab", visibility: "rule_driven", sortOrder: 2 },
   })).id;
-  bothTabId = (await db.crmFormTab.create({
+  bothTabId = (await db.qcfFormTab.create({
     data: { formSetVersionId: versionId, name: "Both Tab", visibility: "rule_driven", sortOrder: 3 },
   })).id;
 
-  await db.crmFormField.createMany({
+  await db.qcfFormField.createMany({
     data: [
       // #4 hard-required, #8 field on the sub-stage tab.
       { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "hard_field", label: "Hard Field", fieldType: "text", requiredLevel: "hard", defaultVisibility: "visible", sortOrder: 0 },
@@ -134,18 +134,18 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const rules = await db.crmFormRule.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  const rules = await db.qcfFormRule.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
   const rids = rules.map((r) => r.id);
   if (rids.length) {
-    await db.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
-    await db.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
-    await db.crmFormRule.deleteMany({ where: { id: { in: rids } } });
+    await db.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
+    await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
+    await db.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
   }
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  await db.crmFormTab.deleteMany({ where: { formSetVersionId: versionId } });
-  await db.crmFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  await db.qcfFormTab.deleteMany({ where: { formSetVersionId: versionId } });
+  await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 /** Helper: the live decision for a given context, through the real runtime. */

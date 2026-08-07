@@ -7,7 +7,7 @@
  * of users who are members of any group the manager manages.
  *
  * Returns IDs first (preferred join), but also surfaces denormalized names so
- * historical rows that lack `ownerId` (CrmCallLog row written before the
+ * historical rows that lack `ownerId` (QcfCallLog row written before the
  * agent-id wiring landed) can still be matched as a fallback. This is the
  * P2.7 "ownerId-first, name-fallback" rule.
  */
@@ -27,7 +27,7 @@ export type Team = {
 export async function resolveManagerTeam(user: SessionUser): Promise<Team | null> {
   if (user.role !== "SalesManager") return null;
 
-  const managed = await prisma.crmSalesGroupManager.findMany({
+  const managed = await prisma.qcfSalesGroupManager.findMany({
     where: { userId: user.userId },
     select: { groupId: true, group: { select: { tenantId: true } } },
   });
@@ -40,7 +40,7 @@ export async function resolveManagerTeam(user: SessionUser): Promise<Team | null
     return { memberIds: [], memberNames: [], size: 0 };
   }
 
-  const memberRows = await prisma.crmSalesGroupMember.findMany({
+  const memberRows = await prisma.qcfSalesGroupMember.findMany({
     where: { groupId: { in: groupIds } },
     select: { userId: true },
   });

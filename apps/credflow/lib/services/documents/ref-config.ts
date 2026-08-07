@@ -44,7 +44,7 @@ export async function assertDocumentParent(
   }
   switch (refType) {
     case "lead": {
-      const lead = await prisma.crmLead.findFirst({
+      const lead = await prisma.qcfLead.findFirst({
         where: { id: refId, tenantId },
         select: { accountId: true },
       });
@@ -53,7 +53,7 @@ export async function assertDocumentParent(
       return;
     }
     case "account": {
-      const acc = await prisma.crmAccount.findFirst({
+      const acc = await prisma.qcfAccount.findFirst({
         where: { id: refId, tenantId },
         select: { id: true },
       });
@@ -62,7 +62,7 @@ export async function assertDocumentParent(
       return;
     }
     case "opportunity": {
-      const opp = await prisma.crmOpportunity.findFirst({
+      const opp = await prisma.qcfOpportunity.findFirst({
         where: { id: refId, tenantId },
         select: { accountId: true },
       });
@@ -71,7 +71,7 @@ export async function assertDocumentParent(
       return;
     }
     case "quote": {
-      const quote = await prisma.crmQuote.findFirst({
+      const quote = await prisma.qcfQuote.findFirst({
         where: { id: refId, tenantId },
         select: { id: true },
       });
@@ -79,7 +79,7 @@ export async function assertDocumentParent(
       return;
     }
     case "order": {
-      const order = await prisma.crmOrder.findFirst({
+      const order = await prisma.qcfOrder.findFirst({
         where: { id: refId, tenantId },
         select: { id: true },
       });

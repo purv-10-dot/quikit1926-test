@@ -32,23 +32,23 @@ import {
 } from "@/lib/services/forms/form-rule.service";
 import { getPipelineConfig } from "@/lib/services/workspace/pipeline-config";
 import type {
-  CrmFormRuleAction,
-  CrmFormRuleActionType,
-  CrmFormRuleTargetKind,
+  QcfFormRuleAction,
+  QcfFormRuleActionType,
+  QcfFormRuleTargetKind,
 } from "@quikit/database";
 
 export { FormRuleError };
 
 export interface ActionInput {
-  actionType: CrmFormRuleActionType;
-  targetKind: CrmFormRuleTargetKind;
+  actionType: QcfFormRuleActionType;
+  targetKind: QcfFormRuleTargetKind;
   targetFieldKey?: string | null;
   targetTabId?: string | null;
   setStatusId?: string | null;
   setSubStatusId?: string | null;
 }
 
-const FIELD_ACTIONS: CrmFormRuleActionType[] = [
+const FIELD_ACTIONS: QcfFormRuleActionType[] = [
   "show_field",
   "hide_field",
   "make_mandatory",
@@ -104,7 +104,7 @@ export function validateActionInput(input: ActionInput): void {
 
 /** Resolve the tenant that owns a (draft) rule's version, via formSet. */
 async function resolveTenantId(formSetVersionId: string): Promise<string> {
-  const version = await prisma.crmFormSetVersion.findUnique({
+  const version = await prisma.qcfFormSetVersion.findUnique({
     where: { id: formSetVersionId },
     select: { formSet: { select: { tenantId: true } } },
   });
@@ -139,7 +139,7 @@ async function assertActionTargets(
     return;
   }
   if (input.actionType === "show_tab") {
-    const tab = await prisma.crmFormTab.findFirst({
+    const tab = await prisma.qcfFormTab.findFirst({
       where: { id: input.targetTabId!.trim(), formSetVersionId },
       select: { id: true },
     });
@@ -156,7 +156,7 @@ async function assertActionTargets(
 
 /** All actions of a rule, ordered. */
 export async function getRuleActions(formRuleId: string) {
-  return prisma.crmFormRuleAction.findMany({
+  return prisma.qcfFormRuleAction.findMany({
     where: { formRuleId },
     orderBy: { sortOrder: "asc" },
   });
@@ -164,19 +164,19 @@ export async function getRuleActions(formRuleId: string) {
 
 export async function addRuleAction(input: {
   formRuleId: string;
-  actionType: CrmFormRuleActionType;
-  targetKind: CrmFormRuleTargetKind;
+  actionType: QcfFormRuleActionType;
+  targetKind: QcfFormRuleTargetKind;
   targetFieldKey?: string | null;
   targetTabId?: string | null;
   setStatusId?: string | null;
   setSubStatusId?: string | null;
   sortOrder: number;
-}): Promise<CrmFormRuleAction> {
+}): Promise<QcfFormRuleAction> {
   validateActionInput(input);
   const versionId = await assertRuleDraft(input.formRuleId);
   await assertActionTargets(versionId, input);
 
-  return prisma.crmFormRuleAction.create({
+  return prisma.qcfFormRuleAction.create({
     data: {
       formRuleId: input.formRuleId,
       actionType: input.actionType,
@@ -197,15 +197,15 @@ export async function addRuleAction(input: {
 
 export async function updateRuleAction(input: {
   actionId: string;
-  actionType?: CrmFormRuleActionType;
-  targetKind?: CrmFormRuleTargetKind;
+  actionType?: QcfFormRuleActionType;
+  targetKind?: QcfFormRuleTargetKind;
   targetFieldKey?: string | null;
   targetTabId?: string | null;
   setStatusId?: string | null;
   setSubStatusId?: string | null;
   sortOrder?: number;
-}): Promise<CrmFormRuleAction> {
-  const existing = await prisma.crmFormRuleAction.findUnique({
+}): Promise<QcfFormRuleAction> {
+  const existing = await prisma.qcfFormRuleAction.findUnique({
     where: { id: input.actionId },
     select: {
       formRuleId: true,
@@ -234,7 +234,7 @@ export async function updateRuleAction(input: {
   validateActionInput(merged);
   await assertActionTargets(versionId, merged);
 
-  return prisma.crmFormRuleAction.update({
+  return prisma.qcfFormRuleAction.update({
     where: { id: input.actionId },
     data: {
       actionType: merged.actionType,
@@ -254,11 +254,11 @@ export async function updateRuleAction(input: {
 }
 
 export async function deleteRuleAction(actionId: string): Promise<void> {
-  const existing = await prisma.crmFormRuleAction.findUnique({
+  const existing = await prisma.qcfFormRuleAction.findUnique({
     where: { id: actionId },
     select: { formRuleId: true },
   });
   if (!existing) throw new FormRuleError("Action not found.", 404);
   await assertRuleDraft(existing.formRuleId);
-  await prisma.crmFormRuleAction.delete({ where: { id: actionId } });
+  await prisma.qcfFormRuleAction.delete({ where: { id: actionId } });
 }

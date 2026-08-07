@@ -23,13 +23,13 @@ export async function buildProductAnalytics(
   productId: string,
 ): Promise<ProductAnalyticsBundle> {
   const [quoteLines, orderLines] = await Promise.all([
-    prisma.crmQuoteLine.findMany({
+    prisma.qcfQuoteLine.findMany({
       where: { tenantId, productId },
       select: { sku: true, productName: true, quantity: true, lineTotal: true },
       take: 500,
       orderBy: { createdAt: "desc" },
     }),
-    prisma.crmOrderLine.findMany({
+    prisma.qcfOrderLine.findMany({
       where: { tenantId, productId },
       select: { sku: true, productName: true, quantity: true, lineTotal: true },
       take: 500,
@@ -71,12 +71,12 @@ function aggregateLines(
 
 export async function buildCatalogAnalytics(tenantId: string) {
   const [byCategory, topProducts] = await Promise.all([
-    prisma.crmProduct.groupBy({
+    prisma.qcfProduct.groupBy({
       by: ["categoryId"],
       where: { tenantId, deletedAt: null },
       _count: { id: true },
     }),
-    prisma.crmOrderLine.groupBy({
+    prisma.qcfOrderLine.groupBy({
       by: ["productId"],
       where: { tenantId, productId: { not: null } },
       _sum: { lineTotal: true },

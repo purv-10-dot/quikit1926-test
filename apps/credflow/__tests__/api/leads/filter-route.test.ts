@@ -9,8 +9,8 @@ vi.mock("@/lib/services/fields/repo", () => ({
 
 describe("POST /api/leads/filter", () => {
   beforeEach(() => {
-    db.crmLead.findMany.mockReset();
-    db.crmLead.count.mockReset();
+    db.qcfLead.findMany.mockReset();
+    db.qcfLead.count.mockReset();
     setSession(null);
   });
 
@@ -37,8 +37,8 @@ describe("POST /api/leads/filter", () => {
       email: "a@b.co",
       name: "Alice",
     });
-    db.crmLead.findMany.mockResolvedValue([]);
-    db.crmLead.count.mockResolvedValue(0);
+    db.qcfLead.findMany.mockResolvedValue([]);
+    db.qcfLead.count.mockResolvedValue(0);
 
     const { POST } = await import("@/app/api/leads/filter/route");
     const req = new Request("http://test/api/leads/filter", {
@@ -59,7 +59,7 @@ describe("POST /api/leads/filter", () => {
     expect(body.items).toEqual([]);
     expect(body.total).toBe(0);
 
-    const where = db.crmLead.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfLead.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
     expect(where.AND[0]).toMatchObject({ tenantId: "t1" });
@@ -75,8 +75,8 @@ describe("POST /api/leads/filter", () => {
       email: "a@b.co",
       name: "Alice",
     });
-    db.crmLead.findMany.mockResolvedValue([]);
-    db.crmLead.count.mockResolvedValue(0);
+    db.qcfLead.findMany.mockResolvedValue([]);
+    db.qcfLead.count.mockResolvedValue(0);
 
     const { POST } = await import("@/app/api/leads/filter/route");
     const req = new Request("http://test/api/leads/filter", {
@@ -97,7 +97,7 @@ describe("POST /api/leads/filter", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const where = db.crmLead.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfLead.findMany.mock.calls[0]![0]!.where as {
       AND: Array<Record<string, unknown>>;
     };
     const searchFrag = where.AND[1] as { OR: Array<Record<string, unknown>> };

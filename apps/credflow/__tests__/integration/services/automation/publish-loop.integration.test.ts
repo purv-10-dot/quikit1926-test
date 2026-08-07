@@ -21,7 +21,7 @@ import { publish } from "@/lib/services/automation/lifecycle";
 const TENANT = `int_b4_${Date.now()}`;
 
 async function draft(id: string, nodes: unknown[], edges: unknown[]) {
-  return integrationPrisma.crmWorkflowDefinition.create({
+  return integrationPrisma.qcfWorkflowDefinition.create({
     data: {
       id: `${TENANT}_${id}`,
       tenantId: TENANT,
@@ -35,7 +35,7 @@ async function draft(id: string, nodes: unknown[], edges: unknown[]) {
 }
 
 afterAll(async () => {
-  await integrationPrisma.crmWorkflowDefinition.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { tenantId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 

@@ -23,7 +23,7 @@ export async function enrichRelatedLabels(
     const unique = [...new Set(ids)];
     switch (refType) {
       case "lead": {
-        const rows = await prisma.crmLead.findMany({
+        const rows = await prisma.qcfLead.findMany({
           where: { tenantId, id: { in: unique } },
           select: { id: true, name: true },
         });
@@ -31,7 +31,7 @@ export async function enrichRelatedLabels(
         break;
       }
       case "account": {
-        const rows = await prisma.crmAccount.findMany({
+        const rows = await prisma.qcfAccount.findMany({
           where: { tenantId, id: { in: unique } },
           select: { id: true, name: true },
         });
@@ -39,7 +39,7 @@ export async function enrichRelatedLabels(
         break;
       }
       case "opportunity": {
-        const rows = await prisma.crmOpportunity.findMany({
+        const rows = await prisma.qcfOpportunity.findMany({
           where: { tenantId, id: { in: unique } },
           select: { id: true, name: true },
         });
@@ -47,7 +47,7 @@ export async function enrichRelatedLabels(
         break;
       }
       case "quote": {
-        const rows = await prisma.crmQuote.findMany({
+        const rows = await prisma.qcfQuote.findMany({
           where: { tenantId, id: { in: unique } },
           select: { id: true, quoteNumber: true },
         });
@@ -55,7 +55,7 @@ export async function enrichRelatedLabels(
         break;
       }
       case "order": {
-        const rows = await prisma.crmOrder.findMany({
+        const rows = await prisma.qcfOrder.findMany({
           where: { tenantId, id: { in: unique } },
           select: { id: true, orderNumber: true },
         });

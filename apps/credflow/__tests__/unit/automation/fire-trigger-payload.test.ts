@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmWorkflowDefinition, CrmLead } from "@quikit/database";
+import type { QcfWorkflowDefinition, QcfLead } from "@quikit/database";
 
 vi.mock("@/lib/db/redis", () => ({ isRedisEnabled: () => true }));
 vi.mock("@/lib/queue/automation-queue", () => ({ enqueueAutomation: vi.fn().mockResolvedValue("job-1") }));
@@ -21,7 +21,7 @@ beforeEach(() => vi.mocked(enqueueAutomation).mockClear());
 
 describe("fireTrigger · trigger-time snapshot payload", () => {
   it("enqueues with triggerEventId + triggerType + triggerSnapshot", async () => {
-    db.crmWorkflowDefinition.findMany.mockResolvedValue([
+    db.qcfWorkflowDefinition.findMany.mockResolvedValue([
       {
         id: "wf1",
         graphNodes: [
@@ -30,9 +30,9 @@ describe("fireTrigger · trigger-time snapshot payload", () => {
         ],
         graphEdges: [{ from: "t", to: "a" }],
       },
-    ] as unknown as CrmWorkflowDefinition[]);
-    db.crmLead.findFirst.mockResolvedValue(
-      { id: "L1", tenantId: "t1", stage: "New Lead", substatus: "Negotiation" } as unknown as CrmLead,
+    ] as unknown as QcfWorkflowDefinition[]);
+    db.qcfLead.findFirst.mockResolvedValue(
+      { id: "L1", tenantId: "t1", stage: "New Lead", substatus: "Negotiation" } as unknown as QcfLead,
     );
 
     const { onLeadUpdated } = await import("@/lib/services/automation/triggers");

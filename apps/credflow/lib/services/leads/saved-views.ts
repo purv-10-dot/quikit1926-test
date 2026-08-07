@@ -19,7 +19,7 @@ export type SavedViewRow = {
 
 /** Saved lead views for the Lists tab (same records as /api/leads/saved-views). */
 export async function listSavedViewsWithCounts(user: SessionUser): Promise<SavedViewRow[]> {
-  const views = await prisma.crmLeadListView.findMany({
+  const views = await prisma.qcfLeadListView.findMany({
     where: { tenantId: user.tenantId, userId: user.userId },
     orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
   });
@@ -36,7 +36,7 @@ export async function listSavedViewsWithCounts(user: SessionUser): Promise<Saved
         const baseAnd: Record<string, unknown>[] = [{ tenantId: user.tenantId }];
         if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
         if (acl) baseAnd.push(acl);
-        leadCount = await prisma.crmLead.count({ where: { AND: baseAnd } });
+        leadCount = await prisma.qcfLead.count({ where: { AND: baseAnd } });
       }
       return {
         id: v.id,

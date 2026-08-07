@@ -6,7 +6,7 @@ import { ExportButton } from "@/components/reports/export-button";
 
 export default async function CallLogsPage() {
   const user = await requireUser();
-  const items = await prisma.crmCallLog.findMany({
+  const items = await prisma.qcfCallLog.findMany({
     where: { tenantId: user.tenantId },
     orderBy: { createdAt: "desc" },
     take: 200,

@@ -41,12 +41,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Validation failed" }, { status: 400 });
     }
     if (parsed.data.isDefault) {
-      await db.crmQuoteTemplate.updateMany({
+      await db.qcfQuoteTemplate.updateMany({
         where: { tenantId: user.tenantId },
         data: { isDefault: false },
       });
     }
-    const row = await db.crmQuoteTemplate.update({
+    const row = await db.qcfQuoteTemplate.update({
       where: { id: parsed.data.id },
       data: {
         themeColor: parsed.data.themeColor,

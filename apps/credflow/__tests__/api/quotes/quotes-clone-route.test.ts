@@ -17,7 +17,7 @@ describe("POST /api/quotes/[id]/clone", () => {
   beforeEach(() => {
     setSession(null);
     db.$transaction.mockReset();
-    db.crmQuote.findFirst.mockReset();
+    db.qcfQuote.findFirst.mockReset();
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -31,13 +31,13 @@ describe("POST /api/quotes/[id]/clone", () => {
 
   it("returns 404 when the source quote is in another tenant", async () => {
     adminSession();
-    // Service wraps the work in a $transaction whose callback uses tx.crmQuote.
+    // Service wraps the work in a $transaction whose callback uses tx.qcfQuote.
     db.$transaction.mockImplementation(async (cb: unknown) => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
     // findFirst returns null because the where { id, tenantId } filter
     // doesn't match in the requesting tenant.
-    db.crmQuote.findFirst.mockResolvedValue(null);
+    db.qcfQuote.findFirst.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/quotes/[id]/clone/route");
     const req = new Request("http://test/api/quotes/q-other-tenant/clone", { method: "POST" });
@@ -54,7 +54,7 @@ describe("POST /api/quotes/[id]/clone", () => {
     db.$transaction.mockImplementation(async (cb: unknown) => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
-    db.crmQuote.findFirst.mockResolvedValue({
+    db.qcfQuote.findFirst.mockResolvedValue({
       id: "q-src",
       tenantId: "t1",
       quoteNumber: "QT-2026-0007",
@@ -76,9 +76,9 @@ describe("POST /api/quotes/[id]/clone", () => {
       ownerName: "Alice",
       lines: [],
     } as never);
-    db.crmSequence.upsert.mockResolvedValue({ counter: 11 } as never);
-    db.crmQuote.create.mockResolvedValue({ id: "q-new" } as never);
-    db.crmActivity.create.mockResolvedValue({} as never);
+    db.qcfSequence.upsert.mockResolvedValue({ counter: 11 } as never);
+    db.qcfQuote.create.mockResolvedValue({ id: "q-new" } as never);
+    db.qcfActivity.create.mockResolvedValue({} as never);
 
     const { POST } = await import("@/app/api/quotes/[id]/clone/route");
     const req = new Request("http://test/api/quotes/q-src/clone", { method: "POST" });
@@ -92,6 +92,6 @@ describe("POST /api/quotes/[id]/clone", () => {
     // Fresh number, not a -V suffix (that's revise territory).
     expect(body.data.quoteNumber).toMatch(/^QT-\d{4}-0011$/);
     // The clone activity must be logged.
-    expect(db.crmActivity.create).toHaveBeenCalled();
+    expect(db.qcfActivity.create).toHaveBeenCalled();
   });
 });

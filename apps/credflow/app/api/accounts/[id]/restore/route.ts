@@ -19,7 +19,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await assertModule(user, "accounts", "delete");
     await assertAccountAccess(user, id);
 
-    const existing = await prisma.crmAccount.findFirst({
+    const existing = await prisma.qcfAccount.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: { not: null } },
       select: { id: true, name: true },
     });
@@ -29,7 +29,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       where: { id },
       data: { deletedAt: null },
     });
-    await prisma.crmActivity.create({
+    await prisma.qcfActivity.create({
       data: {
         tenantId: user.tenantId,
         type: "AccountChange",

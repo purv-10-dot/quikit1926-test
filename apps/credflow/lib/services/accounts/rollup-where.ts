@@ -11,8 +11,8 @@ export interface AccountRollupIds {
 export function buildAccountActivityWhere(
   tenantId: string,
   ids: AccountRollupIds,
-): Prisma.CrmActivityWhereInput {
-  const or: Prisma.CrmActivityWhereInput[] = [
+): Prisma.QcfActivityWhereInput {
+  const or: Prisma.QcfActivityWhereInput[] = [
     { relatedKind: "Account", relatedObjectId: ids.accountId },
     { relatedKind: "account", relatedObjectId: ids.accountId },
   ];
@@ -38,8 +38,8 @@ export function buildAccountActivityWhere(
 export function buildAccountTaskWhere(
   tenantId: string,
   ids: AccountRollupIds,
-): Prisma.CrmTaskWhereInput {
-  const or: Prisma.CrmTaskWhereInput[] = [
+): Prisma.QcfTaskWhereInput {
+  const or: Prisma.QcfTaskWhereInput[] = [
     { relatedKind: "Account", relatedObjectId: ids.accountId },
     { relatedKind: "account", relatedObjectId: ids.accountId },
   ];
@@ -54,8 +54,8 @@ export function buildAccountTaskWhere(
 export function buildAccountNoteWhere(
   tenantId: string,
   ids: AccountRollupIds,
-): Prisma.CrmNoteWhereInput {
-  const or: Prisma.CrmNoteWhereInput[] = [
+): Prisma.QcfNoteWhereInput {
+  const or: Prisma.QcfNoteWhereInput[] = [
     { relatedKind: "Account", relatedObjectId: ids.accountId },
     { relatedKind: "account", relatedObjectId: ids.accountId },
   ];

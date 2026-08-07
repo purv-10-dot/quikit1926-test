@@ -24,12 +24,12 @@ const RANGE = {
 const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
 
 function armPrismaDefaults(): void {
-  db.crmLead.count.mockResolvedValue(0);
-  db.crmAccount.count.mockResolvedValue(0);
-  db.crmOpportunity.count.mockResolvedValue(0);
-  asMock(db.crmOpportunity.groupBy).mockResolvedValue([]);
-  db.crmTask.count.mockResolvedValue(0);
-  db.crmActivity.count.mockResolvedValue(0);
+  db.qcfLead.count.mockResolvedValue(0);
+  db.qcfAccount.count.mockResolvedValue(0);
+  db.qcfOpportunity.count.mockResolvedValue(0);
+  asMock(db.qcfOpportunity.groupBy).mockResolvedValue([]);
+  db.qcfTask.count.mockResolvedValue(0);
+  db.qcfActivity.count.mockResolvedValue(0);
 }
 
 describe("Bug 13 — leads-by-stage ordering", () => {
@@ -38,8 +38,8 @@ describe("Bug 13 — leads-by-stage ordering", () => {
   });
 
   it("groupBy call carries an orderBy clause", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValue([]);
-    db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
+    asMock(db.qcfLead.groupBy).mockResolvedValue([]);
+    db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
     const { buildSummary } = await import(
       "@/lib/services/dashboard/summary-service"
     );
@@ -48,14 +48,14 @@ describe("Bug 13 — leads-by-stage ordering", () => {
       resolvedOwnerId: null,
       ownerId: null,
     } as never);
-    const args = (asMock(db.crmLead.groupBy)).mock.calls[0]?.[0] as {
+    const args = (asMock(db.qcfLead.groupBy)).mock.calls[0]?.[0] as {
       orderBy?: unknown;
     };
     expect(args.orderBy).toBeDefined();
   });
 
   it("output is sorted by canonical pipeline order; junk stages last alphabetically", async () => {
-    db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue({
+    db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue({
       tenantId: "t1",
       settings: {
         dashboard: {
@@ -64,7 +64,7 @@ describe("Bug 13 — leads-by-stage ordering", () => {
         },
       },
     } as never);
-    asMock(db.crmLead.groupBy).mockResolvedValue([
+    asMock(db.qcfLead.groupBy).mockResolvedValue([
       // Intentionally scrambled to prove the sort is doing the work.
       { stage: "Qualified", _count: 5 },
       { stage: "opopopopopo", _count: 1 },

@@ -60,7 +60,7 @@ function onLeadSquaredJobFailed(
 async function processAutomationJob(job: Job<AutomationJobData>) {
   const { tenantId, workflowId, leadId, startNodeId, step, pendingStepId, triggerEventId, triggerType, triggerSnapshot } = job.data;
   if (pendingStepId) {
-    await prisma.crmAutomationPendingStep
+    await prisma.qcfAutomationPendingStep
       .update({
         where: { id: pendingStepId },
         data: { status: "processing" },
@@ -74,13 +74,13 @@ async function processAutomationJob(job: Job<AutomationJobData>) {
       snapshot: triggerSnapshot,
     });
     if (pendingStepId) {
-      await prisma.crmAutomationPendingStep
+      await prisma.qcfAutomationPendingStep
         .update({ where: { id: pendingStepId }, data: { status: "completed" } })
         .catch(() => undefined);
     }
   } catch (err) {
     if (pendingStepId) {
-      await prisma.crmAutomationPendingStep
+      await prisma.qcfAutomationPendingStep
         .update({
           where: { id: pendingStepId },
           data: { status: "failed", failedReason: err instanceof Error ? err.message : "unknown" },

@@ -1,4 +1,4 @@
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import { getLeadScoringConfig } from "@/lib/services/leads/lead-scoring/config";
 import {
@@ -13,7 +13,7 @@ const LEAD_RELATED_OR = (leadId: string) => [
   { relatedKind: "Lead", relatedObjectId: leadId },
 ];
 
-function toLeadInput(lead: CrmLead): LeadScoringLeadInput {
+function toLeadInput(lead: QcfLead): LeadScoringLeadInput {
   return {
     name: lead.name,
     email: lead.email,
@@ -47,21 +47,21 @@ export async function loadLeadScoringContext(
 
   const [activitiesCount, callsCount, notesCount, tasks, lastActivity, lastCall] =
     await Promise.all([
-      prisma.crmActivity.count({
+      prisma.qcfActivity.count({
         where: { tenantId, OR: relatedOr },
       }),
-      prisma.crmCallLog.count({ where: { tenantId, leadId } }),
-      prisma.crmNote.count({ where: { tenantId, OR: relatedOr } }),
-      prisma.crmTask.findMany({
+      prisma.qcfCallLog.count({ where: { tenantId, leadId } }),
+      prisma.qcfNote.count({ where: { tenantId, OR: relatedOr } }),
+      prisma.qcfTask.findMany({
         where: { tenantId, OR: relatedOr },
         select: { status: true },
       }),
-      prisma.crmActivity.findFirst({
+      prisma.qcfActivity.findFirst({
         where: { tenantId, OR: relatedOr },
         orderBy: { occurredAt: "desc" },
         select: { occurredAt: true, createdAt: true },
       }),
-      prisma.crmCallLog.findFirst({
+      prisma.qcfCallLog.findFirst({
         where: { tenantId, leadId },
         orderBy: { startTime: "desc" },
         select: { startTime: true, createdAt: true },
@@ -117,7 +117,7 @@ export async function recalculateLeadScore(
   const config = await getLeadScoringConfig(tenantId);
   if (!config.enabled || !config.autoRecalculate) return null;
 
-  const lead = await prisma.crmLead.findFirst({
+  const lead = await prisma.qcfLead.findFirst({
     where: { id: leadId, tenantId, deletedAt: null },
   });
   if (!lead) return null;
@@ -127,7 +127,7 @@ export async function recalculateLeadScore(
   const previousScore = lead.score;
 
   if (breakdown.total !== previousScore) {
-    await prisma.crmLead.update({
+    await prisma.qcfLead.update({
       where: { id: leadId },
       data: { score: breakdown.total },
     });
@@ -149,7 +149,7 @@ export async function recalculateAllLeadScores(tenantId: string): Promise<{
   const config = await getLeadScoringConfig(tenantId);
   if (!config.enabled) return { processed: 0, updated: 0 };
 
-  const leads = await prisma.crmLead.findMany({
+  const leads = await prisma.qcfLead.findMany({
     where: { tenantId, deletedAt: null },
     select: { id: true },
   });

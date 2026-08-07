@@ -21,11 +21,11 @@ let setId: string;
 let versionId: string;
 
 beforeAll(async () => {
-  const set = await db.crmFormSet.create({
+  const set = await db.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
   });
   setId = set.id;
-  versionId = (await db.crmFormSetVersion.create({
+  versionId = (await db.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   })).id;
 
@@ -42,15 +42,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  await db.crmFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("user_picker field config — scope + mode persist and reach the runtime", () => {
   it("createFormField persists userPickerScope + userPickerMode", async () => {
-    const field = await db.crmFormField.findFirst({ where: { formSetVersionId: versionId, fieldKey: "assignees" } });
+    const field = await db.qcfFormField.findFirst({ where: { formSetVersionId: versionId, fieldKey: "assignees" } });
     expect(field!.userPickerScope).toBe("team");
     expect(field!.userPickerMode).toBe("multi");
   });
@@ -64,7 +64,7 @@ describe("user_picker field config — scope + mode persist and reach the runtim
   });
 
   it("CONTAINMENT: a non-user_picker field leaves scope/mode null", async () => {
-    const field = await db.crmFormField.findFirst({ where: { formSetVersionId: versionId, fieldKey: "remark" } });
+    const field = await db.qcfFormField.findFirst({ where: { formSetVersionId: versionId, fieldKey: "remark" } });
     expect(field!.userPickerScope).toBeNull();
     expect(field!.userPickerMode).toBeNull();
   });

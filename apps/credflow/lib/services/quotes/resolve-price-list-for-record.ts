@@ -17,20 +17,20 @@ export async function resolvePriceListIdForQuote(args: {
   const client = args.client ?? db;
 
   if (args.opportunityId) {
-    const opp = await client.crmOpportunity.findFirst({
+    const opp = await client.qcfOpportunity.findFirst({
       where: { id: args.opportunityId, tenantId: args.tenantId },
       select: { priceListId: true, accountId: true },
     });
     if (opp?.priceListId) return opp.priceListId;
   }
 
-  const account = await client.crmAccount.findFirst({
+  const account = await client.qcfAccount.findFirst({
     where: { id: args.accountId, tenantId: args.tenantId },
     select: { defaultPriceListId: true },
   });
   if (account?.defaultPriceListId) return account.defaultPriceListId;
 
-  const tenantDefault = await client.crmPriceList.findFirst({
+  const tenantDefault = await client.qcfPriceList.findFirst({
     where: { tenantId: args.tenantId, isDefault: true, deletedAt: null, isActive: true },
     select: { id: true },
   });
@@ -46,7 +46,7 @@ export async function resolveOpportunityPriceListId(args: {
   if (args.explicitPriceListId) return args.explicitPriceListId;
   if (!args.accountId) return null;
   const client = args.client ?? db;
-  const account = await client.crmAccount.findFirst({
+  const account = await client.qcfAccount.findFirst({
     where: { id: args.accountId, tenantId: args.tenantId },
     select: { defaultPriceListId: true },
   });

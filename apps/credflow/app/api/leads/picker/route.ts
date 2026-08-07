@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const where: Record<string, unknown> =
       scopeClauses.length > 0 ? { AND: [baseWhere, ...scopeClauses] } : baseWhere;
 
-    const leads = await prisma.crmLead.findMany({
+    const leads = await prisma.qcfLead.findMany({
       where,
       select: { id: true, name: true, company: true },
       orderBy: { createdAt: "desc" },

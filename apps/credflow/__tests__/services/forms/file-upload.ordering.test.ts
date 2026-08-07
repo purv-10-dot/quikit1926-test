@@ -37,10 +37,10 @@ const user: SessionUser = {
 
 beforeEach(() => {
   vi.mocked(saveCrmUpload).mockReset();
-  db.crmActivity.findFirst.mockReset();
+  db.qcfActivity.findFirst.mockReset();
   // Default: caller IS in scope (admin/unrestricted) — isolates each guarantee.
   vi.mocked(getScope).mockResolvedValue({ unrestricted: true });
-  db.crmActivity.findFirst.mockResolvedValue({ id: "act_1" } as never);
+  db.qcfActivity.findFirst.mockResolvedValue({ id: "act_1" } as never);
 });
 
 describe("saveDispositionUpload ordering (AC-RE-8 + ACL-before-store)", () => {
@@ -81,7 +81,7 @@ describe("saveDispositionUpload ordering (AC-RE-8 + ACL-before-store)", () => {
   it("ACL-before-store: an out-of-scope activity throws BEFORE saveCrmUpload is called", async () => {
     // Restricted with no allowed accounts => activity ACL matches nothing.
     vi.mocked(getScope).mockResolvedValue({ unrestricted: false, allowedAccountIds: [] });
-    db.crmActivity.findFirst.mockResolvedValue(null as never);
+    db.qcfActivity.findFirst.mockResolvedValue(null as never);
 
     const validPdf = new File([new Uint8Array(1024)], "ok.pdf", {
       type: "application/pdf",

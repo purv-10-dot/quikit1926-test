@@ -25,11 +25,11 @@ export async function compareQuoteVersions(
   quoteIdB: string,
 ): Promise<VersionComparison> {
   const [a, b] = await Promise.all([
-    db.crmQuote.findFirst({
+    db.qcfQuote.findFirst({
       where: { id: quoteIdA, tenantId },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
     }),
-    db.crmQuote.findFirst({
+    db.qcfQuote.findFirst({
       where: { id: quoteIdB, tenantId },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
     }),
@@ -82,7 +82,7 @@ export async function compareQuoteVersions(
 }
 
 export async function listComparableVersions(tenantId: string, quoteId: string) {
-  const row = await db.crmQuote.findFirst({
+  const row = await db.qcfQuote.findFirst({
     where: { id: quoteId, tenantId },
     select: { parentQuoteId: true },
   });

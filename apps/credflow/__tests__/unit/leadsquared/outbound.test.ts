@@ -59,7 +59,7 @@ function setup() {
 describe("syncLeadOutbound", () => {
   it("pushes a fresh lead and stores the returned ProspectId", async () => {
     const { db, client, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null); // no mapping yet
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null); // no mapping yet
     const input = lead();
 
     const result = await syncLeadOutbound(
@@ -70,8 +70,8 @@ describe("syncLeadOutbound", () => {
     expect(result).toEqual({ pushed: true, prospectId: "PID-1" });
     expect(client.createOrUpdateLead).toHaveBeenCalledOnce();
 
-    expect(db.leadSquaredSyncMap.upsert).toHaveBeenCalledOnce();
-    const arg = db.leadSquaredSyncMap.upsert.mock.calls[0][0];
+    expect(db.qcfLeadSquaredSyncMap.upsert).toHaveBeenCalledOnce();
+    const arg = db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0];
     expect(arg.where).toEqual({ crmLeadId: LEAD_ID });
     expect(arg.create).toMatchObject({
       tenantId: TENANT,
@@ -84,14 +84,14 @@ describe("syncLeadOutbound", () => {
 
   it("looks up the mapping row scoped by tenantId", async () => {
     const { db, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
       deps,
     );
 
-    expect(db.leadSquaredSyncMap.findFirst).toHaveBeenCalledWith({
+    expect(db.qcfLeadSquaredSyncMap.findFirst).toHaveBeenCalledWith({
       where: { crmLeadId: LEAD_ID, tenantId: TENANT },
     });
   });
@@ -99,7 +99,7 @@ describe("syncLeadOutbound", () => {
   it("skips an unchanged lead (payload hash matches last sync)", async () => {
     const { db, client, deps } = setup();
     const input = lead();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue({
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
       tenantId: TENANT,
       crmLeadId: LEAD_ID,
@@ -122,12 +122,12 @@ describe("syncLeadOutbound", () => {
       prospectId: "PID-1",
     });
     expect(client.createOrUpdateLead).not.toHaveBeenCalled();
-    expect(db.leadSquaredSyncMap.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.upsert).not.toHaveBeenCalled();
   });
 
   it("does not push a change that originated in LeadSquared (echo guard)", async () => {
     const { db, client, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue({
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
       tenantId: TENANT,
       crmLeadId: LEAD_ID,
@@ -148,12 +148,12 @@ describe("syncLeadOutbound", () => {
 
     expect(result).toMatchObject({ pushed: false, skippedReason: "origin-leadsquared" });
     expect(client.createOrUpdateLead).not.toHaveBeenCalled();
-    expect(db.leadSquaredSyncMap.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.upsert).not.toHaveBeenCalled();
   });
 
   it("does not touch the mapping row when the API call fails", async () => {
     const { db, client, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
     client.createOrUpdateLead.mockRejectedValue(new LeadSquaredError("HTTP 500", 500));
 
     await expect(
@@ -164,15 +164,15 @@ describe("syncLeadOutbound", () => {
     ).rejects.toBeInstanceOf(LeadSquaredError);
 
     // The push threw before any DB write — mapping row is untouched.
-    expect(db.leadSquaredSyncMap.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.upsert).not.toHaveBeenCalled();
   });
 
   it("does not dead-letter on a duplicate/merged ProspectId (P2002) — logs + returns a warning", async () => {
     const { db, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
     // The ProspectId already belongs to another lead → unique violation.
     const p2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
-    db.leadSquaredSyncMap.upsert.mockRejectedValue(p2002);
+    db.qcfLeadSquaredSyncMap.upsert.mockRejectedValue(p2002);
 
     const result = await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
@@ -185,8 +185,8 @@ describe("syncLeadOutbound", () => {
 
   it("still rethrows a non-P2002 mapping error", async () => {
     const { db, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.leadSquaredSyncMap.upsert.mockRejectedValue(new Error("connection reset"));
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.upsert.mockRejectedValue(new Error("connection reset"));
 
     await expect(
       syncLeadOutbound({ tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" }, deps),
@@ -196,7 +196,7 @@ describe("syncLeadOutbound", () => {
   it("UPDATES by id (Lead.Update) when a ProspectId is known — never CreateOrUpdate", async () => {
     const { db, client, deps } = setup();
     const input = lead();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue({
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue({
       id: "map-1",
       tenantId: TENANT,
       crmLeadId: LEAD_ID,
@@ -222,14 +222,14 @@ describe("syncLeadOutbound", () => {
     expect(sentAttrs.some((a: { Attribute: string }) => a.Attribute === "ProspectID")).toBe(false);
     expect(result).toMatchObject({ pushed: true, prospectId: "PID-EXISTING" });
     // The loop-guard hash is computed from the mapped fields only (no update key).
-    expect(db.leadSquaredSyncMap.upsert.mock.calls[0][0].update.lastPayloadHash).toBe(
+    expect(db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0].update.lastPayloadHash).toBe(
       expectedHash(input),
     );
   });
 
   it("CREATES via CreateOrUpdate on first-time sync (no mapping) and stores the returned id", async () => {
     const { db, client, deps } = setup();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
@@ -242,7 +242,7 @@ describe("syncLeadOutbound", () => {
     const sent = client.createOrUpdateLead.mock.calls[0][0];
     expect(sent.some((a: { Attribute: string }) => a.Attribute === "ProspectID")).toBe(false);
     expect(result).toMatchObject({ pushed: true, prospectId: "PID-1" });
-    expect(db.leadSquaredSyncMap.upsert.mock.calls[0][0].create.lsqProspectId).toBe("PID-1");
+    expect(db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0].create.lsqProspectId).toBe("PID-1");
   });
 
   it("recovers a first-time duplicate-email: resolve by email -> Lead.Update -> persist the id", async () => {
@@ -261,7 +261,7 @@ describe("syncLeadOutbound", () => {
       client,
       now: () => new Date("2026-07-15T00:00:00.000Z"),
     };
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead({ email: "ada@x.com" }), origin: "crm" },
@@ -275,7 +275,7 @@ describe("syncLeadOutbound", () => {
     expect(client.updateLead.mock.calls[0][0]).toBe("PID-FOUND");
     expect(result).toMatchObject({ pushed: true, prospectId: "PID-FOUND" });
     // recovered id persisted so future syncs update directly
-    expect(db.leadSquaredSyncMap.upsert.mock.calls[0][0].create.lsqProspectId).toBe("PID-FOUND");
+    expect(db.qcfLeadSquaredSyncMap.upsert.mock.calls[0][0].create.lsqProspectId).toBe("PID-FOUND");
   });
 
   it("is non-fatal when a recovered duplicate STILL fails to update (no retry exhaustion)", async () => {
@@ -291,7 +291,7 @@ describe("syncLeadOutbound", () => {
       client,
       now: () => new Date("2026-07-15T00:00:00.000Z"),
     };
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead({ email: "ada@x.com" }), origin: "crm" },
@@ -300,7 +300,7 @@ describe("syncLeadOutbound", () => {
 
     // Caught + returned, not thrown -> BullMQ won't spin on a permanent condition.
     expect(result).toMatchObject({ pushed: false, prospectId: "PID-FOUND", warning: "duplicate-email" });
-    expect(db.leadSquaredSyncMap.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.upsert).not.toHaveBeenCalled();
   });
 
   it("treats an UNRESOLVABLE duplicate-email as non-fatal — no throw (no retry exhaustion)", async () => {
@@ -318,7 +318,7 @@ describe("syncLeadOutbound", () => {
       client,
       now: () => new Date("2026-07-15T00:00:00.000Z"),
     };
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },
@@ -327,7 +327,7 @@ describe("syncLeadOutbound", () => {
 
     expect(result).toMatchObject({ pushed: false, warning: "duplicate-email" });
     expect(client.updateLead).not.toHaveBeenCalled();
-    expect(db.leadSquaredSyncMap.upsert).not.toHaveBeenCalled();
+    expect(db.qcfLeadSquaredSyncMap.upsert).not.toHaveBeenCalled();
   });
 
   it("treats a duplicate-email as non-fatal when no email lookup is available", async () => {
@@ -335,7 +335,7 @@ describe("syncLeadOutbound", () => {
     client.createOrUpdateLead.mockRejectedValue(
       new LeadSquaredError("HTTP 500", 500, { ExceptionType: "MXDuplicateEntryException" }),
     );
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
 
     const result = await syncLeadOutbound(
       { tenantId: TENANT, crmLeadId: LEAD_ID, lead: lead(), origin: "crm" },

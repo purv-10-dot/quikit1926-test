@@ -13,7 +13,7 @@ export async function getAgentPhoneForUser(
   tenantId: string,
   userId: string,
 ): Promise<string | null> {
-  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   const tree = (row?.settings as SettingsTree | null) ?? {};
   const phone = tree[SETTINGS_KEY]?.[userId];
   return typeof phone === "string" && phone.length > 0 ? phone : null;
@@ -25,7 +25,7 @@ export async function setAgentPhoneForUser(
   phone: string | null,
 ): Promise<void> {
   const normalized = phone ? digitsOnly(phone) : "";
-  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   const tree = ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
   const phones = { ...(tree[SETTINGS_KEY] ?? {}) };
 
@@ -37,12 +37,12 @@ export async function setAgentPhoneForUser(
 
   const settings: SettingsTree = { ...tree, [SETTINGS_KEY]: phones };
   if (row) {
-    await prisma.crmOrgWorkspaceSettings.update({
+    await prisma.qcfOrgWorkspaceSettings.update({
       where: { tenantId },
       data: { settings: settings as object },
     });
   } else {
-    await prisma.crmOrgWorkspaceSettings.create({
+    await prisma.qcfOrgWorkspaceSettings.create({
       data: { tenantId, settings: settings as object },
     });
   }

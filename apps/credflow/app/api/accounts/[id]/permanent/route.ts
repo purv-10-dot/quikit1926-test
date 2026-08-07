@@ -27,7 +27,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await assertAccountAccess(user, id);
 
-    const existing = await prisma.crmAccount.findFirst({
+    const existing = await prisma.qcfAccount.findFirst({
       where: { id, tenantId: user.tenantId },
       select: { id: true, name: true, deletedAt: true },
     });
@@ -44,23 +44,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.crmLead.updateMany({
+      await tx.qcfLead.updateMany({
         where: { tenantId: user.tenantId, accountId: id },
         data: { accountId: null },
       });
-      await tx.crmContact.updateMany({
+      await tx.qcfContact.updateMany({
         where: { tenantId: user.tenantId, accountId: id },
         data: { accountId: null },
       });
-      await tx.crmOpportunity.updateMany({
+      await tx.qcfOpportunity.updateMany({
         where: { tenantId: user.tenantId, accountId: id },
         data: { accountId: null },
       });
-      await tx.crmAccount.updateMany({
+      await tx.qcfAccount.updateMany({
         where: { tenantId: user.tenantId, parentAccountId: id },
         data: { parentAccountId: null },
       });
-      await tx.crmAccount.delete({ where: { id } });
+      await tx.qcfAccount.delete({ where: { id } });
     });
 
     return NextResponse.json({ success: true });

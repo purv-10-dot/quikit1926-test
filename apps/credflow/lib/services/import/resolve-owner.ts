@@ -12,7 +12,7 @@
  *   - email compared case-insensitively, trimmed
  *   - scoped to the tenant's ACTIVE org members only (same OrgMember→User join
  *     used by GET /api/leads/owners and the users service)
- *   - VERIFIED contract (owner-scope.ts): CrmLead.ownerId === auth.User.id ===
+ *   - VERIFIED contract (owner-scope.ts): QcfLead.ownerId === auth.User.id ===
  *     quikit.OrgMember.userId, so setting ownerId to the matched User.id is correct.
  *
  * Returns null when the email is blank or matches no active user — the caller

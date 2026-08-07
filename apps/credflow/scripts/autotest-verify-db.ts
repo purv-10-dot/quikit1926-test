@@ -42,8 +42,8 @@ async function main() {
     process.exit(1);
   }
 
-  const fixtures = await prisma.crmLead.count({ where: { source: "autotest-fixture" } });
-  const total = await prisma.crmLead.count();
+  const fixtures = await prisma.qcfLead.count({ where: { source: "autotest-fixture" } });
+  const total = await prisma.qcfLead.count();
   console.log(`Lead rows total: ${total}; autotest-fixture rows: ${fixtures}`);
   console.log(`PASS: dev env is isolated on ${EXPECTED}.`);
 }

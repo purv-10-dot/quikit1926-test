@@ -11,7 +11,7 @@
  * replaces the guard with clone-on-edit (auto-create a draft, then edit there).
  */
 import { prisma } from "@/lib/db/prisma";
-import type { CrmFormField, CrmFormSection, CrmFormTab } from "@quikit/database";
+import type { QcfFormField, QcfFormSection, QcfFormTab } from "@quikit/database";
 
 export const PROTECTED_DISPOSITION_TAB_NAME = "Call Disposition";
 
@@ -45,7 +45,7 @@ export class FormStructureError extends Error {
  * guard stays the invariant; the clone is the explicit escape hatch (Unit 7).
  */
 export async function assertDraft(formSetVersionId: string): Promise<void> {
-  const version = await prisma.crmFormSetVersion.findUnique({
+  const version = await prisma.qcfFormSetVersion.findUnique({
     where: { id: formSetVersionId },
     select: { status: true },
   });
@@ -60,7 +60,7 @@ export async function assertDraft(formSetVersionId: string): Promise<void> {
 
 /** Read the full tab/section/field structure of a version, ordered. */
 export async function getFormStructure(formSetVersionId: string) {
-  return prisma.crmFormTab.findMany({
+  return prisma.qcfFormTab.findMany({
     where: { formSetVersionId },
     orderBy: { sortOrder: "asc" },
     include: {
@@ -79,9 +79,9 @@ export async function createFormTab(input: {
   visibility: "always" | "rule_driven";
   sortOrder: number;
   createdByUserId?: string | null;
-}): Promise<CrmFormTab> {
+}): Promise<QcfFormTab> {
   await assertDraft(input.formSetVersionId);
-  return prisma.crmFormTab.create({
+  return prisma.qcfFormTab.create({
     data: {
       formSetVersionId: input.formSetVersionId,
       name: input.name,
@@ -97,14 +97,14 @@ export async function createFormSection(input: {
   formTabId: string;
   name?: string | null;
   sortOrder: number;
-}): Promise<CrmFormSection> {
-  const tab = await prisma.crmFormTab.findUnique({
+}): Promise<QcfFormSection> {
+  const tab = await prisma.qcfFormTab.findUnique({
     where: { id: input.formTabId },
     select: { formSetVersionId: true },
   });
   if (!tab) throw new FormStructureError("Tab not found", 404);
   await assertDraft(tab.formSetVersionId);
-  return prisma.crmFormSection.create({
+  return prisma.qcfFormSection.create({
     data: { formTabId: input.formTabId, name: input.name ?? null, sortOrder: input.sortOrder },
   });
 }
@@ -114,8 +114,8 @@ export async function placeFormField(input: {
   fieldId: string;
   formTabId?: string | null;
   formSectionId?: string | null;
-}): Promise<CrmFormField> {
-  return prisma.crmFormField.update({
+}): Promise<QcfFormField> {
+  return prisma.qcfFormField.update({
     where: { id: input.fieldId },
     data: { formTabId: input.formTabId ?? null, formSectionId: input.formSectionId ?? null },
   });
@@ -137,9 +137,9 @@ export async function createFormField(input: {
   /** "hidden" => the field is rule-driven (revealed by a show_field action). */
   defaultVisibility?: "visible" | "hidden";
   options?: { valueKey: string; label: string }[];
-}): Promise<CrmFormField> {
+}): Promise<QcfFormField> {
   await assertDraft(input.formSetVersionId);
-  const field = await prisma.crmFormField.create({
+  const field = await prisma.qcfFormField.create({
     data: {
       formSetVersionId: input.formSetVersionId,
       tab: input.tab ?? "call_disposition",
@@ -157,7 +157,7 @@ export async function createFormField(input: {
     },
   });
   if (input.options?.length) {
-    await prisma.crmFormFieldOption.createMany({
+    await prisma.qcfFormFieldOption.createMany({
       data: input.options.map((o, i) => ({
         formFieldId: field.id,
         valueKey: o.valueKey,
@@ -170,8 +170,8 @@ export async function createFormField(input: {
 }
 
 /** Resolve a field's version (and assert it is a draft) for any field edit. */
-async function assertFieldDraft(fieldId: string): Promise<CrmFormField> {
-  const field = await prisma.crmFormField.findUnique({ where: { id: fieldId } });
+async function assertFieldDraft(fieldId: string): Promise<QcfFormField> {
+  const field = await prisma.qcfFormField.findUnique({ where: { id: fieldId } });
   if (!field) throw new FormStructureError("Field not found", 404);
   await assertDraft(field.formSetVersionId);
   return field;
@@ -185,9 +185,9 @@ export async function updateFormField(input: {
   sortOrder?: number;
   userPickerMode?: "single" | "multi" | null;
   userPickerScope?: "all_users" | "team" | "role" | null;
-}): Promise<CrmFormField> {
+}): Promise<QcfFormField> {
   await assertFieldDraft(input.fieldId);
-  return prisma.crmFormField.update({
+  return prisma.qcfFormField.update({
     where: { id: input.fieldId },
     data: {
       ...(input.label !== undefined ? { label: input.label } : {}),
@@ -205,12 +205,12 @@ export async function deleteFormField(fieldId: string): Promise<void> {
   if (field.isProtected) {
     throw new FormStructureError("Protected fields cannot be deleted.", 409);
   }
-  await prisma.crmFormFieldOption.deleteMany({ where: { formFieldId: fieldId } });
-  await prisma.crmFormField.delete({ where: { id: fieldId } });
+  await prisma.qcfFormFieldOption.deleteMany({ where: { formFieldId: fieldId } });
+  await prisma.qcfFormField.delete({ where: { id: fieldId } });
 }
 
 export async function deleteFormTab(tabId: string): Promise<void> {
-  const tab = await prisma.crmFormTab.findUnique({
+  const tab = await prisma.qcfFormTab.findUnique({
     where: { id: tabId },
     select: { isProtected: true },
   });
@@ -218,7 +218,7 @@ export async function deleteFormTab(tabId: string): Promise<void> {
   if (tab.isProtected) {
     throw new FormStructureError("The Call Disposition tab is protected and cannot be deleted.", 409);
   }
-  await prisma.crmFormTab.delete({ where: { id: tabId } });
+  await prisma.qcfFormTab.delete({ where: { id: tabId } });
 }
 
 /**
@@ -230,8 +230,8 @@ export async function deleteFormTab(tabId: string): Promise<void> {
 export async function seedProtectedDispositionTab(
   formSetVersionId: string,
   createdByUserId?: string | null,
-): Promise<CrmFormTab> {
-  const tab = await prisma.crmFormTab.create({
+): Promise<QcfFormTab> {
+  const tab = await prisma.qcfFormTab.create({
     data: {
       formSetVersionId,
       name: PROTECTED_DISPOSITION_TAB_NAME,
@@ -244,7 +244,7 @@ export async function seedProtectedDispositionTab(
 
   for (let i = 0; i < PROTECTED_FIELDS.length; i++) {
     const f = PROTECTED_FIELDS[i]!;
-    await prisma.crmFormField.create({
+    await prisma.qcfFormField.create({
       data: {
         formSetVersionId,
         tab: "call_disposition",

@@ -8,7 +8,7 @@ export default async function TasksPage() {
   const user = await requireUser();
 
   // Assignee directory for the modal + table label resolution. The CRM
-  // intentionally has no cross-schema relation from CrmTask → User, so we
+  // intentionally has no cross-schema relation from QcfTask → User, so we
   // pre-compute names server-side once per page render.
   const memberships = await prisma.orgMember.findMany({
     where: { orgId: user.tenantId },

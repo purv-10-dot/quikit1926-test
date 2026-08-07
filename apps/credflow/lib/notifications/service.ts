@@ -3,7 +3,7 @@
  *
  * Single entry-point for all notification creation. Every write goes through
  * createNotification() which:
- *   1. Persists the row to CrmNotification (awaited — we want durability).
+ *   1. Persists the row to QcfNotification (awaited — we want durability).
  *   2. Publishes an SSE event on the per-user Redis channel (fire-and-forget).
  *   3. Sends a transactional email to the recipient (fire-and-forget).
  *
@@ -26,7 +26,7 @@ export async function createNotification(
   payload: NotificationPayload,
 ): Promise<void> {
   // 1. Persist — synchronous from the caller's perspective.
-  const row = await prisma.crmNotification.create({
+  const row = await prisma.qcfNotification.create({
     data: {
       tenantId: payload.tenantId,
       userId: payload.userId,
@@ -86,7 +86,7 @@ export async function getNotifications(
   cursor?: string | null,
   take = 30,
 ): Promise<NotificationPage> {
-  const rows = await prisma.crmNotification.findMany({
+  const rows = await prisma.qcfNotification.findMany({
     where: {
       tenantId,
       userId,
@@ -105,7 +105,7 @@ export async function getNotifications(
       : null;
 
   // Compute unread across the WHOLE inbox (not just this page).
-  const unread = await prisma.crmNotification.count({
+  const unread = await prisma.qcfNotification.count({
     where: { tenantId, userId, readAt: null },
   });
 
@@ -119,7 +119,7 @@ export async function getUnreadCount(
   tenantId: string,
   userId: string,
 ): Promise<number> {
-  return prisma.crmNotification.count({
+  return prisma.qcfNotification.count({
     where: { tenantId, userId, readAt: null },
   });
 }
@@ -131,7 +131,7 @@ export async function markAllRead(
   tenantId: string,
   userId: string,
 ): Promise<number> {
-  const result = await prisma.crmNotification.updateMany({
+  const result = await prisma.qcfNotification.updateMany({
     where: { tenantId, userId, readAt: null },
     data: { readAt: new Date() },
   });

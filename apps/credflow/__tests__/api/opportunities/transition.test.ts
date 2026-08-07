@@ -17,11 +17,11 @@ async function callTransition(id: string, body: object) {
 
 describe("POST /api/opportunities/[id]/transition", () => {
   beforeEach(() => {
-    db.crmOpportunity.findFirst.mockReset();
-    db.crmOpportunity.update.mockReset();
-    db.crmOpportunityStageTransition.create.mockReset();
-    db.crmActivity.create.mockReset();
-    db.crmUserPermissionTemplate.findMany.mockReset();
+    db.qcfOpportunity.findFirst.mockReset();
+    db.qcfOpportunity.update.mockReset();
+    db.qcfOpportunityStageTransition.create.mockReset();
+    db.qcfActivity.create.mockReset();
+    db.qcfUserPermissionTemplate.findMany.mockReset();
     db.$transaction.mockReset();
     setSession(null);
   });
@@ -33,16 +33,16 @@ describe("POST /api/opportunities/[id]/transition", () => {
 
   it("returns 404 cross-tenant (opp not found in user's tenant)", async () => {
     setSession({ userId: "u1", tenantId: "t-A", role: "admin", email: "a@b.co", name: "A" });
-    db.crmUserPermissionTemplate.findMany.mockResolvedValue([]);
-    db.crmOpportunity.findFirst.mockResolvedValue(null);
+    db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qcfOpportunity.findFirst.mockResolvedValue(null);
     const res = await callTransition("opp-from-t-B", { toStage: "Qualification" });
     expect(res.status).toBe(404);
   });
 
   it("rejects closing without a closeReasonCategory (still enforced after full-relax)", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "user", email: "a@b.co", name: "A" });
-    db.crmUserPermissionTemplate.findMany.mockResolvedValue([]);
-    db.crmOpportunity.findFirst.mockResolvedValue({
+    db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qcfOpportunity.findFirst.mockResolvedValue({
       id: "opp1",
       accountId: "acc1",
       stage: "Negotiation",
@@ -57,15 +57,15 @@ describe("POST /api/opportunities/[id]/transition", () => {
 
   it("happy path: Negotiation → ClosedWon writes audit + activity rows", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "admin", email: "a@b.co", name: "Alice" });
-    db.crmUserPermissionTemplate.findMany.mockResolvedValue([]);
-    db.crmOpportunity.findFirst.mockResolvedValue({
+    db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qcfOpportunity.findFirst.mockResolvedValue({
       id: "opp1",
       accountId: "acc1",
       stage: "Negotiation",
       name: "Deal",
     } as never);
     db.$transaction.mockImplementation(async (fn) => fn(db));
-    db.crmOpportunity.update.mockResolvedValue({
+    db.qcfOpportunity.update.mockResolvedValue({
       id: "opp1",
       stage: "ClosedWon",
       tenantId: "t1",
@@ -79,7 +79,7 @@ describe("POST /api/opportunities/[id]/transition", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(db.crmOpportunityStageTransition.create).toHaveBeenCalledTimes(1);
-    expect(db.crmActivity.create).toHaveBeenCalledTimes(1);
+    expect(db.qcfOpportunityStageTransition.create).toHaveBeenCalledTimes(1);
+    expect(db.qcfActivity.create).toHaveBeenCalledTimes(1);
   });
 });

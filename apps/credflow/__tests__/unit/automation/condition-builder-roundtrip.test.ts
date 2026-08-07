@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { evalIfElse } from "@/lib/services/automation/workflow-engine";
 import {
   formatConditionValue,
@@ -16,7 +16,7 @@ import type { IfElseConfig, WorkflowCondition } from "@/types/workflow";
 
 mockDb(); // activate the @quikit/database mock so importing the engine is safe
 
-const lead = (over: Partial<Record<string, unknown>>) => over as unknown as CrmLead;
+const lead = (over: Partial<Record<string, unknown>>) => over as unknown as QcfLead;
 
 describe("ConditionBuilder value transform", () => {
   it("parses a comma-separated IN list into a trimmed array", () => {

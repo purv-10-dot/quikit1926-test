@@ -5,9 +5,9 @@
  *   - Server derives ownerName from public.User on every owner change
  *   - Server computes weightedAmount = amount * probability / 100 on every save
  *   - Soft delete is the default DELETE behaviour; restore reverses it
- *   - Owner change writes a CrmActivity audit row
+ *   - Owner change writes a QcfActivity audit row
  */
-import type { CrmOpportunityStage, Prisma } from "@quikit/database";
+import type { QcfOpportunityStage, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { resolveOpportunityPriceListId } from "@/lib/services/quotes/resolve-price-list-for-record";
 import { computeWeightedAmount } from "./compute";
@@ -41,7 +41,7 @@ export type ListParams = {
   pageSize: number;
   trashed: boolean;
   leadId?: string;
-  stage?: CrmOpportunityStage;
+  stage?: QcfOpportunityStage;
   ownerId?: string;
   accountId?: string;
   q?: string;
@@ -66,7 +66,7 @@ const LIST_SELECT = {
   lastActivityAt: true,
   deletedAt: true,
   createdAt: true,
-} satisfies Prisma.CrmOpportunitySelect;
+} satisfies Prisma.QcfOpportunitySelect;
 
 /**
  * Build the same `where` clause `listOpportunities` uses, so the CSV export
@@ -75,7 +75,7 @@ const LIST_SELECT = {
  */
 export function buildOpportunityListWhere(
   p: Omit<ListParams, "page" | "pageSize">,
-): Prisma.CrmOpportunityWhereInput {
+): Prisma.QcfOpportunityWhereInput {
   return {
     tenantId: p.tenantId,
     deletedAt: p.trashed ? { not: null } : null,
@@ -99,7 +99,7 @@ export function buildOpportunityListWhere(
           ],
         }
       : {}),
-    ...(p.aclFilter ? (p.aclFilter as Prisma.CrmOpportunityWhereInput) : {}),
+    ...(p.aclFilter ? (p.aclFilter as Prisma.QcfOpportunityWhereInput) : {}),
   };
 }
 
@@ -107,7 +107,7 @@ export async function listOpportunities(p: ListParams) {
   const where = buildOpportunityListWhere(p);
 
   const [items, total] = await Promise.all([
-    db.crmOpportunity.findMany({
+    db.qcfOpportunity.findMany({
       where,
       select: LIST_SELECT,
       // `id desc` tiebreaker → stable page boundaries when many rows share the same createdAt.
@@ -115,7 +115,7 @@ export async function listOpportunities(p: ListParams) {
       skip: (p.page - 1) * p.pageSize,
       take: p.pageSize,
     }),
-    db.crmOpportunity.count({ where }),
+    db.qcfOpportunity.count({ where }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / p.pageSize));
@@ -127,7 +127,7 @@ export type CreateInput = {
   accountId: string;
   leadId?: string | null;
   priceListId?: string | null;
-  stage?: CrmOpportunityStage;
+  stage?: QcfOpportunityStage;
   amount?: number | null;
   currency?: string;
   probability?: number;
@@ -144,7 +144,7 @@ export async function createOpportunity(args: {
 }) {
   const { tenantId, userId, input } = args;
   const client: DbClient = args.tx ?? db;
-  const stage: CrmOpportunityStage = input.stage ?? "Prospecting";
+  const stage: QcfOpportunityStage = input.stage ?? "Prospecting";
   const probability = input.probability ?? 10;
   // Default owner = creator. Avoids "—" rows in the kanban/list when the
   // form omits the owner picker. Caller can still override via input.ownerId.
@@ -160,7 +160,7 @@ export async function createOpportunity(args: {
     }),
   ]);
 
-  const data: Prisma.CrmOpportunityUncheckedCreateInput = {
+  const data: Prisma.QcfOpportunityUncheckedCreateInput = {
     tenantId,
     name: input.name,
     accountId: input.accountId,
@@ -178,9 +178,9 @@ export async function createOpportunity(args: {
     createdByUserId: userId,
   };
 
-  const created = await client.crmOpportunity.create({ data });
+  const created = await client.qcfOpportunity.create({ data });
 
-  await client.crmActivity.create({
+  await client.qcfActivity.create({
     data: {
       tenantId,
       type: "OpportunityCreated",
@@ -218,7 +218,7 @@ export async function updateOpportunity(args: {
 }) {
   const { tenantId, userId, id, input, existing } = args;
 
-  const data: Prisma.CrmOpportunityUncheckedUpdateInput = { ...input };
+  const data: Prisma.QcfOpportunityUncheckedUpdateInput = { ...input };
 
   if (input.closeDate !== undefined) {
     data.closeDate = input.closeDate ? new Date(input.closeDate) : null;
@@ -238,13 +238,13 @@ export async function updateOpportunity(args: {
     data.weightedAmount = computeWeightedAmount(nextAmount as number | null, nextProb);
   }
 
-  const updated = await db.crmOpportunity.update({
+  const updated = await db.qcfOpportunity.update({
     where: { id, tenantId },
     data,
   });
 
   if (ownerChanged) {
-    await db.crmActivity.create({
+    await db.qcfActivity.create({
       data: {
         tenantId,
         type: "OpportunityOwnerChange",
@@ -262,14 +262,14 @@ export async function updateOpportunity(args: {
 }
 
 export async function softDelete(tenantId: string, id: string): Promise<void> {
-  await db.crmOpportunity.update({
+  await db.qcfOpportunity.update({
     where: { id, tenantId },
     data: { deletedAt: new Date() },
   });
 }
 
 export async function restore(tenantId: string, id: string): Promise<void> {
-  await db.crmOpportunity.update({
+  await db.qcfOpportunity.update({
     where: { id, tenantId },
     data: { deletedAt: null },
   });
@@ -280,19 +280,19 @@ export async function recalculateFromProducts(
   tenantId: string,
   opportunityId: string,
 ): Promise<{ amount: number; weightedAmount: number | null }> {
-  const opp = await db.crmOpportunity.findFirst({
+  const opp = await db.qcfOpportunity.findFirst({
     where: { id: opportunityId, tenantId },
     select: { probability: true },
   });
   if (!opp) throw new Error("Opportunity not found");
 
-  const products = await db.crmOpportunityProduct.findMany({
+  const products = await db.qcfOpportunityProduct.findMany({
     where: { tenantId, opportunityId },
     select: { lineTotal: true },
   });
   const amount = products.reduce((sum, p) => sum + Number(String(p.lineTotal)), 0);
   const weightedAmount = computeWeightedAmount(amount, opp.probability);
-  await db.crmOpportunity.update({
+  await db.qcfOpportunity.update({
     where: { id: opportunityId, tenantId },
     data: { amount, weightedAmount },
   });

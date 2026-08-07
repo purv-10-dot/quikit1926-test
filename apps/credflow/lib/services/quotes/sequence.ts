@@ -42,7 +42,7 @@ export async function nextFormattedNumber(
   args: NextNumberArgs,
 ): Promise<{ counter: number; formatted: string }> {
   const width = args.width ?? 4;
-  const row = await tx.crmSequence.upsert({
+  const row = await tx.qcfSequence.upsert({
     where: { sequence_uk: { tenantId: args.tenantId, name: args.name } },
     create: { tenantId: args.tenantId, name: args.name, counter: 1 },
     update: { counter: { increment: 1 } },

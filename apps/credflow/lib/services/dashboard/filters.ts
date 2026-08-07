@@ -67,7 +67,7 @@ export async function applyOwnerRestriction(
 }
 
 /** Where fragment for `tenantId` + optional ownerId on a model that has an
- * `ownerId` column (CrmLead, CrmOpportunity, CrmActivity-after-migration). */
+ * `ownerId` column (QcfLead, QcfOpportunity, QcfActivity-after-migration). */
 export function tenantOwnerWhere(
   user: SessionUser,
   ownerId: string | null,
@@ -77,7 +77,7 @@ export function tenantOwnerWhere(
   return w;
 }
 
-/** CrmTask uses `assignedToUserId` instead of `ownerId`. */
+/** QcfTask uses `assignedToUserId` instead of `ownerId`. */
 export function tenantAssigneeWhere(
   user: SessionUser,
   ownerId: string | null,
@@ -87,7 +87,7 @@ export function tenantAssigneeWhere(
   return w;
 }
 
-/** CrmCallLog uses `agentUserId` instead of `ownerId`. */
+/** QcfCallLog uses `agentUserId` instead of `ownerId`. */
 export function tenantAgentWhere(
   user: SessionUser,
   ownerId: string | null,

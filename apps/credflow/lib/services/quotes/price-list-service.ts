@@ -52,7 +52,7 @@ const LIST_SELECT = {
   updatedByUserId: true,
   createdAt: true,
   updatedAt: true,
-} satisfies Prisma.CrmPriceListSelect;
+} satisfies Prisma.QcfPriceListSelect;
 
 export type PriceListSortBy = "name" | "createdAt" | "updatedAt";
 
@@ -69,7 +69,7 @@ export interface ListParams {
   sortDir?: "asc" | "desc";
 }
 
-export function buildPriceListWhere(p: Omit<ListParams, "page" | "pageSize" | "sortBy" | "sortDir">): Prisma.CrmPriceListWhereInput {
+export function buildPriceListWhere(p: Omit<ListParams, "page" | "pageSize" | "sortBy" | "sortDir">): Prisma.QcfPriceListWhereInput {
   return {
     tenantId: p.tenantId,
     deletedAt: p.trashed ? { not: null } : null,
@@ -87,7 +87,7 @@ export function buildPriceListWhere(p: Omit<ListParams, "page" | "pageSize" | "s
   };
 }
 
-function listOrderBy(p: Pick<ListParams, "sortBy" | "sortDir">): Prisma.CrmPriceListOrderByWithRelationInput[] {
+function listOrderBy(p: Pick<ListParams, "sortBy" | "sortDir">): Prisma.QcfPriceListOrderByWithRelationInput[] {
   const dir = p.sortDir ?? "desc";
   const primary =
     p.sortBy === "name"
@@ -101,7 +101,7 @@ function listOrderBy(p: Pick<ListParams, "sortBy" | "sortDir">): Prisma.CrmPrice
 export async function listPriceLists(p: ListParams) {
   const where = buildPriceListWhere(p);
   const [items, total] = await Promise.all([
-    db.crmPriceList.findMany({
+    db.qcfPriceList.findMany({
       where,
       select: {
         ...LIST_SELECT,
@@ -115,7 +115,7 @@ export async function listPriceLists(p: ListParams) {
       skip: (p.page - 1) * p.pageSize,
       take: p.pageSize,
     }),
-    db.crmPriceList.count({ where }),
+    db.qcfPriceList.count({ where }),
   ]);
   type RawRow = (typeof items)[number] & { _count: { items: number } };
   const enriched = (items as RawRow[]).map(({ _count, ...rest }) => ({
@@ -139,10 +139,10 @@ const ITEM_INCLUDE = {
       defaultUnit: true,
     },
   },
-} satisfies Prisma.CrmPriceListItemInclude;
+} satisfies Prisma.QcfPriceListItemInclude;
 
 export async function getPriceList(tenantId: string, id: string, opts?: { includeTrashedItems?: boolean }) {
-  return db.crmPriceList.findFirst({
+  return db.qcfPriceList.findFirst({
     where: { id, tenantId },
     include: {
       items: {
@@ -155,7 +155,7 @@ export async function getPriceList(tenantId: string, id: string, opts?: { includ
 }
 
 async function clearOtherDefaults(tx: DbClient, tenantId: string, exceptId?: string) {
-  await tx.crmPriceList.updateMany({
+  await tx.qcfPriceList.updateMany({
     where: {
       tenantId,
       isDefault: true,
@@ -188,7 +188,7 @@ export async function createPriceList(args: {
 }) {
   return db.$transaction(async (tx) => {
     if (args.input.isDefault) await clearOtherDefaults(tx, args.tenantId);
-    const created = await tx.crmPriceList.create({
+    const created = await tx.qcfPriceList.create({
       data: {
         tenantId: args.tenantId,
         name: args.input.name,
@@ -225,13 +225,13 @@ export async function updatePriceList(args: {
   input: PriceListUpdateInput;
 }) {
   return db.$transaction(async (tx) => {
-    const before = await tx.crmPriceList.findFirst({
+    const before = await tx.qcfPriceList.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
     });
     if (!before) throw new PriceListItemError("Price list not found", 404);
 
     if (args.input.isDefault === true) await clearOtherDefaults(tx, args.tenantId, args.id);
-    const data: Prisma.CrmPriceListUncheckedUpdateInput = { updatedByUserId: args.userId };
+    const data: Prisma.QcfPriceListUncheckedUpdateInput = { updatedByUserId: args.userId };
     const i = args.input;
     if (i.name !== undefined) data.name = i.name;
     if (i.description !== undefined) data.description = i.description ?? null;
@@ -245,7 +245,7 @@ export async function updatePriceList(args: {
     if (i.regionCode !== undefined) data.regionCode = i.regionCode?.trim() || null;
     if (i.customerTier !== undefined) data.customerTier = i.customerTier?.trim() || null;
 
-    const updated = await tx.crmPriceList.update({
+    const updated = await tx.qcfPriceList.update({
       where: { id: args.id, tenantId: args.tenantId },
       data,
     });
@@ -271,7 +271,7 @@ export async function duplicatePriceList(args: {
   name?: string;
 }) {
   return db.$transaction(async (tx) => {
-    const source = await tx.crmPriceList.findFirst({
+    const source = await tx.qcfPriceList.findFirst({
       where: { id: args.sourceId, tenantId: args.tenantId, deletedAt: null },
       include: {
         items: { where: activePriceListItemWhere() },
@@ -279,7 +279,7 @@ export async function duplicatePriceList(args: {
     });
     if (!source) throw new PriceListItemError("Source price list not found", 404);
 
-    const created = await tx.crmPriceList.create({
+    const created = await tx.qcfPriceList.create({
       data: {
         tenantId: args.tenantId,
         name: args.name?.trim() || `${source.name} (copy)`,
@@ -299,7 +299,7 @@ export async function duplicatePriceList(args: {
     });
 
     if (source.items.length > 0) {
-      await tx.crmPriceListItem.createMany({
+      await tx.qcfPriceListItem.createMany({
         data: source.items.map((it) => ({
           tenantId: args.tenantId,
           priceListId: created.id,
@@ -315,7 +315,7 @@ export async function duplicatePriceList(args: {
       });
     }
 
-    await tx.crmPriceList.update({
+    await tx.qcfPriceList.update({
       where: { id: source.id },
       data: { versionNumber: { increment: 1 } },
     });
@@ -341,7 +341,7 @@ export async function softDeletePriceList(args: {
   userName?: string | null;
 }): Promise<void> {
   await db.$transaction(async (tx) => {
-    const pl = await tx.crmPriceList.update({
+    const pl = await tx.qcfPriceList.update({
       where: { id: args.id, tenantId: args.tenantId },
       data: { deletedAt: new Date(), isDefault: false },
     });
@@ -364,7 +364,7 @@ export async function restorePriceList(args: {
   userName?: string | null;
 }): Promise<void> {
   await db.$transaction(async (tx) => {
-    const pl = await tx.crmPriceList.update({
+    const pl = await tx.qcfPriceList.update({
       where: { id: args.id, tenantId: args.tenantId },
       data: { deletedAt: null },
     });
@@ -382,7 +382,7 @@ export async function restorePriceList(args: {
 
 export async function permanentDeletePriceList(tenantId: string, id: string): Promise<void> {
   await db.$transaction(async (tx) => {
-    const existing = await tx.crmPriceList.findFirst({
+    const existing = await tx.qcfPriceList.findFirst({
       where: { id, tenantId, deletedAt: { not: null } },
       select: { id: true },
     });
@@ -391,19 +391,19 @@ export async function permanentDeletePriceList(tenantId: string, id: string): Pr
       (err as { statusCode?: number }).statusCode = 404;
       throw err;
     }
-    await tx.crmQuote.updateMany({
+    await tx.qcfQuote.updateMany({
       where: { tenantId, priceListId: id },
       data: { priceListId: null },
     });
-    await tx.crmAccount.updateMany({
+    await tx.qcfAccount.updateMany({
       where: { tenantId, defaultPriceListId: id },
       data: { defaultPriceListId: null },
     });
-    await tx.crmOpportunity.updateMany({
+    await tx.qcfOpportunity.updateMany({
       where: { tenantId, priceListId: id },
       data: { priceListId: null },
     });
-    await tx.crmPriceList.delete({ where: { id } });
+    await tx.qcfPriceList.delete({ where: { id } });
   });
 }
 
@@ -419,7 +419,7 @@ async function assertBracketAvailable(
   tx: DbClient,
   args: { tenantId: string; priceListId: string; productId: string; minQuantity: number; excludeItemId?: string },
 ) {
-  const clash = await tx.crmPriceListItem.findFirst({
+  const clash = await tx.qcfPriceListItem.findFirst({
     where: activePriceListItemWhere({
       tenantId: args.tenantId,
       priceListId: args.priceListId,
@@ -447,11 +447,11 @@ export async function addPriceListItem(args: {
 }) {
   return db.$transaction(async (tx) => {
     const [priceList, product] = await Promise.all([
-      tx.crmPriceList.findFirst({
+      tx.qcfPriceList.findFirst({
         where: { id: args.priceListId, tenantId: args.tenantId },
         select: { id: true },
       }),
-      tx.crmProduct.findFirst({
+      tx.qcfProduct.findFirst({
         where: { id: args.input.productId, tenantId: args.tenantId },
         select: { id: true, listPrice: true },
       }),
@@ -474,7 +474,7 @@ export async function addPriceListItem(args: {
       allowBelowFloor: args.allowBelowFloor ?? false,
     });
 
-    const created = await tx.crmPriceListItem.create({
+    const created = await tx.qcfPriceListItem.create({
       data: {
         tenantId: args.tenantId,
         priceListId: args.priceListId,
@@ -511,7 +511,7 @@ export async function updatePriceListItem(args: {
   input: Partial<PriceListItemInput>;
 }) {
   return db.$transaction(async (tx) => {
-    const existing = await tx.crmPriceListItem.findFirst({
+    const existing = await tx.qcfPriceListItem.findFirst({
       where: activePriceListItemWhere({ id: args.itemId, tenantId: args.tenantId }),
     });
     if (!existing) throw new PriceListItemError("Price list item not found", 404);
@@ -540,14 +540,14 @@ export async function updatePriceListItem(args: {
       allowBelowFloor: args.allowBelowFloor ?? false,
     });
 
-    const data: Prisma.CrmPriceListItemUncheckedUpdateInput = { updatedByUserId: args.userId };
+    const data: Prisma.QcfPriceListItemUncheckedUpdateInput = { updatedByUserId: args.userId };
     if (args.input.unitPrice !== undefined) data.unitPrice = args.input.unitPrice;
     if (args.input.discountPct !== undefined) data.discountPct = args.input.discountPct;
     if (args.input.minQuantity !== undefined) data.minQuantity = args.input.minQuantity;
     if (args.input.floorPrice !== undefined) data.floorPrice = args.input.floorPrice;
     if (args.input.notes !== undefined) data.notes = args.input.notes?.trim() || null;
 
-    const updated = await tx.crmPriceListItem.update({
+    const updated = await tx.qcfPriceListItem.update({
       where: { id: args.itemId },
       data,
     });
@@ -572,7 +572,7 @@ export async function duplicatePriceListItem(args: {
   userId: string;
   userName?: string | null;
 }) {
-  const source = await db.crmPriceListItem.findFirst({
+  const source = await db.qcfPriceListItem.findFirst({
     where: activePriceListItemWhere({ id: args.itemId, tenantId: args.tenantId }),
   });
   if (!source) throw new PriceListItemError("Price list item not found", 404);
@@ -601,17 +601,17 @@ export async function deletePriceListItem(args: {
   userName?: string | null;
 }): Promise<void> {
   await db.$transaction(async (tx) => {
-    const existing = await tx.crmPriceListItem.findFirst({
+    const existing = await tx.qcfPriceListItem.findFirst({
       where: activePriceListItemWhere({ id: args.itemId, tenantId: args.tenantId }),
     });
     if (!existing) return;
     if (priceListItemSoftDeleteEnabled()) {
-      await tx.crmPriceListItem.update({
+      await tx.qcfPriceListItem.update({
         where: { id: args.itemId },
         data: { deletedAt: new Date() },
       });
     } else {
-      await tx.crmPriceListItem.deleteMany({
+      await tx.qcfPriceListItem.deleteMany({
         where: { id: args.itemId, tenantId: args.tenantId },
       });
     }
@@ -638,7 +638,7 @@ export async function restorePriceListItem(args: {
     if (!priceListItemSoftDeleteEnabled()) {
       throw new PriceListItemError("Item restore requires the price list migration", 501);
     }
-    const existing = await tx.crmPriceListItem.findFirst({
+    const existing = await tx.qcfPriceListItem.findFirst({
       where: { id: args.itemId, tenantId: args.tenantId, deletedAt: { not: null } },
     });
     if (!existing) throw new PriceListItemError("Trashed item not found", 404);
@@ -649,7 +649,7 @@ export async function restorePriceListItem(args: {
       minQuantity: existing.minQuantity,
       excludeItemId: existing.id,
     });
-    await tx.crmPriceListItem.update({
+    await tx.qcfPriceListItem.update({
       where: { id: args.itemId },
       data: { deletedAt: null },
     });
@@ -679,7 +679,7 @@ export async function bulkUpdatePriceListItems(args: {
   allowBelowFloor?: boolean;
 }) {
   return db.$transaction(async (tx) => {
-    const items = await tx.crmPriceListItem.findMany({
+    const items = await tx.qcfPriceListItem.findMany({
       where: activePriceListItemWhere({
         tenantId: args.tenantId,
         priceListId: args.priceListId,
@@ -694,7 +694,7 @@ export async function bulkUpdatePriceListItems(args: {
           : Math.max(0, current + args.value);
       const floor = it.floorPrice != null ? Number(String(it.floorPrice)) : null;
       assertFloorPrice({ unitPrice: next, floorPrice: floor, allowBelowFloor: args.allowBelowFloor ?? false });
-      await tx.crmPriceListItem.update({
+      await tx.qcfPriceListItem.update({
         where: { id: it.id },
         data: { unitPrice: next, updatedByUserId: args.userId },
       });
@@ -734,7 +734,7 @@ export async function importPriceListItems(args: {
   for (let i = 0; i < args.rows.length; i++) {
     const row = args.rows[i]!;
     try {
-      const product = await db.crmProduct.findFirst({
+      const product = await db.qcfProduct.findFirst({
         where: { tenantId: args.tenantId, sku: row.sku, deletedAt: null },
         select: { id: true },
       });
@@ -743,7 +743,7 @@ export async function importPriceListItems(args: {
         continue;
       }
       const minQuantity = row.minQuantity ?? 1;
-      const existing = await db.crmPriceListItem.findFirst({
+      const existing = await db.qcfPriceListItem.findFirst({
         where: activePriceListItemWhere({
           tenantId: args.tenantId,
           priceListId: args.priceListId,
@@ -837,13 +837,13 @@ export async function loadPriceListItemMap(
   discountPct: number;
   minQuantity: number;
 }>> {
-  const pl = await db.crmPriceList.findFirst({
+  const pl = await db.qcfPriceList.findFirst({
     where: { id: priceListId, tenantId },
     select: { effectiveFrom: true, effectiveTo: true, isActive: true },
   });
   if (!pl || !pl.isActive || !isPriceListInWindow(pl, now)) return [];
 
-  const rows = await db.crmPriceListItem.findMany({
+  const rows = await db.qcfPriceListItem.findMany({
     where: activePriceListItemWhere({ tenantId, priceListId }),
     select: {
       productId: true,
@@ -868,7 +868,7 @@ export async function resolvePriceForProduct(args: {
   now?: Date;
 }): Promise<{ unitPrice: number; discountPct: number; catalogListPrice: number } | null> {
   const now = args.now ?? new Date();
-  const product = await db.crmProduct.findFirst({
+  const product = await db.qcfProduct.findFirst({
     where: { id: args.productId, tenantId: args.tenantId },
     select: { listPrice: true },
   });
@@ -876,12 +876,12 @@ export async function resolvePriceForProduct(args: {
   const catalogListPrice = Number(String(product.listPrice));
 
   if (args.priceListId) {
-    const pl = await db.crmPriceList.findFirst({
+    const pl = await db.qcfPriceList.findFirst({
       where: { id: args.priceListId, tenantId: args.tenantId },
       select: { effectiveFrom: true, effectiveTo: true, isActive: true },
     });
     if (pl && pl.isActive && isPriceListInWindow(pl, now)) {
-      const items = await db.crmPriceListItem.findMany({
+      const items = await db.qcfPriceListItem.findMany({
         where: activePriceListItemWhere({
           tenantId: args.tenantId,
           priceListId: args.priceListId,

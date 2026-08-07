@@ -8,7 +8,7 @@ import { getScope } from "@/lib/auth/account-acl";
 import type { SessionUser } from "@/types/permission";
 
 /**
- * Build a Prisma `where` fragment that restricts CrmActivity rows to the
+ * Build a Prisma `where` fragment that restricts QcfActivity rows to the
  * user's account scope. Returns `null` when the user is unrestricted —
  * caller should skip the AND.
  *
@@ -34,16 +34,16 @@ export async function buildActivityAclWhere(
   }
 
   const [leads, opps, contacts] = await Promise.all([
-    prisma.crmLead.findMany({
+    prisma.qcfLead.findMany({
       where: { tenantId, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
       select: { id: true },
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: { tenantId, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
       select: { id: true },
     }),
-    prisma.crmContact.findMany({
-      // CrmContact isn't middleware-protected; exclude trashed so activities tied
+    prisma.qcfContact.findMany({
+      // QcfContact isn't middleware-protected; exclude trashed so activities tied
       // to deleted contacts don't leak into the visibility scope.
       where: { tenantId, deletedAt: null, OR: [{ accountId: { in: allowed } }, { accountId: null }] },
       select: { id: true },

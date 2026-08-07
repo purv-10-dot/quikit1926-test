@@ -34,15 +34,15 @@ let setId: string;
 let versionId: string;
 
 beforeAll(async () => {
-  const set = await db.crmFormSet.create({
+  const set = await db.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}`, isDefault: true },
   });
   setId = set.id;
-  const version = await db.crmFormSetVersion.create({ data: { formSetId: setId, versionNumber: 1, status: "draft" } });
+  const version = await db.qcfFormSetVersion.create({ data: { formSetId: setId, versionNumber: 1, status: "draft" } });
   versionId = version.id;
 
   // Fields the agent fills (typed): a dropdown + a user_picker.
-  await db.crmFormField.createMany({
+  await db.qcfFormField.createMany({
     data: [
       { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "payment_mode", label: "Payment Mode", fieldType: "dropdown", sortOrder: 0 },
       { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "verifiers", label: "Verifiers", fieldType: "user_picker", sortOrder: 1 },
@@ -59,19 +59,19 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const rules = await db.crmFormRule.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  const rules = await db.qcfFormRule.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
   const rids = rules.map((r) => r.id);
   if (rids.length) {
-    await db.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
-    await db.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
-    await db.crmFormRule.deleteMany({ where: { id: { in: rids } } });
+    await db.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
+    await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
+    await db.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
   }
-  await db.crmFieldValue.deleteMany({ where: { tenantId: TENANT } });
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  await db.crmFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
-  await db.crmLead.deleteMany({ where: { tenantId: TENANT } });
+  await db.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
+  await db.qcfLead.deleteMany({ where: { tenantId: TENANT } });
 });
 
 describe("getLiveDispositionVersionId — resolve the live (currentVersion) form version", () => {
@@ -93,10 +93,10 @@ describe("saveDispositionFieldValues — persist typed custom field values", () 
       fieldValues: { payment_mode: "invoice", verifiers: ["u1", "u2"] },
     });
 
-    const drop = await db.crmFieldValue.findUnique({ where: { activityId_fieldKey: { activityId, fieldKey: "payment_mode" } } });
+    const drop = await db.qcfFieldValue.findUnique({ where: { activityId_fieldKey: { activityId, fieldKey: "payment_mode" } } });
     expect(drop).toMatchObject({ valueType: "dropdown", valueText: "invoice" });
 
-    const picker = await db.crmFieldValue.findUnique({ where: { activityId_fieldKey: { activityId, fieldKey: "verifiers" } } });
+    const picker = await db.qcfFieldValue.findUnique({ where: { activityId_fieldKey: { activityId, fieldKey: "verifiers" } } });
     expect(picker!.valueType).toBe("user_picker");
     expect(picker!.valueUserIds).toEqual(["u1", "u2"]);
   });
@@ -109,13 +109,13 @@ describe("saveDispositionFieldValues — persist typed custom field values", () 
       formSetVersionId: versionId,
       fieldValues: { not_a_field: "x" },
     });
-    expect(await db.crmFieldValue.count({ where: { activityId } })).toBe(0);
+    expect(await db.qcfFieldValue.count({ where: { activityId } })).toBe(0);
   });
 });
 
 describe("saveAndApplyDisposition — END-TO-END: entered field drives the rule, Contact Stage moves", () => {
   it("writes the field value, fires the rule, and moves the lead's Contact Stage", async () => {
-    const lead = await db.crmLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}`, status: "Open", stage: "New" } });
+    const lead = await db.qcfLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}`, status: "Open", stage: "New" } });
     const activityId = `act_${STAMP}_e2e`;
 
     const result = await saveAndApplyDisposition({
@@ -131,11 +131,11 @@ describe("saveAndApplyDisposition — END-TO-END: entered field drives the rule,
     expect(result!.stageApplied).toBe(true);
     expect(result!.previousStage).toBe("New");
 
-    const after = await db.crmLead.findUnique({ where: { id: lead.id }, select: { stage: true } });
+    const after = await db.qcfLead.findUnique({ where: { id: lead.id }, select: { stage: true } });
     expect(after!.stage).toBe(TARGET_STAGE); // the entered field value drove the rule
 
     // the field value was persisted for evaluation + later reporting
-    const fv = await db.crmFieldValue.findUnique({ where: { activityId_fieldKey: { activityId, fieldKey: "payment_mode" } } });
+    const fv = await db.qcfFieldValue.findUnique({ where: { activityId_fieldKey: { activityId, fieldKey: "payment_mode" } } });
     expect(fv!.valueText).toBe("invoice");
   });
 
@@ -157,7 +157,7 @@ describe("saveAndApplyDisposition — END-TO-END: entered field drives the rule,
  */
 describe("Option A ordering — FR-RE overrides the mapping when fired, legacy stands when not", () => {
   it("FR-RE OVERRIDES the (legacy-mapped) Contact Stage when a rule fires", async () => {
-    const lead = await db.crmLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}-ovr`, status: "Open", stage: "MappedStage" } });
+    const lead = await db.qcfLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}-ovr`, status: "Open", stage: "MappedStage" } });
     const result = await saveAndApplyDisposition({
       tenantId: TENANT,
       leadId: lead.id,
@@ -165,12 +165,12 @@ describe("Option A ordering — FR-RE overrides the mapping when fired, legacy s
       fieldValues: { payment_mode: "invoice" }, // matches the rule
     });
     expect(result!.stageApplied).toBe(true);
-    const after = await db.crmLead.findUnique({ where: { id: lead.id }, select: { stage: true } });
+    const after = await db.qcfLead.findUnique({ where: { id: lead.id }, select: { stage: true } });
     expect(after!.stage).toBe(TARGET_STAGE); // FR-RE overrode "MappedStage"
   });
 
   it("the legacy-mapped Contact Stage STANDS when no FR-RE rule fires", async () => {
-    const lead = await db.crmLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}-keep`, status: "Open", stage: "MappedStage" } });
+    const lead = await db.qcfLead.create({ data: { tenantId: TENANT, name: `Lead ${STAMP}-keep`, status: "Open", stage: "MappedStage" } });
     const result = await saveAndApplyDisposition({
       tenantId: TENANT,
       leadId: lead.id,
@@ -179,7 +179,7 @@ describe("Option A ordering — FR-RE overrides the mapping when fired, legacy s
     });
     expect(result!.decision.setStage).toBeNull();
     expect(result!.stageApplied).toBe(false);
-    const after = await db.crmLead.findUnique({ where: { id: lead.id }, select: { stage: true } });
+    const after = await db.qcfLead.findUnique({ where: { id: lead.id }, select: { stage: true } });
     expect(after!.stage).toBe("MappedStage"); // untouched — legacy result stands
   });
 });

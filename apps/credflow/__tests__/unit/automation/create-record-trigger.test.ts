@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
 vi.mock("@/lib/services/automation/triggers", () => ({
   onLeadCreated: vi.fn().mockResolvedValue(undefined),
@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe("createCrmLead · service-layer New-Lead trigger", () => {
   it("fires onLeadCreated AND the outbound sync (so the import path fires rules too)", async () => {
-    db.crmLead.create.mockResolvedValue({ id: "L1", tenantId: "t1", ownerName: "Owner" } as unknown as CrmLead);
+    db.qcfLead.create.mockResolvedValue({ id: "L1", tenantId: "t1", ownerName: "Owner" } as unknown as QcfLead);
 
     const { createCrmLead } = await import("@/lib/services/leads/create-record");
     await createCrmLead({ tenantId: "t1", name: "Imported Lead" } as never);

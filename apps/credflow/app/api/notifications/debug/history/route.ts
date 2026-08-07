@@ -42,13 +42,13 @@ export async function GET(req: NextRequest) {
     const where = { tenantId: user.tenantId, ...readFilter };
 
     const [items, total] = await Promise.all([
-      prisma.crmNotification.findMany({
+      prisma.qcfNotification.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      prisma.crmNotification.count({ where }),
+      prisma.qcfNotification.count({ where }),
     ]);
 
     // Attach display name from User table for each notification row.

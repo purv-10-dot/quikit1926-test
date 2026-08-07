@@ -26,7 +26,7 @@ export async function DELETE(
     await assertModule(user, "documents", "edit");
     const { id } = await params;
 
-    const doc = await prisma.crmDocument.findFirst({
+    const doc = await prisma.qcfDocument.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!doc) return fail(404, "Document not found");
@@ -40,7 +40,7 @@ export async function DELETE(
     const canDelete = user.role === "Administrator" || doc.uploadedBy === user.userId;
     if (!canDelete) return fail(403, "Forbidden");
 
-    await prisma.crmDocument.update({
+    await prisma.qcfDocument.update({
       where: { id: doc.id },
       data: { deletedAt: new Date() },
     });

@@ -5,7 +5,7 @@ import { QuoteError } from "@/lib/services/quotes/quote-service";
 async function nextInvoiceNumber(tenantId: string): Promise<string> {
   const year = new Date().getFullYear();
   const name = `invoice-${year}`;
-  const row = await db.crmSequence.upsert({
+  const row = await db.qcfSequence.upsert({
     where: { sequence_uk: { tenantId, name } },
     create: { tenantId, name, counter: 1 },
     update: { counter: { increment: 1 } },
@@ -21,12 +21,12 @@ export async function createInvoiceFromQuote(args: {
   userName: string | null;
   dueInDays?: number;
 }): Promise<{ invoiceId: string; invoiceNumber: string }> {
-  const quote = await db.crmQuote.findFirst({
+  const quote = await db.qcfQuote.findFirst({
     where: { id: args.quoteId, tenantId: args.tenantId, deletedAt: null, status: "Won" },
   });
   if (!quote) throw new QuoteError("Won quote required to create invoice", 400);
 
-  const existing = await db.crmInvoice.findFirst({
+  const existing = await db.qcfInvoice.findFirst({
     where: { tenantId: args.tenantId, quoteId: args.quoteId },
   });
   if (existing) {
@@ -40,7 +40,7 @@ export async function createInvoiceFromQuote(args: {
       : null;
 
   const invoice = await db.$transaction(async (tx) => {
-    const row = await tx.crmInvoice.create({
+    const row = await tx.qcfInvoice.create({
       data: {
         tenantId: args.tenantId,
         invoiceNumber,
@@ -64,7 +64,7 @@ export async function createInvoiceFromQuote(args: {
         dueDate,
       },
     });
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "InvoiceCreated",
@@ -84,13 +84,13 @@ export async function createInvoiceFromQuote(args: {
 export async function listInvoices(tenantId: string, page = 1, pageSize = 25) {
   const skip = (page - 1) * pageSize;
   const [items, total] = await Promise.all([
-    db.crmInvoice.findMany({
+    db.qcfInvoice.findMany({
       where: { tenantId, deletedAt: null },
       orderBy: { createdAt: "desc" },
       skip,
       take: pageSize,
     }),
-    db.crmInvoice.count({ where: { tenantId, deletedAt: null } }),
+    db.qcfInvoice.count({ where: { tenantId, deletedAt: null } }),
   ]);
   return {
     items: items.map((i) => ({

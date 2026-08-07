@@ -29,7 +29,7 @@ export interface TenantAuthContext {
  *
  * Usage:
  *   export const GET = withTenantAuth(async ({ tenantId }, req) => {
- *     const data = await db.crmLead.findMany({ where: { tenantId } });
+ *     const data = await db.qcfLead.findMany({ where: { tenantId } });
  *     return NextResponse.json({ success: true, data });
  *   });
  *

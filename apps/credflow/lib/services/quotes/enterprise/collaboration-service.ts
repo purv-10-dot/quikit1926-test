@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 
 export async function listQuoteComments(tenantId: string, quoteId: string) {
-  return db.crmQuoteComment.findMany({
+  return db.qcfQuoteComment.findMany({
     where: { tenantId, quoteId, isInternal: true },
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -17,7 +17,7 @@ export async function addQuoteComment(args: {
   mentions?: string[];
 }): Promise<{ id: string }> {
   const row = await db.$transaction(async (tx) => {
-    const comment = await tx.crmQuoteComment.create({
+    const comment = await tx.qcfQuoteComment.create({
       data: {
         tenantId: args.tenantId,
         quoteId: args.quoteId,
@@ -28,7 +28,7 @@ export async function addQuoteComment(args: {
         isInternal: true,
       },
     });
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteComment",

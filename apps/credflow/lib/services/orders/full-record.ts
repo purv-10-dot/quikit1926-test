@@ -83,7 +83,7 @@ async function loadOrderActivities(tenantId: string, orderId: string, quoteId: s
   ];
   if (quoteId) or.push({ relatedKind: "Quote", relatedObjectId: quoteId });
 
-  return prisma.crmActivity.findMany({
+  return prisma.qcfActivity.findMany({
     where: {
       tenantId,
       OR: or,
@@ -94,7 +94,7 @@ async function loadOrderActivities(tenantId: string, orderId: string, quoteId: s
 }
 
 async function loadAttachments(tenantId: string, orderId: string) {
-  return prisma.crmDocument.findMany({
+  return prisma.qcfDocument.findMany({
     where: {
       tenantId,
       refType: "order",
@@ -112,7 +112,7 @@ export async function getFullOrderRecord(opts: {
 }): Promise<FullOrderRecord | null> {
   const { user, orderId } = opts;
 
-  const row = await prisma.crmOrder.findFirst({
+  const row = await prisma.qcfOrder.findFirst({
     where: { id: orderId, tenantId: user.tenantId },
     include: {
       lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
@@ -123,20 +123,20 @@ export async function getFullOrderRecord(opts: {
 
   const [account, contact, opportunity, activities, attachments] = await Promise.all([
     row.accountId
-      ? prisma.crmAccount.findFirst({
+      ? prisma.qcfAccount.findFirst({
           where: { id: row.accountId, tenantId: user.tenantId },
           select: { id: true, name: true },
         })
       : null,
     row.contactId
-      ? prisma.crmContact.findFirst({
-          // CrmContact isn't middleware-protected — don't surface a trashed contact.
+      ? prisma.qcfContact.findFirst({
+          // QcfContact isn't middleware-protected — don't surface a trashed contact.
           where: { id: row.contactId, tenantId: user.tenantId, deletedAt: null },
           select: { id: true, firstName: true, lastName: true, email: true },
         })
       : null,
     row.opportunityId
-      ? prisma.crmOpportunity.findFirst({
+      ? prisma.qcfOpportunity.findFirst({
           where: { id: row.opportunityId, tenantId: user.tenantId },
           select: { id: true, name: true, stage: true },
         })

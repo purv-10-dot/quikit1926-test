@@ -1,4 +1,4 @@
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import {
@@ -55,11 +55,11 @@ function isMissingProfileColumnError(err: unknown): boolean {
 }
 
 function withoutProfileColumns(
-  data: Prisma.CrmLeadUncheckedCreateInput,
-): Prisma.CrmLeadUncheckedCreateInput {
+  data: Prisma.QcfLeadUncheckedCreateInput,
+): Prisma.QcfLeadUncheckedCreateInput {
   const copy = { ...data } as Record<string, unknown>;
   for (const key of PROFILE_COLUMNS) delete copy[key];
-  return copy as Prisma.CrmLeadUncheckedCreateInput;
+  return copy as Prisma.QcfLeadUncheckedCreateInput;
 }
 
 export type LeadCreateOptions = {
@@ -67,9 +67,9 @@ export type LeadCreateOptions = {
   creation?: LeadCreationContext;
 };
 
-async function insertLead(data: Prisma.CrmLeadUncheckedCreateInput): Promise<CrmLead> {
+async function insertLead(data: Prisma.QcfLeadUncheckedCreateInput): Promise<QcfLead> {
   try {
-    return await prisma.crmLead.create({ data });
+    return await prisma.qcfLead.create({ data });
   } catch (err) {
     if (!isMissingProfileColumnError(err)) throw err;
     const stripped = withoutProfileColumns(data);
@@ -78,7 +78,7 @@ async function insertLead(data: Prisma.CrmLeadUncheckedCreateInput): Promise<Crm
         "Run: npm run db:sql:crm-lead-form-columns && npm run db:generate",
     );
     try {
-      return await prisma.crmLead.create({ data: stripped });
+      return await prisma.qcfLead.create({ data: stripped });
     } catch (retryErr) {
       console.error("[leads] Create failed after stripping profile columns.", retryErr);
       throw new Error(
@@ -91,7 +91,7 @@ async function insertLead(data: Prisma.CrmLeadUncheckedCreateInput): Promise<Crm
 
 /** Create a lead row; retries without profile columns when the DB migration is pending. */
 export async function createCrmLead(
-  data: Prisma.CrmLeadUncheckedCreateInput,
+  data: Prisma.QcfLeadUncheckedCreateInput,
   options?: LeadCreateOptions,
 ) {
   const lead = await insertLead(data);
@@ -117,18 +117,18 @@ export async function createCrmLead(
 
 async function runUpdate(
   id: string,
-  data: Prisma.CrmLeadUncheckedUpdateInput,
-): Promise<CrmLead> {
+  data: Prisma.QcfLeadUncheckedUpdateInput,
+): Promise<QcfLead> {
   try {
-    return await prisma.crmLead.update({ where: { id }, data });
+    return await prisma.qcfLead.update({ where: { id }, data });
   } catch (err) {
     if (!isMissingProfileColumnError(err)) throw err;
     console.warn(
       "[leads] Profile columns missing in DB — updating without lead profile/qualification columns.",
     );
-    return await prisma.crmLead.update({
+    return await prisma.qcfLead.update({
       where: { id },
-      data: withoutProfileColumns(data as Prisma.CrmLeadUncheckedCreateInput),
+      data: withoutProfileColumns(data as Prisma.QcfLeadUncheckedCreateInput),
     });
   }
 }
@@ -136,11 +136,11 @@ async function runUpdate(
 /** Update a lead row; same profile-column fallback as create. Enqueues the
  *  outbound sync right after the row is committed. NOTE: this covers only the
  *  PATCH /api/leads/[id] path — other update paths (telephony/FR-RE/automation/
- *  bulk-assign/convert/transition) call prisma.crmLead.update directly and are
+ *  bulk-assign/convert/transition) call prisma.qcfLead.update directly and are
  *  NOT routed through here. */
 export async function updateCrmLead(
   id: string,
-  data: Prisma.CrmLeadUncheckedUpdateInput,
+  data: Prisma.QcfLeadUncheckedUpdateInput,
 ) {
   const updated = await runUpdate(id, data);
   triggerOutboundSync({ tenantId: updated.tenantId, crmLeadId: updated.id });

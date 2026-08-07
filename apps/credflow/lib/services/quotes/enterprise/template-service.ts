@@ -36,9 +36,9 @@ const BUILT_IN_TEMPLATES = [
 ] as const;
 
 export async function ensureDefaultQuoteTemplates(tenantId: string): Promise<void> {
-  const count = await db.crmQuoteTemplate.count({ where: { tenantId } });
+  const count = await db.qcfQuoteTemplate.count({ where: { tenantId } });
   if (count > 0) return;
-  await db.crmQuoteTemplate.createMany({
+  await db.qcfQuoteTemplate.createMany({
     data: BUILT_IN_TEMPLATES.map((t) => ({
       tenantId,
       key: t.key,
@@ -56,7 +56,7 @@ export async function ensureDefaultQuoteTemplates(tenantId: string): Promise<voi
 
 export async function listQuoteTemplates(tenantId: string) {
   await ensureDefaultQuoteTemplates(tenantId);
-  return db.crmQuoteTemplate.findMany({
+  return db.qcfQuoteTemplate.findMany({
     where: { tenantId, isActive: true },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
   });
@@ -64,7 +64,7 @@ export async function listQuoteTemplates(tenantId: string) {
 
 export async function getQuoteTemplate(tenantId: string, key: string) {
   await ensureDefaultQuoteTemplates(tenantId);
-  return db.crmQuoteTemplate.findFirst({
+  return db.qcfQuoteTemplate.findFirst({
     where: { tenantId, key, isActive: true },
   });
 }

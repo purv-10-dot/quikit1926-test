@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         aclFilter: acl,
       });
       const cursor = createPrismaCursorIterator<OpportunityCsvRow>({
-        delegate: db.crmOpportunity as unknown as PrismaListDelegate<OpportunityCsvRow>,
+        delegate: db.qcfOpportunity as unknown as PrismaListDelegate<OpportunityCsvRow>,
         where,
         select: OPPORTUNITY_CSV_SELECT,
       });
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
 
     // Confirm the account exists in this tenant — assertAccountAccess only
     // checks scope, not existence.
-    const account = await db.crmAccount.findFirst({
+    const account = await db.qcfAccount.findFirst({
       where: { id: parsed.data.accountId, tenantId: user.tenantId },
       select: { id: true },
     });

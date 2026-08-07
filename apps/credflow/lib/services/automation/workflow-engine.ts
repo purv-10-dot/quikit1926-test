@@ -19,7 +19,7 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
-import type { CrmLead as Lead } from "@prisma/client";
+import type { QcfLead as Lead } from "@prisma/client";
 import { enqueueAutomation, type AutomationJobData } from "@/lib/queue/automation-queue";
 import { randomUUID } from "crypto";
 import { pickNextUser, resolveAssignment } from "@/lib/services/automation/distribution";
@@ -68,9 +68,9 @@ export async function runFrom(
   // Active OR Draining — a Drain lets already-entered (in-flight) leads finish,
   // it just admits no NEW leads (that gate lives in the trigger emitter). A
   // Stopped/Deleted/Draft/Paused/Archived automation never runs. Soft-deleted
-  // rows (deletedAt set) are excluded here since CrmWorkflowDefinition is not in
+  // rows (deletedAt set) are excluded here since QcfWorkflowDefinition is not in
   // the shared soft-delete middleware set.
-  const wf = await prisma.crmWorkflowDefinition.findFirst({
+  const wf = await prisma.qcfWorkflowDefinition.findFirst({
     where: { id: workflowId, tenantId, deletedAt: null },
   });
   if (!wf || !canResumeInFlight(wf.status)) return;
@@ -79,7 +79,7 @@ export async function runFrom(
     nodes: (wf.graphNodes as unknown as WorkflowNode[]) ?? [],
     edges: (wf.graphEdges as unknown as WorkflowEdge[]) ?? [],
   };
-  const lead = await prisma.crmLead.findFirst({ where: { id: leadId, tenantId } });
+  const lead = await prisma.qcfLead.findFirst({ where: { id: leadId, tenantId } });
   if (!lead) return;
 
   // Trigger-time attribution context. Prefer values threaded from the emit site
@@ -124,7 +124,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         const subject = String(cfg.subject || "Workflow task");
         const assignedToUserId = cfg.assignTo === "ownerId" ? lead.ownerId : (cfg.assignTo ?? null);
         const priority = (cfg.priority as "Low" | "Medium" | "High" | undefined) || "Medium";
-        await prisma.crmTask.create({
+        await prisma.qcfTask.create({
           data: {
             tenantId: ctx.tenantId,
             subject,
@@ -172,7 +172,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
         const next = pickNext(ctx.graph, node.id);
         if (!next) return { kind: "continue", nextNodeId: null };
         // Audit row in Postgres
-        const pending = await prisma.crmAutomationPendingStep.create({
+        const pending = await prisma.qcfAutomationPendingStep.create({
           data: {
             tenantId: ctx.tenantId,
             workflowId: ctx.workflowId,
@@ -196,7 +196,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
           delay: minutes * 60_000,
           jobId: `${ctx.workflowId}:${lead.id}:${pending.id}`,
         });
-        await prisma.crmAutomationPendingStep.update({
+        await prisma.qcfAutomationPendingStep.update({
           where: { id: pending.id },
           data: { bullJobId },
         });
@@ -215,7 +215,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
           // AFTER the wait node, so it never re-runs this if_else — no
           // double-count on resume. Atomic increment; fire-and-forget so a
           // counter write never blocks or fails the run.
-          prisma.crmWorkflowDefinition
+          prisma.qcfWorkflowDefinition
             .update({
               where: { id: ctx.workflowId },
               data: { triggerCount: { increment: 1 } },
@@ -272,7 +272,7 @@ async function executeNode(node: WorkflowNode, lead: Lead, ctx: RunContext): Pro
       case "notify_user": {
         const cfg = node.config as { userId?: string; title?: string; body?: string };
         if (cfg.userId) {
-          await prisma.crmNotification.create({
+          await prisma.qcfNotification.create({
             data: {
               tenantId: ctx.tenantId,
               userId: cfg.userId,

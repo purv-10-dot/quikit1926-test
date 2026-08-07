@@ -47,12 +47,12 @@ type Hook = (input: {
 type Spec = { query: { $allModels: Record<string, Hook> } };
 
 const MODELS = [
-  "crmLead",
-  "crmOpportunity",
-  "crmAccount",
-  "crmActivity",
-  "crmTask",
-  "crmOrgWorkspaceSettings",
+  "qcfLead",
+  "qcfOpportunity",
+  "qcfAccount",
+  "qcfActivity",
+  "qcfTask",
+  "qcfOrgWorkspaceSettings",
 ] as const;
 const OPS = [
   "findMany",
@@ -143,14 +143,14 @@ function activeAwareCount(): Impl {
 
 describe("dashboard middleware integration — counts exclude soft-deleted rows", () => {
   it("buildSummary reports active-only lead/opp/account counts", async () => {
-    setImpl("crmLead", "count", activeAwareCount());
-    setImpl("crmOpportunity", "count", activeAwareCount());
-    setImpl("crmAccount", "count", activeAwareCount());
-    setImpl("crmTask", "count", () => Promise.resolve(0));
-    setImpl("crmActivity", "count", () => Promise.resolve(0));
-    setImpl("crmLead", "groupBy", () => Promise.resolve([]));
-    setImpl("crmOpportunity", "groupBy", () => Promise.resolve([]));
-    setImpl("crmOrgWorkspaceSettings", "findUnique", () =>
+    setImpl("qcfLead", "count", activeAwareCount());
+    setImpl("qcfOpportunity", "count", activeAwareCount());
+    setImpl("qcfAccount", "count", activeAwareCount());
+    setImpl("qcfTask", "count", () => Promise.resolve(0));
+    setImpl("qcfActivity", "count", () => Promise.resolve(0));
+    setImpl("qcfLead", "groupBy", () => Promise.resolve([]));
+    setImpl("qcfOpportunity", "groupBy", () => Promise.resolve([]));
+    setImpl("qcfOrgWorkspaceSettings", "findUnique", () =>
       Promise.resolve(null),
     );
 

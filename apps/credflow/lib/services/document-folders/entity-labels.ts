@@ -27,7 +27,7 @@ export async function resolveEntityLabels(
 
   switch (refType) {
     case "lead": {
-      const rows = await prisma.crmLead.findMany({
+      const rows = await prisma.qcfLead.findMany({
         where: {
           tenantId,
           id: { in: unique },
@@ -50,7 +50,7 @@ export async function resolveEntityLabels(
       const allowedIds = scope.unrestricted
         ? unique
         : unique.filter((id) => scope.allowedAccountIds.includes(id));
-      const rows = await prisma.crmAccount.findMany({
+      const rows = await prisma.qcfAccount.findMany({
         where: { tenantId, id: { in: allowedIds } },
         select: { id: true, name: true },
       });
@@ -65,7 +65,7 @@ export async function resolveEntityLabels(
       break;
     }
     case "opportunity": {
-      const rows = await prisma.crmOpportunity.findMany({
+      const rows = await prisma.qcfOpportunity.findMany({
         where: {
           tenantId,
           id: { in: unique },
@@ -84,7 +84,7 @@ export async function resolveEntityLabels(
       break;
     }
     case "quote": {
-      const rows = await prisma.crmQuote.findMany({
+      const rows = await prisma.qcfQuote.findMany({
         where: { tenantId, id: { in: unique } },
         select: { id: true, quoteNumber: true },
       });
@@ -99,7 +99,7 @@ export async function resolveEntityLabels(
       break;
     }
     case "order": {
-      const rows = await prisma.crmOrder.findMany({
+      const rows = await prisma.qcfOrder.findMany({
         where: { tenantId, id: { in: unique } },
         select: { id: true, orderNumber: true },
       });
@@ -133,12 +133,12 @@ export async function listEntityIdsForModule(
   if (!DOCUMENT_REF_TYPES.includes(refType)) return [];
 
   const [folderRows, docRows] = await Promise.all([
-    prisma.crmDocumentFolder.findMany({
+    prisma.qcfDocumentFolder.findMany({
       where: { tenantId, refType, refId: { not: null }, deletedAt: null },
       select: { refId: true },
       distinct: ["refId"],
     }),
-    prisma.crmDocument.findMany({
+    prisma.qcfDocument.findMany({
       where: { tenantId, refType, deletedAt: null },
       select: { refId: true },
       distinct: ["refId"],

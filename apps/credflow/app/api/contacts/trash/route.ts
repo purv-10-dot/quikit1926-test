@@ -24,7 +24,7 @@ export async function DELETE() {
       );
     }
 
-    const trashed = await prisma.crmContact.findMany({
+    const trashed = await prisma.qcfContact.findMany({
       where: { tenantId: user.tenantId, deletedAt: { not: null } },
       select: { id: true, leadId: true },
     });
@@ -37,7 +37,7 @@ export async function DELETE() {
     const leadIds = trashed.map((c) => c.leadId).filter((id): id is string => !!id);
 
     await prisma.$transaction(async (tx) => {
-      await tx.crmLead.updateMany({
+      await tx.qcfLead.updateMany({
         where: {
           tenantId: user.tenantId,
           OR: [
@@ -47,7 +47,7 @@ export async function DELETE() {
         },
         data: { status: "Open", convertedAt: null, linkedContactId: null },
       });
-      await tx.crmContact.deleteMany({
+      await tx.qcfContact.deleteMany({
         where: { tenantId: user.tenantId, id: { in: contactIds } },
       });
     });

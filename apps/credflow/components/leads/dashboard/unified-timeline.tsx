@@ -287,7 +287,7 @@ function TimelineRow({ item }: { item: UnifiedTimelineItem }) {
             <CallRecordingPlayer recordingUrl={item.recordingUrl} />
           </div>
         ) : null}
-        {/* Saved custom disposition form values live in CrmFieldValue keyed to
+        {/* Saved custom disposition form values live in QcfFieldValue keyed to
             the activity — offer the read-only "See form details" view on
             disposition-derived activity rows (call / stage-change / activity). */}
         {item.activityId && (item.kind === "call" || item.kind === "stage" || item.kind === "activity") ? (

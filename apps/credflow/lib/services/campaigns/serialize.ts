@@ -1,4 +1,4 @@
-import type { CrmCampaign } from "@quikit/database";
+import type { QcfCampaign } from "@quikit/database";
 
 export interface CampaignDetailDto {
   id: string;
@@ -14,14 +14,14 @@ export interface CampaignDetailDto {
   updatedAt: string;
 }
 
-function readConfig(config: CrmCampaign["config"]): Record<string, unknown> {
+function readConfig(config: QcfCampaign["config"]): Record<string, unknown> {
   if (config && typeof config === "object" && !Array.isArray(config)) {
     return config as Record<string, unknown>;
   }
   return {};
 }
 
-export function serializeCampaign(c: CrmCampaign): CampaignDetailDto {
+export function serializeCampaign(c: QcfCampaign): CampaignDetailDto {
   const cfg = readConfig(c.config);
   const budget = typeof cfg.budget === "number" ? cfg.budget : null;
   const budgetCurrency =

@@ -33,7 +33,7 @@ export const ACCOUNT_ROW_SELECT_BASE = {
   renewalDate: true,
   defaultPriceListId: true,
   deletedAt: true,
-} as const satisfies Prisma.CrmAccountSelect;
+} as const satisfies Prisma.QcfAccountSelect;
 
 /** Full select including tags (requires migration + `prisma generate`). */
 export const ACCOUNT_ROW_SELECT = {
@@ -41,7 +41,7 @@ export const ACCOUNT_ROW_SELECT = {
   tags: true,
 } as const;
 
-type RowFromSelect<S extends Prisma.CrmAccountSelect> = Prisma.CrmAccountGetPayload<{
+type RowFromSelect<S extends Prisma.QcfAccountSelect> = Prisma.QcfAccountGetPayload<{
   select: S;
 }>;
 
@@ -71,10 +71,10 @@ function mapRow(row: AccountRowSelectRow): AccountRow {
 }
 
 export async function findFirstAccountRow(
-  args: Omit<Prisma.CrmAccountFindFirstArgs, "select">,
+  args: Omit<Prisma.QcfAccountFindFirstArgs, "select">,
 ): Promise<AccountRow | null> {
   try {
-    const row = await prisma.crmAccount.findFirst({
+    const row = await prisma.qcfAccount.findFirst({
       ...args,
       select: ACCOUNT_ROW_SELECT,
     });
@@ -85,7 +85,7 @@ export async function findFirstAccountRow(
       "[accounts] tags column unavailable — reading without labels. Apply migration " +
         "packages/database/prisma/migrations/20260526140000_crm_account_tags and run prisma generate.",
     );
-    const row = await prisma.crmAccount.findFirst({
+    const row = await prisma.qcfAccount.findFirst({
       ...args,
       select: ACCOUNT_ROW_SELECT_BASE,
     });
@@ -94,10 +94,10 @@ export async function findFirstAccountRow(
 }
 
 export async function findManyAccountRows(
-  args: Omit<Prisma.CrmAccountFindManyArgs, "select">,
+  args: Omit<Prisma.QcfAccountFindManyArgs, "select">,
 ): Promise<AccountRow[]> {
   try {
-    const rows = await prisma.crmAccount.findMany({
+    const rows = await prisma.qcfAccount.findMany({
       ...args,
       select: ACCOUNT_ROW_SELECT,
     });
@@ -105,7 +105,7 @@ export async function findManyAccountRows(
   } catch (err) {
     if (!isMissingAccountTagsError(err)) throw err;
     console.warn("[accounts] tags column unavailable — list without labels.");
-    const rows = await prisma.crmAccount.findMany({
+    const rows = await prisma.qcfAccount.findMany({
       ...args,
       select: ACCOUNT_ROW_SELECT_BASE,
     });
@@ -114,10 +114,10 @@ export async function findManyAccountRows(
 }
 
 export async function updateAccountRow(
-  args: Omit<Prisma.CrmAccountUpdateArgs, "select">,
+  args: Omit<Prisma.QcfAccountUpdateArgs, "select">,
 ): Promise<AccountRow> {
   try {
-    const row = await prisma.crmAccount.update({
+    const row = await prisma.qcfAccount.update({
       ...args,
       select: ACCOUNT_ROW_SELECT,
     });
@@ -127,9 +127,9 @@ export async function updateAccountRow(
     const data = { ...(args.data as Record<string, unknown>) };
     delete data.tags;
     console.warn("[accounts] tags column unavailable — update without labels.");
-    const row = await prisma.crmAccount.update({
+    const row = await prisma.qcfAccount.update({
       ...args,
-      data: data as Prisma.CrmAccountUpdateInput,
+      data: data as Prisma.QcfAccountUpdateInput,
       select: ACCOUNT_ROW_SELECT_BASE,
     });
     return mapRow(row);
@@ -137,10 +137,10 @@ export async function updateAccountRow(
 }
 
 export async function createAccountRow(
-  args: Omit<Prisma.CrmAccountCreateArgs, "select">,
+  args: Omit<Prisma.QcfAccountCreateArgs, "select">,
 ): Promise<AccountRow> {
   try {
-    const row = await prisma.crmAccount.create({
+    const row = await prisma.qcfAccount.create({
       ...args,
       select: ACCOUNT_ROW_SELECT,
     });
@@ -149,9 +149,9 @@ export async function createAccountRow(
     if (!isMissingAccountTagsError(err)) throw err;
     const data = { ...(args.data as Record<string, unknown>) };
     delete data.tags;
-    const row = await prisma.crmAccount.create({
+    const row = await prisma.qcfAccount.create({
       ...args,
-      data: data as Prisma.CrmAccountUncheckedCreateInput,
+      data: data as Prisma.QcfAccountUncheckedCreateInput,
       select: ACCOUNT_ROW_SELECT_BASE,
     });
     return mapRow(row);

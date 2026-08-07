@@ -5,23 +5,23 @@ vi.mock("@/lib/services/quotes/enterprise/pdf/render-quote-pdf-buffer", () => ({
 }));
 
 const txMock = {
-  crmQuotePdfSnapshot: {
+  qcfQuotePdfSnapshot: {
     create: vi.fn(),
   },
-  crmQuote: {
+  qcfQuote: {
     update: vi.fn(),
   },
-  crmActivity: {
+  qcfActivity: {
     create: vi.fn(),
   },
 } as any;
 
 const dbMock = {
   $transaction: vi.fn(async (cb: any) => cb(txMock)),
-  crmAccount: {
+  qcfAccount: {
     findFirst: vi.fn(),
   },
-  crmContact: {
+  qcfContact: {
     findFirst: vi.fn(),
   },
 } as any;
@@ -109,9 +109,9 @@ vi.mock("@/lib/storage/documents", () => ({
 
 describe("generateQuotePdfSnapshot", () => {
   it("writes CrmActivity.detailNotes (filename) instead of body", async () => {
-    txMock.crmQuotePdfSnapshot.create.mockResolvedValueOnce({ id: "snap1" });
-    txMock.crmQuote.update.mockResolvedValueOnce(undefined);
-    txMock.crmActivity.create.mockResolvedValueOnce(undefined);
+    txMock.qcfQuotePdfSnapshot.create.mockResolvedValueOnce({ id: "snap1" });
+    txMock.qcfQuote.update.mockResolvedValueOnce(undefined);
+    txMock.qcfActivity.create.mockResolvedValueOnce(undefined);
 
     const { generateQuotePdfSnapshot } = await import(
       "@/lib/services/quotes/enterprise/pdf/generate-pdf"
@@ -124,8 +124,8 @@ describe("generateQuotePdfSnapshot", () => {
       userName: null,
     });
 
-    expect(txMock.crmActivity.create).toHaveBeenCalledTimes(1);
-    const activityArg = txMock.crmActivity.create.mock.calls[0]![0];
+    expect(txMock.qcfActivity.create).toHaveBeenCalledTimes(1);
+    const activityArg = txMock.qcfActivity.create.mock.calls[0]![0];
     expect(activityArg.data).toEqual(
       expect.objectContaining({
         type: "QuotePdfGenerated",

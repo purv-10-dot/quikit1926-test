@@ -14,7 +14,7 @@
  * the Quote Builder ready to add lines.
  *
  * Disabled state: shows tooltip when accountId is missing. Quotes require
- * an account by spec (CrmQuote.accountId is non-nullable), so without it
+ * an account by spec (QcfQuote.accountId is non-nullable), so without it
  * we'd hit a 400 from the API anyway — better to disable upfront.
  */
 import { useState } from "react";

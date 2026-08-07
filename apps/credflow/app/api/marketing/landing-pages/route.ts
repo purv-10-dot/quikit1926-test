@@ -18,7 +18,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.crmLandingPage.findMany({ where: { tenantId: user.tenantId }, orderBy: { updatedAt: "desc" } });
+    const items = await prisma.qcfLandingPage.findMany({ where: { tenantId: user.tenantId }, orderBy: { updatedAt: "desc" } });
     return NextResponse.json({ items });
   } catch (e) { return errorResponse(e); }
 }
@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
     await assertModule(user, "campaigns", "create");
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const p = await prisma.crmLandingPage.create({
-      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.CrmLandingPageUncheckedCreateInput,
+    const p = await prisma.qcfLandingPage.create({
+      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.QcfLandingPageUncheckedCreateInput,
     });
     return NextResponse.json(p, { status: 201 });
   } catch (e) { return errorResponse(e); }

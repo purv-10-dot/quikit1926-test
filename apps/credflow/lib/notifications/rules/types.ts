@@ -194,7 +194,7 @@ export const ENTITY_OWNER_FIELD: Record<EntityType, string> = {
   lead: "ownerId",
   task: "assignedToUserId",
   opportunity: "ownerId",
-  quote: "ownerId",          // CrmQuote stores ownerName; engine falls back gracefully
+  quote: "ownerId",          // QcfQuote stores ownerName; engine falls back gracefully
   contact: "ownerId",
 };
 

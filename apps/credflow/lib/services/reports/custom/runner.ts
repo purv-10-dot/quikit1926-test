@@ -145,32 +145,32 @@ function withFilters<T>(where: T, conds: Record<string, unknown>[]): T {
 // Base where builders (date range + owner + ACL)
 // ---------------------------------------------------------------------------
 
-async function leadWhere(ctx: ReportRunContext): Promise<Prisma.CrmLeadWhereInput> {
+async function leadWhere(ctx: ReportRunContext): Promise<Prisma.QcfLeadWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
-  const base: Prisma.CrmLeadWhereInput = {
+  const base: Prisma.QcfLeadWhereInput = {
     tenantId: ctx.tenantId,
     createdAt: { gte: ctx.from, lte: ctx.to },
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
   if (!acl) return base;
-  return { AND: [base, acl as Prisma.CrmLeadWhereInput] };
+  return { AND: [base, acl as Prisma.QcfLeadWhereInput] };
 }
 
 async function opportunityWhere(
   ctx: ReportRunContext,
-): Promise<Prisma.CrmOpportunityWhereInput> {
+): Promise<Prisma.QcfOpportunityWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
-  const base: Prisma.CrmOpportunityWhereInput = {
+  const base: Prisma.QcfOpportunityWhereInput = {
     tenantId: ctx.tenantId,
     deletedAt: null,
     createdAt: { gte: ctx.from, lte: ctx.to },
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
   if (!acl) return base;
-  return { AND: [base, acl as Prisma.CrmOpportunityWhereInput] };
+  return { AND: [base, acl as Prisma.QcfOpportunityWhereInput] };
 }
 
-function activityWhere(ctx: ReportRunContext): Prisma.CrmActivityWhereInput {
+function activityWhere(ctx: ReportRunContext): Prisma.QcfActivityWhereInput {
   return {
     tenantId: ctx.tenantId,
     occurredAt: { gte: ctx.from, lte: ctx.to },
@@ -178,7 +178,7 @@ function activityWhere(ctx: ReportRunContext): Prisma.CrmActivityWhereInput {
   };
 }
 
-function callLogWhere(ctx: ReportRunContext): Prisma.CrmCallLogWhereInput {
+function callLogWhere(ctx: ReportRunContext): Prisma.QcfCallLogWhereInput {
   return {
     tenantId: ctx.tenantId,
     createdAt: { gte: ctx.from, lte: ctx.to },
@@ -270,46 +270,46 @@ async function runDateBucket(
 
   if (object === "leads") {
     const needScore = metric === "avgScore" || metric === "sumScore";
-    const rows = await db.crmLead.findMany({
-      where: where as Prisma.CrmLeadWhereInput,
+    const rows = await db.qcfLead.findMany({
+      where: where as Prisma.QcfLeadWhereInput,
       select: { createdAt: true, score: true },
       take: DATE_FETCH_CAP,
     });
     for (const r of rows) add(r.createdAt, needScore ? Number(r.score ?? 0) : 1);
   } else if (object === "opportunities") {
     if (metric === "sumAmount") {
-      const rows = await db.crmOpportunity.findMany({
-        where: where as Prisma.CrmOpportunityWhereInput,
+      const rows = await db.qcfOpportunity.findMany({
+        where: where as Prisma.QcfOpportunityWhereInput,
         select: { createdAt: true, amount: true },
         take: DATE_FETCH_CAP,
       });
       for (const r of rows) add(r.createdAt, toNumber(r.amount ?? 0));
     } else {
-      const rows = await db.crmOpportunity.findMany({
-        where: where as Prisma.CrmOpportunityWhereInput,
+      const rows = await db.qcfOpportunity.findMany({
+        where: where as Prisma.QcfOpportunityWhereInput,
         select: { createdAt: true },
         take: DATE_FETCH_CAP,
       });
       for (const r of rows) add(r.createdAt, 1);
     }
   } else if (object === "activities") {
-    const rows = await db.crmActivity.findMany({
-      where: where as Prisma.CrmActivityWhereInput,
+    const rows = await db.qcfActivity.findMany({
+      where: where as Prisma.QcfActivityWhereInput,
       select: { occurredAt: true },
       take: DATE_FETCH_CAP,
     });
     for (const r of rows) add(r.occurredAt, 1);
   } else {
     if (metric === "sumDuration") {
-      const rows = await db.crmCallLog.findMany({
-        where: where as Prisma.CrmCallLogWhereInput,
+      const rows = await db.qcfCallLog.findMany({
+        where: where as Prisma.QcfCallLogWhereInput,
         select: { createdAt: true, durationSec: true },
         take: DATE_FETCH_CAP,
       });
       for (const r of rows) add(r.createdAt, Number(r.durationSec ?? 0));
     } else {
-      const rows = await db.crmCallLog.findMany({
-        where: where as Prisma.CrmCallLogWhereInput,
+      const rows = await db.qcfCallLog.findMany({
+        where: where as Prisma.QcfCallLogWhereInput,
         select: { createdAt: true },
         take: DATE_FETCH_CAP,
       });
@@ -391,7 +391,7 @@ export async function runCustomReport(
   } else if (definition.object === "leads") {
     const where = withFilters(await leadWhere(ctx), filterConds);
     if (definition.metric === "avgScore") {
-      const grouped = await db.crmLead.groupBy({
+      const grouped = await db.qcfLead.groupBy({
         by: [definition.groupBy as "source"],
         where,
         _avg: { score: true },
@@ -401,7 +401,7 @@ export async function runCustomReport(
         [valueKey]: roundTo1(g._avg.score ?? 0),
       }));
     } else if (definition.metric === "sumScore") {
-      const grouped = await db.crmLead.groupBy({
+      const grouped = await db.qcfLead.groupBy({
         by: [definition.groupBy as "source"],
         where,
         _sum: { score: true },
@@ -411,7 +411,7 @@ export async function runCustomReport(
         [valueKey]: g._sum.score ?? 0,
       }));
     } else {
-      const grouped = await db.crmLead.groupBy({
+      const grouped = await db.qcfLead.groupBy({
         by: [definition.groupBy as "source"],
         where,
         _count: { _all: true },
@@ -424,7 +424,7 @@ export async function runCustomReport(
   } else if (definition.object === "opportunities") {
     const where = withFilters(await opportunityWhere(ctx), filterConds);
     if (definition.metric === "sumAmount") {
-      const grouped = await db.crmOpportunity.groupBy({
+      const grouped = await db.qcfOpportunity.groupBy({
         by: [definition.groupBy as "stage"],
         where,
         _sum: { amount: true },
@@ -435,7 +435,7 @@ export async function runCustomReport(
         [valueKey]: toNumber(g._sum.amount ?? 0),
       }));
     } else {
-      const grouped = await db.crmOpportunity.groupBy({
+      const grouped = await db.qcfOpportunity.groupBy({
         by: [definition.groupBy as "stage"],
         where,
         _count: { _all: true },
@@ -447,7 +447,7 @@ export async function runCustomReport(
     }
   } else if (definition.object === "activities") {
     const where = withFilters(activityWhere(ctx), filterConds);
-    const grouped = await db.crmActivity.groupBy({
+    const grouped = await db.qcfActivity.groupBy({
       by: [definition.groupBy as "type"],
       where,
       _count: { _all: true },
@@ -459,7 +459,7 @@ export async function runCustomReport(
   } else {
     const where = withFilters(callLogWhere(ctx), filterConds);
     if (definition.metric === "sumDuration") {
-      const grouped = await db.crmCallLog.groupBy({
+      const grouped = await db.qcfCallLog.groupBy({
         by: [definition.groupBy as "status"],
         where,
         _sum: { durationSec: true },
@@ -470,7 +470,7 @@ export async function runCustomReport(
         [valueKey]: Number(g._sum.durationSec ?? 0),
       }));
     } else {
-      const grouped = await db.crmCallLog.groupBy({
+      const grouped = await db.qcfCallLog.groupBy({
         by: [definition.groupBy as "status"],
         where,
         _count: { _all: true },

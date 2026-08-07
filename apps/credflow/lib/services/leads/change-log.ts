@@ -125,7 +125,7 @@ interface RecordParams {
 }
 
 /**
- * Writes a single CrmAuditLog row for a lead mutation. UPDATE writes a row
+ * Writes a single QcfAuditLog row for a lead mutation. UPDATE writes a row
  * only when at least one tracked field actually changed; the other actions
  * always write. Failures are swallowed and logged — change-log writes must
  * never break the underlying mutation.
@@ -146,7 +146,7 @@ export async function recordLeadChange(params: RecordParams): Promise<void> {
     if (action === "UPDATE") {
       const diff = diffLead(before, after);
       if (Object.keys(diff.after).length === 0) return;
-      await prisma.crmAuditLog.create({
+      await prisma.qcfAuditLog.create({
         data: {
           tenantId,
           userId,
@@ -160,7 +160,7 @@ export async function recordLeadChange(params: RecordParams): Promise<void> {
       });
       return;
     }
-    await prisma.crmAuditLog.create({
+    await prisma.qcfAuditLog.create({
       data: {
         tenantId,
         userId,

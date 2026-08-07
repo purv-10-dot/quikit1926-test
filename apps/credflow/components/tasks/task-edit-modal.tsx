@@ -48,7 +48,7 @@ const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
   Completed: "Completed",
   Cancelled: "Cancelled",
 };
-// "Waiting" is in the spec but the CrmTaskStatus enum hasn't been extended
+// "Waiting" is in the spec but the QcfTaskStatus enum hasn't been extended
 // yet. Re-add to STATUSES once the schema migration lands.
 
 /**

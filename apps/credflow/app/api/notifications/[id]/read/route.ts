@@ -9,7 +9,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     const { id } = await params;
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const updated = await prisma.crmNotification.updateMany({
+    const updated = await prisma.qcfNotification.updateMany({
       where: { id, tenantId: user.tenantId, userId: user.userId },
       data: { readAt: new Date() },
     });

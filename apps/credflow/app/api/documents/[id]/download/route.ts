@@ -22,7 +22,7 @@ export async function GET(
     await assertModule(user, "documents", "view");
     const { id } = await params;
 
-    const doc = await prisma.crmDocument.findFirst({
+    const doc = await prisma.qcfDocument.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!doc) return fail(404, "Document not found");

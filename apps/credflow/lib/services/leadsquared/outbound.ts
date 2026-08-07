@@ -1,5 +1,5 @@
 /**
- * Outbound sync: QuikCRM CrmLead create/update -> LeadSquared.
+ * Outbound sync: QuikCRM QcfLead create/update -> LeadSquared.
  *
  * Flow (all tenant-scoped):
  *   1. Map the lead to the `{ Attribute, Value }[]` LeadSquared payload.
@@ -34,7 +34,7 @@ import { logSync } from "@/lib/services/leadsquared/telemetry";
 
 export interface OutboundSyncInput {
   tenantId: string;
-  /** The CrmLead id — the stable link key in the mapping table. */
+  /** The QcfLead id — the stable link key in the mapping table. */
   crmLeadId: string;
   /** Mapped lead fields (+ optional transient status remarks). */
   lead: LeadPayloadInput;
@@ -122,7 +122,7 @@ export async function syncLeadOutbound(
   const newHash = hashPayload(payloadForHash);
 
   // 2. Load the existing mapping (tenant-scoped per rule #5).
-  const existing = await db.leadSquaredSyncMap.findFirst({
+  const existing = await db.qcfLeadSquaredSyncMap.findFirst({
     where: { crmLeadId: input.crmLeadId, tenantId: input.tenantId },
   });
 
@@ -203,7 +203,7 @@ export async function syncLeadOutbound(
   //    is only set on create.
   const syncedAt = now();
   try {
-    await db.leadSquaredSyncMap.upsert({
+    await db.qcfLeadSquaredSyncMap.upsert({
       where: { crmLeadId: input.crmLeadId },
       create: {
         tenantId: input.tenantId,

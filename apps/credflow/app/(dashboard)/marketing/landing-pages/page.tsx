@@ -6,7 +6,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
 export default async function LandingPagesPage() {
   const user = await requireUser();
-  const items = await prisma.crmLandingPage.findMany({ where: { tenantId: user.tenantId }, orderBy: { updatedAt: "desc" } });
+  const items = await prisma.qcfLandingPage.findMany({ where: { tenantId: user.tenantId }, orderBy: { updatedAt: "desc" } });
   return (
     <div>
       <PageHeader title="Landing Pages" subtitle={`${items.length} total`} />

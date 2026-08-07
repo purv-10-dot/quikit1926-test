@@ -9,7 +9,7 @@ describe("GET /api/settings/company", () => {
     setSession(null);
     vi.mocked(assertModule).mockReset();
     vi.mocked(assertModule).mockResolvedValue(undefined);
-    db.crmCompanyProfile.findUnique.mockReset();
+    db.qcfCompanyProfile.findUnique.mockReset();
     db.org.findUnique.mockReset();
   });
 
@@ -27,7 +27,7 @@ describe("GET /api/settings/company", () => {
       email: "a@x.co",
       name: "A",
     });
-    db.crmCompanyProfile.findUnique.mockResolvedValue({
+    db.qcfCompanyProfile.findUnique.mockResolvedValue({
       companyName: "Moreyeahs",
       logoUrl: null,
       website: null,
@@ -51,7 +51,7 @@ describe("PATCH /api/settings/company", () => {
     setSession(null);
     vi.mocked(assertModule).mockReset();
     vi.mocked(assertModule).mockResolvedValue(undefined);
-    db.crmCompanyProfile.upsert.mockReset();
+    db.qcfCompanyProfile.upsert.mockReset();
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -73,7 +73,7 @@ describe("PATCH /api/settings/company", () => {
       email: "a@x.co",
       name: "A",
     });
-    db.crmCompanyProfile.upsert.mockResolvedValue({
+    db.qcfCompanyProfile.upsert.mockResolvedValue({
       companyName: "Moreyeahs",
       industry: "IT",
       website: "https://moreyeahs.com",
@@ -97,8 +97,8 @@ describe("PATCH /api/settings/company", () => {
     });
     const res = await PATCH(req as import("next/server").NextRequest);
     expect(res.status).toBe(200);
-    expect(db.crmCompanyProfile.upsert).toHaveBeenCalled();
-    const args = db.crmCompanyProfile.upsert.mock.calls[0]?.[0];
+    expect(db.qcfCompanyProfile.upsert).toHaveBeenCalled();
+    const args = db.qcfCompanyProfile.upsert.mock.calls[0]?.[0];
     expect(args?.where.tenantId).toBe("tenant-A");
   });
 });

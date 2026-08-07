@@ -13,7 +13,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { integrationPrisma } from "../helpers/integrationDb";
 
-const SCHEMA = "app_quikcrm"; // constant; interpolated into read-only catalog queries
+const SCHEMA = "app_quikcredflow"; // constant; interpolated into read-only catalog queries
 
 async function tableNames(): Promise<Set<string>> {
   const rows = await integrationPrisma.$queryRawUnsafe<{ table_name: string }[]>(

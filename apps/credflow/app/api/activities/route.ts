@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     if (format) {
       const tz = readTzFromCookieHeader(req.headers.get("cookie"));
       const cursor = createPrismaCursorIterator<ActivityCsvRow>({
-        delegate: prisma.crmActivity as unknown as PrismaListDelegate<ActivityCsvRow>,
+        delegate: prisma.qcfActivity as unknown as PrismaListDelegate<ActivityCsvRow>,
         where,
         select: ACTIVITY_CSV_SELECT,
       });
@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
     // defaults (page 1, 100 per page, max 500) are intentionally distinct from the
     // shared 10/25/50/100 list contract used by the list explorer (which calls
     // POST /api/activities/filter instead).
-    const items = await prisma.crmActivity.findMany({
+    const items = await prisma.qcfActivity.findMany({
       where,
       orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,

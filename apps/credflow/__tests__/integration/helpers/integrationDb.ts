@@ -14,11 +14,11 @@ export const integrationPrisma = new PrismaClient();
  * touches.  Call in afterAll so failures still leave data inspectable.
  */
 export async function cleanupTenant(tenantId: string): Promise<void> {
-  await integrationPrisma.crmAuditLog.deleteMany({ where: { tenantId } });
-  await integrationPrisma.crmTask.deleteMany({ where: { tenantId } });
-  await integrationPrisma.crmActivity.deleteMany({ where: { tenantId } });
-  await integrationPrisma.crmCallLog.deleteMany({ where: { tenantId } });
-  await integrationPrisma.crmAutomationRule.deleteMany({ where: { tenantId } });
-  await integrationPrisma.crmCallDisposition.deleteMany({ where: { tenantId } });
-  await integrationPrisma.crmLead.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfAuditLog.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfTask.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfActivity.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfCallLog.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfAutomationRule.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfCallDisposition.deleteMany({ where: { tenantId } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId } });
 }

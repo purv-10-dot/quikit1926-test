@@ -23,7 +23,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
 
-    const views = await prisma.crmLeadListView.findMany({
+    const views = await prisma.qcfLeadListView.findMany({
       where: { tenantId: user.tenantId, userId: user.userId },
       select: { id: true, filters: true },
     });
@@ -40,7 +40,7 @@ export async function GET() {
         if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
         if (acl) baseAnd.push(acl);
         if (ownerScope) baseAnd.push(ownerScope);
-        const count = await prisma.crmLead.count({ where: { AND: baseAnd } });
+        const count = await prisma.qcfLead.count({ where: { AND: baseAnd } });
         return [v.id, count] as const;
       }),
     );

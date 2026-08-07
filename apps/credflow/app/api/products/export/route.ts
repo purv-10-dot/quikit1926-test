@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
 
-    const items = await prisma.crmProduct.findMany({
+    const items = await prisma.qcfProduct.findMany({
       where: { tenantId: user.tenantId, deletedAt: null },
       include: {
         categoryRef: { select: { id: true, name: true } },

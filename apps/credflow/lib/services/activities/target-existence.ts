@@ -21,14 +21,14 @@ export async function assertActivityTargetExists(
   }
   let exists: { id: string } | null = null;
   if (kind === "Lead") {
-    exists = await prisma.crmLead.findFirst({ where: { id, tenantId }, select: { id: true } });
+    exists = await prisma.qcfLead.findFirst({ where: { id, tenantId }, select: { id: true } });
   } else if (kind === "Opportunity") {
-    exists = await prisma.crmOpportunity.findFirst({ where: { id, tenantId }, select: { id: true } });
+    exists = await prisma.qcfOpportunity.findFirst({ where: { id, tenantId }, select: { id: true } });
   } else if (kind === "Contact") {
-    // CrmContact isn't middleware-protected — exclude trashed contacts explicitly.
-    exists = await prisma.crmContact.findFirst({ where: { id, tenantId, deletedAt: null }, select: { id: true } });
+    // QcfContact isn't middleware-protected — exclude trashed contacts explicitly.
+    exists = await prisma.qcfContact.findFirst({ where: { id, tenantId, deletedAt: null }, select: { id: true } });
   } else if (kind === "Account") {
-    exists = await prisma.crmAccount.findFirst({ where: { id, tenantId }, select: { id: true } });
+    exists = await prisma.qcfAccount.findFirst({ where: { id, tenantId }, select: { id: true } });
   }
   if (!exists) {
     const err = new Error(`${kind} not found`) as Error & { statusCode?: number };
@@ -44,21 +44,21 @@ export async function getRelatedAccountId(
 ): Promise<string | null> {
   if (kind === "Account") return id;
   if (kind === "Lead") {
-    const r = await prisma.crmLead.findFirst({
+    const r = await prisma.qcfLead.findFirst({
       where: { id, tenantId },
       select: { accountId: true },
     });
     return r?.accountId ?? null;
   }
   if (kind === "Opportunity") {
-    const r = await prisma.crmOpportunity.findFirst({
+    const r = await prisma.qcfOpportunity.findFirst({
       where: { id, tenantId },
       select: { accountId: true },
     });
     return r?.accountId ?? null;
   }
   if (kind === "Contact") {
-    const r = await prisma.crmContact.findFirst({
+    const r = await prisma.qcfContact.findFirst({
       where: { id, tenantId, deletedAt: null },
       select: { accountId: true },
     });

@@ -55,13 +55,13 @@ export async function POST(req: NextRequest) {
         : [{ [safeSortBy]: sortDir }, { id: "desc" as const }];
 
     const [rows, total] = await Promise.all([
-      prisma.crmActivity.findMany({
+      prisma.qcfActivity.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy,
       }),
-      prisma.crmActivity.count({ where }),
+      prisma.qcfActivity.count({ where }),
     ]);
 
     const tz = readTzFromCookieHeader(req.headers.get("cookie"));

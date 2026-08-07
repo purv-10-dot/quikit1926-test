@@ -24,7 +24,7 @@ const activitiesByType: CannedReport = {
     return type ? `/activities?type=${encodeURIComponent(type)}` : null;
   },
   async run(ctx) {
-    const grouped = await db.crmActivity.groupBy({
+    const grouped = await db.qcfActivity.groupBy({
       by: ["type"],
       where: {
         tenantId: ctx.tenantId,
@@ -64,7 +64,7 @@ const activityLeaderboard: CannedReport = {
     return ownerId ? `/activities?ownerId=${encodeURIComponent(ownerId)}` : null;
   },
   async run(ctx) {
-    const grouped = await db.crmActivity.groupBy({
+    const grouped = await db.qcfActivity.groupBy({
       by: ["ownerId", "ownerName"],
       where: {
         tenantId: ctx.tenantId,

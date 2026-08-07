@@ -1,4 +1,4 @@
-import type { CrmActivity } from "@quikit/database";
+import type { QcfActivity } from "@quikit/database";
 import { resolveRelatedLabels, rowKey } from "./related-label-batch";
 
 export type ActivityOutreachApi = {
@@ -86,7 +86,7 @@ function readOutreach(o: unknown): ActivityOutreachApi | undefined {
   };
 }
 
-function readLeadLog(d: CrmActivity): ActivityLeadLogApi | undefined {
+function readLeadLog(d: QcfActivity): ActivityLeadLogApi | undefined {
   if (!d.activityCode && !d.logOutcome && !d.detailNotes && !d.followUpAt && !d.opportunityId) {
     return undefined;
   }
@@ -101,7 +101,7 @@ function readLeadLog(d: CrmActivity): ActivityLeadLogApi | undefined {
 
 export async function toListRows(
   tenantId: string,
-  rows: ReadonlyArray<CrmActivity>,
+  rows: ReadonlyArray<QcfActivity>,
   tz: string,
 ): Promise<ActivityRow[]> {
   const labelMap = await resolveRelatedLabels(tenantId, rows);
@@ -128,7 +128,7 @@ export async function toListRows(
 
 export async function toListRow(
   tenantId: string,
-  row: CrmActivity,
+  row: QcfActivity,
   tz: string,
 ): Promise<ActivityRow> {
   const [out] = await toListRows(tenantId, [row], tz);

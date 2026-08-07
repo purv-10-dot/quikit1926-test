@@ -9,14 +9,14 @@
  *     renders as empty string.
  *   - Suppression (checked BEFORE any dispatch): a lead with no valid email, or
  *     flagged Do-Not-Email, or unsubscribed, is SKIPPED. A skip is recorded as a
- *     CrmOutboundMessageLog row with status "skipped" + the reason — it is not an
+ *     QcfOutboundMessageLog row with status "skipped" + the reason — it is not an
  *     error and does not crash the run.
  *
  * SAFETY (Constraint 1.1): this module decides recipient/skip and then hands a
  * queued row to the B1 dispatcher; it never selects a mail driver. The captured
  * console transport is enforced by env/tests, never a real lead address.
  */
-import type { CrmLead as Lead } from "@prisma/client";
+import type { QcfLead as Lead } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { dispatchOutboundMessage } from "@/lib/services/automation/email-dispatch";
 
@@ -90,7 +90,7 @@ export async function executeSendEmail(input: {
   if (suppression.suppressed) {
     // Recorded, not dispatched — a suppressed send is a logged non-event, not an
     // error (SPEC §5.1). Status "skipped" keeps it out of the dispatcher's reach.
-    const row = await prisma.crmOutboundMessageLog.create({
+    const row = await prisma.qcfOutboundMessageLog.create({
       data: {
         tenantId,
         channel: "email",
@@ -104,7 +104,7 @@ export async function executeSendEmail(input: {
     return { status: "skipped", logId: row.id, reason: suppression.reason };
   }
 
-  const row = await prisma.crmOutboundMessageLog.create({
+  const row = await prisma.qcfOutboundMessageLog.create({
     data: { tenantId, channel: "email", to: recipient, subject, body, status: "queued" },
   });
   const res = await dispatchOutboundMessage(tenantId, row.id);

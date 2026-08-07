@@ -5,7 +5,7 @@ const db = mockDb();
 
 // Capture what the PATCH route hands to the write layer so we can assert the
 // phone was normalized to E.164 before persist. updateCrmLead just wraps
-// prisma.crmLead.update; mocking it keeps the test hermetic (no scoring /
+// prisma.qcfLead.update; mocking it keeps the test hermetic (no scoring /
 // change-log round-trips) while still proving the route's normalization wiring.
 const { updateCrmLeadMock } = vi.hoisted(() => ({ updateCrmLeadMock: vi.fn() }));
 vi.mock("@/lib/services/leads/create-record", () => ({
@@ -63,14 +63,14 @@ async function patch(body: unknown) {
 
 describe("PATCH /api/leads/[id] — phone normalization", () => {
   beforeEach(() => {
-    db.crmLead.findUnique.mockReset();
+    db.qcfLead.findUnique.mockReset();
     updateCrmLeadMock.mockReset();
     setSession(null);
   });
 
   it("normalizes a bare-digit phone to E.164 before write", async () => {
     adminSession();
-    db.crmLead.findUnique.mockResolvedValue(existingLead() as never);
+    db.qcfLead.findUnique.mockResolvedValue(existingLead() as never);
     updateCrmLeadMock.mockImplementation(async (_id: string, data: Record<string, unknown>) => ({
       ...existingLead(),
       ...data,
@@ -85,7 +85,7 @@ describe("PATCH /api/leads/[id] — phone normalization", () => {
 
   it("rejects an invalid phone with the leads { error, errors } shape", async () => {
     adminSession();
-    db.crmLead.findUnique.mockResolvedValue(existingLead() as never);
+    db.qcfLead.findUnique.mockResolvedValue(existingLead() as never);
 
     const res = await patch({ phone: "12345" });
     expect(res.status).toBe(400);

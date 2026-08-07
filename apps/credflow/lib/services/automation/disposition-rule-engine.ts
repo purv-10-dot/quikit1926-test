@@ -7,7 +7,7 @@
  *   - create_task and notify_owner fire for every matching rule.
  *   - A rule-made status change does NOT re-trigger this engine (no cascade) — the
  *     function does not call itself and is not re-invoked by the lead update.
- *   - FR-D5: every rule-made status change is audit-logged via CrmAuditLog with
+ *   - FR-D5: every rule-made status change is audit-logged via QcfAuditLog with
  *     metadata.actor = "rule:<id>".
  *   - Condition 1: all disposition/status comparisons are case-insensitive + trimmed.
  *   - A missing or non-matching rule never blocks a save (no-op, no throw).
@@ -25,12 +25,12 @@ export interface RunAfterActivityLoggedCtx {
   tenantId: string;
   leadId: string;
   activityId: string;
-  /** The CrmCallDisposition.code that the agent selected. */
+  /** The QcfCallDisposition.code that the agent selected. */
   dispositionCode: string;
   /**
    * The user-entered occurrence time of the activity (FR-D2).
    * Until FR-D2 is wired end-to-end this will be the server `now` at save
-   * time (CrmActivity.occurredAt). Used as the due date for create_task actions.
+   * time (QcfActivity.occurredAt). Used as the due date for create_task actions.
    */
   activityDatetime: Date;
   /** Lead owner — used as default assignee for create_task. */
@@ -49,9 +49,9 @@ interface ActivityLoggedTrigger {
 
 interface SetLeadStatusAction {
   type: "set_lead_status";
-  /** Target CrmLead.status value. Validated at rule-creation time. */
+  /** Target QcfLead.status value. Validated at rule-creation time. */
   status: string;
-  /** Optional CrmLead.substatus value. */
+  /** Optional QcfLead.substatus value. */
   sub_status?: string;
 }
 
@@ -106,7 +106,7 @@ export async function validateRuleAction(
     throw new Error("set_lead_status action requires a non-empty status value.");
   }
 
-  const exists = await prisma.crmLeadStatus.findFirst({
+  const exists = await prisma.qcfLeadStatus.findFirst({
     where: { name: { equals: target, mode: "insensitive" } },
   });
   if (!exists) {
@@ -117,7 +117,7 @@ export async function validateRuleAction(
   }
 
   if (action.sub_status) {
-    const subExists = await prisma.crmLeadSubStatus.findFirst({
+    const subExists = await prisma.qcfLeadSubStatus.findFirst({
       where: { name: { equals: action.sub_status.trim(), mode: "insensitive" } },
     });
     if (!subExists) {
@@ -153,7 +153,7 @@ export async function runAfterActivityLogged(
 }
 
 async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
-  const rules = await prisma.crmAutomationRule.findMany({
+  const rules = await prisma.qcfAutomationRule.findMany({
     where: { tenantId: ctx.tenantId, isActive: true },
     orderBy: { sortOrder: "asc" },
   });
@@ -162,7 +162,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
 
   // Read lead then make a local mutable copy so the engine's status-hop
   // bookkeeping never mutates the original DB object (or test mock return).
-  const leadRecord = await prisma.crmLead.findUnique({
+  const leadRecord = await prisma.qcfLead.findUnique({
     where: { id: ctx.leadId },
     select: { status: true, name: true, ownerId: true },
   });
@@ -185,7 +185,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
       const prevStatus = lead.status;
       const newStatus = action.status.trim();
 
-      await prisma.crmLead.update({
+      await prisma.qcfLead.update({
         where: { id: ctx.leadId },
         data: {
           status: newStatus,
@@ -223,7 +223,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
       });
 
       // FR-D5: audit-log with rule as actor.
-      await prisma.crmAuditLog.create({
+      await prisma.qcfAuditLog.create({
         data: {
           tenantId: ctx.tenantId,
           userId: null,
@@ -253,7 +253,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
         lead.name ?? "Lead",
       );
 
-      await prisma.crmTask.create({
+      await prisma.qcfTask.create({
         data: {
           tenantId: ctx.tenantId,
           subject: title,
@@ -268,7 +268,7 @@ async function _runEngine(ctx: RunAfterActivityLoggedCtx): Promise<void> {
         },
       });
     } else if (action.type === "notify_owner") {
-      // TODO(FR-D3 notify_owner): wire to CrmNotification when notification
+      // TODO(FR-D3 notify_owner): wire to QcfNotification when notification
       // spec for system-actor events is confirmed.  No-op in v1.
     }
   }

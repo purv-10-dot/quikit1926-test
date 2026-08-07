@@ -1,5 +1,5 @@
 /**
- * Advanced filter + quick search for CrmOpportunity.
+ * Advanced filter + quick search for QcfOpportunity.
  * Keep ALLOWED_FILTER_FIELDS in sync with `lib/opportunity-filter-fields.ts`.
  */
 import type { Prisma } from "@quikit/database";
@@ -61,7 +61,7 @@ function coerceNumber(v: unknown): number | null {
 /** OR across name, account name, and owner for the toolbar search box. */
 export function buildOpportunityQuickSearchWhere(
   term: unknown,
-): Prisma.CrmOpportunityWhereInput | null {
+): Prisma.QcfOpportunityWhereInput | null {
   const s = typeof term === "string" ? term.trim() : term == null ? "" : String(term).trim();
   if (!s) return null;
   return {
@@ -76,8 +76,8 @@ export function buildOpportunityQuickSearchWhere(
 export function buildAdvancedOpportunityWhere(
   conditions: RawCondition[],
   combinator: "AND" | "OR",
-): Prisma.CrmOpportunityWhereInput | null {
-  const built: Prisma.CrmOpportunityWhereInput[] = [];
+): Prisma.QcfOpportunityWhereInput | null {
+  const built: Prisma.QcfOpportunityWhereInput[] = [];
   for (const c of conditions) {
     if (!ALLOWED_FILTER_FIELDS.has(c.field)) continue;
     const fragment = buildSingleCondition(c);
@@ -87,7 +87,7 @@ export function buildAdvancedOpportunityWhere(
   return combinator === "OR" ? { OR: built } : { AND: built };
 }
 
-function buildSingleCondition(c: RawCondition): Prisma.CrmOpportunityWhereInput | null {
+function buildSingleCondition(c: RawCondition): Prisma.QcfOpportunityWhereInput | null {
   const { field, operator } = c;
 
   if (field === "accountName") {
@@ -105,36 +105,36 @@ function buildSingleCondition(c: RawCondition): Prisma.CrmOpportunityWhereInput 
   switch (operator) {
     case "eq":
       if (INSENSITIVE_EQ_FIELDS.has(field) && typeof c.value === "string") {
-        return { [field]: { equals: c.value, mode: "insensitive" } } as Prisma.CrmOpportunityWhereInput;
+        return { [field]: { equals: c.value, mode: "insensitive" } } as Prisma.QcfOpportunityWhereInput;
       }
-      return { [field]: c.value } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: c.value } as Prisma.QcfOpportunityWhereInput;
     case "ne":
       if (INSENSITIVE_EQ_FIELDS.has(field) && typeof c.value === "string") {
         return {
           NOT: { [field]: { equals: c.value, mode: "insensitive" } },
-        } as Prisma.CrmOpportunityWhereInput;
+        } as Prisma.QcfOpportunityWhereInput;
       }
-      return { NOT: { [field]: c.value } } as Prisma.CrmOpportunityWhereInput;
+      return { NOT: { [field]: c.value } } as Prisma.QcfOpportunityWhereInput;
     case "contains":
       return {
         [field]: { contains: String(c.value ?? ""), mode: "insensitive" },
-      } as Prisma.CrmOpportunityWhereInput;
+      } as Prisma.QcfOpportunityWhereInput;
     case "startsWith":
       return {
         [field]: { startsWith: String(c.value ?? ""), mode: "insensitive" },
-      } as Prisma.CrmOpportunityWhereInput;
+      } as Prisma.QcfOpportunityWhereInput;
     case "endsWith":
       return {
         [field]: { endsWith: String(c.value ?? ""), mode: "insensitive" },
-      } as Prisma.CrmOpportunityWhereInput;
+      } as Prisma.QcfOpportunityWhereInput;
     case "in":
-      return { [field]: { in: c.values ?? [] } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { in: c.values ?? [] } } as Prisma.QcfOpportunityWhereInput;
     case "notIn":
-      return { [field]: { notIn: c.values ?? [] } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { notIn: c.values ?? [] } } as Prisma.QcfOpportunityWhereInput;
     case "isNull":
-      return { [field]: null } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: null } as Prisma.QcfOpportunityWhereInput;
     case "notNull":
-      return { NOT: { [field]: null } } as Prisma.CrmOpportunityWhereInput;
+      return { NOT: { [field]: null } } as Prisma.QcfOpportunityWhereInput;
     default:
       return null;
   }
@@ -143,7 +143,7 @@ function buildSingleCondition(c: RawCondition): Prisma.CrmOpportunityWhereInput 
 function buildAccountNameCondition(
   operator: string,
   c: RawCondition,
-): Prisma.CrmOpportunityWhereInput | null {
+): Prisma.QcfOpportunityWhereInput | null {
   const val = String(c.value ?? "");
   switch (operator) {
     case "eq":
@@ -173,32 +173,32 @@ function buildDateCondition(
   field: string,
   operator: string,
   c: RawCondition,
-): Prisma.CrmOpportunityWhereInput | null {
+): Prisma.QcfOpportunityWhereInput | null {
   switch (operator) {
     case "eq": {
       const d = parseFilterDate(c.value);
       if (!d) return null;
-      return { [field]: { gte: startOfDay(d), lte: endOfDay(d) } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { gte: startOfDay(d), lte: endOfDay(d) } } as Prisma.QcfOpportunityWhereInput;
     }
     case "gt": {
       const d = parseFilterDate(c.value);
       if (!d) return null;
-      return { [field]: { gt: endOfDay(d) } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { gt: endOfDay(d) } } as Prisma.QcfOpportunityWhereInput;
     }
     case "gte": {
       const d = parseFilterDate(c.value);
       if (!d) return null;
-      return { [field]: { gte: startOfDay(d) } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { gte: startOfDay(d) } } as Prisma.QcfOpportunityWhereInput;
     }
     case "lt": {
       const d = parseFilterDate(c.value);
       if (!d) return null;
-      return { [field]: { lt: startOfDay(d) } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { lt: startOfDay(d) } } as Prisma.QcfOpportunityWhereInput;
     }
     case "lte": {
       const d = parseFilterDate(c.value);
       if (!d) return null;
-      return { [field]: { lte: endOfDay(d) } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { lte: endOfDay(d) } } as Prisma.QcfOpportunityWhereInput;
     }
     case "between": {
       if (!Array.isArray(c.values) || c.values.length !== 2) return null;
@@ -208,12 +208,12 @@ function buildDateCondition(
       const [lo, hi] = a <= b ? [a, b] : [b, a];
       return {
         [field]: { gte: startOfDay(lo), lte: endOfDay(hi) },
-      } as Prisma.CrmOpportunityWhereInput;
+      } as Prisma.QcfOpportunityWhereInput;
     }
     case "isNull":
-      return { [field]: null } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: null } as Prisma.QcfOpportunityWhereInput;
     case "notNull":
-      return { NOT: { [field]: null } } as Prisma.CrmOpportunityWhereInput;
+      return { NOT: { [field]: null } } as Prisma.QcfOpportunityWhereInput;
     default:
       return null;
   }
@@ -223,37 +223,37 @@ function buildNumericCondition(
   field: string,
   operator: string,
   c: RawCondition,
-): Prisma.CrmOpportunityWhereInput | null {
+): Prisma.QcfOpportunityWhereInput | null {
   switch (operator) {
     case "eq": {
       const n = coerceNumber(c.value);
       if (n == null) return null;
-      return { [field]: n } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: n } as Prisma.QcfOpportunityWhereInput;
     }
     case "ne": {
       const n = coerceNumber(c.value);
       if (n == null) return null;
-      return { NOT: { [field]: n } } as Prisma.CrmOpportunityWhereInput;
+      return { NOT: { [field]: n } } as Prisma.QcfOpportunityWhereInput;
     }
     case "gt": {
       const n = coerceNumber(c.value);
       if (n == null) return null;
-      return { [field]: { gt: n } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { gt: n } } as Prisma.QcfOpportunityWhereInput;
     }
     case "gte": {
       const n = coerceNumber(c.value);
       if (n == null) return null;
-      return { [field]: { gte: n } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { gte: n } } as Prisma.QcfOpportunityWhereInput;
     }
     case "lt": {
       const n = coerceNumber(c.value);
       if (n == null) return null;
-      return { [field]: { lt: n } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { lt: n } } as Prisma.QcfOpportunityWhereInput;
     }
     case "lte": {
       const n = coerceNumber(c.value);
       if (n == null) return null;
-      return { [field]: { lte: n } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { lte: n } } as Prisma.QcfOpportunityWhereInput;
     }
     case "between": {
       if (!Array.isArray(c.values) || c.values.length !== 2) return null;
@@ -261,12 +261,12 @@ function buildNumericCondition(
       const b = coerceNumber(c.values[1]);
       if (a == null || b == null) return null;
       const [lo, hi] = a <= b ? [a, b] : [b, a];
-      return { [field]: { gte: lo, lte: hi } } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: { gte: lo, lte: hi } } as Prisma.QcfOpportunityWhereInput;
     }
     case "isNull":
-      return { [field]: null } as Prisma.CrmOpportunityWhereInput;
+      return { [field]: null } as Prisma.QcfOpportunityWhereInput;
     case "notNull":
-      return { NOT: { [field]: null } } as Prisma.CrmOpportunityWhereInput;
+      return { NOT: { [field]: null } } as Prisma.QcfOpportunityWhereInput;
     default:
       return null;
   }
@@ -279,12 +279,12 @@ export function buildOpportunityFilterWhere(args: {
   conditions: RawCondition[];
   combinator: "AND" | "OR";
   search?: string;
-}): Prisma.CrmOpportunityWhereInput {
-  const parts: Prisma.CrmOpportunityWhereInput[] = [
+}): Prisma.QcfOpportunityWhereInput {
+  const parts: Prisma.QcfOpportunityWhereInput[] = [
     {
       tenantId: args.tenantId,
       deletedAt: null,
-      ...(args.aclFilter ? (args.aclFilter as Prisma.CrmOpportunityWhereInput) : {}),
+      ...(args.aclFilter ? (args.aclFilter as Prisma.QcfOpportunityWhereInput) : {}),
     },
   ];
   const advanced = buildAdvancedOpportunityWhere(args.conditions, args.combinator);

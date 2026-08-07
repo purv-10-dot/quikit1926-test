@@ -1,6 +1,6 @@
 /**
  * Translate the filter DSL (matchMode + ConditionRow[]) into a Prisma `where`
- * clause for the CrmContact model. Mirrors the lead filter-engine but only
+ * clause for the QcfContact model. Mirrors the lead filter-engine but only
  * supports standard fields — contacts have no dynamic-field column.
  *
  * Unknown field names are dropped silently (legacy parity).
@@ -26,7 +26,7 @@ const CONTACT_SEARCH_FIELDS = [
 ] as const;
 
 /** Build the OR clause used by GET /api/contacts?q=… and POST /api/contacts/filter. */
-export function buildContactSearchOr(search: string): Prisma.CrmContactWhereInput[] {
+export function buildContactSearchOr(search: string): Prisma.QcfContactWhereInput[] {
   const q = search.trim();
   if (!q) return [];
   return CONTACT_SEARCH_FIELDS.map((field) => ({

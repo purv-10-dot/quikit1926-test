@@ -17,12 +17,12 @@ const ADMIN_ROLE = "Administrator";
 async function computePriceListStats(tenantId: string): Promise<PriceListsStats> {
   const activeListWhere = { tenantId, deletedAt: null } as const;
   const [total, totalItems, defaultRow] = await Promise.all([
-    db.crmPriceList.count({ where: activeListWhere }),
+    db.qcfPriceList.count({ where: activeListWhere }),
     // Count items on active price lists only (works before item-level deletedAt migration).
-    db.crmPriceListItem.count({
+    db.qcfPriceListItem.count({
       where: { tenantId, priceList: { deletedAt: null } },
     }),
-    db.crmPriceList.findFirst({
+    db.qcfPriceList.findFirst({
       where: { tenantId, isDefault: true, deletedAt: null },
       select: { name: true },
     }),

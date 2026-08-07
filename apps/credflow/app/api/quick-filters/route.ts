@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const module = searchParams.get("module") || undefined;
     const where: Record<string, unknown> = { tenantId: user.tenantId, userId: user.userId };
     if (module) where.module = module;
-    const items = await prisma.crmQuickFilter.findMany({ where, orderBy: { updatedAt: "desc" } });
+    const items = await prisma.qcfQuickFilter.findMany({ where, orderBy: { updatedAt: "desc" } });
     return NextResponse.json({ items });
   } catch (e) {
     return errorResponse(e);
@@ -33,12 +33,12 @@ export async function POST(req: NextRequest) {
     if (isResponse(user)) return user;
     const parsed = upsertSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const item = await prisma.crmQuickFilter.create({
+    const item = await prisma.qcfQuickFilter.create({
       data: {
         ...parsed.data,
         tenantId: user.tenantId,
         userId: user.userId,
-      } as Prisma.CrmQuickFilterUncheckedCreateInput,
+      } as Prisma.QcfQuickFilterUncheckedCreateInput,
     });
     return NextResponse.json(item, { status: 201 });
   } catch (e) {
@@ -53,7 +53,7 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-    await prisma.crmQuickFilter.deleteMany({ where: { id, tenantId: user.tenantId, userId: user.userId } });
+    await prisma.qcfQuickFilter.deleteMany({ where: { id, tenantId: user.tenantId, userId: user.userId } });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

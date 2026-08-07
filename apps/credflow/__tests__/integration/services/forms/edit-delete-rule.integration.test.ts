@@ -43,42 +43,42 @@ let tabB: string;
 
 beforeAll(async () => {
   // Set 1 — the draft cases (never published).
-  const draftSet = await db.crmFormSet.create({
+  const draftSet = await db.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Draft Set ${STAMP}`, isDefault: true },
   });
   draftSetId = draftSet.id;
-  draftVersionId = (await db.crmFormSetVersion.create({
+  draftVersionId = (await db.qcfFormSetVersion.create({
     data: { formSetId: draftSetId, versionNumber: 1, status: "draft" },
   })).id;
-  tabA = (await db.crmFormTab.create({ data: { formSetVersionId: draftVersionId, name: "Tab A", visibility: "rule_driven", sortOrder: 0 } })).id;
-  tabB = (await db.crmFormTab.create({ data: { formSetVersionId: draftVersionId, name: "Tab B", visibility: "rule_driven", sortOrder: 1 } })).id;
+  tabA = (await db.qcfFormTab.create({ data: { formSetVersionId: draftVersionId, name: "Tab A", visibility: "rule_driven", sortOrder: 0 } })).id;
+  tabB = (await db.qcfFormTab.create({ data: { formSetVersionId: draftVersionId, name: "Tab B", visibility: "rule_driven", sortOrder: 1 } })).id;
 
   // Set 2 — the publish/draft-guard case, isolated so publishing can't disturb set 1.
-  const pubSet = await db.crmFormSet.create({
+  const pubSet = await db.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Pub Set ${STAMP}`, isDefault: false },
   });
   pubSetId = pubSet.id;
-  pubVersionId = (await db.crmFormSetVersion.create({
+  pubVersionId = (await db.qcfFormSetVersion.create({
     data: { formSetId: pubSetId, versionNumber: 1, status: "draft" },
   })).id;
 });
 
 afterAll(async () => {
   for (const sId of [draftSetId, pubSetId]) {
-    const versions = await db.crmFormSetVersion.findMany({ where: { formSetId: sId }, select: { id: true } });
+    const versions = await db.qcfFormSetVersion.findMany({ where: { formSetId: sId }, select: { id: true } });
     for (const v of versions) {
-      const rules = await db.crmFormRule.findMany({ where: { formSetVersionId: v.id }, select: { id: true } });
+      const rules = await db.qcfFormRule.findMany({ where: { formSetVersionId: v.id }, select: { id: true } });
       const rids = rules.map((r) => r.id);
       if (rids.length) {
-        await db.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
-        await db.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
-        await db.crmFormRule.deleteMany({ where: { id: { in: rids } } });
+        await db.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
+        await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
+        await db.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
       }
-      await db.crmFormTab.deleteMany({ where: { formSetVersionId: v.id } });
+      await db.qcfFormTab.deleteMany({ where: { formSetVersionId: v.id } });
     }
-    await db.crmFormSet.update({ where: { id: sId }, data: { currentVersionId: null } });
-    await db.crmFormSetVersion.deleteMany({ where: { formSetId: sId } });
-    await db.crmFormSet.deleteMany({ where: { id: sId } });
+    await db.qcfFormSet.update({ where: { id: sId }, data: { currentVersionId: null } });
+    await db.qcfFormSetVersion.deleteMany({ where: { formSetId: sId } });
+    await db.qcfFormSet.deleteMany({ where: { id: sId } });
   }
 });
 
@@ -117,7 +117,7 @@ describe("Phase 2 — edit ACTION (2-B): set_stage target + show_tab tab", () =>
 
     const updated = await updateRuleAction({ actionId: action.id, setStatusId: ST_B });
     expect(updated.setStatusId).toBe(ST_B);
-    const row = await db.crmFormRuleAction.findUnique({ where: { id: action.id } });
+    const row = await db.qcfFormRuleAction.findUnique({ where: { id: action.id } });
     expect(row!.setStatusId).toBe(ST_B);
   });
 
@@ -127,7 +127,7 @@ describe("Phase 2 — edit ACTION (2-B): set_stage target + show_tab tab", () =>
     const action = await addRuleAction({ formRuleId: rule.id, actionType: "show_tab", targetKind: "tab", targetTabId: tabA, sortOrder: 0 });
 
     await updateRuleAction({ actionId: action.id, targetTabId: tabB });
-    const row = await db.crmFormRuleAction.findUnique({ where: { id: action.id } });
+    const row = await db.qcfFormRuleAction.findUnique({ where: { id: action.id } });
     expect(row!.targetTabId).toBe(tabB);
   });
 });
@@ -141,8 +141,8 @@ describe("Phase 2 — delete cascades", () => {
     await deleteFormRule(rule.id);
 
     expect((await getFormRules(draftVersionId)).find((r) => r.id === rule.id)).toBeUndefined();
-    expect(await db.crmFormRuleCondition.findUnique({ where: { id: cond.id } })).toBeNull();
-    expect(await db.crmFormRuleAction.findUnique({ where: { id: action.id } })).toBeNull();
+    expect(await db.qcfFormRuleCondition.findUnique({ where: { id: cond.id } })).toBeNull();
+    expect(await db.qcfFormRuleAction.findUnique({ where: { id: action.id } })).toBeNull();
   });
 });
 

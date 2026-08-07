@@ -17,9 +17,9 @@ describe("POST /api/quotes/[id]/send", () => {
   beforeEach(() => {
     setSession(null);
     db.$transaction.mockReset();
-    db.crmQuote.findFirst.mockReset();
-    db.crmQuote.update.mockReset();
-    db.crmActivity.create.mockReset();
+    db.qcfQuote.findFirst.mockReset();
+    db.qcfQuote.update.mockReset();
+    db.qcfActivity.create.mockReset();
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -38,7 +38,7 @@ describe("POST /api/quotes/[id]/send", () => {
   it("returns 404 when the quote is in another tenant", async () => {
     adminSession();
     // getQuote uses findFirst({ id, tenantId }) â€” null when foreign.
-    db.crmQuote.findFirst.mockResolvedValue(null);
+    db.qcfQuote.findFirst.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/quotes/[id]/send/route");
     const req = new Request("http://test/api/quotes/q-foreign/send", {
@@ -54,7 +54,7 @@ describe("POST /api/quotes/[id]/send", () => {
 
   it("returns 400 when payload fails validation", async () => {
     adminSession();
-    db.crmQuote.findFirst.mockResolvedValue({
+    db.qcfQuote.findFirst.mockResolvedValue({
       id: "q1",
       quoteNumber: "QT-2026-0001",
       status: "Draft",
@@ -83,7 +83,7 @@ describe("POST /api/quotes/[id]/send", () => {
     // A persistent mockResolvedValue returns the same Won row for all three;
     // lines:[] + zeroed totals make the approval check resolve required:false
     // so the flow reaches markQuoteSent, which raises the 409.
-    db.crmQuote.findFirst.mockResolvedValue({
+    db.qcfQuote.findFirst.mockResolvedValue({
       id: "q1",
       quoteNumber: "QT-2026-0001",
       status: "Won",
@@ -121,7 +121,7 @@ describe("POST /api/quotes/[id]/send", () => {
     // Three findFirst calls (getQuote → evaluateQuoteApproval → markQuoteSent's
     // transaction); a persistent Draft row with lines:[] + zeroed totals lets
     // the approval check pass (required:false) and markQuoteSent proceed.
-    db.crmQuote.findFirst.mockResolvedValue({
+    db.qcfQuote.findFirst.mockResolvedValue({
       id: "q1",
       quoteNumber: "QT-2026-0001",
       status: "Draft",
@@ -133,8 +133,8 @@ describe("POST /api/quotes/[id]/send", () => {
     db.$transaction.mockImplementation(async (cb: unknown) => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
-    db.crmQuote.update.mockResolvedValue({} as never);
-    db.crmActivity.create.mockResolvedValue({} as never);
+    db.qcfQuote.update.mockResolvedValue({} as never);
+    db.qcfActivity.create.mockResolvedValue({} as never);
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     const { POST } = await import("@/app/api/quotes/[id]/send/route");
@@ -159,7 +159,7 @@ describe("POST /api/quotes/[id]/send", () => {
     // The route issues several crmQuote.update calls in one send (portal-token
     // hash, snapshot lock, sentAt, engagement status). Locate the one that sets
     // sentAt by content rather than assuming it is call index 0.
-    const sentAtUpdate = db.crmQuote.update.mock.calls.find(
+    const sentAtUpdate = db.qcfQuote.update.mock.calls.find(
       (c) => (c[0] as { data?: { sentAt?: unknown } } | undefined)?.data?.sentAt instanceof Date,
     );
     expect(sentAtUpdate, "expected a crmQuote.update that sets sentAt").toBeDefined();
@@ -167,7 +167,7 @@ describe("POST /api/quotes/[id]/send", () => {
     // QuoteSent activity must be written with the email message id as
     // externalId (lets us later trace bounces back to the activity). The route
     // writes multiple activities per send, so find the QuoteSent one by type.
-    const quoteSentActivity = db.crmActivity.create.mock.calls.find(
+    const quoteSentActivity = db.qcfActivity.create.mock.calls.find(
       (c) => (c[0] as { data?: { type?: string } } | undefined)?.data?.type === "QuoteSent",
     );
     expect(quoteSentActivity, "expected a QuoteSent activity to be written").toBeDefined();

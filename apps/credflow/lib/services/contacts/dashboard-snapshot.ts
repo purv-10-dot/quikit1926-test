@@ -2,7 +2,7 @@
  * Derived metrics for the single-contact 360 dashboard.
  */
 
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
 export interface ContactDashboardSnapshot {
   openTasks: number;
@@ -17,7 +17,7 @@ export interface ContactDashboardSnapshot {
   isStaleTouch: boolean;
 }
 
-const CLOSED_STAGES: CrmOpportunityStage[] = ["ClosedWon", "ClosedLost"];
+const CLOSED_STAGES: QcfOpportunityStage[] = ["ClosedWon", "ClosedLost"];
 
 type OppLike = { stage: string; amount?: unknown };
 type TaskLike = { status: string };
@@ -50,7 +50,7 @@ export function buildContactDashboardSnapshot(input: {
 
   let openPipeline = 0;
   for (const o of input.opportunities) {
-    if (!CLOSED_STAGES.includes(o.stage as CrmOpportunityStage)) {
+    if (!CLOSED_STAGES.includes(o.stage as QcfOpportunityStage)) {
       openPipeline += oppAmount(o);
     }
   }

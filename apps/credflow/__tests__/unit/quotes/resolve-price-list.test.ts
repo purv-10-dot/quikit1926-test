@@ -6,9 +6,9 @@ const db = mockDb();
 describe("resolvePriceListIdForQuote", () => {
   beforeEach(() => {
     vi.resetModules();
-    db.crmOpportunity.findFirst.mockReset();
-    db.crmAccount.findFirst.mockReset();
-    db.crmPriceList.findFirst.mockReset();
+    db.qcfOpportunity.findFirst.mockReset();
+    db.qcfAccount.findFirst.mockReset();
+    db.qcfPriceList.findFirst.mockReset();
   });
 
   it("prefers explicit price list id", async () => {
@@ -24,7 +24,7 @@ describe("resolvePriceListIdForQuote", () => {
   });
 
   it("inherits from opportunity then account default", async () => {
-    db.crmOpportunity.findFirst.mockResolvedValue({ priceListId: "pl-opp", accountId: "a1" } as never);
+    db.qcfOpportunity.findFirst.mockResolvedValue({ priceListId: "pl-opp", accountId: "a1" } as never);
     const { resolvePriceListIdForQuote } = await import(
       "@/lib/services/quotes/resolve-price-list-for-record"
     );

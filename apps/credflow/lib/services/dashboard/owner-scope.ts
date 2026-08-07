@@ -29,7 +29,7 @@ export async function resolveOwnerScope(userId: string): Promise<OwnerScope> {
 
 type OwnerFieldKeys = {
   idKey?: string;
-  /** Set to `null` when the model has no denormalized name column (e.g. CrmTask). */
+  /** Set to `null` when the model has no denormalized name column (e.g. QcfTask). */
   nameKey?: string | null;
 };
 

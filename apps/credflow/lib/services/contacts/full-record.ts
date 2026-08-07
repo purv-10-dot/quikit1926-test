@@ -104,7 +104,7 @@ function toContact360Row(c: {
 }
 
 async function loadActivities(tenantId: string, ids: ContactRollupIds) {
-  return prisma.crmActivity.findMany({
+  return prisma.qcfActivity.findMany({
     where: buildContactActivityWhere(tenantId, ids),
     orderBy: { occurredAt: "desc" },
     take: 100,
@@ -112,7 +112,7 @@ async function loadActivities(tenantId: string, ids: ContactRollupIds) {
 }
 
 async function loadTasks(tenantId: string, ids: ContactRollupIds) {
-  return prisma.crmTask.findMany({
+  return prisma.qcfTask.findMany({
     where: buildContactTaskWhere(tenantId, ids),
     orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     take: 100,
@@ -120,7 +120,7 @@ async function loadTasks(tenantId: string, ids: ContactRollupIds) {
 }
 
 async function loadNotes(tenantId: string, ids: ContactRollupIds) {
-  return prisma.crmNote.findMany({
+  return prisma.qcfNote.findMany({
     where: buildContactNoteWhere(tenantId, ids),
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -129,7 +129,7 @@ async function loadNotes(tenantId: string, ids: ContactRollupIds) {
 
 async function loadCallLogs(tenantId: string, leadId: string | null) {
   if (!leadId) return [];
-  return prisma.crmCallLog.findMany({
+  return prisma.qcfCallLog.findMany({
     where: { tenantId, leadId },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -137,7 +137,7 @@ async function loadCallLogs(tenantId: string, leadId: string | null) {
 }
 
 async function loadAttachments(tenantId: string, contactId: string) {
-  return prisma.crmDocument.findMany({
+  return prisma.qcfDocument.findMany({
     where: {
       tenantId,
       refType: "contact",
@@ -154,7 +154,7 @@ export async function getFullContactRecord(opts: {
 }): Promise<FullContactRecord | null> {
   const { user, contactId } = opts;
 
-  const c = await prisma.crmContact.findFirst({
+  const c = await prisma.qcfContact.findFirst({
     where: { id: contactId, tenantId: user.tenantId },
     include: {
       account: { select: { id: true, name: true } },
@@ -170,7 +170,7 @@ export async function getFullContactRecord(opts: {
   };
 
   const opportunitiesPromise = c.accountId
-    ? prisma.crmOpportunity.findMany({
+    ? prisma.qcfOpportunity.findMany({
         where: {
           tenantId: user.tenantId,
           accountId: c.accountId,

@@ -1,7 +1,7 @@
 /**
  * Pipeline service — board grouping + weighted-pipeline math.
  *
- * Returns one column per CrmOpportunityStage in STAGE_ORDER. Each column
+ * Returns one column per QcfOpportunityStage in STAGE_ORDER. Each column
  * carries: count, totalAmountInr (best-effort INR-only sum for the headline
  * KPI), totalWeightedInr, totalsByCurrency, and the lightweight deal rows.
  *
@@ -9,7 +9,7 @@
  * currency totals are exposed under `totalsByCurrency` so the UI can render
  * the largest one big and the others as sublabels.
  */
-import type { CrmOpportunityStage, Prisma } from "@quikit/database";
+import type { QcfOpportunityStage, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { STAGE_ORDER, STAGE_LABEL, TERMINAL_STAGES } from "./stage-labels";
 import { formatGeneric, toNumber } from "./currency";
@@ -35,7 +35,7 @@ export type PipelineDeal = {
 };
 
 export type PipelineColumn = {
-  stage: CrmOpportunityStage;
+  stage: QcfOpportunityStage;
   label: string;
   count: number;
   totalAmountInr: number;
@@ -61,19 +61,19 @@ export async function getPipelineBoard(args: {
   tenantId: string;
   aclFilter: Record<string, unknown> | null;
   /** When set, replaces the default tenant + ACL where (caller merges ACL). */
-  where?: Prisma.CrmOpportunityWhereInput;
+  where?: Prisma.QcfOpportunityWhereInput;
 }): Promise<PipelineBoard> {
   const { tenantId, aclFilter } = args;
 
-  const baseWhere: Prisma.CrmOpportunityWhereInput =
+  const baseWhere: Prisma.QcfOpportunityWhereInput =
     args.where ??
     ({
       tenantId,
       deletedAt: null,
-      ...(aclFilter ? (aclFilter as Prisma.CrmOpportunityWhereInput) : {}),
-    } as Prisma.CrmOpportunityWhereInput);
+      ...(aclFilter ? (aclFilter as Prisma.QcfOpportunityWhereInput) : {}),
+    } as Prisma.QcfOpportunityWhereInput);
 
-  const rows = await db.crmOpportunity.findMany({
+  const rows = await db.qcfOpportunity.findMany({
     where: baseWhere,
     select: {
       id: true,
@@ -98,7 +98,7 @@ export async function getPipelineBoard(args: {
   const STALE_MS = 30 * 24 * 60 * 60 * 1000;
   const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 
-  const byStage = new Map<CrmOpportunityStage, typeof rows>();
+  const byStage = new Map<QcfOpportunityStage, typeof rows>();
   for (const stage of STAGE_ORDER) byStage.set(stage, []);
   for (const r of rows) byStage.get(r.stage)!.push(r);
 

@@ -17,7 +17,7 @@ export async function attachAccountNames<T extends { accountId: string | null | 
   if (ids.length === 0) {
     return rows.map((r) => ({ ...r, accountName: null }));
   }
-  const accounts = await prisma.crmAccount.findMany({
+  const accounts = await prisma.qcfAccount.findMany({
     where: { tenantId, id: { in: ids } },
     select: { id: true, name: true },
   });

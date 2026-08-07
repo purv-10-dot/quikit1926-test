@@ -2,7 +2,7 @@
  * FR-D2 — Activity DateTime wiring (real-DB integration tests)
  *
  * INT-D2-1  createCallLog stores the agent-supplied activityDateTime as
- *           CrmActivity.occurredAt in the actual database row — not server now.
+ *           QcfActivity.occurredAt in the actual database row — not server now.
  *           This test cannot be faked by mocks: it reads the persisted value
  *           back from Postgres.
  *
@@ -24,12 +24,12 @@ let leadId: string;
 const PAST_DT = new Date("2026-06-01T08:00:00.000Z");
 
 beforeAll(async () => {
-  const disposition = await integrationPrisma.crmCallDisposition.create({
+  const disposition = await integrationPrisma.qcfCallDisposition.create({
     data: { tenantId: TENANT, code: "interested_int", label: "Interested" },
   });
   dispositionId = disposition.id;
 
-  const lead = await integrationPrisma.crmLead.create({
+  const lead = await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: "FR-D2 Integration Lead" },
   });
   leadId = lead.id;
@@ -50,7 +50,7 @@ describe("FR-D2 — Activity DateTime wiring (integration)", () => {
       activityDateTime: PAST_DT.toISOString(),
     });
 
-    const activity = await integrationPrisma.crmActivity.findFirst({
+    const activity = await integrationPrisma.qcfActivity.findFirst({
       where: { tenantId: TENANT, type: "Call", leadId },
       orderBy: { createdAt: "desc" },
       select: { occurredAt: true },
@@ -62,7 +62,7 @@ describe("FR-D2 — Activity DateTime wiring (integration)", () => {
   });
 
   it("INT-D2-2: a future activityDateTime is rejected before any DB write", async () => {
-    const before = await integrationPrisma.crmActivity.count({
+    const before = await integrationPrisma.qcfActivity.count({
       where: { tenantId: TENANT },
     });
 
@@ -76,7 +76,7 @@ describe("FR-D2 — Activity DateTime wiring (integration)", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 422 });
 
-    const after = await integrationPrisma.crmActivity.count({
+    const after = await integrationPrisma.qcfActivity.count({
       where: { tenantId: TENANT },
     });
 

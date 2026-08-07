@@ -2,7 +2,7 @@
  * Canned reports — Team category.
  *
  * "Sales User" / "Sales Manager direct reports" depend on Membership +
- * CrmSalesGroup structures rather than a hard role enum, so the helpers
+ * QcfSalesGroup structures rather than a hard role enum, so the helpers
  * here resolve those at run time per tenant.
  *
  * Heuristic: a lead counts as "qualified" when its stage moved past
@@ -27,14 +27,14 @@ async function tenantSalesUserMemberships(tenantId: string) {
 }
 
 async function directReportUserIds(ctx: ReportRunContext): Promise<string[]> {
-  // CrmSalesGroupManager rows for this user → groups managed → members.
-  const managed = await db.crmSalesGroupManager.findMany({
+  // QcfSalesGroupManager rows for this user → groups managed → members.
+  const managed = await db.qcfSalesGroupManager.findMany({
     where: { userId: ctx.session.userId },
     select: { groupId: true },
   });
   if (managed.length === 0) return [];
   const groupIds = [...new Set(managed.map((m) => m.groupId))];
-  const members = await db.crmSalesGroupMember.findMany({
+  const members = await db.qcfSalesGroupMember.findMany({
     where: { groupId: { in: groupIds } },
     select: { userId: true },
   });
@@ -83,7 +83,7 @@ const teamConversionRate: CannedReport = {
       };
     }
     const userIds = memberships.map((m) => m.user.id);
-    const totals = await db.crmLead.groupBy({
+    const totals = await db.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
         tenantId: ctx.tenantId,
@@ -92,7 +92,7 @@ const teamConversionRate: CannedReport = {
       },
       _count: { _all: true },
     });
-    const qualified = await db.crmLead.groupBy({
+    const qualified = await db.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
         tenantId: ctx.tenantId,
@@ -179,7 +179,7 @@ const teamDispositionMix: CannedReport = {
         rows: [],
       };
     }
-    const grouped = await db.crmCallLog.groupBy({
+    const grouped = await db.qcfCallLog.groupBy({
       by: ["dispositionName"],
       where: {
         tenantId: ctx.tenantId,

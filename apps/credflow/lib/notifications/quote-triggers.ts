@@ -12,10 +12,10 @@
  *  notifyQuoteRejected()  → requestedById (person who requested approval)
  *
  * ─── Schema note ─────────────────────────────────────────────────────────────
- *  CrmQuote.ownerId         → nullable, set on quote creation
- *  CrmQuote.createdByUserId → nullable, the user who created the quote
- *  CrmQuoteApproval.requestedById → person who called POST .../approval/request
- *  CrmQuoteApproval.decidedById   → person who called POST .../approval/decide
+ *  QcfQuote.ownerId         → nullable, set on quote creation
+ *  QcfQuote.createdByUserId → nullable, the user who created the quote
+ *  QcfQuoteApproval.requestedById → person who called POST .../approval/request
+ *  QcfQuoteApproval.decidedById   → person who called POST .../approval/decide
  */
 
 import { prisma } from "@/lib/db/prisma";
@@ -142,7 +142,7 @@ export interface QuoteApprovedParams {
   tenantId: string;
   quoteId: string;
   quoteNumber: string;
-  /** The user who originally requested approval — fetched from CrmQuoteApproval. */
+  /** The user who originally requested approval — fetched from QcfQuoteApproval. */
   requestedById: string | null | undefined;
   /** Name of the approver (actor who called /decide). */
   approverName: string;
@@ -151,7 +151,7 @@ export interface QuoteApprovedParams {
 
 /**
  * Notify the person who requested approval when their quote is approved.
- * Recipient: CrmQuoteApproval.requestedById
+ * Recipient: QcfQuoteApproval.requestedById
  */
 export async function notifyQuoteApproved(p: QuoteApprovedParams): Promise<void> {
   if (!p.requestedById) return;
@@ -190,7 +190,7 @@ export interface QuoteRejectedParams {
 
 /**
  * Notify the requester when their approval request is rejected.
- * Recipient: CrmQuoteApproval.requestedById
+ * Recipient: QcfQuoteApproval.requestedById
  */
 export async function notifyQuoteRejected(p: QuoteRejectedParams): Promise<void> {
   if (!p.requestedById) return;

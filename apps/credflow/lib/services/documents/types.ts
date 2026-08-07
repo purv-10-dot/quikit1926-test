@@ -24,7 +24,7 @@ export interface DocumentDto {
   createdAt: string;
   relatedLabel?: string | null;
   relatedHref?: string | null;
-  /** Present when row is a CrmDocumentLink (same S3 file, no re-upload). */
+  /** Present when row is a QcfDocumentLink (same S3 file, no re-upload). */
   isLink?: boolean;
   linkId?: string | null;
   sourceDocumentId?: string | null;

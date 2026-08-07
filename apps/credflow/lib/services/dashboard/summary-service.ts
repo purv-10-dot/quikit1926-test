@@ -10,7 +10,7 @@
  * prior-window range and computing deltas.
  */
 
-import type { CrmOpportunityStage, CrmTaskStatus } from "@prisma/client";
+import type { QcfOpportunityStage, QcfTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/types/permission";
 import {
@@ -61,7 +61,7 @@ async function countActivitiesInRange(
     occurredAt: { gte: from, lte: to },
   };
   if (ownerId) where.ownerId = ownerId;
-  return prisma.crmActivity.count({ where });
+  return prisma.qcfActivity.count({ where });
 }
 
 export async function buildSummary(
@@ -92,9 +92,9 @@ export async function buildSummary(
 
   const dashCfg = await getDashboardConfig(user.tenantId);
 
-  // Soft-delete-aware bases. CrmLead, CrmOpportunity, and CrmAccount all
+  // Soft-delete-aware bases. QcfLead, QcfOpportunity, and QcfAccount all
   // carry `deletedAt`. They are NOT yet registered in the package-level
-  // SOFT_DELETE_MODELS middleware (see schema.prisma comment on CrmLead),
+  // SOFT_DELETE_MODELS middleware (see schema.prisma comment on QcfLead),
   // so every read here filters explicitly. Activity, Task, and CallLog
   // models have no `deletedAt` column and need no clause.
   const leadWhereBase = { ...tenantOwnerWhere(user, resolvedOwnerId), deletedAt: null };
@@ -103,7 +103,7 @@ export async function buildSummary(
 
   const oppOpenWhere = {
     ...oppWhereBase,
-    stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+    stage: { notIn: ["ClosedWon", "ClosedLost"] as QcfOpportunityStage[] },
   };
 
   // TZ-aware per CLAUDE.md § "Timezone correctness"
@@ -133,33 +133,33 @@ export async function buildSummary(
     activityDayCounts,
   ] = await Promise.all([
     // FLOW: leads created in [from, to]
-    prisma.crmLead.count({
+    prisma.qcfLead.count({
       where: { ...leadWhereBase, createdAt: { gte: range.from, lte: range.to } },
     }),
     // FLOW: leads created in the prior window of equal length
-    prisma.crmLead.count({
+    prisma.qcfLead.count({
       where: { ...leadWhereBase, createdAt: { gte: prior.from, lte: prior.to } },
     }),
     // STOCK: total accounts right now. Bug 1 dropped createdAt (stock
     // semantics); Bug 3 added deletedAt: null (defense in depth on top
     // of the SOFT_DELETE_MODELS middleware); Bug 7 routes through
     // tenantOwnerWhere so the Owner dropdown is honoured.
-    prisma.crmAccount.count({
+    prisma.qcfAccount.count({
       where: { ...tenantOwnerWhere(user, resolvedOwnerId), deletedAt: null },
     }),
     // STOCK: open tasks right now (no createdAt clause)
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         ...taskWhereBase,
-        status: { not: "Completed" as CrmTaskStatus },
+        status: { not: "Completed" as QcfTaskStatus },
       },
     }),
     // STOCK: open opportunities right now (no createdAt clause)
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: oppOpenWhere,
     }),
     // STOCK: pipeline value by currency right now (no createdAt clause)
-    prisma.crmOpportunity.groupBy({
+    prisma.qcfOpportunity.groupBy({
       by: ["currency"],
       where: oppOpenWhere,
       _sum: { amount: true },
@@ -175,14 +175,14 @@ export async function buildSummary(
     // Bug 13: orderBy ensures Postgres returns rows deterministically (the
     // chart x-axis was previously shuffling between requests). Final
     // canonical-pipeline-order sort happens server-side below.
-    prisma.crmLead.groupBy({
+    prisma.qcfLead.groupBy({
       by: ["stage"],
       where: { ...leadWhereBase, createdAt: { gte: range.from, lte: range.to } },
       _count: true,
       orderBy: { _count: { stage: "desc" } },
     }),
     // STOCK: open opps grouped by stage right now (no createdAt clause)
-    prisma.crmOpportunity.groupBy({
+    prisma.qcfOpportunity.groupBy({
       by: ["stage"],
       where: oppOpenWhere,
       _count: true,
@@ -331,9 +331,9 @@ async function buildTeamDashboard(
   };
 
   const [calls, activities, dispRaw] = await Promise.all([
-    prisma.crmCallLog.count({ where: callWhere }),
-    prisma.crmActivity.count({ where: activityWhere }),
-    prisma.crmCallLog.groupBy({
+    prisma.qcfCallLog.count({ where: callWhere }),
+    prisma.qcfActivity.count({ where: activityWhere }),
+    prisma.qcfCallLog.groupBy({
       by: ["dispositionName"],
       where: callWhere,
       _count: { _all: true },

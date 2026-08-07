@@ -1,7 +1,7 @@
 /**
  * Product Master service.
  *
- * Thin CRUD layer over CrmProduct. Soft-delete is the default DELETE;
+ * Thin CRUD layer over QcfProduct. Soft-delete is the default DELETE;
  * restore reverses it. All decimals round-trip through the Prisma Decimal
  * type — routes serialise to JSON numbers via `toNumber()`.
  */
@@ -64,7 +64,7 @@ const LIST_SELECT = {
   deletedAt: true,
   createdAt: true,
   updatedAt: true,
-} satisfies Prisma.CrmProductSelect;
+} satisfies Prisma.QcfProductSelect;
 
 export interface ListParams {
   tenantId: string;
@@ -84,7 +84,7 @@ export interface ListParams {
   trashed: boolean;
 }
 
-export function buildProductWhere(p: Omit<ListParams, "page" | "pageSize">): Prisma.CrmProductWhereInput {
+export function buildProductWhere(p: Omit<ListParams, "page" | "pageSize">): Prisma.QcfProductWhereInput {
   const base = buildProductSearchWhere({
     tenantId: p.tenantId,
     q: p.q,
@@ -109,7 +109,7 @@ function mapProductInput(
   input: ProductCreateInput,
   tenantId: string,
   userId?: string,
-): Prisma.CrmProductUncheckedCreateInput {
+): Prisma.QcfProductUncheckedCreateInput {
   return {
     tenantId,
     name: input.name,
@@ -151,21 +151,21 @@ function mapProductInput(
 export async function listProducts(p: ListParams) {
   const where = buildProductWhere(p);
   const [items, total] = await Promise.all([
-    db.crmProduct.findMany({
+    db.qcfProduct.findMany({
       where,
       select: LIST_SELECT,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (p.page - 1) * p.pageSize,
       take: p.pageSize,
     }),
-    db.crmProduct.count({ where }),
+    db.qcfProduct.count({ where }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / p.pageSize));
   return { items, total, page: p.page, pageSize: p.pageSize, totalPages };
 }
 
 export async function getProduct(tenantId: string, id: string) {
-  return db.crmProduct.findFirst({ where: { id, tenantId } });
+  return db.qcfProduct.findFirst({ where: { id, tenantId } });
 }
 
 export async function createProduct(args: {
@@ -175,7 +175,7 @@ export async function createProduct(args: {
   tx?: DbClient;
 }) {
   const client: DbClient = args.tx ?? db;
-  return client.crmProduct.create({
+  return client.qcfProduct.create({
     data: mapProductInput(args.input, args.tenantId, args.userId),
   });
 }
@@ -185,7 +185,7 @@ export async function updateProduct(args: {
   id: string;
   input: ProductUpdateInput;
 }) {
-  const data: Prisma.CrmProductUncheckedUpdateInput = {};
+  const data: Prisma.QcfProductUncheckedUpdateInput = {};
   const i = args.input;
   if (i.name !== undefined) data.name = i.name;
   if (i.sku !== undefined) data.sku = i.sku;
@@ -221,13 +221,13 @@ export async function updateProduct(args: {
   if (i.imageUrl !== undefined) data.imageUrl = i.imageUrl || null;
   if (i.productType !== undefined) data.productType = i.productType;
   if (i.isActive !== undefined) data.isActive = i.isActive;
-  return db.crmProduct.update({ where: { id: args.id, tenantId: args.tenantId }, data });
+  return db.qcfProduct.update({ where: { id: args.id, tenantId: args.tenantId }, data });
 }
 
 export async function softDeleteProduct(tenantId: string, id: string): Promise<void> {
-  await db.crmProduct.update({ where: { id, tenantId }, data: { deletedAt: new Date() } });
+  await db.qcfProduct.update({ where: { id, tenantId }, data: { deletedAt: new Date() } });
 }
 
 export async function restoreProduct(tenantId: string, id: string): Promise<void> {
-  await db.crmProduct.update({ where: { id, tenantId }, data: { deletedAt: null } });
+  await db.qcfProduct.update({ where: { id, tenantId }, data: { deletedAt: null } });
 }

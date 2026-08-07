@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/db", () => ({
   db: {
-    crmQuote: {
+    qcfQuote: {
       findFirst: vi.fn(),
     },
-    crmOrgWorkspaceSettings: {
+    qcfOrgWorkspaceSettings: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
   },
@@ -20,7 +20,7 @@ describe("evaluateQuoteApproval", () => {
   });
 
   it("requires approval when line discount exceeds threshold", async () => {
-    vi.mocked(db.crmQuote.findFirst).mockResolvedValue({
+    vi.mocked(db.qcfQuote.findFirst).mockResolvedValue({
       id: "q1",
       grandTotal: 100_000,
       overallDiscountAmount: 0,
@@ -33,7 +33,7 @@ describe("evaluateQuoteApproval", () => {
   });
 
   it("does not require approval for small compliant quotes", async () => {
-    vi.mocked(db.crmQuote.findFirst).mockResolvedValue({
+    vi.mocked(db.qcfQuote.findFirst).mockResolvedValue({
       id: "q1",
       grandTotal: 50_000,
       overallDiscountAmount: 0,

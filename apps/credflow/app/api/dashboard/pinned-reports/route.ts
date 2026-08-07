@@ -1,5 +1,5 @@
 /**
- * Server-side dashboard pins (CrmDashboardPin) — replaces the old
+ * Server-side dashboard pins (QcfDashboardPin) — replaces the old
  * localStorage-only `qcrm.dashboard.pinnedTel.v1` key. The client migrates
  * its local key on first load by POSTing each id once and then clearing the
  * local key.
@@ -37,7 +37,7 @@ const deleteSchema = z.object({
 });
 
 async function loadPins(tenantId: string, userId: string): Promise<DashboardPin[]> {
-  const rows = await prisma.crmDashboardPin.findMany({
+  const rows = await prisma.qcfDashboardPin.findMany({
     where: { tenantId, userId },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     select: { id: true, reportId: true, sortOrder: true },
@@ -72,13 +72,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unknown reportId" }, { status: 400 });
     }
 
-    const max = await prisma.crmDashboardPin.aggregate({
+    const max = await prisma.qcfDashboardPin.aggregate({
       where: { tenantId: user.tenantId, userId: user.userId },
       _max: { sortOrder: true },
     });
     const nextOrder = (max._max.sortOrder ?? -1) + 1;
 
-    await prisma.crmDashboardPin.upsert({
+    await prisma.qcfDashboardPin.upsert({
       where: {
         tenantId_userId_reportId: {
           tenantId: user.tenantId,
@@ -114,7 +114,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     }
 
-    await prisma.crmDashboardPin.deleteMany({
+    await prisma.qcfDashboardPin.deleteMany({
       where: { tenantId: user.tenantId, userId: user.userId, reportId: parsed.data.reportId },
     });
 
@@ -139,7 +139,7 @@ export async function PATCH(req: NextRequest) {
 
     await prisma.$transaction(
       parsed.data.order.map((reportId, i) =>
-        prisma.crmDashboardPin.updateMany({
+        prisma.qcfDashboardPin.updateMany({
           where: { tenantId: user.tenantId, userId: user.userId, reportId },
           data: { sortOrder: i },
         }),

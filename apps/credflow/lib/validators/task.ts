@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pageSchema, pageSizeSchema } from "@/lib/validators/pagination";
 
-// CrmTaskStatus enum currently lacks "Waiting" — schema sits in
+// QcfTaskStatus enum currently lacks "Waiting" — schema sits in
 // packages/database which is locked to integration owner. Tracked for the
 // follow-up PR; UI hides "Waiting" until the enum lands.
 export const TASK_STATUSES = ["Open", "InProgress", "Completed", "Cancelled"] as const;

@@ -61,7 +61,7 @@ export async function PATCH(req: NextRequest) {
 
     let preview: { score: number; breakdown: unknown } | undefined;
     if (parsed.data.previewLeadId) {
-      const lead = await prisma.crmLead.findFirst({
+      const lead = await prisma.qcfLead.findFirst({
         where: { id: parsed.data.previewLeadId, tenantId: user.tenantId, deletedAt: null },
       });
       if (lead) {

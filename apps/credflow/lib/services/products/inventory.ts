@@ -1,8 +1,8 @@
-import type { CrmStockMovementType } from "@prisma/client";
+import type { QcfStockMovementType } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
 export async function listProductInventory(tenantId: string, productId: string) {
-  return prisma.crmProductInventory.findMany({
+  return prisma.qcfProductInventory.findMany({
     where: { tenantId, productId },
     include: { warehouse: { select: { id: true, name: true, code: true } }, variant: { select: { id: true, sku: true, name: true } } },
     orderBy: { updatedAt: "desc" },
@@ -10,7 +10,7 @@ export async function listProductInventory(tenantId: string, productId: string) 
 }
 
 export async function listStockMovements(tenantId: string, productId: string, limit = 50) {
-  return prisma.crmStockMovement.findMany({
+  return prisma.qcfStockMovement.findMany({
     where: { tenantId, productId },
     include: { warehouse: { select: { id: true, name: true } }, variant: { select: { id: true, sku: true } } },
     orderBy: { createdAt: "desc" },
@@ -24,13 +24,13 @@ export async function recordStockMovement(input: {
   warehouseId: string;
   variantId?: string | null;
   quantity: number;
-  movementType: CrmStockMovementType;
+  movementType: QcfStockMovementType;
   reference?: string | null;
   notes?: string | null;
   userId?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
-    const movement = await tx.crmStockMovement.create({
+    const movement = await tx.qcfStockMovement.create({
       data: {
         tenantId: input.tenantId,
         productId: input.productId,
@@ -44,7 +44,7 @@ export async function recordStockMovement(input: {
       },
     });
 
-    const inv = await tx.crmProductInventory.findFirst({
+    const inv = await tx.qcfProductInventory.findFirst({
       where: {
         tenantId: input.tenantId,
         productId: input.productId,
@@ -67,7 +67,7 @@ export async function recordStockMovement(input: {
           : 0;
 
     if (inv) {
-      await tx.crmProductInventory.update({
+      await tx.qcfProductInventory.update({
         where: { id: inv.id },
         data: {
           quantityOnHand: { increment: deltaOnHand },
@@ -75,7 +75,7 @@ export async function recordStockMovement(input: {
         },
       });
     } else {
-      await tx.crmProductInventory.create({
+      await tx.qcfProductInventory.create({
         data: {
           tenantId: input.tenantId,
           productId: input.productId,
@@ -92,16 +92,16 @@ export async function recordStockMovement(input: {
 }
 
 export async function listWarehouses(tenantId: string) {
-  return prisma.crmWarehouse.findMany({
+  return prisma.qcfWarehouse.findMany({
     where: { tenantId, isActive: true },
     orderBy: { name: "asc" },
   });
 }
 
 export async function ensureDefaultWarehouse(tenantId: string) {
-  const existing = await prisma.crmWarehouse.findFirst({ where: { tenantId, code: "MAIN" } });
+  const existing = await prisma.qcfWarehouse.findFirst({ where: { tenantId, code: "MAIN" } });
   if (existing) return existing;
-  return prisma.crmWarehouse.create({
+  return prisma.qcfWarehouse.create({
     data: { tenantId, name: "Main Warehouse", code: "MAIN" },
   });
 }

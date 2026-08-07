@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { Prisma, type CrmQuoteEngagementStatus } from "@quikit/database";
+import { Prisma, type QcfQuoteEngagementStatus } from "@quikit/database";
 
 export type EngagementEventType =
   | "quote_sent"
@@ -19,7 +19,7 @@ export async function recordQuoteEngagement(args: {
   userAgent?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
-  await db.crmQuoteEngagementEvent.create({
+  await db.qcfQuoteEngagementEvent.create({
     data: {
       tenantId: args.tenantId,
       quoteId: args.quoteId,
@@ -32,7 +32,7 @@ export async function recordQuoteEngagement(args: {
     },
   });
 
-  const statusMap: Partial<Record<EngagementEventType, CrmQuoteEngagementStatus>> = {
+  const statusMap: Partial<Record<EngagementEventType, QcfQuoteEngagementStatus>> = {
     quote_sent: "Sent",
     quote_viewed: "Viewed",
     quote_signed: "Signed",
@@ -42,14 +42,14 @@ export async function recordQuoteEngagement(args: {
   const nextStatus = statusMap[args.eventType];
   if (!nextStatus) return;
 
-  const quote = await db.crmQuote.findFirst({
+  const quote = await db.qcfQuote.findFirst({
     where: { id: args.quoteId, tenantId: args.tenantId },
     select: { engagementStatus: true, firstViewedAt: true },
   });
   if (!quote) return;
 
   const now = new Date();
-  await db.crmQuote.update({
+  await db.qcfQuote.update({
     where: { id: args.quoteId },
     data: {
       engagementStatus: nextStatus,
@@ -63,7 +63,7 @@ export async function recordQuoteEngagement(args: {
     },
   });
 
-  await db.crmActivity.create({
+  await db.qcfActivity.create({
     data: {
       tenantId: args.tenantId,
       type: "QuoteEngagement",
@@ -77,7 +77,7 @@ export async function recordQuoteEngagement(args: {
 }
 
 export async function listQuoteEngagements(tenantId: string, quoteId: string) {
-  return db.crmQuoteEngagementEvent.findMany({
+  return db.qcfQuoteEngagementEvent.findMany({
     where: { tenantId, quoteId },
     orderBy: { createdAt: "desc" },
     take: 100,

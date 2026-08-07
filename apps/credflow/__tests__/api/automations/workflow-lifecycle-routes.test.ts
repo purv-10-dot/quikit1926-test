@@ -21,15 +21,15 @@ const base = {
 };
 
 function mockDef(status: string) {
-  db.crmWorkflowDefinition.findFirst.mockResolvedValue({ ...base, status } as never);
-  db.crmWorkflowDefinition.update.mockImplementation(
+  db.qcfWorkflowDefinition.findFirst.mockResolvedValue({ ...base, status } as never);
+  db.qcfWorkflowDefinition.update.mockImplementation(
     ((args: { data: Record<string, unknown> }) => ({ ...base, status, ...args.data })) as never,
   );
 }
 
 beforeEach(() => {
-  db.crmWorkflowDefinition.findFirst.mockReset();
-  db.crmWorkflowDefinition.update.mockReset();
+  db.qcfWorkflowDefinition.findFirst.mockReset();
+  db.qcfWorkflowDefinition.update.mockReset();
   setSession(null);
 });
 
@@ -44,13 +44,13 @@ describe("POST /api/automations/workflows/[id]/publish", () => {
 
   it("404 for a cross-tenant / missing definition", async () => {
     adminSession();
-    db.crmWorkflowDefinition.findFirst.mockResolvedValue(null);
+    db.qcfWorkflowDefinition.findFirst.mockResolvedValue(null);
     const { POST } = await import("@/app/api/automations/workflows/[id]/publish/route");
     const res = await POST(new Request("http://t/x", { method: "POST" }) as never, {
       params: Promise.resolve({ id: "wf1" }),
     });
     expect(res.status).toBe(404);
-    expect((db.crmWorkflowDefinition.findFirst.mock.calls[0]![0]!.where as { tenantId: string }).tenantId).toBe("t1");
+    expect((db.qcfWorkflowDefinition.findFirst.mock.calls[0]![0]!.where as { tenantId: string }).tenantId).toBe("t1");
   });
 
   it("publishes a Draft → Active (happy path, stamps lastPublishedOn)", async () => {
@@ -61,7 +61,7 @@ describe("POST /api/automations/workflows/[id]/publish", () => {
       params: Promise.resolve({ id: "wf1" }),
     });
     expect(res.status).toBe(200);
-    const data = db.crmWorkflowDefinition.update.mock.calls[0]![0]!.data as Record<string, unknown>;
+    const data = db.qcfWorkflowDefinition.update.mock.calls[0]![0]!.data as Record<string, unknown>;
     expect(data.status).toBe("Active");
     expect(data.lastPublishedOn).toBeInstanceOf(Date);
   });
@@ -74,7 +74,7 @@ describe("POST /api/automations/workflows/[id]/publish", () => {
       params: Promise.resolve({ id: "wf1" }),
     });
     expect(res.status).toBe(400);
-    expect(db.crmWorkflowDefinition.update).not.toHaveBeenCalled();
+    expect(db.qcfWorkflowDefinition.update).not.toHaveBeenCalled();
   });
 });
 
@@ -108,7 +108,7 @@ describe("POST /api/automations/workflows/[id]/unpublish", () => {
       { params: Promise.resolve({ id: "wf1" }) },
     );
     expect(res.status).toBe(200);
-    expect((db.crmWorkflowDefinition.update.mock.calls[0]![0]!.data as { status: string }).status).toBe("Draining");
+    expect((db.qcfWorkflowDefinition.update.mock.calls[0]![0]!.data as { status: string }).status).toBe("Draining");
   });
 
   it("immediate unpublish drives Active → Stopped", async () => {
@@ -120,7 +120,7 @@ describe("POST /api/automations/workflows/[id]/unpublish", () => {
       { params: Promise.resolve({ id: "wf1" }) },
     );
     expect(res.status).toBe(200);
-    expect((db.crmWorkflowDefinition.update.mock.calls[0]![0]!.data as { status: string }).status).toBe("Stopped");
+    expect((db.qcfWorkflowDefinition.update.mock.calls[0]![0]!.data as { status: string }).status).toBe("Stopped");
   });
 });
 
@@ -135,7 +135,7 @@ describe("DELETE /api/automations/workflows/[id] (soft-delete)", () => {
 
   it("404 for a cross-tenant / missing definition", async () => {
     adminSession();
-    db.crmWorkflowDefinition.findFirst.mockResolvedValue(null);
+    db.qcfWorkflowDefinition.findFirst.mockResolvedValue(null);
     const { DELETE } = await import("@/app/api/automations/workflows/[id]/route");
     const res = await DELETE(new Request("http://t/x", { method: "DELETE" }) as never, {
       params: Promise.resolve({ id: "wf1" }),
@@ -151,10 +151,10 @@ describe("DELETE /api/automations/workflows/[id] (soft-delete)", () => {
       params: Promise.resolve({ id: "wf1" }),
     });
     expect(res.status).toBe(200);
-    const data = db.crmWorkflowDefinition.update.mock.calls[0]![0]!.data as Record<string, unknown>;
+    const data = db.qcfWorkflowDefinition.update.mock.calls[0]![0]!.data as Record<string, unknown>;
     expect(data.status).toBe("Deleted");
     expect(data.deletedAt).toBeInstanceOf(Date);
-    expect(db.crmWorkflowDefinition.delete).not.toHaveBeenCalled();
+    expect(db.qcfWorkflowDefinition.delete).not.toHaveBeenCalled();
   });
 
   it("400 when deleting a Draining automation (must Stop first)", async () => {
@@ -165,6 +165,6 @@ describe("DELETE /api/automations/workflows/[id] (soft-delete)", () => {
       params: Promise.resolve({ id: "wf1" }),
     });
     expect(res.status).toBe(400);
-    expect(db.crmWorkflowDefinition.update).not.toHaveBeenCalled();
+    expect(db.qcfWorkflowDefinition.update).not.toHaveBeenCalled();
   });
 });

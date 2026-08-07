@@ -13,7 +13,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.crmLeadListView.findMany({
+    const items = await prisma.qcfLeadListView.findMany({
       where: { tenantId: user.tenantId, userId: user.userId },
       orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
     });
@@ -52,12 +52,12 @@ export async function POST(req: NextRequest) {
 
     const view = await prisma.$transaction(async (tx) => {
       if (isDefault) {
-        await tx.crmLeadListView.updateMany({
+        await tx.qcfLeadListView.updateMany({
           where: { tenantId: user.tenantId, userId: user.userId, isDefault: true },
           data: { isDefault: false },
         });
       }
-      return tx.crmLeadListView.create({
+      return tx.qcfLeadListView.create({
         data: {
           tenantId: user.tenantId,
           userId: user.userId,

@@ -4,12 +4,12 @@
  *
  * Architecture choices:
  *   - 1:1 with the source Quote (enforced by `quoteId @unique` on
- *     CrmOrder). Re-converting the same quote returns the existing
+ *     QcfOrder). Re-converting the same quote returns the existing
  *     order (idempotent — Stripe-style retry semantics).
  *   - Snapshot totals. The Order locks the financial contract at
  *     conversion time; future edits to the quote (only possible via
  *     Revise → new quote) don't drift the order's numbers.
- *   - Order numbering reuses CrmSequence with the `order-YYYY` bucket,
+ *   - Order numbering reuses QcfSequence with the `order-YYYY` bucket,
  *     so ORD-2026-0001 is just as durable + tenant-isolated as
  *     QT-2026-0001 is.
  *   - Status workflow is *internal* — there's no rich validator yet
@@ -17,7 +17,7 @@
  *     A formal transition-service can come later when the Invoice
  *     domain hangs off Order; today the API exposes the patch.
  */
-import type { CrmOrderStatus, Prisma } from "@quikit/database";
+import type { QcfOrderStatus, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { nextFormattedNumber } from "@/lib/services/quotes/sequence";
 
@@ -80,7 +80,7 @@ export async function createOrderFromQuote(args: {
     // catch a duplicate insert, but a soft fail with the existing order
     // is the friendly path (lets the UI redirect to the existing order
     // instead of error-handling a 409).
-    const existingOrder = await tx.crmOrder.findFirst({
+    const existingOrder = await tx.qcfOrder.findFirst({
       where: { tenantId: args.tenantId, quoteId: args.quoteId },
       select: { id: true, orderNumber: true },
     });
@@ -92,7 +92,7 @@ export async function createOrderFromQuote(args: {
       };
     }
 
-    const quote = await tx.crmQuote.findFirst({
+    const quote = await tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       include: {
         lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
@@ -109,7 +109,7 @@ export async function createOrderFromQuote(args: {
     const orderDate = args.orderDate ?? new Date();
     const orderNumber = await nextOrderNumber(tx, args.tenantId, orderDate);
 
-    const created = await tx.crmOrder.create({
+    const created = await tx.qcfOrder.create({
       data: {
         tenantId: args.tenantId,
         orderNumber,
@@ -147,7 +147,7 @@ export async function createOrderFromQuote(args: {
     // even if the quote line is later (hypothetically) edited, the
     // order keeps its frozen view.
     for (const l of quote.lines) {
-      await tx.crmOrderLine.create({
+      await tx.qcfOrderLine.create({
         data: {
           tenantId: args.tenantId,
           orderId: created.id,
@@ -177,7 +177,7 @@ export async function createOrderFromQuote(args: {
     // quote-side row makes it easy for sales to see "this quote turned
     // into ORD-2026-0001". The order-side row is the audit anchor.
     await Promise.all([
-      tx.crmActivity.create({
+      tx.qcfActivity.create({
         data: {
           tenantId: args.tenantId,
           type: "OrderCreatedFromQuote",
@@ -189,7 +189,7 @@ export async function createOrderFromQuote(args: {
           occurredAt: new Date(),
         },
       }),
-      tx.crmActivity.create({
+      tx.qcfActivity.create({
         data: {
           tenantId: args.tenantId,
           type: "QuoteConvertedToOrder",
@@ -229,19 +229,19 @@ const LIST_SELECT = {
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} satisfies Prisma.CrmOrderSelect;
+} satisfies Prisma.QcfOrderSelect;
 
 export interface ListOrdersParams {
   tenantId: string;
   page: number;
   pageSize: number;
-  status?: CrmOrderStatus;
+  status?: QcfOrderStatus;
   accountId?: string;
   q?: string;
   trashed: boolean;
 }
 
-export function buildOrderWhere(p: Omit<ListOrdersParams, "page" | "pageSize">): Prisma.CrmOrderWhereInput {
+export function buildOrderWhere(p: Omit<ListOrdersParams, "page" | "pageSize">): Prisma.QcfOrderWhereInput {
   return {
     tenantId: p.tenantId,
     deletedAt: p.trashed ? { not: null } : null,
@@ -258,14 +258,14 @@ export function buildOrderWhere(p: Omit<ListOrdersParams, "page" | "pageSize">):
 export async function listOrders(p: ListOrdersParams) {
   const where = buildOrderWhere(p);
   const [items, total] = await Promise.all([
-    db.crmOrder.findMany({
+    db.qcfOrder.findMany({
       where,
       select: LIST_SELECT,
       orderBy: [{ orderDate: "desc" }, { id: "desc" }],
       skip: (p.page - 1) * p.pageSize,
       take: p.pageSize,
     }),
-    db.crmOrder.count({ where }),
+    db.qcfOrder.count({ where }),
   ]);
 
   // Batch-resolve account names (same N+1-avoidance pattern as listQuotes).
@@ -275,7 +275,7 @@ export async function listOrders(p: ListOrdersParams) {
   const accounts =
     accountIds.length === 0
       ? []
-      : await db.crmAccount.findMany({
+      : await db.qcfAccount.findMany({
           where: { tenantId: p.tenantId, id: { in: accountIds } },
           select: { id: true, name: true },
         });
@@ -291,7 +291,7 @@ export async function listOrders(p: ListOrdersParams) {
 }
 
 export async function getOrder(tenantId: string, id: string) {
-  return db.crmOrder.findFirst({
+  return db.qcfOrder.findFirst({
     where: { id, tenantId },
     include: {
       lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },
@@ -301,7 +301,7 @@ export async function getOrder(tenantId: string, id: string) {
 }
 
 export interface UpdateOrderInput {
-  status?: CrmOrderStatus;
+  status?: QcfOrderStatus;
   expectedDeliveryDate?: string | null;
   cancellationReason?: string | null;
   internalNotes?: string | null;
@@ -322,13 +322,13 @@ export async function updateOrder(args: {
   input: UpdateOrderInput;
 }) {
   return db.$transaction(async (tx) => {
-    const existing = await tx.crmOrder.findFirst({
+    const existing = await tx.qcfOrder.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       select: { id: true, orderNumber: true, status: true },
     });
     if (!existing) throw new OrderError("Order not found", 404);
 
-    const data: Prisma.CrmOrderUncheckedUpdateInput = {};
+    const data: Prisma.QcfOrderUncheckedUpdateInput = {};
     const i = args.input;
     const now = new Date();
     if (i.status !== undefined && i.status !== existing.status) {
@@ -353,7 +353,7 @@ export async function updateOrder(args: {
 
     if (Object.keys(data).length === 0) return existing;
 
-    await tx.crmOrder.update({ where: { id: args.id }, data });
+    await tx.qcfOrder.update({ where: { id: args.id }, data });
 
     // Activity row for the change. When the status moved, the subject
     // makes the transition obvious; otherwise it's just "header edited".
@@ -361,7 +361,7 @@ export async function updateOrder(args: {
       i.status && i.status !== existing.status
         ? `${existing.orderNumber}: ${existing.status} → ${i.status}`
         : `${existing.orderNumber}: header updated`;
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type:
@@ -378,7 +378,7 @@ export async function updateOrder(args: {
       },
     });
 
-    return tx.crmOrder.findFirst({
+    return tx.qcfOrder.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       select: LIST_SELECT,
     });
@@ -386,7 +386,7 @@ export async function updateOrder(args: {
 }
 
 export async function softDeleteOrder(tenantId: string, id: string): Promise<void> {
-  await db.crmOrder.update({
+  await db.qcfOrder.update({
     where: { id, tenantId },
     data: { deletedAt: new Date() },
   });

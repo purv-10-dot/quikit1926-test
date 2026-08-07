@@ -69,8 +69,8 @@ export async function buildKanbanBoard(opts: {
     stages.map(async (stage) => {
       const where = { AND: [...baseAnd, { stage }] };
       const [items, total] = await Promise.all([
-        prisma.crmLead.findMany({ where, select, orderBy: { updatedAt: "desc" }, take: perStage }),
-        prisma.crmLead.count({ where }),
+        prisma.qcfLead.findMany({ where, select, orderBy: { updatedAt: "desc" }, take: perStage }),
+        prisma.qcfLead.count({ where }),
       ]);
       const masked = await Promise.all(items.map((l) => maskHiddenLeadFields(user, l)));
       return { stage, total, items: masked as KanbanCard[] };

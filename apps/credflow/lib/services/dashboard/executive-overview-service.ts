@@ -2,7 +2,7 @@
  * Org-wide executive overview — admin dashboard aggregator.
  * All queries are tenant-scoped; optional ownerId narrows to one rep.
  */
-import type { CrmOpportunityStage, CrmTaskStatus } from "@prisma/client";
+import type { QcfOpportunityStage, QcfTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/types/permission";
 import type { ExecutiveOverviewDto, OverviewInsight } from "@/lib/dashboard/executive-overview-types";
@@ -233,25 +233,25 @@ export async function buildExecutiveOverview(
     topAccounts,
     sessionEvents,
   ] = await Promise.all([
-    prisma.crmLead.count({
+    prisma.qcfLead.count({
       where: {
         ...leadBase,
         createdAt: { gte: range.from, lte: range.to },
       },
     }),
-    prisma.crmLead.count({
+    prisma.qcfLead.count({
       where: {
         ...leadBase,
         createdAt: { gte: prior.from, lte: prior.to },
       },
     }),
-    prisma.crmLead.count({
+    prisma.qcfLead.count({
       where: {
         ...leadBase,
         createdAt: { gte: startToday, lte: endToday },
       },
     }),
-    prisma.crmLead.count({
+    prisma.qcfLead.count({
       where: {
         ...leadBase,
         createdAt: {
@@ -260,48 +260,48 @@ export async function buildExecutiveOverview(
         },
       },
     }),
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: {
         ...oppBase,
-        stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+        stage: { notIn: ["ClosedWon", "ClosedLost"] as QcfOpportunityStage[] },
       },
     }),
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: {
         ...oppBase,
         stage: "ClosedWon",
         updatedAt: { gte: range.from, lte: range.to },
       },
     }),
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: {
         ...oppBase,
         stage: "ClosedWon",
         updatedAt: { gte: prior.from, lte: prior.to },
       },
     }),
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: {
         ...oppBase,
         stage: "ClosedLost",
         updatedAt: { gte: range.from, lte: range.to },
       },
     }),
-    prisma.crmOpportunity.count({
+    prisma.qcfOpportunity.count({
       where: {
         ...oppBase,
         stage: "ClosedLost",
         updatedAt: { gte: prior.from, lte: prior.to },
       },
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: {
         ...oppBase,
-        stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+        stage: { notIn: ["ClosedWon", "ClosedLost"] as QcfOpportunityStage[] },
       },
       select: { amount: true, currency: true, stage: true, updatedAt: true },
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: {
         ...oppBase,
         stage: "ClosedWon",
@@ -309,7 +309,7 @@ export async function buildExecutiveOverview(
       },
       select: { amount: true, currency: true, ownerId: true, ownerName: true, name: true, accountId: true },
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: {
         ...oppBase,
         stage: "ClosedWon",
@@ -317,11 +317,11 @@ export async function buildExecutiveOverview(
       },
       select: { amount: true, currency: true },
     }),
-    prisma.crmActivity.findMany({
+    prisma.qcfActivity.findMany({
       where: activityBase,
       select: { type: true, activityCode: true, ownerId: true, occurredAt: true },
     }),
-    prisma.crmActivity.findMany({
+    prisma.qcfActivity.findMany({
       where: {
         tenantId,
         occurredAt: { gte: prior.from, lte: prior.to },
@@ -329,78 +329,78 @@ export async function buildExecutiveOverview(
       },
       select: { type: true, activityCode: true },
     }),
-    prisma.crmCallLog.count({
+    prisma.qcfCallLog.count({
       where: {
         tenantId,
         createdAt: { gte: range.from, lte: range.to },
         ...ownerCallFilter,
       },
     }),
-    prisma.crmCallLog.count({
+    prisma.qcfCallLog.count({
       where: {
         tenantId,
         createdAt: { gte: prior.from, lte: prior.to },
         ...ownerCallFilter,
       },
     }),
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         tenantId,
-        status: "Completed" as CrmTaskStatus,
+        status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: range.from, lte: range.to },
         ...ownerTaskFilter,
       },
     }),
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         tenantId,
-        status: "Completed" as CrmTaskStatus,
+        status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: prior.from, lte: prior.to },
         ...ownerTaskFilter,
       },
     }),
-    prisma.crmNote.count({
+    prisma.qcfNote.count({
       where: {
         tenantId,
         createdAt: { gte: range.from, lte: range.to },
       },
     }),
-    prisma.crmNote.count({
+    prisma.qcfNote.count({
       where: {
         tenantId,
         createdAt: { gte: prior.from, lte: prior.to },
       },
     }),
-    prisma.crmQuote.count({
+    prisma.qcfQuote.count({
       where: {
         tenantId,
         createdAt: { gte: range.from, lte: range.to },
         ...ownerActivityFilter,
       },
     }),
-    prisma.crmQuote.count({
+    prisma.qcfQuote.count({
       where: {
         tenantId,
         createdAt: { gte: prior.from, lte: prior.to },
         ...ownerActivityFilter,
       },
     }),
-    prisma.crmLead.groupBy({
+    prisma.qcfLead.groupBy({
       by: ["stage"],
       where: { ...leadBase, createdAt: { gte: range.from, lte: range.to } },
       _count: true,
     }),
-    prisma.crmOpportunity.groupBy({
+    prisma.qcfOpportunity.groupBy({
       by: ["stage"],
       where: oppBase,
       _count: true,
     }),
-    prisma.crmLead.groupBy({
+    prisma.qcfLead.groupBy({
       by: ["source"],
       where: { ...leadBase, createdAt: { gte: range.from, lte: range.to } },
       _count: true,
     }),
-    prisma.crmActivity.findMany({
+    prisma.qcfActivity.findMany({
       where: { tenantId },
       orderBy: { occurredAt: "desc" },
       take: 15,
@@ -413,30 +413,30 @@ export async function buildExecutiveOverview(
         relatedKind: true,
       },
     }),
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         tenantId,
-        status: { notIn: ["Completed", "Cancelled"] as CrmTaskStatus[] },
+        status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         ...ownerTaskFilter,
       },
     }),
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         tenantId,
-        status: { notIn: ["Completed", "Cancelled"] as CrmTaskStatus[] },
+        status: { notIn: ["Completed", "Cancelled"] as QcfTaskStatus[] },
         dueDate: { lt: now },
         ...ownerTaskFilter,
       },
     }),
-    prisma.crmTask.count({
+    prisma.qcfTask.count({
       where: {
         tenantId,
-        status: "Completed" as CrmTaskStatus,
+        status: "Completed" as QcfTaskStatus,
         updatedAt: { gte: startToday, lte: endToday },
         ...ownerTaskFilter,
       },
     }),
-    prisma.crmActivity.count({
+    prisma.qcfActivity.count({
       where: {
         tenantId,
         followUpAt: { gte: now },
@@ -451,10 +451,10 @@ export async function buildExecutiveOverview(
         user: { select: { firstName: true, lastName: true, email: true } },
       },
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: {
         ...oppBase,
-        stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+        stage: { notIn: ["ClosedWon", "ClosedLost"] as QcfOpportunityStage[] },
         updatedAt: { lt: new Date(now.getTime() - 15 * MS_DAY) },
       },
       take: 12,
@@ -470,7 +470,7 @@ export async function buildExecutiveOverview(
         account: { select: { name: true } },
       },
     }),
-    prisma.crmAccount.findMany({
+    prisma.qcfAccount.findMany({
       where: { tenantId, deletedAt: null },
       take: 8,
       orderBy: { updatedAt: "desc" },
@@ -517,7 +517,7 @@ export async function buildExecutiveOverview(
     dayBuckets.map(async (b) => {
       const from = new Date(b.iso);
       const to = endOfDayInTz(from, range.tz);
-      const count = await prisma.crmActivity.count({
+      const count = await prisma.qcfActivity.count({
         where: {
           tenantId,
           occurredAt: { gte: from, lte: to },
@@ -532,7 +532,7 @@ export async function buildExecutiveOverview(
     dayBuckets.map(async (b) => {
       const from = new Date(b.iso);
       const to = endOfDayInTz(from, range.tz);
-      const count = await prisma.crmLead.count({
+      const count = await prisma.qcfLead.count({
         where: {
           tenantId,
           deletedAt: null,
@@ -562,7 +562,7 @@ export async function buildExecutiveOverview(
   // Leaderboard
   const memberIds = orgMembers.map((m) => m.userId);
   const [leadsByOwner, callsByAgent, actsByOwner, wonByOwner] = await Promise.all([
-    prisma.crmLead.groupBy({
+    prisma.qcfLead.groupBy({
       by: ["ownerId"],
       where: {
         tenantId,
@@ -572,7 +572,7 @@ export async function buildExecutiveOverview(
       },
       _count: true,
     }),
-    prisma.crmCallLog.groupBy({
+    prisma.qcfCallLog.groupBy({
       by: ["agentUserId"],
       where: {
         tenantId,
@@ -581,7 +581,7 @@ export async function buildExecutiveOverview(
       },
       _count: true,
     }),
-    prisma.crmActivity.groupBy({
+    prisma.qcfActivity.groupBy({
       by: ["ownerId"],
       where: {
         tenantId,
@@ -590,7 +590,7 @@ export async function buildExecutiveOverview(
       },
       _count: true,
     }),
-    prisma.crmOpportunity.groupBy({
+    prisma.qcfOpportunity.groupBy({
       by: ["ownerId"],
       where: {
         tenantId,
@@ -661,7 +661,7 @@ export async function buildExecutiveOverview(
   );
 
   // Usage / last activity
-  const lastActByUser = await prisma.crmActivity.groupBy({
+  const lastActByUser = await prisma.qcfActivity.groupBy({
     by: ["ownerId"],
     where: { tenantId, ownerId: { in: memberIds } },
     _max: { occurredAt: true },
@@ -738,7 +738,7 @@ export async function buildExecutiveOverview(
     dayBuckets.slice(-14).map(async (b) => {
       const from = new Date(b.iso);
       const to = endOfDayInTz(from, range.tz);
-      const rows = await prisma.crmOpportunity.findMany({
+      const rows = await prisma.qcfOpportunity.findMany({
         where: {
           tenantId,
           stage: "ClosedWon",

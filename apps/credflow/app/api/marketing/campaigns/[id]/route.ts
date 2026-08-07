@@ -9,7 +9,7 @@ import { parseOptionalCampaignDate, updateCampaignSchema } from "@/lib/validator
 export const runtime = "nodejs";
 
 async function loadCampaign(tenantId: string, id: string) {
-  return prisma.crmCampaign.findFirst({ where: { id, tenantId } });
+  return prisma.qcfCampaign.findFirst({ where: { id, tenantId } });
 }
 
 export async function GET(
@@ -56,7 +56,7 @@ export async function PATCH(
     const { budget, description, startDate, endDate, config, name, status, type } =
       parsed.data;
 
-    const data: Prisma.CrmCampaignUpdateInput = {
+    const data: Prisma.QcfCampaignUpdateInput = {
       ...(name !== undefined ? { name } : {}),
       ...(status !== undefined ? { status } : {}),
       ...(type !== undefined ? { type } : {}),
@@ -94,7 +94,7 @@ export async function PATCH(
           : Prisma.JsonNull;
     }
 
-    const c = await prisma.crmCampaign.update({
+    const c = await prisma.qcfCampaign.update({
       where: { id },
       data,
     });

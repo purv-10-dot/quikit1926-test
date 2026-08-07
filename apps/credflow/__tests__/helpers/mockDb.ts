@@ -9,7 +9,7 @@
  * Pattern:
  *   import { mockDb, setSession } from "../../helpers/mockDb";
  *   const db = mockDb();
- *   db.crmOpportunity.findFirst.mockResolvedValue({ id: "1", ... });
+ *   db.qcfOpportunity.findFirst.mockResolvedValue({ id: "1", ... });
  */
 import { NextResponse } from "next/server";
 import { vi } from "vitest";
@@ -26,8 +26,8 @@ const sharedMock = mockDeep<PrismaClient>();
 // real statuses set their own mockResolvedValue, which overrides this default;
 // vi.clearAllMocks() (global beforeEach) clears call history but keeps this
 // implementation.
-sharedMock.crmLeadStatus.findMany.mockResolvedValue([]);
-sharedMock.crmLeadSubStatus.findMany.mockResolvedValue([]);
+sharedMock.qcfLeadStatus.findMany.mockResolvedValue([]);
+sharedMock.qcfLeadSubStatus.findMany.mockResolvedValue([]);
 
 vi.mock("@quikit/database", () => ({ db: sharedMock }));
 vi.mock("@/lib/db", () => ({ db: sharedMock }));

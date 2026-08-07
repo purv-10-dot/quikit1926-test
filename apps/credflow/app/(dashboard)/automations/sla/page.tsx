@@ -7,8 +7,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 export default async function SlaPage() {
   const user = await requireUser();
   const [rules, tracking] = await Promise.all([
-    prisma.crmSlaRule.findMany({ where: { tenantId: user.tenantId } }),
-    prisma.crmSlaLeadTracking.findMany({
+    prisma.qcfSlaRule.findMany({ where: { tenantId: user.tenantId } }),
+    prisma.qcfSlaLeadTracking.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { breachAt: "asc" },
       take: 100,

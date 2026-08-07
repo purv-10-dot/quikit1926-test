@@ -17,7 +17,7 @@ export async function createQuotePortalLink(args: {
   expiresInDays?: number;
   origin: string;
 }): Promise<{ url: string; expiresAt: string | null }> {
-  const quote = await db.crmQuote.findFirst({
+  const quote = await db.qcfQuote.findFirst({
     where: { id: args.quoteId, tenantId: args.tenantId, deletedAt: null },
     select: { id: true },
   });
@@ -31,7 +31,7 @@ export async function createQuotePortalLink(args: {
       : null;
 
   await db.$transaction(async (tx) => {
-    await tx.crmQuotePortalAccess.create({
+    await tx.qcfQuotePortalAccess.create({
       data: {
         tenantId: args.tenantId,
         quoteId: args.quoteId,
@@ -40,7 +40,7 @@ export async function createQuotePortalLink(args: {
         createdById: args.userId,
       },
     });
-    await tx.crmQuote.update({
+    await tx.qcfQuote.update({
       where: { id: args.quoteId },
       data: {
         portalTokenHash: tokenHash,
@@ -58,7 +58,7 @@ export async function resolvePortalToken(token: string): Promise<{
   quoteId: string;
 } | null> {
   const tokenHash = hashToken(token);
-  const access = await db.crmQuotePortalAccess.findFirst({
+  const access = await db.qcfQuotePortalAccess.findFirst({
     where: {
       tokenHash,
       revokedAt: null,
@@ -68,7 +68,7 @@ export async function resolvePortalToken(token: string): Promise<{
   });
   if (!access) return null;
 
-  await db.crmQuotePortalAccess.update({
+  await db.qcfQuotePortalAccess.update({
     where: { id: access.id },
     data: { lastUsedAt: new Date() },
   });
@@ -84,7 +84,7 @@ export async function portalAcceptQuote(args: {
   userAgent?: string | null;
 }): Promise<void> {
   const now = new Date();
-  await db.crmQuote.update({
+  await db.qcfQuote.update({
     where: { id: args.quoteId },
     data: {
       acceptedAt: now,
@@ -110,7 +110,7 @@ export async function portalRejectQuote(args: {
   userAgent?: string | null;
 }): Promise<void> {
   const now = new Date();
-  await db.crmQuote.update({
+  await db.qcfQuote.update({
     where: { id: args.quoteId },
     data: {
       rejectedAt: now,

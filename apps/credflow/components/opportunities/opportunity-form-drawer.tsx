@@ -17,7 +17,7 @@ import {
   STAGE_LABEL,
   STAGE_ORDER,
 } from "@/lib/services/opportunities/stage-labels";
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
 type AccountOption = { id: string; name: string };
 
@@ -78,7 +78,7 @@ export function OpportunityFormDrawer({
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
-  const [stage, setStage] = useState<CrmOpportunityStage>("Prospecting");
+  const [stage, setStage] = useState<QcfOpportunityStage>("Prospecting");
   const [probability, setProbability] = useState<number>(STAGE_DEFAULT_PROBABILITY.Prospecting);
   const [probabilityTouched, setProbabilityTouched] = useState(false);
   const [amount, setAmount] = useState<number | null>(null);
@@ -163,7 +163,7 @@ export function OpportunityFormDrawer({
           <Select
             value={stage}
             onChange={(e) => {
-              const next = (e.target as HTMLSelectElement).value as CrmOpportunityStage;
+              const next = (e.target as HTMLSelectElement).value as QcfOpportunityStage;
               setStage(next);
               if (!probabilityTouched) setProbability(STAGE_DEFAULT_PROBABILITY[next]);
             }}

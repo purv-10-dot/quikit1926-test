@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Invalid or expired link" }, { status: 404 });
     }
 
-    const quote = await db.crmQuote.findFirst({
+    const quote = await db.qcfQuote.findFirst({
       where: { id: resolved.quoteId, tenantId: resolved.tenantId, deletedAt: null },
       include: { lines: { orderBy: { lineNumber: "asc" } } },
     });
@@ -39,7 +39,7 @@ export async function GET(
     });
 
     const [account, company] = await Promise.all([
-      db.crmAccount.findFirst({
+      db.qcfAccount.findFirst({
         where: { id: quote.accountId, tenantId: resolved.tenantId },
         select: { name: true },
       }),

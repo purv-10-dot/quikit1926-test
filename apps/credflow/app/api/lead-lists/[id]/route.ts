@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await assertModule(user, "leads", "edit");
     const parsed = patchSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const updated = await prisma.crmLeadSavedList.updateMany({
+    const updated = await prisma.qcfLeadSavedList.updateMany({
       where: { id, tenantId: user.tenantId, userId: user.userId },
       data: {
         name: parsed.data.name ?? undefined,
@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     });
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const item = await prisma.crmLeadSavedList.findUnique({ where: { id } });
+    const item = await prisma.qcfLeadSavedList.findUnique({ where: { id } });
     return NextResponse.json(item);
   } catch (e) {
     return errorResponse(e);
@@ -43,7 +43,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "delete");
-    const deleted = await prisma.crmLeadSavedList.deleteMany({
+    const deleted = await prisma.qcfLeadSavedList.deleteMany({
       where: { id, tenantId: user.tenantId, userId: user.userId },
     });
     if (deleted.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });

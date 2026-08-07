@@ -30,15 +30,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const tabs = await db.crmFormTab.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
-  const fields = await db.crmFormField.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
-  if (fields.length) await db.crmFormFieldOption.deleteMany({ where: { formFieldId: { in: fields.map((f) => f.id) } } });
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  if (tabs.length) await db.crmFormSection.deleteMany({ where: { formTabId: { in: tabs.map((t) => t.id) } } });
-  await db.crmFormTab.deleteMany({ where: { formSetVersionId: versionId } });
-  await db.crmFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  const tabs = await db.qcfFormTab.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  const fields = await db.qcfFormField.findMany({ where: { formSetVersionId: versionId }, select: { id: true } });
+  if (fields.length) await db.qcfFormFieldOption.deleteMany({ where: { formFieldId: { in: fields.map((f) => f.id) } } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  if (tabs.length) await db.qcfFormSection.deleteMany({ where: { formTabId: { in: tabs.map((t) => t.id) } } });
+  await db.qcfFormTab.deleteMany({ where: { formSetVersionId: versionId } });
+  await db.qcfFormSet.update({ where: { id: setId }, data: { currentVersionId: null } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("field CRUD on a draft", () => {
@@ -53,7 +53,7 @@ describe("field CRUD on a draft", () => {
       options: [{ valueKey: "upi", label: "UPI" }, { valueKey: "invoice", label: "Invoice" }],
     });
     expect(field.fieldKey).toBe("payment_mode");
-    expect(await db.crmFormFieldOption.count({ where: { formFieldId: field.id } })).toBe(2);
+    expect(await db.qcfFormFieldOption.count({ where: { formFieldId: field.id } })).toBe(2);
   });
 
   it("updates a field's label and requirement", async () => {
@@ -70,11 +70,11 @@ describe("field CRUD on a draft", () => {
       formSetVersionId: versionId, fieldKey: "scratch", label: "Scratch", fieldType: "text", sortOrder: 12,
     });
     await deleteFormField(field.id);
-    expect(await db.crmFormField.findUnique({ where: { id: field.id } })).toBeNull();
+    expect(await db.qcfFormField.findUnique({ where: { id: field.id } })).toBeNull();
   });
 
   it("refuses to delete a protected field", async () => {
-    const prot = await db.crmFormField.findFirst({ where: { formSetVersionId: versionId, isProtected: true } });
+    const prot = await db.qcfFormField.findFirst({ where: { formSetVersionId: versionId, isProtected: true } });
     await expect(deleteFormField(prot!.id)).rejects.toBeInstanceOf(FormStructureError);
   });
 

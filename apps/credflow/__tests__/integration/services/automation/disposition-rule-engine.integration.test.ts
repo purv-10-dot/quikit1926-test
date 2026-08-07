@@ -5,7 +5,7 @@
  * not just against mocks.  They cover two explicit gaps identified after the
  * unit-test pass:
  *
- *   INT-D3-1   Engine reads a real CrmAutomationRule and writes a real status
+ *   INT-D3-1   Engine reads a real QcfAutomationRule and writes a real status
  *              change + audit row.
  *   INT-D5-1   Audit log before.status equals the lead's ACTUAL prior status
  *              from the database, not a value the engine may have mutated in
@@ -34,14 +34,14 @@ const DISPOSITION_CODE = "not_interested";
 const ACTIVITY_DT = new Date("2026-06-18T10:00:00Z");
 
 beforeAll(async () => {
-  // Create the minimal CrmLead the engine will update.
-  const lead = await integrationPrisma.crmLead.create({
+  // Create the minimal QcfLead the engine will update.
+  const lead = await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: "Integration Test Lead", status: INITIAL_STATUS },
   });
   leadId = lead.id;
 
-  // Create a stub CrmActivity (engine receives its ID; doesn't create it).
-  const activity = await integrationPrisma.crmActivity.create({
+  // Create a stub QcfActivity (engine receives its ID; doesn't create it).
+  const activity = await integrationPrisma.qcfActivity.create({
     data: {
       tenantId: TENANT,
       type: "Call",
@@ -55,7 +55,7 @@ beforeAll(async () => {
   activityId = activity.id;
 
   // Create the automation rule under test.
-  const rule = await integrationPrisma.crmAutomationRule.create({
+  const rule = await integrationPrisma.qcfAutomationRule.create({
     data: {
       tenantId: TENANT,
       name: "Integration: not_interested → Disqualified",
@@ -86,7 +86,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
       ownerId: null,
     });
 
-    const updated = await integrationPrisma.crmLead.findUnique({
+    const updated = await integrationPrisma.qcfLead.findUnique({
       where: { id: leadId },
       select: { status: true },
     });
@@ -100,7 +100,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
     // Read the true current status from the DB *before* calling the engine.
     // This is the ground truth — if the audit log disagrees, the engine has a
     // before-capture bug.
-    const before = await integrationPrisma.crmLead.findUnique({
+    const before = await integrationPrisma.qcfLead.findUnique({
       where: { id: leadId },
       select: { status: true },
     });
@@ -108,7 +108,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
 
     // Target a different status for this run so the engine fires again.
     const nextStatus = "Contacted";
-    await integrationPrisma.crmAutomationRule.update({
+    await integrationPrisma.qcfAutomationRule.update({
       where: { id: ruleId },
       data: { action: { type: "set_lead_status", status: nextStatus } },
     });
@@ -123,7 +123,7 @@ describe("FR-D3 / FR-D5 — Disposition Rule Engine (integration)", () => {
     });
 
     // Find the audit row written for this status change.
-    const auditRow = await integrationPrisma.crmAuditLog.findFirst({
+    const auditRow = await integrationPrisma.qcfAuditLog.findFirst({
       where: {
         tenantId: TENANT,
         module: "leads",

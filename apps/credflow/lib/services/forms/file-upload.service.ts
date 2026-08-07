@@ -17,7 +17,7 @@
  * of valueFileId is Unit 6; recordDispositionAttachment is the seam it calls.
  */
 import { prisma } from "@/lib/db/prisma";
-import type { CrmFileAttachment, Prisma } from "@quikit/database";
+import type { QcfFileAttachment, Prisma } from "@quikit/database";
 import { saveCrmUpload, getCrmUploadDownloadUrl } from "@/lib/storage/documents";
 import { buildActivityAclWhere } from "@/lib/services/activities/activity-acl";
 import type { SessionUser } from "@/types/permission";
@@ -64,8 +64,8 @@ export function validateDispositionFile(file: { size: number; type: string }): v
 }
 
 /**
- * Record an already-stored upload: create the CrmFileAttachment row and point
- * the field value (CrmFieldValue.valueFileId) at it. DB-only — no S3.
+ * Record an already-stored upload: create the QcfFileAttachment row and point
+ * the field value (QcfFieldValue.valueFileId) at it. DB-only — no S3.
  */
 export async function recordDispositionAttachment(input: {
   tenantId: string;
@@ -77,8 +77,8 @@ export async function recordDispositionAttachment(input: {
   contentType: string;
   sizeBytes: number;
   uploadedBy: string;
-}): Promise<CrmFileAttachment> {
-  const attachment = await prisma.crmFileAttachment.create({
+}): Promise<QcfFileAttachment> {
+  const attachment = await prisma.qcfFileAttachment.create({
     data: {
       tenantId: input.tenantId,
       activityId: input.activityId,
@@ -90,7 +90,7 @@ export async function recordDispositionAttachment(input: {
     },
   });
 
-  await prisma.crmFieldValue.upsert({
+  await prisma.qcfFieldValue.upsert({
     where: {
       activityId_fieldKey: { activityId: input.activityId, fieldKey: input.fieldKey },
     },
@@ -111,10 +111,10 @@ export async function recordDispositionAttachment(input: {
 /** A caller may only touch an activity within their account scope (Strict). */
 async function assertActivityInScope(user: SessionUser, activityId: string): Promise<void> {
   const aclWhere = await buildActivityAclWhere(user);
-  const where: Prisma.CrmActivityWhereInput = { id: activityId, tenantId: user.tenantId };
+  const where: Prisma.QcfActivityWhereInput = { id: activityId, tenantId: user.tenantId };
   if (aclWhere) where.AND = [aclWhere];
 
-  const activity = await prisma.crmActivity.findFirst({ where, select: { id: true } });
+  const activity = await prisma.qcfActivity.findFirst({ where, select: { id: true } });
   if (!activity) {
     throw new FileUploadError("You do not have access to this activity.", 403);
   }
@@ -131,7 +131,7 @@ export async function saveDispositionUpload(input: {
   formSetVersionId: string;
   fieldKey: string;
   file: File;
-}): Promise<CrmFileAttachment> {
+}): Promise<QcfFileAttachment> {
   validateDispositionFile({ size: input.file.size, type: input.file.type });
   await assertActivityInScope(input.user, input.activityId);
 
@@ -154,8 +154,8 @@ export async function saveDispositionUpload(input: {
 export async function assertAttachmentAccess(
   user: SessionUser,
   attachmentId: string,
-): Promise<CrmFileAttachment> {
-  const attachment = await prisma.crmFileAttachment.findFirst({
+): Promise<QcfFileAttachment> {
+  const attachment = await prisma.qcfFileAttachment.findFirst({
     where: { id: attachmentId, tenantId: user.tenantId },
   });
   if (!attachment) throw new FileUploadError("Attachment not found.", 404);

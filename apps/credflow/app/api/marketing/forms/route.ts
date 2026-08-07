@@ -17,7 +17,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.crmFormDefinition.findMany({ where: { tenantId: user.tenantId } });
+    const items = await prisma.qcfFormDefinition.findMany({ where: { tenantId: user.tenantId } });
     return NextResponse.json({ items });
   } catch (e) { return errorResponse(e); }
 }
@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
     await assertModule(user, "campaigns", "create");
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const f = await prisma.crmFormDefinition.create({
-      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.CrmFormDefinitionUncheckedCreateInput,
+    const f = await prisma.qcfFormDefinition.create({
+      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.QcfFormDefinitionUncheckedCreateInput,
     });
     return NextResponse.json(f, { status: 201 });
   } catch (e) { return errorResponse(e); }

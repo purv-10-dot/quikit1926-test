@@ -37,14 +37,14 @@ function makeContact(overrides: Record<string, unknown> = {}) {
 
 describe("GET /api/contacts/[id]", () => {
   beforeEach(() => {
-    db.crmContact.findFirst.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfContact.findFirst.mockReset();
+    db.qcfAccount.findMany.mockReset();
     setSession(null);
   });
 
   it("returns 404 when the contact belongs to a different tenant", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(null);
+    db.qcfContact.findFirst.mockResolvedValue(null);
 
     const { GET } = await import("@/app/api/contacts/[id]/route");
     const req = new Request("http://test/api/contacts/c1");
@@ -57,16 +57,16 @@ describe("GET /api/contacts/[id]", () => {
 
 describe("PATCH /api/contacts/[id]", () => {
   beforeEach(() => {
-    db.crmContact.findFirst.mockReset();
-    db.crmContact.update.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfContact.findFirst.mockReset();
+    db.qcfContact.update.mockReset();
+    db.qcfAccount.findMany.mockReset();
     db.orgMember.findFirst.mockReset();
     setSession(null);
   });
 
   it("rejects unknown fields via Zod (no raw body to Prisma)", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(makeContact() as never);
+    db.qcfContact.findFirst.mockResolvedValue(makeContact() as never);
 
     const { PATCH } = await import("@/app/api/contacts/[id]/route");
     const req = new Request("http://test/api/contacts/c1", {
@@ -80,12 +80,12 @@ describe("PATCH /api/contacts/[id]", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.fieldErrors).toBeTruthy();
-    expect(db.crmContact.update).not.toHaveBeenCalled();
+    expect(db.qcfContact.update).not.toHaveBeenCalled();
   });
 
   it("returns 409 on duplicate email (excluding self)", async () => {
     adminSession();
-    db.crmContact.findFirst
+    db.qcfContact.findFirst
       .mockResolvedValueOnce(makeContact() as never) // initial loadOwn
       .mockResolvedValueOnce({ id: "c2", firstName: "Other", lastName: "Person" } as never); // duplicate
 
@@ -105,7 +105,7 @@ describe("PATCH /api/contacts/[id]", () => {
 
   it("re-resolves ownerName when ownerId changes", async () => {
     adminSession();
-    db.crmContact.findFirst
+    db.qcfContact.findFirst
       .mockResolvedValueOnce(makeContact({ ownerId: "u1", ownerName: "Alice" }) as never)
       .mockResolvedValueOnce(null); // duplicate-email check
     db.orgMember.findFirst.mockResolvedValue({
@@ -116,10 +116,10 @@ describe("PATCH /api/contacts/[id]", () => {
         email: "bob@example.test",
       },
     } as never);
-    db.crmContact.update.mockResolvedValue(
+    db.qcfContact.update.mockResolvedValue(
       makeContact({ ownerId: "u9", ownerName: "Bob Smith" }) as never,
     );
-    db.crmAccount.findMany.mockResolvedValue([]);
+    db.qcfAccount.findMany.mockResolvedValue([]);
 
     const { PATCH } = await import("@/app/api/contacts/[id]/route");
     const req = new Request("http://test/api/contacts/c1", {
@@ -131,7 +131,7 @@ describe("PATCH /api/contacts/[id]", () => {
       params: Promise.resolve({ id: "c1" }),
     });
     expect(res.status).toBe(200);
-    const update = db.crmContact.update.mock.calls[0]![0]!.data as {
+    const update = db.qcfContact.update.mock.calls[0]![0]!.data as {
       ownerId?: string;
       ownerName?: string;
     };
@@ -141,11 +141,11 @@ describe("PATCH /api/contacts/[id]", () => {
 
   it("normalizes a bare-digit phone to E.164 before write", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(makeContact() as never);
-    db.crmContact.update.mockResolvedValue(
+    db.qcfContact.findFirst.mockResolvedValue(makeContact() as never);
+    db.qcfContact.update.mockResolvedValue(
       makeContact({ phone: "+917631957103" }) as never,
     );
-    db.crmAccount.findMany.mockResolvedValue([]);
+    db.qcfAccount.findMany.mockResolvedValue([]);
 
     const { PATCH } = await import("@/app/api/contacts/[id]/route");
     const req = new Request("http://test/api/contacts/c1", {
@@ -157,13 +157,13 @@ describe("PATCH /api/contacts/[id]", () => {
       params: Promise.resolve({ id: "c1" }),
     });
     expect(res.status).toBe(200);
-    const update = db.crmContact.update.mock.calls[0]![0]!.data as { phone?: string };
+    const update = db.qcfContact.update.mock.calls[0]![0]!.data as { phone?: string };
     expect(update.phone).toBe("+917631957103");
   });
 
   it("rejects an invalid phone on PATCH with the contacts failure shape", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(makeContact() as never);
+    db.qcfContact.findFirst.mockResolvedValue(makeContact() as never);
 
     const { PATCH } = await import("@/app/api/contacts/[id]/route");
     const req = new Request("http://test/api/contacts/c1", {
@@ -178,16 +178,16 @@ describe("PATCH /api/contacts/[id]", () => {
     const body = await res.json();
     expect(body.success).toBe(false);
     expect(body.fieldErrors.phone).toBeTruthy();
-    expect(db.crmContact.update).not.toHaveBeenCalled();
+    expect(db.qcfContact.update).not.toHaveBeenCalled();
   });
 });
 
 describe("DELETE /api/contacts/[id]", () => {
   beforeEach(() => {
-    db.crmContact.findFirst.mockReset();
-    db.crmContact.update.mockReset();
-    db.crmContact.delete.mockReset();
-    db.crmLead.updateMany.mockReset();
+    db.qcfContact.findFirst.mockReset();
+    db.qcfContact.update.mockReset();
+    db.qcfContact.delete.mockReset();
+    db.qcfLead.updateMany.mockReset();
     // $transaction mock — call each promise so the side effects record on
     // updateMany / delete spies, then resolve to their values.
     (db.$transaction as unknown as { mockReset?: () => void }).mockReset?.();
@@ -202,8 +202,8 @@ describe("DELETE /api/contacts/[id]", () => {
 
   it("soft-deletes by setting deletedAt", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(makeContact() as never);
-    db.crmContact.update.mockResolvedValue(makeContact({ deletedAt: new Date() }) as never);
+    db.qcfContact.findFirst.mockResolvedValue(makeContact() as never);
+    db.qcfContact.update.mockResolvedValue(makeContact({ deletedAt: new Date() }) as never);
 
     const { DELETE } = await import("@/app/api/contacts/[id]/route");
     const req = new Request("http://test/api/contacts/c1", { method: "DELETE" });
@@ -212,11 +212,11 @@ describe("DELETE /api/contacts/[id]", () => {
     });
     expect(res.status).toBe(200);
 
-    expect(db.crmContact.update).toHaveBeenCalledWith({
+    expect(db.qcfContact.update).toHaveBeenCalledWith({
       where: { id: "c1" },
       data: expect.objectContaining({ deletedAt: expect.any(Date) }),
     });
-    expect(db.crmContact.delete).not.toHaveBeenCalled();
+    expect(db.qcfContact.delete).not.toHaveBeenCalled();
   });
 });
 

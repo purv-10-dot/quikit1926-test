@@ -1,7 +1,7 @@
 export {}; // module scope (isolate top-level consts from sibling scripts)
 /**
  * [P2.2] Attribution proof against first_db_crm_autotest.
- *   1. An automation stage write records a CrmAutomationAttribution row that
+ *   1. An automation stage write records a QcfAutomationAttribution row that
  *      answers "why did this lead get disqualified?" in one read: automation +
  *      node + trigger event + before->after + trigger-time snapshot.
  *   2. engineSource discriminates automation vs legacy-disposition (both engines
@@ -26,14 +26,14 @@ async function main() {
   const check = (n: string, ok: boolean, d: string) => { out.push(`${ok ? "PASS" : "FAIL"}  ${n} — ${d}`); allOk = allOk && ok; };
 
   // ─── fresh fixtures ───
-  await prisma.crmAutomationAttribution.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.crmAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.crmLead.deleteMany({ where: { id: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.crmLead.create({ data: { id: AUTO_LEAD, tenantId: TENANT, name: "P22 auto", stage: "New Lead", status: "Open", substatus: "Student Lead", source: "p22" } });
-  await prisma.crmLead.create({ data: { id: DISPO_LEAD, tenantId: TENANT, name: "P22 dispo", stage: "New Lead", status: "Open", source: "p22" } });
+  await prisma.qcfAutomationAttribution.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfLead.deleteMany({ where: { id: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfLead.create({ data: { id: AUTO_LEAD, tenantId: TENANT, name: "P22 auto", stage: "New Lead", status: "Open", substatus: "Student Lead", source: "p22" } });
+  await prisma.qcfLead.create({ data: { id: DISPO_LEAD, tenantId: TENANT, name: "P22 dispo", stage: "New Lead", status: "Open", source: "p22" } });
 
   // ─── 1. automation write → attribution ───
-  const wf = await prisma.crmWorkflowDefinition.create({ data: {
+  const wf = await prisma.qcfWorkflowDefinition.create({ data: {
     tenantId: TENANT, name: "P22 R1-like", status: "Active", triggerType: "trigger_lead_updated",
     graphNodes: [
       { id: "cond", kind: "if_else", config: { conditions: [
@@ -46,7 +46,7 @@ async function main() {
   } });
   await runFrom(TENANT, wf.id, AUTO_LEAD, "cond");
 
-  const attr = await prisma.crmAutomationAttribution.findFirst({ where: { tenantId: TENANT, leadId: AUTO_LEAD } });
+  const attr = await prisma.qcfAutomationAttribution.findFirst({ where: { tenantId: TENANT, leadId: AUTO_LEAD } });
   const snap = (attr?.triggerSnapshot ?? {}) as Record<string, unknown>;
   check("1.attribution-written", !!attr, attr ? "one row written" : "no attribution row");
   check("1.engineSource", attr?.engineSource === "automation", `engineSource=${attr?.engineSource}`);
@@ -59,26 +59,26 @@ async function main() {
   out.push(`      WHY(${AUTO_LEAD}): rule ${attr?.workflowId}/${attr?.nodeId} via ${attr?.triggerType} event ${attr?.triggerEventId} set stage ${attr?.beforeValue} -> ${attr?.afterValue}`);
 
   // ─── 2. legacy-disposition write → attribution, distinguishable ───
-  const rule = await prisma.crmAutomationRule.create({ data: {
+  const rule = await prisma.qcfAutomationRule.create({ data: {
     tenantId: TENANT, name: "P22 dispo", sortOrder: 1, isActive: true,
     trigger: { type: "activity_logged", activity_type: "call", disposition: "P22PROOF" },
     action: { type: "set_lead_status", status: "Future Lead" },
   } });
   await runAfterActivityLogged({ tenantId: TENANT, leadId: DISPO_LEAD, activityId: "p22-act", dispositionCode: "P22PROOF", activityDatetime: new Date(), ownerId: null });
 
-  const dispoAttr = await prisma.crmAutomationAttribution.findFirst({ where: { tenantId: TENANT, leadId: DISPO_LEAD } });
+  const dispoAttr = await prisma.qcfAutomationAttribution.findFirst({ where: { tenantId: TENANT, leadId: DISPO_LEAD } });
   check("2.disposition-attribution", dispoAttr?.engineSource === "legacy-disposition" && dispoAttr?.ruleId === rule.id && dispoAttr?.field === "status",
     `engineSource=${dispoAttr?.engineSource}, ruleId=${dispoAttr?.ruleId === rule.id ? "set" : dispoAttr?.ruleId}, field=${dispoAttr?.field}`);
   check("2.discriminator-distinguishes", attr?.engineSource !== dispoAttr?.engineSource,
     `automation="${attr?.engineSource}" vs legacy="${dispoAttr?.engineSource}"`);
 
   // ─── cleanup ───
-  await prisma.crmWorkflowDefinition.deleteMany({ where: { id: wf.id } });
-  await prisma.crmAutomationRule.deleteMany({ where: { id: rule.id } });
-  await prisma.crmAutomationAttribution.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.crmAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.crmActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
-  await prisma.crmLead.deleteMany({ where: { id: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfWorkflowDefinition.deleteMany({ where: { id: wf.id } });
+  await prisma.qcfAutomationRule.deleteMany({ where: { id: rule.id } });
+  await prisma.qcfAutomationAttribution.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfActivity.deleteMany({ where: { tenantId: TENANT, leadId: { in: [AUTO_LEAD, DISPO_LEAD] } } });
+  await prisma.qcfLead.deleteMany({ where: { id: { in: [AUTO_LEAD, DISPO_LEAD] } } });
 
   console.log("\n" + out.join("\n"));
   console.log(`\n${allOk ? "ALL PASS" : "SOME FAILED"}`);

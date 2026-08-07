@@ -25,7 +25,7 @@ import { buildOpportunityFilterRequest } from "./opportunity-advanced-filter";
 import { STAGE_LABEL, STAGE_ORDER } from "@/lib/services/opportunities/stage-labels";
 import { formatINR } from "@/lib/services/opportunities/currency";
 import type { FilterPayload } from "@/types/lead-filter";
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ type DealCard = {
 };
 
 type ColumnDto = {
-  stage: CrmOpportunityStage;
+  stage: QcfOpportunityStage;
   label: string;
   count: number;
   totalAmountInr: number;
@@ -70,7 +70,7 @@ const PIPELINE_QUERY_KEY = ["opportunities", "pipeline"] as const;
 // Per-stage palette mirrors the leads kanban styling. Closed states swap to
 // emerald/rose so Won/Lost reads semantically rather than blending in.
 const STAGE_PALETTE: Record<
-  CrmOpportunityStage,
+  QcfOpportunityStage,
   { dot: string; header: string; count: string; ring: string }
 > = {
   Prospecting: {
@@ -141,7 +141,7 @@ async function fetchPipeline(filter: FilterPayload, search: string): Promise<Boa
 async function postTransition(
   id: string,
   body: {
-    toStage: CrmOpportunityStage;
+    toStage: QcfOpportunityStage;
     closeReasonCategory?: string;
     closeReason?: string;
   },
@@ -180,7 +180,7 @@ export function OpportunityKanban({
 
   const [activeCard, setActiveCard] = useState<DealCard | null>(null);
   const [pendingClose, setPendingClose] = useState<
-    | { id: string; toStage: "ClosedWon" | "ClosedLost"; fromStage: CrmOpportunityStage }
+    | { id: string; toStage: "ClosedWon" | "ClosedLost"; fromStage: QcfOpportunityStage }
     | null
   >(null);
 
@@ -191,7 +191,7 @@ export function OpportunityKanban({
   const transition = useMutation({
     mutationFn: async (vars: {
       id: string;
-      toStage: CrmOpportunityStage;
+      toStage: QcfOpportunityStage;
       closeReasonCategory?: string;
       closeReason?: string;
     }) => {
@@ -207,7 +207,7 @@ export function OpportunityKanban({
       if (!prev) return { prev: undefined };
 
       let card: DealCard | null = null;
-      let fromStage: CrmOpportunityStage | null = null;
+      let fromStage: QcfOpportunityStage | null = null;
       for (const col of prev.columns) {
         const found = col.deals.find((d) => d.id === id);
         if (found) {
@@ -300,7 +300,7 @@ export function OpportunityKanban({
     useSensor(KeyboardSensor),
   );
 
-  function findCard(id: string): { card: DealCard; stage: CrmOpportunityStage } | null {
+  function findCard(id: string): { card: DealCard; stage: QcfOpportunityStage } | null {
     if (!board.data) return null;
     for (const col of board.data.columns) {
       const found = col.deals.find((d) => d.id === id);
@@ -319,7 +319,7 @@ export function OpportunityKanban({
     const cardId = String(e.active.id);
     const overId = e.over?.id ? String(e.over.id) : null;
     if (!overId || !overId.startsWith("col:")) return;
-    const targetStage = overId.slice(4) as CrmOpportunityStage;
+    const targetStage = overId.slice(4) as QcfOpportunityStage;
     const found = findCard(cardId);
     if (!found || found.stage === targetStage) return;
 

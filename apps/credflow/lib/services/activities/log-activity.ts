@@ -10,7 +10,7 @@
 // Ownership: never trust a client-supplied `ownerName`. Resolve from the
 // User row identified by `userId`. `ownerName` is a denormalized cache and
 // must be refreshed by the caller when a user is renamed.
-import type { CrmActivity, Prisma, PrismaClient } from "@quikit/database";
+import type { QcfActivity, Prisma, PrismaClient } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import { touchLeadLastActivity } from "@/lib/services/leads/touch-last-activity";
 
@@ -54,7 +54,7 @@ async function resolveOwnerDisplay(
   return { id: u.id, name: composed || u.email || "" };
 }
 
-export async function logActivity(input: LogActivityInput): Promise<CrmActivity> {
+export async function logActivity(input: LogActivityInput): Promise<QcfActivity> {
   const tx: Tx = input.tx ?? prisma;
   const ownerIdInput = input.ownerId ?? input.userId;
   const owner = await resolveOwnerDisplay(tx, ownerIdInput);
@@ -80,13 +80,13 @@ export async function logActivity(input: LogActivityInput): Promise<CrmActivity>
     activityCode: input.activityCode ?? null,
     logOutcome: input.logOutcome ?? null,
     outreach: input.outreach ?? undefined,
-  } satisfies Prisma.CrmActivityUncheckedCreateInput;
+  } satisfies Prisma.QcfActivityUncheckedCreateInput;
 
   // Dedupe path: only when BOTH externalId and sourceSystem are present.
   // The unique partial index allows multiple rows with null externalId.
   const activity =
     input.externalId && input.sourceSystem
-      ? await tx.crmActivity.upsert({
+      ? await tx.qcfActivity.upsert({
           where: {
             tenantId_sourceSystem_externalId: {
               tenantId: input.tenantId,
@@ -97,13 +97,13 @@ export async function logActivity(input: LogActivityInput): Promise<CrmActivity>
           create: data,
           update: {}, // idempotent: re-running with same key is a no-op
         })
-      : await tx.crmActivity.create({ data });
+      : await tx.qcfActivity.create({ data });
 
   // [last-activity] Advance the lead's last_activity_date whenever an activity
   // is logged against a lead, so activity-date filters (e.g. "Last Activity
   // Date is before today") re-evaluate. This is the central chokepoint for
   // transition/stage-change/import activities; the call-disposition engine
-  // stamps its own (it writes CrmActivity directly, bypassing this function),
+  // stamps its own (it writes QcfActivity directly, bypassing this function),
   // and notes/tasks stamp at their own create sites. Guarded to Lead activities
   // with a resolvable leadId. Uses the same tx so it commits atomically. Pure
   // field write — no activity/automation emit — so it cannot recurse here.

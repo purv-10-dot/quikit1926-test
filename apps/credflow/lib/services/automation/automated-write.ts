@@ -24,7 +24,7 @@
  * introduced by either track.
  */
 import type { Prisma } from "@quikit/database";
-import type { CrmLead as Lead } from "@prisma/client";
+import type { QcfLead as Lead } from "@prisma/client";
 import { recordWriteAndCheck, type EngineSource } from "@/lib/services/automation/loop-guard";
 import { recordAttribution } from "@/lib/services/automation/attribution";
 import { transitionLead } from "@/lib/services/leads/transition-service";
@@ -117,7 +117,7 @@ export async function applyAutomatedLeadWrite(input: AutomatedWriteInput): Promi
     // — again exactly once. Deliberately no extra triggerOutboundSync here.
     await updateCrmLead(lead.id, {
       [field]: value,
-    } as unknown as Prisma.CrmLeadUncheckedUpdateInput);
+    } as unknown as Prisma.QcfLeadUncheckedUpdateInput);
   }
 
   // Attribution (SPEC §8): record which automation/node made this write, the

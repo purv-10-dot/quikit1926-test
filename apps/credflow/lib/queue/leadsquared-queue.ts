@@ -9,7 +9,7 @@ const ENQUEUE_TIMEOUT = Symbol("enqueue-timeout");
  * Job data for the outbound QuikCRM -> LeadSquared push.
  *
  * We deliberately store only the LEAD ID (not a snapshot of the row): the
- * processor re-reads the current CrmLead, so retries and coalesced bursts
+ * processor re-reads the current QcfLead, so retries and coalesced bursts
  * always push the latest state, and the job payload stays tiny.
  *
  * `origin` is always "crm" — this queue exists solely for CRM-authored pushes.

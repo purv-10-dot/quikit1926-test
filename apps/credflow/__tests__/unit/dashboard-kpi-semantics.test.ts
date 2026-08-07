@@ -32,14 +32,14 @@ const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
 const FILTERS = { range: RANGE, resolvedOwnerId: null, ownerId: null };
 
 function armPrismaDefaults(): void {
-  db.crmLead.count.mockResolvedValue(0);
-  asMock(db.crmLead.groupBy).mockResolvedValue([]);
-  db.crmAccount.count.mockResolvedValue(0);
-  db.crmOpportunity.count.mockResolvedValue(0);
-  asMock(db.crmOpportunity.groupBy).mockResolvedValue([]);
-  db.crmTask.count.mockResolvedValue(0);
-  db.crmActivity.count.mockResolvedValue(0);
-  db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
+  db.qcfLead.count.mockResolvedValue(0);
+  asMock(db.qcfLead.groupBy).mockResolvedValue([]);
+  db.qcfAccount.count.mockResolvedValue(0);
+  db.qcfOpportunity.count.mockResolvedValue(0);
+  asMock(db.qcfOpportunity.groupBy).mockResolvedValue([]);
+  db.qcfTask.count.mockResolvedValue(0);
+  db.qcfActivity.count.mockResolvedValue(0);
+  db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
 }
 
 type WhereCarrier = { where?: Record<string, unknown> };
@@ -65,7 +65,7 @@ describe("Bug 1 — flow KPIs are period-bound", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmLead.count);
+    const wheres = whereArgs(db.qcfLead.count);
     expect(wheres.length).toBe(2); // current + prior
     for (const w of wheres) expect(hasFlowCreatedAt(w)).toBe(true);
   });
@@ -75,7 +75,7 @@ describe("Bug 1 — flow KPIs are period-bound", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmLead.groupBy);
+    const wheres = whereArgs(db.qcfLead.groupBy);
     expect(wheres.length).toBe(1);
     expect(hasFlowCreatedAt(wheres[0])).toBe(true);
   });
@@ -85,7 +85,7 @@ describe("Bug 1 — flow KPIs are period-bound", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmActivity.count);
+    const wheres = whereArgs(db.qcfActivity.count);
     expect(wheres.length).toBeGreaterThan(0);
     // occurredAt drives activities, not createdAt.
     const flowWheres = wheres.filter((w) => "occurredAt" in w);
@@ -108,7 +108,7 @@ describe("Bug 1 — stock KPIs have NO createdAt clause", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmAccount.count);
+    const wheres = whereArgs(db.qcfAccount.count);
     expect(wheres.length).toBe(1); // no prior query
     for (const w of wheres) expect("createdAt" in w).toBe(false);
   });
@@ -118,7 +118,7 @@ describe("Bug 1 — stock KPIs have NO createdAt clause", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmTask.count);
+    const wheres = whereArgs(db.qcfTask.count);
     expect(wheres.length).toBe(2);
     for (const w of wheres) expect("createdAt" in w).toBe(false);
   });
@@ -128,7 +128,7 @@ describe("Bug 1 — stock KPIs have NO createdAt clause", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmOpportunity.count);
+    const wheres = whereArgs(db.qcfOpportunity.count);
     expect(wheres.length).toBe(2);
     for (const w of wheres) expect("createdAt" in w).toBe(false);
   });
@@ -138,7 +138,7 @@ describe("Bug 1 — stock KPIs have NO createdAt clause", () => {
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmOpportunity.groupBy);
+    const wheres = whereArgs(db.qcfOpportunity.groupBy);
     expect(wheres.length).toBe(2); // pipeline currency + opps-by-stage
     for (const w of wheres) expect("createdAt" in w).toBe(false);
   });
@@ -159,11 +159,11 @@ describe("Bug 1 — conversionLeadToQualifiedPct empty-window guard", () => {
   });
 
   it("is a rounded percentage when leadsByStage has rows", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValue([
+    asMock(db.qcfLead.groupBy).mockResolvedValue([
       { stage: "New", _count: 8 },
       { stage: "Qualified", _count: 2 },
     ]);
-    db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue({
+    db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue({
       tenantId: "t1",
       settings: {
         dashboard: { qualifiedStages: ["Qualified"], funnelStages: ["New"] },
@@ -184,8 +184,8 @@ describe("Bug 1 — DTO carries deltas for flow only", () => {
   });
 
   it("populates kpis.leadCount and kpis.activities with priorValue", async () => {
-    db.crmLead.count.mockResolvedValueOnce(7).mockResolvedValueOnce(3);
-    db.crmActivity.count.mockResolvedValue(0);
+    db.qcfLead.count.mockResolvedValueOnce(7).mockResolvedValueOnce(3);
+    db.qcfActivity.count.mockResolvedValue(0);
     const { buildSummary } = await import(
       "@/lib/services/dashboard/summary-service"
     );

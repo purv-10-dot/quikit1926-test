@@ -23,7 +23,7 @@ export async function expandProductBundle(
   tenantId: string,
   bundleProductId: string,
 ): Promise<BundleComponent[]> {
-  const product = await db.crmProduct.findFirst({
+  const product = await db.qcfProduct.findFirst({
     where: { id: bundleProductId, tenantId, deletedAt: null, productType: "Bundle" },
     select: {
       id: true,
@@ -74,7 +74,7 @@ export async function getCpqSuggestions(
   }
   if (suggestIds.size === 0) return [];
 
-  const products = await db.crmProduct.findMany({
+  const products = await db.qcfProduct.findMany({
     where: { tenantId, id: { in: [...suggestIds] }, deletedAt: null, isActive: true },
     select: { id: true, name: true, sku: true, listPrice: true },
   });

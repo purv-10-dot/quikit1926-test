@@ -8,7 +8,7 @@
  * The picker's RBAC is the user-level analog of `getScope` (account-acl.ts):
  *   - Administrator  -> sees ALL tenant users.
  *   - Any other user -> sees only their sales-group co-members
- *                       (CrmSalesGroupMember + CrmSalesGroupManager).
+ *                       (QcfSalesGroupMember + QcfSalesGroupManager).
  *
  * Fixture: one org, an admin + two disjoint teams (A1/A2 in Team A, B1/B2 in
  * Team B). The cross-scope-leak assertions run in BOTH directions so the test
@@ -73,16 +73,16 @@ beforeAll(async () => {
   });
 
   // Two disjoint sales groups (teams).
-  const teamA = await integrationPrisma.crmSalesGroup.create({
+  const teamA = await integrationPrisma.qcfSalesGroup.create({
     data: { tenantId: orgId, name: `Team A ${STAMP}` },
   });
-  const teamB = await integrationPrisma.crmSalesGroup.create({
+  const teamB = await integrationPrisma.qcfSalesGroup.create({
     data: { tenantId: orgId, name: `Team B ${STAMP}` },
   });
   teamAId = teamA.id;
   teamBId = teamB.id;
 
-  await integrationPrisma.crmSalesGroupMember.createMany({
+  await integrationPrisma.qcfSalesGroupMember.createMany({
     data: [
       { groupId: teamAId, userId: u.a1!.id },
       { groupId: teamAId, userId: u.a2!.id },
@@ -93,10 +93,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmSalesGroupMember.deleteMany({
+  await integrationPrisma.qcfSalesGroupMember.deleteMany({
     where: { groupId: { in: [teamAId, teamBId] } },
   });
-  await integrationPrisma.crmSalesGroup.deleteMany({
+  await integrationPrisma.qcfSalesGroup.deleteMany({
     where: { id: { in: [teamAId, teamBId] } },
   });
   await integrationPrisma.orgMember.deleteMany({ where: { orgId } });

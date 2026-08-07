@@ -26,18 +26,18 @@ let setId: string;
 let versionId: string;
 
 beforeAll(async () => {
-  const set = await integrationPrisma.crmFormSet.create({
+  const set = await integrationPrisma.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
-  const version = await integrationPrisma.crmFormSetVersion.create({
+  const version = await integrationPrisma.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   });
   versionId = version.id;
 
   // Validate-at-build: field-subject conditions reference real fields, so seed
   // the fields the conditions below point at (payment_mode, f).
-  await integrationPrisma.crmFormField.createMany({
+  await integrationPrisma.qcfFormField.createMany({
     data: [
       { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "payment_mode", label: "Payment Mode", fieldType: "dropdown", sortOrder: 0 },
       { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "f", label: "F", fieldType: "text", sortOrder: 1 },
@@ -47,18 +47,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Conditions cascade on rule delete; clean any stragglers in FK order.
-  const rules = await integrationPrisma.crmFormRule.findMany({
+  const rules = await integrationPrisma.qcfFormRule.findMany({
     where: { formSetVersionId: versionId },
     select: { id: true },
   });
   const ruleIds = rules.map((r) => r.id);
   if (ruleIds.length) {
-    await integrationPrisma.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: ruleIds } } });
-    await integrationPrisma.crmFormRule.deleteMany({ where: { id: { in: ruleIds } } });
+    await integrationPrisma.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: ruleIds } } });
+    await integrationPrisma.qcfFormRule.deleteMany({ where: { id: { in: ruleIds } } });
   }
-  await integrationPrisma.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  await integrationPrisma.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await integrationPrisma.crmFormSet.deleteMany({ where: { id: setId } });
+  await integrationPrisma.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("form-rule builder (FR-RE-1/2)", () => {
@@ -133,10 +133,10 @@ describe("form-rule builder (FR-RE-1/2)", () => {
   });
 
   it("rejects mutating a PUBLISHED version (draft-only guard)", async () => {
-    const set = await integrationPrisma.crmFormSet.create({
+    const set = await integrationPrisma.qcfFormSet.create({
       data: { tenantId: TENANT, surface: "call_disposition", name: `Pub ${STAMP}` },
     });
-    const published = await integrationPrisma.crmFormSetVersion.create({
+    const published = await integrationPrisma.qcfFormSetVersion.create({
       data: { formSetId: set.id, versionNumber: 1, status: "published" },
     });
 
@@ -145,8 +145,8 @@ describe("form-rule builder (FR-RE-1/2)", () => {
       createFormRule({ formSetVersionId: published.id, name: "nope", matchType: "all", sortOrder: 0 }),
     ).rejects.toMatchObject({ statusCode: 409 });
 
-    await integrationPrisma.crmFormSetVersion.deleteMany({ where: { formSetId: set.id } });
-    await integrationPrisma.crmFormSet.deleteMany({ where: { id: set.id } });
+    await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: set.id } });
+    await integrationPrisma.qcfFormSet.deleteMany({ where: { id: set.id } });
   });
 
   it("deleting a rule cascades its conditions", async () => {
@@ -166,7 +166,7 @@ describe("form-rule builder (FR-RE-1/2)", () => {
 
     await deleteFormRule(rule.id);
 
-    const remaining = await integrationPrisma.crmFormRuleCondition.count({
+    const remaining = await integrationPrisma.qcfFormRuleCondition.count({
       where: { formRuleId: rule.id },
     });
     expect(remaining).toBe(0);

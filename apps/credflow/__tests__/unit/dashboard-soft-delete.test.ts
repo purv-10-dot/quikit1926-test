@@ -2,7 +2,7 @@
  * Bug 3 PR 1 regression test.
  *
  * The package-level soft-delete middleware (packages/database/index.ts) does
- * NOT yet register CrmLead / CrmOpportunity / CrmAccount, so the dashboard
+ * NOT yet register QcfLead / QcfOpportunity / QcfAccount, so the dashboard
  * must filter `deletedAt: null` explicitly. This test fails if anyone drops
  * those clauses before the middleware registration lands (PR 2).
  */
@@ -28,14 +28,14 @@ const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
 const FILTERS = { range: RANGE, resolvedOwnerId: null, ownerId: null };
 
 function armPrismaDefaults(): void {
-  db.crmLead.count.mockResolvedValue(0);
-  asMock(db.crmLead.groupBy).mockResolvedValue([]);
-  db.crmAccount.count.mockResolvedValue(0);
-  db.crmOpportunity.count.mockResolvedValue(0);
-  asMock(db.crmOpportunity.groupBy).mockResolvedValue([]);
-  db.crmTask.count.mockResolvedValue(0);
-  db.crmActivity.count.mockResolvedValue(0);
-  db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
+  db.qcfLead.count.mockResolvedValue(0);
+  asMock(db.qcfLead.groupBy).mockResolvedValue([]);
+  db.qcfAccount.count.mockResolvedValue(0);
+  db.qcfOpportunity.count.mockResolvedValue(0);
+  asMock(db.qcfOpportunity.groupBy).mockResolvedValue([]);
+  db.qcfTask.count.mockResolvedValue(0);
+  db.qcfActivity.count.mockResolvedValue(0);
+  db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
 }
 
 type WhereCarrier = { where?: Record<string, unknown> };
@@ -54,7 +54,7 @@ describe("dashboard summary-service: soft-delete filtering", () => {
   it("CrmLead.count always passes `deletedAt: null`", async () => {
     const { buildSummary } = await import("@/lib/services/dashboard/summary-service");
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmLead.count);
+    const wheres = whereArgs(db.qcfLead.count);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).toHaveProperty("deletedAt", null);
   });
@@ -62,7 +62,7 @@ describe("dashboard summary-service: soft-delete filtering", () => {
   it("CrmLead.groupBy (leads-by-stage) passes `deletedAt: null`", async () => {
     const { buildSummary } = await import("@/lib/services/dashboard/summary-service");
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmLead.groupBy);
+    const wheres = whereArgs(db.qcfLead.groupBy);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).toHaveProperty("deletedAt", null);
   });
@@ -70,7 +70,7 @@ describe("dashboard summary-service: soft-delete filtering", () => {
   it("CrmOpportunity.count always passes `deletedAt: null`", async () => {
     const { buildSummary } = await import("@/lib/services/dashboard/summary-service");
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmOpportunity.count);
+    const wheres = whereArgs(db.qcfOpportunity.count);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).toHaveProperty("deletedAt", null);
   });
@@ -78,7 +78,7 @@ describe("dashboard summary-service: soft-delete filtering", () => {
   it("CrmOpportunity.groupBy (pipeline + opps-by-stage) passes `deletedAt: null`", async () => {
     const { buildSummary } = await import("@/lib/services/dashboard/summary-service");
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmOpportunity.groupBy);
+    const wheres = whereArgs(db.qcfOpportunity.groupBy);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).toHaveProperty("deletedAt", null);
   });
@@ -86,7 +86,7 @@ describe("dashboard summary-service: soft-delete filtering", () => {
   it("CrmAccount.count always passes `deletedAt: null`", async () => {
     const { buildSummary } = await import("@/lib/services/dashboard/summary-service");
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmAccount.count);
+    const wheres = whereArgs(db.qcfAccount.count);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).toHaveProperty("deletedAt", null);
   });
@@ -94,7 +94,7 @@ describe("dashboard summary-service: soft-delete filtering", () => {
   it("CrmActivity.count is unchanged (no `deletedAt` column)", async () => {
     const { buildSummary } = await import("@/lib/services/dashboard/summary-service");
     await buildSummary(USER as never, FILTERS as never);
-    const wheres = whereArgs(db.crmActivity.count);
+    const wheres = whereArgs(db.qcfActivity.count);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).not.toHaveProperty("deletedAt");
   });

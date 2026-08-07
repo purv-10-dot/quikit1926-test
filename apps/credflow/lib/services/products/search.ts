@@ -21,8 +21,8 @@ export interface ProductSearchParams extends ProductSearchFilters {
   pageSize: number;
 }
 
-export function buildProductSearchWhere(p: ProductSearchFilters): Prisma.CrmProductWhereInput {
-  const and: Prisma.CrmProductWhereInput[] = [
+export function buildProductSearchWhere(p: ProductSearchFilters): Prisma.QcfProductWhereInput {
+  const and: Prisma.QcfProductWhereInput[] = [
     { tenantId: p.tenantId },
     { deletedAt: p.trashed ? { not: null } : null },
   ];
@@ -58,7 +58,7 @@ export function buildProductSearchWhere(p: ProductSearchFilters): Prisma.CrmProd
 export async function searchProducts(p: ProductSearchParams) {
   const where = buildProductSearchWhere(p);
   const [items, total] = await Promise.all([
-    prisma.crmProduct.findMany({
+    prisma.qcfProduct.findMany({
       where,
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       skip: (p.page - 1) * p.pageSize,
@@ -68,7 +68,7 @@ export async function searchProducts(p: ProductSearchParams) {
         brandRef: { select: { id: true, name: true } },
       },
     }),
-    prisma.crmProduct.count({ where }),
+    prisma.qcfProduct.count({ where }),
   ]);
   return {
     items,

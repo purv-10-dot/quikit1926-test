@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/shared/page-header";
 
 export default async function DispositionsPage() {
   const user = await requireUser();
-  const items = await prisma.crmCallDisposition.findMany({
+  const items = await prisma.qcfCallDisposition.findMany({
     where: { tenantId: user.tenantId },
     orderBy: { code: "asc" },
   });

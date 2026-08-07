@@ -7,7 +7,7 @@ const asMock = <T>(fn: T): Mock => fn as unknown as Mock;
 
 describe("POST /api/reports/custom/run", () => {
   beforeEach(() => {
-    asMock(db.crmLead.groupBy).mockReset();
+    asMock(db.qcfLead.groupBy).mockReset();
     setSession(null);
     vi.mocked(assertModule).mockReset();
     vi.mocked(assertModule).mockResolvedValue(undefined);
@@ -32,7 +32,7 @@ describe("POST /api/reports/custom/run", () => {
       email: "a@x.co",
       name: "A",
     });
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([] as never);
 
     const { POST } = await import("@/app/api/reports/custom/run/route");
     const req = new Request("http://test/api/reports/custom/run", {

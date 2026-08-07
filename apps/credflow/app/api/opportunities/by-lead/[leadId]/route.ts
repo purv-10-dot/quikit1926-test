@@ -29,7 +29,7 @@ export async function GET(
       ...(acl ?? {}),
     };
 
-    const items = await db.crmOpportunity.findMany({
+    const items = await db.qcfOpportunity.findMany({
       where,
       select: {
         id: true,

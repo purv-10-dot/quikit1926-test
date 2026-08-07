@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       if (format) {
         const tz = readTzFromCookieHeader(req.headers.get("cookie"));
         const cursor = createPrismaCursorIterator<CallLogCsvRow>({
-          delegate: prisma.crmCallLog as unknown as PrismaListDelegate<CallLogCsvRow>,
+          delegate: prisma.qcfCallLog as unknown as PrismaListDelegate<CallLogCsvRow>,
           where: { tenantId: user.tenantId },
           select: CALL_LOG_CSV_SELECT,
         });
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
           filenameStem: "call-logs",
         });
       }
-      const items = await prisma.crmCallLog.findMany({
+      const items = await prisma.qcfCallLog.findMany({
         where: { tenantId: user.tenantId },
         orderBy: { createdAt: "desc" },
         take: 200,
@@ -71,20 +71,20 @@ export async function GET(req: NextRequest) {
     // `linkedContactId` was set to the new Contact) plus any standalone-dialer
     // calls whose to/from number tail matches the contact's phone.
     if (contactId) {
-      const contact = await prisma.crmContact.findFirst({
-        // CrmContact isn't middleware-protected — don't resolve a trashed contact.
+      const contact = await prisma.qcfContact.findFirst({
+        // QcfContact isn't middleware-protected — don't resolve a trashed contact.
         where: { id: contactId, tenantId: user.tenantId, deletedAt: null },
         select: { phone: true },
       });
       const tails = [lastTen(contact?.phone)].filter((t) => t.length === 10);
-      const orClauses: Prisma.CrmCallLogWhereInput[] = [
+      const orClauses: Prisma.QcfCallLogWhereInput[] = [
         { linkedContactId: contactId },
       ];
       for (const t of tails) {
         orClauses.push({ destinationNumber: { endsWith: t } });
         orClauses.push({ sourceNumber: { endsWith: t } });
       }
-      const items = await prisma.crmCallLog.findMany({
+      const items = await prisma.qcfCallLog.findMany({
         where: { tenantId: user.tenantId, OR: orClauses },
         orderBy: { createdAt: "desc" },
         take: 200,
@@ -99,20 +99,20 @@ export async function GET(req: NextRequest) {
     // `leadId` is guaranteed non-null here by the early-returns above; the
     // narrowing assertion keeps the Prisma `where` typing happy.
     if (!leadId) return NextResponse.json({ items: [] });
-    const lead = await prisma.crmLead.findFirst({
+    const lead = await prisma.qcfLead.findFirst({
       where: { id: leadId, tenantId: user.tenantId },
       select: { phone: true, mobile: true },
     });
 
     const tails = [lastTen(lead?.phone), lastTen(lead?.mobile)].filter((t) => t.length === 10);
 
-    const orClauses: Prisma.CrmCallLogWhereInput[] = [{ leadId }];
+    const orClauses: Prisma.QcfCallLogWhereInput[] = [{ leadId }];
     for (const t of tails) {
       orClauses.push({ destinationNumber: { endsWith: t } });
       orClauses.push({ sourceNumber: { endsWith: t } });
     }
 
-    const items = await prisma.crmCallLog.findMany({
+    const items = await prisma.qcfCallLog.findMany({
       where: { tenantId: user.tenantId, OR: orClauses },
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -127,7 +127,7 @@ const createSchema = z.object({
   toNumber: z.string().min(1),
   fromNumber: z.string().optional().nullable(),
   durationSec: z.number().int().nonnegative().optional().nullable(),
-  // Stage 3-D(a): explicit origin — "dialer" (real call -> CrmCallLog row) vs
+  // Stage 3-D(a): explicit origin — "dialer" (real call -> QcfCallLog row) vs
   // "manual" (disposition update -> activities only). Required; never inferred.
   source: z.enum(["dialer", "manual"]),
   // Option Y (Stage 3-B): the agent saves from Status; the disposition is

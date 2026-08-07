@@ -4,7 +4,7 @@
  */
 
 import { parseCsv } from "@/lib/services/import/csv-processor";
-import type { CrmLeadImportJob as LeadImportJob } from "@prisma/client";
+import type { QcfLeadImportJob as LeadImportJob } from "@prisma/client";
 import { logActivity } from "@/lib/services/activities/log-activity";
 import { isPrimaryKind } from "@/lib/services/activities/target-existence";
 import { upsertImportedLeadRow } from "@/lib/services/import/lead-import-row";
@@ -58,7 +58,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
   // spacing + numeric-prefix variants that otherwise land invalid). Also load the
   // source values already present, so "Mobile Signup" collapses onto an existing
   // "mobile signup" (source is free-text, no configured list to match against).
-  const ws = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId: job.tenantId } });
+  const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId: job.tenantId } });
   const pipelineCfg = ((ws?.settings as Record<string, unknown> | null) ?? {})["leadPipelineConfig"] as
     | { stages?: string[]; statuses?: string[]; substatuses?: string[] }
     | undefined;
@@ -67,7 +67,7 @@ export async function processLeadsImport(job: LeadImportJob): Promise<ProcessorR
     statuses: Array.isArray(pipelineCfg?.statuses) ? pipelineCfg!.statuses! : [],
     substatuses: Array.isArray(pipelineCfg?.substatuses) ? pipelineCfg!.substatuses! : [],
   });
-  const existingSourceRows = await prisma.crmLead.findMany({
+  const existingSourceRows = await prisma.qcfLead.findMany({
     where: { tenantId: job.tenantId, deletedAt: null, source: { not: null } },
     select: { source: true },
     distinct: ["source"],
@@ -266,7 +266,7 @@ export async function processWorkflowsImport(job: LeadImportJob): Promise<Proces
   for (let i = 0; i < arr.length; i++) {
     const r = arr[i]!;
     try {
-      await prisma.crmWorkflowDefinition.create({
+      await prisma.qcfWorkflowDefinition.create({
         data: {
           tenantId: job.tenantId,
           name: String(r.name ?? `Imported workflow #${i}`),
@@ -297,7 +297,7 @@ export async function processSlaImport(job: LeadImportJob): Promise<ProcessorRes
   for (let i = 0; i < (payload.rules ?? []).length; i++) {
     const r = payload.rules![i]!;
     try {
-      await prisma.crmSlaRule.create({
+      await prisma.qcfSlaRule.create({
         data: {
           tenantId: job.tenantId,
           name: String(r.name ?? `Rule #${i}`),

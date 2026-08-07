@@ -25,8 +25,8 @@ function adminSession() {
 
 describe("GET /api/documents", () => {
   beforeEach(() => {
-    db.crmDocument.findMany.mockReset();
-    db.crmDocument.count.mockReset();
+    db.qcfDocument.findMany.mockReset();
+    db.qcfDocument.count.mockReset();
     db.orgMember.findMany.mockReset();
     setSession(null);
   });
@@ -39,7 +39,7 @@ describe("GET /api/documents", () => {
 
   it("returns tenant-scoped paginated list", async () => {
     adminSession();
-    db.crmDocument.findMany.mockResolvedValue([
+    db.qcfDocument.findMany.mockResolvedValue([
       {
         id: "d1",
         tenantId: "t1",
@@ -55,11 +55,11 @@ describe("GET /api/documents", () => {
         deletedAt: null,
       },
     ] as never);
-    db.crmDocument.count.mockResolvedValue(1);
+    db.qcfDocument.count.mockResolvedValue(1);
     db.orgMember.findMany.mockResolvedValue([
       { userId: "u1", user: { firstName: "Alice", lastName: "", email: "a@b.co" } },
     ] as never);
-    db.crmLead.findMany.mockResolvedValue([{ id: "l1", name: "Acme Lead" }] as never);
+    db.qcfLead.findMany.mockResolvedValue([{ id: "l1", name: "Acme Lead" }] as never);
 
     const { GET } = await import("@/app/api/documents/route");
     const res = await GET(new Request("http://test/api/documents?page=1") as never);
@@ -70,7 +70,7 @@ describe("GET /api/documents", () => {
     expect(body.data.items[0].fileName).toBe("kyc.pdf");
     expect(body.data.items[0].url).toContain("crm-documents/l1");
     expect(body.data.items[0].downloadUrl).toBe("/api/documents/d1/download");
-    expect(db.crmDocument.findMany).toHaveBeenCalledWith(
+    expect(db.qcfDocument.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ tenantId: "t1", deletedAt: null }),
       }),

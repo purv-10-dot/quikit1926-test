@@ -3,7 +3,7 @@ import { requireApiUser, isResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
 import { taxonomyCreateSchema } from "@/lib/services/quotes/validators";
 import { createTaxonomy, listTaxonomy } from "@/lib/services/products/taxonomy";
-import type { CrmProductTaxonomyKind } from "@prisma/client";
+import type { QcfProductTaxonomyKind } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     if (isResponse(user)) return user;
     await assertModule(user, "quotes", "view");
     const sp = new URL(req.url).searchParams;
-    const kind = sp.get("kind") as CrmProductTaxonomyKind | null;
+    const kind = sp.get("kind") as QcfProductTaxonomyKind | null;
     const parentId = sp.get("parentId");
     const items = await listTaxonomy(
       user.tenantId,

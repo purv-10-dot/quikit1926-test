@@ -35,7 +35,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       );
     }
 
-    const existing = await prisma.crmLead.findUnique({ where: { id } });
+    const existing = await prisma.qcfLead.findUnique({ where: { id } });
     if (!existing || existing.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -54,7 +54,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       // Soft-orphan activities so the audit trail survives the parent delete.
       // The relatedOrphanedAt flag drives "(deleted)" rendering in the
       // unified Activities timeline.
-      await tx.crmActivity.updateMany({
+      await tx.qcfActivity.updateMany({
         where: {
           tenantId: user.tenantId,
           relatedObjectId: id,
@@ -63,7 +63,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         },
         data: { relatedOrphanedAt: new Date() },
       });
-      await tx.crmLead.delete({ where: { id } });
+      await tx.qcfLead.delete({ where: { id } });
     });
     await recordLeadChange({
       tenantId: user.tenantId,

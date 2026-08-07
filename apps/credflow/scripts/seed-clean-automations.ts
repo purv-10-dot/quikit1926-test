@@ -5,7 +5,7 @@
  *   SEED_TENANT_ID=xxx npx tsx --env-file=.env.local scripts/seed-clean-automations.ts
  *
  * WHAT THIS IS
- *   Creates 7 CrmWorkflowDefinition rows whose graph shape is BYTE-IDENTICAL to
+ *   Creates 7 QcfWorkflowDefinition rows whose graph shape is BYTE-IDENTICAL to
  *   the UI-built "TEST R19 negotiation" rule proven to execute end-to-end:
  *   trigger_lead_updated -> if_else {AND, conditions:[{op:in,field,value:[...]}]}
  *   -> update_lead_field {field:"stage", value:X}; edge branch:"true".
@@ -171,7 +171,7 @@ async function main() {
   let skipped = 0;
 
   for (const spec of RULES) {
-    const existing = await prisma.crmWorkflowDefinition.findFirst({
+    const existing = await prisma.qcfWorkflowDefinition.findFirst({
       where: { tenantId: TENANT_ID, name: spec.name, deletedAt: null },
       select: { id: true },
     });
@@ -183,7 +183,7 @@ async function main() {
 
     const { graphNodes, graphEdges } = buildGraph(spec);
     const now = new Date();
-    await prisma.crmWorkflowDefinition.create({
+    await prisma.qcfWorkflowDefinition.create({
       data: {
         id: randomUUID(),
         tenantId: TENANT_ID,

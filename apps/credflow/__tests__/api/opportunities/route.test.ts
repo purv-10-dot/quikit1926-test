@@ -5,13 +5,13 @@ const db = mockDb();
 
 describe("GET /api/opportunities", () => {
   beforeEach(() => {
-    db.crmOpportunity.findMany.mockReset();
-    db.crmOpportunity.count.mockReset();
-    db.crmUserAccountAccess.findMany.mockReset();
-    db.crmSalesGroupMember.findMany.mockReset();
-    db.crmSalesGroupManager.findMany.mockReset();
-    db.crmSalesGroupAccount.findMany.mockReset();
-    db.crmUserPermissionTemplate.findMany.mockReset();
+    db.qcfOpportunity.findMany.mockReset();
+    db.qcfOpportunity.count.mockReset();
+    db.qcfUserAccountAccess.findMany.mockReset();
+    db.qcfSalesGroupMember.findMany.mockReset();
+    db.qcfSalesGroupManager.findMany.mockReset();
+    db.qcfSalesGroupAccount.findMany.mockReset();
+    db.qcfUserPermissionTemplate.findMany.mockReset();
     setSession(null);
   });
 
@@ -30,12 +30,12 @@ describe("GET /api/opportunities", () => {
       email: "a@b.co",
       name: "Alice",
     });
-    db.crmUserAccountAccess.findMany.mockResolvedValue([]);
-    db.crmSalesGroupMember.findMany.mockResolvedValue([]);
-    db.crmSalesGroupManager.findMany.mockResolvedValue([]);
-    db.crmSalesGroupAccount.findMany.mockResolvedValue([]);
-    db.crmUserPermissionTemplate.findMany.mockResolvedValue([]);
-    db.crmOpportunity.findMany.mockResolvedValue([
+    db.qcfUserAccountAccess.findMany.mockResolvedValue([]);
+    db.qcfSalesGroupMember.findMany.mockResolvedValue([]);
+    db.qcfSalesGroupManager.findMany.mockResolvedValue([]);
+    db.qcfSalesGroupAccount.findMany.mockResolvedValue([]);
+    db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qcfOpportunity.findMany.mockResolvedValue([
       {
         id: "o1",
         name: "Acme Q4",
@@ -56,7 +56,7 @@ describe("GET /api/opportunities", () => {
         createdAt: new Date(),
       } as never,
     ]);
-    db.crmOpportunity.count.mockResolvedValue(1);
+    db.qcfOpportunity.count.mockResolvedValue(1);
 
     const { GET } = await import("@/app/api/opportunities/route");
     const req = new Request("http://test/api/opportunities");
@@ -76,11 +76,11 @@ describe("GET /api/opportunities", () => {
 
 describe("POST /api/opportunities — tenant isolation", () => {
   beforeEach(() => {
-    db.crmAccount.findFirst.mockReset();
-    db.crmOpportunity.create.mockReset();
-    db.crmActivity.create.mockReset();
+    db.qcfAccount.findFirst.mockReset();
+    db.qcfOpportunity.create.mockReset();
+    db.qcfActivity.create.mockReset();
     db.user.findUnique.mockReset();
-    db.crmUserPermissionTemplate.findMany.mockReset();
+    db.qcfUserPermissionTemplate.findMany.mockReset();
     setSession(null);
   });
 
@@ -92,12 +92,12 @@ describe("POST /api/opportunities — tenant isolation", () => {
       email: "a@b.co",
       name: "Alice",
     });
-    db.crmUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qcfUserPermissionTemplate.findMany.mockResolvedValue([]);
     // assertAccountAccess: admin role shortcut returns immediately, so no
     // ACL queries are needed.
     // crmAccount lookup is scoped by tenantId — return null to simulate that
     // the account exists only in tenant B.
-    db.crmAccount.findFirst.mockResolvedValue(null);
+    db.qcfAccount.findFirst.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/opportunities/route");
     const req = new Request("http://test/api/opportunities", {

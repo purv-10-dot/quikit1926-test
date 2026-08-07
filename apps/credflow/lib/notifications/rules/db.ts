@@ -43,7 +43,7 @@ export async function ensureTableExists(): Promise<void> {
 
   // Statement 1: table
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS app_quikcrm.crm_notification_rule (
+    CREATE TABLE IF NOT EXISTS app_quikcredflow.crm_notification_rule (
       id               TEXT         PRIMARY KEY DEFAULT gen_random_uuid()::text,
       tenant_id        TEXT         NOT NULL,
       name             VARCHAR(200) NOT NULL,
@@ -66,7 +66,7 @@ export async function ensureTableExists(): Promise<void> {
   // Statement 2: index (separate call — see note above)
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS idx_crm_notification_rule_lookup
-      ON app_quikcrm.crm_notification_rule(tenant_id, entity_type, is_active)
+      ON app_quikcredflow.crm_notification_rule(tenant_id, entity_type, is_active)
   `);
 
   _tableReady = true;
@@ -119,7 +119,7 @@ function toRule(row: RuleRow): NotificationRule {
 export async function listRules(tenantId: string): Promise<NotificationRule[]> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
-    SELECT * FROM app_quikcrm.crm_notification_rule
+    SELECT * FROM app_quikcredflow.crm_notification_rule
     WHERE tenant_id = ${tenantId}
     ORDER BY created_at DESC
   `;
@@ -132,7 +132,7 @@ export async function getActiveRulesForEntity(
 ): Promise<NotificationRule[]> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
-    SELECT * FROM app_quikcrm.crm_notification_rule
+    SELECT * FROM app_quikcredflow.crm_notification_rule
     WHERE tenant_id = ${tenantId}
       AND entity_type = ${entityType}
       AND is_active = TRUE
@@ -147,7 +147,7 @@ export async function getRuleById(
 ): Promise<NotificationRule | null> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
-    SELECT * FROM app_quikcrm.crm_notification_rule
+    SELECT * FROM app_quikcredflow.crm_notification_rule
     WHERE id = ${id} AND tenant_id = ${tenantId}
     LIMIT 1
   `;
@@ -173,7 +173,7 @@ export interface CreateRuleInput {
 export async function createRule(input: CreateRuleInput): Promise<NotificationRule> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
-    INSERT INTO app_quikcrm.crm_notification_rule
+    INSERT INTO app_quikcredflow.crm_notification_rule
       (tenant_id, name, description, entity_type, field_name, condition_type,
        condition_value, notify_in_app, notify_email, recipient_type,
        recipient_value, message_template, is_active)
@@ -229,7 +229,7 @@ export async function updateRule(
   };
 
   const rows = await prisma.$queryRaw<RuleRow[]>`
-    UPDATE app_quikcrm.crm_notification_rule
+    UPDATE app_quikcredflow.crm_notification_rule
     SET name             = ${merged.name},
         description      = ${merged.description},
         entity_type      = ${merged.entityType},
@@ -252,7 +252,7 @@ export async function updateRule(
 export async function deleteRule(tenantId: string, id: string): Promise<boolean> {
   await ensureTableExists();
   await prisma.$executeRaw`
-    DELETE FROM app_quikcrm.crm_notification_rule
+    DELETE FROM app_quikcredflow.crm_notification_rule
     WHERE id = ${id} AND tenant_id = ${tenantId}
   `;
   return true;
@@ -265,7 +265,7 @@ export async function toggleRuleActive(
 ): Promise<NotificationRule | null> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<RuleRow[]>`
-    UPDATE app_quikcrm.crm_notification_rule
+    UPDATE app_quikcredflow.crm_notification_rule
     SET is_active  = ${isActive},
         updated_at = NOW()
     WHERE id = ${id} AND tenant_id = ${tenantId}
@@ -277,7 +277,7 @@ export async function toggleRuleActive(
 export async function countRules(tenantId: string): Promise<number> {
   await ensureTableExists();
   const rows = await prisma.$queryRaw<[{ count: bigint }]>`
-    SELECT COUNT(*) as count FROM app_quikcrm.crm_notification_rule
+    SELECT COUNT(*) as count FROM app_quikcredflow.crm_notification_rule
     WHERE tenant_id = ${tenantId}
   `;
   return Number(rows[0]?.count ?? 0);

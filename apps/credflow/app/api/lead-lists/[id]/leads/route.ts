@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const user = await requireApiUser();
     if (isResponse(user)) return user;
 
-    const list = await prisma.crmLeadSavedList.findFirst({
+    const list = await prisma.qcfLeadSavedList.findFirst({
       where: { id, tenantId: user.tenantId, userId: user.userId },
     });
     if (!list) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -41,13 +41,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const where = { AND: baseAnd };
 
     const [items, total] = await Promise.all([
-      prisma.crmLead.findMany({
+      prisma.qcfLead.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { createdAt: "desc" },
       }),
-      prisma.crmLead.count({ where }),
+      prisma.qcfLead.count({ where }),
     ]);
     const masked = await Promise.all(items.map((l) => maskHiddenLeadFields(user, l)));
     return NextResponse.json({

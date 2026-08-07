@@ -1,8 +1,8 @@
 /**
- * System-generated CrmActivity rows when a lead is created (HubSpot / Salesforce pattern).
+ * System-generated QcfActivity rows when a lead is created (HubSpot / Salesforce pattern).
  * Ensures timeline, recent activity, and intelligence feeds are never empty on new leads.
  */
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { logActivity } from "@/lib/services/activities/log-activity";
 
 export const LEAD_SYSTEM_ACTIVITY_CODE = "lead_system";
@@ -78,7 +78,7 @@ export function inferLeadCreationChannel(input: {
   return "manual";
 }
 
-function formatDetailBlock(lead: CrmLead, channel: LeadCreationChannel, ctx: LeadCreationContext): string {
+function formatDetailBlock(lead: QcfLead, channel: LeadCreationChannel, ctx: LeadCreationContext): string {
   const lines: string[] = ["[System]", "", "Lead created", ""];
   if (lead.source?.trim()) lines.push(`Source: ${lead.source.trim()}`);
   if (lead.ownerName?.trim()) lines.push(`Owner: ${lead.ownerName.trim()}`);
@@ -102,7 +102,7 @@ type SystemEvent = {
 };
 
 function buildSystemEvents(
-  lead: CrmLead,
+  lead: QcfLead,
   channel: LeadCreationChannel,
   ctx: LeadCreationContext,
 ): SystemEvent[] {
@@ -165,7 +165,7 @@ function buildSystemEvents(
  * Idempotent per lead + event slug. Safe to call after every create path.
  */
 export async function logLeadSystemActivitiesOnCreate(
-  lead: CrmLead,
+  lead: QcfLead,
   ctx: LeadCreationContext = {},
 ): Promise<void> {
   const channel =

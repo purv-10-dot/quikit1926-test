@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const ws = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId: user.tenantId } });
+    const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId: user.tenantId } });
     const settings = (ws?.settings as Record<string, unknown> | null) ?? {};
     const stages = (settings.leadPipelineConfig as { stages?: string[] } | undefined)?.stages ?? DEFAULT_STAGES;
     return NextResponse.json({ stages });

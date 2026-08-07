@@ -20,11 +20,11 @@ import { prisma } from "@/lib/db/prisma";
 import { assertDraft } from "@/lib/services/forms/form-structure.service";
 import { Prisma } from "@quikit/database";
 import type {
-  CrmFormRule,
-  CrmFormRuleCondition,
-  CrmFormRuleMatchType,
-  CrmFormRuleSubjectKind,
-  CrmFormRuleOperator,
+  QcfFormRule,
+  QcfFormRuleCondition,
+  QcfFormRuleMatchType,
+  QcfFormRuleSubjectKind,
+  QcfFormRuleOperator,
 } from "@quikit/database";
 
 export class FormRuleError extends Error {
@@ -37,15 +37,15 @@ export class FormRuleError extends Error {
 }
 
 export interface ConditionInput {
-  subjectKind: CrmFormRuleSubjectKind;
+  subjectKind: QcfFormRuleSubjectKind;
   subjectFieldKey?: string | null;
-  operator: CrmFormRuleOperator;
+  operator: QcfFormRuleOperator;
   valueKeys?: string[] | null;
 }
 
-const SINGLE_VALUE_OPS: CrmFormRuleOperator[] = ["is", "is_not"];
-const MULTI_VALUE_OPS: CrmFormRuleOperator[] = ["is_any_of", "is_none_of"];
-const NO_VALUE_OPS: CrmFormRuleOperator[] = ["is_empty", "is_not_empty"];
+const SINGLE_VALUE_OPS: QcfFormRuleOperator[] = ["is", "is_not"];
+const MULTI_VALUE_OPS: QcfFormRuleOperator[] = ["is_any_of", "is_none_of"];
+const NO_VALUE_OPS: QcfFormRuleOperator[] = ["is_empty", "is_not_empty"];
 
 /**
  * Pure SHAPE validation (no DB): subject-kind <-> subjectFieldKey coupling and
@@ -87,7 +87,7 @@ export function validateConditionInput(input: ConditionInput): void {
 
 /** Validate-at-build: a field-subject condition must reference an existing field. */
 export async function assertFieldExists(formSetVersionId: string, fieldKey: string): Promise<void> {
-  const field = await prisma.crmFormField.findFirst({
+  const field = await prisma.qcfFormField.findFirst({
     where: { formSetVersionId, fieldKey },
     select: { id: true },
   });
@@ -101,7 +101,7 @@ export async function assertFieldExists(formSetVersionId: string, fieldKey: stri
 
 /** All rules of a version with their conditions, ordered. */
 export async function getFormRules(formSetVersionId: string) {
-  return prisma.crmFormRule.findMany({
+  return prisma.qcfFormRule.findMany({
     where: { formSetVersionId },
     orderBy: { sortOrder: "asc" },
     include: {
@@ -115,13 +115,13 @@ export async function getFormRules(formSetVersionId: string) {
 export async function createFormRule(input: {
   formSetVersionId: string;
   name: string;
-  matchType: CrmFormRuleMatchType;
+  matchType: QcfFormRuleMatchType;
   sortOrder: number;
   isActive?: boolean;
   createdByUserId?: string | null;
-}): Promise<CrmFormRule> {
+}): Promise<QcfFormRule> {
   await assertDraft(input.formSetVersionId);
-  return prisma.crmFormRule.create({
+  return prisma.qcfFormRule.create({
     data: {
       formSetVersionId: input.formSetVersionId,
       name: input.name,
@@ -135,7 +135,7 @@ export async function createFormRule(input: {
 
 /** Resolve a rule's version (and assert it is a draft) for any rule-scoped edit. */
 export async function assertRuleDraft(formRuleId: string): Promise<string> {
-  const rule = await prisma.crmFormRule.findUnique({
+  const rule = await prisma.qcfFormRule.findUnique({
     where: { id: formRuleId },
     select: { formSetVersionId: true },
   });
@@ -147,12 +147,12 @@ export async function assertRuleDraft(formRuleId: string): Promise<string> {
 export async function updateFormRule(input: {
   ruleId: string;
   name?: string;
-  matchType?: CrmFormRuleMatchType;
+  matchType?: QcfFormRuleMatchType;
   sortOrder?: number;
   isActive?: boolean;
-}): Promise<CrmFormRule> {
+}): Promise<QcfFormRule> {
   await assertRuleDraft(input.ruleId);
-  return prisma.crmFormRule.update({
+  return prisma.qcfFormRule.update({
     where: { id: input.ruleId },
     data: {
       ...(input.name !== undefined ? { name: input.name } : {}),
@@ -165,23 +165,23 @@ export async function updateFormRule(input: {
 
 export async function deleteFormRule(ruleId: string): Promise<void> {
   await assertRuleDraft(ruleId);
-  await prisma.crmFormRule.delete({ where: { id: ruleId } }); // conditions/actions cascade
+  await prisma.qcfFormRule.delete({ where: { id: ruleId } }); // conditions/actions cascade
 }
 
 export async function addRuleCondition(input: {
   formRuleId: string;
-  subjectKind: CrmFormRuleSubjectKind;
+  subjectKind: QcfFormRuleSubjectKind;
   subjectFieldKey?: string | null;
-  operator: CrmFormRuleOperator;
+  operator: QcfFormRuleOperator;
   valueKeys?: string[] | null;
   sortOrder: number;
-}): Promise<CrmFormRuleCondition> {
+}): Promise<QcfFormRuleCondition> {
   validateConditionInput(input);
   const versionId = await assertRuleDraft(input.formRuleId);
   if (input.subjectKind === "field") {
     await assertFieldExists(versionId, input.subjectFieldKey!.trim());
   }
-  return prisma.crmFormRuleCondition.create({
+  return prisma.qcfFormRuleCondition.create({
     data: {
       formRuleId: input.formRuleId,
       subjectKind: input.subjectKind,
@@ -195,13 +195,13 @@ export async function addRuleCondition(input: {
 
 export async function updateRuleCondition(input: {
   conditionId: string;
-  subjectKind?: CrmFormRuleSubjectKind;
+  subjectKind?: QcfFormRuleSubjectKind;
   subjectFieldKey?: string | null;
-  operator?: CrmFormRuleOperator;
+  operator?: QcfFormRuleOperator;
   valueKeys?: string[] | null;
   sortOrder?: number;
-}): Promise<CrmFormRuleCondition> {
-  const existing = await prisma.crmFormRuleCondition.findUnique({
+}): Promise<QcfFormRuleCondition> {
+  const existing = await prisma.qcfFormRuleCondition.findUnique({
     where: { id: input.conditionId },
     select: {
       formRuleId: true,
@@ -228,7 +228,7 @@ export async function updateRuleCondition(input: {
     await assertFieldExists(versionId, merged.subjectFieldKey!.trim());
   }
 
-  return prisma.crmFormRuleCondition.update({
+  return prisma.qcfFormRuleCondition.update({
     where: { id: input.conditionId },
     data: {
       subjectKind: merged.subjectKind,
@@ -242,13 +242,13 @@ export async function updateRuleCondition(input: {
 }
 
 export async function deleteRuleCondition(conditionId: string): Promise<void> {
-  const existing = await prisma.crmFormRuleCondition.findUnique({
+  const existing = await prisma.qcfFormRuleCondition.findUnique({
     where: { id: conditionId },
     select: { formRuleId: true },
   });
   if (!existing) throw new FormRuleError("Condition not found.", 404);
   await assertRuleDraft(existing.formRuleId);
-  await prisma.crmFormRuleCondition.delete({ where: { id: conditionId } });
+  await prisma.qcfFormRuleCondition.delete({ where: { id: conditionId } });
 }
 
 /** Store valueKeys as a uniform JSON string[]; no values -> SQL NULL. */

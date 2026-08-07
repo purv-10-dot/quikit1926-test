@@ -2,7 +2,7 @@
  * Tasks service — server-side helpers shared by the API routes.
  *
  * This is the scoped Phase-2 implementation: everything works against the
- * existing CrmTask columns. Schema-dependent features (description,
+ * existing QcfTask columns. Schema-dependent features (description,
  * completedAt/By, cancellationReason, snoozedFromDueDate, parentTaskId,
  * recurrenceRule, sourceCallLogId, "Waiting" status) are tracked in the
  * follow-up PR — see // TODO(integration) markers below and in
@@ -40,11 +40,11 @@ const SMART_VIEW_KEYWORDS: Record<string, { subject?: string[]; taskType?: strin
   follow_up: { subject: ["follow"] },
 };
 
-function smartViewWhere(key: string | undefined): Prisma.CrmTaskWhereInput | null {
+function smartViewWhere(key: string | undefined): Prisma.QcfTaskWhereInput | null {
   if (!key) return null;
   const groups = SMART_VIEW_KEYWORDS[key];
   if (!groups) return null;
-  const or: Prisma.CrmTaskWhereInput[] = [];
+  const or: Prisma.QcfTaskWhereInput[] = [];
   for (const word of groups.subject ?? []) {
     or.push({ subject: { contains: word, mode: "insensitive" } });
   }
@@ -54,7 +54,7 @@ function smartViewWhere(key: string | undefined): Prisma.CrmTaskWhereInput | nul
   return or.length ? { OR: or } : null;
 }
 
-function duePresetWhere(preset: string | undefined): Prisma.CrmTaskWhereInput | null {
+function duePresetWhere(preset: string | undefined): Prisma.QcfTaskWhereInput | null {
   if (!preset) return null;
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -92,13 +92,13 @@ function duePresetWhere(preset: string | undefined): Prisma.CrmTaskWhereInput | 
 export function buildTaskListWhere(
   user: SessionUser,
   q: ListTasksQuery,
-): Prisma.CrmTaskWhereInput {
+): Prisma.QcfTaskWhereInput {
   return buildListWhere(user, q);
 }
 
-function buildListWhere(user: SessionUser, q: ListTasksQuery): Prisma.CrmTaskWhereInput {
-  const where: Prisma.CrmTaskWhereInput = { tenantId: user.tenantId };
-  const ands: Prisma.CrmTaskWhereInput[] = [];
+function buildListWhere(user: SessionUser, q: ListTasksQuery): Prisma.QcfTaskWhereInput {
+  const where: Prisma.QcfTaskWhereInput = { tenantId: user.tenantId };
+  const ands: Prisma.QcfTaskWhereInput[] = [];
 
   if (q.status) where.status = q.status;
   if (q.relatedKind) where.relatedKind = q.relatedKind;
@@ -141,21 +141,21 @@ export async function listTasks(user: SessionUser, q: ListTasksQuery) {
   const page = q.limit ? 1 : q.page;
   const skip = (page - 1) * pageSize;
   const [items, total] = await Promise.all([
-    prisma.crmTask.findMany({
+    prisma.qcfTask.findMany({
       where,
       // `id desc` tiebreaker → stable page boundaries when many rows share the same dueDate.
       orderBy: [{ dueDate: "asc" }, { id: "desc" }],
       skip,
       take: pageSize,
     }),
-    prisma.crmTask.count({ where }),
+    prisma.qcfTask.count({ where }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return { items, total, page, pageSize, totalPages };
 }
 
 export async function getTask(user: SessionUser, id: string) {
-  return prisma.crmTask.findFirst({ where: { id, tenantId: user.tenantId } });
+  return prisma.qcfTask.findFirst({ where: { id, tenantId: user.tenantId } });
 }
 
 function leadIdFromRelation(input: {
@@ -171,7 +171,7 @@ function leadIdFromRelation(input: {
 }
 
 export async function createTask(user: SessionUser, input: CreateTaskInput) {
-  const data: Prisma.CrmTaskUncheckedCreateInput = {
+  const data: Prisma.QcfTaskUncheckedCreateInput = {
     tenantId: user.tenantId,
     subject: input.subject,
     taskType: input.taskType ?? null,
@@ -186,7 +186,7 @@ export async function createTask(user: SessionUser, input: CreateTaskInput) {
     // so it can't be spoofed. Surfaced as "Assigned by" in the tasks table.
     createdByUserId: user.userId,
   };
-  const task = await prisma.crmTask.create({ data });
+  const task = await prisma.qcfTask.create({ data });
   // [last-activity] Creating a task is an activity — advance the related lead's
   // last_activity_date so activity-date filters re-evaluate. No-op when the task
   // isn't tied to a lead.
@@ -209,7 +209,7 @@ interface UpdateOptions {
 /**
  * Update a task with status-change + reassignment audit rows.
  *
- * Writes a CrmActivity { type: "TaskStatusChange" } when status changes and
+ * Writes a QcfActivity { type: "TaskStatusChange" } when status changes and
  * { type: "TaskReassignment" } when assignedToUserId changes — these surface
  * on the lead unified timeline (`/api/activities` filters by leadId) the
  * same way Call/FollowUp activities do today.
@@ -220,7 +220,7 @@ export async function updateTask(
   patch: UpdateTaskInput,
   options: UpdateOptions = {},
 ) {
-  const existing = await prisma.crmTask.findFirst({ where: { id, tenantId: user.tenantId } });
+  const existing = await prisma.qcfTask.findFirst({ where: { id, tenantId: user.tenantId } });
   if (!existing) {
     const err = new Error("Task not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -229,7 +229,7 @@ export async function updateTask(
 
   // Unchecked variant lets us set scalar FKs (leadId) directly without a
   // relation connect — matches how the rest of the CRM updates rows.
-  const data: Prisma.CrmTaskUncheckedUpdateInput = {};
+  const data: Prisma.QcfTaskUncheckedUpdateInput = {};
   if (patch.subject !== undefined) data.subject = patch.subject;
   if (patch.taskType !== undefined) data.taskType = patch.taskType;
   if (patch.priority !== undefined) data.priority = patch.priority;
@@ -251,7 +251,7 @@ export async function updateTask(
     data.leadId = leadIdFromRelation(merged);
   }
 
-  const updated = await prisma.crmTask.update({ where: { id }, data });
+  const updated = await prisma.qcfTask.update({ where: { id }, data });
 
   const statusChanged = patch.status !== undefined && patch.status !== existing.status;
   const assigneeChanged =
@@ -272,7 +272,7 @@ export async function updateTask(
 
 export async function deleteTask(user: SessionUser, id: string) {
   // Tenant-scoped delete; deleteMany returns count so we can detect the 404.
-  const res = await prisma.crmTask.deleteMany({ where: { id, tenantId: user.tenantId } });
+  const res = await prisma.qcfTask.deleteMany({ where: { id, tenantId: user.tenantId } });
   if (res.count === 0) {
     const err = new Error("Task not found") as Error & { statusCode?: number };
     err.statusCode = 404;
@@ -284,24 +284,24 @@ export async function snoozeTask(
   user: SessionUser,
   id: string,
   newDueDate: Date,
-): Promise<{ task: Awaited<ReturnType<typeof prisma.crmTask.update>>; previousDueDate: Date | null }> {
-  const existing = await prisma.crmTask.findFirst({ where: { id, tenantId: user.tenantId } });
+): Promise<{ task: Awaited<ReturnType<typeof prisma.qcfTask.update>>; previousDueDate: Date | null }> {
+  const existing = await prisma.qcfTask.findFirst({ where: { id, tenantId: user.tenantId } });
   if (!existing) {
     const err = new Error("Task not found") as Error & { statusCode?: number };
     err.statusCode = 404;
     throw err;
   }
-  const updated = await prisma.crmTask.update({
+  const updated = await prisma.qcfTask.update({
     where: { id },
     data: { dueDate: newDueDate },
   });
 
   // Status-change activity shape, repurposed for snooze. Stores the old/new
-  // due dates in detailNotes since CrmTask has no snoozedFromDueDate column.
+  // due dates in detailNotes since QcfTask has no snoozedFromDueDate column.
   // TODO(integration): switch to a proper snoozedFromDueDate field once the
   // schema overhaul lands so the modal can show "Snoozed from …" reliably.
   if (existing.relatedKind && existing.relatedObjectId) {
-    await prisma.crmActivity.create({
+    await prisma.qcfActivity.create({
       data: {
         tenantId: user.tenantId,
         type: "TaskSnooze",
@@ -321,8 +321,8 @@ export async function snoozeTask(
 }
 
 export async function advancedFilter(user: SessionUser, input: AdvancedFilterInput) {
-  const where: Prisma.CrmTaskWhereInput = { tenantId: user.tenantId };
-  const ands: Prisma.CrmTaskWhereInput[] = [];
+  const where: Prisma.QcfTaskWhereInput = { tenantId: user.tenantId };
+  const ands: Prisma.QcfTaskWhereInput[] = [];
   if (input.status?.length) ands.push({ status: { in: input.status } });
   if (input.priority?.length) ands.push({ priority: { in: input.priority } });
   if (input.relatedKind?.length) ands.push({ relatedKind: { in: input.relatedKind } });
@@ -344,16 +344,16 @@ export async function advancedFilter(user: SessionUser, input: AdvancedFilterInp
   const sv = smartViewWhere(input.smartView);
   if (sv) ands.push(sv);
 
-  const finalWhere: Prisma.CrmTaskWhereInput = ands.length ? { AND: [where, ...ands] } : where;
+  const finalWhere: Prisma.QcfTaskWhereInput = ands.length ? { AND: [where, ...ands] } : where;
   const skip = (input.page - 1) * input.pageSize;
   const [items, total] = await Promise.all([
-    prisma.crmTask.findMany({
+    prisma.qcfTask.findMany({
       where: finalWhere,
       orderBy: [{ dueDate: "asc" }, { id: "desc" }],
       skip,
       take: input.pageSize,
     }),
-    prisma.crmTask.count({ where: finalWhere }),
+    prisma.qcfTask.count({ where: finalWhere }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
   return { items, total, page: input.page, pageSize: input.pageSize, totalPages };
@@ -367,7 +367,7 @@ async function writeStatusChangeActivity(
   meta: { cancellationReason: string | null },
 ) {
   if (!task.relatedKind || !task.relatedObjectId) return;
-  await prisma.crmActivity.create({
+  await prisma.qcfActivity.create({
     data: {
       tenantId: user.tenantId,
       type: "TaskStatusChange",
@@ -402,7 +402,7 @@ async function writeReassignmentActivity(
     const p = profiles.find((u) => u.id === id);
     return p ? `${p.firstName} ${p.lastName}`.trim() || p.email : id;
   };
-  await prisma.crmActivity.create({
+  await prisma.qcfActivity.create({
     data: {
       tenantId: user.tenantId,
       type: "TaskReassignment",
@@ -420,7 +420,7 @@ async function writeReassignmentActivity(
 /**
  * Best-effort idempotency check used by the disposition → task hook.
  *
- * CrmTask has no sourceCallLogId column yet, so we approximate by matching
+ * QcfTask has no sourceCallLogId column yet, so we approximate by matching
  * on lead + due date + status="Open" + a "Follow up · " subject prefix
  * within a 2-minute window of the call log creation. Two clicks on the
  * same disposition modal save (same followUpAt + same lead) collapse to
@@ -435,7 +435,7 @@ export async function findExistingFollowUpTask(opts: {
 }) {
   const windowStart = new Date(opts.callLogCreatedAt.getTime() - 2 * 60 * 1000);
   const windowEnd = new Date(opts.callLogCreatedAt.getTime() + 2 * 60 * 1000);
-  return prisma.crmTask.findFirst({
+  return prisma.qcfTask.findFirst({
     where: {
       tenantId: opts.tenantId,
       leadId: opts.leadId,

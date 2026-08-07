@@ -15,7 +15,7 @@ function adminSession() {
 
 describe("POST /api/marketing/campaigns", () => {
   beforeEach(() => {
-    db.crmCampaign.create.mockReset();
+    db.qcfCampaign.create.mockReset();
     setSession(null);
   });
 
@@ -32,7 +32,7 @@ describe("POST /api/marketing/campaigns", () => {
 
   it("creates a campaign scoped to the tenant", async () => {
     adminSession();
-    db.crmCampaign.create.mockResolvedValue({
+    db.qcfCampaign.create.mockResolvedValue({
       id: "c1",
       tenantId: "t1",
       name: "Diwali Offer",
@@ -57,7 +57,7 @@ describe("POST /api/marketing/campaigns", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(201);
 
-    const data = db.crmCampaign.create.mock.calls[0]![0]!.data as {
+    const data = db.qcfCampaign.create.mock.calls[0]![0]!.data as {
       tenantId: string;
       name: string;
       config?: { budget: number; description: string };

@@ -40,12 +40,12 @@ interface SettingsTree {
 }
 
 async function readTree(tenantId: string): Promise<SettingsTree> {
-  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   return ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
 }
 
 async function writeTree(tenantId: string, next: SettingsTree): Promise<void> {
-  await prisma.crmOrgWorkspaceSettings.upsert({
+  await prisma.qcfOrgWorkspaceSettings.upsert({
     where: { tenantId },
     create: { tenantId, settings: next as object },
     update: { settings: next as object },
@@ -57,11 +57,11 @@ export async function getPipelineConfig(tenantId: string): Promise<PipelineConfi
   const cfg = tree.leadPipelineConfig ?? {};
 
   // Derive statuses, substatuses, and statusToSubstatuses from the DB tables
-  // (CrmLeadStatus / CrmLeadSubStatus / CrmLeadStatusSubStatus).
+  // (QcfLeadStatus / QcfLeadSubStatus / QcfLeadStatusSubStatus).
   // These are authoritative — the stale JSON blob in OrgWorkspaceSettings may
   // contain reversed or empty data from before the migration.
   const [dbStatuses, dbSubStatuses] = await Promise.all([
-    prisma.crmLeadStatus.findMany({
+    prisma.qcfLeadStatus.findMany({
       include: {
         subStatuses: {
           include: { leadSubStatus: { select: { name: true } } },
@@ -69,7 +69,7 @@ export async function getPipelineConfig(tenantId: string): Promise<PipelineConfi
       },
       orderBy: { name: "asc" },
     }),
-    prisma.crmLeadSubStatus.findMany({
+    prisma.qcfLeadSubStatus.findMany({
       select: { name: true },
       orderBy: { name: "asc" },
     }),

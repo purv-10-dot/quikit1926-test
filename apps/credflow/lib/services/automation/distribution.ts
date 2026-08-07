@@ -1,4 +1,4 @@
-import type { CrmLead as Lead } from "@prisma/client";
+import type { QcfLead as Lead } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { evalCondition } from "@/lib/services/automation/conditions";
 import type { DistributeConfig } from "@/types/workflow";
@@ -18,7 +18,7 @@ export async function pickNextUser(opts: {
   if (opts.candidateUserIds.length === 0) return null;
 
   // Upsert the state row, then atomically increment & read in one call
-  const state = await prisma.crmAutomationDistributionState.upsert({
+  const state = await prisma.qcfAutomationDistributionState.upsert({
     where: {
       tenantId_workflowId_nodeId: {
         tenantId: opts.tenantId,
@@ -49,7 +49,7 @@ export async function pickNextUser(opts: {
  *
  * Returns the chosen pool plus a stable `ruleKey` the caller appends to the node
  * id so each rule/default keeps its OWN round-robin cursor
- * (CrmAutomationDistributionState is keyed by tenant+workflow+nodeId). The legacy
+ * (QcfAutomationDistributionState is keyed by tenant+workflow+nodeId). The legacy
  * flat form returns ruleKey "" so its cursor stays on the bare node id (no reset
  * for pre-B3 definitions). Returns null when nothing is assignable (no rule
  * matched AND no/empty default) — the caller then leaves the owner unchanged.

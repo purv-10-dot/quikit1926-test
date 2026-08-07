@@ -1,6 +1,6 @@
 /**
  * GET /api/settings/company — tenant company profile for Settings → Company.
- * PATCH /api/settings/company — upsert CrmCompanyProfile (settings.edit).
+ * PATCH /api/settings/company — upsert QcfCompanyProfile (settings.edit).
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";

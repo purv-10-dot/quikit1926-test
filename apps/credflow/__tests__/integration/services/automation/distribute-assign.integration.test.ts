@@ -29,7 +29,7 @@ const cfg: DistributeConfig = {
 };
 
 beforeAll(async () => {
-  await integrationPrisma.crmWorkflowDefinition.create({
+  await integrationPrisma.qcfWorkflowDefinition.create({
     data: {
       id: WF,
       tenantId: TENANT,
@@ -43,41 +43,41 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmAutomationAttribution.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmAutomationDistributionState.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmLead.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmWorkflowDefinition.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfAutomationAttribution.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfAutomationDistributionState.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { tenantId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 
 describe("B3 distribute_lead · real DB", () => {
   it("assigns a rule-2-only lead from rule 2, records attribution + loop count, no raw update", async () => {
-    const lead = await integrationPrisma.crmLead.create({
+    const lead = await integrationPrisma.qcfLead.create({
       data: { tenantId: TENANT, name: "Rule2 Lead", stage: "Cold", status: "Open", ownerId: "orig-owner" },
     });
 
     await runFrom(TENANT, WF, lead.id, "n1");
 
-    const after = await integrationPrisma.crmLead.findUnique({ where: { id: lead.id } });
+    const after = await integrationPrisma.qcfLead.findUnique({ where: { id: lead.id } });
     expect(after?.ownerId).toBe("rule2-user"); // rule 1 (stage=Hot) misses; rule 2 (status=Open) wins
 
-    const attr = await integrationPrisma.crmAutomationAttribution.findMany({ where: { tenantId: TENANT, leadId: lead.id } });
+    const attr = await integrationPrisma.qcfAutomationAttribution.findMany({ where: { tenantId: TENANT, leadId: lead.id } });
     expect(attr).toHaveLength(1);
     expect(attr[0]).toMatchObject({ field: "ownerId", afterValue: "rule2-user", engineSource: "automation" });
 
-    const counter = await integrationPrisma.crmAutomationLeadDayCount.findFirst({ where: { tenantId: TENANT, leadId: lead.id } });
+    const counter = await integrationPrisma.qcfAutomationLeadDayCount.findFirst({ where: { tenantId: TENANT, leadId: lead.id } });
     expect(counter?.count).toBe(1); // the owner write counted toward the per-lead/day cap
   });
 
   it("assigns a no-match lead from the mandatory default pool", async () => {
-    const lead = await integrationPrisma.crmLead.create({
+    const lead = await integrationPrisma.qcfLead.create({
       data: { tenantId: TENANT, name: "Default Lead", stage: "Cold", status: "Closed", ownerId: "orig-owner" },
     });
 
     await runFrom(TENANT, WF, lead.id, "n1");
 
-    const after = await integrationPrisma.crmLead.findUnique({ where: { id: lead.id } });
+    const after = await integrationPrisma.qcfLead.findUnique({ where: { id: lead.id } });
     expect(after?.ownerId).toBe("default-user");
   });
 });

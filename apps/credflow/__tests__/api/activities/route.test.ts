@@ -15,8 +15,8 @@ function adminSession() {
 
 describe("POST /api/activities (generic)", () => {
   beforeEach(() => {
-    db.crmLead.findFirst.mockReset();
-    db.crmActivity.create.mockReset();
+    db.qcfLead.findFirst.mockReset();
+    db.qcfActivity.create.mockReset();
     db.user.findUnique.mockReset();
     setSession(null);
   });
@@ -51,7 +51,7 @@ describe("POST /api/activities (generic)", () => {
 
   it("returns 404 when the related Lead does not exist", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue(null);
+    db.qcfLead.findFirst.mockResolvedValue(null);
     const { POST } = await import("@/app/api/activities/route");
     const req = new Request("http://test/api/activities", {
       method: "POST",
@@ -68,14 +68,14 @@ describe("POST /api/activities (generic)", () => {
 
   it("creates a generic activity with happy-path payload", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
     db.user.findUnique.mockResolvedValue({
       id: "u1",
       firstName: "Alice",
       lastName: "",
       email: "a@b.co",
     } as never);
-    db.crmActivity.create.mockResolvedValue({
+    db.qcfActivity.create.mockResolvedValue({
       id: "act1",
       tenantId: "t1",
       type: "Note",
@@ -100,7 +100,7 @@ describe("POST /api/activities (generic)", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as never);
-    db.crmLead.findMany.mockResolvedValue([{ id: "L1", name: "ACME" } as never]);
+    db.qcfLead.findMany.mockResolvedValue([{ id: "L1", name: "ACME" } as never]);
 
     const { POST } = await import("@/app/api/activities/route");
     const req = new Request("http://test/api/activities", {
@@ -125,13 +125,13 @@ describe("POST /api/activities (generic)", () => {
 
 describe("GET /api/activities (relink-aware Opportunity reads)", () => {
   beforeEach(() => {
-    db.crmActivity.findMany.mockReset();
+    db.qcfActivity.findMany.mockReset();
     setSession(null);
   });
 
   it("includes the direct opportunityId FK in the OR-branch when relatedKind=Opportunity", async () => {
     adminSession();
-    db.crmActivity.findMany.mockResolvedValue([] as never);
+    db.qcfActivity.findMany.mockResolvedValue([] as never);
     const { GET } = await import("@/app/api/activities/route");
     const req = new Request(
       "http://test/api/activities?relatedKind=Opportunity&relatedObjectId=opp-1",
@@ -139,7 +139,7 @@ describe("GET /api/activities (relink-aware Opportunity reads)", () => {
     const res = await GET(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const findArg = db.crmActivity.findMany.mock.calls[0]?.[0] as {
+    const findArg = db.qcfActivity.findMany.mock.calls[0]?.[0] as {
       where: { AND: Array<Record<string, unknown>> };
     };
     const orBranch = findArg.where.AND.find((c) => Array.isArray(c.OR)) as
@@ -155,7 +155,7 @@ describe("GET /api/activities (relink-aware Opportunity reads)", () => {
 
   it("does NOT add an opportunityId OR-clause for non-Opportunity reads (e.g. Contact)", async () => {
     adminSession();
-    db.crmActivity.findMany.mockResolvedValue([] as never);
+    db.qcfActivity.findMany.mockResolvedValue([] as never);
     const { GET } = await import("@/app/api/activities/route");
     const req = new Request(
       "http://test/api/activities?relatedKind=Contact&relatedObjectId=c-1",
@@ -163,7 +163,7 @@ describe("GET /api/activities (relink-aware Opportunity reads)", () => {
     const res = await GET(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const findArg = db.crmActivity.findMany.mock.calls[0]?.[0] as {
+    const findArg = db.qcfActivity.findMany.mock.calls[0]?.[0] as {
       where: { AND: Array<Record<string, unknown>> };
     };
     const orBranch = findArg.where.AND.find((c) => Array.isArray(c.OR)) as
@@ -177,13 +177,13 @@ describe("GET /api/activities (relink-aware Opportunity reads)", () => {
 
   it("preserves the leadId provenance read-path (GET ?leadId=oldLeadId still works)", async () => {
     adminSession();
-    db.crmActivity.findMany.mockResolvedValue([] as never);
+    db.qcfActivity.findMany.mockResolvedValue([] as never);
     const { GET } = await import("@/app/api/activities/route");
     const req = new Request("http://test/api/activities?leadId=lead-old");
     const res = await GET(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
 
-    const findArg = db.crmActivity.findMany.mock.calls[0]?.[0] as {
+    const findArg = db.qcfActivity.findMany.mock.calls[0]?.[0] as {
       where: { AND: Array<Record<string, unknown>> };
     };
     const orBranch = findArg.where.AND.find((c) => Array.isArray(c.OR)) as

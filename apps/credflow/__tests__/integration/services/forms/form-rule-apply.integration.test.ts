@@ -37,53 +37,53 @@ let setId: string;
 let vn = 1;
 
 async function newVersion(): Promise<string> {
-  const v = await integrationPrisma.crmFormSetVersion.create({
+  const v = await integrationPrisma.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: vn++, status: "draft" },
   });
   return v.id;
 }
 
 async function newLead(status = "Open", stage = "New", substatus: string | null = null): Promise<string> {
-  const lead = await integrationPrisma.crmLead.create({
+  const lead = await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: `Lead ${STAMP}-${vn}`, status, stage, substatus },
   });
   return lead.id;
 }
 
 beforeAll(async () => {
-  const set = await integrationPrisma.crmFormSet.create({
+  const set = await integrationPrisma.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
 });
 
 afterAll(async () => {
-  const versions = await integrationPrisma.crmFormSetVersion.findMany({
+  const versions = await integrationPrisma.qcfFormSetVersion.findMany({
     where: { formSetId: setId },
     select: { id: true },
   });
   const vids = versions.map((v) => v.id);
-  const rules = await integrationPrisma.crmFormRule.findMany({
+  const rules = await integrationPrisma.qcfFormRule.findMany({
     where: { formSetVersionId: { in: vids } },
     select: { id: true },
   });
   const rids = rules.map((r) => r.id);
   if (rids.length) {
-    await integrationPrisma.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
-    await integrationPrisma.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
-    await integrationPrisma.crmFormRule.deleteMany({ where: { id: { in: rids } } });
+    await integrationPrisma.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: rids } } });
+    await integrationPrisma.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rids } } });
+    await integrationPrisma.qcfFormRule.deleteMany({ where: { id: { in: rids } } });
   }
-  await integrationPrisma.crmFieldValue.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
-  await integrationPrisma.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await integrationPrisma.crmFormSet.deleteMany({ where: { id: setId } });
-  await integrationPrisma.crmLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
+  await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
 });
 
 describe("loadEvalRules — Prisma rows -> EvalRule[] adapter", () => {
   it("maps active rules with conditions + actions into the pure shape", async () => {
     const versionId = await newVersion();
-    await integrationPrisma.crmFormField.create({
+    await integrationPrisma.qcfFormField.create({
       data: { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "gst", label: "GST", fieldType: "text", sortOrder: 0 },
     });
     const rule = await createFormRule({ formSetVersionId: versionId, name: "adapter", matchType: "any", sortOrder: 0 });
@@ -104,7 +104,7 @@ describe("loadEvalRules — Prisma rows -> EvalRule[] adapter", () => {
     const versionId = await newVersion();
     const rule = await createFormRule({ formSetVersionId: versionId, name: "inactive", matchType: "all", sortOrder: 0 });
     await addRuleCondition({ formRuleId: rule.id, subjectKind: "status", operator: "is", valueKeys: ["Open"], sortOrder: 0 });
-    await integrationPrisma.crmFormRule.update({ where: { id: rule.id }, data: { isActive: false } });
+    await integrationPrisma.qcfFormRule.update({ where: { id: rule.id }, data: { isActive: false } });
 
     expect(await loadEvalRules(versionId)).toHaveLength(0);
   });
@@ -115,7 +115,7 @@ describe("loadEvalContext — lead state + field values -> EvalContext", () => {
     const versionId = await newVersion();
     const leadId = await newLead("Open", "New", "docs");
     const activityId = `act_${STAMP}_ctx`;
-    await integrationPrisma.crmFieldValue.createMany({
+    await integrationPrisma.qcfFieldValue.createMany({
       data: [
         { tenantId: TENANT, activityId, formSetVersionId: versionId, fieldKey: "payment_mode", valueType: "dropdown", valueText: "invoice" },
         { tenantId: TENANT, activityId, formSetVersionId: versionId, fieldKey: "owners", valueType: "user_picker", valueUserIds: ["u1", "u2"] },
@@ -158,14 +158,14 @@ describe("applyFormRules — set_stage writes the lead's Contact Stage, one hop,
     expect(result.decision.setStage).toEqual({ status: STAGE_A, subStatus: null });
     expect(result.stageApplied).toBe(true);
 
-    const lead = await integrationPrisma.crmLead.findUnique({ where: { id: leadId }, select: { stage: true } });
+    const lead = await integrationPrisma.qcfLead.findUnique({ where: { id: leadId }, select: { stage: true } });
     expect(lead!.stage).toBe(STAGE_A); // A fired
     expect(lead!.stage).not.toBe(STAGE_B); // B did NOT fire — no cascade
   });
 
   it("a decision with no set_stage leaves the lead untouched and returns the visibility decision", async () => {
     const versionId = await newVersion();
-    await integrationPrisma.crmFormField.create({
+    await integrationPrisma.qcfFormField.create({
       data: { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "gst", label: "GST", fieldType: "text", sortOrder: 0 },
     });
     const leadId = await newLead("Open");
@@ -177,7 +177,7 @@ describe("applyFormRules — set_stage writes the lead's Contact Stage, one hop,
 
     expect(result.stageApplied).toBe(false);
     expect(result.decision.fieldVisibility.gst).toBe("show");
-    const lead = await integrationPrisma.crmLead.findUnique({ where: { id: leadId }, select: { status: true } });
+    const lead = await integrationPrisma.qcfLead.findUnique({ where: { id: leadId }, select: { status: true } });
     expect(lead!.status).toBe("Open"); // untouched
   });
 });

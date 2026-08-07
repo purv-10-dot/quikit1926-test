@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
       // reduction of the query so "98765 43210" / "9876543210" still hit.
       // Text fields keep the raw-q insensitive contains.
       const digits = q.q.replace(/\D/g, "");
-      const searchOr: Prisma.CrmContactWhereInput[] = [
+      const searchOr: Prisma.QcfContactWhereInput[] = [
         { firstName: { contains: q.q, mode: "insensitive" } },
         { lastName: { contains: q.q, mode: "insensitive" } },
         { email: { contains: q.q, mode: "insensitive" } },
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
     if (format) {
       const tz = readTzFromCookieHeader(req.headers.get("cookie"));
       const cursor = createPrismaCursorIterator<ContactCsvRow>({
-        delegate: prisma.crmContact as unknown as PrismaListDelegate<ContactCsvRow>,
+        delegate: prisma.qcfContact as unknown as PrismaListDelegate<ContactCsvRow>,
         where: finalWhere,
         select: CONTACT_CSV_SELECT,
       });
@@ -121,13 +121,13 @@ export async function GET(req: NextRequest) {
         : [{ [safeSortBy]: q.sortDir }, { id: "desc" as const }];
 
     const [rows, total] = await Promise.all([
-      prisma.crmContact.findMany({
+      prisma.qcfContact.findMany({
         where: finalWhere,
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
         orderBy,
       }),
-      prisma.crmContact.count({ where: finalWhere }),
+      prisma.qcfContact.count({ where: finalWhere }),
     ]);
 
     const items = await attachAccountNames(user.tenantId, rows);
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
       ownerName = user.name || user.email || null;
     }
 
-    const created = await prisma.crmContact.create({
+    const created = await prisma.qcfContact.create({
       data: {
         tenantId: user.tenantId,
         firstName: data.firstName,

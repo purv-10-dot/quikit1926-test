@@ -1,4 +1,4 @@
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/types/permission";
 import {
@@ -27,9 +27,9 @@ export async function transitionLead(opts: {
   user: SessionUser;
   leadId: string;
   input: TransitionLeadInput;
-}): Promise<CrmLead> {
+}): Promise<QcfLead> {
   const { user, leadId, input } = opts;
-  const existing = await prisma.crmLead.findUnique({ where: { id: leadId } });
+  const existing = await prisma.qcfLead.findUnique({ where: { id: leadId } });
   if (!existing || existing.tenantId !== user.tenantId) {
     throw new LeadTransitionError("Not found", 404);
   }
@@ -73,7 +73,7 @@ export async function transitionLead(opts: {
     input.stage !== undefined && input.stage !== existing.stage;
 
   const updated = await prisma.$transaction(async (tx) => {
-    const row = await tx.crmLead.update({
+    const row = await tx.qcfLead.update({
       where: { id: leadId },
       data,
     });

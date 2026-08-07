@@ -5,15 +5,15 @@ import { Prisma as PrismaRuntime } from "@prisma/client";
 export function priceListItemSoftDeleteEnabled(): boolean {
   return (
     PrismaRuntime.dmmf.datamodel.models
-      .find((m) => m.name === "CrmPriceListItem")
+      .find((m) => m.name === "QcfPriceListItem")
       ?.fields.some((f) => f.name === "deletedAt") ?? false
   );
 }
 
 /** Active (non-trashed) price list items — no-op filter until schema/client include `deletedAt`. */
 export function activePriceListItemWhere(
-  where: Prisma.CrmPriceListItemWhereInput = {},
-): Prisma.CrmPriceListItemWhereInput {
+  where: Prisma.QcfPriceListItemWhereInput = {},
+): Prisma.QcfPriceListItemWhereInput {
   if (!priceListItemSoftDeleteEnabled()) return where;
   return { ...where, deletedAt: null };
 }

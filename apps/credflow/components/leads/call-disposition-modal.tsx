@@ -51,11 +51,11 @@ interface DispositionSection {
  * Submit target depends on the call context:
  *   - When the parent (CallModal) supplies callLogContext, this modal POSTs
  *     to /api/telephony/call-logs. The server-side createCallLog writes the
- *     CrmCallLog row, links the lead, applies the lead-stage transition, and
- *     creates the CrmActivity entry — all in one transaction.
+ *     QcfCallLog row, links the lead, applies the lead-stage transition, and
+ *     creates the QcfActivity entry — all in one transaction.
  *   - When called from a manual "Add disposition" flow without an actual
  *     call (e.g. from lead-action-bar), it falls back to POSTing a plain
- *     CrmActivity to /api/activities — preserving the legacy no-call path.
+ *     QcfActivity to /api/activities — preserving the legacy no-call path.
  */
 export function CallDispositionModal({
   open,
@@ -102,7 +102,7 @@ export function CallDispositionModal({
 
     // Combine outcome (free-text sub-status) into the notes the server stores.
     // Disposition name itself is taken from `section.label` server-side via
-    // CrmCallDisposition.name/label, so we don't repeat it here.
+    // QcfCallDisposition.name/label, so we don't repeat it here.
     const combinedNotes = outcome
       ? `Outcome: ${outcome}${notes ? `\n\n${notes}` : ""}`
       : notes;
@@ -131,7 +131,7 @@ export function CallDispositionModal({
         toast.success(`Disposition "${section.label}" recorded`);
       } else {
         // Legacy manual-disposition path (no real call): write a plain
-        // CrmActivity. lead-action-bar's "Add disposition" button uses this.
+        // QcfActivity. lead-action-bar's "Add disposition" button uses this.
         if (!leadId) {
           throw new Error("Lead is required when logging a disposition without an active call");
         }
@@ -390,7 +390,7 @@ interface LeadCallDispositionModalProps {
   leadStage?: string;
   defaultToNumber: string;
   providerCallSid?: string;
-  /** Stage 3-D(a): "dialer" when opened after a real call (writes a CrmCallLog
+  /** Stage 3-D(a): "dialer" when opened after a real call (writes a QcfCallLog
    *  row); "manual" when opened from lead details (activities only). Required —
    *  set by the parent that knows the context, never inferred. */
   source: "dialer" | "manual";

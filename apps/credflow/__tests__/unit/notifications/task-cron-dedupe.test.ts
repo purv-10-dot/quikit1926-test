@@ -8,7 +8,7 @@ import {
 
 /**
  * The morning + evening sweeps dedupe via Prisma JSON path filtering on
- * CrmNotification.metadata (prisma.crmNotification.count). count === 0 means
+ * QcfNotification.metadata (prisma.qcfNotification.count). count === 0 means
  * "not yet sent" → notify; count > 0 means "already sent" → skip.
  */
 vi.mock("@/lib/notifications/service", () => ({ createNotification: vi.fn() }));
@@ -45,9 +45,9 @@ describe("task-cron dedupe — morning sweep", () => {
 
   it("notifies due-today task when no prior notification exists (count=0)", async () => {
     // findMany is called twice (due-today, due-tomorrow) via Promise.all.
-    db.crmTask.findMany.mockResolvedValueOnce([dueTodayTask()] as never);
-    db.crmTask.findMany.mockResolvedValueOnce([] as never);
-    db.crmNotification.count.mockResolvedValue(0 as never);
+    db.qcfTask.findMany.mockResolvedValueOnce([dueTodayTask()] as never);
+    db.qcfTask.findMany.mockResolvedValueOnce([] as never);
+    db.qcfNotification.count.mockResolvedValue(0 as never);
 
     const result = await runMorningTaskNotifications();
 
@@ -58,9 +58,9 @@ describe("task-cron dedupe — morning sweep", () => {
   });
 
   it("skips due-today task when a notification already exists (count=1)", async () => {
-    db.crmTask.findMany.mockResolvedValueOnce([dueTodayTask()] as never);
-    db.crmTask.findMany.mockResolvedValueOnce([] as never);
-    db.crmNotification.count.mockResolvedValue(1 as never);
+    db.qcfTask.findMany.mockResolvedValueOnce([dueTodayTask()] as never);
+    db.qcfTask.findMany.mockResolvedValueOnce([] as never);
+    db.qcfNotification.count.mockResolvedValue(1 as never);
 
     const result = await runMorningTaskNotifications();
 
@@ -77,8 +77,8 @@ describe("task-cron dedupe — evening sweep", () => {
   });
 
   it("notifies overdue task when not previously sent (count=0)", async () => {
-    db.crmTask.findMany.mockResolvedValue([overdueTask()] as never);
-    db.crmNotification.count.mockResolvedValue(0 as never);
+    db.qcfTask.findMany.mockResolvedValue([overdueTask()] as never);
+    db.qcfNotification.count.mockResolvedValue(0 as never);
 
     const result = await runEveningTaskNotifications();
 
@@ -89,8 +89,8 @@ describe("task-cron dedupe — evening sweep", () => {
   });
 
   it("skips overdue task when already sent (count=1)", async () => {
-    db.crmTask.findMany.mockResolvedValue([overdueTask()] as never);
-    db.crmNotification.count.mockResolvedValue(1 as never);
+    db.qcfTask.findMany.mockResolvedValue([overdueTask()] as never);
+    db.qcfNotification.count.mockResolvedValue(1 as never);
 
     const result = await runEveningTaskNotifications();
 

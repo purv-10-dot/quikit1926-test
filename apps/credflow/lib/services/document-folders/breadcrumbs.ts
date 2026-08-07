@@ -26,7 +26,7 @@ export async function buildFolderBreadcrumbs(
     }
     seen.add(currentId);
 
-    const row: FolderBreadcrumbRow | null = await prisma.crmDocumentFolder.findFirst({
+    const row: FolderBreadcrumbRow | null = await prisma.qcfDocumentFolder.findFirst({
       where: { id: currentId, tenantId, deletedAt: null },
       select: { id: true, name: true, parentFolderId: true },
     });

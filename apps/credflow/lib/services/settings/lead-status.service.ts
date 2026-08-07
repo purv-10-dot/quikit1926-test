@@ -1,7 +1,7 @@
 /**
- * CRUD + mapping service for CrmLeadStatus / CrmLeadSubStatus.
+ * CRUD + mapping service for QcfLeadStatus / QcfLeadSubStatus.
  *
- * Storage: app_quikcrm.CrmLeadStatus / CrmLeadSubStatus / CrmLeadStatusSubStatus
+ * Storage: app_quikcrm.QcfLeadStatus / QcfLeadSubStatus / QcfLeadStatusSubStatus
  * (global lookup tables, not tenant-scoped — seeded once, shared by all tenants).
  */
 import { prisma } from "@/lib/db/prisma";
@@ -87,7 +87,7 @@ function toSubStatusDto(row: RawSubStatus): LeadSubStatusDto {
 // ─── Lead Status ──────────────────────────────────────────────────────────────
 
 export async function getLeadStatuses(): Promise<LeadStatusDto[]> {
-  const rows = await prisma.crmLeadStatus.findMany({
+  const rows = await prisma.qcfLeadStatus.findMany({
     include: STATUS_INCLUDE,
     orderBy: { name: "asc" },
   });
@@ -101,10 +101,10 @@ export async function createLeadStatus(
   const trimmed = name.trim();
   if (!trimmed) throw new LeadStatusError("Name is required");
 
-  const existing = await prisma.crmLeadStatus.findUnique({ where: { name: trimmed } });
+  const existing = await prisma.qcfLeadStatus.findUnique({ where: { name: trimmed } });
   if (existing) throw new LeadStatusError(`Status "${trimmed}" already exists`, 409);
 
-  const created = await prisma.crmLeadStatus.create({
+  const created = await prisma.qcfLeadStatus.create({
     data: {
       name: trimmed,
       subStatuses: subStatusIds.length
@@ -120,14 +120,14 @@ export async function updateLeadStatus(
   id: string,
   data: { name?: string; subStatusIds?: string[] },
 ): Promise<LeadStatusDto> {
-  const current = await prisma.crmLeadStatus.findUnique({ where: { id } });
+  const current = await prisma.qcfLeadStatus.findUnique({ where: { id } });
   if (!current) throw new LeadStatusError("Status not found", 404);
 
   if (data.name !== undefined) {
     const trimmed = data.name.trim();
     if (!trimmed) throw new LeadStatusError("Name is required");
     if (trimmed !== current.name) {
-      const conflict = await prisma.crmLeadStatus.findUnique({ where: { name: trimmed } });
+      const conflict = await prisma.qcfLeadStatus.findUnique({ where: { name: trimmed } });
       if (conflict) throw new LeadStatusError(`Status "${trimmed}" already exists`, 409);
     }
   }
@@ -135,9 +135,9 @@ export async function updateLeadStatus(
   const result = await prisma.$transaction(async (tx) => {
     // Replace sub-status mappings when provided
     if (data.subStatusIds !== undefined) {
-      await tx.crmLeadStatusSubStatus.deleteMany({ where: { leadStatusId: id } });
+      await tx.qcfLeadStatusSubStatus.deleteMany({ where: { leadStatusId: id } });
       if (data.subStatusIds.length) {
-        await tx.crmLeadStatusSubStatus.createMany({
+        await tx.qcfLeadStatusSubStatus.createMany({
           data: data.subStatusIds.map((leadSubStatusId) => ({ leadStatusId: id, leadSubStatusId })),
           skipDuplicates: true,
         });
@@ -146,29 +146,29 @@ export async function updateLeadStatus(
 
     // Rename if requested; otherwise just re-fetch with fresh relations
     if (data.name !== undefined) {
-      return tx.crmLeadStatus.update({
+      return tx.qcfLeadStatus.update({
         where: { id },
         data: { name: data.name.trim() },
         include: STATUS_INCLUDE,
       });
     }
-    return tx.crmLeadStatus.findUniqueOrThrow({ where: { id }, include: STATUS_INCLUDE });
+    return tx.qcfLeadStatus.findUniqueOrThrow({ where: { id }, include: STATUS_INCLUDE });
   });
 
   return toStatusDto(result);
 }
 
 export async function deleteLeadStatus(id: string): Promise<void> {
-  const current = await prisma.crmLeadStatus.findUnique({ where: { id } });
+  const current = await prisma.qcfLeadStatus.findUnique({ where: { id } });
   if (!current) throw new LeadStatusError("Status not found", 404);
   // Junction rows cascade-delete via schema onDelete: Cascade
-  await prisma.crmLeadStatus.delete({ where: { id } });
+  await prisma.qcfLeadStatus.delete({ where: { id } });
 }
 
 // ─── Lead Sub-Status ──────────────────────────────────────────────────────────
 
 export async function getLeadSubStatuses(): Promise<LeadSubStatusDto[]> {
-  const rows = await prisma.crmLeadSubStatus.findMany({
+  const rows = await prisma.qcfLeadSubStatus.findMany({
     include: SUB_STATUS_INCLUDE,
     orderBy: { name: "asc" },
   });
@@ -182,10 +182,10 @@ export async function createLeadSubStatus(
   const trimmed = name.trim();
   if (!trimmed) throw new LeadStatusError("Name is required");
 
-  const existing = await prisma.crmLeadSubStatus.findUnique({ where: { name: trimmed } });
+  const existing = await prisma.qcfLeadSubStatus.findUnique({ where: { name: trimmed } });
   if (existing) throw new LeadStatusError(`Sub-status "${trimmed}" already exists`, 409);
 
-  const created = await prisma.crmLeadSubStatus.create({
+  const created = await prisma.qcfLeadSubStatus.create({
     data: {
       name: trimmed,
       statuses: statusIds.length
@@ -201,14 +201,14 @@ export async function updateLeadSubStatus(
   id: string,
   data: { name?: string; statusIds?: string[] },
 ): Promise<LeadSubStatusDto> {
-  const current = await prisma.crmLeadSubStatus.findUnique({ where: { id } });
+  const current = await prisma.qcfLeadSubStatus.findUnique({ where: { id } });
   if (!current) throw new LeadStatusError("Sub-status not found", 404);
 
   if (data.name !== undefined) {
     const trimmed = data.name.trim();
     if (!trimmed) throw new LeadStatusError("Name is required");
     if (trimmed !== current.name) {
-      const conflict = await prisma.crmLeadSubStatus.findUnique({ where: { name: trimmed } });
+      const conflict = await prisma.qcfLeadSubStatus.findUnique({ where: { name: trimmed } });
       if (conflict) throw new LeadStatusError(`Sub-status "${trimmed}" already exists`, 409);
     }
   }
@@ -216,9 +216,9 @@ export async function updateLeadSubStatus(
   const result = await prisma.$transaction(async (tx) => {
     // Replace status mappings when provided
     if (data.statusIds !== undefined) {
-      await tx.crmLeadStatusSubStatus.deleteMany({ where: { leadSubStatusId: id } });
+      await tx.qcfLeadStatusSubStatus.deleteMany({ where: { leadSubStatusId: id } });
       if (data.statusIds.length) {
-        await tx.crmLeadStatusSubStatus.createMany({
+        await tx.qcfLeadStatusSubStatus.createMany({
           data: data.statusIds.map((leadStatusId) => ({ leadStatusId, leadSubStatusId: id })),
           skipDuplicates: true,
         });
@@ -226,20 +226,20 @@ export async function updateLeadSubStatus(
     }
 
     if (data.name !== undefined) {
-      return tx.crmLeadSubStatus.update({
+      return tx.qcfLeadSubStatus.update({
         where: { id },
         data: { name: data.name.trim() },
         include: SUB_STATUS_INCLUDE,
       });
     }
-    return tx.crmLeadSubStatus.findUniqueOrThrow({ where: { id }, include: SUB_STATUS_INCLUDE });
+    return tx.qcfLeadSubStatus.findUniqueOrThrow({ where: { id }, include: SUB_STATUS_INCLUDE });
   });
 
   return toSubStatusDto(result);
 }
 
 export async function deleteLeadSubStatus(id: string): Promise<void> {
-  const current = await prisma.crmLeadSubStatus.findUnique({ where: { id } });
+  const current = await prisma.qcfLeadSubStatus.findUnique({ where: { id } });
   if (!current) throw new LeadStatusError("Sub-status not found", 404);
-  await prisma.crmLeadSubStatus.delete({ where: { id } });
+  await prisma.qcfLeadSubStatus.delete({ where: { id } });
 }

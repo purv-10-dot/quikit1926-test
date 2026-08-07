@@ -18,10 +18,10 @@ import { QuotesAnalyticsDashboard } from "@/components/quotes/enterprise/quotes-
  *
  * Uses `groupBy` for the by-status counts + grand-total sums in a single
  * query. Cheap (`(tenantId, status)` is indexed via `@@index([tenantId, status])`
- * on CrmQuote).
+ * on QcfQuote).
  */
 async function computeQuoteStats(tenantId: string): Promise<QuotesStats> {
-  const grouped = await db.crmQuote.groupBy({
+  const grouped = await db.qcfQuote.groupBy({
     by: ["status"],
     where: { tenantId, deletedAt: null },
     _count: { _all: true },

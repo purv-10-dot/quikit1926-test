@@ -32,8 +32,8 @@ function adminSession() {
 
 describe("GET /api/leads/[id]/attachments", () => {
   beforeEach(() => {
-    db.crmLead.findFirst.mockReset();
-    db.crmDocument.findMany.mockReset();
+    db.qcfLead.findFirst.mockReset();
+    db.qcfDocument.findMany.mockReset();
     db.orgMember.findMany.mockReset();
     setSession(null);
   });
@@ -48,7 +48,7 @@ describe("GET /api/leads/[id]/attachments", () => {
 
   it("returns 404 when lead is missing", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue(null);
+    db.qcfLead.findFirst.mockResolvedValue(null);
 
     const { GET } = await import("@/app/api/leads/[id]/attachments/route");
     const res = await GET(new NextRequest("http://test/api/leads/l1/attachments"), {
@@ -59,8 +59,8 @@ describe("GET /api/leads/[id]/attachments", () => {
 
   it("lists attachments for a lead", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue({ accountId: null } as never);
-    db.crmDocument.findMany.mockResolvedValue([
+    db.qcfLead.findFirst.mockResolvedValue({ accountId: null } as never);
+    db.qcfDocument.findMany.mockResolvedValue([
       {
         id: "d1",
         tenantId: "t1",

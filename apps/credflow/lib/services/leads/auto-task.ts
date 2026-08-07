@@ -1,10 +1,10 @@
-import type { CrmLead, CrmTaskPriority } from "@quikit/database";
+import type { QcfLead, QcfTaskPriority } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 
 export type AutoTaskOverrides = {
   subject?: string;
   dueInDays?: number;
-  priority?: CrmTaskPriority;
+  priority?: QcfTaskPriority;
 };
 
 const DEFAULT_DUE_IN_DAYS = 1;
@@ -16,7 +16,7 @@ function isEnabled(): boolean {
 }
 
 export async function createDefaultTaskForLead(
-  lead: CrmLead,
+  lead: QcfLead,
   overrides: AutoTaskOverrides = {},
 ): Promise<void> {
   if (!isEnabled()) return;
@@ -25,11 +25,11 @@ export async function createDefaultTaskForLead(
     const dueInDays = overrides.dueInDays ?? DEFAULT_DUE_IN_DAYS;
     const dueDate = new Date(Date.now() + dueInDays * 24 * 60 * 60 * 1000);
 
-    // CrmLead has no `createdBy` column — only `ownerId`. When ownerId is
+    // QcfLead has no `createdBy` column — only `ownerId`. When ownerId is
     // null the task is left unassigned (assignedToUserId = null).
     const assignedToUserId = lead.ownerId ?? null;
 
-    await prisma.crmTask.create({
+    await prisma.qcfTask.create({
       data: {
         tenantId: lead.tenantId,
         subject: overrides.subject ?? `Follow-up with ${lead.name}`,

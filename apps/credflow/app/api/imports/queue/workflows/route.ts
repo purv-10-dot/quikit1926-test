@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     await assertModule(user, "automations", "import");
     const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const job = await prisma.crmLeadImportJob.create({
+    const job = await prisma.qcfLeadImportJob.create({
       data: {
         tenantId: user.tenantId,
         entityType: "workflows",
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       entityType: "workflows",
       batchId: parsed.data.batchId ?? undefined,
     });
-    await prisma.crmLeadImportJob.update({ where: { id: job.id }, data: { bullJobId } });
+    await prisma.qcfLeadImportJob.update({ where: { id: job.id }, data: { bullJobId } });
     return NextResponse.json({ jobId: job.id, bullJobId, status: "queued" }, { status: 202 });
   } catch (e) {
     return errorResponse(e);

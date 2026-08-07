@@ -10,8 +10,8 @@ export interface ContactRollupIds {
 export function buildContactActivityWhere(
   tenantId: string,
   ids: ContactRollupIds,
-): Prisma.CrmActivityWhereInput {
-  const or: Prisma.CrmActivityWhereInput[] = [
+): Prisma.QcfActivityWhereInput {
+  const or: Prisma.QcfActivityWhereInput[] = [
     { relatedKind: "Contact", relatedObjectId: ids.contactId },
     { relatedKind: "contact", relatedObjectId: ids.contactId },
   ];
@@ -34,8 +34,8 @@ export function buildContactActivityWhere(
 export function buildContactTaskWhere(
   tenantId: string,
   ids: ContactRollupIds,
-): Prisma.CrmTaskWhereInput {
-  const or: Prisma.CrmTaskWhereInput[] = [
+): Prisma.QcfTaskWhereInput {
+  const or: Prisma.QcfTaskWhereInput[] = [
     { relatedKind: "Contact", relatedObjectId: ids.contactId },
     { relatedKind: "contact", relatedObjectId: ids.contactId },
   ];
@@ -50,8 +50,8 @@ export function buildContactTaskWhere(
 export function buildContactNoteWhere(
   tenantId: string,
   ids: ContactRollupIds,
-): Prisma.CrmNoteWhereInput {
-  const or: Prisma.CrmNoteWhereInput[] = [
+): Prisma.QcfNoteWhereInput {
+  const or: Prisma.QcfNoteWhereInput[] = [
     { relatedKind: "Contact", relatedObjectId: ids.contactId },
     { relatedKind: "contact", relatedObjectId: ids.contactId },
   ];

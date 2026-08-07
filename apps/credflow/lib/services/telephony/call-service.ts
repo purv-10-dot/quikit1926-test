@@ -1,7 +1,7 @@
 // apps/quikcrm/lib/services/telephony/call-service.ts
 /**
  * Orchestrates click-to-call: place provider call → fire-and-forget audit
- * (success or failure) → pre-create the CrmCallLog stub the webhook will
+ * (success or failure) → pre-create the QcfCallLog stub the webhook will
  * later populate with duration/recording/disposition.
  *
  * Audit insertion is intentionally fire-and-forget (`.catch(console.error)`)
@@ -37,7 +37,7 @@ export async function placeCall(opts: {
     const e = err as { message?: string; statusCode?: number; response?: unknown };
     // Failure audit — fire-and-forget so the original error reaches the user
     // unmodified even if the audit insert fails.
-    void prisma.crmCtcCallAudit
+    void prisma.qcfCtcCallAudit
       .create({
         data: {
           ...auditBase,
@@ -57,7 +57,7 @@ export async function placeCall(opts: {
   }
 
   // Success audit — fire-and-forget.
-  void prisma.crmCtcCallAudit
+  void prisma.qcfCtcCallAudit
     .create({
       data: {
         ...auditBase,
@@ -86,7 +86,7 @@ export async function placeCall(opts: {
       `[call-service] upserting CrmCallLog stub callSid=${result.callSid} tenantId=${opts.user.tenantId} leadId=${opts.leadId ?? null}`,
     );
     try {
-      await prisma.crmCallLog.upsert({
+      await prisma.qcfCallLog.upsert({
         where: { tenantId_callSid: { tenantId: opts.user.tenantId, callSid: result.callSid } },
         create: {
           tenantId: opts.user.tenantId,

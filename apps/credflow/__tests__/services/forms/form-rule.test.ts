@@ -26,11 +26,11 @@ const draftVersion = { id: VERSION_ID, status: "draft" } as never;
 const publishedVersion = { id: VERSION_ID, status: "published" } as never;
 
 beforeEach(() => {
-  db.crmFormSetVersion.findUnique.mockReset();
-  db.crmFormRule.create.mockReset();
-  db.crmFormRule.findUnique.mockReset();
-  db.crmFormRuleCondition.create.mockReset();
-  db.crmFormField.findFirst.mockReset();
+  db.qcfFormSetVersion.findUnique.mockReset();
+  db.qcfFormRule.create.mockReset();
+  db.qcfFormRule.findUnique.mockReset();
+  db.qcfFormRuleCondition.create.mockReset();
+  db.qcfFormField.findFirst.mockReset();
 });
 
 describe("validateConditionInput — subject kind <-> subjectFieldKey", () => {
@@ -120,8 +120,8 @@ describe("validateConditionInput — operator <-> valueKeys shape", () => {
 
 describe("createFormRule / addRuleCondition — draft-only guard", () => {
   it("createFormRule creates an all-match rule on a draft version", async () => {
-    db.crmFormSetVersion.findUnique.mockResolvedValue(draftVersion);
-    db.crmFormRule.create.mockResolvedValue({ id: RULE_ID } as never);
+    db.qcfFormSetVersion.findUnique.mockResolvedValue(draftVersion);
+    db.qcfFormRule.create.mockResolvedValue({ id: RULE_ID } as never);
 
     await createFormRule({
       formSetVersionId: VERSION_ID,
@@ -130,36 +130,36 @@ describe("createFormRule / addRuleCondition — draft-only guard", () => {
       sortOrder: 0,
     });
 
-    expect(db.crmFormRule.create).toHaveBeenCalledOnce();
-    const arg = db.crmFormRule.create.mock.calls[0]![0] as { data: { matchType: string } };
+    expect(db.qcfFormRule.create).toHaveBeenCalledOnce();
+    const arg = db.qcfFormRule.create.mock.calls[0]![0] as { data: { matchType: string } };
     expect(arg.data.matchType).toBe("all");
   });
 
   it("createFormRule REJECTS a published (frozen) version", async () => {
-    db.crmFormSetVersion.findUnique.mockResolvedValue(publishedVersion);
+    db.qcfFormSetVersion.findUnique.mockResolvedValue(publishedVersion);
     // Draft guard is the SHARED assertDraft (FormStructureError, statusCode 409);
     // assert the behaviour, not the class.
     await expect(
       createFormRule({ formSetVersionId: VERSION_ID, name: "x", matchType: "any", sortOrder: 0 }),
     ).rejects.toMatchObject({ statusCode: 409 });
-    expect(db.crmFormRule.create).not.toHaveBeenCalled();
+    expect(db.qcfFormRule.create).not.toHaveBeenCalled();
   });
 
   it("addRuleCondition validates the condition AND checks the draft guard before writing", async () => {
-    db.crmFormRule.findUnique.mockResolvedValue({ id: RULE_ID, formSetVersionId: VERSION_ID } as never);
-    db.crmFormSetVersion.findUnique.mockResolvedValue(draftVersion);
+    db.qcfFormRule.findUnique.mockResolvedValue({ id: RULE_ID, formSetVersionId: VERSION_ID } as never);
+    db.qcfFormSetVersion.findUnique.mockResolvedValue(draftVersion);
 
     // Invalid (field without fieldKey) must throw before any create.
     await expect(
       addRuleCondition({ formRuleId: RULE_ID, subjectKind: "field", operator: "is", valueKeys: ["x"], sortOrder: 0 }),
     ).rejects.toBeInstanceOf(FormRuleError);
-    expect(db.crmFormRuleCondition.create).not.toHaveBeenCalled();
+    expect(db.qcfFormRuleCondition.create).not.toHaveBeenCalled();
   });
 
   it("addRuleCondition enforces validate-at-build: a nonexistent field reference is rejected", async () => {
-    db.crmFormRule.findUnique.mockResolvedValue({ id: RULE_ID, formSetVersionId: VERSION_ID } as never);
-    db.crmFormSetVersion.findUnique.mockResolvedValue(draftVersion);
-    db.crmFormField.findFirst.mockResolvedValue(null); // field does not exist
+    db.qcfFormRule.findUnique.mockResolvedValue({ id: RULE_ID, formSetVersionId: VERSION_ID } as never);
+    db.qcfFormSetVersion.findUnique.mockResolvedValue(draftVersion);
+    db.qcfFormField.findFirst.mockResolvedValue(null); // field does not exist
 
     await expect(
       addRuleCondition({
@@ -171,6 +171,6 @@ describe("createFormRule / addRuleCondition — draft-only guard", () => {
         sortOrder: 0,
       }),
     ).rejects.toBeInstanceOf(FormRuleError);
-    expect(db.crmFormRuleCondition.create).not.toHaveBeenCalled();
+    expect(db.qcfFormRuleCondition.create).not.toHaveBeenCalled();
   });
 });

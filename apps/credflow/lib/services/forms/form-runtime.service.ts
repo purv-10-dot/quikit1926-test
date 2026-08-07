@@ -21,7 +21,7 @@ type RuntimeStructure = Awaited<ReturnType<typeof getFormStructure>>;
 
 /** All of a version's fields (flat, with options + placement) — what the agent renders. */
 async function getVersionFields(versionId: string) {
-  return prisma.crmFormField.findMany({
+  return prisma.qcfFormField.findMany({
     where: { formSetVersionId: versionId },
     orderBy: { sortOrder: "asc" },
     include: { options: { orderBy: { sortOrder: "asc" } } },
@@ -39,7 +39,7 @@ export interface FormRuntime {
 
 /** The live form payload for a version, scoped to the caller's tenant. */
 export async function getFormRuntime(versionId: string, tenantId: string): Promise<FormRuntime> {
-  const version = await prisma.crmFormSetVersion.findUnique({
+  const version = await prisma.qcfFormSetVersion.findUnique({
     where: { id: versionId },
     select: { id: true, formSet: { select: { tenantId: true } } },
   });

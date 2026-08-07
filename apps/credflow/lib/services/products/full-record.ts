@@ -5,7 +5,7 @@ import { serializeProduct } from "@/lib/services/products/serialize";
 import { listProductFields } from "@/lib/services/products/fields/repo";
 
 export async function getFullProductRecord(tenantId: string, productId: string) {
-  const product = await prisma.crmProduct.findFirst({
+  const product = await prisma.qcfProduct.findFirst({
     where: { id: productId, tenantId },
     include: {
       categoryRef: { select: { id: true, name: true } },
@@ -29,7 +29,7 @@ export async function getFullProductRecord(tenantId: string, productId: string) 
       listStockMovements(tenantId, productId, 30),
       buildProductAnalytics(tenantId, productId),
       listProductFields(tenantId),
-      prisma.crmQuoteLine.findMany({
+      prisma.qcfQuoteLine.findMany({
         where: { tenantId, productId },
         select: {
           id: true,
@@ -42,7 +42,7 @@ export async function getFullProductRecord(tenantId: string, productId: string) 
         orderBy: { createdAt: "desc" },
         take: 15,
       }),
-      prisma.crmOrderLine.findMany({
+      prisma.qcfOrderLine.findMany({
         where: { tenantId, productId },
         select: {
           id: true,
@@ -55,7 +55,7 @@ export async function getFullProductRecord(tenantId: string, productId: string) 
         orderBy: { createdAt: "desc" },
         take: 15,
       }),
-      prisma.crmDocument.findMany({
+      prisma.qcfDocument.findMany({
         where: { tenantId, refType: "product", refId: productId, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 20,

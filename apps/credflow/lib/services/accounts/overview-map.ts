@@ -3,7 +3,7 @@
  * Keep out of "use client" modules so RSC pages can import them.
  */
 
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 import { STAGE_LABEL } from "@/lib/services/opportunities/stage-labels";
 import { formatGeneric } from "@/lib/services/opportunities/currency";
 
@@ -26,7 +26,7 @@ export function mapAccountOpportunitiesForOverview(
   return opps.map((o) => ({
     id: o.id,
     name: o.name,
-    stage: STAGE_LABEL[o.stage as CrmOpportunityStage] ?? o.stage,
+    stage: STAGE_LABEL[o.stage as QcfOpportunityStage] ?? o.stage,
     amountDisplay:
       o.amount != null ? formatGeneric(Number(o.amount), o.currency ?? "INR") : null,
   }));

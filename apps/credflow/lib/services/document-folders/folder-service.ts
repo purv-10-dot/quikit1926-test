@@ -47,7 +47,7 @@ async function resolveParentForCreate(
   parentFolderId: string | null | undefined,
 ): Promise<string | null> {
   if (!parentFolderId) return null;
-  const parent = await prisma.crmDocumentFolder.findFirst({
+  const parent = await prisma.qcfDocumentFolder.findFirst({
     where: { id: parentFolderId, tenantId, deletedAt: null },
   });
   if (!parent) throw new FolderServiceError("Parent folder not found", 404);
@@ -77,7 +77,7 @@ export async function createFolder(
   );
 
   const { refType, refId } = normalizeScope(scope);
-  const row = await prisma.crmDocumentFolder.create({
+  const row = await prisma.qcfDocumentFolder.create({
     data: {
       tenantId: user.tenantId,
       name,
@@ -91,7 +91,7 @@ export async function createFolder(
 }
 
 export async function getFolder(user: SessionUser, folderId: string): Promise<FolderDto> {
-  const row = await prisma.crmDocumentFolder.findFirst({
+  const row = await prisma.qcfDocumentFolder.findFirst({
     where: { id: folderId, tenantId: user.tenantId, deletedAt: null },
   });
   if (!row) throw new FolderServiceError("Folder not found", 404);
@@ -101,10 +101,10 @@ export async function getFolder(user: SessionUser, folderId: string): Promise<Fo
   });
 
   const [childFolderCount, fileCount] = await Promise.all([
-    prisma.crmDocumentFolder.count({
+    prisma.qcfDocumentFolder.count({
       where: { tenantId: user.tenantId, parentFolderId: folderId, deletedAt: null },
     }),
-    prisma.crmDocument.count({
+    prisma.qcfDocument.count({
       where: { tenantId: user.tenantId, folderId, deletedAt: null },
     }),
   ]);
@@ -121,7 +121,7 @@ export async function renameFolder(
   const name = input.name?.trim();
   if (!name) throw new FolderServiceError("Folder name is required");
 
-  const row = await prisma.crmDocumentFolder.update({
+  const row = await prisma.qcfDocumentFolder.update({
     where: { id: existing.id },
     data: { name },
   });
@@ -136,7 +136,7 @@ export async function moveFolder(
   await getFolder(user, folderId);
   await validateFolderMove(user.tenantId, folderId, input.parentFolderId);
 
-  const row = await prisma.crmDocumentFolder.update({
+  const row = await prisma.qcfDocumentFolder.update({
     where: { id: folderId },
     data: { parentFolderId: input.parentFolderId },
   });
@@ -150,10 +150,10 @@ export async function deleteFolder(
 ): Promise<void> {
   await getFolder(user, folderId);
 
-  const childCount = await prisma.crmDocumentFolder.count({
+  const childCount = await prisma.qcfDocumentFolder.count({
     where: { tenantId: user.tenantId, parentFolderId: folderId, deletedAt: null },
   });
-  const fileCount = await prisma.crmDocument.count({
+  const fileCount = await prisma.qcfDocument.count({
     where: { tenantId: user.tenantId, folderId, deletedAt: null },
   });
 
@@ -169,14 +169,14 @@ export async function deleteFolder(
     return;
   }
 
-  await prisma.crmDocumentFolder.update({
+  await prisma.qcfDocumentFolder.update({
     where: { id: folderId },
     data: { deletedAt: new Date() },
   });
 }
 
 async function softDeleteFolderRecursive(tenantId: string, folderId: string): Promise<void> {
-  const children = await prisma.crmDocumentFolder.findMany({
+  const children = await prisma.qcfDocumentFolder.findMany({
     where: { tenantId, parentFolderId: folderId, deletedAt: null },
     select: { id: true },
   });
@@ -185,11 +185,11 @@ async function softDeleteFolderRecursive(tenantId: string, folderId: string): Pr
   }
 
   const now = new Date();
-  await prisma.crmDocument.updateMany({
+  await prisma.qcfDocument.updateMany({
     where: { tenantId, folderId, deletedAt: null },
     data: { deletedAt: now },
   });
-  await prisma.crmDocumentFolder.update({
+  await prisma.qcfDocumentFolder.update({
     where: { id: folderId },
     data: { deletedAt: now },
   });
@@ -216,7 +216,7 @@ export async function listFolderContents(
     await assertFolderInScope(user.tenantId, query.folderId, query.scope);
   }
 
-  const folderWhere: Prisma.CrmDocumentFolderWhereInput = {
+  const folderWhere: Prisma.QcfDocumentFolderWhereInput = {
     ...scopeWhere(user.tenantId, query.scope),
     parentFolderId: query.folderId,
   };
@@ -224,7 +224,7 @@ export async function listFolderContents(
     folderWhere.name = { contains: query.q.trim(), mode: "insensitive" };
   }
 
-  const fileWhere: Prisma.CrmDocumentWhereInput = {
+  const fileWhere: Prisma.QcfDocumentWhereInput = {
     tenantId: user.tenantId,
     deletedAt: null,
     folderId: query.folderId,
@@ -242,22 +242,22 @@ export async function listFolderContents(
 
   const [folderRows, fileRows, totalFolders, totalFiles, folderMeta, breadcrumbs] =
     await Promise.all([
-      prisma.crmDocumentFolder.findMany({
+      prisma.qcfDocumentFolder.findMany({
         where: folderWhere,
         orderBy: { name: "asc" },
         skip,
         take: pageSize,
       }),
-      prisma.crmDocument.findMany({
+      prisma.qcfDocument.findMany({
         where: fileWhere,
         orderBy: { createdAt: "desc" },
         skip,
         take: pageSize,
       }),
-      prisma.crmDocumentFolder.count({ where: folderWhere }),
-      prisma.crmDocument.count({ where: fileWhere }),
+      prisma.qcfDocumentFolder.count({ where: folderWhere }),
+      prisma.qcfDocument.count({ where: fileWhere }),
       query.folderId
-        ? prisma.crmDocumentFolder.findFirst({
+        ? prisma.qcfDocumentFolder.findFirst({
             where: { id: query.folderId, tenantId: user.tenantId, deletedAt: null },
           })
         : Promise.resolve(null),
@@ -297,7 +297,7 @@ export async function uploadFileToFolder(
   folderId: string,
   file: File,
 ): Promise<ReturnType<typeof uploadEntityDocument>> {
-  const folder = await prisma.crmDocumentFolder.findFirst({
+  const folder = await prisma.qcfDocumentFolder.findFirst({
     where: { id: folderId, tenantId: user.tenantId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
@@ -321,7 +321,7 @@ export async function uploadGlobalRootDocument(
   const segment = user.tenantId;
   const { storageKey, size, safeName } = await saveCrmUpload(segment, file);
   try {
-    const row = await prisma.crmDocument.create({
+    const row = await prisma.qcfDocument.create({
       data: {
         tenantId: user.tenantId,
         refType: "global",
@@ -351,7 +351,7 @@ async function uploadGlobalFolderDocument(
   const segment = folderId;
   const { storageKey, size, safeName } = await saveCrmUpload(segment, file);
   try {
-    const row = await prisma.crmDocument.create({
+    const row = await prisma.qcfDocument.create({
       data: {
         tenantId: user.tenantId,
         refType: "global",
@@ -377,7 +377,7 @@ export async function moveDocumentToFolder(
   documentId: string,
   input: MoveDocumentInput,
 ): Promise<void> {
-  const doc = await prisma.crmDocument.findFirst({
+  const doc = await prisma.qcfDocument.findFirst({
     where: { id: documentId, tenantId: user.tenantId, deletedAt: null },
   });
   if (!doc) throw new FolderServiceError("Document not found", 404);
@@ -385,7 +385,7 @@ export async function moveDocumentToFolder(
   await assertDocumentParent(user, doc.refType as DocumentRefType, doc.refId);
 
   if (input.folderId) {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: input.folderId, tenantId: user.tenantId, deletedAt: null },
     });
     if (!folder) throw new FolderServiceError("Folder not found", 404);
@@ -394,7 +394,7 @@ export async function moveDocumentToFolder(
     }
   }
 
-  await prisma.crmDocument.update({
+  await prisma.qcfDocument.update({
     where: { id: documentId },
     data: { folderId: input.folderId },
   });

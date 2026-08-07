@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     }
     const where: Record<string, unknown> = acl ? { AND: [baseWhere, acl] } : baseWhere;
 
-    const rows = await prisma.crmContact.findMany({
+    const rows = await prisma.qcfContact.findMany({
       where,
       select: { id: true, firstName: true, lastName: true, email: true },
       orderBy: { createdAt: "desc" },

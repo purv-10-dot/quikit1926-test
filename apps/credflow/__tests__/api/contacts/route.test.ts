@@ -15,9 +15,9 @@ function adminSession() {
 
 describe("GET /api/contacts", () => {
   beforeEach(() => {
-    db.crmContact.findMany.mockReset();
-    db.crmContact.count.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfContact.findMany.mockReset();
+    db.qcfContact.count.mockReset();
+    db.qcfAccount.findMany.mockReset();
     setSession(null);
   });
 
@@ -30,7 +30,7 @@ describe("GET /api/contacts", () => {
 
   it("returns the {success, data} envelope and batches account names", async () => {
     adminSession();
-    db.crmContact.findMany.mockResolvedValue([
+    db.qcfContact.findMany.mockResolvedValue([
       {
         id: "c1",
         tenantId: "t1",
@@ -50,8 +50,8 @@ describe("GET /api/contacts", () => {
         updatedAt: new Date(),
       } as never,
     ]);
-    db.crmContact.count.mockResolvedValue(1);
-    db.crmAccount.findMany.mockResolvedValue([
+    db.qcfContact.count.mockResolvedValue(1);
+    db.qcfAccount.findMany.mockResolvedValue([
       { id: "a1", name: "Acme Corp" } as never,
     ]);
 
@@ -69,27 +69,27 @@ describe("GET /api/contacts", () => {
 
   it("scopes the where clause by tenantId", async () => {
     adminSession();
-    db.crmContact.findMany.mockResolvedValue([]);
-    db.crmContact.count.mockResolvedValue(0);
+    db.qcfContact.findMany.mockResolvedValue([]);
+    db.qcfContact.count.mockResolvedValue(0);
 
     const { GET } = await import("@/app/api/contacts/route");
     const req = new Request("http://test/api/contacts");
     await GET(req as unknown as import("next/server").NextRequest);
 
-    const where = db.crmContact.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
+    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as { tenantId?: string };
     expect(where.tenantId).toBe("t1");
   });
 
   it("searches across the expanded text field set (incl. city) on ?q=", async () => {
     adminSession();
-    db.crmContact.findMany.mockResolvedValue([]);
-    db.crmContact.count.mockResolvedValue(0);
+    db.qcfContact.findMany.mockResolvedValue([]);
+    db.qcfContact.count.mockResolvedValue(0);
 
     const { GET } = await import("@/app/api/contacts/route");
     const req = new Request("http://test/api/contacts?q=acme");
     await GET(req as unknown as import("next/server").NextRequest);
 
-    const where = db.crmContact.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as {
       OR?: Array<Record<string, { contains?: string }>>;
     };
     const keys = (where.OR ?? []).map((clause) => Object.keys(clause)[0]);
@@ -107,8 +107,8 @@ describe("GET /api/contacts", () => {
 
   it("reduces a formatted phone query to a digits-only phone clause", async () => {
     adminSession();
-    db.crmContact.findMany.mockResolvedValue([]);
-    db.crmContact.count.mockResolvedValue(0);
+    db.qcfContact.findMany.mockResolvedValue([]);
+    db.qcfContact.count.mockResolvedValue(0);
 
     const { GET } = await import("@/app/api/contacts/route");
     const req = new Request(
@@ -116,7 +116,7 @@ describe("GET /api/contacts", () => {
     );
     await GET(req as unknown as import("next/server").NextRequest);
 
-    const where = db.crmContact.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfContact.findMany.mock.calls[0]![0]!.where as {
       OR?: Array<Record<string, { contains?: string }>>;
     };
     const phoneClause = (where.OR ?? []).find((clause) => "phone" in clause);
@@ -126,9 +126,9 @@ describe("GET /api/contacts", () => {
 
 describe("POST /api/contacts", () => {
   beforeEach(() => {
-    db.crmContact.create.mockReset();
-    db.crmContact.findFirst.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfContact.create.mockReset();
+    db.qcfContact.findFirst.mockReset();
+    db.qcfAccount.findMany.mockReset();
     db.orgMember.findFirst.mockReset();
     setSession(null);
   });
@@ -150,7 +150,7 @@ describe("POST /api/contacts", () => {
 
   it("returns 409 with existingId when an email duplicate exists in the tenant", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue({
+    db.qcfContact.findFirst.mockResolvedValue({
       id: "c-dup",
       firstName: "Existing",
       lastName: "Person",
@@ -172,13 +172,13 @@ describe("POST /api/contacts", () => {
     expect(body.success).toBe(false);
     expect(body.fieldErrors.email).toBeTruthy();
     expect(body.existingId).toBe("c-dup");
-    expect(db.crmContact.create).not.toHaveBeenCalled();
+    expect(db.qcfContact.create).not.toHaveBeenCalled();
   });
 
   it("normalises phone to E.164 (IN default) before persist", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(null);
-    db.crmContact.create.mockResolvedValue({
+    db.qcfContact.findFirst.mockResolvedValue(null);
+    db.qcfContact.create.mockResolvedValue({
       id: "c1",
       tenantId: "t1",
       firstName: "Jane",
@@ -196,7 +196,7 @@ describe("POST /api/contacts", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as never);
-    db.crmAccount.findMany.mockResolvedValue([]);
+    db.qcfAccount.findMany.mockResolvedValue([]);
 
     const { POST } = await import("@/app/api/contacts/route");
     const req = new Request("http://test/api/contacts", {
@@ -210,13 +210,13 @@ describe("POST /api/contacts", () => {
     });
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(201);
-    const create = db.crmContact.create.mock.calls[0]![0]!.data as { phone?: string };
+    const create = db.qcfContact.create.mock.calls[0]![0]!.data as { phone?: string };
     expect(create.phone).toBe("+919876543210");
   });
 
   it("rejects an unparseable phone with the contacts failure shape", async () => {
     adminSession();
-    db.crmContact.findFirst.mockResolvedValue(null);
+    db.qcfContact.findFirst.mockResolvedValue(null);
 
     const { POST } = await import("@/app/api/contacts/route");
     const req = new Request("http://test/api/contacts", {
@@ -229,6 +229,6 @@ describe("POST /api/contacts", () => {
     const body = await res.json();
     expect(body.success).toBe(false);
     expect(body.fieldErrors.phone).toBeTruthy();
-    expect(db.crmContact.create).not.toHaveBeenCalled();
+    expect(db.qcfContact.create).not.toHaveBeenCalled();
   });
 });

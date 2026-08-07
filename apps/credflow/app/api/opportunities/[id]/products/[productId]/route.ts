@@ -34,14 +34,14 @@ export async function PATCH(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "edit");
 
-    const opp = await db.crmOpportunity.findFirst({
+    const opp = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId },
       select: { id: true, accountId: true },
     });
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
-    const product = await db.crmOpportunityProduct.findFirst({
+    const product = await db.qcfOpportunityProduct.findFirst({
       where: { id: productId, tenantId: user.tenantId, opportunityId: id },
     });
     if (!product) return err("Not found", 404);
@@ -60,7 +60,7 @@ export async function PATCH(
     const nextUnit = parsed.data.unitPrice ?? toNumber(product.unitPrice);
     const nextDiscount = parsed.data.discountPct ?? product.discountPct;
 
-    const updated = await db.crmOpportunityProduct.update({
+    const updated = await db.qcfOpportunityProduct.update({
       where: { id: productId },
       data: {
         ...parsed.data,
@@ -92,14 +92,14 @@ export async function DELETE(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "edit");
 
-    const opp = await db.crmOpportunity.findFirst({
+    const opp = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId },
       select: { id: true, accountId: true },
     });
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
-    const result = await db.crmOpportunityProduct.deleteMany({
+    const result = await db.qcfOpportunityProduct.deleteMany({
       where: { id: productId, tenantId: user.tenantId, opportunityId: id },
     });
     if (result.count === 0) return err("Not found", 404);

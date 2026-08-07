@@ -15,7 +15,7 @@ function err(message: string, status = 500) {
 }
 
 async function loadOpp(tenantId: string, id: string) {
-  return db.crmOpportunity.findFirst({
+  return db.qcfOpportunity.findFirst({
     where: { id, tenantId },
     select: { id: true, accountId: true },
   });
@@ -35,7 +35,7 @@ export async function GET(
     if (!opp) return err("Not found", 404);
     await assertAccountAccess(user, opp.accountId);
 
-    const products = await db.crmOpportunityProduct.findMany({
+    const products = await db.qcfOpportunityProduct.findMany({
       where: { tenantId: user.tenantId, opportunityId: id },
       orderBy: { sortOrder: "asc" },
     });
@@ -84,7 +84,7 @@ export async function POST(
       parsed.data.discountPct,
     );
 
-    const created = await db.crmOpportunityProduct.create({
+    const created = await db.qcfOpportunityProduct.create({
       data: {
         tenantId: user.tenantId,
         opportunityId: id,

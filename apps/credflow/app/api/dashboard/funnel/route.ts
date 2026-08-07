@@ -21,13 +21,13 @@ export async function GET(req: NextRequest) {
 
     const where = {
       ...tenantOwnerWhere(user, filters.resolvedOwnerId),
-      // CrmLead has `deletedAt`. The package middleware does not yet inject
+      // QcfLead has `deletedAt`. The package middleware does not yet inject
       // this clause; filter explicitly until that registration lands.
       deletedAt: null,
       createdAt: { gte: filters.range.from, lte: filters.range.to },
     };
 
-    const grouped = await prisma.crmLead.groupBy({
+    const grouped = await prisma.qcfLead.groupBy({
       by: ["stage"],
       where,
       _count: true,

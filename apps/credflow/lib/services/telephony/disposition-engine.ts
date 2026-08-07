@@ -3,12 +3,12 @@
  * Server-side workflow that runs when an agent saves a call disposition.
  * Ports PlatformDataService.createCallLog from the legacy NestJS CRM.
  *
- *   1. Load the chosen CrmCallDisposition (tenant-scoped).
- *   2. Backfill from the most recent unmatched CrmIndiaVoiceWebhookLog within
+ *   1. Load the chosen QcfCallDisposition (tenant-scoped).
+ *   2. Backfill from the most recent unmatched QcfIndiaVoiceWebhookLog within
  *      4h that we can plausibly attribute to this call (by callSid/campid or
  *      phone-tail).
  *   3. Resolve the linked lead from `linkedLeadId` or by phone-tail lookup.
- *   4. UPSERT the CrmCallLog row (reuse the dialer pre-stub if we have a sid).
+ *   4. UPSERT the QcfCallLog row (reuse the dialer pre-stub if we have a sid).
  *   5. Consume the orphan webhook by setting matchedCallLogId on it.
  *   6. Write the lead-timeline `Call · <name>` activity.
  *   7. Compute mapped stage/status from the disposition name and apply it,
@@ -36,7 +36,7 @@ export interface CreateCallLogDto {
   /**
    * FR-RE Stage 3-D(a): the EXPLICIT origin of this save (not inferred from
    * providerCallSid). "dialer" = a real telephony call happened -> write a
-   * CrmCallLog row. "manual" = an agent disposition update with no call ->
+   * QcfCallLog row. "manual" = an agent disposition update with no call ->
    * activities only, NO call-log row. Set by the parent that knows the context.
    */
   source: "dialer" | "manual";
@@ -66,14 +66,14 @@ export interface CreateCallLogDto {
   activityDateTime?: string | Date | null;
   /**
    * FR-RE: the custom disposition field values the agent entered, keyed by
-   * fieldKey. Persisted as CrmFieldValue and fed to the rule engine. Type is
+   * fieldKey. Persisted as QcfFieldValue and fed to the rule engine. Type is
    * resolved server-side from the live form version (client type not trusted).
    */
   dispositionFieldValues?: Record<string, DispositionFieldValue> | null;
 }
 
 export interface CreateCallLogResult {
-  /** Stage 3-D(a): null on a manual save (no real call -> no CrmCallLog row). */
+  /** Stage 3-D(a): null on a manual save (no real call -> no QcfCallLog row). */
   id: string | null;
   dispositionName: string;
   paymentVerificationRequired: boolean;
@@ -113,12 +113,12 @@ const INTERNAL_CALL_CODE = "call";
 const INTERNAL_CALL_NAME = "Call";
 
 async function resolveInternalCallDisposition(tenantId: string) {
-  const existing = await prisma.crmCallDisposition.findFirst({
+  const existing = await prisma.qcfCallDisposition.findFirst({
     where: { tenantId, code: INTERNAL_CALL_CODE },
   });
   if (existing) return existing;
   // upsert-on-unique guards the race where two concurrent saves both seed it.
-  return prisma.crmCallDisposition.upsert({
+  return prisma.qcfCallDisposition.upsert({
     where: { tenantId_code: { tenantId, code: INTERNAL_CALL_CODE } },
     update: {},
     create: {
@@ -160,7 +160,7 @@ export async function createCallLog(
   // Status — the disposition is plumbing, never a required agent pick.
   const requestedId = (dto.callDispositionId ?? "").trim();
   const disposition = requestedId
-    ? (await prisma.crmCallDisposition.findFirst({ where: { id: requestedId, tenantId } })) ??
+    ? (await prisma.qcfCallDisposition.findFirst({ where: { id: requestedId, tenantId } })) ??
       (await resolveInternalCallDisposition(tenantId))
     : await resolveInternalCallDisposition(tenantId);
   const dispositionName = disposition.name ?? disposition.label;
@@ -170,14 +170,14 @@ export async function createCallLog(
   const tailFrom = lastTen(dto.fromNumber);
   const tailTo = lastTen(dto.toNumber);
 
-  const orphanOr: Prisma.CrmIndiaVoiceWebhookLogWhereInput[] = [];
+  const orphanOr: Prisma.QcfIndiaVoiceWebhookLogWhereInput[] = [];
   if (sid) orphanOr.push({ callSid: sid }, { campid: sid });
   if (tailTo) orphanOr.push({ sourceNumber: { endsWith: tailTo } });
   if (tailFrom) orphanOr.push({ dialWhomNumber: { endsWith: tailFrom } });
 
   const orphan =
     orphanOr.length > 0
-      ? await prisma.crmIndiaVoiceWebhookLog.findFirst({
+      ? await prisma.qcfIndiaVoiceWebhookLog.findFirst({
           where: {
             tenantId,
             matchedCallLogId: null,
@@ -191,7 +191,7 @@ export async function createCallLog(
   let leadId: string | null = null;
   let leadDisplayName = "";
   if (dto.linkedLeadId && dto.linkedLeadId.trim()) {
-    const explicit = await prisma.crmLead.findFirst({
+    const explicit = await prisma.qcfLead.findFirst({
       where: { id: dto.linkedLeadId.trim(), tenantId },
       select: { id: true, name: true },
     });
@@ -201,7 +201,7 @@ export async function createCallLog(
     }
   }
   if (!leadId && tailTo) {
-    const matched = await prisma.crmLead.findFirst({
+    const matched = await prisma.qcfLead.findFirst({
       where: {
         tenantId,
         OR: [{ phone: { endsWith: tailTo } }, { mobile: { endsWith: tailTo } }],
@@ -248,7 +248,7 @@ export async function createCallLog(
     endedBy: dto.endedBy ?? undefined,
   } as const;
 
-  // FR-RE Stage 3-D(a): a CrmCallLog row means a real call happened. Only the
+  // FR-RE Stage 3-D(a): a QcfCallLog row means a real call happened. Only the
   // dialer flow (source="dialer") writes one; a manual disposition update
   // (source="manual") records activities only — no fabricated call row. Reuse
   // the dialer-flow stub when we have a sid and it has not yet been
@@ -256,7 +256,7 @@ export async function createCallLog(
   const isRealCall = dto.source === "dialer";
   const existingStub =
     isRealCall && sid
-      ? await prisma.crmCallLog.findFirst({
+      ? await prisma.qcfCallLog.findFirst({
           where: {
             tenantId,
             dispositionName: null,
@@ -269,7 +269,7 @@ export async function createCallLog(
   const callLog = !isRealCall
     ? null
     : existingStub
-      ? await prisma.crmCallLog.update({
+      ? await prisma.qcfCallLog.update({
           where: { id: existingStub.id },
           data: {
             ...baseCallLogFields,
@@ -279,7 +279,7 @@ export async function createCallLog(
             providerCallSid: existingStub.providerCallSid || sid || null,
           },
         })
-      : await prisma.crmCallLog.create({
+      : await prisma.qcfCallLog.create({
           data: {
             tenantId,
             callSid: sid,
@@ -289,7 +289,7 @@ export async function createCallLog(
         });
 
   if (orphan && callLog) {
-    await prisma.crmIndiaVoiceWebhookLog.update({
+    await prisma.qcfIndiaVoiceWebhookLog.update({
       where: { id: orphan.id },
       data: { matchedCallLogId: callLog.id },
     });
@@ -332,7 +332,7 @@ export async function createCallLog(
       selectedReason ? `Reason: ${selectedReason}` : "",
     ].filter(Boolean);
 
-    const callActivity = await prisma.crmActivity.create({
+    const callActivity = await prisma.qcfActivity.create({
       data: {
         tenantId,
         type: "Call",
@@ -377,13 +377,13 @@ export async function createCallLog(
     // off disposition.triggersPaymentVerification, not the mapped stage/status).
     const mappedStatus = selectedStatus;
 
-    const lead = await prisma.crmLead.findFirst({
+    const lead = await prisma.qcfLead.findFirst({
       where: { id: leadId, tenantId },
       select: { id: true, stage: true, status: true, substatus: true, dynamicFields: true },
     });
     if (lead) {
       const changed: string[] = [];
-      const data: Prisma.CrmLeadUpdateInput = {};
+      const data: Prisma.QcfLeadUpdateInput = {};
       // NOTE: no stage write here anymore — automation owns the Contact Stage
       // (see the pipeline-ownership note above). The disposition writes only the
       // agent's raw status + sub-stage selections; automation reacts via the
@@ -448,10 +448,10 @@ export async function createCallLog(
       // have silently dropped the last-activity stamp on a status-only save.
       data.dynamicFields = newDyn as Prisma.InputJsonValue;
       if (changed.length > 0) {
-        await prisma.crmLead.update({ where: { id: leadId }, data });
+        await prisma.qcfLead.update({ where: { id: leadId }, data });
         // Outbound sync (status/substatus/stage changed). Fire-and-forget.
         triggerOutboundSync({ tenantId, crmLeadId: leadId });
-        await prisma.crmActivity.create({
+        await prisma.qcfActivity.create({
           data: {
             tenantId,
             type: "LeadStageChange",
@@ -484,13 +484,13 @@ export async function createCallLog(
       formDecision = frre?.decision;
 
       // FR-RE visibility: applyFormRules moves lead.stage (Contact Stage) when a
-      // rule fires but records ONLY a CrmAuditLog — so the change never showed on
+      // rule fires but records ONLY a QcfAuditLog — so the change never showed on
       // the lead timeline, making a firing rule look dead. Log the move as its own
       // LeadStageChange activity so the rule's effect is visible + traceable,
       // mirroring the built-in mapping's own entry above.
       if (frre?.stageApplied && frre.decision.setStage) {
         const ruleStage = frre.decision.setStage.status; // carries a stage name
-        await prisma.crmActivity.create({
+        await prisma.qcfActivity.create({
           data: {
             tenantId,
             type: "LeadStageChange",
@@ -523,7 +523,7 @@ export async function createCallLog(
     );
 
     if (followUpAt) {
-      await prisma.crmActivity.create({
+      await prisma.qcfActivity.create({
         data: {
           tenantId,
           type: "FollowUp",
@@ -554,11 +554,11 @@ export async function createCallLog(
         callLogCreatedAt: callLog?.createdAt ?? now,
       });
       if (!dup) {
-        const lead = await prisma.crmLead.findFirst({
+        const lead = await prisma.qcfLead.findFirst({
           where: { id: leadId, tenantId },
           select: { ownerId: true, name: true },
         });
-        await prisma.crmTask.create({
+        await prisma.qcfTask.create({
           data: {
             tenantId,
             subject: `Follow up · ${lead?.name ?? leadDisplayName ?? ""}`.trim(),

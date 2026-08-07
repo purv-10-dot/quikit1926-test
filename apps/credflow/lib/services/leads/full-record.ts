@@ -46,7 +46,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
   // lead in read-only mode on the detail page (URL access from the trash row).
   // Include the linked account so the edit form can pre-fill the "Link account"
   // searchable input without a second round-trip.
-  const lead = await prisma.crmLead.findUnique({
+  const lead = await prisma.qcfLead.findUnique({
     where: { id: leadId },
     include: { account: { select: { id: true, name: true } } },
   });
@@ -70,7 +70,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
 
   const [activities, tasks, notes, opportunities, callLogs, attachments, slaTracking] =
     await Promise.all([
-    prisma.crmActivity.findMany({
+    prisma.qcfActivity.findMany({
       where: {
         tenantId: user.tenantId,
         OR: [
@@ -82,7 +82,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       orderBy: { occurredAt: "desc" },
       take: 50,
     }),
-    prisma.crmTask.findMany({
+    prisma.qcfTask.findMany({
       where: {
         tenantId: user.tenantId,
         OR: [
@@ -94,7 +94,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
       take: 50,
     }),
-    prisma.crmNote.findMany({
+    prisma.qcfNote.findMany({
       where: {
         tenantId: user.tenantId,
         OR: [
@@ -106,12 +106,12 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.crmOpportunity.findMany({
+    prisma.qcfOpportunity.findMany({
       where: { tenantId: user.tenantId, leadId },
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.crmCallLog.findMany({
+    prisma.qcfCallLog.findMany({
       where: {
         tenantId: user.tenantId,
         OR: [
@@ -125,7 +125,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.crmDocument.findMany({
+    prisma.qcfDocument.findMany({
       where: {
         tenantId: user.tenantId,
         refType: "lead",
@@ -134,7 +134,7 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.crmSlaLeadTracking.findMany({
+    prisma.qcfSlaLeadTracking.findMany({
       where: { tenantId: user.tenantId, leadId },
       orderBy: { updatedAt: "desc" },
       take: 20,

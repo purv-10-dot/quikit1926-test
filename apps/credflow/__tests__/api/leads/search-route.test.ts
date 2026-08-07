@@ -15,8 +15,8 @@ function adminSession() {
 
 describe("GET /api/leads — search OR", () => {
   beforeEach(() => {
-    db.crmLead.findMany.mockReset();
-    db.crmLead.count.mockReset();
+    db.qcfLead.findMany.mockReset();
+    db.qcfLead.count.mockReset();
     setSession(null);
   });
 
@@ -29,14 +29,14 @@ describe("GET /api/leads — search OR", () => {
 
   it("searches across the expanded text field set on ?q=", async () => {
     adminSession();
-    db.crmLead.findMany.mockResolvedValue([]);
-    db.crmLead.count.mockResolvedValue(0);
+    db.qcfLead.findMany.mockResolvedValue([]);
+    db.qcfLead.count.mockResolvedValue(0);
 
     const { GET } = await import("@/app/api/leads/route");
     const req = new Request("http://test/api/leads?q=acme");
     await GET(req as unknown as import("next/server").NextRequest);
 
-    const where = db.crmLead.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfLead.findMany.mock.calls[0]![0]!.where as {
       OR?: Array<Record<string, { contains?: string }>>;
     };
     const keys = (where.OR ?? []).map((clause) => Object.keys(clause)[0]);
@@ -58,8 +58,8 @@ describe("GET /api/leads — search OR", () => {
 
   it("reduces a formatted phone query to digits-only phone + mobile clauses", async () => {
     adminSession();
-    db.crmLead.findMany.mockResolvedValue([]);
-    db.crmLead.count.mockResolvedValue(0);
+    db.qcfLead.findMany.mockResolvedValue([]);
+    db.qcfLead.count.mockResolvedValue(0);
 
     const { GET } = await import("@/app/api/leads/route");
     const req = new Request(
@@ -67,7 +67,7 @@ describe("GET /api/leads — search OR", () => {
     );
     await GET(req as unknown as import("next/server").NextRequest);
 
-    const where = db.crmLead.findMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfLead.findMany.mock.calls[0]![0]!.where as {
       OR?: Array<Record<string, { contains?: string }>>;
     };
     const or = where.OR ?? [];

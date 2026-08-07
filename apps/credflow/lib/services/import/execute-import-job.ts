@@ -1,5 +1,5 @@
 import type { Prisma } from "@quikit/database";
-import type { CrmImportJobStatus } from "@prisma/client";
+import type { QcfImportJobStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { enqueueImportSafe, type ImportJobData } from "@/lib/queue/import-queue";
 import { backoffMs, isBlocked } from "@/lib/services/import/batch-coordinator";
@@ -17,7 +17,7 @@ export type ImportJobRunResult =
   | { outcome: "skipped" }
   | {
       outcome: "finished";
-      status: CrmImportJobStatus;
+      status: QcfImportJobStatus;
       totalRows: number;
       importedCount: number;
       createdCount?: number;
@@ -32,7 +32,7 @@ export type ImportJobRunResult =
  */
 export async function executeImportJob(data: ImportJobData): Promise<ImportJobRunResult> {
   const { tenantId, jobId, entityType } = data;
-  const dbJob = await prisma.crmLeadImportJob.findUnique({ where: { id: jobId } });
+  const dbJob = await prisma.qcfLeadImportJob.findUnique({ where: { id: jobId } });
   if (!dbJob || dbJob.tenantId !== tenantId) {
     return { outcome: "skipped" };
   }
@@ -44,12 +44,12 @@ export async function executeImportJob(data: ImportJobData): Promise<ImportJobRu
     return { outcome: "deferred" };
   }
 
-  const claim = await prisma.crmLeadImportJob.updateMany({
+  const claim = await prisma.qcfLeadImportJob.updateMany({
     where: { id: jobId, status: "queued" },
     data: { status: "processing", startedAt: new Date(), attempts: { increment: 1 } },
   });
   if (claim.count === 0) {
-    const current = await prisma.crmLeadImportJob.findUnique({ where: { id: jobId } });
+    const current = await prisma.qcfLeadImportJob.findUnique({ where: { id: jobId } });
     if (current && current.status !== "queued") {
       return {
         outcome: "finished",
@@ -85,7 +85,7 @@ export async function executeImportJob(data: ImportJobData): Promise<ImportJobRu
     }
 
     const finalStatus = result.rowErrors.length === 0 ? "completed" : "completed_with_errors";
-    await prisma.crmLeadImportJob.update({
+    await prisma.qcfLeadImportJob.update({
       where: { id: jobId },
       data: {
         status: finalStatus,
@@ -107,11 +107,11 @@ export async function executeImportJob(data: ImportJobData): Promise<ImportJobRu
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
-    const updated = await prisma.crmLeadImportJob.findUnique({ where: { id: jobId } });
+    const updated = await prisma.qcfLeadImportJob.findUnique({ where: { id: jobId } });
     const attempts = updated?.attempts ?? 1;
 
     if (attempts >= MAX_IMPORT_ATTEMPTS) {
-      await prisma.crmLeadImportJob.update({
+      await prisma.qcfLeadImportJob.update({
         where: { id: jobId },
         data: { status: "dead_letter", deadLetteredAt: new Date(), lastError: message },
       });
@@ -126,7 +126,7 @@ export async function executeImportJob(data: ImportJobData): Promise<ImportJobRu
     }
 
     const delay = backoffMs(attempts);
-    await prisma.crmLeadImportJob.update({
+    await prisma.qcfLeadImportJob.update({
       where: { id: jobId },
       data: { status: "queued", lastError: message, nextRetryAt: new Date(Date.now() + delay) },
     });

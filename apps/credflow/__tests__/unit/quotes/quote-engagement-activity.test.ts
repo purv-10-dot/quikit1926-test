@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 const dbMock = {
-  crmQuoteEngagementEvent: {
+  qcfQuoteEngagementEvent: {
     create: vi.fn(),
   },
-  crmQuote: {
+  qcfQuote: {
     findFirst: vi.fn(),
     update: vi.fn(),
   },
-  crmActivity: {
+  qcfActivity: {
     create: vi.fn(),
   },
 } as any;
@@ -21,10 +21,10 @@ describe("recordQuoteEngagement", () => {
       "@/lib/services/quotes/enterprise/engagement-service"
     );
 
-    dbMock.crmQuoteEngagementEvent.create.mockResolvedValueOnce(undefined);
-    dbMock.crmQuote.findFirst.mockResolvedValueOnce({ engagementStatus: null, firstViewedAt: null });
-    dbMock.crmQuote.update.mockResolvedValueOnce(undefined);
-    dbMock.crmActivity.create.mockResolvedValueOnce(undefined);
+    dbMock.qcfQuoteEngagementEvent.create.mockResolvedValueOnce(undefined);
+    dbMock.qcfQuote.findFirst.mockResolvedValueOnce({ engagementStatus: null, firstViewedAt: null });
+    dbMock.qcfQuote.update.mockResolvedValueOnce(undefined);
+    dbMock.qcfActivity.create.mockResolvedValueOnce(undefined);
 
     await recordQuoteEngagement({
       tenantId: "t1",
@@ -33,8 +33,8 @@ describe("recordQuoteEngagement", () => {
       ipAddress: "::1",
     });
 
-    expect(dbMock.crmActivity.create).toHaveBeenCalledTimes(1);
-    const callArg = dbMock.crmActivity.create.mock.calls[0]![0];
+    expect(dbMock.qcfActivity.create).toHaveBeenCalledTimes(1);
+    const callArg = dbMock.qcfActivity.create.mock.calls[0]![0];
     expect(callArg.data).toEqual(
       expect.objectContaining({
         type: "QuoteEngagement",

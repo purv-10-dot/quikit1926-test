@@ -12,8 +12,8 @@ async function readBodyWithBom(res: Response): Promise<string> {
 
 describe("GET /api/leads?format=csv", () => {
   beforeEach(() => {
-    db.crmLead.findMany.mockReset();
-    db.crmLead.count.mockReset();
+    db.qcfLead.findMany.mockReset();
+    db.qcfLead.count.mockReset();
     setSession(null);
     vi.mocked(assertModule).mockReset();
     vi.mocked(assertModule).mockResolvedValue(undefined);
@@ -47,7 +47,7 @@ describe("GET /api/leads?format=csv", () => {
 
   it("streams CSV with BOM + matching header row on the happy path", async () => {
     setSession({ userId: "u1", tenantId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
-    db.crmLead.findMany.mockResolvedValueOnce([
+    db.qcfLead.findMany.mockResolvedValueOnce([
       {
         id: "l1",
         name: "Alice",
@@ -66,7 +66,7 @@ describe("GET /api/leads?format=csv", () => {
       } as never,
     ]);
     // Second findMany call (cursor next page) returns empty → streaming ends.
-    db.crmLead.findMany.mockResolvedValueOnce([]);
+    db.qcfLead.findMany.mockResolvedValueOnce([]);
 
     const { GET } = await import("@/app/api/leads/route");
     const req = new Request("http://test/api/leads?format=csv");
@@ -87,14 +87,14 @@ describe("GET /api/leads?format=csv", () => {
 
   it("filters by tenant — findMany receives the caller's tenantId in where", async () => {
     setSession({ userId: "u1", tenantId: "tenant-A", role: "Administrator", email: "a@x.co", name: "A" });
-    db.crmLead.findMany.mockResolvedValueOnce([]);
+    db.qcfLead.findMany.mockResolvedValueOnce([]);
 
     const { GET } = await import("@/app/api/leads/route");
     const req = new Request("http://test/api/leads?format=csv");
     await GET(req as unknown as import("next/server").NextRequest);
 
-    expect(db.crmLead.findMany).toHaveBeenCalled();
-    const call = db.crmLead.findMany.mock.calls[0]?.[0];
+    expect(db.qcfLead.findMany).toHaveBeenCalled();
+    const call = db.qcfLead.findMany.mock.calls[0]?.[0];
     expect(call).toBeDefined();
     expect((call!.where as Record<string, unknown>).tenantId).toBe("tenant-A");
   });

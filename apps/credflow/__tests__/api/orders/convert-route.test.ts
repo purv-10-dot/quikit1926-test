@@ -22,12 +22,12 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
   beforeEach(() => {
     setSession(null);
     db.$transaction.mockReset();
-    db.crmOrder.findFirst.mockReset();
-    db.crmQuote.findFirst.mockReset();
-    db.crmSequence.upsert.mockReset();
-    db.crmOrder.create.mockReset();
-    db.crmOrderLine.create.mockReset();
-    db.crmActivity.create.mockReset();
+    db.qcfOrder.findFirst.mockReset();
+    db.qcfQuote.findFirst.mockReset();
+    db.qcfSequence.upsert.mockReset();
+    db.qcfOrder.create.mockReset();
+    db.qcfOrderLine.create.mockReset();
+    db.qcfActivity.create.mockReset();
 
     db.$transaction.mockImplementation(async (cb: unknown) => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
@@ -45,8 +45,8 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
 
   it("returns 404 when the quote is in another tenant", async () => {
     adminSession();
-    db.crmOrder.findFirst.mockResolvedValue(null); // no existing order
-    db.crmQuote.findFirst.mockResolvedValue(null); // quote not in tenant
+    db.qcfOrder.findFirst.mockResolvedValue(null); // no existing order
+    db.qcfQuote.findFirst.mockResolvedValue(null); // quote not in tenant
 
     const { POST } = await import("@/app/api/quotes/[id]/convert-to-order/route");
     const req = new Request("http://test/api/quotes/q-foreign/convert-to-order", { method: "POST" });
@@ -58,8 +58,8 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
 
   it("returns 409 when the quote isn't in Won status", async () => {
     adminSession();
-    db.crmOrder.findFirst.mockResolvedValue(null);
-    db.crmQuote.findFirst.mockResolvedValue({
+    db.qcfOrder.findFirst.mockResolvedValue(null);
+    db.qcfQuote.findFirst.mockResolvedValue({
       id: "q1",
       quoteNumber: "QT-2026-0001",
       status: "Active",
@@ -74,13 +74,13 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toMatch(/won/iu);
-    expect(db.crmOrder.create).not.toHaveBeenCalled();
+    expect(db.qcfOrder.create).not.toHaveBeenCalled();
   });
 
   it("idempotent: returns existing order (200) instead of duplicating", async () => {
     adminSession();
     // Order already exists for this quote.
-    db.crmOrder.findFirst.mockResolvedValue({
+    db.qcfOrder.findFirst.mockResolvedValue({
       id: "ord-existing",
       orderNumber: "ORD-2026-0001",
     } as never);
@@ -95,13 +95,13 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
     expect(body.data.alreadyExisted).toBe(true);
     expect(body.data.id).toBe("ord-existing");
     // No new order should have been minted.
-    expect(db.crmOrder.create).not.toHaveBeenCalled();
+    expect(db.qcfOrder.create).not.toHaveBeenCalled();
   });
 
   it("happy path: 201, snapshots totals, mints ORD-YYYY-NNNN, emits twin activity rows", async () => {
     adminSession();
-    db.crmOrder.findFirst.mockResolvedValue(null);
-    db.crmQuote.findFirst.mockResolvedValue({
+    db.qcfOrder.findFirst.mockResolvedValue(null);
+    db.qcfQuote.findFirst.mockResolvedValue({
       id: "q1",
       quoteNumber: "QT-2026-0007",
       status: "Won",
@@ -145,10 +145,10 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
         },
       ],
     } as never);
-    db.crmSequence.upsert.mockResolvedValue({ counter: 1 } as never);
-    db.crmOrder.create.mockResolvedValue({ id: "ord-new" } as never);
-    db.crmOrderLine.create.mockResolvedValue({} as never);
-    db.crmActivity.create.mockResolvedValue({} as never);
+    db.qcfSequence.upsert.mockResolvedValue({ counter: 1 } as never);
+    db.qcfOrder.create.mockResolvedValue({ id: "ord-new" } as never);
+    db.qcfOrderLine.create.mockResolvedValue({} as never);
+    db.qcfActivity.create.mockResolvedValue({} as never);
 
     const { POST } = await import("@/app/api/quotes/[id]/convert-to-order/route");
     const req = new Request("http://test/api/quotes/q1/convert-to-order", { method: "POST" });
@@ -163,7 +163,7 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
     expect(body.data.orderNumber).toMatch(/^ORD-\d{4}-0001$/u);
 
     // Totals snapshotted on the order â€” must NOT recompute.
-    const orderCreateCall = db.crmOrder.create.mock.calls[0]![0]! as {
+    const orderCreateCall = db.qcfOrder.create.mock.calls[0]![0]! as {
       data: { grandTotal: unknown; totalDiscount: unknown; status: string };
     };
     expect(orderCreateCall.data.grandTotal).toBe("11074.00");
@@ -172,10 +172,10 @@ describe("POST /api/quotes/[id]/convert-to-order", () => {
     expect(orderCreateCall.data.status).toBe("Open");
 
     // Line snapshot was created.
-    expect(db.crmOrderLine.create).toHaveBeenCalledOnce();
+    expect(db.qcfOrderLine.create).toHaveBeenCalledOnce();
 
     // Twin activity rows â€” one on the order, one on the quote.
-    const activityTypes = db.crmActivity.create.mock.calls.map(
+    const activityTypes = db.qcfActivity.create.mock.calls.map(
       (c) => (c[0] as { data?: { type?: string } })?.data?.type,
     );
     expect(activityTypes).toContain("OrderCreatedFromQuote");

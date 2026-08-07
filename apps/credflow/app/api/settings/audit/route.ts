@@ -41,13 +41,13 @@ export async function GET(req: NextRequest) {
     }
 
     const [items, total] = await Promise.all([
-      prisma.crmAuditLog.findMany({
+      prisma.qcfAuditLog.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
       }),
-      prisma.crmAuditLog.count({ where }),
+      prisma.qcfAuditLog.count({ where }),
     ]);
     return NextResponse.json({ items, total, page: q.page, pageSize: q.pageSize });
   } catch (e) {

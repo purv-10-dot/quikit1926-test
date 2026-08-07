@@ -41,18 +41,18 @@ export async function GET(req: NextRequest) {
         };
 
     const [leads, accounts, contacts] = await Promise.all([
-      prisma.crmLead.findMany({
+      prisma.qcfLead.findMany({
         where: leadWhere,
         take: 10,
         select: { id: true, name: true, company: true, stage: true },
       }),
-      prisma.crmAccount.findMany({
+      prisma.qcfAccount.findMany({
         where: { tenantId: user.tenantId, name: { contains: q, mode: "insensitive" } },
         take: 10,
         select: { id: true, name: true, industry: true },
       }),
-      prisma.crmContact.findMany({
-        // CrmContact is NOT in SOFT_DELETE_MODELS, so the soft-delete middleware
+      prisma.qcfContact.findMany({
+        // QcfContact is NOT in SOFT_DELETE_MODELS, so the soft-delete middleware
         // does not auto-inject this — filter trashed contacts out explicitly.
         where: {
           tenantId: user.tenantId,

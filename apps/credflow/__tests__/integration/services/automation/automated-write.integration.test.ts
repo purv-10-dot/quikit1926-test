@@ -14,21 +14,21 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { integrationPrisma } from "../../helpers/integrationDb";
 import { applyAutomatedLeadWrite } from "@/lib/services/automation/automated-write";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
 const TENANT = `int_s2_${Date.now()}`;
-let lead: CrmLead;
+let lead: QcfLead;
 
 beforeAll(async () => {
-  lead = await integrationPrisma.crmLead.create({
+  lead = await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: "S2 Helper Lead", status: "Open", stage: "New" },
   });
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmAutomationAttribution.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfAutomationAttribution.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfAutomationLeadDayCount.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 
@@ -48,14 +48,14 @@ describe("S2 automated-write helper · real DB", () => {
 
     expect(outcome).toBe("written");
 
-    const row = await integrationPrisma.crmLead.findUnique({ where: { id: lead.id } });
+    const row = await integrationPrisma.qcfLead.findUnique({ where: { id: lead.id } });
     expect(row?.status).toBe("Disqualified"); // real PATCH landed on the lead
 
-    const attr = await integrationPrisma.crmAutomationAttribution.findMany({ where: { tenantId: TENANT, leadId: lead.id } });
+    const attr = await integrationPrisma.qcfAutomationAttribution.findMany({ where: { tenantId: TENANT, leadId: lead.id } });
     expect(attr).toHaveLength(1);
     expect(attr[0]).toMatchObject({ engineSource: "automation", field: "status", beforeValue: "Open", afterValue: "Disqualified" });
 
-    const counter = await integrationPrisma.crmAutomationLeadDayCount.findFirst({ where: { tenantId: TENANT, leadId: lead.id } });
+    const counter = await integrationPrisma.qcfAutomationLeadDayCount.findFirst({ where: { tenantId: TENANT, leadId: lead.id } });
     expect(counter?.count).toBe(1); // one automated write counted toward the cap
   });
 
@@ -63,7 +63,7 @@ describe("S2 automated-write helper · real DB", () => {
     // status is now "Disqualified" from the previous test — writing it again is a no-op.
     const outcome = await applyAutomatedLeadWrite({
       tenantId: TENANT,
-      lead: (await integrationPrisma.crmLead.findUnique({ where: { id: lead.id } }))!,
+      lead: (await integrationPrisma.qcfLead.findUnique({ where: { id: lead.id } }))!,
       field: "status",
       value: "Disqualified",
       workflowId: "wf-s2",
@@ -74,9 +74,9 @@ describe("S2 automated-write helper · real DB", () => {
     });
 
     expect(outcome).toBe("noop");
-    const counter = await integrationPrisma.crmAutomationLeadDayCount.findFirst({ where: { tenantId: TENANT, leadId: lead.id } });
+    const counter = await integrationPrisma.qcfAutomationLeadDayCount.findFirst({ where: { tenantId: TENANT, leadId: lead.id } });
     expect(counter?.count).toBe(1); // unchanged — a no-op must not consume the budget
-    const attr = await integrationPrisma.crmAutomationAttribution.count({ where: { tenantId: TENANT, leadId: lead.id } });
+    const attr = await integrationPrisma.qcfAutomationAttribution.count({ where: { tenantId: TENANT, leadId: lead.id } });
     expect(attr).toBe(1); // no new attribution row
   });
 });

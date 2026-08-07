@@ -31,21 +31,21 @@ export async function POST(req: NextRequest) {
     const { leadId, callLogId, amount, currency, reference, paymentMode, notes } = parsed.data;
 
     if (leadId) {
-      const lead = await prisma.crmLead.findFirst({
+      const lead = await prisma.qcfLead.findFirst({
         where: { id: leadId, tenantId: user.tenantId },
         select: { id: true },
       });
       if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     if (callLogId) {
-      const cl = await prisma.crmCallLog.findFirst({
+      const cl = await prisma.qcfCallLog.findFirst({
         where: { id: callLogId, tenantId: user.tenantId },
         select: { id: true },
       });
       if (!cl) return NextResponse.json({ error: "Call log not found" }, { status: 404 });
     }
 
-    const row = await prisma.crmPaymentVerification.create({
+    const row = await prisma.qcfPaymentVerification.create({
       data: {
         tenantId: user.tenantId,
         leadId: leadId ?? null,

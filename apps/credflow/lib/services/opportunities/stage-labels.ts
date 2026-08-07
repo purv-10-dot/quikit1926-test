@@ -8,9 +8,9 @@
  * UI surfaces show the friendly label; the database and API contracts use the
  * canonical enum value. Documented in apps/quikcrm/CLAUDE.md.
  */
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
-export const STAGE_LABEL: Record<CrmOpportunityStage, string> = {
+export const STAGE_LABEL: Record<QcfOpportunityStage, string> = {
   Prospecting: "Prospecting",
   Qualification: "Qualification",
   Proposal: "Proposal",
@@ -19,7 +19,7 @@ export const STAGE_LABEL: Record<CrmOpportunityStage, string> = {
   ClosedLost: "Lost",
 };
 
-export const STAGE_ORDER: CrmOpportunityStage[] = [
+export const STAGE_ORDER: QcfOpportunityStage[] = [
   "Prospecting",
   "Qualification",
   "Proposal",
@@ -28,13 +28,13 @@ export const STAGE_ORDER: CrmOpportunityStage[] = [
   "ClosedLost",
 ];
 
-export const TERMINAL_STAGES: ReadonlySet<CrmOpportunityStage> = new Set([
+export const TERMINAL_STAGES: ReadonlySet<QcfOpportunityStage> = new Set([
   "ClosedWon",
   "ClosedLost",
 ]);
 
 /** Server-side default probability per stage. UI suggests; user confirms. */
-export const STAGE_DEFAULT_PROBABILITY: Record<CrmOpportunityStage, number> = {
+export const STAGE_DEFAULT_PROBABILITY: Record<QcfOpportunityStage, number> = {
   Prospecting: 10,
   Qualification: 25,
   Proposal: 50,

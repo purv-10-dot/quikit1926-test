@@ -51,14 +51,14 @@ export async function recordWriteAndCheck(opts: {
 }): Promise<LoopGuardResult> {
   const day = loopDayKey(opts.now);
   const cap = loopCap();
-  const row = await prisma.crmAutomationLeadDayCount.upsert({
+  const row = await prisma.qcfAutomationLeadDayCount.upsert({
     where: { tenantId_leadId_day: { tenantId: opts.tenantId, leadId: opts.leadId, day } },
     create: { tenantId: opts.tenantId, leadId: opts.leadId, day, count: 1 },
     update: { count: { increment: 1 } },
   });
   const terminated = row.count > cap;
   if (terminated && !row.terminated) {
-    await prisma.crmAutomationLeadDayCount.update({
+    await prisma.qcfAutomationLeadDayCount.update({
       where: { tenantId_leadId_day: { tenantId: opts.tenantId, leadId: opts.leadId, day } },
       data: { terminated: true },
     });
@@ -72,7 +72,7 @@ export async function isLeadTerminated(
   leadId: string,
   now?: Date,
 ): Promise<boolean> {
-  const row = await prisma.crmAutomationLeadDayCount.findUnique({
+  const row = await prisma.qcfAutomationLeadDayCount.findUnique({
     where: { tenantId_leadId_day: { tenantId, leadId, day: loopDayKey(now) } },
   });
   return row?.terminated ?? false;

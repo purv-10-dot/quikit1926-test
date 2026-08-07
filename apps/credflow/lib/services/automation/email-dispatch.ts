@@ -1,5 +1,5 @@
 /**
- * [P3.B1] Email dispatch — consume a queued CrmOutboundMessageLog row and
+ * [P3.B1] Email dispatch — consume a queued QcfOutboundMessageLog row and
  * actually send it through the shared mail infra (`lib/services/email/send.ts`).
  * SPEC §5.1 · SURVEY #7.
  *
@@ -52,7 +52,7 @@ export async function dispatchOutboundMessage(
   tenantId: string,
   logId: string,
 ): Promise<DispatchResult> {
-  const log = await prisma.crmOutboundMessageLog.findFirst({
+  const log = await prisma.qcfOutboundMessageLog.findFirst({
     where: { id: logId, tenantId },
   });
   if (!log) return { outcome: "skipped", reason: "message log row not found for tenant" };
@@ -71,7 +71,7 @@ export async function dispatchOutboundMessage(
       subject: log.subject ?? "",
       text: log.body ?? "",
     });
-    await prisma.crmOutboundMessageLog.update({
+    await prisma.qcfOutboundMessageLog.update({
       where: { id: log.id },
       data: {
         status: "sent",
@@ -87,7 +87,7 @@ export async function dispatchOutboundMessage(
     // A send failure is a recorded terminal state on the row, not a thrown error
     // — the workflow run continues past a failed email node (SPEC §5.1).
     const message = error instanceof Error ? error.message : String(error);
-    await prisma.crmOutboundMessageLog.update({
+    await prisma.qcfOutboundMessageLog.update({
       where: { id: log.id },
       data: { status: "failed", metadata: mergeMetadata(log.metadata, { error: message }) },
     });

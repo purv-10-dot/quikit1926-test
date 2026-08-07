@@ -15,12 +15,12 @@ function adminSession() {
 
 describe("POST /api/activities/filter", () => {
   beforeEach(() => {
-    db.crmActivity.findMany.mockReset();
-    db.crmActivity.count.mockReset();
-    db.crmLead.findMany.mockReset();
-    db.crmOpportunity.findMany.mockReset();
-    db.crmContact.findMany.mockReset();
-    db.crmAccount.findMany.mockReset();
+    db.qcfActivity.findMany.mockReset();
+    db.qcfActivity.count.mockReset();
+    db.qcfLead.findMany.mockReset();
+    db.qcfOpportunity.findMany.mockReset();
+    db.qcfContact.findMany.mockReset();
+    db.qcfAccount.findMany.mockReset();
     setSession(null);
   });
 
@@ -89,12 +89,12 @@ describe("POST /api/activities/filter", () => {
         updatedAt: new Date(),
       } as never,
     ]);
-    db.crmActivity.findMany.mockResolvedValue(rows.slice(0, 25));
-    db.crmActivity.count.mockResolvedValue(100);
-    db.crmLead.findMany.mockResolvedValue(
+    db.qcfActivity.findMany.mockResolvedValue(rows.slice(0, 25));
+    db.qcfActivity.count.mockResolvedValue(100);
+    db.qcfLead.findMany.mockResolvedValue(
       Array.from({ length: 25 }, (_, i) => ({ id: `lead-${i}`, name: `Lead ${i}` }) as never),
     );
-    db.crmOpportunity.findMany.mockResolvedValue(
+    db.qcfOpportunity.findMany.mockResolvedValue(
       Array.from({ length: 25 }, (_, i) => ({ id: `opp-${i}`, name: `Opp ${i}` }) as never),
     );
 
@@ -111,10 +111,10 @@ describe("POST /api/activities/filter", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(200);
     // N+1 guard: each parent table is hit at most once.
-    expect(db.crmLead.findMany.mock.calls.length).toBeLessThanOrEqual(1);
-    expect(db.crmOpportunity.findMany.mock.calls.length).toBeLessThanOrEqual(1);
-    expect(db.crmContact.findMany.mock.calls.length).toBeLessThanOrEqual(1);
-    expect(db.crmAccount.findMany.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(db.qcfLead.findMany.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(db.qcfOpportunity.findMany.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(db.qcfContact.findMany.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(db.qcfAccount.findMany.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
   it("returns 400 for invalid match mode", async () => {

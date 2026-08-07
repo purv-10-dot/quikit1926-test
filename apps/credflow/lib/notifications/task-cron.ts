@@ -18,7 +18,7 @@
  *  └─────────────────────────────────────────────────────────┘
  *
  * Dedupe is implemented with Prisma's typed JSON path filters on the
- * CrmNotification.metadata column (NOT raw `@>` SQL) so the physical column
+ * QcfNotification.metadata column (NOT raw `@>` SQL) so the physical column
  * names always match the generated client — no extra tracking table or schema
  * change required. Morning reminders dedupe per calendar day; overdue dedupes
  * once per task lifetime.
@@ -73,7 +73,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
   const tomorrow = buildDayWindow(1);
 
   const [dueToday, dueTomorrow] = await Promise.all([
-    prisma.crmTask.findMany({
+    prisma.qcfTask.findMany({
       where: {
         status: { notIn: ["Completed", "Cancelled"] },
         dueDate: { gte: today.start, lte: today.end },
@@ -88,7 +88,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
         assignedToUserId: true,
       },
     }),
-    prisma.crmTask.findMany({
+    prisma.qcfTask.findMany({
       where: {
         status: { notIn: ["Completed", "Cancelled"] },
         dueDate: { gte: tomorrow.start, lte: tomorrow.end },
@@ -192,7 +192,7 @@ export async function runMorningTaskNotifications(): Promise<MorningSweepResult>
  * Send "task overdue" notifications — exactly ONCE per task per assignee.
  *
  * The "notify once" guarantee is implemented via hasNotificationBeenSent(),
- * which checks the CrmNotification.metadata column with Prisma's typed JSON
+ * which checks the QcfNotification.metadata column with Prisma's typed JSON
  * path filters (no `since` → notify once per task lifetime). No extra table or
  * schema change is needed.
  */
@@ -200,7 +200,7 @@ export async function runEveningTaskNotifications(): Promise<EveningSweepResult>
   const today = buildDayWindow(0);
 
   // Tasks that passed their due date and are still open.
-  const overdueTasks = await prisma.crmTask.findMany({
+  const overdueTasks = await prisma.qcfTask.findMany({
     where: {
       status: { notIn: ["Completed", "Cancelled"] },
       dueDate: { lt: today.start },               // strictly before today
@@ -283,7 +283,7 @@ async function hasNotificationBeenSent(
   match: Record<string, string>,
   since?: Date,
 ): Promise<boolean> {
-  const count = await prisma.crmNotification.count({
+  const count = await prisma.qcfNotification.count({
     where: {
       tenantId,
       userId,

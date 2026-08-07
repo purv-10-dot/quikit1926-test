@@ -22,11 +22,11 @@ const ctx: ReportRunContext = {
 
 describe("runCustomReport", () => {
   beforeEach(() => {
-    asMock(db.crmLead.groupBy).mockReset();
-    asMock(db.crmCallLog.groupBy).mockReset();
-    db.crmLead.findMany.mockReset();
-    db.crmOpportunity.findMany.mockReset();
-    db.crmCallLog.findMany.mockReset();
+    asMock(db.qcfLead.groupBy).mockReset();
+    asMock(db.qcfCallLog.groupBy).mockReset();
+    db.qcfLead.findMany.mockReset();
+    db.qcfOpportunity.findMany.mockReset();
+    db.qcfCallLog.findMany.mockReset();
     db.orgMember.findMany.mockReset();
   });
 
@@ -40,7 +40,7 @@ describe("runCustomReport", () => {
   });
 
   it("scopes lead reports to tenantId", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([
       { source: "Web", _count: { _all: 3 } },
     ] as never);
 
@@ -50,13 +50,13 @@ describe("runCustomReport", () => {
     );
 
     expect(result.rows).toHaveLength(1);
-    expect(asMock(db.crmLead.groupBy)).toHaveBeenCalled();
-    const args = asMock(db.crmLead.groupBy).mock.calls[0]?.[0];
+    expect(asMock(db.qcfLead.groupBy)).toHaveBeenCalled();
+    const args = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0];
     expect(args?.where?.tenantId).toBe("t1");
   });
 
   it("applies a whitelisted filter as an extra where condition", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([] as never);
     await runCustomReport(
       {
         object: "leads",
@@ -66,7 +66,7 @@ describe("runCustomReport", () => {
       },
       ctx,
     );
-    const where = asMock(db.crmLead.groupBy).mock.calls[0]?.[0]?.where as {
+    const where = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0]?.where as {
       AND?: Record<string, unknown>[];
     };
     expect(Array.isArray(where.AND)).toBe(true);
@@ -74,7 +74,7 @@ describe("runCustomReport", () => {
   });
 
   it("ignores filters on non-whitelisted fields (injection-safe)", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([] as never);
     await runCustomReport(
       {
         object: "leads",
@@ -84,7 +84,7 @@ describe("runCustomReport", () => {
       },
       ctx,
     );
-    const where = asMock(db.crmLead.groupBy).mock.calls[0]?.[0]?.where as Record<
+    const where = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0]?.where as Record<
       string,
       unknown
     >;
@@ -94,7 +94,7 @@ describe("runCustomReport", () => {
   });
 
   it("buckets by month when groupBy is a date grain", async () => {
-    db.crmLead.findMany.mockResolvedValueOnce([
+    db.qcfLead.findMany.mockResolvedValueOnce([
       { createdAt: new Date("2026-01-05T10:00:00Z") },
       { createdAt: new Date("2026-01-20T10:00:00Z") },
       { createdAt: new Date("2026-01-28T10:00:00Z") },
@@ -103,14 +103,14 @@ describe("runCustomReport", () => {
       { object: "leads", groupBy: "date:month", metric: "count" },
       ctx,
     );
-    expect(db.crmLead.findMany).toHaveBeenCalled();
-    expect(asMock(db.crmLead.groupBy)).not.toHaveBeenCalled();
+    expect(db.qcfLead.findMany).toHaveBeenCalled();
+    expect(asMock(db.qcfLead.groupBy)).not.toHaveBeenCalled();
     expect(result.rows).toEqual([{ dimension: "2026-01", value: 3 }]);
     expect(result.chart?.type).toBe("line");
   });
 
   it("resolves owner ids to names when grouping by ownerId", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([
       { ownerId: "user-1", _count: { _all: 5 } },
     ] as never);
     db.orgMember.findMany.mockResolvedValueOnce([
@@ -136,7 +136,7 @@ describe("runCustomReport", () => {
   // --- Task 1: avg/sum of score (Leads) ---
 
   it("averages score (rounded to 1dp) for the avgScore metric", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([
       { source: "Web", _avg: { score: 42.66 } },
     ] as never);
     const result = await runCustomReport(
@@ -149,7 +149,7 @@ describe("runCustomReport", () => {
   });
 
   it("sums score for the sumScore metric (with a footer total)", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([
       { source: "Web", _sum: { score: 150 } },
       { source: "Referral", _sum: { score: 90 } },
     ] as never);
@@ -165,7 +165,7 @@ describe("runCustomReport", () => {
   // existing count / opp-sum / call-sum behavior ---
 
   it("date bucket regression — leads count still counts rows per bucket", async () => {
-    db.crmLead.findMany.mockResolvedValueOnce([
+    db.qcfLead.findMany.mockResolvedValueOnce([
       { createdAt: new Date("2026-01-05T10:00:00Z") },
       { createdAt: new Date("2026-01-20T10:00:00Z") },
     ] as never);
@@ -177,7 +177,7 @@ describe("runCustomReport", () => {
   });
 
   it("date bucket regression — opportunities sumAmount still sums amounts", async () => {
-    db.crmOpportunity.findMany.mockResolvedValueOnce([
+    db.qcfOpportunity.findMany.mockResolvedValueOnce([
       { createdAt: new Date("2026-01-10T00:00:00Z"), amount: 1000 },
       { createdAt: new Date("2026-01-20T00:00:00Z"), amount: 500 },
     ] as never);
@@ -189,7 +189,7 @@ describe("runCustomReport", () => {
   });
 
   it("date bucket regression — callLogs sumDuration still sums durations", async () => {
-    db.crmCallLog.findMany.mockResolvedValueOnce([
+    db.qcfCallLog.findMany.mockResolvedValueOnce([
       { createdAt: new Date("2026-01-05T00:00:00Z"), durationSec: 60 },
       { createdAt: new Date("2026-01-15T00:00:00Z"), durationSec: 120 },
     ] as never);
@@ -201,7 +201,7 @@ describe("runCustomReport", () => {
   });
 
   it("date bucket — avgScore averages score per bucket", async () => {
-    db.crmLead.findMany.mockResolvedValueOnce([
+    db.qcfLead.findMany.mockResolvedValueOnce([
       { createdAt: new Date("2026-01-05T00:00:00Z"), score: 40 },
       { createdAt: new Date("2026-01-25T00:00:00Z"), score: 50 },
     ] as never);
@@ -213,7 +213,7 @@ describe("runCustomReport", () => {
   });
 
   it("date bucket — sumScore sums score per bucket", async () => {
-    db.crmLead.findMany.mockResolvedValueOnce([
+    db.qcfLead.findMany.mockResolvedValueOnce([
       { createdAt: new Date("2026-01-05T00:00:00Z"), score: 40 },
       { createdAt: new Date("2026-01-25T00:00:00Z"), score: 50 },
     ] as never);
@@ -227,7 +227,7 @@ describe("runCustomReport", () => {
   // --- Task 2: owner/agent as a filter field ---
 
   it("owner filter is ANDed with tenant scope (never replaces tenantId)", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([] as never);
     await runCustomReport(
       {
         object: "leads",
@@ -237,7 +237,7 @@ describe("runCustomReport", () => {
       },
       ctx,
     );
-    const where = asMock(db.crmLead.groupBy).mock.calls[0]?.[0]?.where as {
+    const where = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0]?.where as {
       AND?: Array<Record<string, unknown>>;
     };
     expect(Array.isArray(where.AND)).toBe(true);
@@ -248,7 +248,7 @@ describe("runCustomReport", () => {
   });
 
   it("owner is_not_empty excludes unassigned (ownerId not null), tenant kept", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([] as never);
     await runCustomReport(
       {
         object: "leads",
@@ -258,7 +258,7 @@ describe("runCustomReport", () => {
       },
       ctx,
     );
-    const where = asMock(db.crmLead.groupBy).mock.calls[0]?.[0]?.where as {
+    const where = asMock(db.qcfLead.groupBy).mock.calls[0]?.[0]?.where as {
       AND?: Array<Record<string, unknown>>;
     };
     expect((where.AND![0] as { tenantId?: string }).tenantId).toBe("t1");
@@ -268,7 +268,7 @@ describe("runCustomReport", () => {
   });
 
   it("agent (agentUserId) is filterable on call logs, ANDed with tenant scope", async () => {
-    asMock(db.crmCallLog.groupBy).mockResolvedValueOnce([] as never);
+    asMock(db.qcfCallLog.groupBy).mockResolvedValueOnce([] as never);
     await runCustomReport(
       {
         object: "callLogs",
@@ -278,7 +278,7 @@ describe("runCustomReport", () => {
       },
       ctx,
     );
-    const where = asMock(db.crmCallLog.groupBy).mock.calls[0]?.[0]?.where as {
+    const where = asMock(db.qcfCallLog.groupBy).mock.calls[0]?.[0]?.where as {
       AND?: Array<Record<string, unknown>>;
     };
     expect(Array.isArray(where.AND)).toBe(true);
@@ -289,7 +289,7 @@ describe("runCustomReport", () => {
   });
 
   it("respects an explicit chartType override", async () => {
-    asMock(db.crmLead.groupBy).mockResolvedValueOnce([
+    asMock(db.qcfLead.groupBy).mockResolvedValueOnce([
       { source: "Web", _count: { _all: 3 } },
     ] as never);
     const result = await runCustomReport(

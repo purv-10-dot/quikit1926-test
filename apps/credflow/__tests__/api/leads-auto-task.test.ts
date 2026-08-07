@@ -97,7 +97,7 @@ describe("POST /api/leads — auto-task side effect", () => {
     validateDynamicFields.mockReturnValue({ values: {}, errors: {} });
     listLeadFields.mockResolvedValue([]);
     findDuplicateLead.mockResolvedValue(null);
-    db.crmLead.create.mockReset();
+    db.qcfLead.create.mockReset();
     setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
   });
 
@@ -109,7 +109,7 @@ describe("POST /api/leads — auto-task side effect", () => {
       ownerId: "u-owner",
       stage: "New",
     };
-    db.crmLead.create.mockResolvedValue(lead as never);
+    db.qcfLead.create.mockResolvedValue(lead as never);
 
     const res = await callPost(baseLeadInput);
     await flushMicrotasks();
@@ -120,7 +120,7 @@ describe("POST /api/leads — auto-task side effect", () => {
   });
 
   it("does NOT fail the lead POST when auto-task dispatch throws", async () => {
-    db.crmLead.create.mockResolvedValue({
+    db.qcfLead.create.mockResolvedValue({
       id: "lead-4",
       tenantId: "t1",
       name: "Resilient Lead",
@@ -159,7 +159,7 @@ describe("POST /api/leads — auto-task side effect", () => {
       ownerName: "Test Owner",
       stage: "New",
     };
-    db.crmLead.create.mockResolvedValue(lead as never);
+    db.qcfLead.create.mockResolvedValue(lead as never);
 
     const res = await callPost({
       name: "Individual Lead",
@@ -170,7 +170,7 @@ describe("POST /api/leads — auto-task side effect", () => {
     await flushMicrotasks();
 
     expect(res.status).toBe(201);
-    expect(db.crmLead.create).toHaveBeenCalledTimes(1);
+    expect(db.qcfLead.create).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a create with neither email nor mobile", async () => {
@@ -183,6 +183,6 @@ describe("POST /api/leads — auto-task side effect", () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe("Validation failed");
-    expect(db.crmLead.create).not.toHaveBeenCalled();
+    expect(db.qcfLead.create).not.toHaveBeenCalled();
   });
 });

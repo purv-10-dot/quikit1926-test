@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       const tz = readTzFromCookieHeader(req.headers.get("cookie"));
       const where = buildTaskListWhere(user, parsed.data);
       const cursor = createPrismaCursorIterator<TaskCsvRow>({
-        delegate: prisma.crmTask as unknown as PrismaListDelegate<TaskCsvRow>,
+        delegate: prisma.qcfTask as unknown as PrismaListDelegate<TaskCsvRow>,
         where,
         select: TASK_CSV_SELECT,
       });

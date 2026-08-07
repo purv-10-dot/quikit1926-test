@@ -31,9 +31,9 @@ describe("POST /api/price-lists/[id]/items â€” tenant scoping", () => {
   beforeEach(() => {
     setSession(null);
     db.$transaction.mockReset();
-    db.crmPriceList.findFirst.mockReset();
-    db.crmProduct.findFirst.mockReset();
-    db.crmPriceListItem.create.mockReset();
+    db.qcfPriceList.findFirst.mockReset();
+    db.qcfProduct.findFirst.mockReset();
+    db.qcfPriceListItem.create.mockReset();
   });
 
   it("rejects with 404 when productId belongs to another tenant", async () => {
@@ -42,12 +42,12 @@ describe("POST /api/price-lists/[id]/items â€” tenant scoping", () => {
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
     // Price list exists in tenant t1 âœ”
-    db.crmPriceList.findFirst.mockResolvedValue({ id: "pl1" } as never);
+    db.qcfPriceList.findFirst.mockResolvedValue({ id: "pl1" } as never);
     // But the product isn't visible to tenant t1 â€” pretend it's in t2.
-    db.crmProduct.findFirst.mockResolvedValue(null);
+    db.qcfProduct.findFirst.mockResolvedValue(null);
 
     // getPriceList (called by route before service) also resolves the pl.
-    db.crmPriceList.findFirst.mockResolvedValueOnce({ id: "pl1", items: [] } as never);
+    db.qcfPriceList.findFirst.mockResolvedValueOnce({ id: "pl1", items: [] } as never);
 
     const { POST } = await import("@/app/api/price-lists/[id]/items/route");
     const req = new Request("http://test/api/price-lists/pl1/items", {
@@ -59,7 +59,7 @@ describe("POST /api/price-lists/[id]/items â€” tenant scoping", () => {
       params: Promise.resolve({ id: "pl1" }),
     });
     expect(res.status).toBe(404);
-    expect(db.crmPriceListItem.create).not.toHaveBeenCalled();
+    expect(db.qcfPriceListItem.create).not.toHaveBeenCalled();
   });
 
   it("rejects with 404 when priceListId belongs to another tenant (via service check)", async () => {
@@ -69,9 +69,9 @@ describe("POST /api/price-lists/[id]/items â€” tenant scoping", () => {
     });
     // The route-level getPriceList check would actually catch this first,
     // but the service-level guard is the belt-and-braces.
-    db.crmPriceList.findFirst.mockResolvedValueOnce({ id: "pl1", items: [] } as never); // route preflight
-    db.crmPriceList.findFirst.mockResolvedValueOnce(null); // service guard
-    db.crmProduct.findFirst.mockResolvedValue({ id: "p1" } as never);
+    db.qcfPriceList.findFirst.mockResolvedValueOnce({ id: "pl1", items: [] } as never); // route preflight
+    db.qcfPriceList.findFirst.mockResolvedValueOnce(null); // service guard
+    db.qcfProduct.findFirst.mockResolvedValue({ id: "p1" } as never);
 
     const { POST } = await import("@/app/api/price-lists/[id]/items/route");
     const req = new Request("http://test/api/price-lists/pl1/items", {
@@ -83,7 +83,7 @@ describe("POST /api/price-lists/[id]/items â€” tenant scoping", () => {
       params: Promise.resolve({ id: "pl1" }),
     });
     expect(res.status).toBe(404);
-    expect(db.crmPriceListItem.create).not.toHaveBeenCalled();
+    expect(db.qcfPriceListItem.create).not.toHaveBeenCalled();
   });
 });
 
@@ -91,8 +91,8 @@ describe("PATCH /api/price-lists/[id]/items/[itemId] â€” tenant scoping", (
   beforeEach(() => {
     setSession(null);
     db.$transaction.mockReset();
-    db.crmPriceListItem.findFirst.mockReset();
-    db.crmPriceListItem.update.mockReset();
+    db.qcfPriceListItem.findFirst.mockReset();
+    db.qcfPriceListItem.update.mockReset();
   });
 
   it("returns 404 when the item belongs to another tenant", async () => {
@@ -101,7 +101,7 @@ describe("PATCH /api/price-lists/[id]/items/[itemId] â€” tenant scoping", (
       return (cb as (tx: typeof db) => Promise<unknown>)(db);
     });
     // The ownership check fails: item exists somewhere, but not in t1.
-    db.crmPriceListItem.findFirst.mockResolvedValue(null);
+    db.qcfPriceListItem.findFirst.mockResolvedValue(null);
 
     const { PATCH } = await import("@/app/api/price-lists/[id]/items/[itemId]/route");
     const req = new Request("http://test/api/price-lists/pl1/items/cross-tenant-item", {
@@ -114,6 +114,6 @@ describe("PATCH /api/price-lists/[id]/items/[itemId] â€” tenant scoping", (
     });
     expect(res.status).toBe(404);
     // The crucial assertion â€” no SQL UPDATE was issued.
-    expect(db.crmPriceListItem.update).not.toHaveBeenCalled();
+    expect(db.qcfPriceListItem.update).not.toHaveBeenCalled();
   });
 });

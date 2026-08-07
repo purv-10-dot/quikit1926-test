@@ -15,7 +15,7 @@
  *
  * This module is pure and unit-testable — no network, no Prisma, no env.
  */
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
 /** One LeadSquared attribute pair, as required by the CreateOrUpdate body. */
 export interface LeadSquaredAttribute {
@@ -24,7 +24,7 @@ export interface LeadSquaredAttribute {
 }
 
 /**
- * The subset of CrmLead columns we sync outbound. Tied to the real Prisma model
+ * The subset of QcfLead columns we sync outbound. Tied to the real Prisma model
  * so a schema change surfaces here at compile time. Every field is widened to
  * allow `null`: this is a sync DTO that may carry a partial update, and the
  * builder skips empty values — so callers need not supply columns the model
@@ -36,7 +36,7 @@ type Nullable<T> = { [K in keyof T]: T[K] | null };
 export type LeadSyncFields = Partial<
   Nullable<
     Pick<
-      CrmLead,
+      QcfLead,
     // name is used only to derive FirstName/LastName; never sent as its own attribute.
     | "name"
     // --- CONFIRMED (mapped both directions) ---
@@ -75,7 +75,7 @@ export type LeadSyncFields = Partial<
 
 /**
  * The full input to the payload builder: the mapped lead fields plus the
- * transient status `remarks` (which is not a stored CrmLead column — it rides
+ * transient status `remarks` (which is not a stored QcfLead column — it rides
  * along with a status change), passed in by the caller when present.
  */
 export interface LeadPayloadInput extends LeadSyncFields {

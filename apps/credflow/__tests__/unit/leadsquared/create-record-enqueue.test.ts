@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDeep } from "vitest-mock-extended";
-import type { CrmLead, Prisma, PrismaClient } from "@quikit/database";
+import type { QcfLead, Prisma, PrismaClient } from "@quikit/database";
 
 // Spies shared with the module mocks (hoisted so the vi.mock factories can use them).
 const h = vi.hoisted(() => ({
@@ -14,7 +14,7 @@ vi.mock("@/lib/queue/leadsquared-queue", () => ({
   enqueueLeadSquaredSyncSafe: h.enqueue,
 }));
 vi.mock("@/lib/db/prisma", () => ({
-  prisma: { crmLead: { create: h.create, update: h.update } },
+  prisma: { qcfLead: { create: h.create, update: h.update } },
 }));
 vi.mock("@/lib/services/leads/log-lead-system-activities", () => ({
   logLeadSystemActivitiesOnCreate: h.logActivities,
@@ -24,9 +24,9 @@ import { createCrmLead, updateCrmLead } from "@/lib/services/leads/create-record
 import { processInboundWebhook } from "@/lib/services/leadsquared/inbound";
 
 const TENANT = "tenant-1";
-const CREATE_DATA = { tenantId: TENANT, name: "Ada" } as unknown as Prisma.CrmLeadUncheckedCreateInput;
-const leadRow = (p: Partial<CrmLead> = {}): CrmLead =>
-  ({ id: "lead-1", tenantId: TENANT, name: "Ada", deletedAt: null, ...p }) as unknown as CrmLead;
+const CREATE_DATA = { tenantId: TENANT, name: "Ada" } as unknown as Prisma.QcfLeadUncheckedCreateInput;
+const leadRow = (p: Partial<QcfLead> = {}): QcfLead =>
+  ({ id: "lead-1", tenantId: TENANT, name: "Ada", deletedAt: null, ...p }) as unknown as QcfLead;
 
 beforeEach(() => {
   h.enqueue.mockReset().mockResolvedValue("job-1");
@@ -81,9 +81,9 @@ describe("updateCrmLead — outbound enqueue (PATCH path)", () => {
 describe("inbound webhook — must NOT enqueue (loop guard)", () => {
   it("processInboundWebhook writes the lead but never calls the outbound enqueue", async () => {
     const db = mockDeep<PrismaClient>();
-    db.leadSquaredSyncMap.findFirst.mockResolvedValue(null);
-    db.crmLead.findUnique.mockResolvedValue(null);
-    db.crmLead.upsert.mockResolvedValue(leadRow({ id: "lead-inbound" }));
+    db.qcfLeadSquaredSyncMap.findFirst.mockResolvedValue(null);
+    db.qcfLead.findUnique.mockResolvedValue(null);
+    db.qcfLead.upsert.mockResolvedValue(leadRow({ id: "lead-inbound" }));
 
     await processInboundWebhook(
       TENANT,

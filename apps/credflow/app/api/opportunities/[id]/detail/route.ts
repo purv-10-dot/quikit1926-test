@@ -21,7 +21,7 @@ export async function GET(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "view");
 
-    const opp = await db.crmOpportunity.findFirst({
+    const opp = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId },
       include: {
         account: { select: { id: true, name: true, status: true } },

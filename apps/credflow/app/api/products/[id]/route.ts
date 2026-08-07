@@ -26,7 +26,7 @@ function fail(status: number, error: string, fieldErrors?: Record<string, string
 }
 
 async function serialise(tenantId: string, id: string) {
-  const p = await prisma.crmProduct.findFirst({
+  const p = await prisma.qcfProduct.findFirst({
     where: { id, tenantId },
     include: {
       categoryRef: { select: { id: true, name: true } },

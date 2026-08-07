@@ -31,14 +31,14 @@ async function callRoute(req: NextRequest): Promise<Response> {
 beforeEach(() => {
   setSession({ userId: "u1", tenantId: "t1", role: "SalesUser" });
   // Arm every prisma call buildSummary won't reach but at-risk does.
-  db.crmTask.count.mockResolvedValue(0);
-  db.crmTask.findMany.mockResolvedValue([]);
-  db.crmLead.count.mockResolvedValue(0);
-  db.crmLead.findMany.mockResolvedValue([]);
-  db.crmOpportunity.count.mockResolvedValue(0);
-  db.crmOpportunity.findMany.mockResolvedValue([]);
-  db.crmCallLog.count.mockResolvedValue(0);
-  db.crmCallLog.findMany.mockResolvedValue([]);
+  db.qcfTask.count.mockResolvedValue(0);
+  db.qcfTask.findMany.mockResolvedValue([]);
+  db.qcfLead.count.mockResolvedValue(0);
+  db.qcfLead.findMany.mockResolvedValue([]);
+  db.qcfOpportunity.count.mockResolvedValue(0);
+  db.qcfOpportunity.findMany.mockResolvedValue([]);
+  db.qcfCallLog.count.mockResolvedValue(0);
+  db.qcfCallLog.findMany.mockResolvedValue([]);
   db.user.findMany.mockResolvedValue([]);
 });
 
@@ -72,19 +72,19 @@ describe("Bug 2 — at-risk cutoffs anchored to range.to", () => {
     );
 
     // taskWhere.dueDate.lt === asOf (range.to)
-    const taskWhere = whereOf(db.crmTask.count);
+    const taskWhere = whereOf(db.qcfTask.count);
     expect(lt(taskWhere.dueDate)?.getTime()).toBe(expectedAsOf.getTime());
 
     // leadWhere.updatedAt.lt === staleCutoff
-    const leadWhere = whereOf(db.crmLead.count);
+    const leadWhere = whereOf(db.qcfLead.count);
     expect(lt(leadWhere.updatedAt)?.getTime()).toBe(expectedStale.getTime());
 
     // oppWhere.updatedAt.lt === stuckCutoff
-    const oppWhere = whereOf(db.crmOpportunity.count);
+    const oppWhere = whereOf(db.qcfOpportunity.count);
     expect(lt(oppWhere.updatedAt)?.getTime()).toBe(expectedStuck.getTime());
 
     // callWhere.createdAt.lt === dispoCutoff
-    const callWhere = whereOf(db.crmCallLog.count);
+    const callWhere = whereOf(db.qcfCallLog.count);
     expect(lt(callWhere.createdAt)?.getTime()).toBe(expectedDispo.getTime());
   });
 
@@ -93,19 +93,19 @@ describe("Bug 2 — at-risk cutoffs anchored to range.to", () => {
     // exactly 7d before whatever asOf the route resolved.
     await callRoute(makeReq("from=2026-05-01&to=2026-05-07"));
 
-    const taskWhere = whereOf(db.crmTask.count);
+    const taskWhere = whereOf(db.qcfTask.count);
     const asOf = lt(taskWhere.dueDate)!;
     expect(asOf).toBeDefined();
 
-    const leadWhere = whereOf(db.crmLead.count);
+    const leadWhere = whereOf(db.qcfLead.count);
     const stale = lt(leadWhere.updatedAt)!;
     expect(asOf.getTime() - stale.getTime()).toBe(7 * MS_DAY);
 
-    const oppWhere = whereOf(db.crmOpportunity.count);
+    const oppWhere = whereOf(db.qcfOpportunity.count);
     const stuck = lt(oppWhere.updatedAt)!;
     expect(asOf.getTime() - stuck.getTime()).toBe(30 * MS_DAY);
 
-    const callWhere = whereOf(db.crmCallLog.count);
+    const callWhere = whereOf(db.qcfCallLog.count);
     const dispo = lt(callWhere.createdAt)!;
     expect(asOf.getTime() - dispo.getTime()).toBe(24 * MS_HOUR);
   });

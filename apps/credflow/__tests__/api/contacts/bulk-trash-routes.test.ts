@@ -15,7 +15,7 @@ function adminSession() {
 
 describe("POST /api/contacts/bulk-delete", () => {
   beforeEach(() => {
-    db.crmContact.updateMany.mockReset();
+    db.qcfContact.updateMany.mockReset();
     setSession(null);
   });
 
@@ -27,7 +27,7 @@ describe("POST /api/contacts/bulk-delete", () => {
 
   it("soft-deletes active contacts for the tenant", async () => {
     adminSession();
-    db.crmContact.updateMany.mockResolvedValue({ count: 3 } as never);
+    db.qcfContact.updateMany.mockResolvedValue({ count: 3 } as never);
 
     const { POST } = await import("@/app/api/contacts/bulk-delete/route");
     const res = await POST(new Request("http://test/api/contacts/bulk-delete", { method: "POST" }));
@@ -36,7 +36,7 @@ describe("POST /api/contacts/bulk-delete", () => {
     expect(body.success).toBe(true);
     expect(body.data.count).toBe(3);
 
-    const where = db.crmContact.updateMany.mock.calls[0]![0]!.where as {
+    const where = db.qcfContact.updateMany.mock.calls[0]![0]!.where as {
       tenantId?: string;
       deletedAt?: null;
     };
@@ -47,9 +47,9 @@ describe("POST /api/contacts/bulk-delete", () => {
 
 describe("DELETE /api/contacts/trash", () => {
   beforeEach(() => {
-    db.crmContact.findMany.mockReset();
-    db.crmLead.updateMany.mockReset();
-    db.crmContact.deleteMany.mockReset();
+    db.qcfContact.findMany.mockReset();
+    db.qcfLead.updateMany.mockReset();
+    db.qcfContact.deleteMany.mockReset();
     db.$transaction.mockReset();
     setSession(null);
   });
@@ -75,15 +75,15 @@ describe("DELETE /api/contacts/trash", () => {
 
   it("permanently deletes all trashed contacts for the tenant", async () => {
     adminSession();
-    db.crmContact.findMany.mockResolvedValue([
+    db.qcfContact.findMany.mockResolvedValue([
       { id: "c1", leadId: "l1" },
       { id: "c2", leadId: null },
     ] as never);
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) =>
       fn(db),
     );
-    db.crmLead.updateMany.mockResolvedValue({ count: 1 } as never);
-    db.crmContact.deleteMany.mockResolvedValue({ count: 2 } as never);
+    db.qcfLead.updateMany.mockResolvedValue({ count: 1 } as never);
+    db.qcfContact.deleteMany.mockResolvedValue({ count: 2 } as never);
 
     const { DELETE } = await import("@/app/api/contacts/trash/route");
     const res = await DELETE();
@@ -91,6 +91,6 @@ describe("DELETE /api/contacts/trash", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.count).toBe(2);
-    expect(db.crmContact.deleteMany).toHaveBeenCalled();
+    expect(db.qcfContact.deleteMany).toHaveBeenCalled();
   });
 });

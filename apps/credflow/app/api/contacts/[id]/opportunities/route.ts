@@ -65,8 +65,8 @@ export async function POST(
     }
     const dto = parsed.data;
 
-    const contact = await prisma.crmContact.findFirst({
-      // CrmContact isn't middleware-protected — a trashed contact has no live opportunities view.
+    const contact = await prisma.qcfContact.findFirst({
+      // QcfContact isn't middleware-protected — a trashed contact has no live opportunities view.
       where: { id, tenantId: user.tenantId, deletedAt: null },
       select: { id: true, accountId: true },
     });

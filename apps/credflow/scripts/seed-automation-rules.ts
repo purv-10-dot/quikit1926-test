@@ -9,7 +9,7 @@
  *      non-New open status (typically "Contacted").
  *
  * Hard requirements (Condition 2):
- *   - Verifies ALL referenced disposition codes exist in CrmCallDisposition
+ *   - Verifies ALL referenced disposition codes exist in QcfCallDisposition
  *     for the tenant BEFORE creating any rules.  If ANY code is missing,
  *     throws with an explicit error — never silently skips.
  *   - Idempotent: running twice does not create duplicate rules (checks by name).
@@ -34,7 +34,7 @@ async function main() {
 
   // ── 1. Verify disposition codes exist — fail loudly if any are missing ────
 
-  const dispositions = await prisma.crmCallDisposition.findMany({
+  const dispositions = await prisma.qcfCallDisposition.findMany({
     where: { tenantId, code: { in: [...REQUIRED_CODES] } },
     select: { code: true },
   });
@@ -56,7 +56,7 @@ async function main() {
   // ── 2. Resolve status targets (use case-insensitive name match) ───────────
 
   // Rule 1 target: a status whose name contains "Disqualified" (case-insensitive)
-  const disqualifiedStatus = await prisma.crmLeadStatus.findFirst({
+  const disqualifiedStatus = await prisma.qcfLeadStatus.findFirst({
     where: { name: { contains: "disqualified", mode: "insensitive" } },
   });
   if (!disqualifiedStatus) {
@@ -67,7 +67,7 @@ async function main() {
   }
 
   // Rule 3 target: a status whose name contains "Contacted" (case-insensitive)
-  const contactedStatus = await prisma.crmLeadStatus.findFirst({
+  const contactedStatus = await prisma.qcfLeadStatus.findFirst({
     where: { name: { contains: "contacted", mode: "insensitive" } },
   });
   if (!contactedStatus) {
@@ -109,7 +109,7 @@ async function main() {
   let skipped = 0;
 
   for (const rule of SEED_RULES) {
-    const existing = await prisma.crmAutomationRule.findFirst({
+    const existing = await prisma.qcfAutomationRule.findFirst({
       where: { tenantId, name: rule.name },
     });
     if (existing) {
@@ -117,7 +117,7 @@ async function main() {
       skipped++;
       continue;
     }
-    await prisma.crmAutomationRule.create({
+    await prisma.qcfAutomationRule.create({
       data: { tenantId, ...rule, isActive: true },
     });
     console.log(`[seed-automation-rules]   created: "${rule.name}"`);

@@ -122,14 +122,14 @@ export async function POST(req: NextRequest) {
         : [{ [safeSortBy]: sortDir }, { id: "desc" as const }];
 
     const [items, total] = await Promise.all([
-      prisma.crmLead.findMany({
+      prisma.qcfLead.findMany({
         where,
         select: leadFilterSelect,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy,
       }),
-      prisma.crmLead.count({ where }),
+      prisma.qcfLead.count({ where }),
     ]);
 
     const masked = await Promise.all(items.map((l) => maskHiddenLeadFields(user, l)));

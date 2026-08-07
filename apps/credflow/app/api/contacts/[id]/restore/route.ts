@@ -20,12 +20,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (isResponse(user)) return user;
     await assertModule(user, "contacts", "delete");
 
-    const existing = await prisma.crmContact.findFirst({
+    const existing = await prisma.qcfContact.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: { not: null } },
     });
     if (!existing) return fail(404, "Contact not found in trash");
 
-    const restored = await prisma.crmContact.update({
+    const restored = await prisma.qcfContact.update({
       where: { id },
       data: { deletedAt: null },
     });

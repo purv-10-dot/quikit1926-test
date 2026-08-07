@@ -35,19 +35,19 @@ export async function PATCH(
       );
     }
     const { config, ...rest } = parsed.data;
-    const data: Prisma.CrmCallDispositionUpdateManyMutationInput = { ...rest };
+    const data: Prisma.QcfCallDispositionUpdateManyMutationInput = { ...rest };
     if (config !== undefined) {
       data.config =
         config === null ? Prisma.JsonNull : (config as Prisma.InputJsonValue);
     }
-    const updated = await prisma.crmCallDisposition.updateMany({
+    const updated = await prisma.qcfCallDisposition.updateMany({
       where: { id, tenantId: user.tenantId },
       data,
     });
     if (updated.count === 0) {
       return NextResponse.json({ error: "Disposition not found" }, { status: 404 });
     }
-    const item = await prisma.crmCallDisposition.findFirst({
+    const item = await prisma.qcfCallDisposition.findFirst({
       where: { id, tenantId: user.tenantId },
     });
     return NextResponse.json({ item });
@@ -65,7 +65,7 @@ export async function DELETE(
     if (isResponse(user)) return user;
     await assertModule(user, "settings", "delete");
     const { id } = await params;
-    const deleted = await prisma.crmCallDisposition.deleteMany({
+    const deleted = await prisma.qcfCallDisposition.deleteMany({
       where: { id, tenantId: user.tenantId },
     });
     if (deleted.count === 0) {

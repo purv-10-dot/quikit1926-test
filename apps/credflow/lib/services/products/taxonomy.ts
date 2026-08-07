@@ -1,12 +1,12 @@
-import type { CrmProductTaxonomyKind } from "@prisma/client";
+import type { QcfProductTaxonomyKind } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
 export async function listTaxonomy(
   tenantId: string,
-  kind?: CrmProductTaxonomyKind,
+  kind?: QcfProductTaxonomyKind,
   parentId?: string | null,
 ) {
-  return prisma.crmProductTaxonomy.findMany({
+  return prisma.qcfProductTaxonomy.findMany({
     where: {
       tenantId,
       ...(kind ? { kind } : {}),
@@ -19,7 +19,7 @@ export async function listTaxonomy(
 export async function createTaxonomy(
   tenantId: string,
   data: {
-    kind: CrmProductTaxonomyKind;
+    kind: QcfProductTaxonomyKind;
     name: string;
     parentId?: string | null;
     sortOrder?: number;
@@ -28,7 +28,7 @@ export async function createTaxonomy(
   if (data.kind === "Subcategory" && !data.parentId) {
     throw Object.assign(new Error("Subcategory requires a parent category."), { statusCode: 400 });
   }
-  return prisma.crmProductTaxonomy.create({
+  return prisma.qcfProductTaxonomy.create({
     data: {
       tenantId,
       kind: data.kind,
@@ -40,7 +40,7 @@ export async function createTaxonomy(
 }
 
 export async function deleteTaxonomy(tenantId: string, id: string) {
-  const row = await prisma.crmProductTaxonomy.findFirst({ where: { id, tenantId } });
+  const row = await prisma.qcfProductTaxonomy.findFirst({ where: { id, tenantId } });
   if (!row) throw Object.assign(new Error("Taxonomy node not found."), { statusCode: 404 });
-  await prisma.crmProductTaxonomy.delete({ where: { id } });
+  await prisma.qcfProductTaxonomy.delete({ where: { id } });
 }

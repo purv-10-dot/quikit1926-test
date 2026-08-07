@@ -1,5 +1,5 @@
 /**
- * One-time seed: CrmLeadStatus, CrmLeadSubStatus, CrmLeadStatusSubStatus
+ * One-time seed: QcfLeadStatus, QcfLeadSubStatus, QcfLeadStatusSubStatus
  *
  *   npm run seed:lead-statuses
  *   npx tsx scripts/seed-lead-status-mapping.ts
@@ -182,13 +182,13 @@ async function main() {
     const subStatusIdMap = new Map<string, string>();
 
     for (const name of allSubStatusNames) {
-      const existing = await tx.crmLeadSubStatus.findUnique({ where: { name } });
+      const existing = await tx.qcfLeadSubStatus.findUnique({ where: { name } });
       if (existing) {
         subStatusIdMap.set(name, existing.id);
         counts.subStatuses.skipped++;
         console.log(`         ⏭  sub-status skipped :  ${name}`);
       } else {
-        const created = await tx.crmLeadSubStatus.create({ data: { name } });
+        const created = await tx.qcfLeadSubStatus.create({ data: { name } });
         subStatusIdMap.set(name, created.id);
         counts.subStatuses.created++;
         console.log(`         ✅ sub-status created :  ${name}`);
@@ -199,14 +199,14 @@ async function main() {
     console.log("\n  [2/3] Upserting statuses and mappings…");
     for (const [statusName, subStatusNames] of Object.entries(STATUS_MAPPING)) {
       // Find or create status
-      const existingStatus = await tx.crmLeadStatus.findUnique({ where: { name: statusName } });
+      const existingStatus = await tx.qcfLeadStatus.findUnique({ where: { name: statusName } });
       let statusId: string;
       if (existingStatus) {
         statusId = existingStatus.id;
         counts.statuses.skipped++;
         console.log(`\n         ⏭  status skipped  :  ${statusName}`);
       } else {
-        const created = await tx.crmLeadStatus.create({ data: { name: statusName } });
+        const created = await tx.qcfLeadStatus.create({ data: { name: statusName } });
         statusId = created.id;
         counts.statuses.created++;
         console.log(`\n         ✅ status created  :  ${statusName}`);
@@ -215,7 +215,7 @@ async function main() {
       // Create mappings
       for (const subName of subStatusNames) {
         const subStatusId = subStatusIdMap.get(subName)!;
-        const existingMapping = await tx.crmLeadStatusSubStatus.findUnique({
+        const existingMapping = await tx.qcfLeadStatusSubStatus.findUnique({
           where: {
             leadStatusId_leadSubStatusId: {
               leadStatusId: statusId,
@@ -228,7 +228,7 @@ async function main() {
           counts.mappings.skipped++;
           console.log(`             ⏭  mapping skipped  :  "${statusName}" → "${subName}"`);
         } else {
-          await tx.crmLeadStatusSubStatus.create({
+          await tx.qcfLeadStatusSubStatus.create({
             data: { leadStatusId: statusId, leadSubStatusId: subStatusId },
           });
           counts.mappings.created++;

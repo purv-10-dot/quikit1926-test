@@ -22,14 +22,14 @@ const RANGE = {
 const USER = { userId: "u1", tenantId: "t1", role: "SalesUser" };
 
 function armPrismaDefaults(): void {
-  db.crmLead.count.mockResolvedValue(0);
-  asMock(db.crmLead.groupBy).mockResolvedValue([]);
-  db.crmAccount.count.mockResolvedValue(0);
-  db.crmOpportunity.count.mockResolvedValue(0);
-  asMock(db.crmOpportunity.groupBy).mockResolvedValue([]);
-  db.crmTask.count.mockResolvedValue(0);
-  db.crmActivity.count.mockResolvedValue(0);
-  db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
+  db.qcfLead.count.mockResolvedValue(0);
+  asMock(db.qcfLead.groupBy).mockResolvedValue([]);
+  db.qcfAccount.count.mockResolvedValue(0);
+  db.qcfOpportunity.count.mockResolvedValue(0);
+  asMock(db.qcfOpportunity.groupBy).mockResolvedValue([]);
+  db.qcfTask.count.mockResolvedValue(0);
+  db.qcfActivity.count.mockResolvedValue(0);
+  db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue(null as never);
 }
 
 type WhereCarrier = { where?: Record<string, unknown> };
@@ -54,7 +54,7 @@ describe("Bug 7 — Accounts KPI owner filter", () => {
       resolvedOwnerId: "user-X",
       ownerId: "user-X",
     } as never);
-    const wheres = whereArgs(db.crmAccount.count);
+    const wheres = whereArgs(db.qcfAccount.count);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect(w).toMatchObject({ ownerId: "user-X" });
   });
@@ -68,7 +68,7 @@ describe("Bug 7 — Accounts KPI owner filter", () => {
       resolvedOwnerId: null,
       ownerId: null,
     } as never);
-    const wheres = whereArgs(db.crmAccount.count);
+    const wheres = whereArgs(db.qcfAccount.count);
     expect(wheres.length).toBeGreaterThan(0);
     for (const w of wheres) expect("ownerId" in w).toBe(false);
   });

@@ -15,7 +15,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.crmCampaign.findMany({
+    const items = await prisma.qcfCampaign.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { createdAt: "desc" },
     });
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { budget, description, startDate, endDate, config, name, status, type } = parsed.data;
-    const c = await prisma.crmCampaign.create({
+    const c = await prisma.qcfCampaign.create({
       data: {
         name,
         status: status ?? "Draft",

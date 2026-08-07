@@ -117,7 +117,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // ownerName is server-managed; ignore any client-supplied value.
-    const data: Prisma.CrmAccountUpdateInput = {
+    const data: Prisma.QcfAccountUpdateInput = {
       ...(dto.name !== undefined && { name: dto.name }),
       ...(segmentText !== undefined && { segment: segmentText }),
       ...(dto.segmentEnum !== undefined && { segmentEnum: dto.segmentEnum }),
@@ -154,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     };
 
     const updated = await updateAccountRow({ where: { id }, data });
-    await prisma.crmActivity.create({
+    await prisma.qcfActivity.create({
       data: {
         tenantId: user.tenantId,
         type: "AccountChange",
@@ -185,15 +185,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await assertModule(user, "accounts", "delete");
     await assertAccountAccess(user, id);
 
-    const existing = await prisma.crmAccount.findFirst({
+    const existing = await prisma.qcfAccount.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
       select: { id: true, name: true },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await prisma.$transaction([
-      prisma.crmAccount.update({ where: { id }, data: { deletedAt: new Date() } }),
-      prisma.crmActivity.create({
+      prisma.qcfAccount.update({ where: { id }, data: { deletedAt: new Date() } }),
+      prisma.qcfActivity.create({
         data: {
           tenantId: user.tenantId,
           type: "AccountChange",

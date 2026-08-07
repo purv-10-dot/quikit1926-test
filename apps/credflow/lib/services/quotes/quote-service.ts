@@ -2,8 +2,8 @@
  * Quote service.
  *
  * Responsibilities:
- *   - Create / read / update / soft-delete CrmQuote rows
- *   - Manage CrmQuoteLine rows under a quote
+ *   - Create / read / update / soft-delete QcfQuote rows
+ *   - Manage QcfQuoteLine rows under a quote
  *   - Re-compute totals (delegates to ./totals.ts) on every mutation
  *   - Mint QT-YYYY-NNNN numbers via ./sequence.ts on create
  *   - Block edits to non-Draft quotes (status transitions live in
@@ -12,7 +12,7 @@
  * All writes go through Prisma transactions so totals never get out of sync
  * with the lines that produced them.
  */
-import type { CrmQuoteStatus, Prisma } from "@quikit/database";
+import type { QcfQuoteStatus, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { serverlessTransaction } from "@/lib/db/transaction-options";
 import { computeQuoteTotals, decideIntraState } from "./totals";
@@ -77,7 +77,7 @@ export interface QuoteUpdateInput {
 
 const QUOTE_INCLUDE = {
   lines: { orderBy: [{ sortOrder: "asc" as const }, { lineNumber: "asc" as const }] },
-} satisfies Prisma.CrmQuoteInclude;
+} satisfies Prisma.QcfQuoteInclude;
 
 const LIST_SELECT = {
   id: true,
@@ -86,9 +86,9 @@ const LIST_SELECT = {
   parentQuoteId: true,
   accountId: true,
   // Account name joined inline. The relation is a real Prisma relation
-  // (CrmQuote.priceList) so this is a single query under the hood — no
+  // (QcfQuote.priceList) so this is a single query under the hood — no
   // N+1. Same pattern used by `CrmOpportunity` list endpoints.
-  // Note: CrmQuote → CrmAccount isn't currently a typed relation in the
+  // Note: QcfQuote → QcfAccount isn't currently a typed relation in the
   // schema (accountId is a bare String), so we resolve it via a separate
   // findMany batch in the list service rather than a Prisma include.
   opportunityId: true,
@@ -107,13 +107,13 @@ const LIST_SELECT = {
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-} satisfies Prisma.CrmQuoteSelect;
+} satisfies Prisma.QcfQuoteSelect;
 
 export interface ListQuotesParams {
   tenantId: string;
   page: number;
   pageSize: number;
-  status?: CrmQuoteStatus;
+  status?: QcfQuoteStatus;
   accountId?: string;
   opportunityId?: string;
   ownerId?: string;
@@ -121,7 +121,7 @@ export interface ListQuotesParams {
   trashed: boolean;
 }
 
-export function buildQuoteWhere(p: Omit<ListQuotesParams, "page" | "pageSize">): Prisma.CrmQuoteWhereInput {
+export function buildQuoteWhere(p: Omit<ListQuotesParams, "page" | "pageSize">): Prisma.QcfQuoteWhereInput {
   return {
     tenantId: p.tenantId,
     deletedAt: p.trashed ? { not: null } : null,
@@ -142,27 +142,27 @@ export function buildQuoteWhere(p: Omit<ListQuotesParams, "page" | "pageSize">):
 export async function listQuotes(p: ListQuotesParams) {
   const where = buildQuoteWhere(p);
   const [items, total] = await Promise.all([
-    db.crmQuote.findMany({
+    db.qcfQuote.findMany({
       where,
       select: LIST_SELECT,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (p.page - 1) * p.pageSize,
       take: p.pageSize,
     }),
-    db.crmQuote.count({ where }),
+    db.qcfQuote.count({ where }),
   ]);
 
   // Batch-resolve account names in a single follow-up query (no N+1).
   // Reason we don't `include` it: CrmQuote.accountId is a bare String —
   // there's no typed Prisma relation across schemas. See schema.prisma
-  // CrmOpportunity.accountId comment for the cross-schema-FK rationale.
+  // QcfOpportunity.accountId comment for the cross-schema-FK rationale.
   const accountIds = Array.from(
     new Set(items.map((it) => it.accountId).filter(Boolean) as string[]),
   );
   const accounts =
     accountIds.length === 0
       ? []
-      : await db.crmAccount.findMany({
+      : await db.qcfAccount.findMany({
           where: { tenantId: p.tenantId, id: { in: accountIds } },
           select: { id: true, name: true },
         });
@@ -178,7 +178,7 @@ export async function listQuotes(p: ListQuotesParams) {
 }
 
 export async function getQuote(tenantId: string, id: string) {
-  return db.crmQuote.findFirst({
+  return db.qcfQuote.findFirst({
     where: { id, tenantId },
     include: QUOTE_INCLUDE,
   });
@@ -207,7 +207,7 @@ async function repriceQuoteLinesFromPriceList(
   quoteId: string,
   priceListId: string,
 ): Promise<number> {
-  const lines = await tx.crmQuoteLine.findMany({
+  const lines = await tx.qcfQuoteLine.findMany({
     where: { quoteId, tenantId },
     select: { id: true, productId: true, quantity: true },
   });
@@ -222,7 +222,7 @@ async function repriceQuoteLinesFromPriceList(
       quantity: qty,
     });
     if (!resolved) continue;
-    await tx.crmQuoteLine.update({
+    await tx.qcfQuoteLine.update({
       where: { id: line.id },
       data: {
         unitPrice: resolved.unitPrice,
@@ -245,7 +245,7 @@ async function applyPriceListToQuoteLines(
   priceListId: string,
 ): Promise<{ added: number; repriced: number }> {
   const now = new Date();
-  const pl = await tx.crmPriceList.findFirst({
+  const pl = await tx.qcfPriceList.findFirst({
     where: { id: priceListId, tenantId },
     select: { effectiveFrom: true, effectiveTo: true, isActive: true },
   });
@@ -253,7 +253,7 @@ async function applyPriceListToQuoteLines(
     return { added: 0, repriced: 0 };
   }
 
-  const plItems = await tx.crmPriceListItem.findMany({
+  const plItems = await tx.qcfPriceListItem.findMany({
     where: { tenantId, priceListId },
     include: {
       product: {
@@ -280,7 +280,7 @@ async function applyPriceListToQuoteLines(
     }
   }
 
-  const q = await tx.crmQuote.findFirst({
+  const q = await tx.qcfQuote.findFirst({
     where: { id: quoteId, tenantId },
     select: {
       lines: { select: { productId: true, lineNumber: true, sortOrder: true } },
@@ -311,7 +311,7 @@ async function applyPriceListToQuoteLines(
 
     maxLine += 1;
     maxSort += 1;
-    await tx.crmQuoteLine.create({
+    await tx.qcfQuoteLine.create({
       data: {
         tenantId,
         quoteId,
@@ -337,7 +337,7 @@ async function applyPriceListToQuoteLines(
 }
 
 async function recomputeQuoteTotals(tx: DbClient, tenantId: string, quoteId: string): Promise<void> {
-  const quote = await tx.crmQuote.findFirst({
+  const quote = await tx.qcfQuote.findFirst({
     where: { id: quoteId, tenantId },
     include: QUOTE_INCLUDE,
   });
@@ -363,7 +363,7 @@ async function recomputeQuoteTotals(tx: DbClient, tenantId: string, quoteId: str
   await Promise.all(
     quote.lines.map((dbLine, i) => {
       const calc = totals.lines[i]!;
-      return tx.crmQuoteLine.update({
+      return tx.qcfQuoteLine.update({
         where: { id: dbLine.id },
         data: {
           discountAmount: calc.discountAmount,
@@ -377,7 +377,7 @@ async function recomputeQuoteTotals(tx: DbClient, tenantId: string, quoteId: str
     }),
   );
 
-  await tx.crmQuote.update({
+  await tx.qcfQuote.update({
     where: { id: quoteId },
     data: {
       subtotal: totals.subtotal,
@@ -406,26 +406,26 @@ export async function createQuote(args: {
 
   return serverlessTransaction(db, async (tx) => {
     // FK validation. Without these checks the route only enforces tenant
-    // isolation on CrmQuote itself; references to Account / Contact /
+    // isolation on QcfQuote itself; references to Account / Contact /
     // Opportunity / PriceList are bare strings (no DB-level FK across
-    // schemas — see schema.prisma CrmOpportunity comment), so a caller
+    // schemas — see schema.prisma QcfOpportunity comment), so a caller
     // could plant arbitrary IDs.
-    const account = await tx.crmAccount.findFirst({
+    const account = await tx.qcfAccount.findFirst({
       where: { id: args.input.accountId, tenantId: args.tenantId },
       select: { id: true },
     });
     if (!account) throw new QuoteError("Account not found in this tenant", 404);
 
     if (args.input.contactId) {
-      // CrmContact isn't middleware-protected — reject linking to a trashed contact.
-      const contact = await tx.crmContact.findFirst({
+      // QcfContact isn't middleware-protected — reject linking to a trashed contact.
+      const contact = await tx.qcfContact.findFirst({
         where: { id: args.input.contactId, tenantId: args.tenantId, deletedAt: null },
         select: { id: true },
       });
       if (!contact) throw new QuoteError("Contact not found in this tenant", 404);
     }
     if (args.input.opportunityId) {
-      const opp = await tx.crmOpportunity.findFirst({
+      const opp = await tx.qcfOpportunity.findFirst({
         where: { id: args.input.opportunityId, tenantId: args.tenantId },
         select: { id: true },
       });
@@ -440,7 +440,7 @@ export async function createQuote(args: {
     });
 
     if (resolvedPriceListId) {
-      const pl = await tx.crmPriceList.findFirst({
+      const pl = await tx.qcfPriceList.findFirst({
         where: { id: resolvedPriceListId, tenantId: args.tenantId },
         select: { id: true, currency: true },
       });
@@ -456,7 +456,7 @@ export async function createQuote(args: {
 
     const quoteNumber = await nextQuoteNumber(tx, args.tenantId, issueDate);
 
-    const created = await tx.crmQuote.create({
+    const created = await tx.qcfQuote.create({
       data: {
         tenantId: args.tenantId,
         quoteNumber,
@@ -484,7 +484,7 @@ export async function createQuote(args: {
     if (args.input.lines && args.input.lines.length > 0) {
       for (let i = 0; i < args.input.lines.length; i++) {
         const l = args.input.lines[i]!;
-        await tx.crmQuoteLine.create({
+        await tx.qcfQuoteLine.create({
           data: {
             tenantId: args.tenantId,
             quoteId: created.id,
@@ -506,7 +506,7 @@ export async function createQuote(args: {
       await recomputeQuoteTotals(tx, args.tenantId, created.id);
     }
 
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteCreated",
@@ -523,7 +523,7 @@ export async function createQuote(args: {
   });
 }
 
-function assertDraft(status: CrmQuoteStatus): void {
+function assertDraft(status: QcfQuoteStatus): void {
   if (status !== "Draft") {
     throw new QuoteError(
       "Only Draft quotes can be edited directly. Use Revise to amend an active quote.",
@@ -538,7 +538,7 @@ export async function updateQuote(args: {
   input: QuoteUpdateInput;
 }) {
   return serverlessTransaction(db, async (tx) => {
-    const existing = await tx.crmQuote.findFirst({
+    const existing = await tx.qcfQuote.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       // currency pulled so the price-list mismatch guard below has the
       // current quote-side context without a second read.
@@ -549,7 +549,7 @@ export async function updateQuote(args: {
 
     // Currency-mismatch guard when (re)binding a price list (audit W-4).
     if (args.input.priceListId) {
-      const pl = await tx.crmPriceList.findFirst({
+      const pl = await tx.qcfPriceList.findFirst({
         where: { id: args.input.priceListId, tenantId: args.tenantId },
         select: { id: true, currency: true },
       });
@@ -562,7 +562,7 @@ export async function updateQuote(args: {
       }
     }
 
-    const data: Prisma.CrmQuoteUncheckedUpdateInput = {};
+    const data: Prisma.QcfQuoteUncheckedUpdateInput = {};
     const i = args.input;
     if (i.contactId !== undefined) data.contactId = i.contactId ?? null;
     if (i.opportunityId !== undefined) data.opportunityId = i.opportunityId ?? null;
@@ -580,7 +580,7 @@ export async function updateQuote(args: {
     if (i.termsText !== undefined) data.termsText = i.termsText ?? null;
     if (i.ownerId !== undefined) data.ownerId = i.ownerId ?? null;
 
-    await tx.crmQuote.update({ where: { id: args.id }, data });
+    await tx.qcfQuote.update({ where: { id: args.id }, data });
     if (priceListChanged && i.priceListId) {
       await applyPriceListToQuoteLines(tx, args.tenantId, args.id, i.priceListId);
     }
@@ -588,15 +588,15 @@ export async function updateQuote(args: {
 
     // Activity row for the header change (audit finding W-8). We don't
     // diff field-by-field here — the audit timeline says "header edited",
-    // and the CrmAuditLog (writeable by `audit()`) is the deeper diff
+    // and the QcfAuditLog (writeable by `audit()`) is the deeper diff
     // surface when a per-field "who-changed-what" is needed. Skipped when
     // the input is structurally empty (no actual mutation).
     if (Object.keys(data).length > 0) {
-      const existingNumber = await tx.crmQuote.findFirst({
+      const existingNumber = await tx.qcfQuote.findFirst({
         where: { id: args.id, tenantId: args.tenantId },
         select: { quoteNumber: true },
       });
-      await tx.crmActivity.create({
+      await tx.qcfActivity.create({
         data: {
           tenantId: args.tenantId,
           type: "QuoteHeaderEdited",
@@ -609,7 +609,7 @@ export async function updateQuote(args: {
       });
     }
 
-    return tx.crmQuote.findFirst({
+    return tx.qcfQuote.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       include: QUOTE_INCLUDE,
     });
@@ -617,14 +617,14 @@ export async function updateQuote(args: {
 }
 
 export async function softDeleteQuote(tenantId: string, id: string): Promise<void> {
-  await db.crmQuote.update({
+  await db.qcfQuote.update({
     where: { id, tenantId },
     data: { deletedAt: new Date() },
   });
 }
 
 export async function restoreQuote(tenantId: string, id: string): Promise<void> {
-  await db.crmQuote.update({
+  await db.qcfQuote.update({
     where: { id, tenantId },
     data: { deletedAt: null },
   });
@@ -632,7 +632,7 @@ export async function restoreQuote(tenantId: string, id: string): Promise<void> 
 
 export async function permanentDeleteQuote(tenantId: string, id: string): Promise<void> {
   await serverlessTransaction(db, async (tx) => {
-    const existing = await tx.crmQuote.findFirst({
+    const existing = await tx.qcfQuote.findFirst({
       where: { id, tenantId, deletedAt: { not: null } },
       select: { id: true, order: { select: { id: true } } },
     });
@@ -648,11 +648,11 @@ export async function permanentDeleteQuote(tenantId: string, id: string): Promis
       (err as { statusCode?: number }).statusCode = 409;
       throw err;
     }
-    await tx.crmQuote.updateMany({
+    await tx.qcfQuote.updateMany({
       where: { tenantId, parentQuoteId: id },
       data: { parentQuoteId: null },
     });
-    await tx.crmQuote.delete({ where: { id } });
+    await tx.qcfQuote.delete({ where: { id } });
   });
 }
 
@@ -683,7 +683,7 @@ export async function expireStaleQuotes(
   tenantId: string,
   now: Date = new Date(),
 ): Promise<{ count: number; quoteIds: string[] }> {
-  const expired = await db.crmQuote.findMany({
+  const expired = await db.qcfQuote.findMany({
     where: {
       tenantId,
       status: "Active",
@@ -694,7 +694,7 @@ export async function expireStaleQuotes(
   if (expired.length === 0) return { count: 0, quoteIds: [] };
 
   await serverlessTransaction(db, async (tx) => {
-    await tx.crmQuote.updateMany({
+    await tx.qcfQuote.updateMany({
       where: {
         tenantId,
         status: "Active",
@@ -711,7 +711,7 @@ export async function expireStaleQuotes(
     // here (one cron tick, infrequent, tens-not-thousands of expired
     // quotes per run) for the cleaner audit trail.
     for (const q of expired) {
-      await tx.crmQuoteStatusTransition.create({
+      await tx.qcfQuoteStatusTransition.create({
         data: {
           tenantId,
           quoteId: q.id,
@@ -723,7 +723,7 @@ export async function expireStaleQuotes(
           notes: "Auto-marked Lost: validity date passed.",
         },
       });
-      await tx.crmActivity.create({
+      await tx.qcfActivity.create({
         data: {
           tenantId,
           type: "QuoteExpired",
@@ -743,7 +743,7 @@ export async function expireStaleQuotes(
 /**
  * Record that a quote was sent to the customer. Updates `sentAt` (idempotent
  * — first send wins for the "first-sent-at" semantic) and writes a
- * `QuoteSent` CrmActivity row so the timeline reflects the touch.
+ * `QuoteSent` QcfActivity row so the timeline reflects the touch.
  *
  * Allowed from Draft (rare, but useful for sharing a preview) and Active.
  * Other statuses reject — Won/Lost/Revised quotes shouldn't be re-sent.
@@ -758,7 +758,7 @@ export async function markQuoteSent(args: {
   emailMessageId: string;
 }) {
   return serverlessTransaction(db, async (tx) => {
-    const existing = await tx.crmQuote.findFirst({
+    const existing = await tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       select: { id: true, quoteNumber: true, status: true, sentAt: true },
     });
@@ -770,12 +770,12 @@ export async function markQuoteSent(args: {
       );
     }
 
-    await tx.crmQuote.update({
+    await tx.qcfQuote.update({
       where: { id: args.quoteId },
       data: { sentAt: existing.sentAt ?? new Date() },
     });
 
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteSent",
@@ -801,7 +801,7 @@ export async function addQuoteLine(args: {
   input: QuoteLineInputDb;
 }) {
   return serverlessTransaction(db, async (tx) => {
-    const q = await tx.crmQuote.findFirst({
+    const q = await tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       select: { id: true, status: true, lines: { select: { lineNumber: true, sortOrder: true } } },
     });
@@ -810,7 +810,7 @@ export async function addQuoteLine(args: {
 
     const maxLine = q.lines.reduce((m, l) => Math.max(m, l.lineNumber), 0);
     const maxSort = q.lines.reduce((m, l) => Math.max(m, l.sortOrder), -1);
-    const line = await tx.crmQuoteLine.create({
+    const line = await tx.qcfQuoteLine.create({
       data: {
         tenantId: args.tenantId,
         quoteId: args.quoteId,
@@ -831,7 +831,7 @@ export async function addQuoteLine(args: {
     await recomputeQuoteTotals(tx, args.tenantId, args.quoteId);
     // Activity row (audit finding W-9). Mentions the product name so
     // the timeline reads naturally without forcing a join on activities.
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteLineAdded",
@@ -856,20 +856,20 @@ export async function updateQuoteLine(args: {
     // Two-step ownership: line must belong to the named quote AND that quote
     // must be in this tenant. Without the lineId→quoteId binding, a user
     // could mutate any line in their tenant via a different quote's URL.
-    const q = await tx.crmQuote.findFirst({
+    const q = await tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       select: { status: true },
     });
     if (!q) throw new QuoteError("Quote not found", 404);
     assertDraft(q.status);
 
-    const line = await tx.crmQuoteLine.findFirst({
+    const line = await tx.qcfQuoteLine.findFirst({
       where: { id: args.lineId, quoteId: args.quoteId, tenantId: args.tenantId },
       select: { id: true },
     });
     if (!line) throw new QuoteError("Line not found on this quote", 404);
 
-    const data: Prisma.CrmQuoteLineUncheckedUpdateInput = {};
+    const data: Prisma.QcfQuoteLineUncheckedUpdateInput = {};
     const i = args.input;
     if (i.productId !== undefined) data.productId = i.productId ?? null;
     if (i.productName !== undefined) data.productName = i.productName;
@@ -883,7 +883,7 @@ export async function updateQuoteLine(args: {
     if (i.gstRate !== undefined) data.gstRate = i.gstRate;
     if (i.sortOrder !== undefined) data.sortOrder = i.sortOrder;
 
-    await tx.crmQuoteLine.update({
+    await tx.qcfQuoteLine.update({
       where: { id: args.lineId },
       data,
     });
@@ -891,7 +891,7 @@ export async function updateQuoteLine(args: {
     // Activity row for the line edit (audit W-9). The keys list keeps it
     // useful at a glance ("unitPrice, discountPct" tells the reader what
     // moved) without leaking the actual new/old values.
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteLineEdited",
@@ -902,7 +902,7 @@ export async function updateQuoteLine(args: {
         occurredAt: new Date(),
       },
     });
-    return tx.crmQuoteLine.findUnique({ where: { id: args.lineId } });
+    return tx.qcfQuoteLine.findUnique({ where: { id: args.lineId } });
   });
 }
 
@@ -912,7 +912,7 @@ export async function deleteQuoteLine(args: {
   lineId: string;
 }): Promise<void> {
   await serverlessTransaction(db, async (tx) => {
-    const q = await tx.crmQuote.findFirst({
+    const q = await tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       select: { status: true },
     });
@@ -921,18 +921,18 @@ export async function deleteQuoteLine(args: {
     // Same defensive bind: require (lineId, quoteId, tenantId) all match.
     // Grab the product name BEFORE deletion so the activity row can name
     // what was removed (the line itself is gone after `deleteMany`).
-    const lineForLog = await tx.crmQuoteLine.findFirst({
+    const lineForLog = await tx.qcfQuoteLine.findFirst({
       where: { id: args.lineId, quoteId: args.quoteId, tenantId: args.tenantId },
       select: { productName: true, lineNumber: true },
     });
-    const deleted = await tx.crmQuoteLine.deleteMany({
+    const deleted = await tx.qcfQuoteLine.deleteMany({
       where: { id: args.lineId, quoteId: args.quoteId, tenantId: args.tenantId },
     });
     if (deleted.count === 0) throw new QuoteError("Line not found on this quote", 404);
     await recomputeQuoteTotals(tx, args.tenantId, args.quoteId);
     // Activity row for the line removal (audit W-9).
     if (lineForLog) {
-      await tx.crmActivity.create({
+      await tx.qcfActivity.create({
         data: {
           tenantId: args.tenantId,
           type: "QuoteLineRemoved",
@@ -960,7 +960,7 @@ export async function reviseQuote(args: {
   notes?: string | null;
 }): Promise<{ id: string; quoteNumber: string }> {
   return serverlessTransaction(db, async (tx) => {
-    const existing = await tx.crmQuote.findFirst({
+    const existing = await tx.qcfQuote.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       include: QUOTE_INCLUDE,
     });
@@ -970,11 +970,11 @@ export async function reviseQuote(args: {
     }
 
     // 1) Close current
-    await tx.crmQuote.update({
+    await tx.qcfQuote.update({
       where: { id: existing.id },
       data: { status: "Revised" },
     });
-    await tx.crmQuoteStatusTransition.create({
+    await tx.qcfQuoteStatusTransition.create({
       data: {
         tenantId: args.tenantId,
         quoteId: existing.id,
@@ -990,7 +990,7 @@ export async function reviseQuote(args: {
     // the quote number stable by appending the version suffix so PDFs and
     // emails are unambiguous: QT-2026-001-V2.
     const newQuoteNumber = `${stripVersionSuffix(existing.quoteNumber)}-V${existing.versionNumber + 1}`;
-    const created = await tx.crmQuote.create({
+    const created = await tx.qcfQuote.create({
       data: {
         tenantId: args.tenantId,
         quoteNumber: newQuoteNumber,
@@ -1017,7 +1017,7 @@ export async function reviseQuote(args: {
     });
 
     for (const l of existing.lines) {
-      await tx.crmQuoteLine.create({
+      await tx.qcfQuoteLine.create({
         data: {
           tenantId: args.tenantId,
           quoteId: created.id,
@@ -1039,7 +1039,7 @@ export async function reviseQuote(args: {
 
     await recomputeQuoteTotals(tx, args.tenantId, created.id);
 
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteRevised",
@@ -1086,7 +1086,7 @@ export async function loadRevisionChain(
   id: string;
   quoteNumber: string;
   versionNumber: number;
-  status: CrmQuoteStatus;
+  status: QcfQuoteStatus;
   grandTotal: number;
   createdAt: Date;
   isCurrent: boolean;
@@ -1096,7 +1096,7 @@ export async function loadRevisionChain(
   // We check for children via a count to avoid a needless full chain
   // fetch for unrevised quotes.
   if (!parentQuoteId) {
-    const childCount = await db.crmQuote.count({
+    const childCount = await db.qcfQuote.count({
       where: { tenantId, parentQuoteId: quoteId },
     });
     if (childCount === 0) return [];
@@ -1107,7 +1107,7 @@ export async function loadRevisionChain(
   // Cap the walk at 20 steps as a safety belt against accidentally-
   // cyclic parentQuoteId (shouldn't happen, but cheap to defend).
   for (let i = 0; i < 20; i++) {
-    const node = await db.crmQuote.findFirst({
+    const node = await db.qcfQuote.findFirst({
       where: { id: rootId, tenantId },
       select: { id: true, parentQuoteId: true },
     });
@@ -1125,7 +1125,7 @@ export async function loadRevisionChain(
     id: string;
     quoteNumber: string;
     versionNumber: number;
-    status: CrmQuoteStatus;
+    status: QcfQuoteStatus;
     grandTotal: Prisma.Decimal | number | string;
     createdAt: Date;
     parentQuoteId: string | null;
@@ -1136,7 +1136,7 @@ export async function loadRevisionChain(
     const ids = queue.splice(0, queue.length).filter((id) => !seen.has(id));
     ids.forEach((id) => seen.add(id));
     if (ids.length === 0) break;
-    const rows = await db.crmQuote.findMany({
+    const rows = await db.qcfQuote.findMany({
       where: {
         tenantId,
         OR: [{ id: { in: ids } }, { parentQuoteId: { in: ids } }],
@@ -1195,7 +1195,7 @@ export async function cloneQuote(args: {
   id: string;
 }): Promise<{ id: string; quoteNumber: string }> {
   return serverlessTransaction(db, async (tx) => {
-    const existing = await tx.crmQuote.findFirst({
+    const existing = await tx.qcfQuote.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       include: QUOTE_INCLUDE,
     });
@@ -1204,7 +1204,7 @@ export async function cloneQuote(args: {
     const issueDate = new Date();
     const newQuoteNumber = await nextQuoteNumber(tx, args.tenantId, issueDate);
 
-    const created = await tx.crmQuote.create({
+    const created = await tx.qcfQuote.create({
       data: {
         tenantId: args.tenantId,
         quoteNumber: newQuoteNumber,
@@ -1231,7 +1231,7 @@ export async function cloneQuote(args: {
     });
 
     for (const l of existing.lines) {
-      await tx.crmQuoteLine.create({
+      await tx.qcfQuoteLine.create({
         data: {
           tenantId: args.tenantId,
           quoteId: created.id,
@@ -1253,7 +1253,7 @@ export async function cloneQuote(args: {
 
     await recomputeQuoteTotals(tx, args.tenantId, created.id);
 
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuoteCloned",

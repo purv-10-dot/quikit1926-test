@@ -1,26 +1,26 @@
 /**
  * Stage transition rules and audit-row writer.
  *
- * Governs the legal moves between CrmOpportunityStage values, enforces that
+ * Governs the legal moves between QcfOpportunityStage values, enforces that
  * close-deal transitions carry a closeReasonCategory, prevents departures
  * from terminal stages without an admin override, and writes both a
- * CrmOpportunityStageTransition row and a CrmActivity row on every accepted
+ * QcfOpportunityStageTransition row and a QcfActivity row on every accepted
  * transition.
  */
-import type { CrmOpportunityStage, Prisma } from "@quikit/database";
+import type { QcfOpportunityStage, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { CLOSE_REASON_CATEGORIES, STAGE_LABEL } from "./stage-labels";
 
 // Default config: any → any. Governance lives entirely in the audit log
-// (CrmOpportunityStageTransition + CrmActivity). The only remaining hard
+// (QcfOpportunityStageTransition + QcfActivity). The only remaining hard
 // guards are:
 //   - Self-transitions (no-op writes pollute the audit log)
 //   - Closing requires a closeReasonCategory (forecast cohort analysis)
 //
 // The matrix is kept as data so a workspace can re-tighten the rules later
-// (e.g. via CrmOrgWorkspaceSettings.settings.opportunityTransitions). For
+// (e.g. via QcfOrgWorkspaceSettings.settings.opportunityTransitions). For
 // now every stage allows every other stage.
-const ALL_STAGES: CrmOpportunityStage[] = [
+const ALL_STAGES: QcfOpportunityStage[] = [
   "Prospecting",
   "Qualification",
   "Proposal",
@@ -29,11 +29,11 @@ const ALL_STAGES: CrmOpportunityStage[] = [
   "ClosedLost",
 ];
 
-function allOther(self: CrmOpportunityStage): CrmOpportunityStage[] {
+function allOther(self: QcfOpportunityStage): QcfOpportunityStage[] {
   return ALL_STAGES.filter((s) => s !== self);
 }
 
-export const TRANSITIONS: Record<CrmOpportunityStage, CrmOpportunityStage[]> = {
+export const TRANSITIONS: Record<QcfOpportunityStage, QcfOpportunityStage[]> = {
   Prospecting: allOther("Prospecting"),
   Qualification: allOther("Qualification"),
   Proposal: allOther("Proposal"),
@@ -43,7 +43,7 @@ export const TRANSITIONS: Record<CrmOpportunityStage, CrmOpportunityStage[]> = {
 };
 
 export type TransitionInput = {
-  toStage: CrmOpportunityStage;
+  toStage: QcfOpportunityStage;
   closeReason?: string | null;
   closeReasonCategory?: string | null;
   notes?: string | null;
@@ -66,7 +66,7 @@ export class TransitionError extends Error {
  * @param isAdmin whether the caller has admin override (Administrator role)
  */
 export function validateTransition(
-  fromStage: CrmOpportunityStage,
+  fromStage: QcfOpportunityStage,
   input: TransitionInput,
   isAdmin: boolean,
 ): void {
@@ -105,8 +105,8 @@ export function validateTransition(
 }
 
 /**
- * Write the audit row + CrmActivity entry. Caller is responsible for actually
- * mutating the CrmOpportunity (so the transition write happens in the same
+ * Write the audit row + QcfActivity entry. Caller is responsible for actually
+ * mutating the QcfOpportunity (so the transition write happens in the same
  * Prisma transaction as the field updates).
  */
 export async function recordTransition(
@@ -115,8 +115,8 @@ export async function recordTransition(
     tenantId: string;
     opportunityId: string;
     opportunityName: string;
-    fromStage: CrmOpportunityStage;
-    toStage: CrmOpportunityStage;
+    fromStage: QcfOpportunityStage;
+    toStage: QcfOpportunityStage;
     changedByUserId: string | null;
     changedByName: string | null;
     closeReason: string | null;
@@ -124,7 +124,7 @@ export async function recordTransition(
     notes: string | null;
   },
 ): Promise<void> {
-  await tx.crmOpportunityStageTransition.create({
+  await tx.qcfOpportunityStageTransition.create({
     data: {
       tenantId: args.tenantId,
       opportunityId: args.opportunityId,
@@ -138,7 +138,7 @@ export async function recordTransition(
     },
   });
 
-  await tx.crmActivity.create({
+  await tx.qcfActivity.create({
     data: {
       tenantId: args.tenantId,
       type: "OpportunityStageChange",
@@ -173,7 +173,7 @@ export async function recordTransition(
   // type `QuoteAutoLostFromOpportunity` makes the source unambiguous.
   if (args.toStage === "ClosedLost") {
     const now = new Date();
-    const activeQuotes = await tx.crmQuote.findMany({
+    const activeQuotes = await tx.qcfQuote.findMany({
       where: {
         tenantId: args.tenantId,
         opportunityId: args.opportunityId,
@@ -182,7 +182,7 @@ export async function recordTransition(
       select: { id: true, quoteNumber: true },
     });
     if (activeQuotes.length > 0) {
-      await tx.crmQuote.updateMany({
+      await tx.qcfQuote.updateMany({
         where: {
           tenantId: args.tenantId,
           opportunityId: args.opportunityId,
@@ -198,7 +198,7 @@ export async function recordTransition(
       // One activity row per cascaded quote — keeps the timeline truthful
       // (each affected quote shows up under its own record's timeline).
       for (const q of activeQuotes) {
-        await tx.crmActivity.create({
+        await tx.qcfActivity.create({
           data: {
             tenantId: args.tenantId,
             type: "QuoteAutoLostFromOpportunity",

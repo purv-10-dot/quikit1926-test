@@ -34,7 +34,7 @@ export async function touchLeadLastActivity(opts: {
   const stampIso = (when ?? new Date()).toISOString();
 
   try {
-    const lead = await client.crmLead.findFirst({
+    const lead = await client.qcfLead.findFirst({
       where: { id: leadId, tenantId },
       select: { dynamicFields: true },
     });
@@ -47,7 +47,7 @@ export async function touchLeadLastActivity(opts: {
       last_activity: label ?? "Activity",
     };
 
-    await client.crmLead.update({
+    await client.qcfLead.update({
       where: { id: leadId },
       data: { dynamicFields: nextDyn as Prisma.InputJsonValue },
     });

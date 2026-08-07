@@ -91,7 +91,7 @@ async function resolveTargetIds(
     // client can't write ids outside its scope. Uses an empty filter (all
     // visible) AND id IN (...).
     const visibleWhere = await resolveLeadWhere(user, { matchMode: "ALL", conditions: [] });
-    const rows = await prisma.crmLead.findMany({
+    const rows = await prisma.qcfLead.findMany({
       where: { AND: [visibleWhere, { id: { in: scope.ids } }] },
       select: { id: true },
     });
@@ -100,7 +100,7 @@ async function resolveTargetIds(
 
   const where = await resolveLeadWhere(user, scope.filter);
   const take = scope.kind === "count" ? Math.max(0, Math.floor(scope.count)) : undefined;
-  const rows = await prisma.crmLead.findMany({
+  const rows = await prisma.qcfLead.findMany({
     where,
     select: { id: true },
     ...(take !== undefined ? { take } : {}),
@@ -124,7 +124,7 @@ export async function bulkUpdateLeads(opts: {
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
     const batchIds = ids.slice(i, i + BATCH_SIZE);
     // Read the current dynamicFields for this batch, merge, write back.
-    const rows = await prisma.crmLead.findMany({
+    const rows = await prisma.qcfLead.findMany({
       where: { id: { in: batchIds }, tenantId: user.tenantId },
       select: { id: true, dynamicFields: true },
     });
@@ -133,7 +133,7 @@ export async function bulkUpdateLeads(opts: {
         const dyn = (row.dynamicFields as Record<string, unknown> | null) ?? {};
         let nextDyn = dyn;
         for (const u of updates) nextDyn = applyUpdate(nextDyn, u);
-        return prisma.crmLead.update({
+        return prisma.qcfLead.update({
           where: { id: row.id },
           data: { dynamicFields: nextDyn as Prisma.InputJsonValue },
         });

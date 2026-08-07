@@ -33,7 +33,7 @@ const DEFAULTS: QuoteEnterpriseSettings = {
 export async function getQuoteEnterpriseSettings(
   tenantId: string,
 ): Promise<QuoteEnterpriseSettings> {
-  const row = await db.crmOrgWorkspaceSettings.findUnique({
+  const row = await db.qcfOrgWorkspaceSettings.findUnique({
     where: { tenantId },
     select: { settings: true },
   });
@@ -61,13 +61,13 @@ export async function saveQuoteEnterpriseSettings(
     reminderDaysBeforeExpiry:
       patch.reminderDaysBeforeExpiry ?? current.reminderDaysBeforeExpiry,
   };
-  const row = await db.crmOrgWorkspaceSettings.findUnique({
+  const row = await db.qcfOrgWorkspaceSettings.findUnique({
     where: { tenantId },
     select: { settings: true },
   });
   const settings = (row?.settings as Record<string, unknown> | undefined) ?? {};
   const merged = { ...settings, quotesEnterprise: next } as unknown as Prisma.InputJsonValue;
-  await db.crmOrgWorkspaceSettings.upsert({
+  await db.qcfOrgWorkspaceSettings.upsert({
     where: { tenantId },
     create: { tenantId, settings: merged },
     update: { settings: merged },

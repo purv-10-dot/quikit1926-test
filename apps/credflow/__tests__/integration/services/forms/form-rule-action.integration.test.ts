@@ -22,7 +22,7 @@ import {
 
 const STAMP = Date.now();
 const TENANT = `int_frre_u5_${STAMP}`;
-// Globally-unique status names (CrmLeadStatus has no tenantId; name is @unique).
+// Globally-unique status names (QcfLeadStatus has no tenantId; name is @unique).
 const STATUS = `Working_${STAMP}`;
 const SUB_MAPPED = `AwaitingDocs_${STAMP}`;
 const SUB_UNMAPPED = `Unrelated_${STAMP}`;
@@ -36,32 +36,32 @@ let subMappedId: string;
 let subUnmappedId: string;
 
 beforeAll(async () => {
-  const set = await integrationPrisma.crmFormSet.create({
+  const set = await integrationPrisma.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
-  const version = await integrationPrisma.crmFormSetVersion.create({
+  const version = await integrationPrisma.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   });
   versionId = version.id;
 
   // A field (field-target tests) and a tab (tab-target tests).
-  await integrationPrisma.crmFormField.create({
+  await integrationPrisma.qcfFormField.create({
     data: { formSetVersionId: versionId, tab: "call_disposition", fieldKey: "gstin", label: "GSTIN", fieldType: "text", sortOrder: 0 },
   });
-  const tab = await integrationPrisma.crmFormTab.create({
+  const tab = await integrationPrisma.qcfFormTab.create({
     data: { formSetVersionId: versionId, name: `Tab ${STAMP}`, visibility: "rule_driven", sortOrder: 1, isProtected: false },
   });
   tabId = tab.id;
 
   // Lead status + two sub-statuses; only SUB_MAPPED is mapped to the status.
-  const status = await integrationPrisma.crmLeadStatus.create({ data: { name: STATUS } });
+  const status = await integrationPrisma.qcfLeadStatus.create({ data: { name: STATUS } });
   statusId = status.id;
-  const subA = await integrationPrisma.crmLeadSubStatus.create({ data: { name: SUB_MAPPED } });
-  const subB = await integrationPrisma.crmLeadSubStatus.create({ data: { name: SUB_UNMAPPED } });
+  const subA = await integrationPrisma.qcfLeadSubStatus.create({ data: { name: SUB_MAPPED } });
+  const subB = await integrationPrisma.qcfLeadSubStatus.create({ data: { name: SUB_UNMAPPED } });
   subMappedId = subA.id;
   subUnmappedId = subB.id;
-  await integrationPrisma.crmLeadStatusSubStatus.create({
+  await integrationPrisma.qcfLeadStatusSubStatus.create({
     data: { leadStatusId: statusId, leadSubStatusId: subMappedId },
   });
 
@@ -75,22 +75,22 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const rules = await integrationPrisma.crmFormRule.findMany({
+  const rules = await integrationPrisma.qcfFormRule.findMany({
     where: { formSetVersionId: versionId },
     select: { id: true },
   });
   const ids = rules.map((r) => r.id);
   if (ids.length) {
-    await integrationPrisma.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: ids } } });
-    await integrationPrisma.crmFormRule.deleteMany({ where: { id: { in: ids } } });
+    await integrationPrisma.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: ids } } });
+    await integrationPrisma.qcfFormRule.deleteMany({ where: { id: { in: ids } } });
   }
-  await integrationPrisma.crmLeadStatusSubStatus.deleteMany({ where: { leadStatusId: statusId } });
-  await integrationPrisma.crmLeadSubStatus.deleteMany({ where: { id: { in: [subMappedId, subUnmappedId] } } });
-  await integrationPrisma.crmLeadStatus.deleteMany({ where: { id: statusId } });
-  await integrationPrisma.crmFormField.deleteMany({ where: { formSetVersionId: versionId } });
-  await integrationPrisma.crmFormTab.deleteMany({ where: { formSetVersionId: versionId } });
-  await integrationPrisma.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await integrationPrisma.crmFormSet.deleteMany({ where: { id: setId } });
+  await integrationPrisma.qcfLeadStatusSubStatus.deleteMany({ where: { leadStatusId: statusId } });
+  await integrationPrisma.qcfLeadSubStatus.deleteMany({ where: { id: { in: [subMappedId, subUnmappedId] } } });
+  await integrationPrisma.qcfLeadStatus.deleteMany({ where: { id: statusId } });
+  await integrationPrisma.qcfFormField.deleteMany({ where: { formSetVersionId: versionId } });
+  await integrationPrisma.qcfFormTab.deleteMany({ where: { formSetVersionId: versionId } });
+  await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("set_stage Contact-Stage-target validation", () => {

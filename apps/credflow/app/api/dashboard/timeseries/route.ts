@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         const tenantId = user.tenantId;
         const ownerId = filters.resolvedOwnerId;
         if (metric === "calls") {
-          return prisma.crmCallLog.count({
+          return prisma.qcfCallLog.count({
             where: {
               tenantId,
               createdAt: { gte: b.start, lte: b.end },
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
           });
         }
         if (metric === "leads-created") {
-          return prisma.crmLead.count({
+          return prisma.qcfLead.count({
             where: {
               tenantId,
               createdAt: { gte: b.start, lte: b.end },
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
             },
           });
         }
-        return prisma.crmActivity.count({
+        return prisma.qcfActivity.count({
           where: {
             tenantId,
             occurredAt: { gte: b.start, lte: b.end },

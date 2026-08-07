@@ -67,7 +67,7 @@ export const STANDARD_LEAD_FIELDS: LeadFieldDefinition[] = [
     options: ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Closed"] },
   { key: "status",    label: "Status",     fieldType: "Select", requirement: "Required", visible: true, isStandard: true, showInList: true,
     options: ["Open", "Working", "Disqualified", "Converted"] },
-  // Sub Status is a real standard column (CrmLead.substatus, nullable). It is
+  // Sub Status is a real standard column (QcfLead.substatus, nullable). It is
   // driven by the status->substatus cascade in the lead form (visibleSubstatuses),
   // so it is intentionally listed here WITHOUT static options. Its purpose in this
   // array is to (a) surface a "Sub Status" target in the CSV import mapper and

@@ -22,7 +22,7 @@ async function validateFolderForEntity(
   folderId: string | null | undefined,
 ): Promise<string | null> {
   if (!folderId) return null;
-  const folder = await prisma.crmDocumentFolder.findFirst({
+  const folder = await prisma.qcfDocumentFolder.findFirst({
     where: { id: folderId, tenantId, deletedAt: null },
   });
   if (!folder) throw new FolderServiceError("Folder not found", 404);
@@ -42,7 +42,7 @@ export async function listEntityDocuments(
   const resolvedFolderId =
     folderId === undefined ? undefined : await validateFolderForEntity(user.tenantId, refType, refId, folderId);
 
-  const rows = await prisma.crmDocument.findMany({
+  const rows = await prisma.qcfDocument.findMany({
     where: {
       tenantId: user.tenantId,
       refType,
@@ -76,7 +76,7 @@ export async function uploadEntityDocument(
   const segment = resolveStorageSegment(resolvedFolderId, refId);
   const { storageKey, size, safeName } = await saveCrmUpload(segment, file);
   try {
-    const row = await prisma.crmDocument.create({
+    const row = await prisma.qcfDocument.create({
       data: {
         tenantId: user.tenantId,
         refType,
@@ -104,7 +104,7 @@ export async function deleteEntityDocument(
   attachmentId: string,
 ): Promise<void> {
   await assertDocumentParent(user, refType, refId);
-  const doc = await prisma.crmDocument.findFirst({
+  const doc = await prisma.qcfDocument.findFirst({
     where: {
       id: attachmentId,
       tenantId: user.tenantId,
@@ -121,7 +121,7 @@ export async function deleteEntityDocument(
     throw err;
   }
 
-  await prisma.crmDocument.update({
+  await prisma.qcfDocument.update({
     where: { id: doc.id },
     data: { deletedAt: new Date() },
   });
@@ -135,7 +135,7 @@ async function findEntityDocument(
   attachmentId: string,
 ) {
   await assertDocumentParent(user, refType, refId);
-  const doc = await prisma.crmDocument.findFirst({
+  const doc = await prisma.qcfDocument.findFirst({
     where: {
       id: attachmentId,
       tenantId: user.tenantId,

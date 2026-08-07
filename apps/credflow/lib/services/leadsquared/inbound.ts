@@ -14,7 +14,7 @@
  *   outbound loop guard sees `newHash === lastPayloadHash` and skips it — no
  *   echo. Genuine later CRM edits change the hash and still push.
  *
- *   Note the primary structural guard, too: this path writes CrmLead directly
+ *   Note the primary structural guard, too: this path writes QcfLead directly
  *   via Prisma and NEVER enqueues onto the outbound `leadsquared-sync` queue
  *   (that queue is only fed from the HTTP lead routes). So an inbound write does
  *   not travel back out. `syncOrigin` + the cross-direction hash are the
@@ -169,7 +169,7 @@ export function extractInboundLead(
   const custom = (schema: string | null) => (schema ? pick(rec, schema) : null);
 
   // Phone/Mobile: LeadSquared has two standard number fields and some accounts
-  // populate only one. Read each from its own key, but fall CrmLead.phone back
+  // populate only one. Read each from its own key, but fall QcfLead.phone back
   // to the Mobile value when Phone is empty — otherwise a lead whose number is
   // only in Mobile would land with phone=null. Both columns are still written.
   const mobileVal = std(config.mobile, "Mobile", "mobile");
@@ -342,7 +342,7 @@ export interface InboundDeps {
 }
 
 /**
- * Apply a LeadSquared webhook payload to QuikCRM: upsert the CrmLead and the
+ * Apply a LeadSquared webhook payload to QuikCRM: upsert the QcfLead and the
  * mapping row, stamping `syncOrigin = "leadsquared"`. Tenant-scoped throughout.
  */
 export async function processInboundWebhook(
@@ -362,7 +362,7 @@ export async function processInboundWebhook(
   const { lsqProspectId } = fields;
 
   // Look up the mapping by (tenantId, lsqProspectId) — tenant-scoped.
-  const mapping = await db.leadSquaredSyncMap.findFirst({
+  const mapping = await db.qcfLeadSquaredSyncMap.findFirst({
     where: { tenantId, lsqProspectId },
   });
 
@@ -420,10 +420,10 @@ export async function processInboundWebhook(
   let crmLeadId: string;
   let action: "created" | "updated";
 
-  // Determine the target CrmLead. Two independent keys can already point at this
+  // Determine the target QcfLead. Two independent keys can already point at this
   // ProspectId, and we must UPDATE (never re-create) if either resolves:
   //   1. the mapping row, by (tenantId, lsqProspectId) — the canonical link;
-  //   2. the CrmLead's own unique triple (tenantId, sourceSystem='leadsquared',
+  //   2. the QcfLead's own unique triple (tenantId, sourceSystem='leadsquared',
   //      externalId=ProspectId) — the DB constraint `lead_external_uk`.
   //
   // We use findUnique (NOT findFirst): the soft-delete middleware injects
@@ -432,7 +432,7 @@ export async function processInboundWebhook(
   // constraint failed on (tenantId, sourceSystem, externalId)"). findUnique
   // bypasses that filter, so we see the row regardless of deletedAt: skip it if
   // trashed, otherwise UPDATE it instead of racing into a duplicate.
-  const byTriple: Prisma.CrmLeadWhereUniqueInput = {
+  const byTriple: Prisma.QcfLeadWhereUniqueInput = {
     lead_external_uk: {
       tenantId,
       sourceSystem: "leadsquared",
@@ -451,7 +451,7 @@ export async function processInboundWebhook(
     substatus: true,
   } as const;
   let existingLead = mapping
-    ? await db.crmLead.findUnique({
+    ? await db.qcfLead.findUnique({
         where: { id: mapping.crmLeadId },
         select: existingSelect,
       })
@@ -459,7 +459,7 @@ export async function processInboundWebhook(
   // findUnique(by id) is not tenant-scoped — enforce the tenant boundary.
   if (existingLead && existingLead.tenantId !== tenantId) existingLead = null;
   if (!existingLead) {
-    existingLead = await db.crmLead.findUnique({
+    existingLead = await db.qcfLead.findUnique({
       where: byTriple,
       select: existingSelect,
     });
@@ -475,9 +475,9 @@ export async function processInboundWebhook(
     const prevStage = existingLead.stage;
     const prevStatus = existingLead.status;
     const prevSubstatus = existingLead.substatus;
-    const updated = await db.crmLead.update({
+    const updated = await db.qcfLead.update({
       where: { id: existingLead.id },
-      data: updateData as Prisma.CrmLeadUpdateInput,
+      data: updateData as Prisma.QcfLeadUpdateInput,
     });
     crmLeadId = updated.id;
     action = "updated";
@@ -509,7 +509,7 @@ export async function processInboundWebhook(
     }
     if (changed.length > 0) {
       try {
-        await db.crmActivity.create({
+        await db.qcfActivity.create({
           data: {
             tenantId,
             type: "LeadStageChange",
@@ -538,7 +538,7 @@ export async function processInboundWebhook(
     // does an atomic INSERT ... ON CONFLICT DO UPDATE: the loser of the race
     // (or a redelivery) UPDATES instead of throwing the unique-constraint error.
     // upsert also bypasses the soft-delete middleware.
-    const upserted = await db.crmLead.upsert({
+    const upserted = await db.qcfLead.upsert({
       where: byTriple,
       create: {
         tenantId,
@@ -546,8 +546,8 @@ export async function processInboundWebhook(
         sourceSystem: "leadsquared",
         externalId: lsqProspectId,
         ...common,
-      } as Prisma.CrmLeadUncheckedCreateInput,
-      update: updateData as Prisma.CrmLeadUpdateInput,
+      } as Prisma.QcfLeadUncheckedCreateInput,
+      update: updateData as Prisma.QcfLeadUpdateInput,
       select: { id: true },
     });
     crmLeadId = upserted.id;
@@ -559,7 +559,7 @@ export async function processInboundWebhook(
   const syncedAt = now();
 
   try {
-    await db.leadSquaredSyncMap.upsert({
+    await db.qcfLeadSquaredSyncMap.upsert({
       where: { crmLeadId },
       create: {
         tenantId,
@@ -578,7 +578,7 @@ export async function processInboundWebhook(
     });
   } catch (e: unknown) {
     // [tenantId, lsqProspectId] conflict: this ProspectId already maps to a
-    // different lead. The CrmLead write already happened; log and continue
+    // different lead. The QcfLead write already happened; log and continue
     // rather than fail the webhook/job.
     if (isUniqueConstraintError(e)) {
       console.warn(

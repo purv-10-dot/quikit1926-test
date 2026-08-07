@@ -25,11 +25,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { status: 400 },
       );
     }
-    const existing = await prisma.crmLeadSource.findFirst({ where: { id: params.id, tenantId: user.tenantId } });
+    const existing = await prisma.qcfLeadSource.findFirst({ where: { id: params.id, tenantId: user.tenantId } });
     if (!existing) return NextResponse.json({ error: "Source not found" }, { status: 404 });
 
     if (parsed.data.name && parsed.data.name !== existing.name) {
-      const dup = await prisma.crmLeadSource.findFirst({
+      const dup = await prisma.qcfLeadSource.findFirst({
         where: {
           tenantId: user.tenantId,
           name: { equals: parsed.data.name, mode: "insensitive" },
@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (dup) return NextResponse.json({ error: "A source with that name already exists." }, { status: 409 });
     }
 
-    const updated = await prisma.crmLeadSource.update({
+    const updated = await prisma.qcfLeadSource.update({
       where: { id: existing.id },
       data: {
         name: parsed.data.name ?? existing.name,
@@ -59,9 +59,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "settings", "delete");
-    const existing = await prisma.crmLeadSource.findFirst({ where: { id: params.id, tenantId: user.tenantId } });
+    const existing = await prisma.qcfLeadSource.findFirst({ where: { id: params.id, tenantId: user.tenantId } });
     if (!existing) return NextResponse.json({ error: "Source not found" }, { status: 404 });
-    await prisma.crmLeadSource.delete({ where: { id: existing.id } });
+    await prisma.qcfLeadSource.delete({ where: { id: existing.id } });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

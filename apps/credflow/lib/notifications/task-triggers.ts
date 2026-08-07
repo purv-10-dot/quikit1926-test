@@ -11,7 +11,7 @@
  *                           Suppressed: no actual change (same ID before/after).
  *
  *  notifyTaskCompleted()  — task status transitions to "Completed".
- *                           Notifies the creator/assigner (CrmTask.createdByUserId)
+ *                           Notifies the creator/assigner (QcfTask.createdByUserId)
  *                           when someone else marks the task done.
  *                           When actor === creator (they completed their own task),
  *                           notification is suppressed (they already know).

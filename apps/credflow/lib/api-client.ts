@@ -43,7 +43,7 @@ export interface CallLogPayload {
   toNumber: string;
   fromNumber?: string | null;
   durationSec?: number | null;
-  /** Stage 3-D(a): explicit origin — "dialer" (real call) writes a CrmCallLog
+  /** Stage 3-D(a): explicit origin — "dialer" (real call) writes a QcfCallLog
    *  row; "manual" (disposition update) writes activities only. Set by the
    *  parent flow; never inferred from providerCallSid. */
   source: "dialer" | "manual";
@@ -91,7 +91,7 @@ export interface PaymentVerificationPayload {
 }
 
 interface CallLogResponse {
-  /** Stage 3-D(a): null when no real call occurred (manual save → no CrmCallLog). */
+  /** Stage 3-D(a): null when no real call occurred (manual save → no QcfCallLog). */
   id: string | null;
   dispositionName: string;
   paymentVerificationRequired: boolean;

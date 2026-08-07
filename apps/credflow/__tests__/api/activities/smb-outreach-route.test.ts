@@ -15,9 +15,9 @@ function adminSession() {
 
 describe("POST /api/activities/smb-outreach", () => {
   beforeEach(() => {
-    db.crmLead.findFirst.mockReset();
-    db.crmLead.update.mockReset();
-    db.crmActivity.create.mockReset();
+    db.qcfLead.findFirst.mockReset();
+    db.qcfLead.update.mockReset();
+    db.qcfActivity.create.mockReset();
     db.user.findUnique.mockReset();
     db.$transaction.mockReset();
     setSession(null);
@@ -25,7 +25,7 @@ describe("POST /api/activities/smb-outreach", () => {
 
   it("rejects an invalid disposition chain (400)", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
     const { POST } = await import("@/app/api/activities/smb-outreach/route");
     const req = new Request("http://test/api/activities/smb-outreach", {
       method: "POST",
@@ -48,7 +48,7 @@ describe("POST /api/activities/smb-outreach", () => {
 
   it("logs activity AND patches the parent lead's country + followupPriority", async () => {
     adminSession();
-    db.crmLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
+    db.qcfLead.findFirst.mockResolvedValue({ id: "L1", accountId: null } as never);
     db.user.findUnique.mockResolvedValue({
       id: "u1",
       firstName: "Alice",
@@ -57,8 +57,8 @@ describe("POST /api/activities/smb-outreach", () => {
     } as never);
 
     // Capture the inner transactional calls.
-    const createMock = db.crmActivity.create;
-    const updateMock = db.crmLead.update;
+    const createMock = db.qcfActivity.create;
+    const updateMock = db.qcfLead.update;
     db.$transaction.mockImplementation(async (fn: unknown) => {
       // For tx-callback form, invoke with the same mocked client.
       if (typeof fn === "function") {
@@ -67,7 +67,7 @@ describe("POST /api/activities/smb-outreach", () => {
       // For array form (unused here), just resolve.
       return [];
     });
-    db.crmActivity.create.mockResolvedValue({
+    db.qcfActivity.create.mockResolvedValue({
       id: "act1",
       tenantId: "t1",
       type: "SMB Outreach",
@@ -92,8 +92,8 @@ describe("POST /api/activities/smb-outreach", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as never);
-    db.crmLead.update.mockResolvedValue({} as never);
-    db.crmLead.findMany.mockResolvedValue([{ id: "L1", name: "ACME" } as never]);
+    db.qcfLead.update.mockResolvedValue({} as never);
+    db.qcfLead.findMany.mockResolvedValue([{ id: "L1", name: "ACME" } as never]);
 
     const { POST } = await import("@/app/api/activities/smb-outreach/route");
     const req = new Request("http://test/api/activities/smb-outreach", {

@@ -15,9 +15,9 @@ import {
  */
 async function computeProductStats(tenantId: string): Promise<ProductsStats> {
   const [total, active, categoryRows] = await Promise.all([
-    db.crmProduct.count({ where: { tenantId } }),
-    db.crmProduct.count({ where: { tenantId, isActive: true } }),
-    db.crmProduct.findMany({
+    db.qcfProduct.count({ where: { tenantId } }),
+    db.qcfProduct.count({ where: { tenantId, isActive: true } }),
+    db.qcfProduct.findMany({
       where: { tenantId, category: { not: null } },
       select: { category: true },
       distinct: ["category"],

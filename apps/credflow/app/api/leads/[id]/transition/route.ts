@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "leads", "edit");
-    const lead = await prisma.crmLead.findUnique({ where: { id } });
+    const lead = await prisma.qcfLead.findUnique({ where: { id } });
     if (!lead || lead.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

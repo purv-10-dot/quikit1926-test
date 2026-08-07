@@ -1,8 +1,8 @@
 /**
  * FR-RE Unit 3b (FR-RE-3 file_upload) — DB write, no-partial-save, ACL read.
  *
- *   AC-RE-7  — a valid upload records a CrmFileAttachment and points the
- *              field value (CrmFieldValue.valueFileId) at it.
+ *   AC-RE-7  — a valid upload records a QcfFileAttachment and points the
+ *              field value (QcfFieldValue.valueFileId) at it.
  *   AC-RE-8  — an oversize / disallowed file is rejected with NO partial save
  *              (validation runs before any S3 or DB write).
  *   AC-RE-17 — uploaded files must not leak across account scopes: a restricted
@@ -45,7 +45,7 @@ const adminUser: SessionUser = {
   email: "admin@frre.test",
   name: "Admin",
 };
-// Restricted agent: scoped (via CrmUserAccountAccess) to account B only.
+// Restricted agent: scoped (via QcfUserAccountAccess) to account B only.
 const agentB: SessionUser = {
   userId: `agentB_${STAMP}`,
   tenantId: TENANT,
@@ -56,47 +56,47 @@ const agentB: SessionUser = {
 
 beforeAll(async () => {
   const [accA, accB] = await Promise.all([
-    integrationPrisma.crmAccount.create({ data: { tenantId: TENANT, name: `Acct A ${STAMP}` } }),
-    integrationPrisma.crmAccount.create({ data: { tenantId: TENANT, name: `Acct B ${STAMP}` } }),
+    integrationPrisma.qcfAccount.create({ data: { tenantId: TENANT, name: `Acct A ${STAMP}` } }),
+    integrationPrisma.qcfAccount.create({ data: { tenantId: TENANT, name: `Acct B ${STAMP}` } }),
   ]);
   accountAId = accA.id;
   accountBId = accB.id;
 
   // Lead + activity live on account A.
-  const leadA = await integrationPrisma.crmLead.create({
+  const leadA = await integrationPrisma.qcfLead.create({
     data: { tenantId: TENANT, name: `Lead A ${STAMP}`, accountId: accountAId },
   });
   leadAId = leadA.id;
-  const activityA = await integrationPrisma.crmActivity.create({
+  const activityA = await integrationPrisma.qcfActivity.create({
     data: { tenantId: TENANT, type: "call", relatedKind: "Lead", relatedObjectId: leadAId },
   });
   activityAId = activityA.id;
 
   // agentB may only see account B (so account A — and its activity — is out of scope).
-  await integrationPrisma.crmUserAccountAccess.create({
+  await integrationPrisma.qcfUserAccountAccess.create({
     data: { userId: agentB.userId, accountId: accountBId },
   });
 
   // A form-set version to anchor the field value.
-  const set = await integrationPrisma.crmFormSet.create({
+  const set = await integrationPrisma.qcfFormSet.create({
     data: { tenantId: TENANT, surface: "call_disposition", name: `Set ${STAMP}` },
   });
   setId = set.id;
-  const version = await integrationPrisma.crmFormSetVersion.create({
+  const version = await integrationPrisma.qcfFormSetVersion.create({
     data: { formSetId: setId, versionNumber: 1, status: "draft" },
   });
   versionId = version.id;
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmFieldValue.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmFileAttachment.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await integrationPrisma.crmFormSet.deleteMany({ where: { id: setId } });
-  await integrationPrisma.crmActivity.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmLead.deleteMany({ where: { tenantId: TENANT } });
-  await integrationPrisma.crmUserAccountAccess.deleteMany({ where: { userId: agentB.userId } });
-  await integrationPrisma.crmAccount.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFieldValue.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFileAttachment.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await integrationPrisma.qcfFormSet.deleteMany({ where: { id: setId } });
+  await integrationPrisma.qcfActivity.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfLead.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfUserAccountAccess.deleteMany({ where: { userId: agentB.userId } });
+  await integrationPrisma.qcfAccount.deleteMany({ where: { tenantId: TENANT } });
 });
 
 describe("recordDispositionAttachment — AC-RE-7 (valid upload recorded)", () => {
@@ -117,7 +117,7 @@ describe("recordDispositionAttachment — AC-RE-7 (valid upload recorded)", () =
     expect(attachment.activityId).toBe(activityAId);
     expect(attachment.sizeBytes).toBe(2 * MB);
 
-    const fv = await integrationPrisma.crmFieldValue.findUnique({
+    const fv = await integrationPrisma.qcfFieldValue.findUnique({
       where: { activityId_fieldKey: { activityId: activityAId, fieldKey: "id_proof" } },
     });
     expect(fv?.valueFileId).toBe(attachment.id);
@@ -127,7 +127,7 @@ describe("recordDispositionAttachment — AC-RE-7 (valid upload recorded)", () =
 
 describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => {
   it("rejects an oversize file and writes NOTHING", async () => {
-    const before = await integrationPrisma.crmFileAttachment.count({ where: { tenantId: TENANT } });
+    const before = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
     const big = new File([new Uint8Array(10 * MB + 1)], "big.pdf", { type: "application/pdf" });
 
     await expect(
@@ -140,16 +140,16 @@ describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => 
       }),
     ).rejects.toBeInstanceOf(FileUploadError);
 
-    const after = await integrationPrisma.crmFileAttachment.count({ where: { tenantId: TENANT } });
+    const after = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
     expect(after).toBe(before); // no new row
-    const fv = await integrationPrisma.crmFieldValue.findUnique({
+    const fv = await integrationPrisma.qcfFieldValue.findUnique({
       where: { activityId_fieldKey: { activityId: activityAId, fieldKey: "oversize_field" } },
     });
     expect(fv).toBeNull();
   });
 
   it("rejects a disallowed type (gif — allowed by the general service) and writes NOTHING", async () => {
-    const before = await integrationPrisma.crmFileAttachment.count({ where: { tenantId: TENANT } });
+    const before = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
     const gif = new File([new Uint8Array(1024)], "x.gif", { type: "image/gif" });
 
     await expect(
@@ -162,7 +162,7 @@ describe("saveDispositionUpload — AC-RE-8 (no partial save on reject)", () => 
       }),
     ).rejects.toBeInstanceOf(FileUploadError);
 
-    const after = await integrationPrisma.crmFileAttachment.count({ where: { tenantId: TENANT } });
+    const after = await integrationPrisma.qcfFileAttachment.count({ where: { tenantId: TENANT } });
     expect(after).toBe(before);
   });
 });

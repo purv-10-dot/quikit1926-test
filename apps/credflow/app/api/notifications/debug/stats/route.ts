@@ -23,13 +23,13 @@ export async function GET() {
     todayStart.setHours(0, 0, 0, 0);
 
     const [total, unread, today] = await Promise.all([
-      prisma.crmNotification.count({
+      prisma.qcfNotification.count({
         where: { tenantId: user.tenantId },
       }),
-      prisma.crmNotification.count({
+      prisma.qcfNotification.count({
         where: { tenantId: user.tenantId, readAt: null },
       }),
-      prisma.crmNotification.count({
+      prisma.qcfNotification.count({
         where: {
           tenantId: user.tenantId,
           createdAt: { gte: todayStart },

@@ -1,6 +1,6 @@
 /**
  * POST /api/internal/accounts/reconcile-owner-names — admin-only background job.
- * Re-derives ownerName from public.User for every CrmAccount in the caller's tenant.
+ * Re-derives ownerName from public.User for every QcfAccount in the caller's tenant.
  * Useful after bulk user renames or imports that left ownerId/ownerName desynced.
  */
 import { NextResponse } from "next/server";
@@ -19,7 +19,7 @@ export async function POST() {
     }
 
     // Pull every account with a non-null ownerId for this tenant.
-    const accounts = await prisma.crmAccount.findMany({
+    const accounts = await prisma.qcfAccount.findMany({
       where: { tenantId: user.tenantId, ownerId: { not: null } },
       select: { id: true, ownerId: true, ownerName: true },
     });
@@ -41,7 +41,7 @@ export async function POST() {
     for (const a of accounts) {
       const desired = a.ownerId ? (nameMap.get(a.ownerId) ?? null) : null;
       if (desired !== null && desired !== (a.ownerName ?? null)) {
-        await prisma.crmAccount.update({
+        await prisma.qcfAccount.update({
           where: { id: a.id },
           data: { ownerName: desired },
         });

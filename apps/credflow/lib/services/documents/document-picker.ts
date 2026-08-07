@@ -93,7 +93,7 @@ export async function listDocumentPickerFiles(
   }
 
   if (location.kind === "folder") {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
     });
     if (folder?.refType) {
@@ -106,7 +106,7 @@ export async function listDocumentPickerFiles(
     : ({ fileName: "asc" } as const);
 
   const take = query.recent ? Math.min(pageSize, 20) : pageSize * 3;
-  const rows = await prisma.crmDocument.findMany({
+  const rows = await prisma.qcfDocument.findMany({
     where,
     orderBy,
     take: query.recent ? take : take,
@@ -116,7 +116,7 @@ export async function listDocumentPickerFiles(
   let accessible = await filterAccessible(user, rows);
 
   if (location.kind === "folder") {
-    const folder = await prisma.crmDocumentFolder.findFirst({
+    const folder = await prisma.qcfDocumentFolder.findFirst({
       where: { id: location.folderId, tenantId: user.tenantId, deletedAt: null },
     });
     if (folder) {

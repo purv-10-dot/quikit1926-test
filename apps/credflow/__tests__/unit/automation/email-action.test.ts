@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockDb } from "../../helpers/mockDb";
-import type { CrmLead } from "@quikit/database";
+import type { QcfLead } from "@quikit/database";
 
 vi.mock("@/lib/services/automation/email-dispatch", () => ({
   dispatchOutboundMessage: vi.fn().mockResolvedValue({ outcome: "sent", driver: "console", messageId: "m1" }),
@@ -22,7 +22,7 @@ import {
 const db = mockDb();
 const dispatch = vi.mocked(dispatchOutboundMessage);
 
-function lead(overrides: Record<string, unknown> = {}): CrmLead {
+function lead(overrides: Record<string, unknown> = {}): QcfLead {
   return {
     id: "lead-1",
     tenantId: "t1",
@@ -32,14 +32,14 @@ function lead(overrides: Record<string, unknown> = {}): CrmLead {
     doNotEmail: null,
     unsubscribed: null,
     ...overrides,
-  } as unknown as CrmLead;
+  } as unknown as QcfLead;
 }
 
 beforeEach(() => {
   dispatch.mockClear();
   dispatch.mockResolvedValue({ outcome: "sent", driver: "console", messageId: "m1" } as never);
-  db.crmOutboundMessageLog.create.mockReset();
-  db.crmOutboundMessageLog.create.mockResolvedValue({ id: "log-1" } as never);
+  db.qcfOutboundMessageLog.create.mockReset();
+  db.qcfOutboundMessageLog.create.mockResolvedValue({ id: "log-1" } as never);
 });
 
 describe("renderMergeFields · §8 minimal grammar", () => {
@@ -75,7 +75,7 @@ describe("executeSendEmail · orchestration", () => {
   it("renders merge fields then queues + dispatches a mailable lead", async () => {
     const res = await executeSendEmail({ tenantId: "t1", lead: lead(), cfg: { subject: "Hi {firstName}", body: "From {name}" } });
     expect(res.status).toBe("sent");
-    expect(db.crmOutboundMessageLog.create).toHaveBeenCalledWith({
+    expect(db.qcfOutboundMessageLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ tenantId: "t1", to: "ada@example.test", subject: "Hi Ada", body: "From Acme Co", status: "queued" }),
     });
     expect(dispatch).toHaveBeenCalledWith("t1", "log-1");
@@ -84,7 +84,7 @@ describe("executeSendEmail · orchestration", () => {
   it("SKIPS a Do-Not-Email lead — records a skipped row, never dispatches", async () => {
     const res = await executeSendEmail({ tenantId: "t1", lead: lead({ doNotEmail: true }), cfg: { subject: "s", body: "b" } });
     expect(res).toMatchObject({ status: "skipped", reason: "do-not-email" });
-    expect(db.crmOutboundMessageLog.create).toHaveBeenCalledWith({
+    expect(db.qcfOutboundMessageLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ status: "skipped", metadata: { skippedReason: "do-not-email" } }),
     });
     expect(dispatch).not.toHaveBeenCalled();
@@ -98,7 +98,7 @@ describe("executeSendEmail · orchestration", () => {
 
   it("honors a literal `to` override over the lead email", async () => {
     await executeSendEmail({ tenantId: "t1", lead: lead(), cfg: { to: "override@example.test", subject: "s" } });
-    expect(db.crmOutboundMessageLog.create).toHaveBeenCalledWith({
+    expect(db.qcfOutboundMessageLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ to: "override@example.test", status: "queued" }),
     });
   });

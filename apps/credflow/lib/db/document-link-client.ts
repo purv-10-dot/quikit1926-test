@@ -2,7 +2,7 @@ import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import { FolderServiceError } from "@/lib/services/document-folders/scope";
 
-export type DocumentLinkDelegate = NonNullable<(typeof prisma)["crmDocumentLink"]>;
+export type DocumentLinkDelegate = NonNullable<(typeof prisma)["qcfDocumentLink"]>;
 
 let warnedMissingDelegate = false;
 let warnedMissingTable = false;
@@ -11,13 +11,13 @@ function warnDelegateMissing(): void {
   if (warnedMissingDelegate) return;
   warnedMissingDelegate = true;
   console.warn(
-    "[quikcrm] prisma.crmDocumentLink delegate missing. From repo root: npm run db:generate — then restart the dev server.",
+    "[quikcrm] prisma.qcfDocumentLink delegate missing. From repo root: npm run db:generate — then restart the dev server.",
   );
 }
 
-/** Undefined when Prisma client was generated before CrmDocumentLink or dev server is stale. */
+/** Undefined when Prisma client was generated before QcfDocumentLink or dev server is stale. */
 export function getDocumentLinkClient(): DocumentLinkDelegate | undefined {
-  const client = (prisma as { crmDocumentLink?: DocumentLinkDelegate }).crmDocumentLink;
+  const client = (prisma as { qcfDocumentLink?: DocumentLinkDelegate }).qcfDocumentLink;
   if (!client) warnDelegateMissing();
   return client;
 }
@@ -44,7 +44,7 @@ function warnMissingTable(): void {
   if (warnedMissingTable) return;
   warnedMissingTable = true;
   console.warn(
-    "[quikcrm] app_quikcrm.CrmDocumentLink table missing. Apply migration: npm run db:migrate:crm-document-links — or run scripts/apply-crm-document-links.sql",
+    "[quikcrm] app_quikcredflow.CrmDocumentLink table missing. Apply migration: npm run db:migrate:crm-document-links — or run scripts/apply-crm-document-links.sql",
   );
 }
 

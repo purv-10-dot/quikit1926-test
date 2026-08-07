@@ -27,7 +27,7 @@ const callsByDisposition: CannedReport = {
       : null;
   },
   async run(ctx) {
-    const grouped = await db.crmCallLog.groupBy({
+    const grouped = await db.qcfCallLog.groupBy({
       by: ["dispositionName"],
       where: {
         tenantId: ctx.tenantId,
@@ -93,7 +93,7 @@ const callsByDay: CannedReport = {
   },
   async run(ctx) {
     const start = startOfDayInTz(ctx.from, ctx.tz);
-    const calls = await db.crmCallLog.findMany({
+    const calls = await db.qcfCallLog.findMany({
       where: {
         tenantId: ctx.tenantId,
         createdAt: { gte: start, lte: ctx.to },
@@ -150,7 +150,7 @@ const callsByUser: CannedReport = {
       : null;
   },
   async run(ctx) {
-    const grouped = await db.crmCallLog.groupBy({
+    const grouped = await db.qcfCallLog.groupBy({
       by: ["agentUserId", "ownerName"],
       where: {
         tenantId: ctx.tenantId,
@@ -199,7 +199,7 @@ const talkTimeByUser: CannedReport = {
       : null;
   },
   async run(ctx: ReportRunContext) {
-    const grouped = await db.crmCallLog.groupBy({
+    const grouped = await db.qcfCallLog.groupBy({
       by: ["agentUserId", "ownerName"],
       where: {
         tenantId: ctx.tenantId,

@@ -95,7 +95,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (isResponse(user)) return user;
     await assertModule(user, "automations", "view");
 
-    const wf = await prisma.crmWorkflowDefinition.findFirst({
+    const wf = await prisma.qcfWorkflowDefinition.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -115,7 +115,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const parsed = updateSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
-    const existing = await prisma.crmWorkflowDefinition.findFirst({
+    const existing = await prisma.qcfWorkflowDefinition.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -131,14 +131,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
 
-    const data: Prisma.CrmWorkflowDefinitionUpdateInput = {};
+    const data: Prisma.QcfWorkflowDefinitionUpdateInput = {};
     if (parsed.data.name !== undefined) data.name = parsed.data.name;
     if (parsed.data.triggerType !== undefined) data.triggerType = parsed.data.triggerType;
     if (parsed.data.triggerSummary !== undefined) data.triggerSummary = parsed.data.triggerSummary;
     if (parsed.data.graphNodes !== undefined) data.graphNodes = parsed.data.graphNodes as Prisma.InputJsonValue;
     if (parsed.data.graphEdges !== undefined) data.graphEdges = parsed.data.graphEdges as Prisma.InputJsonValue;
 
-    const wf = await prisma.crmWorkflowDefinition.update({
+    const wf = await prisma.qcfWorkflowDefinition.update({
       where: { id: existing.id }, // tenant ownership already asserted by the scoped findFirst
       data,
     });
@@ -160,7 +160,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (isResponse(user)) return user;
     await assertModule(user, "automations", "delete");
 
-    const existing = await prisma.crmWorkflowDefinition.findFirst({
+    const existing = await prisma.qcfWorkflowDefinition.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

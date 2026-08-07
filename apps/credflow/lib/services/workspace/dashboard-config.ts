@@ -1,6 +1,6 @@
 /**
  * Dashboard-specific workspace settings, stored alongside the lead pipeline
- * config in CrmOrgWorkspaceSettings.settings.dashboard.
+ * config in QcfOrgWorkspaceSettings.settings.dashboard.
  *
  * Shape:
  *   {
@@ -34,7 +34,7 @@ interface SettingsTree {
 }
 
 export async function getDashboardConfig(tenantId: string): Promise<DashboardConfig> {
-  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId } });
+  const row = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId } });
   const tree = ((row?.settings as SettingsTree | null) ?? {}) as SettingsTree;
   const cfg = tree.dashboard ?? {};
 

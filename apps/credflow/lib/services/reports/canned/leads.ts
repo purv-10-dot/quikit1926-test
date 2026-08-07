@@ -13,14 +13,14 @@ import { accountScopeFilter } from "@/lib/auth/account-acl";
 import { daysAgoStartOfDay } from "./date-ranges";
 import type { CannedReport, ReportRunContext } from "./types";
 
-async function leadAclWhere(ctx: ReportRunContext): Promise<Prisma.CrmLeadWhereInput> {
+async function leadAclWhere(ctx: ReportRunContext): Promise<Prisma.QcfLeadWhereInput> {
   const acl = await accountScopeFilter(ctx.session);
-  const base: Prisma.CrmLeadWhereInput = {
+  const base: Prisma.QcfLeadWhereInput = {
     tenantId: ctx.tenantId,
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
   if (!acl) return base;
-  return { AND: [base, acl as Prisma.CrmLeadWhereInput] };
+  return { AND: [base, acl as Prisma.QcfLeadWhereInput] };
 }
 
 const leadsBySource: CannedReport = {
@@ -45,7 +45,7 @@ const leadsBySource: CannedReport = {
   },
   async run(ctx) {
     const where = await leadAclWhere(ctx);
-    const grouped = await db.crmLead.groupBy({
+    const grouped = await db.qcfLead.groupBy({
       by: ["source"],
       where: { ...where, createdAt: { gte: ctx.from, lte: ctx.to } },
       _count: { _all: true },
@@ -85,7 +85,7 @@ const leadFunnel: CannedReport = {
   },
   async run(ctx) {
     const where = await leadAclWhere(ctx);
-    const grouped = await db.crmLead.groupBy({
+    const grouped = await db.qcfLead.groupBy({
       by: ["stage"],
       where: { ...where, createdAt: { gte: ctx.from, lte: ctx.to } },
       _count: { _all: true },
@@ -132,7 +132,7 @@ const staleLeads: CannedReport = {
   async run(ctx) {
     const where = await leadAclWhere(ctx);
     const cutoff = daysAgoStartOfDay(7, ctx.tz);
-    const leads = await db.crmLead.findMany({
+    const leads = await db.qcfLead.findMany({
       where: {
         ...where,
         convertedAt: null,

@@ -1,7 +1,7 @@
 /**
  * [P3.B1] Email dispatch — real-DB proof against the seeded autotest DB.
  *
- * Proves the SURVEY #7 gap is closed: a queued CrmOutboundMessageLog row is
+ * Proves the SURVEY #7 gap is closed: a queued QcfOutboundMessageLog row is
  * consumed by `dispatchOutboundMessage`, actually dispatched, and the row
  * transitions queued→sent; a send failure records "failed" and does not throw.
  *
@@ -31,13 +31,13 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  await integrationPrisma.crmOutboundMessageLog.deleteMany({ where: { tenantId: TENANT } });
+  await integrationPrisma.qcfOutboundMessageLog.deleteMany({ where: { tenantId: TENANT } });
   await integrationPrisma.$disconnect();
 });
 
 describe("B1 email dispatch · real DB (captured transport)", () => {
   it("consumes a queued row → dispatches via console driver → status queued→sent", async () => {
-    const row = await integrationPrisma.crmOutboundMessageLog.create({
+    const row = await integrationPrisma.qcfOutboundMessageLog.create({
       data: {
         tenantId: TENANT,
         channel: "email",
@@ -53,7 +53,7 @@ describe("B1 email dispatch · real DB (captured transport)", () => {
     expect(res.outcome).toBe("sent");
     expect(res.driver).toBe("console"); // GUARD 3: proves no live provider ran
 
-    const after = await integrationPrisma.crmOutboundMessageLog.findUnique({ where: { id: row.id } });
+    const after = await integrationPrisma.qcfOutboundMessageLog.findUnique({ where: { id: row.id } });
     expect(after?.status).toBe("sent");
     expect(after?.sentAt).toBeInstanceOf(Date);
     expect((after?.metadata as Record<string, unknown>)?.driver).toBe("console");
@@ -61,20 +61,20 @@ describe("B1 email dispatch · real DB (captured transport)", () => {
 
   it("records failed (no throw) when the recipient is invalid", async () => {
     // Empty recipient → ensureRecipients throws inside the driver → recorded failed.
-    const row = await integrationPrisma.crmOutboundMessageLog.create({
+    const row = await integrationPrisma.qcfOutboundMessageLog.create({
       data: { tenantId: TENANT, channel: "email", to: "", subject: "x", body: "y", status: "queued" },
     });
 
     const res = await dispatchOutboundMessage(TENANT, row.id);
 
     expect(res.outcome).toBe("failed");
-    const after = await integrationPrisma.crmOutboundMessageLog.findUnique({ where: { id: row.id } });
+    const after = await integrationPrisma.qcfOutboundMessageLog.findUnique({ where: { id: row.id } });
     expect(after?.status).toBe("failed");
     expect((after?.metadata as Record<string, unknown>)?.error).toBeTruthy();
   });
 
   it("skips a non-queued row (idempotent — never double-sends)", async () => {
-    const row = await integrationPrisma.crmOutboundMessageLog.create({
+    const row = await integrationPrisma.qcfOutboundMessageLog.create({
       data: { tenantId: TENANT, channel: "email", to: "captured@example.test", subject: "x", body: "y", status: "sent" },
     });
     const res = await dispatchOutboundMessage(TENANT, row.id);

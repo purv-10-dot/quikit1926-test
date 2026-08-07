@@ -41,27 +41,27 @@ export async function resolveRelatedLabels(
 
   const [leads, opps, contacts, accounts] = await Promise.all([
     byKind.lead.size
-      ? prisma.crmLead.findMany({
+      ? prisma.qcfLead.findMany({
           where: { tenantId, id: { in: [...byKind.lead] } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
     byKind.opportunity.size
-      ? prisma.crmOpportunity.findMany({
+      ? prisma.qcfOpportunity.findMany({
           where: { tenantId, id: { in: [...byKind.opportunity] } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
     byKind.contact.size
-      ? prisma.crmContact.findMany({
-          // CrmContact isn't middleware-protected; exclude trashed so labels match
+      ? prisma.qcfContact.findMany({
+          // QcfContact isn't middleware-protected; exclude trashed so labels match
           // the soft-delete behaviour the other (registered) models get for free.
           where: { tenantId, id: { in: [...byKind.contact] }, deletedAt: null },
           select: { id: true, firstName: true, lastName: true },
         })
       : Promise.resolve([]),
     byKind.account.size
-      ? prisma.crmAccount.findMany({
+      ? prisma.qcfAccount.findMany({
           where: { tenantId, id: { in: [...byKind.account] } },
           select: { id: true, name: true },
         })

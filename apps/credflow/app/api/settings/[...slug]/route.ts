@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     const { slug } = await params;
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const ws = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId: user.tenantId } });
+    const ws = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId: user.tenantId } });
     const tree = (ws?.settings as JsonValue) ?? {};
     return NextResponse.json({ value: getAt(tree, slug) });
   } catch (e) {
@@ -63,9 +63,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sl
     await assertModule(user, "settings", "edit");
     const body = await req.json().catch(() => ({}));
     const value = (body && typeof body === "object" && "value" in body ? body.value : body) as JsonValue;
-    const existing = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { tenantId: user.tenantId } });
+    const existing = await prisma.qcfOrgWorkspaceSettings.findUnique({ where: { tenantId: user.tenantId } });
     const next = setAt((existing?.settings as JsonValue) ?? {}, slug, value);
-    await prisma.crmOrgWorkspaceSettings.upsert({
+    await prisma.qcfOrgWorkspaceSettings.upsert({
       where: { tenantId: user.tenantId },
       create: { tenantId: user.tenantId, settings: next as object },
       update: { settings: next as object },

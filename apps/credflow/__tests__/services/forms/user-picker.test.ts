@@ -2,7 +2,7 @@
  * FR-RE Unit 3a (FR-RE-3 user_picker) — selection validation (single vs multi).
  *
  * A user_picker field is configured single or multi via userPickerMode. On
- * save, the selected user IDs (-> CrmFieldValue.valueUserIds) must respect that
+ * save, the selected user IDs (-> QcfFieldValue.valueUserIds) must respect that
  * mode: single accepts at most one, multi accepts many. Empty is allowed here
  * (required-ness is enforced separately by the field's requiredLevel).
  */

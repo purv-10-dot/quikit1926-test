@@ -47,7 +47,7 @@ export async function POST(
     const force = searchParams.get("force") === "true";
     const isAdmin = user.role === "Administrator";
 
-    const opp = await db.crmOpportunity.findFirst({
+    const opp = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId, deletedAt: null },
       select: { id: true, accountId: true, stage: true, name: true },
     });
@@ -74,7 +74,7 @@ export async function POST(
     const isClosing = TERMINAL_STAGES.has(parsed.data.toStage);
 
     const updated = await db.$transaction(async (tx) => {
-      const next = await tx.crmOpportunity.update({
+      const next = await tx.qcfOpportunity.update({
         where: { id, tenantId: user.tenantId },
         data: {
           stage: parsed.data.toStage,

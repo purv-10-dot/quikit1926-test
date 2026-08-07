@@ -2,7 +2,7 @@
  * Derived metrics for the single-account 360 dashboard.
  */
 
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
 export interface AccountDashboardSnapshot {
   openPipeline: number;
@@ -24,7 +24,7 @@ export interface AccountDashboardSnapshot {
   isStaleTouch: boolean;
 }
 
-const CLOSED_STAGES: CrmOpportunityStage[] = ["ClosedWon", "ClosedLost"];
+const CLOSED_STAGES: QcfOpportunityStage[] = ["ClosedWon", "ClosedLost"];
 
 type OppLike = {
   stage: string;
@@ -70,7 +70,7 @@ export function buildAccountDashboardSnapshot(input: {
   let wonRevenue12mo = 0;
   for (const o of input.opportunities) {
     const amt = oppAmount(o);
-    if (CLOSED_STAGES.includes(o.stage as CrmOpportunityStage)) {
+    if (CLOSED_STAGES.includes(o.stage as QcfOpportunityStage)) {
       if (o.stage === "ClosedWon") {
         const at = toMs(o.updatedAt ?? o.closeDate);
         if (at != null && at >= yearAgo) wonRevenue12mo += amt;

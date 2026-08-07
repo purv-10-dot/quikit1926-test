@@ -4,7 +4,7 @@
  * Primary storage (QuikScale parity):
  *   app_quikcrm.UserAppRole + RolePermission + UserPermissionExtra
  *
- * Legacy field-level rules still read from CrmPermissionTemplate when present.
+ * Legacy field-level rules still read from QcfPermissionTemplate when present.
  */
 import { db } from "@/lib/db";
 import { loadUserCrmGrants, isCrmRbacClientReady } from "@/lib/api/crm-rbac";
@@ -111,7 +111,7 @@ function mergeMatrices(primary: PermissionMatrix, fieldRules: PermissionMatrix):
 }
 
 async function loadTemplateMatrix(userId: string): Promise<PermissionMatrix> {
-  const links = await db.crmUserPermissionTemplate.findMany({
+  const links = await db.qcfUserPermissionTemplate.findMany({
     where: { userId },
     include: { template: true },
   });

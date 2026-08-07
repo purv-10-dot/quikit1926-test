@@ -3,7 +3,7 @@
  *
  * Drives the lifecycle service against the actual seeded autotest Postgres +
  * Prisma client (not mocks), proving each transition is a tenant-scoped service
- * call that leaves the CrmWorkflowDefinition row in the expected state, that
+ * call that leaves the QcfWorkflowDefinition row in the expected state, that
  * illegal transitions are rejected, that soft-delete hides-but-persists and is
  * recoverable, and that the firing gates behave (Draining admits no NEW leads
  * but still resumes in-flight).
@@ -31,16 +31,16 @@ const TENANT = `int_s1_${Date.now()}`;
 const OTHER_TENANT = `int_s1_other_${Date.now()}`;
 
 async function newDraft(tenantId = TENANT, name = "Rule") {
-  return integrationPrisma.crmWorkflowDefinition.create({
+  return integrationPrisma.qcfWorkflowDefinition.create({
     data: { tenantId, name, status: "Draft", triggerType: "trigger_lead_updated", graphNodes: [], graphEdges: [] },
   });
 }
-const read = (id: string) => integrationPrisma.crmWorkflowDefinition.findUnique({ where: { id } });
+const read = (id: string) => integrationPrisma.qcfWorkflowDefinition.findUnique({ where: { id } });
 
 afterAll(async () => {
   for (const t of [TENANT, OTHER_TENANT]) {
-    await integrationPrisma.crmAutomationPendingStep.deleteMany({ where: { tenantId: t } });
-    await integrationPrisma.crmWorkflowDefinition.deleteMany({ where: { tenantId: t } });
+    await integrationPrisma.qcfAutomationPendingStep.deleteMany({ where: { tenantId: t } });
+    await integrationPrisma.qcfWorkflowDefinition.deleteMany({ where: { tenantId: t } });
   }
   await integrationPrisma.$disconnect();
 });

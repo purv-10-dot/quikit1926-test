@@ -8,14 +8,14 @@
  * distribution.ts). The engine re-exports these for back-compat with existing
  * importers/tests. SPEC §2.
  */
-import type { CrmLead as Lead } from "@prisma/client";
+import type { QcfLead as Lead } from "@prisma/client";
 import type { IfElseConfig, WorkflowCondition } from "@/types/workflow";
 
 /**
  * Resolve the value a condition targets, from the CURRENT lead.
  *
  * Standard lead COLUMNS (stage, status, substatus, ownerId, source, email, …)
- * are own-properties of the Prisma CrmLead row — read directly.
+ * are own-properties of the Prisma QcfLead row — read directly.
  *
  * CUSTOM fields (created in Settings → Lead Fields) are NOT columns; their values
  * live in the `dynamicFields` JSON column keyed by field key. So a condition on

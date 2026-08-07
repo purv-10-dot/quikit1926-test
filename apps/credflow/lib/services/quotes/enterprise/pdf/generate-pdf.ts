@@ -27,13 +27,13 @@ async function loadPrintPayload(
 
   const [account, contact, company, template] = await Promise.all([
     quote.accountId
-      ? db.crmAccount.findFirst({
+      ? db.qcfAccount.findFirst({
           where: { id: quote.accountId, tenantId },
           select: { name: true },
         })
       : null,
     quote.contactId
-      ? db.crmContact.findFirst({
+      ? db.qcfContact.findFirst({
           where: { id: quote.contactId, tenantId },
           select: { firstName: true, lastName: true, email: true },
         })
@@ -125,7 +125,7 @@ export async function buildQuotePreviewPdfBuffer(
 
 /**
  * Generate a locked PDF snapshot: stores HTML in S3 (print-to-PDF ready) and
- * records CrmQuotePdfSnapshot. When S3 is unavailable, returns HTML buffer only.
+ * records QcfQuotePdfSnapshot. When S3 is unavailable, returns HTML buffer only.
  */
 export async function generateQuotePdfSnapshot(args: {
   tenantId: string;
@@ -154,7 +154,7 @@ export async function generateQuotePdfSnapshot(args: {
   }
 
   const snapshot = await db.$transaction(async (tx) => {
-    const row = await tx.crmQuotePdfSnapshot.create({
+    const row = await tx.qcfQuotePdfSnapshot.create({
       data: {
         tenantId: args.tenantId,
         quoteId: args.quoteId,
@@ -170,11 +170,11 @@ export async function generateQuotePdfSnapshot(args: {
         generatedByName: args.userName,
       },
     });
-    await tx.crmQuote.update({
+    await tx.qcfQuote.update({
       where: { id: args.quoteId },
       data: { lockedSnapshotAt: new Date() },
     });
-    await tx.crmActivity.create({
+    await tx.qcfActivity.create({
       data: {
         tenantId: args.tenantId,
         type: "QuotePdfGenerated",
@@ -201,7 +201,7 @@ export async function generateQuotePdfSnapshot(args: {
 }
 
 export async function listQuotePdfSnapshots(tenantId: string, quoteId: string) {
-  return db.crmQuotePdfSnapshot.findMany({
+  return db.qcfQuotePdfSnapshot.findMany({
     where: { tenantId, quoteId },
     orderBy: { createdAt: "desc" },
     take: 20,

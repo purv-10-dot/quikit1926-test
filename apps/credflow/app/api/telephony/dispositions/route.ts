@@ -53,9 +53,9 @@ const DEFAULT_DISPOSITIONS: Array<{
 ];
 
 async function seedDefaultsIfEmpty(tenantId: string) {
-  const count = await prisma.crmCallDisposition.count({ where: { tenantId } });
+  const count = await prisma.qcfCallDisposition.count({ where: { tenantId } });
   if (count > 0) return;
-  await prisma.crmCallDisposition.createMany({
+  await prisma.qcfCallDisposition.createMany({
     data: DEFAULT_DISPOSITIONS.map((d, i) => ({
       tenantId,
       code: d.code,
@@ -76,7 +76,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await seedDefaultsIfEmpty(user.tenantId);
-    const items = await prisma.crmCallDisposition.findMany({
+    const items = await prisma.qcfCallDisposition.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { code: "asc" },
     });
@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
     await assertModule(user, "settings", "create");
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const item = await prisma.crmCallDisposition.create({
-      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.CrmCallDispositionUncheckedCreateInput,
+    const item = await prisma.qcfCallDisposition.create({
+      data: { ...parsed.data, tenantId: user.tenantId } as Prisma.QcfCallDispositionUncheckedCreateInput,
     });
     return NextResponse.json(item, { status: 201 });
   } catch (e) {

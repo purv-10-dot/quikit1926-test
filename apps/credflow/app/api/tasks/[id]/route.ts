@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     }
 
     // Status=Cancelled requires a cancellation reason. The reason is stored
-    // on the resulting CrmActivity audit row (CrmTask has no column for it
+    // on the resulting QcfActivity audit row (QcfTask has no column for it
     // yet).
     if (patch.status === "Cancelled" && !patch.cancellationReason?.trim()) {
       return NextResponse.json(

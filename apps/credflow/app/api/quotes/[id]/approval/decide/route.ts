@@ -35,7 +35,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Validation failed" }, { status: 400 });
     }
     // Fetch approval record BEFORE deciding so we have the requester's ID.
-    const approval = await prisma.crmQuoteApproval.findFirst({
+    const approval = await prisma.qcfQuoteApproval.findFirst({
       where: { id: parsed.data.approvalId, quoteId: id, tenantId: user.tenantId },
       select: {
         requestedById: true,

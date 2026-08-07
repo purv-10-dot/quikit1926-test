@@ -25,14 +25,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 100)));
 
-    const where: Prisma.CrmLeadWhereInput = {
+    const where: Prisma.QcfLeadWhereInput = {
       tenantId: user.tenantId,
       accountId: id,
       deletedAt: null,
     };
 
     const [items, total] = await Promise.all([
-      prisma.crmLead.findMany({
+      prisma.qcfLead.findMany({
         where,
         select: {
           id: true,
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.crmLead.count({ where }),
+      prisma.qcfLead.count({ where }),
     ]);
 
     return NextResponse.json({

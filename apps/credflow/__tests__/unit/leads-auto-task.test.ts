@@ -7,7 +7,7 @@ describe("createDefaultTaskForLead", () => {
   const originalEnv = process.env.AUTO_TASK_ON_LEAD_CREATE;
 
   beforeEach(() => {
-    db.crmTask.create.mockReset();
+    db.qcfTask.create.mockReset();
   });
 
   afterEach(() => {
@@ -32,16 +32,16 @@ describe("createDefaultTaskForLead", () => {
     delete process.env.AUTO_TASK_ON_LEAD_CREATE;
     const createDefaultTaskForLead = await loadCreateDefaultTaskForLead();
     await createDefaultTaskForLead(lead);
-    expect(db.crmTask.create).not.toHaveBeenCalled();
+    expect(db.qcfTask.create).not.toHaveBeenCalled();
   });
 
   it("creates a follow-up task when AUTO_TASK_ON_LEAD_CREATE=true", async () => {
     process.env.AUTO_TASK_ON_LEAD_CREATE = "true";
-    db.crmTask.create.mockResolvedValueOnce({ id: "task-1" } as never);
+    db.qcfTask.create.mockResolvedValueOnce({ id: "task-1" } as never);
     const createDefaultTaskForLead = await loadCreateDefaultTaskForLead();
     await createDefaultTaskForLead(lead);
-    expect(db.crmTask.create).toHaveBeenCalledTimes(1);
-    const arg = db.crmTask.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(db.qcfTask.create).toHaveBeenCalledTimes(1);
+    const arg = db.qcfTask.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(arg.subject).toBe("Follow-up with Acme Lead");
     expect(arg.priority).toBe("Medium");
     expect(arg.status).toBe("Open");

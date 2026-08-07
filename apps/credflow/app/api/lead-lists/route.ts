@@ -22,7 +22,7 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    const items = await prisma.crmLeadSavedList.findMany({
+    const items = await prisma.qcfLeadSavedList.findMany({
       where: { tenantId: user.tenantId, userId: user.userId },
       orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
     });
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     await assertModule(user, "leads", "create");
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const list = await prisma.crmLeadSavedList.create({
+    const list = await prisma.qcfLeadSavedList.create({
       data: {
         tenantId: user.tenantId,
         userId: user.userId,

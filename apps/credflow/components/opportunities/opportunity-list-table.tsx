@@ -9,14 +9,14 @@ import { StagePill } from "./stage-pill";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonBar } from "@/components/ui/skeleton";
 import type { FilterPayload } from "@/types/lead-filter";
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 
 type Row = {
   id: string;
   name: string;
   accountId: string | null;
   account: { id: string; name: string } | null;
-  stage: CrmOpportunityStage;
+  stage: QcfOpportunityStage;
   amount: number | null;
   currency: string | null;
   amountDisplay: string;

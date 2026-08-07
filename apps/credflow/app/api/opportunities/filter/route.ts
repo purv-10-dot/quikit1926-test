@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     });
 
     const [items, total] = await Promise.all([
-      db.crmOpportunity.findMany({
+      db.qcfOpportunity.findMany({
         where,
         select: {
           id: true,
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      db.crmOpportunity.count({ where }),
+      db.qcfOpportunity.count({ where }),
     ]);
 
     const data = items.map((it) => ({

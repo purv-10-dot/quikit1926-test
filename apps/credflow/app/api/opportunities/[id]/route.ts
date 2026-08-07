@@ -26,7 +26,7 @@ export async function GET(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "view");
 
-    const opp = await db.crmOpportunity.findFirst({
+    const opp = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId },
     });
     // Tenant isolation: cross-tenant requests get 404 (not 403) to avoid
@@ -68,7 +68,7 @@ export async function PATCH(
       );
     }
 
-    const existing = await db.crmOpportunity.findFirst({
+    const existing = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId },
       select: { id: true, accountId: true, ownerId: true, amount: true, probability: true },
     });
@@ -119,7 +119,7 @@ export async function DELETE(
     if (isResponse(user)) return user;
     await assertModule(user, "opportunities", "delete");
 
-    const existing = await db.crmOpportunity.findFirst({
+    const existing = await db.qcfOpportunity.findFirst({
       where: { id, tenantId: user.tenantId },
       select: { id: true, accountId: true },
     });

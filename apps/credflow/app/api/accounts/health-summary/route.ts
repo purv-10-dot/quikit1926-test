@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     const scope = await getScope(user);
 
-    const where: Prisma.CrmAccountWhereInput = {
+    const where: Prisma.QcfAccountWhereInput = {
       tenantId: user.tenantId,
       deletedAt: null,
     };
@@ -69,15 +69,15 @@ export async function GET(req: NextRequest) {
       prospect,
       inactive,
     ] = await Promise.all([
-      prisma.crmAccount.count({ where }),
-      prisma.crmAccount.count({ where: { ...where, healthScore: { lt: 40 } } }),
-      prisma.crmAccount.count({ where: { ...where, healthScore: { gte: 40, lt: 70 } } }),
-      prisma.crmAccount.count({ where: { ...where, healthScore: { gte: 70 } } }),
-      prisma.crmAccount.count({ where: { ...where, renewalDate: { gte: now, lte: in30 } } }),
-      prisma.crmAccount.count({ where: { ...where, renewalDate: { gte: now, lte: in90 } } }),
-      prisma.crmAccount.count({ where: { ...where, status: "Active" } }),
-      prisma.crmAccount.count({ where: { ...where, status: "Prospect" } }),
-      prisma.crmAccount.count({ where: { ...where, status: "Inactive" } }),
+      prisma.qcfAccount.count({ where }),
+      prisma.qcfAccount.count({ where: { ...where, healthScore: { lt: 40 } } }),
+      prisma.qcfAccount.count({ where: { ...where, healthScore: { gte: 40, lt: 70 } } }),
+      prisma.qcfAccount.count({ where: { ...where, healthScore: { gte: 70 } } }),
+      prisma.qcfAccount.count({ where: { ...where, renewalDate: { gte: now, lte: in30 } } }),
+      prisma.qcfAccount.count({ where: { ...where, renewalDate: { gte: now, lte: in90 } } }),
+      prisma.qcfAccount.count({ where: { ...where, status: "Active" } }),
+      prisma.qcfAccount.count({ where: { ...where, status: "Prospect" } }),
+      prisma.qcfAccount.count({ where: { ...where, status: "Inactive" } }),
     ]);
 
     return NextResponse.json({

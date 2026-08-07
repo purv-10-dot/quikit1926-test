@@ -29,7 +29,7 @@ async function fireTrigger(tenantId: string, leadId: string, triggerType: string
   // Active automation. Draining/Stopped/Deleted/Draft never admit new leads
   // (Draining still *resumes* its in-flight leads — that gate is in runFrom).
   // ADMIT_NEW_STATUS is the single source of truth shared with the engine.
-  const workflows = await prisma.crmWorkflowDefinition.findMany({
+  const workflows = await prisma.qcfWorkflowDefinition.findMany({
     where: { tenantId, status: ADMIT_NEW_STATUS, deletedAt: null, triggerType },
   });
   if (workflows.length === 0) return;
@@ -38,7 +38,7 @@ async function fireTrigger(tenantId: string, leadId: string, triggerType: string
   // snapshot ONCE and carry it on every enqueued run so attribution (SPEC §8)
   // can show "field was X at trigger". Shared across all matching workflows.
   const eventId = randomUUID();
-  const lead = await prisma.crmLead.findFirst({ where: { id: leadId, tenantId } });
+  const lead = await prisma.qcfLead.findFirst({ where: { id: leadId, tenantId } });
   const triggerSnapshot = lead ? snapshotOf(lead) : undefined;
 
   for (const wf of workflows) {

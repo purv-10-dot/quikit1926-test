@@ -14,9 +14,9 @@ describe("updateMeProfile", () => {
   beforeEach(() => {
     db.user.findUnique.mockReset();
     db.user.update.mockReset();
-    db.crmOrgWorkspaceSettings.findUnique.mockReset();
-    db.crmOrgWorkspaceSettings.update.mockReset();
-    db.crmOrgWorkspaceSettings.create.mockReset();
+    db.qcfOrgWorkspaceSettings.findUnique.mockReset();
+    db.qcfOrgWorkspaceSettings.update.mockReset();
+    db.qcfOrgWorkspaceSettings.create.mockReset();
     vi.mocked(isConfigured).mockReturnValue(true);
     vi.mocked(registerMember).mockReset();
   });
@@ -29,8 +29,8 @@ describe("updateMeProfile", () => {
       lastName: "User",
       email: "a@test.co",
     } as never);
-    db.crmOrgWorkspaceSettings.findUnique.mockResolvedValue(null);
-    db.crmOrgWorkspaceSettings.create.mockResolvedValue({} as never);
+    db.qcfOrgWorkspaceSettings.findUnique.mockResolvedValue(null);
+    db.qcfOrgWorkspaceSettings.create.mockResolvedValue({} as never);
     vi.mocked(registerMember).mockResolvedValue({
       status: 200,
       type: "success",

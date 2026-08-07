@@ -14,7 +14,7 @@ export async function findDuplicateContactByEmail(
   if (!email) return null;
   const normalised = email.trim().toLowerCase();
   if (!normalised) return null;
-  const dup = await prisma.crmContact.findFirst({
+  const dup = await prisma.qcfContact.findFirst({
     where: {
       tenantId,
       deletedAt: null,

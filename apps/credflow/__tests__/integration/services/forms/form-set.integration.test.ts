@@ -29,22 +29,22 @@ let setId: string;
 let versionId: string;
 
 afterAll(async () => {
-  const versions = await db.crmFormSetVersion.findMany({ where: { formSetId: setId }, select: { id: true } });
+  const versions = await db.qcfFormSetVersion.findMany({ where: { formSetId: setId }, select: { id: true } });
   const vids = versions.map((v) => v.id);
-  const fields = await db.crmFormField.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
-  const rules = await db.crmFormRule.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
-  const tabs = await db.crmFormTab.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
+  const fields = await db.qcfFormField.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
+  const rules = await db.qcfFormRule.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
+  const tabs = await db.qcfFormTab.findMany({ where: { formSetVersionId: { in: vids } }, select: { id: true } });
   if (rules.length) {
-    await db.crmFormRuleAction.deleteMany({ where: { formRuleId: { in: rules.map((r) => r.id) } } });
-    await db.crmFormRuleCondition.deleteMany({ where: { formRuleId: { in: rules.map((r) => r.id) } } });
-    await db.crmFormRule.deleteMany({ where: { id: { in: rules.map((r) => r.id) } } });
+    await db.qcfFormRuleAction.deleteMany({ where: { formRuleId: { in: rules.map((r) => r.id) } } });
+    await db.qcfFormRuleCondition.deleteMany({ where: { formRuleId: { in: rules.map((r) => r.id) } } });
+    await db.qcfFormRule.deleteMany({ where: { id: { in: rules.map((r) => r.id) } } });
   }
-  if (fields.length) await db.crmFormFieldOption.deleteMany({ where: { formFieldId: { in: fields.map((f) => f.id) } } });
-  await db.crmFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
-  if (tabs.length) await db.crmFormSection.deleteMany({ where: { formTabId: { in: tabs.map((t) => t.id) } } });
-  await db.crmFormTab.deleteMany({ where: { formSetVersionId: { in: vids } } });
-  await db.crmFormSetVersion.deleteMany({ where: { formSetId: setId } });
-  await db.crmFormSet.deleteMany({ where: { id: setId } });
+  if (fields.length) await db.qcfFormFieldOption.deleteMany({ where: { formFieldId: { in: fields.map((f) => f.id) } } });
+  await db.qcfFormField.deleteMany({ where: { formSetVersionId: { in: vids } } });
+  if (tabs.length) await db.qcfFormSection.deleteMany({ where: { formTabId: { in: tabs.map((t) => t.id) } } });
+  await db.qcfFormTab.deleteMany({ where: { formSetVersionId: { in: vids } } });
+  await db.qcfFormSetVersion.deleteMany({ where: { formSetId: setId } });
+  await db.qcfFormSet.deleteMany({ where: { id: setId } });
 });
 
 describe("createFormSet + listFormSets", () => {
@@ -58,10 +58,10 @@ describe("createFormSet + listFormSets", () => {
     expect(version.versionNumber).toBe(1);
     expect(version.status).toBe("draft");
 
-    const tabs = await db.crmFormTab.findMany({ where: { formSetVersionId: versionId } });
+    const tabs = await db.qcfFormTab.findMany({ where: { formSetVersionId: versionId } });
     expect(tabs).toHaveLength(1);
     expect(tabs[0]!.isProtected).toBe(true);
-    const protectedFields = await db.crmFormField.count({ where: { formSetVersionId: versionId, isProtected: true } });
+    const protectedFields = await db.qcfFormField.count({ where: { formSetVersionId: versionId, isProtected: true } });
     expect(protectedFields).toBe(4); // contact_stage, status, sub_stage, notes
   });
 

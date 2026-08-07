@@ -21,7 +21,7 @@ export async function GET() {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "automations", "view");
-    const items = await prisma.crmWorkflowDefinition.findMany({
+    const items = await prisma.qcfWorkflowDefinition.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { updatedAt: "desc" },
     });
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     await assertModule(user, "automations", "create");
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-    const wf = await prisma.crmWorkflowDefinition.create({
+    const wf = await prisma.qcfWorkflowDefinition.create({
       data: {
         tenantId: user.tenantId,
         name: parsed.data.name,

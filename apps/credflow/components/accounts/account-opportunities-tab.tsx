@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDate } from "@/lib/utils/date-helpers";
 import { STAGE_LABEL } from "@/lib/services/opportunities/stage-labels";
-import type { CrmOpportunityStage } from "@quikit/database";
+import type { QcfOpportunityStage } from "@quikit/database";
 import { useToast } from "@/hooks/use-toast";
 
 interface OppRow {
@@ -61,7 +61,7 @@ export function AccountOpportunitiesTab({ accountId }: { accountId: string }) {
               {o.name}
             </Link>
             <div className="text-xs text-crm-muted">
-              {STAGE_LABEL[o.stage as CrmOpportunityStage] ?? o.stage} · {o.probability}% · close{" "}
+              {STAGE_LABEL[o.stage as QcfOpportunityStage] ?? o.stage} · {o.probability}% · close{" "}
               {formatDate(o.closeDate)}
             </div>
           </div>

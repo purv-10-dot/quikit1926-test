@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "callSid is required" }, { status: 400 });
     }
 
-    const row = await prisma.crmIndiaVoiceWebhookLog.findFirst({
+    const row = await prisma.qcfIndiaVoiceWebhookLog.findFirst({
       where: {
         tenantId: user.tenantId,
         OR: [{ callSid }, { campid: callSid }],

@@ -12,16 +12,16 @@
  * admin force escape hatch in v1 — if you need to amend a terminal quote,
  * Clone it.
  *
- * Each transition writes BOTH a CrmQuoteStatusTransition row and a
- * CrmActivity row so the audit log is queryable via either path.
+ * Each transition writes BOTH a QcfQuoteStatusTransition row and a
+ * QcfActivity row so the audit log is queryable via either path.
  */
-import type { CrmQuoteStatus, Prisma } from "@quikit/database";
+import type { QcfQuoteStatus, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { serverlessTransaction } from "@/lib/db/transaction-options";
 
 type DbClient = typeof db | Prisma.TransactionClient;
 
-const ALLOWED: Record<CrmQuoteStatus, CrmQuoteStatus[]> = {
+const ALLOWED: Record<QcfQuoteStatus, QcfQuoteStatus[]> = {
   Draft: ["Active"],
   // Revised is reached via reviseQuote, not this state machine.
   Active: ["Won", "Lost"],
@@ -39,12 +39,12 @@ export class TransitionError extends Error {
 }
 
 export interface TransitionInput {
-  toStatus: CrmQuoteStatus;
+  toStatus: QcfQuoteStatus;
   reason?: string | null;
   notes?: string | null;
 }
 
-export function validateTransition(from: CrmQuoteStatus, input: TransitionInput): void {
+export function validateTransition(from: QcfQuoteStatus, input: TransitionInput): void {
   const { toStatus } = input;
   if (from === toStatus) {
     throw new TransitionError(`Quote is already ${toStatus}.`, 409);
@@ -73,15 +73,15 @@ export async function recordTransition(
     tenantId: string;
     quoteId: string;
     quoteNumber: string;
-    fromStatus: CrmQuoteStatus;
-    toStatus: CrmQuoteStatus;
+    fromStatus: QcfQuoteStatus;
+    toStatus: QcfQuoteStatus;
     changedByUserId: string | null;
     changedByName: string | null;
     reason: string | null;
     notes: string | null;
   },
 ): Promise<void> {
-  await tx.crmQuoteStatusTransition.create({
+  await tx.qcfQuoteStatusTransition.create({
     data: {
       tenantId: args.tenantId,
       quoteId: args.quoteId,
@@ -93,7 +93,7 @@ export async function recordTransition(
       notes: args.notes,
     },
   });
-  await tx.crmActivity.create({
+  await tx.qcfActivity.create({
     data: {
       tenantId: args.tenantId,
       type: "QuoteStatusChange",
@@ -118,12 +118,12 @@ export async function recordTransition(
  *   Quote: Active → Won
  *     ⤷ Opportunity.probability = 100
  *     ⤷ Opportunity.lastActivityAt = now
- *     ⤷ CrmActivity{type:OpportunityProbabilityFromQuote} on the opportunity
+ *     ⤷ QcfActivity{type:OpportunityProbabilityFromQuote} on the opportunity
  *
  *   Quote: Active → Lost
  *     ⤷ Opportunity.probability = 0
  *     ⤷ Opportunity.lastActivityAt = now
- *     ⤷ CrmActivity{type:OpportunityProbabilityFromQuote} on the opportunity
+ *     ⤷ QcfActivity{type:OpportunityProbabilityFromQuote} on the opportunity
  *
  * Why inline (vs an event bus): we don't have a domain-event primitive yet
  * (P-1 in the audit). Inline sync inside the same transaction is the
@@ -139,7 +139,7 @@ export async function transitionQuote(args: {
   input: TransitionInput;
 }) {
   return serverlessTransaction(db, async (tx) => {
-    const existing = await tx.crmQuote.findFirst({
+    const existing = await tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       // opportunityId pulled into the row so the side-effect block doesn't
       // need a second read.
@@ -149,7 +149,7 @@ export async function transitionQuote(args: {
 
     validateTransition(existing.status, args.input);
 
-    const data: Prisma.CrmQuoteUncheckedUpdateInput = { status: args.input.toStatus };
+    const data: Prisma.QcfQuoteUncheckedUpdateInput = { status: args.input.toStatus };
     const now = new Date();
     if (args.input.toStatus === "Active") data.sentAt = now;
     if (args.input.toStatus === "Won") data.wonAt = now;
@@ -159,7 +159,7 @@ export async function transitionQuote(args: {
       data.lostNotes = args.input.notes ?? null;
     }
 
-    await tx.crmQuote.update({ where: { id: args.quoteId }, data });
+    await tx.qcfQuote.update({ where: { id: args.quoteId }, data });
     await recordTransition(tx, {
       tenantId: args.tenantId,
       quoteId: args.quoteId,
@@ -179,7 +179,7 @@ export async function transitionQuote(args: {
     // even though the quote's tenant has already been verified above.
     if (existing.opportunityId && (args.input.toStatus === "Won" || args.input.toStatus === "Lost")) {
       const nextProbability = args.input.toStatus === "Won" ? 100 : 0;
-      const updated = await tx.crmOpportunity.updateMany({
+      const updated = await tx.qcfOpportunity.updateMany({
         where: {
           id: existing.opportunityId,
           tenantId: args.tenantId,
@@ -197,7 +197,7 @@ export async function transitionQuote(args: {
       // probability moved. Skipped when the opp was already closed (no
       // mutation happened above).
       if (updated.count > 0) {
-        await tx.crmActivity.create({
+        await tx.qcfActivity.create({
           data: {
             tenantId: args.tenantId,
             type: "OpportunityProbabilityFromQuote",
@@ -214,7 +214,7 @@ export async function transitionQuote(args: {
     }
     // ──────────────────────────────────────────────────────────────────
 
-    return tx.crmQuote.findFirst({
+    return tx.qcfQuote.findFirst({
       where: { id: args.quoteId, tenantId: args.tenantId },
       include: {
         lines: { orderBy: [{ sortOrder: "asc" }, { lineNumber: "asc" }] },

@@ -39,7 +39,7 @@ export async function findDuplicateLeadRecord(opts: DuplicateOpts): Promise<Dupl
   const { tenantId, email, mobile, phone, excludeId } = opts;
 
   if (email && email.trim()) {
-    const hit = await prisma.crmLead.findFirst({
+    const hit = await prisma.qcfLead.findFirst({
       where: {
         tenantId,
         email: { equals: email.trim(), mode: "insensitive" },
@@ -62,7 +62,7 @@ export async function findDuplicateLeadRecord(opts: DuplicateOpts): Promise<Dupl
     const normalized = normalizePhoneDigits(value);
     if (!normalized) continue;
 
-    const exact = await prisma.crmLead.findFirst({
+    const exact = await prisma.qcfLead.findFirst({
       where: {
         tenantId,
         OR: [{ mobile: value }, { phone: value }],
@@ -75,7 +75,7 @@ export async function findDuplicateLeadRecord(opts: DuplicateOpts): Promise<Dupl
     // Fallback: scan candidates that share at least the trailing 10 digits.
     const tail = normalized.slice(-10);
     if (tail.length === 10) {
-      const candidates = await prisma.crmLead.findMany({
+      const candidates = await prisma.qcfLead.findMany({
         where: {
           tenantId,
           OR: [{ mobile: { contains: tail } }, { phone: { contains: tail } }],
