@@ -41,6 +41,8 @@ export interface TemplateDTO {
   description: string | null;
   triggerLabel: string | null;
   actionLabel: string | null;
+  isTested: boolean;
+  lastTestedAt: string | null;
 }
 
 export interface ConnectionDTO {

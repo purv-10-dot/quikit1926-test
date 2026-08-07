@@ -125,7 +125,15 @@
       "Read(//c/Users/user/Downloads/migration_prod/quikflow_20260714/**)",
       "Bash(echo \"---exit: $?\")",
       "Bash(find / -maxdepth 6 -iname \"*.prisma\" -path \"*node_modules*\" 2>/dev/null | grep -i client | head -5 *)",
-      "Read(//c//**)"
+      "Read(//c//**)",
+      "Bash(git -C c:/workStation_3/quikit1926 branch --show-current)",
+      "Bash(grep -n \"model WfTemplate\" -A 25 packages/database/prisma/schema.prisma 2>/dev/null || find / -iname \"schema.prisma\" -path \"*database*\" 2>/dev/null)",
+      "Bash(npx prisma *)",
+      "Bash(xargs grep -l -i \"quikflow\\\\|run\\\\|playwright\")",
+      "Bash(npm ls *)",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--workStation-3-quikit1926\\\\de254016-cf5b-4e4c-aec4-024bae8fa03c\\\\scratchpad\\\\check-templates.js\")",
+      "Bash(node scratch-check-templates.js)",
+      "Bash(npx tsx -e ' *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",
@@ -147,4 +155,3 @@
     ]
   }
 }
- 

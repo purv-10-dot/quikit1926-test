@@ -89,6 +89,7 @@ const TEMPLATES = [
     name: "Client Master → Teams meetings",
     app: "quikscale",
     category: "Meeting Rhythm",
+    isTested: true,
     description:
       "When a client is added, create recurring Daily Huddle (Mon–Fri) & Weekly Meeting Teams online meetings on the connected calendar.",
     triggerLabel: "A client is created",
@@ -151,6 +152,7 @@ const TEMPLATES = [
     name: "Client removed → remove Teams meetings",
     app: "quikscale",
     category: "Meeting Rhythm",
+    isTested: true,
     description:
       "When a client is deleted, remove the Daily Huddle & Weekly Meeting Teams events created for it.",
     triggerLabel: "A client is deleted",
@@ -168,6 +170,108 @@ const TEMPLATES = [
         label: "Delete Teams meetings",
         // No params → deletes every event (all kinds) linked to the deleted client.
         config: { actionId: "calendar.event.delete", params: {} },
+      },
+    ],
+    graphEdges: [{ from: "trigger", to: "step_1" }],
+  },
+  {
+    // Real, prefilled starting point: Fathom finishes a transcript → save it
+    // into QuikScale Meeting Rhythm (client/type/date matching happens
+    // server-side, idempotent on (orgId, recordingId)).
+    name: "Fathom transcript → Meeting Rhythm",
+    app: "fathom",
+    category: "Meeting Rhythm",
+    isTested: true,
+    description:
+      "When Fathom finishes transcribing a meeting, save the transcript into the matching QuikScale Meeting Rhythm record.",
+    triggerLabel: "A meeting transcript is ready",
+    actionLabel: "Save transcript to QuikScale",
+    graphNodes: [
+      {
+        id: "trigger",
+        kind: "trigger",
+        label: "A meeting transcript is ready",
+        config: { app: "fathom", module: "Meetings", event: "fathom.meeting.transcribed" },
+      },
+      {
+        id: "step_1",
+        kind: "action",
+        label: "Save transcript to QuikScale",
+        config: { actionId: "quikscale.save_transcript", params: {} },
+      },
+    ],
+    graphEdges: [{ from: "trigger", to: "step_1" }],
+  },
+  {
+    // Real, prefilled starting point: any inbound Gmail message auto-replies
+    // from the org's connected Gmail account.
+    name: "New Gmail → auto-reply",
+    app: "mail",
+    category: "Sales",
+    description: "When a new email lands in a connected Gmail inbox, send an automatic reply.",
+    triggerLabel: "A new Gmail email is received",
+    actionLabel: "Reply via Gmail",
+    graphNodes: [
+      {
+        id: "trigger",
+        kind: "trigger",
+        label: "A new Gmail email is received",
+        config: {
+          app: "mail",
+          module: "Email",
+          event: "mail.email.received",
+          filter: { combine: "and", rules: [{ field: "trigger.provider", operator: "eq", value: "gmail" }] },
+        },
+      },
+      {
+        id: "step_1",
+        kind: "action",
+        label: "Reply via Gmail",
+        config: {
+          actionId: "gmail.send",
+          params: {
+            to: "{{trigger.from}}",
+            subject: "Re: {{trigger.subject}}",
+            body: "Thanks for your email — we've received it and will get back to you shortly.",
+          },
+        },
+      },
+    ],
+    graphEdges: [{ from: "trigger", to: "step_1" }],
+  },
+  {
+    // Real, prefilled starting point: any inbound Outlook message auto-replies
+    // from the org's connected Outlook account.
+    name: "New Outlook email → auto-reply",
+    app: "mail",
+    category: "Sales",
+    description: "When a new email lands in a connected Outlook inbox, send an automatic reply.",
+    triggerLabel: "A new Outlook email is received",
+    actionLabel: "Reply via Outlook",
+    graphNodes: [
+      {
+        id: "trigger",
+        kind: "trigger",
+        label: "A new Outlook email is received",
+        config: {
+          app: "mail",
+          module: "Email",
+          event: "mail.email.received",
+          filter: { combine: "and", rules: [{ field: "trigger.provider", operator: "eq", value: "outlook" }] },
+        },
+      },
+      {
+        id: "step_1",
+        kind: "action",
+        label: "Reply via Outlook",
+        config: {
+          actionId: "outlook.send",
+          params: {
+            to: "{{trigger.from}}",
+            subject: "Re: {{trigger.subject}}",
+            body: "Thanks for your email — we've received it and will get back to you shortly.",
+          },
+        },
       },
     ],
     graphEdges: [{ from: "trigger", to: "step_1" }],

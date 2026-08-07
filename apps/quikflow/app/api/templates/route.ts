@@ -24,6 +24,8 @@ export const GET = withOrgAuth(async (_ctx, req) => {
     description: r.description,
     triggerLabel: r.triggerLabel,
     actionLabel: r.actionLabel,
+    isTested: r.isTested,
+    lastTestedAt: r.lastTestedAt ? r.lastTestedAt.toISOString() : null,
   }));
 
   return NextResponse.json({ success: true, data });
