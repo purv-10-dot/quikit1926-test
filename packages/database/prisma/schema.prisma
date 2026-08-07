@@ -237,6 +237,7 @@ model Org {
   qtWorkflows              QtWorkflow[]
   qtResolutions            QtResolution[]
   qtWorkflowSchemes        QtWorkflowScheme[]
+  qtScreens                QtScreen[]
   QtTimesheetEntry         QtTimesheetEntry[]
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
@@ -6812,6 +6813,12 @@ model QtWorkflow {
   /// cycle with QtWorkflowTransition.workflowId; integrity enforced in app code.
   initialTransitionId String?
   isDeleted           Boolean                @default(false)
+  /// For reusable org-level templates (projectId = null): a self-contained,
+  /// name-based snapshot of the graph — { statuses:[{name,category,isInitial}],
+  /// transitions:[{name,type,from:[names],to:name,rules}] }. Independent of any
+  /// project's status rows, so the template survives if the source project (or
+  /// its statuses) change or are deleted. Materialized BY NAME on import.
+  templateJson        Json?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   createdBy           String?
@@ -6862,6 +6869,7 @@ model QtWorkflowTransition {
   toStatus    QtIssueStatus             @relation("TransitionToStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
   fromStatuses QtWorkflowTransitionFrom[]
   rules       QtWorkflowRule[]
+  triggers    QtWorkflowTrigger[]
 
   @@unique([workflowId, name])
   @@index([workflowId])
@@ -6941,6 +6949,22 @@ model QtWorkflowScheme {
   @@schema("app_quiktrack")
 }
 
+/// A dev trigger on a transition: when a GitHub event (`event`) fires on an
+/// issue linked to a connected repo, and the issue is currently in one of the
+/// transition's source statuses, the transition auto-executes. `event` is one
+/// of: pr_created | pr_merged | pr_declined | pr_reopened | branch_created |
+/// commit_created.
+model QtWorkflowTrigger {
+  id           String               @id @default(cuid())
+  transitionId String
+  event        String
+  transition   QtWorkflowTransition  @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@unique([transitionId, event])
+  @@index([transitionId])
+  @@schema("app_quiktrack")
+}
+
 /// issue-type → workflow map. issueTypeId NULL + isDefault = the fallback used
 /// for any unmapped type.
 model QtWorkflowSchemeItem {
@@ -6955,6 +6979,56 @@ model QtWorkflowSchemeItem {
 
   @@unique([schemeId, issueTypeId])
   @@index([workflowId])
+  @@schema("app_quiktrack")
+}
+
+/// A Screen — an org-level, ordered arrangement of fields shown when a work
+/// item is transitioned (the workflow "Show a screen" rule references one). A
+/// screen owns one or more tabs; each tab owns ordered field rows. `isDefault`
+/// marks the seeded "Default Screen".
+model QtScreen {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  isDefault   Boolean        @default(false)
+  isDeleted   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  org         Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tabs        QtScreenTab[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A tab within a screen (Jira "Field Tab"). Ordered by `orderNo`.
+model QtScreenTab {
+  id       String          @id @default(cuid())
+  screenId String
+  name     String
+  orderNo  Int             @default(0)
+  screen   QtScreen        @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  fields   QtScreenField[]
+
+  @@index([screenId])
+  @@schema("app_quiktrack")
+}
+
+/// One field row on a screen tab. `fieldKey` is a key from the app's screen
+/// field registry (Summary / Priority / Assignee / …). Ordered by `orderNo`.
+model QtScreenField {
+  id       String      @id @default(cuid())
+  tabId    String
+  fieldKey String
+  orderNo  Int         @default(0)
+  tab      QtScreenTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@unique([tabId, fieldKey])
+  @@index([tabId])
   @@schema("app_quiktrack")
 }
 

@@ -45,6 +45,8 @@ export interface DraftTransition {
   fromStatusIds: string[];
   /** Conditions / validators / post-functions on this transition. */
   rules?: DraftRule[];
+  /** Dev trigger event keys (e.g. "pr_merged") that auto-fire this transition. */
+  triggers?: string[];
 }
 
 export interface WorkflowDraft {

@@ -65,6 +65,7 @@ export const GET = withOrgAuth<{ wfId: string }>(
             rules: {
               select: { id: true, kind: true, type: true, config: true, errorMessage: true, groupNo: true, orderNo: true },
             },
+            triggers: { select: { event: true } },
           },
         },
       },

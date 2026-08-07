@@ -90,10 +90,12 @@ export async function POST(req: NextRequest) {
       if (pr) {
         // Surface GitHub's head.ref as headRef so the handler can key off the
         // branch name when the title/body has no work-item key.
-        linked = await handlePullRequestEvent(orgId, repo, {
-          ...pr,
-          headRef: pr.headRef ?? pr.head?.ref ?? null,
-        });
+        linked = await handlePullRequestEvent(
+          orgId,
+          repo,
+          { ...pr, headRef: pr.headRef ?? pr.head?.ref ?? null },
+          String(payload.action ?? ""),
+        );
       }
     } else if (event === "create" || event === "delete") {
       const refType = String(payload.ref_type ?? "");

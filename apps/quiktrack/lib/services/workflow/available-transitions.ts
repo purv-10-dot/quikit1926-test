@@ -41,6 +41,46 @@ export async function listAvailableTransitionsForIssue(params: {
       });
       return a?.projectRole.name === roleName;
     },
+    subtaskStatusIds: async () => {
+      const kids = await db.qtIssue.findMany({
+        where: { parentId: issue.id, isDeleted: false },
+        select: { statusId: true },
+      });
+      return kids.map((k) => k.statusId);
+    },
+    transitionHistory: async () => {
+      const rows = await db.qtIssueTransitionLog.findMany({
+        where: { issueId: issue.id },
+        orderBy: { createdAt: "asc" },
+        select: { fromStatusId: true, toStatusId: true, actorId: true },
+      });
+      return rows;
+    },
+    parentStatusId: async () => {
+      if (!issue.id) return null;
+      const self = await db.qtIssue.findUnique({
+        where: { id: issue.id },
+        select: { parent: { select: { statusId: true } } },
+      });
+      return self?.parent?.statusId ?? null;
+    },
+    projectLeadId: async () => {
+      const project = await db.qtProject.findUnique({
+        where: { id: issue.projectId },
+        select: { leadUserId: true },
+      });
+      return project?.leadUserId ?? null;
+    },
+    parentFieldValue: async (key: string) => {
+      if (!issue.id) return null;
+      const self = await db.qtIssue.findUnique({
+        where: { id: issue.id },
+        select: { parent: true },
+      });
+      const parent = self?.parent as Record<string, unknown> | null | undefined;
+      const v = parent ? parent[key] : null;
+      return v == null ? null : String(v);
+    },
   };
 
   const out: AvailableTransition[] = [];
