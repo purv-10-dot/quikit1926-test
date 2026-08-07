@@ -103,6 +103,7 @@ async function fetchUserView(
       // rbacDb() is non-null here because isCrmRbacClientReady() returned true
       ? rbacDb()!.qcfUserAppRole.findMany({
           where: { userId, orgId: orgId, role: { appId } },
+          select: { role: { select: { id: true, name: true } } },
         })
       : Promise.resolve([]),
     prisma.qcfUserAccountAccess.findMany({
@@ -179,6 +180,7 @@ export async function listUsers(opts: {
     appId && isCrmRbacClientReady()
       ? rbacDb()!.qcfUserAppRole.findMany({
           where: { userId: { in: userIds }, orgId: opts.orgId, role: { appId } },
+          select: { userId: true, role: { select: { id: true, name: true } } },
         })
       : Promise.resolve([]),
     prisma.qcfUserAccountAccess.findMany({

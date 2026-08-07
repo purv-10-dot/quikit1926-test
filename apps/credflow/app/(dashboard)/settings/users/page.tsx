@@ -217,6 +217,59 @@ function CreateUserModal({
   const [invitationMethod, setInvitationMethod] = useState<"native" | "sso">("native");
   const [saving, setSaving] = useState(false);
 
+  type MemberHit = {
+    userId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    status: string;
+    hasCredflowAccess: boolean;
+  };
+  const [suggestions, setSuggestions] = useState<MemberHit[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [linkUserId, setLinkUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (linkUserId || email.trim().length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/settings/users/search?email=${encodeURIComponent(email.trim())}`,
+          { credentials: "include" },
+        );
+        const j = await res.json();
+        if (res.ok && Array.isArray(j.data)) {
+          setSuggestions(j.data);
+          setShowSuggestions(j.data.length > 0);
+        }
+      } catch {
+        // typeahead best-effort
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [email, linkUserId]);
+
+  function pickExisting(m: MemberHit) {
+    if (m.hasCredflowAccess) return;
+    setLinkUserId(m.userId);
+    setFirst(m.firstName);
+    setLast(m.lastName);
+    setEmail(m.email);
+    setShowSuggestions(false);
+    setSuggestions([]);
+  }
+
+  function clearLink() {
+    setLinkUserId(null);
+    setFirst("");
+    setLast("");
+    setEmail("");
+  }
+
   async function submit() {
     if (!first.trim() || !last.trim() || !email.trim()) {
       toast.error("First name, last name and email are required");
@@ -234,6 +287,7 @@ function CreateUserModal({
           email,
           role,
           invitationMethod,
+          ...(linkUserId ? { linkExistingUserId: linkUserId } : {}),
         }),
       });
       const j = await res.json();
@@ -244,6 +298,7 @@ function CreateUserModal({
       setLast("");
       setEmail("");
       setRole("SalesUser");
+      setLinkUserId(null);
       onClose();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
@@ -262,7 +317,52 @@ function CreateUserModal({
           <Input value={last} onChange={(e) => setLast(e.target.value)} />
         </Field>
         <Field label="Email *" full>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <div className="relative">
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+              disabled={!!linkUserId}
+            />
+            {linkUserId && (
+              <div className="mt-1 flex items-center gap-2 text-xs text-crm-muted">
+                <span>Granting CredFlow access to an existing member.</span>
+                <button type="button" className="underline" onClick={clearLink}>
+                  Change
+                </button>
+              </div>
+            )}
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-crm-border bg-white shadow-lg">
+                {suggestions.map((m) => (
+                  <li key={m.userId}>
+                    <button
+                      type="button"
+                      disabled={m.hasCredflowAccess}
+                      onClick={() => pickExisting(m)}
+                      className={
+                        "flex w-full items-center justify-between px-3 py-2 text-left text-sm " +
+                        (m.hasCredflowAccess
+                          ? "cursor-not-allowed text-crm-muted"
+                          : "hover:bg-crm-hover")
+                      }
+                    >
+                      <span>
+                        <span className="font-medium text-crm-text">
+                          {m.firstName} {m.lastName}
+                        </span>{" "}
+                        <span className="text-crm-muted">{m.email}</span>
+                      </span>
+                      <span className="text-xs">
+                        {m.hasCredflowAccess ? "Already in CredFlow" : "Add"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </Field>
         <Field label="Role" full>
           <Select value={role} onChange={(e) => setRole(e.target.value)}>
