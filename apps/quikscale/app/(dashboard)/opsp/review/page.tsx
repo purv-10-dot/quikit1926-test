@@ -1328,6 +1328,7 @@ export default function OPSPReviewPage() {
             allowedModules={["people"]}
             canPickUser={false}
             canEdit={canUpdateCritical}
+            canEditAfterFinalize={canEditAfterFinalize}
             selfId={reviewUserId}
             selfName={selfName}
           />
@@ -1517,6 +1518,7 @@ export default function OPSPReviewPage() {
             allowedModules={access.allowedCriticalModules}
             canPickUser={access.canPickUser}
             canEdit={canUpdateCritical}
+            canEditAfterFinalize={canEditAfterFinalize}
             selfId={reviewUserId}
             selfName={selfName}
           />
