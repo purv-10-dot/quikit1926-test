@@ -6,6 +6,7 @@ import { aggregateResponses, updateCampaignSchema } from "@/lib/schemas/habitSch
 import { validationError } from "@/lib/api/validationError";
 import { annotateRounds } from "@/lib/utils/habitRounds";
 import { notifyHabitCampaign } from "@/lib/services/habitNotifications";
+import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 
 /**
  * GET /api/habits/[id]
@@ -114,6 +115,34 @@ export const PUT = withOrgAuth<{ id: string }>(
     const parsed = updateCampaignSchema.safeParse(await request.json());
     if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
+
+    // Mirrors the client's `min` on the deadline `<input type="date">`: moving
+    // the deadline to a past calendar day requires "Add Past Week Data". Only
+    // gated on an actual MOVE (not the existing value round-tripping back
+    // unchanged), so an assessment that was already overdue before this check
+    // existed doesn't become permanently un-editable.
+    if (
+      input.deadline !== undefined &&
+      input.deadline !== null &&
+      (!existing.deadline ||
+        new Date(input.deadline).getTime() !== existing.deadline.getTime())
+    ) {
+      const next = new Date(input.deadline);
+      const now = new Date();
+      const isPast =
+        Date.UTC(next.getUTCFullYear(), next.getUTCMonth(), next.getUTCDate()) <
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      if (isPast && !(await isFeatureFlagEnabled(orgId, "add_past_week_data"))) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Add Past Week Data is disabled — enable it in Settings → Configurations to set a past deadline.",
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     const updated = await db.habitAssessment.update({
       where: { id: params.id },
