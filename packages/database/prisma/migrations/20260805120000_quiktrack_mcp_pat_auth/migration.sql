@@ -4,6 +4,7 @@ CREATE TABLE "app_quiktrack"."QtPersonalAccessToken" (
     "orgId" TEXT NOT NULL,
     "projectId" TEXT NOT NULL,
     "createdById" TEXT NOT NULL,
+    "name" TEXT NOT NULL DEFAULT 'Unnamed token',
     "tokenHash" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "revokedAt" TIMESTAMP(3),
