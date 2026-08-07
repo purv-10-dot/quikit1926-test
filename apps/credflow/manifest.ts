@@ -32,20 +32,29 @@ export interface AppManifest {
 }
 
 const manifest: AppManifest = {
-  appId: "quikcrm",
-  name: "QuikCRM",
-  description: "Leads, accounts, contacts, automations, and telephony — sales execution.",
-  routePrefix: "/quikcrm",
+  appId: "credflow",
+  name: "CredFlow",
+  description: "Leads, accounts, contacts, opportunities, automations, and telephony — sales execution.",
+  routePrefix: "/credflow",
   icon: "Users",
   permissions: [],
+  // Hrefs are this app's own routes (it runs on its own host, like quiktrack) —
+  // they mirror the directories under `app/(dashboard)/`.
   navigation: [
-    { label: "Dashboard", href: "/quikcrm", icon: "LayoutDashboard" },
-    { label: "Leads", href: "/quikcrm/leads", icon: "Target" },
-    { label: "Accounts", href: "/quikcrm/accounts", icon: "Building2" },
-    { label: "Contacts", href: "/quikcrm/contacts", icon: "UserSquare2" },
-    { label: "Activities", href: "/quikcrm/activities", icon: "ListChecks" },
-    { label: "Automations", href: "/quikcrm/automations", icon: "Zap" },
-    { label: "Imports", href: "/quikcrm/imports", icon: "Upload" },
+    { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
+    { label: "Leads", href: "/leads", icon: "Target" },
+    { label: "Accounts", href: "/accounts", icon: "Building2" },
+    { label: "Contacts", href: "/contacts", icon: "UserSquare2" },
+    { label: "Opportunities", href: "/opportunities", icon: "TrendingUp" },
+    { label: "Quotes", href: "/quotes", icon: "FileText" },
+    { label: "Orders", href: "/orders", icon: "ShoppingCart" },
+    { label: "Activities", href: "/activities", icon: "ListChecks" },
+    { label: "Tasks", href: "/tasks", icon: "CheckSquare" },
+    { label: "Telephony", href: "/telephony", icon: "Phone" },
+    { label: "Automations", href: "/automations", icon: "Zap" },
+    { label: "Reports", href: "/reports", icon: "BarChart3" },
+    { label: "Imports", href: "/imports", icon: "Upload" },
+    { label: "Settings", href: "/settings", icon: "Settings" },
   ],
 };
 

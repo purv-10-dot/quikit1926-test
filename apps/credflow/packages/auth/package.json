@@ -18,6 +18,7 @@
     "./with-auth": "./with-auth.ts",
     "./verify-token-remote": "./verify-token-remote.ts",
     "./session-store": "./session-store.ts",
+    "./public-url": "./public-url.ts",
     "./oauth-prefill-store": "./oauth-prefill-store.ts",
     "./assign-app-roles": "./assign-app-roles.ts"
   },

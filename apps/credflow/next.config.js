@@ -4,7 +4,7 @@ const path = require("path");
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  transpilePackages: ["@quikit/ui", "@quikit/shared", "@quikit/database"],
+  transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
   // Migration in progress: ported source has ESLint warnings (unused vars,
   // any-typed callbacks). TypeScript correctness is enforced via tsc; ESLint
   // can be re-enabled once the per-file cleanup pass lands.

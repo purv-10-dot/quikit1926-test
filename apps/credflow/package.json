@@ -1,5 +1,5 @@
 {
-  "name": "quikcrm",
+  "name": "credflow",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -29,6 +29,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@hookform/resolvers": "^3.9.0",
     "@prisma/client": "^5.22.0",
+    "@quikit/auth": "file:./packages/auth",
     "@quikit/database": "file:./packages/database",
     "@quikit/redis": "file:./packages/redis",
     "@quikit/shared": "file:./packages/shared",
@@ -40,7 +41,7 @@
     "@xyflow/react": "^12.10.2",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
-    "bullmq": "^5.34.0",
+    "bullmq": "5.76.8",
     "clsx": "^2.0.0",
     "cookie": "^1.0.2",
     "date-fns": "^4.1.0",
@@ -90,6 +91,7 @@
     "vitest-mock-extended": "^4.0.0"
   },
   "overrides": {
+    "@quikit/auth": "file:./packages/auth",
     "@quikit/redis": "file:./packages/redis",
     "@quikit/database": "file:./packages/database",
     "@quikit/shared": "file:./packages/shared"
