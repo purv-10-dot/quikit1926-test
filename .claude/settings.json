@@ -133,7 +133,9 @@
       "Bash(npm ls *)",
       "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--workStation-3-quikit1926\\\\de254016-cf5b-4e4c-aec4-024bae8fa03c\\\\scratchpad\\\\check-templates.js\")",
       "Bash(node scratch-check-templates.js)",
-      "Bash(npx tsx -e ' *)"
+      "Bash(npx tsx -e ' *)",
+      "Bash(NODE_PATH=\"c:\\\\workStation_3\\\\quikit1926\\\\node_modules\" node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--workStation-3-quikit1926\\\\38bc0438-1ee1-4113-a22d-83696dbf0d89\\\\scratchpad\\\\build-teams-sync-proposal.js\")",
+      "Bash(NODE_PATH=\"c:\\\\workStation_3\\\\quikit1926\\\\node_modules\" node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--workStation-3-quikit1926\\\\38bc0438-1ee1-4113-a22d-83696dbf0d89\\\\scratchpad\\\\build-final-proposal-v3.js\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",

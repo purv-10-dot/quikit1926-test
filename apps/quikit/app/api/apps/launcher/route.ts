@@ -202,7 +202,7 @@ export async function GET(req: NextRequest) {
     quiklms: "http://localhost:3014",
     quikasset: "http://localhost:3012",
     quiksupport: "http://localhost:3010",
-    quikflow: "http://localhost:3011",
+    quikflow: "http://localhost:3014",
   };
 
   /**

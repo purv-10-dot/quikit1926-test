@@ -78,7 +78,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikcrm: "http://localhost:3008",
     quiksupport: "http://localhost:3010",
     quikhrms: "http://localhost:3009",
-    quikflow: "http://localhost:3011",
+    quikflow: "http://localhost:3014",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
     const fromEnv = envBaseUrls[slug];

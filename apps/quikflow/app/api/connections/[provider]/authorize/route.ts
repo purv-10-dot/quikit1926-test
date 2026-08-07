@@ -20,7 +20,7 @@ export const GET = withOrgAuth<Params>(
       return NextResponse.json({ success: false, error: "Unknown provider" }, { status: 400 });
     }
     const provider = getOAuthProvider(providerId)!;
-    const base = process.env.QUIKFLOW_URL ?? "http://localhost:3011";
+    const base = process.env.QUIKFLOW_URL ?? "http://localhost:3014";
     try {
       const state = signState({ orgId, userId, provider: providerId });
       const url = provider.buildAuthUrl(redirectUriFor(providerId), state);

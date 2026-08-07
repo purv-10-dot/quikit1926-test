@@ -70,7 +70,7 @@ export function isOAuthProvider(id: string): id is OAuthProviderId {
 
 /** The OAuth redirect URI for a provider (must match the console registration). */
 export function redirectUriFor(provider: string): string {
-  const base = process.env.QUIKFLOW_URL ?? "http://localhost:3011";
+  const base = process.env.QUIKFLOW_URL ?? "http://localhost:3014";
   return `${base}/api/connections/${provider}/callback`;
 }
 

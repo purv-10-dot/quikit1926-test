@@ -5,7 +5,7 @@ const nextConfig = {
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
   experimental: {
     serverActions: {
-      allowedOrigins: ["localhost:3011"],
+      allowedOrigins: ["localhost:3014"],
     },
   },
   async headers() {

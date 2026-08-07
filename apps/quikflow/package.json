@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3011",
+    "dev": "next dev -p 3014",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
-    "start": "next start -p 3011",
+    "start": "next start -p 3014",
     "worker": "node --env-file=.env.local --import tsx worker/main.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
