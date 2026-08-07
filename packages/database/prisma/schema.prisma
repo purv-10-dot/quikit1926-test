@@ -25065,3 +25065,90 @@ model QcfFileAttachment {
   @@map("CrmFileAttachment")
   @@schema("app_quikcredflow")
 }
+
+// ===========================================================================
+// CredFlow — isolated QuikIT RBAC tables in app_quikcredflow. Mirror the
+// app_quikcrm AppRole/RolePermission/RoleNavigation/UserAppRole/
+// UserPermissionExtra shapes exactly, but Qcf*-prefixed and scoped to
+// CredFlow's own schema (completes the de-vendor — the dormant RBAC code
+// previously pointed at app_quikcrm). Scalar orgId/userId/appId (no shared-
+// model relations), so this is purely additive — no reverse fields on
+// Org/User/App. Tables map to the same names inside app_quikcredflow.
+// ===========================================================================
+
+model QcfAppRole {
+  id          String              @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean             @default(false)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   String?
+  permissions QcfRolePermission[]
+  navigations QcfRoleNavigation[]
+  members     QcfUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikcredflow")
+}
+
+model QcfRolePermission {
+  id       String     @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QcfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikcredflow")
+}
+
+model QcfRoleNavigation {
+  id     String     @id @default(cuid())
+  roleId String
+  navKey String
+  role   QcfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quikcredflow")
+}
+
+model QcfUserAppRole {
+  id         String     @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime   @default(now())
+  assignedBy String?
+  role       QcfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikcredflow")
+}
+
+model QcfUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quikcredflow")
+}

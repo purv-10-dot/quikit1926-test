@@ -70,6 +70,7 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const CREDFLOW_BASE = resolveAppUrl("CREDFLOW_URL", "http://localhost:3076"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -115,6 +116,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKCRM_OAUTH_CLIENT_SECRET", "quikcrm-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKCRM_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikcredflow",
+    name: "CredFlow",
+    description: "CredFlow CRM — leads, pipeline, telephony, disposition, automation.",
+    baseUrl: CREDFLOW_BASE,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikcrm.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikcredflow",
+      clientSecretPlain: resolveClientSecret("CREDFLOW_OAUTH_CLIENT_SECRET", "credflow-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${CREDFLOW_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

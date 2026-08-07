@@ -1,5 +1,6 @@
 /**
- * Default QuikCRM AppRole seeders (mirrors QuikScale seedAdminAppRole pattern).
+ * Default CredFlow AppRole seeders (mirrors QuikScale seedAdminAppRole pattern).
+ * Uses CredFlow's own app_quikcredflow RBAC tables via the qcf* delegates.
  */
 import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
 import { isCrmRbacClientReady, rbacDb } from "@/lib/api/crm-rbac-client";
@@ -23,35 +24,35 @@ interface RoleSpec {
 const ROLE_SPECS: RoleSpec[] = [
   {
     name: "admin",
-    description: "Full CRM access — auto-seeded. Permissions editable; rename/delete protected.",
+    description: "Full CRM access - auto-seeded. Permissions editable; rename/delete protected.",
     isSystem: true,
     isDefault: false,
     grants: "all",
   },
   {
     name: "sales-user",
-    description: "Default sales rep — core CRM modules.",
+    description: "Default sales rep - core CRM modules.",
     isSystem: false,
     isDefault: true,
     grants: SALES_USER_GRANTS,
   },
   {
     name: "sales-manager",
-    description: "Sales manager — export/delete plus quotes and reports.",
+    description: "Sales manager - export/delete plus quotes and reports.",
     isSystem: false,
     isDefault: false,
     grants: SALES_MANAGER_GRANTS,
   },
   {
     name: "marketing-user",
-    description: "Marketing — leads and campaigns.",
+    description: "Marketing - leads and campaigns.",
     isSystem: false,
     isDefault: false,
     grants: MARKETING_USER_GRANTS,
   },
   {
     name: "finance-user",
-    description: "Finance — quotes and reporting.",
+    description: "Finance - quotes and reporting.",
     isSystem: false,
     isDefault: false,
     grants: FINANCE_USER_GRANTS,
@@ -62,13 +63,13 @@ async function seedRole(orgId: string, appId: string, spec: RoleSpec): Promise<s
   const client = rbacDb();
   if (!client) throw new Error("CRM RBAC client not ready");
 
-  const existing = await client.crmAppRole.findFirst({
+  const existing = await client.qcfAppRole.findFirst({
     where: { orgId, appId, name: spec.name },
     select: { id: true },
   });
 
   if (!spec.isSystem && spec.isDefault && !existing) {
-    await client.crmAppRole.updateMany({
+    await client.qcfAppRole.updateMany({
       where: { orgId, appId, isDefault: true },
       data: { isDefault: false },
     });
@@ -76,7 +77,7 @@ async function seedRole(orgId: string, appId: string, spec: RoleSpec): Promise<s
 
   const role =
     existing ??
-    (await client.crmAppRole.create({
+    (await client.qcfAppRole.create({
       data: {
         orgId,
         appId,
@@ -88,7 +89,7 @@ async function seedRole(orgId: string, appId: string, spec: RoleSpec): Promise<s
       select: { id: true },
     }));
 
-  const grantCount = await client.crmRolePermission.count({ where: { roleId: role.id } });
+  const grantCount = await client.qcfRolePermission.count({ where: { roleId: role.id } });
   if (grantCount > 0) return role.id;
 
   const pairs =
@@ -96,7 +97,7 @@ async function seedRole(orgId: string, appId: string, spec: RoleSpec): Promise<s
       ? allCrmPermissionPairs()
       : spec.grants.map((g) => ({ resource: g.resource, action: g.action }));
 
-  await client.crmRolePermission.createMany({
+  await client.qcfRolePermission.createMany({
     data: pairs.map((p) => ({ roleId: role.id, resource: p.resource, action: p.action })),
     skipDuplicates: true,
   });
@@ -108,7 +109,7 @@ async function backfillAdminPermissions(orgId: string, appId: string): Promise<v
   const client = rbacDb();
   if (!client) return;
 
-  const admin = await client.crmAppRole.findFirst({
+  const admin = await client.qcfAppRole.findFirst({
     where: { orgId, appId, isSystem: true, name: "admin" },
     select: { id: true, permissions: { select: { resource: true, action: true } } },
   });
@@ -120,7 +121,7 @@ async function backfillAdminPermissions(orgId: string, appId: string): Promise<v
   );
   if (missing.length === 0) return;
 
-  await client.crmRolePermission.createMany({
+  await client.qcfRolePermission.createMany({
     data: missing.map((p) => ({ roleId: admin.id, resource: p.resource, action: p.action })),
     skipDuplicates: true,
   });
@@ -134,7 +135,7 @@ export async function seedAllDefaultCrmRoles(
 ): Promise<{ adminRoleId: string; defaultRoleId: string }> {
   if (!isCrmRbacClientReady()) {
     throw new Error(
-      "CRM RBAC tables are not available — run prisma generate (stop dev server first on Windows).",
+      "CRM RBAC tables are not available - run prisma generate (stop dev server first on Windows).",
     );
   }
 
@@ -146,8 +147,8 @@ export async function seedAllDefaultCrmRoles(
       const client = rbacDb();
       if (client) {
         const [admin, def] = await Promise.all([
-          client.crmAppRole.findFirst({ where: { orgId, appId, name: "admin" }, select: { id: true } }),
-          client.crmAppRole.findFirst({
+          client.qcfAppRole.findFirst({ where: { orgId, appId, name: "admin" }, select: { id: true } }),
+          client.qcfAppRole.findFirst({
             where: { orgId, appId, isDefault: true },
             select: { id: true },
           }),
@@ -158,7 +159,7 @@ export async function seedAllDefaultCrmRoles(
   }
 
   const appId = await getQuikCrmAppId();
-  if (!appId) throw new Error("QuikCRM App not registered in quikit.App");
+  if (!appId) throw new Error("CredFlow App not registered in quikit.App");
 
   const ids: string[] = [];
   for (const spec of ROLE_SPECS) {
@@ -170,7 +171,7 @@ export async function seedAllDefaultCrmRoles(
   const adminRoleId = ids[0]!;
   const client = rbacDb();
   const defaultRoleId =
-    (await client?.crmAppRole.findFirst({
+    (await client?.qcfAppRole.findFirst({
       where: { orgId, appId, isDefault: true },
       select: { id: true },
     }))?.id ?? ids[1]!;

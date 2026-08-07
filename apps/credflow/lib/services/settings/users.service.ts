@@ -101,7 +101,7 @@ async function fetchUserView(
     }),
     appId && isCrmRbacClientReady()
       // rbacDb() is non-null here because isCrmRbacClientReady() returned true
-      ? rbacDb()!.crmUserAppRole.findMany({
+      ? rbacDb()!.qcfUserAppRole.findMany({
           where: { userId, orgId: orgId, role: { appId } },
         })
       : Promise.resolve([]),
@@ -177,7 +177,7 @@ export async function listUsers(opts: {
       include: { template: { select: { id: true, name: true } } },
     }),
     appId && isCrmRbacClientReady()
-      ? rbacDb()!.crmUserAppRole.findMany({
+      ? rbacDb()!.qcfUserAppRole.findMany({
           where: { userId: { in: userIds }, orgId: opts.orgId, role: { appId } },
         })
       : Promise.resolve([]),
@@ -643,8 +643,8 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
       // tx cast: these RBAC models aren't in the schema yet; isCrmRbacClientReady()
       // always returns false so this block never executes at runtime.
       const rbacTx = tx as unknown as CrmRbacDb;
-      await rbacTx.crmUserAppRole.deleteMany({ where: { userId: id, orgId: actor.orgId } });
-      await rbacTx.crmUserPermissionExtra.deleteMany({ where: { userId: id, orgId: actor.orgId } });
+      await rbacTx.qcfUserAppRole.deleteMany({ where: { userId: id, orgId: actor.orgId } });
+      await rbacTx.qcfUserPermissionExtra.deleteMany({ where: { userId: id, orgId: actor.orgId } });
     }
 
     const appId = await getQuikCrmAppId();
