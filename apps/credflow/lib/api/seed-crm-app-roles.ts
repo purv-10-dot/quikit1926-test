@@ -2,7 +2,7 @@
  * Default CredFlow AppRole seeders (mirrors QuikScale seedAdminAppRole pattern).
  * Uses CredFlow's own app_quikcredflow RBAC tables via the qcf* delegates.
  */
-import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { getQuikcredflowAppId } from "@/lib/api/quikcredflow-app";
 import { isCrmRbacClientReady, rbacDb } from "@/lib/api/crm-rbac-client";
 import { allCrmPermissionPairs } from "@/lib/api/permissions-registry";
 import {
@@ -142,7 +142,7 @@ export async function seedAllDefaultCrmRoles(
   const cached = seededOrgs.get(orgId);
   const now = Date.now();
   if (cached && now - cached < SEED_CACHE_TTL_MS) {
-    const appId = await getQuikCrmAppId();
+    const appId = await getQuikcredflowAppId();
     if (appId && isCrmRbacClientReady()) {
       const client = rbacDb();
       if (client) {
@@ -158,7 +158,7 @@ export async function seedAllDefaultCrmRoles(
     }
   }
 
-  const appId = await getQuikCrmAppId();
+  const appId = await getQuikcredflowAppId();
   if (!appId) throw new Error("CredFlow App not registered in quikit.App");
 
   const ids: string[] = [];

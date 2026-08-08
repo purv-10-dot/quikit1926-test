@@ -178,7 +178,7 @@ export function Sidebar() {
   );
 }
 
-function QuikCrmMark({ className = "h-8 w-8 rounded-lg object-cover" }: { className?: string }) {
+function QuikcredflowMark({ className = "h-8 w-8 rounded-lg object-cover" }: { className?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img src="/icon.svg" alt="" width={32} height={32} className={className} />
@@ -203,7 +203,7 @@ function SidebarBrand({
     >
       {collapsed ? (
         <Link href="/dashboard" aria-label="QuikCRM home" className="shrink-0">
-          <QuikCrmMark />
+          <QuikcredflowMark />
         </Link>
       ) : (
         <Link
@@ -211,7 +211,7 @@ function SidebarBrand({
           aria-label="QuikCRM home"
           className="flex min-w-0 items-center gap-2.5"
         >
-          <QuikCrmMark className="h-8 w-8 shrink-0 rounded-lg object-cover" />
+          <QuikcredflowMark className="h-8 w-8 shrink-0 rounded-lg object-cover" />
           <div className="min-w-0 leading-tight">
             <p className="truncate text-sm font-semibold text-crm-text">
               <span>Quik</span>

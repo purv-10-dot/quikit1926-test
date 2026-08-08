@@ -36,7 +36,7 @@ import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
 import { prisma } from "@/lib/db/prisma";
 import { syncUserCrmAppRole, isCrmRbacClientReady } from "@/lib/api/crm-rbac";
 import { rbacDb, type CrmRbacDb } from "@/lib/api/crm-rbac-client";
-import { ensureQuikCrmAppAccess, getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { ensureQuikcredflowAppAccess, getQuikcredflowAppId } from "@/lib/api/quikcredflow-app";
 import { audit, diffShallow } from "@/lib/services/audit";
 import { sendTransactionalEmail } from "@/lib/services/email/send";
 import {
@@ -93,7 +93,7 @@ async function fetchUserView(
     },
   });
   if (!m) return null;
-  const appId = await getQuikCrmAppId();
+  const appId = await getQuikcredflowAppId();
   const [permissionTemplates, appRoles, allowedAccounts] = await Promise.all([
     prisma.qcfUserPermissionTemplate.findMany({
       where: { userId },
@@ -171,7 +171,7 @@ export async function listUsers(opts: {
   ]);
 
   const userIds = memberships.map((m) => m.userId);
-  const appId = await getQuikCrmAppId();
+  const appId = await getQuikcredflowAppId();
   const [tpl, roles, acl] = await Promise.all([
     prisma.qcfUserPermissionTemplate.findMany({
       where: { userId: { in: userIds } },
@@ -395,7 +395,7 @@ export async function createUser(opts: {
     );
   });
 
-  await ensureQuikCrmAppAccess({
+  await ensureQuikcredflowAppAccess({
     userId: newUserId,
     orgId: actor.orgId,
     grantedBy: actor.userId,
@@ -414,7 +414,7 @@ export async function createUser(opts: {
           where: { id: actor.userId },
           select: { firstName: true, lastName: true },
         }),
-        getQuikCrmAppId().then((appId) =>
+        getQuikcredflowAppId().then((appId) =>
           appId
             ? prisma.app.findUnique({ where: { id: appId }, select: { name: true } })
             : Promise.resolve(null),
@@ -649,7 +649,7 @@ export async function deleteUser(opts: { actor: SessionUser; id: string }) {
       await rbacTx.qcfUserPermissionExtra.deleteMany({ where: { userId: id, orgId: actor.orgId } });
     }
 
-    const appId = await getQuikCrmAppId();
+    const appId = await getQuikcredflowAppId();
     if (appId) {
       await tx.userAppAccess.deleteMany({
         where: { orgId: actor.orgId, appId, userId: id },

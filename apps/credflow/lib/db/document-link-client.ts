@@ -11,7 +11,7 @@ function warnDelegateMissing(): void {
   if (warnedMissingDelegate) return;
   warnedMissingDelegate = true;
   console.warn(
-    "[quikcrm] prisma.qcfDocumentLink delegate missing. From repo root: npm run db:generate — then restart the dev server.",
+    "[quikcredflow] prisma.qcfDocumentLink delegate missing. From repo root: npm run db:generate — then restart the dev server.",
   );
 }
 
@@ -44,7 +44,7 @@ function warnMissingTable(): void {
   if (warnedMissingTable) return;
   warnedMissingTable = true;
   console.warn(
-    "[quikcrm] app_quikcredflow.CrmDocumentLink table missing. Apply migration: npm run db:migrate:crm-document-links — or run scripts/apply-crm-document-links.sql",
+    "[quikcredflow] app_quikcredflow.CrmDocumentLink table missing. Apply migration: npm run db:migrate:crm-document-links — or run scripts/apply-crm-document-links.sql",
   );
 }
 

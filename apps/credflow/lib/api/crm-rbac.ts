@@ -10,7 +10,7 @@ import {
   type CrmAction,
   type CrmModule,
 } from "@/lib/api/permissions-registry";
-import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { getQuikcredflowAppId } from "@/lib/api/quikcredflow-app";
 import { appRoleNameForMembershipRole } from "@/lib/api/permissions-registry";
 import { seedAllDefaultCrmRoles } from "@/lib/api/seed-crm-app-roles";
 import { isCrmRbacClientReady, rbacDb } from "@/lib/api/crm-rbac-client";
@@ -25,7 +25,7 @@ export async function userCan(
 ): Promise<boolean> {
   if (!isCrmModule(resource) || !isCrmAction(action)) return false;
 
-  const appId = await getQuikCrmAppId();
+  const appId = await getQuikcredflowAppId();
   if (!appId) return false;
 
   const client = rbacDb();
@@ -83,7 +83,7 @@ export async function syncUserCrmAppRole(
   if (!isCrmRbacClientReady()) return;
 
   await seedAllDefaultCrmRoles(orgId);
-  const appId = await getQuikCrmAppId();
+  const appId = await getQuikcredflowAppId();
   if (!appId) return;
 
   const client = rbacDb();
@@ -112,7 +112,7 @@ export async function loadUserCrmGrants(
   userId: string,
   orgId: string,
 ): Promise<CrmEffectiveGrant[]> {
-  const appId = await getQuikCrmAppId();
+  const appId = await getQuikcredflowAppId();
   if (!appId) return [];
 
   const client = rbacDb();

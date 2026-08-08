@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { requirePermission } from "@/lib/auth/require-permission";
-import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { getQuikcredflowAppId } from "@/lib/api/quikcredflow-app";
 
 export const runtime = "nodejs";
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    const appId = await getQuikCrmAppId();
+    const appId = await getQuikcredflowAppId();
 
     const members = await prisma.orgMember.findMany({
       where: {

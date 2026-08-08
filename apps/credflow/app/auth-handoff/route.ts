@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
   // credflow session (cross-app session forgery, P0). Reject any token whose
   // slug isn't this app's manifest appId.
   // NOTE: requires the DB App.slug for this app to equal manifest.appId
-  // ("credflow"). If a stale UAT catalog row uses a different slug, correct
+  // ("quikcredflow"). If a stale UAT catalog row uses a different slug, correct
   // the DB row rather than weakening this check.
   if (payload.slug !== manifest.appId) {
     return NextResponse.redirect(new URL("/login?reason=wrong_app_handoff", origin));

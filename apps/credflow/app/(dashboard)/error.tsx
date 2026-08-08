@@ -10,7 +10,7 @@ export default function DashboardError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[quikcrm] dashboard error:", error);
+    console.error("[quikcredflow] dashboard error:", error);
   }, [error]);
 
   return (

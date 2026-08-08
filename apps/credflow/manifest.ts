@@ -32,10 +32,10 @@ export interface AppManifest {
 }
 
 const manifest: AppManifest = {
-  appId: "credflow",
+  appId: "quikcredflow",
   name: "CredFlow",
   description: "Leads, accounts, contacts, opportunities, automations, and telephony — sales execution.",
-  routePrefix: "/credflow",
+  routePrefix: "/quikcredflow",
   icon: "Users",
   permissions: [],
   // Hrefs are this app's own routes (it runs on its own host, like quiktrack) —
