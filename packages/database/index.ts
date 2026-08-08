@@ -10,17 +10,39 @@ declare global {
  * Automatically adds `deletedAt: null` to every `findMany`, `findFirst`,
  * `count`, and `findUnique` query on models that have a `deletedAt` column.
  *
- * Models with soft-delete: KPI, Team, Priority, WWWItem, Meeting.
+ * Models with soft-delete:
+ *   QuikScale — KPI, Team, Priority, WWWItem, Meeting.
+ *   CredFlow  — QcfLead, QcfAccount, QcfOpportunity, QcfProduct, QcfPriceList,
+ *               QcfPriceListItem, QcfQuote, QcfOrder, QcfDocumentFolder,
+ *               QcfDocumentLink.
+ *
+ * Entries MUST be the Prisma `model` name character-for-character — the
+ * extension matches on the `model` string, so a stale or mis-cased name fails
+ * silently (no error, just no `deletedAt` filter). CredFlow's models carry the
+ * `Qcf` prefix from the de-vendor; they were named `Crm*` in the standalone
+ * app and the rename must be reflected here too.
  *
  * Override: pass `{ where: { deletedAt: { not: null } } }` explicitly
  * to query deleted records (e.g., admin trash view).
  */
 const SOFT_DELETE_MODELS = new Set([
+  // QuikScale
   "KPI",
   "Team",
   "Priority",
   "WWWItem",
   "Meeting",
+  // CredFlow (app_quikcredflow)
+  "QcfLead",
+  "QcfAccount",
+  "QcfOpportunity",
+  "QcfProduct",
+  "QcfPriceList",
+  "QcfPriceListItem",
+  "QcfQuote",
+  "QcfOrder",
+  "QcfDocumentFolder",
+  "QcfDocumentLink",
 ]);
 
 function applySoftDeleteMiddleware(client: PrismaClient): PrismaClient {
