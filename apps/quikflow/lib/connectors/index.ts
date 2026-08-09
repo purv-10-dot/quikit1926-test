@@ -365,8 +365,13 @@ export async function createCalendarEventForOrg(
       return { ...updated, organizer: found.conn.label, updated: true };
     }
     const created = await found.provider.createEvent(accessToken, payload);
-    await db.wfCalendarLink.create({
-      data: {
+    // findUnique-then-create isn't atomic: a concurrent call for the same
+    // (orgId, refType, refId, kind) can race past the check above and hit
+    // the unique constraint here. Upsert so the loser of the race updates
+    // the winner's row instead of crashing.
+    await db.wfCalendarLink.upsert({
+      where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
+      create: {
         orgId,
         provider: found.conn.provider as never,
         connectionId: found.conn.id,
@@ -377,6 +382,13 @@ export async function createCalendarEventForOrg(
         webLink: created.webLink ?? null,
         joinUrl: created.joinUrl ?? null,
         createdBy: opts?.createdBy ?? "system",
+      },
+      update: {
+        connectionId: found.conn.id,
+        provider: found.conn.provider as never,
+        externalEventId: created.id,
+        webLink: created.webLink ?? null,
+        joinUrl: created.joinUrl ?? null,
       },
     });
     return { ...created, organizer: found.conn.label, updated: false };

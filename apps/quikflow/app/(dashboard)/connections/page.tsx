@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Mail, Plug, Trash2, CheckCircle2, AlertCircle, Send, Video, KeyRound, X, CalendarDays } from "lucide-react";
+import { Mail, Plug, Trash2, CheckCircle2, AlertCircle, Send, Video, KeyRound, X, CalendarDays, Copy, Check } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState } from "@/components/ui/page-states";
@@ -398,6 +398,10 @@ function FathomConnectModal({
   const [apiKey, setApiKey] = useState("");
   const [label, setLabel] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
+  // Set once the connection is created — switches the modal into the
+  // "register this webhook URL with Fathom" step instead of closing outright.
+  const [connected, setConnected] = useState<{ id: string; label: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const connect = useMutation({
     mutationFn: () =>
@@ -406,8 +410,80 @@ function FathomConnectModal({
         ...(label.trim() ? { label: label.trim() } : {}),
         ...(webhookSecret.trim() ? { webhookSecret: webhookSecret.trim() } : {}),
       }),
-    onSuccess: (d) => onConnected(d.label),
+    onSuccess: (d) => {
+      // Notify the parent right away so the connections list refreshes,
+      // but keep the modal open on the webhook step if a signing secret
+      // was supplied (otherwise there's nothing to register).
+      onConnected(d.label);
+      if (webhookSecret.trim()) setConnected(d);
+    },
   });
+
+  const webhookUrl =
+    connected && typeof window !== "undefined"
+      ? `${window.location.origin}/api/webhooks/fathom?c=${connected.id}`
+      : "";
+
+  const copyWebhookUrl = useCallback(async () => {
+    if (!webhookUrl) return;
+    await navigator.clipboard.writeText(webhookUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [webhookUrl]);
+
+  if (connected) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        onClick={onClose}
+        role="presentation"
+      >
+        <div
+          className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="mb-4 flex items-start justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <h3 className="text-lg font-semibold">One more step</h3>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <p className="mb-3 text-sm text-gray-500">
+            {connected.label} is connected. To get transcripts in real time (instead of waiting for the
+            next poll), paste this URL into Fathom → Settings → Integrations / API → Webhooks.
+          </p>
+
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2">
+            <code className="flex-1 truncate text-xs">{webhookUrl}</code>
+            <button
+              type="button"
+              onClick={copyWebhookUrl}
+              title="Copy webhook URL"
+              className="shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-accent-700"
+            >
+              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -462,8 +538,12 @@ function FathomConnectModal({
           value={webhookSecret}
           onChange={(e) => setWebhookSecret(e.target.value)}
           placeholder="whsec_… (only for real-time webhooks)"
-          className="mb-4 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent-400"
+          className="mb-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent-400"
         />
+        <p className="mb-4 text-xs text-gray-400">
+          Create a webhook in Fathom first to get this secret — we&apos;ll show you the callback URL to
+          paste back into Fathom once connected. Leave blank to rely on polling only (checks every ~60s).
+        </p>
 
         {connect.isError ? (
           <p className="mb-3 text-sm text-red-600">{(connect.error as Error).message}</p>
