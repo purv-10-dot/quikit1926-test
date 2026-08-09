@@ -74,6 +74,25 @@ export const STANDARD_LEAD_FIELDS: LeadFieldDefinition[] = [
   // (b) reserve the `substatus` key in STANDARD_KEYS. The hardcoded lead form
   // renders substatus via its own props, so this does NOT add a duplicate field.
   { key: "substatus", label: "Sub Status", fieldType: "Select", requirement: "Optional", visible: true, isStandard: true },
+  // Lead Quality is a real standard column (QcfLead.leadQuality, nullable). It
+  // was present in IMPORTABLE_STANDARD_KEYS (backend allows importing it) but was
+  // MISSING from this array — so the CSV import mapper never offered it (the
+  // mapper lists STANDARD_LEAD_FIELDS ∩ IMPORTABLE_STANDARD_KEYS), the value was
+  // never written, the column stayed empty, and the advanced filter's
+  // "Lead quality is Hot" matched zero rows. Added as Text (no static options):
+  // like `source`, the real values come from the data — the advanced-filter
+  // value picker resolves leadQuality via capped DB-distinct (see field-values.ts
+  // REAL_COLUMN_DISTINCT), so it shows the client's ACTUAL quality values rather
+  // than a hardcoded Hot/Warm/Cold guess that may not match their vocabulary.
+  { key: "leadQuality", label: "Lead quality", fieldType: "Text", requirement: "Optional", visible: true, isStandard: true },
+  // Country is a real standard column (QcfLead.country, nullable). Like
+  // leadQuality it was in IMPORTABLE_STANDARD_KEYS but MISSING from this array,
+  // so the CSV import mapper never offered it and country could not be imported
+  // at all (client leads would arrive with no country). Added here so it surfaces
+  // as a mapping target. The lead form already renders country via its dedicated
+  // address section (LeadAddressSection / setCountry), NOT from this array, so
+  // this does NOT create a duplicate country input — same pattern as substatus.
+  { key: "country", label: "Country", fieldType: "Text", requirement: "Optional", visible: true, isStandard: true },
   { key: "score",     label: "Score",      fieldType: "Number", requirement: "System",   visible: true, isStandard: true, showInList: true },
   { key: "ownerName", label: "Owner",      fieldType: "Text",   requirement: "Optional", visible: true, isStandard: true, showInList: true },
 ];

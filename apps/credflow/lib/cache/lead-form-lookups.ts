@@ -30,6 +30,10 @@ const cache: {
   pipeline?: Promise<PipelineConfig | null>;
 } = {};
 
+export function invalidateCustomFieldDefsCache(): void {
+  delete cache.defs;
+}
+
 export function fetchCustomFieldDefs(): Promise<LeadFieldDefinition[]> {
   if (!cache.defs) {
     cache.defs = fetch("/api/settings/fields?customOnly=true", { credentials: "include" })

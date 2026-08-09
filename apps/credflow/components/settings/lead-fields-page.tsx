@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { FieldEditorModal } from "@/components/settings/field-editor-modal";
+import { invalidateCustomFieldDefsCache } from "@/lib/cache/lead-form-lookups";
 import type { LeadFieldDefinition } from "@/types/field-definition";
 
 export function LeadFieldsPageClient() {
@@ -32,6 +33,18 @@ export function LeadFieldsPageClient() {
     refresh();
   }, [refresh]);
 
+  // Bust the shared custom-field defs cache after ANY field mutation (create /
+  // edit / delete). The lead form, leads explorer, and CSV importer read custom
+  // fields from a page-session promise cache (lib/cache/lead-form-lookups); the
+  // local refresh() below only updates THIS settings table. Without invalidating
+  // the shared cache, a newly-created field was missing from the lead form until
+  // a hard reload (its "Other Information" step never appeared) even though it
+  // showed here. Invalidate once, then refresh this page's own list.
+  const refreshAll = useCallback(() => {
+    invalidateCustomFieldDefsCache();
+    void refresh();
+  }, [refresh]);
+
   async function deleteField(key: string) {
     if (!confirm(`Delete field "${key}"? Existing lead values for this field will be hidden but not removed.`)) return;
     try {
@@ -44,7 +57,7 @@ export function LeadFieldsPageClient() {
         throw new Error(j.error || "Delete failed");
       }
       toast.success("Field deleted");
-      refresh();
+      refreshAll();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
     }
@@ -146,8 +159,8 @@ export function LeadFieldsPageClient() {
         </CardBody>
       </Card>
 
-      <FieldEditorModal open={createOpen} onClose={() => setCreateOpen(false)} onSaved={refresh} />
-      <FieldEditorModal open={!!editing} initial={editing} onClose={() => setEditing(undefined)} onSaved={refresh} />
+      <FieldEditorModal open={createOpen} onClose={() => setCreateOpen(false)} onSaved={refreshAll} />
+      <FieldEditorModal open={!!editing} initial={editing} onClose={() => setEditing(undefined)} onSaved={refreshAll} />
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   fetchOwners,
   fetchSources,
   fetchPipelineConfig,
+  invalidateCustomFieldDefsCache,
   invalidatePipelineConfigCache,
   invalidateSourcesCache,
 } from "@/lib/cache/lead-form-lookups";
@@ -411,6 +412,14 @@ export function LeadForm({
 
   /** Refetch dropdown lookups — busts session cache first (Settings may have changed). */
   const reloadLookups = useCallback(() => {
+    // Bust the custom-field defs cache so a field added/edited/removed in
+    // Settings is reflected on this form WITHOUT a hard reload. The cache is a
+    // page-session promise cache; without this it only cleared on a full reload,
+    // so a newly-created custom field was missing from the form (its "Other
+    // Information" step never appeared) until the user hard-refreshed — even
+    // though the CSV importer, which fetches fresh, already showed it. Mirrors
+    // the invalidateSourcesCache / invalidatePipelineConfigCache calls below.
+    invalidateCustomFieldDefsCache();
     fetchCustomFieldDefs()
       .then((items) => setDefs(items))
       .finally(() => setDefsLoading(false));

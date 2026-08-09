@@ -35,6 +35,13 @@ export const LEAD_FILTER_FIELDS: FilterFieldDef[] = [
   { field: "source", label: "Source", type: "text" },
   { field: "stage", label: "Stage", type: "select", options: STAGE_OPTIONS },
   { field: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
+  // substatus resolves its picker values from the tenant's pipeline config via
+  // resolveFieldValues (same as stage/status). It was previously ABSENT from
+  // this catalog, so it could not be selected in the advanced filter at all
+  // (server-side validation rejects any field not listed here). No static
+  // options are declared: the value picker fetches the real sub-status list
+  // from /api/leads/field-values at runtime.
+  { field: "substatus", label: "Sub-status", type: "select" },
   { field: "score", label: "Score", type: "number" },
   { field: "ownerId", label: "Owner", type: "select" },
   { field: "country", label: "Country", type: "text" },

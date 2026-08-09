@@ -69,7 +69,17 @@ function readPageSizeFromUrl(sp: URLSearchParams): number {
   return (PAGE_SIZE_OPTIONS as readonly number[]).includes(raw) ? raw : DEFAULT_PAGE_SIZE;
 }
 
-/** Merge a value-or-empty field into the filter (mode = ALL). Removes any prior condition for that field. */
+/**
+ * Merge a value-or-empty quick-filter field into the filter. Removes any prior
+ * condition for that field, then adds the new one when a value is present.
+ *
+ * IMPORTANT: this PRESERVES the filter's existing matchMode (the ALL/ANY the
+ * user chose in the advanced modal). It previously hardcoded matchMode:"ALL"
+ * on every return, which silently reverted the user's ANY (OR) selection to ALL
+ * on every compose — so the request always shipped matchMode:"ALL" and OR
+ * filters behaved like AND. The quick filters (search/stage/mineOnly) are
+ * additive narrowing conditions; they must not overwrite the user's match mode.
+ */
 function withQuickFilter(
   filter: FilterPayload,
   field: string,
@@ -77,8 +87,8 @@ function withQuickFilter(
   operator: ConditionRow["operator"],
 ): FilterPayload {
   const stripped = filter.conditions.filter((c) => c.field !== field);
-  if (!value) return { ...filter, matchMode: "ALL", conditions: stripped };
-  return { ...filter, matchMode: "ALL", conditions: [...stripped, { field, operator, value }] };
+  if (!value) return { ...filter, conditions: stripped };
+  return { ...filter, conditions: [...stripped, { field, operator, value }] };
 }
 
 export function LeadsExplorer() {
