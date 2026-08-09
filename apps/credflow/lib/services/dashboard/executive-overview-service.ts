@@ -483,7 +483,7 @@ export async function buildExecutiveOverview(
       },
     }),
     prisma.sessionEvent.findMany({
-      where: { orgId: orgId, appSlug: "quikcrm" },
+      where: { orgId: orgId, appSlug: "quikcredflow" },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: { userId: true, createdAt: true, event: true },

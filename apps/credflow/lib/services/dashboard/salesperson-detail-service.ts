@@ -374,7 +374,7 @@ export async function getSalespersonDetail(
 
     // Last login session event
     prisma.sessionEvent.findFirst({
-      where: { orgId: orgId, userId, appSlug: "quikcrm", event: "login" },
+      where: { orgId: orgId, userId, appSlug: "quikcredflow", event: "login" },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     }),

@@ -401,7 +401,7 @@ export async function buildAdvancedOverview(input: {
       by: ["userId"],
       where: {
         orgId: orgId,
-        appSlug: "quikcrm",
+        appSlug: "quikcredflow",
         event: "login",
         createdAt: { gte: range.from, lte: range.to },
         userId: { in: filteredMemberIds },
@@ -460,7 +460,7 @@ export async function buildAdvancedOverview(input: {
     prisma.sessionEvent.findMany({
       where: {
         orgId: orgId,
-        appSlug: "quikcrm",
+        appSlug: "quikcredflow",
         userId: { in: filteredMemberIds },
         createdAt: { gte: new Date(now.getTime() - 30 * MS_DAY) },
       },
