@@ -12,16 +12,16 @@ import {
   Button,
 } from "@quikit/ui";
 
-export function CreatePatModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+export function CreatePatModal({ onClose }: { onClose: () => void }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);
   if (!mounted) return null;
-  return createPortal(<CreatePatDrawer projectId={projectId} onClose={onClose} />, document.body);
+  return createPortal(<CreatePatDrawer onClose={onClose} />, document.body);
 }
 
-function CreatePatDrawer({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+function CreatePatDrawer({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [expiresInDays, setExpiresInDays] = useState(30);
@@ -36,7 +36,7 @@ function CreatePatDrawer({ projectId, onClose }: { projectId: string; onClose: (
 
   const mut = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`/api/projects/${projectId}/pats`, {
+      const r = await fetch("/api/org/pats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmedName, expiresInDays }),
@@ -46,7 +46,7 @@ function CreatePatDrawer({ projectId, onClose }: { projectId: string; onClose: (
       return j.data as { token: string };
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["quiktrack", "space-pats", projectId] });
+      qc.invalidateQueries({ queryKey: ["quiktrack", "org-pats"] });
       setCreatedToken(data.token);
     },
     onError: (e: Error) => setError(e.message),
@@ -104,7 +104,7 @@ function CreatePatDrawer({ projectId, onClose }: { projectId: string; onClose: (
       open
       onClose={onClose}
       title="New personal access token"
-      subtitle="Lets an MCP client (e.g. Claude Code) act on this project as you"
+      subtitle="Lets an MCP client (e.g. Claude Code) act on every project you have access to, as you"
       size="sm"
       footer={
         <RightPanelFooter>
@@ -133,12 +133,12 @@ function CreatePatDrawer({ projectId, onClose }: { projectId: string; onClose: (
           label="Expires in (days)"
           type="number"
           min={1}
-          max={365}
+          max={90}
           value={expiresInDays}
           onChange={(e) => setExpiresInDays(Number(e.target.value))}
         />
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          1–365 days. There is no non-expiring option.
+          1–90 days. There is no non-expiring option.
         </p>
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}

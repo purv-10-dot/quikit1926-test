@@ -20,9 +20,13 @@ vi.mock("next-auth/jwt", () => ({
 }));
 
 // Auth-code generation is irrelevant to the access-denied branch, but the
-// module is imported at the top of the route.
+// module is imported at the top of the route. redirectUriMatches is
+// reimplemented (not the real import) to keep this mock self-contained —
+// exact-match is all these tests exercise.
 vi.mock("@/lib/oauth", () => ({
   generateAuthCode: vi.fn(() => "test-code"),
+  redirectUriMatches: vi.fn((registered: string, actual: string) => registered === actual),
+  resolveAppOrigin: vi.fn((app: { baseUrl: string }) => app.baseUrl),
 }));
 
 import { GET } from "@/app/api/oauth/authorize/route";
@@ -48,10 +52,11 @@ const BASE_PARAMS = {
 describe("GET /api/oauth/authorize — app access gate", () => {
   beforeEach(() => {
     resetMockDb();
-    // Registered client with the matching redirect URI.
+    // Registered (confidential) client with the matching redirect URI.
     mockDb.oAuthClient.findUnique.mockResolvedValue({
       redirectUris: [REDIRECT_URI],
       scopes: ["openid", "profile", "email", "tenant"],
+      clientSecret: "$2a$10$fakehashforconfidentialclient",
     } as never);
     // The App backing this client, with a slug + landing baseUrl.
     mockDb.app.findFirst.mockResolvedValue({
