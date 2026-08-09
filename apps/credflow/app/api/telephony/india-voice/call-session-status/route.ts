@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/india-voice/call-session-status/route.ts
+// apps/credflow/app/api/telephony/india-voice/call-session-status/route.ts
 /**
  * Polled by the dialer every 2s while a call is in progress. Returns the
  * latest known IndiaVoice webhook event for a given callSid/campid, plus a

@@ -1,4 +1,4 @@
-// apps/quikcrm/components/telephony/dialer-pad.tsx
+// apps/credflow/components/telephony/dialer-pad.tsx
 "use client";
 
 import { Phone, Delete } from "lucide-react";

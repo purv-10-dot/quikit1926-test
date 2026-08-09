@@ -6,7 +6,7 @@
  *   1. SMTP (Office365 / any SMTP)
  *      Set:  SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASS  SMTP_FROM
  *      Requires nodemailer installed:
- *        npm i nodemailer @types/nodemailer --workspace=apps/quikcrm
+ *        npm i nodemailer @types/nodemailer --workspace=apps/credflow
  *
  *   2. Resend  (EMAIL_PROVIDER=resend + RESEND_API_KEY)
  *      Supports attachments via Resend's attachment field.

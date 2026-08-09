@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/recording/route.ts
+// apps/credflow/app/api/telephony/recording/route.ts
 /**
  * Same-origin streaming proxy for IndiaVoice/RP Digital call recordings.
  *

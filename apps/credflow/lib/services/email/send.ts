@@ -9,10 +9,10 @@
  *     without third-party credentials.
  *   - When the team's ready to ship real email, they add:
  *
- *         RESEND_API_KEY=re_xxx        # in apps/quikcrm/.env.local
+ *         RESEND_API_KEY=re_xxx        # in apps/credflow/.env.local
  *         EMAIL_FROM="Sales <sales@yourdomain.com>"
  *         EMAIL_PROVIDER=resend
- *         npm i resend --workspace=apps/quikcrm   # gate on PR justification per CLAUDE.md
+ *         npm i resend --workspace=apps/credflow   # gate on PR justification per CLAUDE.md
  *
  *     …then swap the body of `resendDriver()` to call `new Resend(...)`.
  *     The driver-selection logic in this file stays untouched.
@@ -138,9 +138,9 @@ function consoleDriver(args: SendEmailArgs): SendEmailResult {
  * Resend driver — production-ready code, just needs the dep + key.
  *
  * Activation steps (one-time):
- *   1. PR justification per apps/quikcrm/CLAUDE.md:
- *        npm i resend --workspace=apps/quikcrm
- *   2. apps/quikcrm/.env.local:
+ *   1. PR justification per apps/credflow/CLAUDE.md:
+ *        npm i resend --workspace=apps/credflow
+ *   2. apps/credflow/.env.local:
  *        RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxx
  *        EMAIL_FROM="Your Sales <sales@yourverifieddomain.com>"
  *        EMAIL_PROVIDER=resend
@@ -222,7 +222,7 @@ async function resendDriver(args: SendEmailArgs): Promise<SendEmailResult> {
  * Brevo driver — transactional email via Brevo's v3 HTTP API.
  *
  * No SDK: a single fetch to https://api.brevo.com/v3/smtp/email with the
- * `api-key` header keeps this dependency-free (apps/quikcrm/CLAUDE.md #3).
+ * `api-key` header keeps this dependency-free (apps/credflow/CLAUDE.md #3).
  * Activate with EMAIL_PROVIDER=brevo, BREVO_API_KEY, and an EMAIL_FROM whose
  * address is a verified sender in your Brevo account.
  */

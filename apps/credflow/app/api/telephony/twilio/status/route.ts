@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/twilio/status/route.ts
+// apps/credflow/app/api/telephony/twilio/status/route.ts
 /**
  * Reports whether the telephony provider env vars are wired up. The dialer
  * page calls this on mount to decide whether to render the call button or a

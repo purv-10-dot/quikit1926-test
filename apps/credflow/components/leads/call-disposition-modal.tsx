@@ -1,4 +1,4 @@
-// apps/quikcrm/components/leads/call-disposition-modal.tsx
+// apps/credflow/components/leads/call-disposition-modal.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";

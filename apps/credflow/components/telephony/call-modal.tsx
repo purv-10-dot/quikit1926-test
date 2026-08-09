@@ -1,4 +1,4 @@
-// apps/quikcrm/components/telephony/call-modal.tsx
+// apps/credflow/components/telephony/call-modal.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";

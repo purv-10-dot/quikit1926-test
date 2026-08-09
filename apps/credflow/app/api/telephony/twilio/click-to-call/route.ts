@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/twilio/click-to-call/route.ts
+// apps/credflow/app/api/telephony/twilio/click-to-call/route.ts
 /**
  * Spec-named alias for POST /api/telephony/call. The legacy frontend (and
  * the click-to-call build prompt) addresses the action as

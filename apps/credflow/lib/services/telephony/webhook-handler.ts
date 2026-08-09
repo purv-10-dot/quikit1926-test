@@ -1,4 +1,4 @@
-// apps/quikcrm/lib/services/telephony/webhook-handler.ts
+// apps/credflow/lib/services/telephony/webhook-handler.ts
 /**
  * IndiaVoice webhook pipeline.
  *

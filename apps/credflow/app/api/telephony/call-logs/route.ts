@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/call-logs/route.ts
+// apps/credflow/app/api/telephony/call-logs/route.ts
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@quikit/database";

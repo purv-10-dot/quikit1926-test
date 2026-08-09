@@ -1,4 +1,4 @@
-// apps/quikcrm/lib/services/telephony/call-service.ts
+// apps/credflow/lib/services/telephony/call-service.ts
 /**
  * Orchestrates click-to-call: place provider call → fire-and-forget audit
  * (success or failure) → pre-create the QcfCallLog stub the webhook will

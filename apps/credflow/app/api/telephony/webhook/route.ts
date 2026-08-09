@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/webhook/route.ts
+// apps/credflow/app/api/telephony/webhook/route.ts
 /**
  * Legacy webhook URL — kept so already-configured IndiaVoice panel webhooks
  * keep working. Delegates to the canonical handler at

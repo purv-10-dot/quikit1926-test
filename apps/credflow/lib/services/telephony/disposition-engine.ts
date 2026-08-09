@@ -1,4 +1,4 @@
-// apps/quikcrm/lib/services/telephony/disposition-engine.ts
+// apps/credflow/lib/services/telephony/disposition-engine.ts
 /**
  * Server-side workflow that runs when an agent saves a call disposition.
  * Ports PlatformDataService.createCallLog from the legacy NestJS CRM.

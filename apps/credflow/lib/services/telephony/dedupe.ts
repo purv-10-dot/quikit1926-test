@@ -1,4 +1,4 @@
-// apps/quikcrm/lib/services/telephony/dedupe.ts
+// apps/credflow/lib/services/telephony/dedupe.ts
 /**
  * IndiaVoice webhook helpers used by the click-to-call pipeline:
  *

@@ -1,4 +1,4 @@
-// apps/quikcrm/app/(dashboard)/telephony/dialer/dialer-workspace.tsx
+// apps/credflow/app/(dashboard)/telephony/dialer/dialer-workspace.tsx
 "use client";
 
 import { useState } from "react";

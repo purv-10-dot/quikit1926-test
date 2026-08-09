@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/telephony/india-voice/webhook/route.ts
+// apps/credflow/app/api/telephony/india-voice/webhook/route.ts
 /**
  * Canonical IndiaVoice webhook endpoint. The old /api/telephony/webhook path
  * re-exports these handlers so already-configured panels keep working without

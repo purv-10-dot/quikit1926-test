@@ -1,4 +1,4 @@
-// apps/quikcrm/app/api/route.ts
+// apps/credflow/app/api/route.ts
 /**
  * Short-URL fallback for IndiaVoice. Some panel deployments only accept a
  * webhook URL with no path beyond `/api` — they reject anything deeper. This

@@ -6,7 +6,7 @@
  * (Prospecting added; Won/Lost renamed to ClosedWon/ClosedLost).
  *
  * UI surfaces show the friendly label; the database and API contracts use the
- * canonical enum value. Documented in apps/quikcrm/CLAUDE.md.
+ * canonical enum value. Documented in apps/credflow/CLAUDE.md.
  */
 import type { QcfOpportunityStage } from "@quikit/database";
 

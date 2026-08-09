@@ -22,138 +22,38 @@ const prisma = new PrismaClient({
 // ─── Mapping data ─────────────────────────────────────────────────────────────
 
 const STATUS_MAPPING: Record<string, string[]> = {
-  "Disqualified": [
-    "Not using Tally/ Busy",
-    "Invalid client details ( number/email)",
-    "other ( self notes)",
-    "Student Lead",
-    "Language Barrier",
-    "Looking to buy Tally/ Busy",
-    "Unable to sync (Oracle user)",
-  ],
-  "Could Not Connect": [
-    "No. Busy",
-    "Not reachable",
-    "Invalid No.",
-    "Switch off",
-  ],
-  "Discussion Pending (Answered Calls)": [
-    "Can't talk right now",
-    "Internet Issue",
-  ],
-  "Demo Scheduled": [
-    "For Scheduling Demo",
-    "Demo Now",
-  ],
-  "Not Interested (For Scheduling Demo)": [
-    "In Scheduling Demo",
-  ],
-  "Interested Followup Counselling": [
-    "Interested for Demo",
-  ],
-  "Future Lead": [
-    "Unable to sync (Oracle user)",
-    "Not required now",
-    "Could not connect",
-    "Not Interested",
-    "Disqualified",
-    "Discussion Pending",
-  ],
-  "Already Paid Customer": [
-    "Already paid Customer",
-  ],
-  "Active Partner": [
-    "Active Partner",
-  ],
-  "Inactive Partner": [
-    "Inactive Partner",
-  ],
-  "Payment Link Sent": [
-    "TL to revert",
-    "Wait for the Confirmation",
-  ],
-  "Interested Followup": [
-    "Interested Followup",
-  ],
-  "Not Interested (For Making Payment)": [
-    "For Making Payment",
-  ],
-  "Payment Done": [
-    "Razorpay",
-    "Cheque",
-    "Bank Transfer (NEFT/IMPS)",
-    "Cash Deposit",
-    "UPI",
-  ],
-  "Negotiation": [
-    "Negotiation",
-  ],
-  "Demo Completed": [
-    "Demo Completed with Demo Data",
-    "Demo Completed with Synced Data",
-  ],
-  "Demo Rescheduled": [
-    "Demo Rescheduled",
-    "Demo Completed with Demo Data",
-    "Demo Completed with Synced Data",
-  ],
-  "Call Back (Demo Scheduled)": [
-    "Call Back (Demo Scheduled)",
-    "Demo Completed with Demo Data",
-    "Demo Completed with Synced Data",
-  ],
-  "Not Interested (For Demo Done)": [
-    "For Demo Done",
-  ],
-  "Unable to sync (Oracle user)": [
-    "Unable to sync (Oracle user)",
-  ],
-  "Payment Verified": [
-    "Payment Verified",
-  ],
-  "Payment Not Verified": [
-    "Payment Not Verified",
-  ],
-  "Plan Activation Done": [
-    "Plan Activation Done",
-  ],
-  "Plan Activation Failed": [
-    "Plan Activation Failed",
-    "Renewal Payment Activation Delayed",
-  ],
-  "Paid Customer Demo Done": [
-    "Paid Customer Demo Done",
-  ],
-  "Paid Customer Demo Failed": [
-    "Paid Customer Demo Failed",
-  ],
-  "Paid Customer Demo to be Done": [
-    "Paid Customer Demo to be Done",
-  ],
-  "Onboarding Done": [
-    "Onboarding Done",
-  ],
-  "Upgrade Due": [
-    "Upgrade Due",
-    "Upgrade Not Due",
-  ],
-  "Not Interested": [
-    "Went to Competitor",
-    "Syncing Issue",
-    "Not using Tally Busy",
-    "Pricing Issue",
-    "Support Issue",
-  ],
-  "Renewal Done": [
-    "Razorpay- Renewal",
-    "Cheque-Renewal",
-    "Bank Transfer (NEFT/IMPS)-Renewal",
-    "Cash Deposit-Renewal",
-    "UPI-Renewal",
-  ],
-  "Syncing Issue": [
-    "Unable to sync (Oracle user)",
-  ],
+  "Future Lead": ["Unable to sync (Oracle user)", "Not required now", "Could not connect", "Not Interested", "Disqualified", "Discussion Pending"],
+  "Negotiation": ["Negotiation"],
+  "Upgrade Due": ["Upgrade Due", "Upgrade Not Due"],
+  "Disqualified": ["Not using Tally/ Busy", "Invalid client details ( number/email)", "other ( self notes)", "Student Lead", "Language Barrier", "Looking to buy Tally/ Busy", "Unable to sync (Oracle user)"],
+  "Payment Done": ["Razorpay", "Cheque", "Bank Transfer (NEFT/IMPS)", "Cash Deposit", "UPI"],
+  "Renewal Done": ["Razorpay- Renewal", "Cheque-Renewal", "Bank Transfer (NEFT/IMPS)-Renewal", "Cash Deposit-Renewal", "UPI-Renewal"],
+  "Syncing Issue": ["Unable to sync (Oracle user)", "Invalid No."],
+  "Active Partner": ["Active Partner", "active & done", "Already paid Customer"],
+  "Demo Completed": ["Demo Completed with Demo Data", "Demo Completed with Synced Data"],
+  "Demo Scheduled": ["For Scheduling Demo", "Demo Now"],
+  "Not Interested": ["Went to Competitor", "Syncing Issue", "Not using Tally Busy", "Pricing Issue", "Support Issue"],
+  "Onboarding Done": ["Onboarding Done"],
+  "Demo Rescheduled": ["Demo Rescheduled", "Demo Completed with Demo Data", "Demo Completed with Synced Data"],
+  "Inactive Partner": ["Inactive Partner"],
+  "Payment Verified": ["Payment Verified"],
+  "Could Not Connect": ["No. Busy", "Not reachable", "Switch off", "Invalid No."],
+  "Payment Link Sent": ["TL to revert", "Wait for the Confirmation"],
+  "Interested Followup": ["Interested Followup"],
+  "Payment Not Verified": ["Payment Not Verified"],
+  "Plan Activation Done": ["Plan Activation Done"],
+  "Already Paid Customer": ["Already paid Customer", "Active Partner", "active & done"],
+  "Plan Activation Failed": ["Plan Activation Failed", "Renewal Payment Activation Delayed"],
+  "Paid Customer Demo Done": ["Paid Customer Demo Done"],
+  "Paid Customer Demo Failed": ["Paid Customer Demo Failed"],
+  "Call Back (Demo Scheduled)": ["Call Back (Demo Scheduled)", "Demo Completed with Demo Data", "Demo Completed with Synced Data", "Active Partner", "active & done"],
+  "Unable to sync (Oracle user)": ["Unable to sync (Oracle user)"],
+  "Paid Customer Demo to be Done": ["Paid Customer Demo to be Done"],
+  "Not Interested (For Demo Done)": ["For Demo Done"],
+  "Interested Followup Counselling": ["Interested for Demo"],
+  "Discussion Pending (Answered Calls)": ["Can't talk right now", "Internet Issue"],
+  "Not Interested (For Making Payment)": ["For Making Payment"],
+  "Not Interested (For Scheduling Demo)": ["In Scheduling Demo"],
 };
 
 // ─── Counters ─────────────────────────────────────────────────────────────────

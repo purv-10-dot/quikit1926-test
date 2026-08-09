@@ -1,4 +1,4 @@
-// apps/quikcrm/components/leads/lead-call-history.tsx
+// apps/credflow/components/leads/lead-call-history.tsx
 "use client";
 
 import { useEffect, useState } from "react";

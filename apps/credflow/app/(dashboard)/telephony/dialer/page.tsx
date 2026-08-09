@@ -1,4 +1,4 @@
-// apps/quikcrm/app/(dashboard)/telephony/dialer/page.tsx
+// apps/credflow/app/(dashboard)/telephony/dialer/page.tsx
 import { PageHeader } from "@/components/shared/page-header";
 import { dialerStatus } from "@/lib/services/telephony/india-voice";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";

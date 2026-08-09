@@ -1,4 +1,4 @@
-// apps/quikcrm/lib/api-client.ts
+// apps/credflow/lib/api-client.ts
 /**
  * Typed fetch wrappers for the click-to-call client. Auth piggy-backs on the
  * NextAuth cookie session (`credentials: "include"`) — there is no

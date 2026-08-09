@@ -26,9 +26,9 @@
  * Note: this test does NOT distinguish whether the `deletedAt: null`
  * clause came from app code (PR 1's defense in depth) or from the
  * middleware. That distinction is covered by:
- *   - apps/quikcrm/__tests__/unit/soft-delete-middleware.test.ts (the
+ *   - apps/credflow/__tests__/unit/soft-delete-middleware.test.ts (the
  *     middleware in isolation)
- *   - apps/quikcrm/__tests__/unit/dashboard-soft-delete.test.ts (the
+ *   - apps/credflow/__tests__/unit/dashboard-soft-delete.test.ts (the
  *     app code in isolation, with prisma mocked at the args boundary)
  * This file's job is to confirm the combined stack returns the right
  * numbers to the user.
