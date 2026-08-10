@@ -15,6 +15,7 @@
 import { toErrorMessage, getErrorCode , getErrorMeta} from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
+import { loadRepairFlags } from "@/lib/approvals/list-repair-flags";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -508,15 +509,22 @@ export async function listIndents(opts: ListIndentsOptions): Promise<any[]> {
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
   const allLines = rows.flatMap((r) => r.lines ?? []);
-  const [{ itemById, uomById, vendorById }, prInfoById] = await Promise.all([
-    loadLineLookups(allLines, opts.orgId),
-    loadSourcePrInfo(
-      rows.map((r) => r.prId).filter((x): x is string => Boolean(x)),
-    ),
-  ]);
-  return rows.map((r) =>
-    enrichIndent(r, itemById, uomById, prInfoById, vendorById),
-  );
+  const [{ itemById, uomById, vendorById }, prInfoById, repairByApprovalId] =
+    await Promise.all([
+      loadLineLookups(allLines, opts.orgId),
+      loadSourcePrInfo(
+        rows.map((r) => r.prId).filter((x): x is string => Boolean(x)),
+      ),
+      // Flags rows whose workflow was edited after submission, so the list can
+      // mark them instead of the user opening each pending row to find out.
+      loadRepairFlags(rows.map((r) => r.approvalId)),
+    ]);
+  return rows.map((r) => ({
+    ...enrichIndent(r, itemById, uomById, prInfoById, vendorById),
+    approvalRepair: r.approvalId
+      ? (repairByApprovalId.get(r.approvalId) ?? null)
+      : null,
+  }));
 }
 
 export async function findIndentById(

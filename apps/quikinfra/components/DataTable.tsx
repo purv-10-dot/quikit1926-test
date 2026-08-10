@@ -12,7 +12,9 @@ import { Pager } from './Pager';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ColType = 'text' | 'number' | 'date' | 'select' | 'boolean';
+// 'user' holds a user id in the row data but displays/sorts/filters on the
+// resolved account name — see the resolver wired into `columns` below.
+export type ColType = 'text' | 'number' | 'date' | 'select' | 'boolean' | 'user';
 
 export interface ColDef<T = Record<string, unknown>> {
   key: string;
@@ -115,9 +117,42 @@ interface DataTableProps<T = Record<string, unknown>> {
 export const AUDIT_COLS: ColDef<Record<string, unknown>>[] = [
   { key: 'createdAt', label: 'Created At', type: 'date', width: '115px', hideable: true, freezable: false },
   { key: 'updatedAt', label: 'Updated At', type: 'date', width: '115px', hideable: true, freezable: false },
-  { key: 'createdBy', label: 'Created By', type: 'text', width: '130px', hideable: true, freezable: false },
-  { key: 'updatedBy', label: 'Updated By', type: 'text', width: '130px', hideable: true, freezable: false },
+  { key: 'createdBy', label: 'Created By', type: 'user', width: '160px', hideable: true, freezable: false },
+  { key: 'updatedBy', label: 'Updated By', type: 'user', width: '160px', hideable: true, freezable: false },
 ];
+
+// ─── User-name lookup for `type: 'user'` columns ───────────────────────────────
+
+// Deliberately a plain fetch rather than React Query: DataTable is a low-level
+// component rendered in contexts without a QueryClientProvider (unit tests
+// among them), and useQuery throws outright when the provider is absent.
+// Module-level memo means one request per page load, shared by every grid.
+const EMPTY_NAMES: ReadonlyMap<string, string> = new Map();
+let userNamesPromise: Promise<ReadonlyMap<string, string>> | null = null;
+
+function loadUserNames(): Promise<ReadonlyMap<string, string>> {
+  if (userNamesPromise) return userNamesPromise;
+  if (typeof fetch !== 'function') return Promise.resolve(EMPTY_NAMES);
+  userNamesPromise = fetch('/api/org/user-names')
+    .then((r) => (r.ok ? r.json() : { data: [] }))
+    .then((j) => {
+      const rows = (j?.data ?? []) as Array<{ id: string; name: string }>;
+      return new Map(rows.map((u) => [u.id, u.name])) as ReadonlyMap<string, string>;
+    })
+    // A failure must degrade to showing the raw id, never break the grid.
+    .catch(() => EMPTY_NAMES);
+  return userNamesPromise;
+}
+
+function useUserNameMap(): ReadonlyMap<string, string> {
+  const [names, setNames] = useState<ReadonlyMap<string, string>>(EMPTY_NAMES);
+  useEffect(() => {
+    let alive = true;
+    loadUserNames().then((m) => { if (alive) setNames(m); });
+    return () => { alive = false; };
+  }, []);
+  return names;
+}
 
 // ─── Operators ────────────────────────────────────────────────────────────────
 
@@ -982,13 +1017,33 @@ export function DataTable<T extends Record<string, unknown>>({
   onPageChange, onPageSizeChange, onSearchChange, onSortChange,
   hideFilter = false, hideColumns = false,
 }: DataTableProps<T>) {
+  // Account lookup for `type: 'user'` columns (Created By / Updated By and any
+  // module column that stores a user id).
+  const userNameById = useUserNameMap();
+
   // Merge audit cols
   const columns = useMemo(() => {
-    if (!auditEnabled) return rawColumns;
     const auditKeys = new Set(AUDIT_COLS.map(c => c.key));
-    const userCols = rawColumns.filter(c => !auditKeys.has(c.key));
-    return [...userCols, ...AUDIT_COLS] as ColDef<T>[];
-  }, [rawColumns, auditEnabled]);
+    const merged = auditEnabled
+      ? ([...rawColumns.filter(c => !auditKeys.has(c.key)), ...AUDIT_COLS] as ColDef<T>[])
+      : rawColumns;
+    // Resolve user ids → names once, centrally. `getValue` is what search /
+    // filter / sort read, so wiring it here keeps every code path on the name
+    // instead of the raw cuid the row actually carries.
+    return merged.map(col => {
+      if (col.type !== 'user' || col.render || col.getValue) return col;
+      const resolve = (row: T) => {
+        const uid = (row as Record<string, unknown>)[col.key];
+        if (typeof uid !== 'string' || !uid) return '';
+        return userNameById.get(uid) ?? uid;
+      };
+      return {
+        ...col,
+        getValue: (row: T) => resolve(row),
+        render: (row: T) => resolve(row) || '—',
+      };
+    });
+  }, [rawColumns, auditEnabled, userNameById]);
 
   // State
   const [globalQ, setGlobalQ] = useState('');

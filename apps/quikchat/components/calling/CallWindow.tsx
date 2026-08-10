@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { CallControls } from "./CallControls";
 import { ParticipantTile } from "./ParticipantTile";
 import { ActiveSpeaker } from "./ActiveSpeaker";
@@ -21,13 +21,16 @@ export interface CallWindowProps {
   isAudioOnly?: boolean;
   isReconnecting?: boolean;
   onDeviceChange?: (kind: "audioinput" | "videoinput", deviceId: string) => void;
-  sfuRoomId?: string;
-  sfuToken?: string;
   isScreenSharing?: boolean;
   onToggleScreenShare?: (stream: MediaStream | null) => void;
   screenShareStream?: MediaStream | null;
   localUserName?: string;
-  onEnableCamera?: () => void;
+  /** Mute/camera state is controlled by the caller (LiveKit owns the source of
+   * truth via room.localParticipant) — CallWindow never mutates tracks itself. */
+  isMuted: boolean;
+  onToggleMute: () => void;
+  isCameraOff: boolean;
+  onToggleCamera: () => void;
 }
 
 export function CallWindow({
@@ -45,41 +48,16 @@ export function CallWindow({
   isAudioOnly = false,
   isReconnecting = false,
   onDeviceChange,
-  sfuRoomId: _sfuRoomId,
-  sfuToken: _sfuToken,
   isScreenSharing = false,
   onToggleScreenShare,
   screenShareStream,
   localUserName = "You",
-  onEnableCamera,
+  isMuted,
+  onToggleMute,
+  isCameraOff,
+  onToggleCamera,
 }: CallWindowProps) {
-  const [isMuted, setIsMuted] = useState(false);
   const isDuoCall = !!remoteStream && !!localStream;
-
-  // Derive camera state from actual video track — no independent state needed
-  const videoTrack = localStream?.getVideoTracks()[0];
-  const isCameraOff = !videoTrack || !videoTrack.enabled;
-
-  const toggleMute = useCallback(() => {
-    if (localStream) {
-      localStream.getAudioTracks().forEach((t) => {
-        t.enabled = isMuted;
-      });
-    }
-    setIsMuted(!isMuted);
-  }, [localStream, isMuted]);
-
-  const toggleCamera = useCallback(() => {
-    // No video track yet (audio-only call): request camera access
-    if (!videoTrack) {
-      onEnableCamera?.();
-      return;
-    }
-    // Video track exists: toggle its enabled state
-    videoTrack.enabled = !videoTrack.enabled;
-    // Force re-render so the derived isCameraOff updates
-    setIsMuted((prev) => prev);
-  }, [videoTrack, onEnableCamera]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -88,11 +66,11 @@ export function CallWindow({
       switch (e.key.toLowerCase()) {
         case " ":
           e.preventDefault();
-          toggleMute();
+          onToggleMute();
           break;
         case "v":
           e.preventDefault();
-          toggleCamera();
+          onToggleCamera();
           break;
         case "h":
           e.preventDefault();
@@ -102,7 +80,7 @@ export function CallWindow({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [toggleMute, toggleCamera, onEndCall]);
+  }, [onToggleMute, onToggleCamera, onEndCall]);
 
   // Permission denial error state
   if (mediaError) {
@@ -217,14 +195,17 @@ export function CallWindow({
       <CallControls
         isMuted={isMuted}
         isCameraOff={isCameraOff}
-        onToggleMute={toggleMute}
-        onToggleCamera={toggleCamera}
+        onToggleMute={onToggleMute}
+        onToggleCamera={onToggleCamera}
         onEndCall={onEndCall}
         isAudioOnly={isAudioOnly}
         localStream={localStream}
         onDeviceChange={onDeviceChange}
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={onToggleScreenShare}
+        // Every CallWindow caller is LiveKit-backed — screen capture is owned
+        // by room.localParticipant.setScreenShareEnabled(), not getDisplayMedia().
+        screenShareLiveKitMode={true}
       />
     </div>
   );

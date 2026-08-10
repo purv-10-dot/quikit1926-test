@@ -181,8 +181,11 @@ export async function GET(
     reconciliationDate:
       row.reconciliationDate?.toISOString?.().slice(0, 10) ?? "",
     conductedById: row.conductedById,
+    // The typed name wins; rows created before that column existed fall back
+    // to the display name of the user recorded on the FK.
     conductedByName:
-      (row.conductedById && nameById.get(row.conductedById)) ?? null,
+      row.conductedByName ??
+      ((row.conductedById && nameById.get(row.conductedById)) ?? null),
     approvedById: row.approvedById,
     approvedByName:
       (row.approvedById && nameById.get(row.approvedById)) ?? null,

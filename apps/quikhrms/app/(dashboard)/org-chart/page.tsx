@@ -231,6 +231,10 @@ export default function OrgChartPage() {
   // Users without it may still view the Org Chart, but must not reach the
   // Directory tab.
   const canViewDirectory = hasPermission("hrms.employee.read");
+  // Add Employee / Bulk Import create records — gate them the same way
+  // Edit does, so a view-only (hrms.employee.read) user isn't shown a form
+  // they can fill out completely only to have the backend reject it on submit.
+  const canManageEmployees = hasPermission("hrms.employee.write");
 
   // Per-tab navigation allow-list (mirrors the sidebar). Default-allow — a role
   // with no configured navKeys (or super-admin) sees both tabs. Legacy
@@ -240,8 +244,14 @@ export default function OrgChartPage() {
   const navConfigured = !isSuper && navSet.size > 0;
   const legacyAll = navSet.has("people.directory");
   const navAllowed = (key: string) => !navConfigured || legacyAll || navSet.has(key);
+  // Both tabs hit GET /api/v1/hrms/org-chart, which requires hrms.employee.read
+  // on the backend — Org Chart previously had no matching frontend check (only
+  // Directory did), so a role without that permission still saw the Org Chart
+  // tab and got a 403 the moment it tried to load. Entity permission is now
+  // the authoritative gate for both; the Navigation checkbox can only ever
+  // narrow further, never show something the Entity permission forbids.
   const showDirectory = canViewDirectory && navAllowed("people.directory.list");
-  const showOrgChart = navAllowed("people.directory.orgchart");
+  const showOrgChart = canViewDirectory && navAllowed("people.directory.orgchart");
   const [editMode, setEditMode] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -647,12 +657,14 @@ export default function OrgChartPage() {
         <div />
         {topTab === "directory" ? (
           <div className="flex items-center gap-2">
-            <Link
-              href="/employees/bulk-import"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition"
-            >
-              <Upload size={13} /> Bulk Import
-            </Link>
+            {canManageEmployees && (
+              <Link
+                href="/employees/bulk-import"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition"
+              >
+                <Upload size={13} /> Bulk Import
+              </Link>
+            )}
             <button
               onClick={exportDirectory}
               disabled={exporting || all.length === 0}
@@ -660,12 +672,14 @@ export default function OrgChartPage() {
             >
               <Download size={13} /> {exporting ? "Exporting..." : "Export"}
             </button>
-            <Link
-              href="/employees/new"
-              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition"
-            >
-              <Plus size={13} /> Add Employee
-            </Link>
+            {canManageEmployees && (
+              <Link
+                href="/employees/new"
+                className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition"
+              >
+                <Plus size={13} /> Add Employee
+              </Link>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-3 text-xs">

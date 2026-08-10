@@ -23,6 +23,29 @@ const realtimeConnectOrigin = (() => {
   }
 })();
 
+// The SAME gateway origin over http(s). socket.io's default transport order
+// (["polling","websocket"]) opens the handshake as an HTTP long-poll XHR to the
+// gateway's http(s) origin BEFORE it can upgrade to WebSocket, so connect-src
+// must permit both. Derived from the one ws(s) source of truth: ws→http,
+// wss→https. Empty string stays empty (dropped by .filter(Boolean) below).
+const realtimeHttpOrigin = realtimeConnectOrigin.replace(/^ws/, "http");
+
+// LiveKit SFU origin (group + 1:1 calls). Server-only var — the browser never
+// reads process.env directly; the LiveKit client SDK gets the URL and token
+// from an API response body, so no NEXT_PUBLIC_* mirror is needed here.
+// next.config.js always runs server-side regardless of the var's prefix.
+const livekitConnectOrigin = (() => {
+  const raw = process.env.LIVEKIT_URL || "";
+  try {
+    return raw ? new URL(raw).origin : "";
+  } catch {
+    return "";
+  }
+})();
+// LiveKit's REST API (room/token validation) shares the same host over https;
+// the wss origin alone doesn't cover it. Same ws→http derivation as above.
+const livekitHttpOrigin = livekitConnectOrigin.replace(/^ws/, "http");
+
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
@@ -56,9 +79,19 @@ const nextConfig = {
     // 'self' + the QuikIT launcher origin + the realtime gateway origin.
     // Both origin helpers return "" when their env var is unset (scaffold),
     // and .filter(Boolean) drops empties so the directive stays valid.
-    const connectSrc = ["'self'", quikitConnectOrigin, realtimeConnectOrigin, "https://storage.googleapis.com"]
-      .filter(Boolean)
-      .join(" ");
+    const connectSrc = [
+      ...new Set(
+        [
+          "'self'",
+          quikitConnectOrigin,
+          realtimeHttpOrigin,
+          realtimeConnectOrigin,
+          livekitConnectOrigin,
+          livekitHttpOrigin,
+          "https://storage.googleapis.com",
+        ].filter(Boolean),
+      ),
+    ].join(" ");
     return [
       {
         source: "/:path*",
@@ -75,7 +108,13 @@ const nextConfig = {
               // GCS-hosted media (bucket quikit-bucket) is served over https,
               // so `https:` covers it — no images.remotePatterns needed.
               "img-src 'self' data: blob: https:",
-              "frame-src 'self' blob:",
+              // Audio/video playback. Without an explicit media-src, <audio>/<video>
+              // fall back to default-src 'self', which blocks BOTH the GCS-hosted
+              // signed URL (cross-origin, prod) and the blob: URL used for the
+              // optimistic just-sent preview. Mirrors img-src above. Local dev never
+              // hit this — the local driver serves same-origin /api/uploads/local/*.
+              "media-src 'self' blob: https:",
+              "frame-src 'self' blob: https://storage.googleapis.com https://*.storage.googleapis.com",
               `connect-src ${connectSrc}`,
               "frame-ancestors 'none'",
             ].join("; "),
@@ -87,7 +126,12 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+            // `camera=()` / `microphone=()` are EMPTY allowlists — they deny every
+            // origin including self, so getUserMedia is rejected at the policy layer
+            // before any device check (it surfaces as a bogus "no microphone found").
+            // `(self)` = same-origin only: microphone for voice notes + audio calls,
+            // camera for video calls. geolocation/interest-cohort stay fully blocked.
+            value: "camera=(self), microphone=(self), geolocation=(), interest-cohort=()",
           },
         ],
       },

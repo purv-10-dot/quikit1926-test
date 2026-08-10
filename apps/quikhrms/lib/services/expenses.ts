@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds } from "@/lib/services/approval-chain";
+import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds, type ChainLevelCfg } from "@/lib/services/approval-chain";
+import { findEmployeesWithPermission } from "@/lib/rbac/permission-holders";
 
 export interface PolicySnapshot {
   policyId: string;
@@ -84,62 +85,6 @@ export async function validateAgainstSnapshot(
       violations.push(`Exceeds yearly limit (used ${used}, limit ${snap.maxPerYear})`);
     }
   }
-  return { ok: violations.length === 0, violations };
-}
-
-export async function validateAgainstPolicy(
-  orgId: string,
-  policyId: string,
-  employeeId: string,
-  amount: number,
-  date: Date,
-): Promise<{ ok: boolean; violations: string[] }> {
-  const policy = await prisma.expensePolicy.findFirst({
-    where: { id: policyId, orgId, deletedAt: null, isActive: true },
-  });
-
-  if (!policy) return { ok: false, violations: ["Policy not found or inactive"] };
-
-  const violations: string[] = [];
-
-  if (policy.maxPerTransaction && amount > Number(policy.maxPerTransaction)) {
-    violations.push(`Exceeds per-transaction limit (${policy.maxPerTransaction})`);
-  }
-
-  if (policy.maxPerMonth) {
-    const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-    const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-    const monthTotal = await prisma.expenseClaim.aggregate({
-      where: {
-        orgId, employeeId, policyId, deletedAt: null,
-        status: { in: ["Submitted", "ManagerApproved", "FinanceApproved", "Approved", "Paid"] },
-        expenseDate: { gte: monthStart, lte: monthEnd },
-      },
-      _sum: { totalAmount: true },
-    });
-    const used = Number(monthTotal._sum.totalAmount ?? 0);
-    if (used + amount > Number(policy.maxPerMonth)) {
-      violations.push(`Exceeds monthly limit (used ${used}, limit ${policy.maxPerMonth})`);
-    }
-  }
-
-  if (policy.maxPerYear) {
-    const yearStart = new Date(date.getFullYear(), 0, 1);
-    const yearEnd = new Date(date.getFullYear(), 11, 31);
-    const yearTotal = await prisma.expenseClaim.aggregate({
-      where: {
-        orgId, employeeId, policyId, deletedAt: null,
-        status: { in: ["Submitted", "ManagerApproved", "FinanceApproved", "Approved", "Paid"] },
-        expenseDate: { gte: yearStart, lte: yearEnd },
-      },
-      _sum: { totalAmount: true },
-    });
-    const used = Number(yearTotal._sum.totalAmount ?? 0);
-    if (used + amount > Number(policy.maxPerYear)) {
-      violations.push(`Exceeds yearly limit (used ${used}, limit ${policy.maxPerYear})`);
-    }
-  }
-
   return { ok: violations.length === 0, violations };
 }
 
@@ -302,4 +247,61 @@ export function nextStatusAfterApproval(
   if (currentLevel === 1 && totalLevels >= 2) return "ManagerApproved";
   if (currentLevel === 2) return "FinanceApproved";
   return currentStatus;
+}
+
+/**
+ * Resolve the concrete employee id(s) who can action a given chain level, so a
+ * notification can be aimed at them. Mirrors the eligibility rules enforced in
+ * the approve route (isEligibleExpenseApprover / central-chain fallback /
+ * legacy manager-or-dept-head fallback) but returns WHO, not just a yes/no.
+ */
+export async function resolveExpenseLevelApproverIds(
+  orgId: string,
+  level: number,
+  chain: ExpenseChainLevel[],
+  centralLevels: ChainLevelCfg[] | null,
+  claimApprovers: { reportingManagerId: string | null; departmentHeadId: string | null },
+  excludeEmployeeId?: string | null,
+): Promise<string[]> {
+  let ids: string[] = [];
+
+  if (chain.length > 0) {
+    const levelCfg = chain.find((c) => c.level === level);
+    if (levelCfg) {
+      switch (levelCfg.approverType) {
+        case "ReportingManager":
+          if (claimApprovers.reportingManagerId) ids = [claimApprovers.reportingManagerId];
+          break;
+        case "DepartmentHead":
+          if (claimApprovers.departmentHeadId) ids = [claimApprovers.departmentHeadId];
+          break;
+        case "Custom":
+          if (levelCfg.approverId) ids = [levelCfg.approverId];
+          break;
+        case "HR":
+        case "Finance":
+          ids = await findEmployeesWithPermission(orgId, "hrms.expense.approve");
+          break;
+      }
+    }
+  } else if (centralLevels && centralLevels.length > 0) {
+    const levelCfg = centralLevels.find((c) => c.level === level);
+    if (levelCfg) {
+      if (levelCfg.kind === "USER" && levelCfg.userId) {
+        ids = [levelCfg.userId];
+      } else if (levelCfg.kind === "ROLE" && levelCfg.roleId) {
+        const holders = await prisma.employee.findMany({
+          where: { orgId, deletedAt: null, status: "Active", appRoles: { some: { roleId: levelCfg.roleId } } },
+          select: { id: true },
+        });
+        ids = holders.map((h) => h.id);
+      }
+    }
+  } else {
+    // No chain configured anywhere — legacy fallback (reporting manager, else dept head).
+    if (claimApprovers.reportingManagerId) ids = [claimApprovers.reportingManagerId];
+    else if (claimApprovers.departmentHeadId) ids = [claimApprovers.departmentHeadId];
+  }
+
+  return [...new Set(ids)].filter((id) => id && id !== excludeEmployeeId);
 }

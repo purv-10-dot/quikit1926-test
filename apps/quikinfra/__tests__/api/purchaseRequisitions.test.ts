@@ -50,7 +50,12 @@ describe("GET /api/purchase/requisitions — auth", () => {
 });
 
 describe("GET /api/purchase/requisitions — happy path", () => {
-  beforeEach(() => setContext(makeUserCtx(["construction.pr.view"])));
+  beforeEach(() => {
+    setContext(makeUserCtx(["construction.pr.view"]));
+    // Each page is enriched with rolled-up PO/GRN procurement status, which
+    // walks PR lines. Default to "no lines" so list tests stay focused.
+    db.cnPurchaseRequisitionLine.findMany.mockResolvedValue([]);
+  });
 
   it("lists PRs scoped to the org with the legacy {data,total} shape", async () => {
     db.cnPurchaseRequisition.findMany.mockResolvedValue([

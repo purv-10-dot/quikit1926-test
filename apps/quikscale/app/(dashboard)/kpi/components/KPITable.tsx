@@ -8,7 +8,7 @@ import { weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
-import { computeQtd, weeklyGoalFor } from "./kpiStats";
+import { computeQtd, weeklyGoalFor, resolvePace } from "./kpiStats";
 import { useTableColumns, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { FreezeIcon } from "@/components/ui/FreezeIcon";
@@ -23,6 +23,8 @@ import { HistoryButton } from "@/components/audit/HistoryButton";
 import { WeekTooltip } from "./WeekTooltip";
 import { DescTooltip } from "./DescTooltip";
 import { NameTooltip } from "./NameTooltip";
+import { FormulaTooltip } from "./FormulaTooltip";
+import { explainQtr, type FormulaExplain } from "./kpiFormulaTooltips";
 import { ColMenu } from "@/components/table/ColMenu";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { X } from "lucide-react";
@@ -283,26 +285,44 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
       weekMap: Record<number, WeeklyValue>;
       progressBarBg: string;
       progressTextColor: string;
+      /** Hover explanation for the Progress cell — division-aware formula plus
+       *  this row's own numbers. Built here (not at render) so it is computed
+       *  once per (kpis, qtdWeek, weekCount) like the rest of this map. */
+      progressExplain: FormulaExplain;
     }>();
     for (const kpi of kpis) {
       const progressDivisionType: "Cumulative" | "Standalone" =
         kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-      const stdProgress =
-        progressDivisionType === "Standalone"
-          ? computeQtd(kpi, qtdWeek, "Standalone", weekCount)
-          : null;
-      const progressAchieved =
-        stdProgress != null ? (stdProgress.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
-      const progressGoal =
-        stdProgress != null
-          ? (stdProgress.qtdGoal ?? kpi.target ?? 0)
-          : (kpi.qtdGoal ?? kpi.target ?? 0);
+      // Quarter Progress = achieved-to-date ÷ the full quarter's potential,
+      // delegated to the SAME `resolvePace` that draws the Dashboard KPI
+      // Overview card's QTR bar, so the two surfaces can never drift again.
+      //
+      // Cumulative is untouched by that choice: `resolvePace` delegates
+      // straight to `resolveProgressOverall` for Cumulative KPIs, so those
+      // rows render byte-identical numbers to before. STANDALONE is what
+      // changes — `resolveProgressOverall` divides the per-week AVERAGE by the
+      // per-week target ("how are my reported weeks doing"), while QTR divides
+      // the raw sum by `target × weekCount` ("how much of the quarter is
+      // banked"). A Standalone KPI with target 80 and 540 logged over 4
+      // reported weeks used to read 169% here (135 ÷ 80) while the dashboard
+      // QTR bar read 52% (540 ÷ 1040). Now both read 52%. See
+      // kpiStats.ts `kpiQtrPercent` for the full rationale.
+      //
+      // (This column also no longer reads the raw `kpi.qtdAchieved` DB column
+      // for anything — that aggregate, stamped by `recalcKPI` in
+      // `api/kpi/[id]/weekly/batch/route.ts`, counts the in-progress week.)
+      const { achieved: progressAchieved, goal: progressGoal } =
+        resolvePace(kpi, qtdWeek, weekCount);
       const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
       const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
       const weekMap: Record<number, WeeklyValue> = {};
       (kpi.weeklyValues ?? []).forEach(wv => { weekMap[wv.weekNumber] = wv; });
       const hasAnyWeeklyValue = Object.values(weekMap).some((wv) => wv?.value != null);
-      const progressBadge = kpi.qtdAchieved != null
+      // Gate on `hasAnyWeeklyValue`, matching the dashboard card: a KPI with no
+      // logged week renders the neutral gray state instead of a colored 0% bar.
+      // (The old gate was `kpi.qtdAchieved != null`, a server column that is 0
+      // — not null — for untouched KPIs, so they rendered as red 0%.)
+      const progressBadge = hasAnyWeeklyValue
         ? getProgressBadgeColors(progressAchieved, progressGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
         : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
       map.set(kpi.id, {
@@ -312,6 +332,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         weekMap,
         progressBarBg: progressBadge.bar,
         progressTextColor: progressBadge.text,
+        progressExplain: explainQtr(kpi, qtdWeek, weekCount),
       });
     }
     return map;
@@ -475,15 +496,15 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               // returns the same color thresholds with readable-on-white
               // text tones (text-blue-700 etc.).
               //
-              // Standalone KPIs: server-stamped `kpi.qtdAchieved` is a
-              // cumulative SUM regardless of divisionType, so it shows
-              // (e.g.) 341% on a Standalone KPI whose true progress is
-              // ~113%. Re-derive via `computeQtd(...,"Standalone")` —
-              // that returns avg / kpi.target per the spec. Cumulative
-              // path stays byte-identical to before.
-              // Precomputed once in `rowDerived` (see above) — output identical,
-              // just not recomputed for every row on unrelated re-renders.
-              const { progressDivisionType, progressPct, ownerName, weekMap, progressBarBg, progressTextColor } =
+              // The percentage itself is QTR progress (achieved-to-date ÷ the
+              // full quarter's potential) via `resolvePace` — the same helper
+              // behind the Dashboard KPI Overview card's QTR bar. Neither
+              // division type reads the server-stamped `kpi.qtdAchieved` any
+              // more; both re-derive from `weeklyValues` through the last
+              // completed week.
+              // Precomputed once in `rowDerived` (see above) so it isn't
+              // recomputed for every row on unrelated re-renders.
+              const { progressDivisionType, progressPct, ownerName, weekMap, progressBarBg, progressTextColor, progressExplain } =
                 rowDerived.get(kpi.id)!;
 
               // Render a single static column cell by key. Driven by the
@@ -498,12 +519,18 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   case "progress":
                     return (
                       <td key={col} className={tdClass("progress")} style={stickyStyle("progress", getColWidth("progress"))}>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-medium w-10 flex-shrink-0 ${progressTextColor}`}>{progressPct.toFixed(0)}%</span>
-                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
-                            <div className={`h-2 rounded-full transition-all ${progressBarBg}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+                        {/* Hovering the cell explains the Quarterly Progress
+                            formula for this row's division type. The tooltip
+                            wraps the inner div (never the <td>), so the locked
+                            cell styling is untouched — see CLAUDE.md. */}
+                        <FormulaTooltip explain={progressExplain} triggerClassName="block w-full">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-medium w-10 flex-shrink-0 ${progressTextColor}`}>{progressPct.toFixed(0)}%</span>
+                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+                              <div className={`h-2 rounded-full transition-all ${progressBarBg}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+                            </div>
                           </div>
-                        </div>
+                        </FormulaTooltip>
                       </td>
                     );
                   case "owner":

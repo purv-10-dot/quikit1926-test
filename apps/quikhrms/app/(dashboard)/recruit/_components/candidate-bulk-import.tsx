@@ -225,16 +225,17 @@ export function CandidateBulkImport({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Apply all to a requisition <span className="text-red-500">*</span></label>
-            <Select value={reqId} onChange={setReqId} placeholder="Select a requisition…"
+            <label className="block text-xs font-medium text-gray-700 mb-1">Apply all to a requisition (optional)</label>
+            <Select value={reqId} onChange={setReqId} placeholder="Select a requisition… (or leave blank)"
               options={requisitions.map((r) => ({ value: r.id, label: `${r.title} (${r.requisitionNumber})` }))} />
-            {!reqId && <p className="mt-1 text-[11px] text-gray-400">Every uploaded candidate will be applied to this requisition.</p>}
+            <p className="mt-1 text-[11px] text-gray-400">
+              {reqId ? "Every uploaded candidate will be applied to this requisition." : "Left blank — candidates will be added without applying to any requisition. You can apply them later."}
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
             <button type="button" onClick={close} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button type="button" onClick={runImport} disabled={validCount === 0 || !reqId || importing}
-              title={!reqId ? "Select a requisition first" : undefined}
+            <button type="button" onClick={runImport} disabled={validCount === 0 || importing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
               <Upload size={13} /> {importing ? "Importing..." : `Import ${validCount || ""}`}
             </button>

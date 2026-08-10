@@ -32,11 +32,30 @@
 
 import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
-import { findCnUsersByIds } from "@/lib/users/lookup";
+import { findCnUserById, findCnUsersByIds } from "@/lib/users/lookup";
 import type { TenantContext } from "@/lib/auth/context";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
+import {
+  completeRepairedApproval,
+  repointNote,
+} from "@/lib/approvals/complete-repaired-approval";
+import { masterApproveRequest } from "@/lib/approvals/master-approve";
+import {
+  claimInstanceForAdvance,
+  claimInstanceForSettlement,
+  conflictMessage,
+  describeSettledInstance,
+  type ClaimResult,
+} from "@/lib/approvals/claim-instance";
 
-export type ApprovalAction = "approve" | "reject" | "return";
+export type ApprovalAction =
+  | "approve"
+  | "reject"
+  | "return"
+  | "complete"
+  | "master_approve";
+
 export type ApprovalPhase =
   | "intermediate-approve"
   | "final-approve"
@@ -99,7 +118,11 @@ export async function actOnApproval(
 ): Promise<ActOnApprovalOutcome> {
   const { ctx, entity, entityLabel, action, comments } = input;
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (
+    !["approve", "reject", "return", "complete", "master_approve"].includes(
+      action,
+    )
+  ) {
     return {
       kind: "error",
       status: 400,
@@ -135,30 +158,56 @@ export async function actOnApproval(
     };
   }
   if (instance.status !== "pending_approval") {
+    // Name whoever settled it — the step's own approver needs to see that the
+    // master approver closed the request, not a bare "already approved".
+    const settled = await describeSettledInstance(db, instance.id);
+    const winner = settled.byUserId
+      ? await findCnUserById(settled.byUserId)
+      : null;
     return {
       kind: "error",
       status: 409,
       body: {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
+        error: conflictMessage(settled, winner?.fullName ?? null, entityLabel),
       },
     };
   }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
-  });
+  if (action === "complete") {
+    return await completeRepairedApproval({
+      ctx,
+      instance,
+      entityLabel,
+      reason: comments,
+      applyEntityPatch: input.applyEntityPatch,
+    });
+  }
+
+  if (action === "master_approve") {
+    return await masterApproveRequest({
+      ctx,
+      instance,
+      entityLabel,
+      reason: comments,
+      applyEntityPatch: input.applyEntityPatch,
+    });
+  }
+
+  // The instance may be parked on a stepOrder the workflow no longer has
+  // (a mid-flight edit removed it). Fall back to the highest surviving step
+  // below it rather than dead-ending the request — see step-resolution.ts.
+  const resolved = await resolveEffectiveStep(db, instance);
+  const currentStep = resolved.step;
   if (!currentStep) {
     return {
       kind: "error",
       status: 500,
       body: {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this ${entityLabel} was mid-flight.`,
+        error: `Workflow for this ${entityLabel} has no steps configured — it cannot be actioned. Reconfigure the workflow under Settings → Workflows.`,
       },
     };
   }
+  const actingStepOrder = resolved.effectiveStepOrder;
 
   if (
     !canActOnStep(
@@ -207,18 +256,15 @@ export async function actOnApproval(
       kind: "error",
       status: 403,
       body: {
-        error: `You are not authorized to ${action} this ${entityLabel} at step ${instance.currentStepOrder}. Expected: ${expected}.`,
+        error: `You are not authorized to ${action} this ${entityLabel} at step ${actingStepOrder}. Expected: ${expected}.`,
       },
     };
   }
 
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
+  // Derived from the instance's own chain, not a fresh query — a snapshotted
+  // instance must advance through the steps it was submitted under.
+  const nextStep =
+    resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null;
 
   let phase: ApprovalPhase;
   if (action === "approve") {
@@ -229,11 +275,38 @@ export async function actOnApproval(
     phase = "return";
   }
 
+  // Claim the row first. Two people entitled to the same step — a pool member
+  // and the master approver, say — could both pass the status read above; the
+  // conditional UPDATE lets exactly one of them proceed, so the entity patch
+  // and its side effects run once.
+  let conflict: ClaimResult["conflict"] | undefined;
+
   await db.$transaction(async (tx) => {
+    const claim =
+      phase === "intermediate-approve"
+        ? await claimInstanceForAdvance(tx, instance.id, nextStep!.stepOrder)
+        : await claimInstanceForSettlement(tx, instance.id, {
+            status:
+              phase === "final-approve"
+                ? "approved"
+                : phase === "reject"
+                  ? "rejected"
+                  : "returned",
+            completedAt: new Date(),
+            // Land the instance on the step actually actioned — a repointed
+            // instance would otherwise keep a currentStepOrder that no workflow
+            // step matches, and every later read re-derives the fallback.
+            currentStepOrder: actingStepOrder,
+          });
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
+
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
+        stepOrder: actingStepOrder,
         action,
         actionById: ctx.userId,
         // Write the timestamp app-side (UTC) instead of relying on the DB
@@ -242,41 +315,36 @@ export async function actOnApproval(
         // offset — leaving approval-history times out of sync with the
         // app-written createdAt/updatedAt. new Date() keeps them consistent.
         actionAt: new Date(),
-        comments: comments || null,
+        comments: resolved.repointed
+          ? repointNote({
+              parkedStepOrder: instance.currentStepOrder,
+              actedStepOrder: actingStepOrder,
+              comments,
+            })
+          : comments || null,
       },
     });
-
-    if (phase === "intermediate-approve") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { currentStepOrder: nextStep!.stepOrder },
-      });
-    } else if (phase === "final-approve") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "approved", completedAt: new Date() },
-      });
-    } else if (phase === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
-    } else {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
-    }
 
     await input.applyEntityPatch(tx, { phase, comments });
   });
 
-  const totalSteps = await db.cnApprovalWorkflowStep.count({
-    where: { workflowId: instance.workflowId },
-  });
+  if (conflict) {
+    const winner = conflict.byUserId
+      ? await findCnUserById(conflict.byUserId)
+      : null;
+    return {
+      kind: "error",
+      status: 409,
+      body: {
+        error: conflictMessage(conflict, winner?.fullName ?? null, entityLabel),
+      },
+    };
+  }
+
+  const totalSteps = resolved.totalSteps;
 
   let newInstanceStatus: ActOnApprovalSuccess["newInstanceStatus"];
-  let newCurrentStepOrder = instance.currentStepOrder;
+  let newCurrentStepOrder = actingStepOrder;
   if (phase === "intermediate-approve") {
     newInstanceStatus = "pending_approval";
     newCurrentStepOrder = nextStep!.stepOrder;

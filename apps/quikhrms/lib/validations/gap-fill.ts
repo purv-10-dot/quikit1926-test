@@ -1,50 +1,15 @@
 import { z } from "zod";
-import { zPhoneLooseOptional, zPanOptional, zAadhaarOptional, zIfscOptional, zBankAccountOptional } from "./identifiers";
-
-// ─── Time Logs ──────────────────────────────────────────
-
-export const TimeLogStatusEnum = z.enum(["LogDraft", "LogSubmitted", "LogApproved", "LogRejected"]);
-
-export const createTimeLogSchema = z.object({
-  date: z.string().min(1),
-  startTime: z.string().min(1),
-  endTime: z.string().optional().nullable(),
-  duration: z.number().min(0).default(0),
-  projectId: z.string().optional().nullable(),
-  taskId: z.string().optional().nullable(),
-  description: z.string().optional(),
-  isBillable: z.boolean().default(false),
-});
-
-export const updateTimeLogSchema = createTimeLogSchema.partial();
-
-// ─── Timesheets ─────────────────────────────────────────
-
-export const TimesheetPeriodTypeEnum = z.enum(["Weekly", "BiWeekly", "Monthly"]);
-export const TimesheetStatusEnum = z.enum(["TsDraft", "TsSubmitted", "TsApproved", "TsRejected"]);
-
-export const createTimesheetSchema = z.object({
-  periodType: TimesheetPeriodTypeEnum.default("Weekly"),
-  periodStart: z.string().min(1),
-  periodEnd: z.string().min(1),
-  logIds: z.array(z.string()).optional(),
-  notes: z.string().optional(),
-});
-
-export const approveTimesheetSchema = z.object({
-  action: z.enum(["Approve", "Reject"]),
-  rejectionReason: z.string().optional(),
-});
+import { zPhoneLooseOptional } from "./identifiers";
 
 // ─── Delegation ─────────────────────────────────────────
 
-export const DelegationTypeEnum = z.enum(["DelegationTemporary", "DelegationPermanent"]);
-export const DelegationNotifyModeEnum = z.enum(["NotifyBoth", "NotifyDelegatee"]);
-export const DelegationModuleEnum = z.enum(["Leave", "Expense", "Timesheet", "Attendance", "Recruitment"]);
+const DelegationTypeEnum = z.enum(["DelegationTemporary", "DelegationPermanent"]);
+const DelegationNotifyModeEnum = z.enum(["NotifyBoth", "NotifyDelegatee"]);
+const DelegationModuleEnum = z.enum(["Leave", "Expense", "Timesheet", "Attendance", "Recruitment"]);
 
 // A delegated module now carries the specific permission codes being handed
 // over (not just the module name), so delegation is scoped to chosen authorities.
-export const DelegationModuleSchema = z.object({
+const DelegationModuleSchema = z.object({
   module: DelegationModuleEnum,
   permissions: z.array(z.string().min(1)).min(1),
 });
@@ -81,10 +46,15 @@ export const bulkEmployeeRowSchema = z.object({
   firstName: z.string().min(1),
   middleName: z.string().optional(),
   lastName: z.string().min(1),
-  workEmail: z.string().email("Invalid work email").optional().nullable(),
-  personalEmail: z.string().email("Invalid personal email").optional().nullable(),
-  workPhone: zPhoneLooseOptional.nullable(),
-  personalPhone: zPhoneLooseOptional.nullable(),
+  // Format checks removed for bulk import — a bad value gets saved as-is
+  // rather than failing the row; HR cleans it up later via Edit Employee.
+  // (Add Employee's manual form still validates these strictly — only this
+  // schema was relaxed.) Presence checks (e.g. "must have SOME email") still
+  // run separately in gap-fill.ts.
+  workEmail: z.string().optional().nullable(),
+  personalEmail: z.string().optional().nullable(),
+  workPhone: z.string().optional().nullable(),
+  personalPhone: z.string().optional().nullable(),
   departmentCode: z.string().optional(),
   departmentName: z.string().optional(),
   designation: z.string().optional(),
@@ -101,8 +71,8 @@ export const bulkEmployeeRowSchema = z.object({
   workLocation: z.string().optional(),
   officeLocation: z.string().optional(),
   jobTitle: z.string().optional(),
-  panNumber: zPanOptional,
-  aadhaarNumber: zAadhaarOptional,
+  panNumber: z.string().optional(),
+  aadhaarNumber: z.string().optional(),
   gender: z.string().optional(),
   maritalStatus: z.string().optional(),
   bloodGroup: z.string().optional(),
@@ -127,12 +97,12 @@ export const bulkEmployeeRowSchema = z.object({
   // Emergency contact (single primary)
   emergencyContactName: z.string().optional(),
   emergencyContactRelation: z.string().optional(),
-  emergencyContactPhone: zPhoneLooseOptional,
+  emergencyContactPhone: z.string().optional(),
   emergencyContactEmail: z.string().optional(),
   // Bank
   bankName: z.string().optional(),
-  bankAccountNumber: zBankAccountOptional,
-  bankIfsc: zIfscOptional,
+  bankAccountNumber: z.string().optional(),
+  bankIfsc: z.string().optional(),
   bankAccountHolder: z.string().optional(),
   // Reporting manager (lookup by code)
   reportingManagerCode: z.string().optional(),
@@ -230,7 +200,7 @@ export const bulkImportEmployeesSchema = z.object({
 
 // ─── Employment History ─────────────────────────────────
 
-export const EmploymentChangeTypeEnum = z.enum([
+const EmploymentChangeTypeEnum = z.enum([
   "Promotion", "Transfer", "RoleChange", "SalaryChange", "ConfirmationChange",
   "EmpStatusChange", "DepartmentChange", "ManagerChange",
 ]);
@@ -244,50 +214,6 @@ export const createEmploymentHistorySchema = z.object({
   reason: z.string().optional(),
   letterUrl: z.string().url().optional(),
   notes: z.string().optional(),
-});
-
-// ─── AI Copilot ─────────────────────────────────────────
-
-export const AIScopeEnum = z.enum([
-  "HRChat", "LeaveAssistant", "PayslipExplainer", "PolicyQA", "ResumeScreening", "DocumentAI",
-]);
-
-export const aiChatMessageSchema = z.object({
-  conversationId: z.string().optional(),
-  scope: AIScopeEnum.default("HRChat"),
-  message: z.string().min(1).max(4000),
-  contextId: z.string().optional(),
-});
-
-export const aiInsightRequestSchema = z.object({
-  scope: AIScopeEnum,
-  entityType: z.string().optional(),
-  entityId: z.string().optional(),
-  input: z.record(z.string(), z.unknown()).optional(),
-});
-
-// ─── E-Sign ─────────────────────────────────────────────
-
-export const ESignProviderEnum = z.enum(["Internal", "DocuSign", "AdobeSign", "LeegalityProvider"]);
-
-export const createESignRequestSchema = z.object({
-  documentId: z.string().optional().nullable(),
-  title: z.string().min(1),
-  provider: ESignProviderEnum.default("Internal"),
-  signers: z.array(z.object({
-    name: z.string().min(1),
-    email: z.string().email(),
-    role: z.string().optional(),
-    order: z.number().int().min(1).default(1),
-  })).min(1),
-  message: z.string().optional(),
-  expiresAt: z.string().optional().nullable(),
-});
-
-export const signESignSchema = z.object({
-  signerEmail: z.string().email(),
-  signatureBase64: z.string().min(1),
-  decline: z.boolean().default(false),
 });
 
 // ─── Candidate Portal ───────────────────────────────────

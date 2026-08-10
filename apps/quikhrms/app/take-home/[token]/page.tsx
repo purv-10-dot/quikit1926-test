@@ -17,6 +17,7 @@ interface Detail {
   roundName: string;
   instructions: string;
   hasAttachment: boolean;
+  attachmentLink: string | null;
   dueDate: string | null;
   submission: Submission | null;
 }
@@ -115,13 +116,23 @@ export default function TakeHomeTaskPage({ params }: { params: { token: string }
         {detail.instructions ? (
           <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{detail.instructions}</p>
         ) : (
-          <p className="text-sm text-gray-400">No written instructions were provided. See the attached file{detail.hasAttachment ? "" : " (if any)"} or contact HR.</p>
+          <p className="text-sm text-gray-400">No written instructions were provided. See the attached file/link{(detail.hasAttachment || detail.attachmentLink) ? "" : " (if any)"} or contact HR.</p>
         )}
-        {detail.hasAttachment && (
-          <a href={attachmentHref} target="_blank" rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold hover:bg-blue-100">
-            <Download size={15} /> Download task file
-          </a>
+        {(detail.hasAttachment || detail.attachmentLink) && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {detail.hasAttachment && (
+              <a href={attachmentHref} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold hover:bg-blue-100">
+                <Download size={15} /> Download task file
+              </a>
+            )}
+            {detail.attachmentLink && (
+              <a href={detail.attachmentLink} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold hover:bg-blue-100">
+                <Link2 size={15} /> Open reference link
+              </a>
+            )}
+          </div>
         )}
       </div>
 

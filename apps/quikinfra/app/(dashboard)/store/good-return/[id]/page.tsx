@@ -35,6 +35,8 @@ import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGoodReturn } from "@/hooks/use-store";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -355,18 +357,27 @@ export default function GoodReturnDetailPage() {
                 );
               }
               return (
-                <ApprovalActionBar
-                  entityType="goodReturn"
-                  entityId={id}
-                  currentStatus={gr.status ?? undefined}
-                  requiredPermission="store.good_return.approve"
-                  actionEndpoint={`/api/store/good-returns/${id}/approve`}
-                  invalidateKeys={[
-                    ["good-returns"],
-                    ["good-return", id],
-                  ]}
-                  hidden={!canAct}
-                />
+                <>
+                  <ApprovalActionBar
+                    entityType="goodReturn"
+                    entityId={id}
+                    currentStatus={gr.status ?? undefined}
+                    requiredPermission="store.good_return.approve"
+                    actionEndpoint={`/api/store/good-returns/${id}/approve`}
+                    invalidateKeys={[
+                      ["good-returns"],
+                      ["good-return", id],
+                    ]}
+                    hidden={!canAct}
+                  />
+                  <MasterApprovalAction
+                    approval={gr?.approval}
+                    me={me}
+                    entityLabel="good return"
+                    actionEndpoint={`/api/store/good-returns/${id}/approve`}
+                    invalidateKeys={[["good-returns"], ["good-return", id]]}
+                  />
+                </>
               );
             })()}
           </div>
@@ -374,6 +385,14 @@ export default function GoodReturnDetailPage() {
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={gr?.approval?.repair}
+          entityLabel="good return"
+          actionEndpoint={`/api/store/good-returns/${id}/approve`}
+          invalidateKeys={[["good-returns"], ["good-return", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 space-y-6">
             {/* Overview card */}

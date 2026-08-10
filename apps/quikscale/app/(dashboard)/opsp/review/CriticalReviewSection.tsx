@@ -74,6 +74,7 @@ export function CriticalReviewSection({
   // forgets to pass `canEdit`, the section stays read-only rather than
   // silently allowing a view-only user to overwrite review numbers.
   canEdit = false,
+  canEditAfterFinalize = false,
   selfId = "",
   selfName = "Me",
 }: {
@@ -85,6 +86,8 @@ export function CriticalReviewSection({
   canPickUser?: boolean;
   /** Whether the Achieved/Comment inputs are editable (OPSP.Review.Critical:update). */
   canEdit?: boolean;
+  /** OPSP.History.EditFinalize:update — re-opens editing on a "reviewed" OPSP, mirroring the main Review tab. */
+  canEditAfterFinalize?: boolean;
   /** Signed-in user's id — excluded from the picker list (shown as "(you)"). */
   selfId?: string;
   /** Display name for the signed-in user (the picker's "self" option). */
@@ -216,8 +219,13 @@ export function CriticalReviewSection({
 
   const isCommitted =
     data.opspStatus === "finalized" || data.opspStatus === "reviewed";
-  // Editable only when finalized (not reviewed) AND the user holds update.
-  const readOnly = !isCommitted || data.opspStatus === "reviewed" || !canEdit;
+  // Editable once finalized, and re-opens on "reviewed" for holders of
+  // OPSP.History.EditFinalize:update — mirrors canEditReviewedData on the
+  // main Review tab (page.tsx).
+  const readOnly =
+    !isCommitted ||
+    (data.opspStatus === "reviewed" && !canEditAfterFinalize) ||
+    !canEdit;
 
   const moduleCards = data.modules[activeModule];
 
@@ -280,11 +288,17 @@ export function CriticalReviewSection({
           OPSP is in <span className="font-semibold">draft</span> status —
           Critical Review inputs become editable after Finalize.
         </div>
-      ) : data.opspStatus === "reviewed" ? (
+      ) : data.opspStatus === "reviewed" && !canEditAfterFinalize ? (
         <div className="mx-6 mt-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600">
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
           Review has been <span className="font-semibold">submitted</span> —
           read-only.
+        </div>
+      ) : data.opspStatus === "reviewed" && canEditAfterFinalize ? (
+        <div className="mx-6 mt-4 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800">
+          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+          Review has been <span className="font-semibold">finalized</span> —
+          editing enabled. Changes will be autosaved.
         </div>
       ) : null}
 

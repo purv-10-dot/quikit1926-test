@@ -20,6 +20,7 @@
 --   6. 20260717130000_quikcrm_mailbox_emails
 --   7. 20260723120000_quikcrm_prospects
 --   8. 20260723140000_quikcrm_prospect_convert
+--   9. 20260803120000_quikcrm_activity_type_targets
 --
 -- NOTE: CrmActivity (referenced by CrmActivityFieldValue below) must already
 -- exist from the base QuikCRM init migration before running section 2.
@@ -411,6 +412,38 @@ ALTER TABLE app_quikcrm."CrmProspect"
 -- @@index([orgId, status]) — list filtering by conversion state.
 CREATE INDEX IF NOT EXISTS "CrmProspect_orgId_status_idx"
   ON app_quikcrm."CrmProspect" ("orgId", "status");
+
+-- =============================================================================
+-- 9. Activity Type-wise daily targets
+--    from 20260803120000_quikcrm_activity_type_targets
+-- =============================================================================
+-- Per-salesperson daily target for ONE activity type (user × CrmActivityType).
+-- Additive: the OVERALL daily target stays on
+-- CrmOrgWorkspaceSettings.settings.activityTargets and is not modified here.
+-- Requires section 1 (CrmActivityType) to have been applied first.
+
+CREATE TABLE IF NOT EXISTS app_quikcrm."CrmActivityTypeTarget" (
+  id               text PRIMARY KEY,
+  "orgId"          text NOT NULL REFERENCES quikit."Org"(id) ON DELETE CASCADE,
+  "userId"         text NOT NULL,
+  "activityTypeId" text NOT NULL REFERENCES app_quikcrm."CrmActivityType"(id) ON DELETE CASCADE,
+  "dailyTarget"    integer NOT NULL DEFAULT 0,
+  "createdAt"      timestamp(3) NOT NULL DEFAULT now(),
+  "updatedAt"      timestamp(3) NOT NULL
+);
+
+-- @@unique([orgId, userId, activityTypeId]) — one target per (user, type).
+CREATE UNIQUE INDEX IF NOT EXISTS "CrmActivityTypeTarget_orgId_userId_activityTypeId_key"
+  ON app_quikcrm."CrmActivityTypeTarget" ("orgId", "userId", "activityTypeId");
+-- @@index([orgId]) — org scoping.
+CREATE INDEX IF NOT EXISTS "CrmActivityTypeTarget_orgId_idx"
+  ON app_quikcrm."CrmActivityTypeTarget" ("orgId");
+-- @@index([orgId, userId]) — the tracker's per-salesperson lookup.
+CREATE INDEX IF NOT EXISTS "CrmActivityTypeTarget_orgId_userId_idx"
+  ON app_quikcrm."CrmActivityTypeTarget" ("orgId", "userId");
+-- @@index([activityTypeId]) — cascade + "who targets this type" lookups.
+CREATE INDEX IF NOT EXISTS "CrmActivityTypeTarget_activityTypeId_idx"
+  ON app_quikcrm."CrmActivityTypeTarget" ("activityTypeId");
 
 -- =============================================================================
 -- End of QuikCRM consolidated schema changes.

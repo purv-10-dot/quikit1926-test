@@ -9,6 +9,9 @@ const payload = {
   termsBody: null,
   vendors: [
     {
+      // Selection is keyed on the RFQ vendor ROW id, not vendorId — the same
+      // vendor can appear on an RFQ more than once.
+      id: "row-1",
       vendorId: "v1",
       vendorName: "Acme Cement",
       email: "buyer@acme.io",
@@ -19,6 +22,7 @@ const payload = {
       skipReason: null,
     },
     {
+      id: "row-2",
       vendorId: "v2",
       vendorName: "Beta Steel",
       email: null,

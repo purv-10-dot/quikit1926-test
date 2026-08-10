@@ -1,7 +1,33 @@
 import type { Mention } from "@/lib/shared";
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { RichText } from "./richtext";
+import { flattenMarkdown, RichText } from "./richtext";
+
+describe("flattenMarkdown (preview/quote plain text)", () => {
+  it("unwraps inline emphasis, code, strike, and link label", () => {
+    expect(flattenMarkdown("**Hello** *world* `code`")).toBe("Hello world code");
+    expect(flattenMarkdown("__under__ ~strike~")).toBe("under strike");
+    expect(flattenMarkdown("see [the docs](https://x.io) now")).toBe("see the docs now");
+  });
+
+  it("is faithful to the real grammar: __x__ → x (underline), lone _ stays literal", () => {
+    expect(flattenMarkdown("__x__")).toBe("x");
+    expect(flattenMarkdown("snake_case_name")).toBe("snake_case_name");
+  });
+
+  it("collapses block syntax to one readable line", () => {
+    expect(flattenMarkdown("> quoted **bit**")).toBe("quoted bit");
+    expect(flattenMarkdown("- one\n- two")).toBe("one two");
+    expect(flattenMarkdown("1. first\n2. second")).toBe("first second");
+    expect(flattenMarkdown("```\nconst x = 1;\n```")).toBe("const x = 1;");
+  });
+
+  it("empty / plain / whitespace", () => {
+    expect(flattenMarkdown("")).toBe("");
+    expect(flattenMarkdown("just plain text")).toBe("just plain text");
+    expect(flattenMarkdown("multi\nline\ntext")).toBe("multi line text");
+  });
+});
 
 function html(content: string, mentions: Mention[] = []): HTMLElement {
   const { container } = render(<RichText content={content} mentions={mentions} />);

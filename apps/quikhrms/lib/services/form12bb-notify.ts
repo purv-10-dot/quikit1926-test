@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildForm12BBAckEmail } from "@/lib/email-templates/form12bb-acknowledgment";
+import { findEmployeesWithPermission } from "@/lib/rbac/permission-holders";
 
 interface DeclSummary {
   id: string;
@@ -23,69 +24,6 @@ interface Submitter {
 }
 
 /**
- * Resolve every employee in the tenant who currently holds (resource, action),
- * either via an assigned role or a direct UserPermissionExtra GRANT, minus any
- * explicit DENY. Mirrors the union-then-subtract logic of resolvePermissions()
- * in lib/with-auth.ts but inverted — given the permission, find the users.
- */
-async function findUsersWithPermission(
-  orgId: string,
-  resource: string,
-  action: string,
-): Promise<string[]> {
-  const now = new Date();
-
-  // Roles in this tenant that grant the permission (or are admin/super_admin
-  // which bypass per the auth layer).
-  const roles = await prisma.hrmsAppRole.findMany({
-    where: {
-      orgId: orgId,
-      OR: [
-        { isSystem: true, name: "admin" },
-        { permissions: { some: { resource, action } } },
-      ],
-    },
-    select: { id: true },
-  });
-
-  const userIds = new Set<string>();
-
-  if (roles.length > 0) {
-    const userRoles = await prisma.hrmsUserAppRole.findMany({
-      where: {
-        orgId: orgId,
-        roleId: { in: roles.map((r) => r.id) },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-      select: { userId: true },
-    });
-    for (const r of userRoles) userIds.add(r.userId);
-  }
-
-  const [grants, denies] = await Promise.all([
-    prisma.hrmsUserPermissionExtra.findMany({
-      where: { orgId: orgId, resource, action, kind: "GRANT" },
-      select: { userId: true },
-    }),
-    prisma.hrmsUserPermissionExtra.findMany({
-      where: { orgId: orgId, resource, action, kind: "DENY" },
-      select: { userId: true },
-    }),
-  ]);
-  for (const g of grants) userIds.add(g.userId);
-  for (const d of denies) userIds.delete(d.userId);
-
-  if (userIds.size === 0) return [];
-
-  // Confirm each is still an active employee in this tenant.
-  const employees = await prisma.employee.findMany({
-    where: { orgId, deletedAt: null, id: { in: Array.from(userIds) } },
-    select: { id: true },
-  });
-  return employees.map((e) => e.id);
-}
-
-/**
  * Drop a Notification row into every payroll-admin's in-app inbox. Fire and
  * forget — never throw, logs failures.
  */
@@ -97,7 +35,7 @@ export async function notifyHrPayrollTeam(
   try {
     // Payroll-admin gate today is hrms.settings.write — matches every
     // payroll route's requiredPermissions guard.
-    const recipientIds = await findUsersWithPermission(orgId, "hrms.settings", "write");
+    const recipientIds = await findEmployeesWithPermission(orgId, "hrms.settings.write");
 
     // Don't notify the submitter about their own submission.
     const filtered = recipientIds.filter((id) => id !== submitter.employeeId);

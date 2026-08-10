@@ -243,6 +243,8 @@ describe("runDailyDigest — GO-LIVE: yesterday-IST window wired + DEMO banner O
       {
         userId: "r1", userName: "Rep One",
         calls: [], callsTotal: 3, emails: [], emailsTotal: 0,
+        emailReplies: [], emailRepliesTotal: 0,
+        leadSummary: [], leadSummaryTotal: 0,
         meetings: [], meetingsTotal: 0, tasks: [], tasksTotal: 1,
       },
     ];

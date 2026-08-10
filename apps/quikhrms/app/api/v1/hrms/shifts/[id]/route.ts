@@ -40,7 +40,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     console.error("PATCH /shifts/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.attendance.manage"] });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -58,4 +58,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     console.error("DELETE /shifts/:id error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.attendance.manage"] });

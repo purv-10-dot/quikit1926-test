@@ -11,7 +11,10 @@ export const createWWWSchema = z
     whoIds:          z.array(z.string().min(1)).optional(),
     // No length cap on user-content fields — Prisma columns are `text`.
     what:            z.string().min(1, "What is required"),
-    when:            z.string().min(1, "Due date is required"),
+    // Optional at the field level — the cross-field refine below requires
+    // EITHER a date OR the To-Be-Decided flag.
+    when:            z.string().min(1).optional(),
+    dueDateTBD:      z.boolean().optional().default(false),
     status:          z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","in-progress","blocked"]).default("not-yet-started"),
     notes:           z.string().optional().nullable(),
     category:        z.enum(["eNPS", "cNPS", "Others"]).optional().nullable(),
@@ -20,6 +23,13 @@ export const createWWWSchema = z
   .refine(
     (v) => (v.whoIds && v.whoIds.length > 0) || !!v.who,
     { message: "At least one assignee is required", path: ["whoIds"] },
+  )
+  // Exactly one of the two must identify the due date. Marking TBD *and*
+  // sending a date is accepted — TBD wins, and the date is ignored (the
+  // client clears it, but a stale value shouldn't 400 the request).
+  .refine(
+    (v) => v.dueDateTBD === true || !!v.when,
+    { message: "Select a due date or mark it To Be Decided", path: ["when"] },
   );
 
 // Update — fully partial so PATCH-style updates work. Length/enum rules
@@ -29,6 +39,7 @@ export const updateWWWSchema = z.object({
   whoIds:          z.array(z.string().min(1)).optional(),
   what:            z.string().min(1).optional(),
   when:            z.string().min(1).optional(),
+  dueDateTBD:      z.boolean().optional(),
   status:          z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","in-progress","blocked"]).optional(),
   notes:           z.string().optional().nullable(),
   category:        z.enum(["eNPS", "cNPS", "Others"]).optional().nullable(),

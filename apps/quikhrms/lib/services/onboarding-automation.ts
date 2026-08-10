@@ -13,7 +13,7 @@ import { appBaseUrl } from "@/lib/utils/app-url";
 
 // Synthetic template key for the joining-letter PDF (not a registry email event —
 // it's a generated PDF sent as an attachment with a short cover email).
-export const JOINING_LETTER_KEY = "onboarding.joining-letter";
+const JOINING_LETTER_KEY = "onboarding.joining-letter";
 
 // ── "Start onboarding" completion-chained automation ──────────────────────────
 // When an instance is `automated`, sending advances step-by-step: the next
@@ -52,7 +52,7 @@ function actionDetail(stepType: string | null, cfg: Record<string, unknown>): st
 }
 
 /** Can automation email this step out on its own? */
-export function isSendableStep(t: TaskRow): boolean {
+function isSendableStep(t: TaskRow): boolean {
   const st = t.stepType ?? "CustomTask";
   const cfg = cfgOf(t);
   if (st === "DocumentUpload") return Array.isArray(cfg.documents) && (cfg.documents as unknown[]).filter(Boolean).length > 0;
@@ -148,7 +148,7 @@ export async function sendStepEmails(t: TaskRow, orgId: string): Promise<number>
  * instantly, so the chain continues); false when it sent but must wait for an
  * external completion (upload/ack/mark-done), or when nothing was sent.
  */
-export async function sendStepRequest(t: TaskRow, orgId: string): Promise<boolean> {
+async function sendStepRequest(t: TaskRow, orgId: string): Promise<boolean> {
   const st = t.stepType ?? "CustomTask";
   const cfg = cfgOf(t);
   const instance = await prisma.onboardingInstance.findFirst({ where: { id: t.instanceId, orgId }, select: { employeeId: true } });

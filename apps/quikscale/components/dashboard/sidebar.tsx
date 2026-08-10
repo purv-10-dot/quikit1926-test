@@ -43,9 +43,22 @@ interface NavItem {
   moduleKey: string;
   children?: NavSubItem[];
   comingSoon?: boolean;
+  /** Spotlight anchor for the onboarding tour (QuikScaleTour) — only set on
+   *  items that get their own tour step (Dashboard, Org Setup). */
+  tourId?: string;
 }
 interface NavSection { type: "section"; label: string; }
 type SidebarEntry = NavItem | NavSection;
+
+/* ─── Tour anchors — maps a pillar section label to the `data-tour` key its
+ *  wrapper div exposes, so QuikScaleTour can spotlight a whole section
+ *  (KPI/Priority/WWW/... ) as one step instead of one step per module. ─── */
+const SECTION_TOUR_KEYS: Record<string, string> = {
+  Execution: "section-execution",
+  Strategy: "section-strategy",
+  People: "section-people",
+  Cash: "section-cash",
+};
 
 /* ─── Pillar color tokens — Scaling Up book palette
  *  Matches the swoosh band on Verne Harnish's "Scaling Up" cover:
@@ -60,8 +73,8 @@ const PILLAR_COLORS: Record<string, string> = {
 
 /* ─── Navigation data ─── */
 const navigation: SidebarEntry[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, moduleKey: "dashboard" },
-  { label: "Org Setup", icon: Building2, moduleKey: "orgSetup", children: [
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, moduleKey: "dashboard", tourId: "nav-dashboard" },
+  { label: "Org Setup", icon: Building2, moduleKey: "orgSetup", tourId: "nav-org-setup", children: [
     { label: "Teams",            href: "/org-setup/teams",    icon: Users,        moduleKey: "orgSetup.teams" },
     { label: "Users",            href: "/org-setup/users",    icon: User,         moduleKey: "orgSetup.users" },
     { label: "Quarter Settings", href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
@@ -184,6 +197,38 @@ function filterNavigation(
   return result;
 }
 
+/* ─── Group consecutive nav items under their section header ───
+ * Lets QuikScaleTour spotlight a whole pillar (Execution/Strategy/People/
+ * Cash) as one step via a `data-tour="section-*"` wrapper, instead of one
+ * step per module. Items before the first section header (Dashboard, Org
+ * Setup) render standalone — they get their own `tourId` instead. */
+interface SidebarRenderGroup {
+  key: string;
+  section: NavSection | null;
+  tourKey?: string;
+  items: NavItem[];
+}
+function groupSidebarEntries(entries: SidebarEntry[]): SidebarRenderGroup[] {
+  const groups: SidebarRenderGroup[] = [];
+  let current: SidebarRenderGroup | null = null;
+  for (const entry of entries) {
+    if (entry.type === "section") {
+      current = {
+        key: `section-${entry.label}`,
+        section: entry,
+        tourKey: SECTION_TOUR_KEYS[entry.label],
+        items: [],
+      };
+      groups.push(current);
+    } else if (current) {
+      current.items.push(entry);
+    } else {
+      groups.push({ key: entry.label, section: null, items: [entry] });
+    }
+  }
+  return groups;
+}
+
 /* ─── NavGroup (expanded mode) ─── */
 function NavGroup({ item }: { item: NavItem }) {
   const pathname = usePathname();
@@ -211,6 +256,8 @@ function NavGroup({ item }: { item: NavItem }) {
   if (!item.children) {
     return (
       <Link href={item.href!}
+        data-tour={item.tourId}
+        data-tour-module={item.moduleKey}
         className={cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
           isActive ? "bg-accent-50 text-accent-700" : "text-gray-700 hover:bg-gray-50"
@@ -223,7 +270,7 @@ function NavGroup({ item }: { item: NavItem }) {
 
   // Group with children
   return (
-    <div>
+    <div data-tour={item.tourId} data-tour-module={item.moduleKey}>
       <div className={cn(
         "flex items-center rounded-md transition-colors",
         isActive ? "text-accent-700" : "text-gray-700",
@@ -313,6 +360,7 @@ function NavGroupCollapsed({ item }: { item: NavItem }) {
   const href = item.href ?? item.children?.[0]?.href ?? "#";
   return (
     <Link href={href} title={item.label}
+      data-tour={item.tourId}
       className={cn(
         "flex items-center justify-center w-9 h-9 rounded-lg mx-auto transition-colors",
         isActive ? "bg-accent-50 text-accent-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
@@ -409,16 +457,31 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
       </div>
 
       {/* Navigation */}
-      <nav className={cn(
+      <nav data-tour="sidebar" className={cn(
         "flex-1 py-2 overflow-y-auto overflow-x-hidden",
         collapsed ? "px-1 space-y-1" : "px-2 space-y-0.5"
       )}>
-        {visibleNav.map((entry, idx) => {
-          if (entry.type === "section") {
-            if (collapsed) return null;
-            const color = PILLAR_COLORS[entry.label];
+        {groupSidebarEntries(visibleNav).map((group) => {
+          if (!group.section) {
+            // Standalone item (Dashboard, Org Setup) — own tour step via item.tourId
+            const item = group.items[0]!;
+            return collapsed
+              ? <NavGroupCollapsed key={group.key} item={item} />
+              : <NavGroup key={group.key} item={item} />;
+          }
+          if (collapsed) {
+            // Section headers are hidden in collapsed mode; still render its items.
             return (
-              <div key={`section-${entry.label}-${idx}`} className="px-3 pt-4 pb-1 flex items-center gap-1.5">
+              <div key={group.key} className="space-y-1">
+                {group.items.map((item) => <NavGroupCollapsed key={item.label} item={item} />)}
+              </div>
+            );
+          }
+          const { label } = group.section;
+          const color = PILLAR_COLORS[label];
+          return (
+            <div key={group.key} data-tour={group.tourKey}>
+              <div className="px-3 pt-4 pb-1 flex items-center gap-1.5">
                 {color && (
                   <span
                     className="h-1.5 w-1.5 rounded-full flex-shrink-0"
@@ -429,15 +492,14 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
                   className="text-[10px] font-semibold uppercase tracking-widest"
                   style={{ color: color ?? "#9ca3af" }}
                 >
-                  {entry.label}
+                  {label}
                 </span>
               </div>
-            );
-          }
-          const item = entry as NavItem;
-          return collapsed
-            ? <NavGroupCollapsed key={item.label} item={item} />
-            : <NavGroup key={item.label} item={item} />;
+              <div className="space-y-0.5">
+                {group.items.map((item) => <NavGroup key={item.label} item={item} />)}
+              </div>
+            </div>
+          );
         })}
       </nav>
 

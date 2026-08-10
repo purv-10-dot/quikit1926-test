@@ -15,6 +15,15 @@
 //   11. a normal message routes to onSend, not onAssist
 //   12. a caption typed alongside an attachment travels with the media on send
 //   13. paste strips rich formatting → plain text, newlines become hard breaks
+//   14. the placeholder follows the ACTIVE channel across switches, and its
+//       wording branches on channel.type: open a DM → "Message <DM name>";
+//       switch to a group → "Message in <group name>" (groups take the "in"
+//       form); switch to AI Chat → "Message <AI channel name>"; switch back →
+//       the first name again. Regression guard for the stale-placeholder bug
+//       AND for the group wording. TipTap reads
+//       `Placeholder.configure` once per editor creation, so this only holds
+//       while <Composer> stays keyed by channelId in ConversationView. Also
+//       assert the editor is empty after the switch (no text carried over).
 import { ToastProvider } from "@/components/ui";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,7 +51,13 @@ const members = [{ id: "u1", displayName: "Alice" }];
 function renderComposer(onSendMedia = vi.fn()) {
   render(
     <ToastProvider>
-      <Composer members={members} onSend={vi.fn()} channelId="c1" onSendMedia={onSendMedia} />
+      <Composer
+        members={members}
+        onSend={vi.fn()}
+        currentUserId="u1"
+        channelId="c1"
+        onSendMedia={onSendMedia}
+      />
     </ToastProvider>,
   );
   return onSendMedia;
@@ -128,7 +143,7 @@ describe("Composer attach flow (stage → preview → send)", () => {
     expect(onSendMedia).not.toHaveBeenCalled();
   });
 
-  it("toasts on upload failure when sending", async () => {
+  it("toasts on upload failure when sending AND keeps the file staged", async () => {
     signUploadApi.mockRejectedValueOnce(new Error("sign failed"));
     const onSendMedia = renderComposer();
     const file = new File(["bytes"], "a.png", { type: "image/png" });
@@ -138,5 +153,98 @@ describe("Composer attach flow (stage → preview → send)", () => {
 
     expect(await screen.findByText("Upload failed")).toBeInTheDocument();
     expect(onSendMedia).not.toHaveBeenCalled();
+    // The toast is transient; the chip is not. The file survives so Send retries.
+    const chip = screen.getByTestId("attach-preview");
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveAttribute("data-failed", "true");
+    expect(screen.getByTestId("attach-failed")).toHaveTextContent(
+      "Upload failed — tap Send to retry",
+    );
+    expect(screen.getByText("a.png")).toBeInTheDocument();
+    // Retry is the same button, re-enabled once the attempt settles.
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+});
+
+/**
+ * Retry-after-failure. The whole point: a failed upload must not force the user to
+ * re-pick the file. `pending` survives, so Send re-runs the SAME upload — there is
+ * no separate retry code path to test.
+ */
+describe("Composer failed-upload retry", () => {
+  const png = () => new File(["bytes"], "a.png", { type: "image/png" });
+
+  /** Stage a file, Send, and wait for the failed chip. */
+  async function stageAndFail() {
+    fireEvent.change(fileInput(), { target: { files: [png()] } });
+    await screen.findByTestId("attach-preview");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByTestId("attach-failed");
+  }
+
+  it("clicking Send again re-attempts and succeeds", async () => {
+    signUploadApi.mockRejectedValueOnce(new Error("sign failed"));
+    const onSendMedia = renderComposer();
+    await stageAndFail();
+    expect(onSendMedia).not.toHaveBeenCalled();
+
+    // Same button, same staged file — the second call gets the beforeEach's
+    // resolved sign response.
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(onSendMedia).toHaveBeenCalled());
+    expect(signUploadApi).toHaveBeenCalledTimes(2);
+    const [meta, caption, localUrl] = onSendMedia.mock.calls[0]!;
+    expect(meta).toMatchObject({ objectPath: "quikchat/o/c/uuid-a.png", originalName: "a.png" });
+    expect(caption).toBe("");
+    expect(localUrl).toBe("blob:preview");
+    // Chip clears on the successful retry, exactly as a first-try send would.
+    await waitFor(() => expect(screen.queryByTestId("attach-preview")).toBeNull());
+  });
+
+  it("a second failure re-renders the failed state rather than keeping a stale one", async () => {
+    // Rejects every time — the flag is cleared before each attempt, so this
+    // proves the SECOND failure sets it again instead of leaving it untouched.
+    signUploadApi.mockRejectedValue(new Error("sign failed"));
+    const onSendMedia = renderComposer();
+    await stageAndFail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(signUploadApi).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("attach-failed")).toBeInTheDocument());
+    expect(screen.getByTestId("attach-preview")).toHaveAttribute("data-failed", "true");
+    expect(onSendMedia).not.toHaveBeenCalled();
+  });
+
+  it("a failed attachment can still be discarded instead of retried", async () => {
+    signUploadApi.mockRejectedValueOnce(new Error("sign failed"));
+    const onSendMedia = renderComposer();
+    await stageAndFail();
+
+    const remove = screen.getByRole("button", { name: "Remove attachment" });
+    expect(remove).toBeEnabled(); // only `uploading` disables it, and that's over
+    fireEvent.click(remove);
+
+    expect(screen.queryByTestId("attach-preview")).toBeNull();
+    expect(screen.queryByTestId("attach-failed")).toBeNull();
+    expect(onSendMedia).not.toHaveBeenCalled();
+    expect(signUploadApi).toHaveBeenCalledTimes(1); // no retry fired on discard
+  });
+
+  it("a newly picked file never inherits a stale failed state", async () => {
+    signUploadApi.mockRejectedValueOnce(new Error("sign failed"));
+    renderComposer();
+    await stageAndFail();
+
+    // Pick a different file over the failed one (onFilePicked replaces the staged
+    // file) — the replacement is the path that could inherit `failed`.
+    fireEvent.change(fileInput(), {
+      target: { files: [new File(["bytes"], "b.png", { type: "image/png" })] },
+    });
+
+    await screen.findByText("b.png");
+    expect(screen.getByTestId("attach-preview")).not.toHaveAttribute("data-failed");
+    expect(screen.queryByTestId("attach-failed")).toBeNull();
   });
 });

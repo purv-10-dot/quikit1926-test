@@ -31,6 +31,9 @@ export interface RfqVendorInput {
   email?: string | null;
   vendorName?: string | null;
   assignedItemIds?: string[];
+  /** Per-vendor T&C override — null/absent means "use the RFQ default". */
+  termsAndConditions?: string | null;
+  termsTemplateId?: string | null;
 }
 
 export interface CreateRfqInput {
@@ -46,6 +49,7 @@ export interface CreateRfqInput {
   contactMobile?: string | null;
   address?: string | null;
   termsTemplateId?: string | null;
+  termsAndConditions?: string | null;
   status?: string;
   createdBy: string;
   lines: RfqLineInput[];
@@ -138,6 +142,8 @@ interface RfqVendorRow {
   vendorName?: string | null;
   email?: string | null;
   assignedItemIds?: unknown;
+  termsAndConditions?: string | null;
+  termsTemplateId?: string | null;
   quotedRates?: unknown;
   sentAt?: Date | null;
   respondedAt?: Date | null;
@@ -160,6 +166,7 @@ interface RfqRow {
   contactMobile?: string | null;
   address?: string | null;
   termsTemplateId?: string | null;
+  termsAndConditions?: string | null;
   status: string;
   approvalId?: string | null;
   createdAt?: Date | null;
@@ -275,10 +282,12 @@ function enrichVendor(
     id: v.id,
     vendorId: v.vendorId,
     vendorName:
-      v.vendorName || master?.companyName || master?.name || "",
+      v.vendorName || master?.name || master?.companyName || "",
     email: v.email ?? master?.email ?? "",
     phone: master?.phone ?? "",
     assignedItemIds,
+    termsAndConditions: v.termsAndConditions ?? "",
+    termsTemplateId: v.termsTemplateId ?? null,
     sentAt: v.sentAt?.toISOString?.() ?? null,
     respondedAt: v.respondedAt?.toISOString?.() ?? null,
     quotedRates,
@@ -321,6 +330,7 @@ function enrichRfq(
     contactMobile: row.contactMobile ?? "",
     address: row.address ?? "",
     termsTemplateId: row.termsTemplateId ?? null,
+    termsAndConditions: row.termsAndConditions ?? "",
     status: row.status,
     approvalId: row.approvalId ?? null,
     lineCount: lines.length,
@@ -350,7 +360,12 @@ export type EnrichedRfq = ReturnType<typeof enrichRfq>;
  * the vendor helper below.
  */
 async function augmentRfqsWithDriftFields(
-  rfqRows: Array<{ id: string; address?: unknown; termsTemplateId?: unknown }>,
+  rfqRows: Array<{
+    id: string;
+    address?: unknown;
+    termsTemplateId?: unknown;
+    termsAndConditions?: unknown;
+  }>,
 ): Promise<void> {
   if (rfqRows.length === 0) return;
   if ("address" in rfqRows[0]) return; // already present → client is fresh
@@ -362,8 +377,9 @@ async function augmentRfqsWithDriftFields(
       id: string;
       address: string | null;
       termsTemplateId: string | null;
+      termsAndConditions: string | null;
     }> = await db.$queryRaw`
-      SELECT id, "address", "termsTemplateId"
+      SELECT id, "address", "termsTemplateId", "termsAndConditions"
       FROM app_quikinfra."Rfqs"
       WHERE id = ANY(${ids})
     `;
@@ -373,6 +389,7 @@ async function augmentRfqsWithDriftFields(
       if (!hit) continue;
       r.address = hit.address;
       r.termsTemplateId = hit.termsTemplateId;
+      r.termsAndConditions = hit.termsAndConditions;
     }
   } catch (err: unknown) {
     console.warn(
@@ -389,6 +406,8 @@ async function augmentVendorsWithQuoteFields(
       quotedRates?: unknown;
       quoteRemarks?: unknown;
       quotedAt?: unknown;
+      termsAndConditions?: unknown;
+      termsTemplateId?: unknown;
     }>;
   }>,
 ): Promise<void> {
@@ -412,8 +431,11 @@ async function augmentVendorsWithQuoteFields(
       quotedRates: unknown;
       quoteRemarks: string | null;
       quotedAt: Date | null;
+      termsAndConditions: string | null;
+      termsTemplateId: string | null;
     }> = await db.$queryRaw`
-      SELECT id, "quotedRates", "quoteRemarks", "quotedAt"
+      SELECT id, "quotedRates", "quoteRemarks", "quotedAt",
+             "termsAndConditions", "termsTemplateId"
       FROM app_quikinfra."Rfq_vendors"
       WHERE id = ANY(${vendorIds})
     `;
@@ -425,6 +447,8 @@ async function augmentVendorsWithQuoteFields(
         v.quotedRates = hit.quotedRates;
         v.quoteRemarks = hit.quoteRemarks;
         v.quotedAt = hit.quotedAt;
+        v.termsAndConditions = hit.termsAndConditions;
+        v.termsTemplateId = hit.termsTemplateId;
       }
     }
   } catch (err: unknown) {
@@ -544,6 +568,9 @@ export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
     contactPerson: input.contactPerson ?? null,
     contactMobile: input.contactMobile ?? null,
     ...(includeTerms ? { termsTemplateId: input.termsTemplateId ?? null } : {}),
+    ...(includeTerms
+      ? { termsAndConditions: input.termsAndConditions ?? null }
+      : {}),
     ...(includeTerms ? { address: input.address ?? null } : {}),
     status: input.status ?? "draft",
     createdBy: input.createdBy,
@@ -565,6 +592,12 @@ export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
         assignedItemIds: Array.isArray(v.assignedItemIds)
           ? v.assignedItemIds
           : [],
+        ...(includeTerms
+          ? {
+              termsAndConditions: v.termsAndConditions ?? null,
+              termsTemplateId: v.termsTemplateId ?? null,
+            }
+          : {}),
       })),
     },
   });
@@ -580,6 +613,7 @@ export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
     const msg = toErrorMessage(err, "");
     if (
       msg.includes("Unknown argument `termsTemplateId`") ||
+      msg.includes("Unknown argument `termsAndConditions`") ||
       msg.includes("Unknown argument `address`")
     ) {
       console.warn(
@@ -603,12 +637,33 @@ export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
   if (needsRawBackfill) {
     await db.$executeRaw`
       UPDATE app_quikinfra."Rfqs"
-      SET "termsTemplateId" = ${input.termsTemplateId ?? null},
-          "address"         = ${input.address ?? null}
+      SET "termsTemplateId"    = ${input.termsTemplateId ?? null},
+          "termsAndConditions" = ${input.termsAndConditions ?? null},
+          "address"            = ${input.address ?? null}
       WHERE id = ${row.id}
     `;
     row.termsTemplateId = input.termsTemplateId ?? null;
+    row.termsAndConditions = input.termsAndConditions ?? null;
     row.address = input.address ?? null;
+
+    // Same drift for the nested vendor rows' T&C override columns —
+    // back-fill each by id so per-vendor overrides aren't silently
+    // dropped while the client is stale.
+    const vendorInputById = new Map(
+      (input.vendors ?? []).map((v) => [v.vendorId, v]),
+    );
+    for (const vRow of row.vendors ?? []) {
+      const vInput = vendorInputById.get(vRow.vendorId);
+      if (!vInput) continue;
+      await db.$executeRaw`
+        UPDATE app_quikinfra."Rfq_vendors"
+        SET "termsAndConditions" = ${vInput.termsAndConditions ?? null},
+            "termsTemplateId"    = ${vInput.termsTemplateId ?? null}
+        WHERE id = ${vRow.id}
+      `;
+      vRow.termsAndConditions = vInput.termsAndConditions ?? null;
+      vRow.termsTemplateId = vInput.termsTemplateId ?? null;
+    }
   }
   const { itemById, uomById, vendorById, projectById } = await loadLookups(
     input.orgId,

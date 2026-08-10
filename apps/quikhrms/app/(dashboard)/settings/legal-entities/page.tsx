@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { Building2, Plus, X, Trash2, Save, Star } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -42,6 +43,8 @@ export default function LegalEntitiesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
+  const { hasPermission } = useDashboardConfig();
+  const canManage = hasPermission("hrms.settings.write");
   const [editing, setEditing] = useState<Entity | null>(null);
   const [showForm, setShowForm] = useState(false);
 
@@ -76,15 +79,17 @@ export default function LegalEntitiesPage() {
             <p className="text-xs text-gray-500">Multiple registered companies under one tenant. Each has own PAN/TAN, currency, statutory codes.</p>
           </div>
         </div>
-        <button
-          onClick={() => { setEditing(null); setShowForm((v) => !v); }}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium"
-        >
-          {showForm ? <X size={13} /> : <Plus size={13} />} {showForm ? "Cancel" : "New Entity"}
-        </button>
+        {canManage && (
+          <button
+            onClick={() => { setEditing(null); setShowForm((v) => !v); }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium"
+          >
+            {showForm ? <X size={13} /> : <Plus size={13} />} {showForm ? "Cancel" : "New Entity"}
+          </button>
+        )}
       </div>
 
-      {(showForm || editing) && (
+      {canManage && (showForm || editing) && (
         <EntityForm
           existing={editing}
           submitting={createMut.isPending || updateMut.isPending}
@@ -126,10 +131,14 @@ export default function LegalEntitiesPage() {
                     e.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600")}>{e.status}</span>
                 </td>
                 <td className="py-2 px-3 text-right">
-                  <button onClick={() => { setEditing(e); setShowForm(true); }} className="text-[#22c55e] text-xs hover:underline mr-2">Edit</button>
-                  <button onClick={() => { if (confirm(`Delete ${e.name}?`)) delMut.mutate(e.id); }} className="text-gray-400 hover:text-red-600">
-                    <Trash2 size={12} />
-                  </button>
+                  {canManage && (
+                    <>
+                      <button onClick={() => { setEditing(e); setShowForm(true); }} className="text-[#22c55e] text-xs hover:underline mr-2">Edit</button>
+                      <button onClick={() => { if (confirm(`Delete ${e.name}?`)) delMut.mutate(e.id); }} className="text-gray-400 hover:text-red-600">
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

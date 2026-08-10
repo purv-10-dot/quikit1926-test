@@ -15,10 +15,18 @@ export default defineConfig({
       "node_modules/**",
       ".next/**",
       "e2e/**",
-      // DB-backed integration tests — excluded from Vitest; pending re-home to
-      // Playwright e2e (see QUIKCHAT_MERGE_PLAN.md Bucket 2).
+      // 30 DB-backed integration tests, excluded from `npm run test`. They all
+      // query a real Postgres via `db` from "@quikit/database" against fixture
+      // rows (org "acme"/"globex", users alice/bob/carol@*.test, etc.) that no
+      // seed script currently creates. Blocked on a decision for how CI's
+      // `check` job (no Postgres service today — see .github/workflows/ci.yml)
+      // gets a database before any of these can be re-enabled.
       "app/api/calls/group/route.test.ts",
       "app/api/calls/route.test.ts",
+      "app/api/calls/[id]/token/route.test.ts",
+      "app/api/calls/[id]/participants/[identity]/route.test.ts",
+      "app/api/calls/[id]/mute-all/route.test.ts",
+      "app/api/livekit/webhook/route.test.ts",
       "app/api/channels/[id]/assist/route.test.ts",
       "app/api/channels/[id]/ingest/route.test.ts",
       "app/api/channels/[id]/kb-docs/route.test.ts",

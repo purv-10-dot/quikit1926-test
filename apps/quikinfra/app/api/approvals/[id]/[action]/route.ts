@@ -33,6 +33,7 @@ const ALLOWED_ACTIONS: ApprovalActionKind[] = [
   "reject",
   "return",
   "reverse",
+  "master_approve",
 ];
 
 export async function POST(

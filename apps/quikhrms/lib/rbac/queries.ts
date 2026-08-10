@@ -16,11 +16,6 @@ export function whereEmployeeHasAnyRole(roleNames: string[]): Prisma.EmployeeWhe
   };
 }
 
-export function whereEmployeeHasRole(roleName: string): Prisma.EmployeeWhereInput {
-  return {
-    appRoles: { some: { role: { appId: APP_ID, name: roleName } } },
-  };
-}
 
 /** Sort a fetched-with-appRoles list by max role priority descending. */
 export function sortByMaxRolePriorityDesc<

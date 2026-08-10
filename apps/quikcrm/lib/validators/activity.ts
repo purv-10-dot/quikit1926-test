@@ -106,11 +106,20 @@ export const activityFilterRequestSchema = z.object({
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
 
+/**
+ * Summary counts for the SAME filter the list uses. No page/pageSize: the
+ * summary always describes the entire filtered set, not the visible page.
+ */
+export const activitySummaryRequestSchema = z.object({
+  filter: filterPayloadSchema,
+});
+
 export type CreateActivityInput = z.infer<typeof createActivitySchema>;
 export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
 export type LeadLogInput = z.infer<typeof leadLogSchema>;
 export type SmbOutreachInput = z.infer<typeof smbOutreachSchema>;
 export type ActivityFilterRequest = z.infer<typeof activityFilterRequestSchema>;
+export type ActivitySummaryRequest = z.infer<typeof activitySummaryRequestSchema>;
 
 export const SORTABLE_ACTIVITY_KEYS = new Set([
   "occurredAt",

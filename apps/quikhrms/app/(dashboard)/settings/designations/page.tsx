@@ -8,6 +8,7 @@ import { Modal } from "@/components/hrms/modal";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface Desig {
   id: string;
@@ -34,6 +35,8 @@ const emptyForm: FormState = { title: "", level: 0, departmentId: "" };
 export default function DesignationsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission } = useDashboardConfig();
+  const canManage = hasPermission("hrms.org.write");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -103,7 +106,8 @@ export default function DesignationsPage() {
       <CrudTable title="Designations" data={(data?.data ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} columns={columns} isLoading={isLoading}
         onAdd={openAdd} onEdit={openEdit} onDelete={(id) => deleteMut.mutate(id)}
         search={search} onSearchChange={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search designations..."
-        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }} />
+        pagination={{ page, totalPages: Math.max(1, Math.ceil((data?.data ?? []).length / PAGE_SIZE)), total: (data?.data ?? []).length, limit: PAGE_SIZE, onPageChange: setPage }}
+        canManage={canManage} />
 
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Designation" : "Add Designation"}>
         <form onSubmit={handleSubmit} className="space-y-4">

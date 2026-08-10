@@ -17,6 +17,7 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **admin** | `3002` | `3005` | [apps/admin/package.json](../apps/admin/package.json) | Org admin portal (members, teams, apps, roles, audit log, settings). |
 | **quikscale** | `3003` | `3002` | [apps/quikscale/package.json](../apps/quikscale/package.json) | QuikScale — OKR / KPI / OPSP / Priority / WWW tooling. |
 | **quiktrack** | `3004` | `3004` | [apps/quiktrack/package.json](../apps/quiktrack/package.json) | QuikTrack — project / task / docs tracker (Tiptap rich-text docs). |
+| **quikinsight** | `3015` | `3015` | [apps/quikinsight/package.json](../apps/quikinsight/package.json) | QuikInsight — analytics and insights portal. |
 | **quikvc** | `3005` | `3008` | [apps/quikvc/package.json](../apps/quikvc/package.json) | QuikVC — venture-capital deal flow (founder / investor / VC-admin portals). |
 | **quikinfra** | `3006` | `3006` | [apps/quikinfra/package.json](../apps/quikinfra/package.json) | QuikInfra — construction ERP (BOQ, DPR/RAB, stock, procurement, finance). Own `Cn*` RBAC. |
 | **quiksocial** | `3007` | `3007` | [apps/quiksocial/package.json](../apps/quiksocial/package.json) | QuikSocial — AI social media management. Talks to a Python AI service on Railway. |
@@ -61,6 +62,32 @@ All apps share **one** Postgres database (`quikit_dev` in dev). Schemas are name
 | `MIGRATION_DATABASE_URL` | quiktrack/quiksocial/quikvc/_template only | Same role as `DATABASE_URL_DIRECT` — older template naming. New apps should standardise on `DATABASE_URL_DIRECT`. |
 
 Encode special chars in the password (e.g. `@` → `%40`). Example: `postgresql://postgres:sa%40123@localhost:5432/quikit_dev`.
+
+#### Neon: always set `connect_timeout`
+
+**Every Neon URL (`DATABASE_URL`, `DATABASE_URL_DIRECT`, `MIGRATION_DATABASE_URL`) must carry `connect_timeout=20`.**
+
+```
+postgresql://…@ep-xxxx-pooler.<region>.aws.neon.tech/quikit?sslmode=require&channel_binding=require&connect_timeout=20
+```
+
+Neon suspends the compute when idle. The first query after a suspend pays a cold
+start, and a measured handshake against our instance takes **~4–5s** — right on
+Prisma's default `connect_timeout` of **5s**. When the wake-up is a shade slower
+Prisma throws:
+
+```
+PrismaClientInitializationError: Can't reach database server at `ep-…-pooler.…neon.tech:5432`
+```
+
+Nothing is actually wrong with the database — the port is open and the next
+request usually succeeds. But because the app-access gate in
+`packages/auth/app-access.ts` runs in every app's `(dashboard)/layout.tsx`
+server component, a single missed handshake takes out the whole dashboard with
+the generic "Something went wrong" boundary, which reads like an app bug.
+
+This applies to local `.env.local` **and** the Vercel project env vars — the
+param has to be on the deployed URLs too, not just dev.
 
 ### 2.2 NextAuth (shared session)
 

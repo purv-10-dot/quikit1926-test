@@ -111,15 +111,6 @@ const assignmentDateOrder = (v: { effectiveFrom?: Date; effectiveTo?: Date }) =>
   !v.effectiveTo || !v.effectiveFrom || v.effectiveTo.getTime() >= v.effectiveFrom.getTime();
 const assignmentDateOrderOpts = { path: ["effectiveTo"], message: "End date must be on or after the start date" };
 
-export const createShiftAssignmentSchema = z.object({
-  employeeId: z.string().min(1, "Employee required"),
-  shiftId: z.string().min(1, "Shift required"),
-  effectiveFrom: dateString,
-  effectiveTo: optionalDateString,
-  isRotating: z.boolean().default(false),
-  rotationPattern: z.unknown().optional(),
-}).refine(assignmentDateOrder, assignmentDateOrderOpts);
-
 /**
  * Assign a shift to one or many employees. `employeeIds` is preferred (bulk);
  * `employeeId` kept for backward compatibility. When neither is given, the API
@@ -143,6 +134,3 @@ export const updateShiftAssignmentSchema = z.object({
   isRotating: z.boolean().optional(),
   rotationPattern: z.unknown().optional(),
 }).refine(assignmentDateOrder, assignmentDateOrderOpts);
-
-export type CreateShiftPolicyInput = z.infer<typeof createShiftPolicySchema>;
-export type CreateShiftAssignmentInput = z.infer<typeof createShiftAssignmentSchema>;

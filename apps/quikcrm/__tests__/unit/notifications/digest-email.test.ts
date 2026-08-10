@@ -46,6 +46,16 @@ function repOne(): UserActivityDetail {
       },
     ],
     emailsTotal: 1,
+    emailReplies: [
+      {
+        time: new Date("2026-07-19T10:42:00.000Z"),
+        from: "Rahul Sharma",
+        subject: "Re: Proposal",
+        originalEmail: "Proposal Sent",
+        replyReceived: "Yes",
+      },
+    ],
+    emailRepliesTotal: 1,
     meetings: [
       {
         time: new Date("2026-07-19T11:30:00.000Z"),
@@ -65,6 +75,13 @@ function repOne(): UserActivityDetail {
       },
     ],
     tasksTotal: 1,
+    otherSections: [],
+    otherTotal: 0,
+    leadSummary: [
+      { leadId: "l1", leadName: "ABC Pvt Ltd", total: 8, breakdown: "3 Emails, 2 Replies, 1 Task" },
+      { leadId: "l2", leadName: "XYZ Industries", total: 5, breakdown: "2 Tasks, 1 Meeting, 2 Emails" },
+    ],
+    leadSummaryTotal: 2,
   };
 }
 
@@ -76,10 +93,16 @@ function repTwoEmpty(): UserActivityDetail {
     callsTotal: 0,
     emails: [],
     emailsTotal: 0,
+    emailReplies: [],
+    emailRepliesTotal: 0,
     meetings: [],
     meetingsTotal: 0,
     tasks: [],
     tasksTotal: 0,
+    otherSections: [],
+    otherTotal: 0,
+    leadSummary: [],
+    leadSummaryTotal: 0,
   };
 }
 
@@ -178,6 +201,107 @@ describe("renderDigestEmail — detailed per-user layout (redesign)", () => {
     expect(html).toMatch(/Total Activities/);
   });
 
+  // ── Email Replies section ──────────────────────────────────────────────────
+  it("renders the 📩 Email Replies section with all five columns and real values", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toMatch(/Email Replies \(1\)/);
+    expect(html).toContain("Original Email");
+    expect(html).toContain("Reply Received");
+    expect(html).toContain("Re: Proposal");
+    expect(html).toContain("Proposal Sent");
+  });
+
+  it("Email Replies appears immediately after the Emails section, before Meetings", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    const emails = html.search(/Emails \(1\)/);
+    const replies = html.search(/Email Replies \(1\)/);
+    const meetings = html.search(/Meetings \(1\)/);
+    expect(emails).toBeGreaterThanOrEqual(0);
+    expect(replies).toBeGreaterThan(emails);
+    expect(meetings).toBeGreaterThan(replies);
+  });
+
+  it("zero replies → honest 'No Email Replies' empty state", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toMatch(/No Email Replies/);
+  });
+
+  it("renames the summary row to 'Emails Sent' and adds an 'Email Replies' row", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toContain("Emails Sent");
+    expect(html).toContain("Email Replies");
+  });
+
+  it("EXCLUDES email replies from Total Activities (a reply is not rep-logged work)", () => {
+    // rep one: 1 call + 1 email + 1 meeting + 1 task = 4, plus 1 reply that must NOT count.
+    const { text } = renderDigestEmail(sampleDigest());
+    expect(text).toContain("Email Replies: 1");
+    expect(text).toContain("Total: 4");
+    expect(text).not.toContain("Total: 5");
+  });
+
+  it("a fixture omitting the reply fields still renders (defensive ?? guards)", () => {
+    const legacy = sampleDigest();
+    // Simulate a caller built before this field existed.
+    const u = legacy.userDetails[0] as unknown as Record<string, unknown>;
+    delete u.emailReplies;
+    delete u.emailRepliesTotal;
+    const { html } = renderDigestEmail(legacy);
+    expect(html).toMatch(/Email Replies \(0\)/);
+    expect(html).toMatch(/No Email Replies/);
+  });
+
+  // ── Lead Activity Summary section ──────────────────────────────────────────
+  it("renders the 📊 Lead Activity Summary with all three columns and real values", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toMatch(/Lead Activity Summary \(2\)/);
+    expect(html).toContain("Lead Name");
+    expect(html).toContain("Total Activities");
+    expect(html).toContain("Activity Breakdown");
+    expect(html).toContain("ABC Pvt Ltd");
+    expect(html).toContain("3 Emails, 2 Replies, 1 Task");
+  });
+
+  it("Lead Activity Summary is LAST in the user block (after Tasks and dynamic types)", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    const tasks = html.search(/Tasks Completed \(1\)/);
+    const lead = html.search(/Lead Activity Summary/);
+    expect(tasks).toBeGreaterThanOrEqual(0);
+    expect(lead).toBeGreaterThan(tasks);
+  });
+
+  it("lists most-active leads first (sorted by total desc)", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html.search(/ABC Pvt Ltd/)).toBeLessThan(html.search(/XYZ Industries/));
+  });
+
+  it("no lead activity → honest empty state, not a fabricated row", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toContain("No lead activity recorded during this reporting period.");
+  });
+
+  it("EXCLUDES the lead rollup from Total Activities (it would double-count)", () => {
+    // rep one: 4 real activities; leadSummary totals 13 and must not leak in.
+    const { text } = renderDigestEmail(sampleDigest());
+    expect(text).toContain("Total: 4");
+  });
+
+  it("reuses the shared overflow note when the lead list is capped", () => {
+    const d = sampleDigest();
+    d.userDetails[0].leadSummaryTotal = 60; // 2 shown, 60 distinct leads
+    const { html } = renderDigestEmail(d);
+    expect(html).toMatch(/\+58 more leads not shown/);
+  });
+
+  it("a fixture omitting the lead fields still renders (defensive ?? guards)", () => {
+    const legacy = sampleDigest();
+    const u = legacy.userDetails[0] as unknown as Record<string, unknown>;
+    delete u.leadSummary;
+    delete u.leadSummaryTotal;
+    const { html } = renderDigestEmail(legacy);
+    expect(html).toMatch(/Lead Activity Summary \(0\)/);
+  });
+
   it("shows an org-wide totals strip near the top (before the first user block)", () => {
     const { html } = renderDigestEmail(sampleDigest());
     const totalIdx = html.search(/Reps/);
@@ -255,5 +379,178 @@ describe("renderDigestEmail — detailed per-user layout (redesign)", () => {
       expect(subject).not.toMatch(/weekly/i);
       expect(html).not.toMatch(/weekly summary/i);
     });
+  });
+});
+
+/**
+ * DYNAMIC ACTIVITY TYPES in the rendered email. The template must render one
+ * section per discovered type and count them all in the totals — with no
+ * hardcoded type list. Regression for: only Calls/Emails/Meetings/Tasks were
+ * rendered, so custom types never reached the inbox.
+ */
+describe("renderDigestEmail — dynamic activity type sections", () => {
+  function repWithCustomTypes(): UserActivityDetail {
+    return {
+      ...repTwoEmpty(),
+      userName: "Adarsh Jain",
+      otherSections: [
+        {
+          typeLabel: "Bidding",
+          total: 2,
+          rows: [
+            {
+              time: new Date("2026-07-19T09:00:00.000Z"),
+              relatedRecord: "ACME Corp",
+              subject: "Portal bid",
+              outcome: "Submitted",
+              notes: "Bid #4471",
+            },
+          ],
+        },
+        {
+          typeLabel: "Client Interviews",
+          total: 1,
+          rows: [
+            {
+              time: new Date("2026-07-19T12:00:00.000Z"),
+              relatedRecord: "Globex",
+              subject: "Panel round",
+              outcome: "Shortlisted",
+              notes: "2 candidates",
+            },
+          ],
+        },
+      ],
+      otherTotal: 3,
+    };
+  }
+
+  it("renders a section per custom activity type with its records", () => {
+    const { html } = renderDigestEmail(sampleDigest({ userDetails: [repWithCustomTypes()] }));
+    expect(html).toMatch(/Bidding \(2\)/);
+    expect(html).toMatch(/Client Interviews \(1\)/);
+    expect(html).toContain("Portal bid");
+    expect(html).toContain("ACME Corp");
+    expect(html).toContain("Shortlisted");
+  });
+
+  it("counts custom types in the per-user summary and Total Activities", () => {
+    const { html } = renderDigestEmail(sampleDigest({ userDetails: [repWithCustomTypes()] }));
+    // repTwoEmpty has 0 of the four fixed types; the 3 custom ones are the total.
+    expect(html).toMatch(/Total Activities/);
+    expect(html).toContain("Bidding");
+    expect(html).toContain("Client Interviews");
+    const totalCell = html.match(/>3<\/strong>/);
+    expect(totalCell).not.toBeNull();
+  });
+
+  it("counts custom types in the org-wide totals strip", () => {
+    const { html } = renderDigestEmail(sampleDigest({ userDetails: [repWithCustomTypes()] }));
+    expect(html).toContain("Other");
+    // Total = 3 (all custom); rendered in the highlighted total cell.
+    expect(html).toMatch(/>3<\/div>/);
+  });
+
+  it("includes custom types in the plain-text fallback", () => {
+    const { text } = renderDigestEmail(sampleDigest({ userDetails: [repWithCustomTypes()] }));
+    expect(text).toContain("Bidding: 2");
+    expect(text).toContain("Client Interviews: 1");
+    expect(text).toContain("Total: 3");
+  });
+
+  it("a user with no dynamic sections renders unchanged (no 'Other' cell)", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).not.toContain(">Other<");
+  });
+
+  /**
+   * SUMMARY vs DETAIL split. digest-detail pads otherSections with zero-count
+   * placeholders for every active configured type; the summary band lists them
+   * all (a 0 is information) while the detail band renders only types with
+   * records (no empty "Demo (0) / No Demo" block).
+   */
+  describe("zero-count types: listed in the summary, omitted from the detail", () => {
+    function repWithZeroTypes(): UserActivityDetail {
+      return {
+        ...repTwoEmpty(),
+        userName: "Saniya Tharwani",
+        callsTotal: 1,
+        calls: [
+          {
+            time: new Date("2026-07-19T10:30:00.000Z"),
+            contact: "ABC",
+            company: "XYZ",
+            durationLabel: "12 min",
+            outcome: "Connected",
+            notes: "—",
+          },
+        ],
+        otherSections: [
+          {
+            typeLabel: "WhatsApp",
+            total: 2,
+            rows: [
+              {
+                time: new Date("2026-07-19T11:00:00.000Z"),
+                relatedRecord: "Lead A",
+                subject: "Brochure",
+                outcome: "Read",
+                notes: "—",
+              },
+            ],
+          },
+          // Configured but not logged today — summary row only.
+          { typeLabel: "Demo", total: 0, rows: [] },
+          { typeLabel: "Site Visit", total: 0, rows: [] },
+        ],
+        otherTotal: 2,
+      };
+    }
+
+    it("summary lists zero-count types; detail omits their sections entirely", () => {
+      const { html } = renderDigestEmail(sampleDigest({ userDetails: [repWithZeroTypes()] }));
+      // Both labels appear (summary rows)…
+      expect(html).toContain("Demo");
+      expect(html).toContain("Site Visit");
+      // …but never as a detail section heading or an empty-state line.
+      expect(html).not.toMatch(/Demo \(0\)/);
+      expect(html).not.toMatch(/Site Visit \(0\)/);
+      expect(html).not.toMatch(/No Demo/);
+      expect(html).not.toMatch(/No Site Visit/);
+    });
+
+    it("a logged type still renders its detail section", () => {
+      const { html } = renderDigestEmail(sampleDigest({ userDetails: [repWithZeroTypes()] }));
+      expect(html).toMatch(/WhatsApp \(2\)/);
+      expect(html).toContain("Brochure");
+    });
+
+    it("the four specialized sections keep their empty states", () => {
+      const { html } = renderDigestEmail(sampleDigest({ userDetails: [repWithZeroTypes()] }));
+      expect(html).toMatch(/No Emails/);
+      expect(html).toMatch(/No Meetings/);
+      expect(html).toMatch(/No Tasks/);
+    });
+
+    it("zero-count placeholders do not inflate any total", () => {
+      const { html, text } = renderDigestEmail(sampleDigest({ userDetails: [repWithZeroTypes()] }));
+      // 1 call + 2 WhatsApp = 3; the two zero types must contribute nothing.
+      expect(text).toContain("Total: 3");
+      expect(text).toContain("Demo: 0");
+      expect(html).toMatch(/Total Activities/);
+    });
+  });
+
+  it("escapes custom type labels (no HTML injection from a type name)", () => {
+    const rep = {
+      ...repTwoEmpty(),
+      otherSections: [
+        { typeLabel: "<img src=x onerror=alert(1)>", total: 1, rows: [] },
+      ],
+      otherTotal: 1,
+    };
+    const { html } = renderDigestEmail(sampleDigest({ userDetails: [rep] }));
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x");
   });
 });

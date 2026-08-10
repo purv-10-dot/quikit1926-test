@@ -1,5 +1,24 @@
 import type { Mention, MessageDto, ReactionSummary } from "@/lib/shared";
 
+// Mirror of `EDIT_WINDOW_MS` in lib/server/messages.service.ts, which is the
+// SOURCE OF TRUTH. Defined locally (not imported) because that module pulls in
+// Prisma, and the `@/lib/shared` barrel pulls in ioredis/node:events — neither is
+// importable from a client bundle. Same mirroring pattern as
+// ASSISTANT_BOT_USER_ID in lib/ticks.ts. Keep the two in sync.
+export const EDIT_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Whether the viewer may still edit `message` (QC_007). Mirrors the server gate
+ * in `editMessage`: own message + editable type + inside the edit window. Used to
+ * hide the Edit action so the UI never offers an edit the server would reject.
+ * `now` is injected so callers/tests control the clock.
+ */
+export function canEditMessage(message: MessageDto, meId: string, now: number): boolean {
+  if (message.senderId !== meId) return false;
+  if (message.type !== "Text") return false;
+  return now - new Date(message.createdAt).getTime() <= EDIT_WINDOW_MS;
+}
+
 /** Replace a message in an ascending list by id (no-op if absent). */
 export function updateInList(
   list: MessageDto[],

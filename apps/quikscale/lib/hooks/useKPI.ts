@@ -57,11 +57,12 @@ export function useCreateKPI() {
 
   return useMutation({
     mutationFn: (input: CreateKPIInput) => kpiService.createKPI(input),
-    onSuccess: () => {
-      // Invalidate the KPI list + Dashboard summary AND the Dashboard
-      // infinite-scroll list (["kpi-infinite"]) — see dashboardInvalidation.ts.
-      invalidateEntity(queryClient, "kpi");
-    },
+    // Invalidate the KPI list + Dashboard summary AND the Dashboard
+    // infinite-scroll list (["kpi-infinite"]) — see dashboardInvalidation.ts.
+    // Returning (not just calling) invalidateEntity makes mutateAsync() callers
+    // wait for the refetches to land, closing the window where the Dashboard's
+    // summary cards and its infinite table briefly disagree on the same row.
+    onSuccess: () => invalidateEntity(queryClient, "kpi"),
   });
 }
 
@@ -71,10 +72,8 @@ export function useUpdateKPI(id: string) {
 
   return useMutation({
     mutationFn: (input: Partial<UpdateKPIInput>) => kpiService.updateKPI(id, input),
-    onSuccess: () => {
-      // detail + list + dashboard + dashboard-infinite (single source of truth).
-      invalidateEntity(queryClient, "kpi", { id });
-    },
+    // detail + list + dashboard + dashboard-infinite (single source of truth).
+    onSuccess: () => invalidateEntity(queryClient, "kpi", { id }),
   });
 }
 
@@ -84,12 +83,13 @@ export function useDeleteKPI() {
 
   return useMutation({
     mutationFn: (id: string) => kpiService.deleteKPI(id),
-    onSuccess: () => {
+    onSuccess: () =>
       // Broad ["kpi"] invalidation covers cascade-deleted children's detail/weekly;
       // invalidateEntity adds the Dashboard infinite list + summary.
-      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      invalidateEntity(queryClient, "kpi");
-    },
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: kpiKeys.all }),
+        invalidateEntity(queryClient, "kpi"),
+      ]),
   });
 }
 
@@ -103,10 +103,11 @@ export function useRestoreKPI() {
       if (!json.success) throw new Error(json.error || "Failed to restore KPI");
       return json.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      invalidateEntity(queryClient, "kpi");
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: kpiKeys.all }),
+        invalidateEntity(queryClient, "kpi"),
+      ]),
   });
 }
 
@@ -124,10 +125,11 @@ export function useBulkRestoreKPI() {
       if (!json.success) throw new Error(json.error || "Failed to restore KPIs");
       return (json.data ?? { restored: 0 }) as { restored: number };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      invalidateEntity(queryClient, "kpi");
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: kpiKeys.all }),
+        invalidateEntity(queryClient, "kpi"),
+      ]),
   });
 }
 
@@ -148,11 +150,11 @@ export function useUpdateWeeklyValue(kpiId: string) {
 
   return useMutation({
     mutationFn: (input: WeeklyValueInput) => kpiService.updateWeeklyValue(kpiId, input),
-    onSuccess: () => {
-      // detail(kpiId) prefix-matches its weekly child; plus list + dashboard +
-      // dashboard-infinite so the Dashboard KPI table reflects the new value.
-      invalidateEntity(queryClient, "kpi", { id: kpiId });
-    },
+    // detail(kpiId) prefix-matches its weekly child; plus list + dashboard +
+    // dashboard-infinite so the Dashboard KPI table reflects the new value.
+    // Returned (not just called) so callers awaiting mutateAsync() see fully
+    // refetched caches before proceeding — see dashboardInvalidation.ts.
+    onSuccess: () => invalidateEntity(queryClient, "kpi", { id: kpiId }),
   });
 }
 
@@ -164,9 +166,11 @@ export function useUpdateWeeklyValuesBatch(kpiId: string) {
   return useMutation({
     mutationFn: (inputs: WeeklyValueInput[]) =>
       kpiService.updateWeeklyValuesBatch(kpiId, inputs),
-    onSuccess: () => {
-      invalidateEntity(queryClient, "kpi", { id: kpiId });
-    },
+    // Returned so LogModal's `await updateWeeklyBatch.mutateAsync(...)` doesn't
+    // resolve (and close the modal) until the Dashboard's summary cards and its
+    // infinite KPI table have both finished refetching — see
+    // dashboardInvalidation.ts for why the two can otherwise briefly disagree.
+    onSuccess: () => invalidateEntity(queryClient, "kpi", { id: kpiId }),
   });
 }
 

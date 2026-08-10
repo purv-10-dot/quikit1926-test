@@ -16,5 +16,3 @@ export const REGULARIZATION_REASONS = [
   "Early departure (pre-approved)",
   OTHER_REASON,
 ] as const;
-
-export type RegularizationReason = (typeof REGULARIZATION_REASONS)[number];

@@ -19,6 +19,14 @@ export type FanoutEventType =
   | "message_update"
   | "reaction"
   | "channel_created"
+  // Group details changed (rename / description / avatar) — APP-PUBLISHED on
+  // PATCH /api/channels/[id]. Relayed to the channel room so members update the
+  // channel in place. Payload: { channelId, name?, description?, avatarUrl? }
+  | "channel_updated"
+  // Group deleted-for-everyone — APP-PUBLISHED on the admin delete route.
+  // Relayed to the channel room so members remove it live. Payload:
+  //   { channelId, memberIds?: string[] }
+  | "channel_deleted"
   | "system"
   | "read"
   // Per-member delivery watermark (S14a) — channel-room relayed like `read`.
@@ -27,7 +35,20 @@ export type FanoutEventType =
   | "notification"
   // Ephemeral, gateway-relayed (not app-published): emitted straight to rooms.
   | "presence"
-  | "typing";
+  // Durable set-status change (available|busy|dnd|brb|away|appear_offline).
+  // APP-PUBLISHED on write to /api/me/presence. Fans out like `channel_created`:
+  // the payload carries the author's channel ids and the gateway relays to each
+  // `channel:{orgId}:{id}` room. Payload:
+  //   { userId, status, statusMessage?, statusExpiresAt?: string, channelIds: string[] }
+  | "presence_status"
+  | "typing"
+  // A group call started (CALL-3 §3). APP-PUBLISHED from POST /api/calls/group.
+  // Relayed to the channel room like `channel_updated` — every member with the
+  // channel open gets a live "join" nudge; a member who's offline still finds
+  // the call later via GET /api/calls/active (they're already a
+  // QcCallParticipant from call creation). Payload:
+  //   { callId, channelId, initiatorId, type: "audio" | "video" }
+  | "call_group_started";
 
 export interface FanoutEvent {
   orgId: string;

@@ -288,12 +288,12 @@ export default function LocationsPage() {
 
   const handleSubmit = async () => {
     const errs = validateForm(form, rules);
-    // At least one material must be stocked at the location, and each picked
-    // material needs a positive quantity — an allotted qty of 0 (or blank)
-    // is meaningless and would leave the location with nothing to consume.
-    if (!form.itemIds || form.itemIds.length === 0) {
-      errs.itemIds = "Add at least one material";
-    } else {
+    // Items are OPTIONAL — a site is often created before anything is stocked
+    // there, so the location must be saveable with an empty material list and
+    // topped up later. Quantity stays mandatory for materials that ARE picked:
+    // an allotted qty of 0 (or blank) is meaningless and would leave the
+    // location holding a material it can never consume.
+    if (form.itemIds && form.itemIds.length > 0) {
       const missingQty = form.itemIds.some(
         (id) => !(parseFloat(form.itemQtyByItemId?.[id] ?? "") > 0),
       );
@@ -409,9 +409,8 @@ export default function LocationsPage() {
           </FormRow>
           <Field
             label="Items"
-            required
             error={errors.itemIds}
-            hint="Pick items stored here — choose an item group first, then materials (same as Indents / RFQ)"
+            hint="Optional — pick items stored here (choose an item group first, then materials, same as Indents / RFQ). Leave empty to create the site now and add materials later."
           >
             <GroupedMaterialMultiSelect
               values={form.itemIds}

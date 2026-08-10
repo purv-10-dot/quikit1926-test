@@ -1,6 +1,7 @@
 import crypto from "crypto";
+import { resolveTokenSecret } from "./token-secret";
 
-const SECRET = process.env.CANDIDATE_DOC_TOKEN_SECRET || process.env.FEEDBACK_TOKEN_SECRET || process.env.NEXTAUTH_SECRET || "dev-candidate-doc-secret-change-me";
+const SECRET = resolveTokenSecret("candidate-doc-token", "dev-candidate-doc-secret-change-me", process.env.CANDIDATE_DOC_TOKEN_SECRET, process.env.FEEDBACK_TOKEN_SECRET, process.env.NEXTAUTH_SECRET);
 const EXPIRY_DAYS = 7;
 
 function b64u(buf: Buffer): string {

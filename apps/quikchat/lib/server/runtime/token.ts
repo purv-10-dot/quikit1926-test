@@ -8,6 +8,7 @@
  * the platform `issue-agent-jwt` (internal-secret) and drop in here unchanged.
  */
 import jwt from "jsonwebtoken";
+import { logger } from "@/lib/shared";
 
 export const RUNTIME_TOKEN_ISSUER = "quikchat";
 export const RUNTIME_TOKEN_AUDIENCE = "quikverse-runtime";
@@ -33,8 +34,26 @@ export interface RuntimeTokenClaims {
   agentRunId?: string;
 }
 
+// `instrumentation.ts` refuses to boot in production without AGENT_JWT_SECRET —
+// this fallback is reached only in dev/test, where we still warn once so it's
+// never silent.
+let warnedFallback = false;
+
 function secret(): string {
-  return process.env.AGENT_JWT_SECRET || "dev-only-agent-secret-change-me";
+  const value = process.env.AGENT_JWT_SECRET;
+  if (value) return value;
+  if (!warnedFallback) {
+    warnedFallback = true;
+    logger.warn(
+      "AGENT_JWT_SECRET is unset — signing agent JWTs with a hardcoded dev secret",
+    );
+  }
+  return "dev-only-agent-secret-change-me";
+}
+
+/** Test hook: drop the warn-once latch so a test can re-observe the warning. */
+export function __resetAgentSecretWarnForTest(): void {
+  warnedFallback = false;
 }
 
 /** Mint a short-lived agent JWT to present to the runtime. */

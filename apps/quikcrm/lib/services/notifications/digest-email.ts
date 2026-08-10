@@ -13,11 +13,36 @@
  * tables of ACTUAL records logged in the window:
  *   📞 Calls    — Time · Contact · Company · Duration · Outcome · Notes
  *   📧 Emails   — Time · To · Subject · Delivery · Reply Status
+ *   📩 Email Replies — Time · From · Subject · Original Email · Reply Received
  *   🤝 Meetings — Time · Client · Meeting Type · Status · Notes
  *   ✅ Tasks    — Time · Task · Related Record · Status
+ *   📌 <Any other type> — Time · Related Record · Subject · Outcome · Notes
+ *   📊 Lead Activity Summary — Lead Name · Total Activities · Activity Breakdown
+ *      (a rollup of the sections above, grouped by lead; last in each user block)
  * Each empty section shows an honest "No Calls" / "No Emails" / … line, and each
  * user's block ends with a compact count summary (Calls/Emails/Meetings/Tasks/
- * Total). A small org-wide totals strip sits at the very top for a quick glance.
+ * every dynamic type/Total). A small org-wide totals strip sits at the very top.
+ *
+ * ─── ALL activity types, not just four ───────────────────────────────────────
+ * The four sections above keep bespoke columns because they join extra tables.
+ * EVERY other activity type — the remaining seeded defaults (Note, WhatsApp,
+ * Demo, Site Visit, …) and anything an admin adds in Settings → Activity Types —
+ * arrives via `u.otherSections`, which digest-detail builds from the DATA. The
+ * renderer just loops it, so a new custom type needs no change here. Per-user
+ * and org totals count every type (see userTotal).
+ *
+ * ─── The two bands show DIFFERENT slices of that one list ────────────────────
+ * digest-detail pads otherSections with `{ total: 0, rows: [] }` placeholders
+ * for every ACTIVE configured type the user didn't log. From that single list:
+ *   - Team Member Summary  → renders ALL rows, so leadership sees the full
+ *     activity menu and a 0 reads as real information ("no demos today").
+ *   - Detailed Activity Report → renders only sections with total > 0, so no
+ *     empty "Demo (0) / No Demo" block bloats the report.
+ * Both read the same array, so the two bands can never disagree on labels.
+ * Zero-count placeholders carry no rows and so never affect any total.
+ *
+ * `otherSections`/`otherTotal` are read defensively (`?? []` / `?? 0`) so a
+ * caller constructing UserActivityDetail without them still renders.
  *
  * HONEST LABELS (data-model constraints, see digest-detail.ts):
  *   - Email "Delivery" shows "Sent" — the model has no real delivery/bounce
@@ -35,8 +60,11 @@ import type {
   UserActivityDetail,
   CallDetail,
   EmailDetail,
+  EmailReplyDetail,
   MeetingDetail,
   TaskDetail,
+  GenericActivitySection,
+  LeadActivitySummary,
 } from "@/lib/services/notifications/digest-detail";
 import { MAX_ROWS_PER_SECTION } from "@/lib/services/notifications/digest-detail";
 
@@ -128,6 +156,29 @@ function renderEmails(emails: EmailDetail[], total: number): string {
   );
 }
 
+/**
+ * 📩 Email Replies — inbound replies to this rep's outbound mail.
+ *
+ * "Reply Received" is always "Yes": a row exists only because a reply landed.
+ * The column is kept because the spec asks for it and it makes the table
+ * self-describing when skimmed out of context.
+ */
+function renderEmailReplies(replies: EmailReplyDetail[], total: number): string {
+  const heading = subHeading(`📩 Email Replies (${total})`);
+  if (total === 0) return heading + emptyLine("No Email Replies");
+  const rows = replies
+    .map(
+      (r) =>
+        `<tr>${td(escHtml(fmtTime(r.time)))}${td(escHtml(r.from))}${td(escHtml(r.subject))}${td(escHtml(r.originalEmail))}${td(escHtml(r.replyReceived))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "From", "Subject", "Original Email", "Reply Received"], rows) +
+    overflowNote(total, replies.length, "email replies")
+  );
+}
+
 function renderMeetings(meetings: MeetingDetail[], total: number): string {
   const heading = subHeading(`🤝 Meetings (${total})`);
   if (total === 0) return heading + emptyLine("No Meetings");
@@ -160,9 +211,74 @@ function renderTasks(tasks: TaskDetail[], total: number): string {
   );
 }
 
+/**
+ * One DYNAMIC activity-type section (any type without a specialized renderer).
+ * Columns are the ones every activity has, so a new custom type needs no code.
+ *
+ * Only called for sections with total > 0 — renderUserBlock filters out the
+ * zero-count placeholders that digest-detail pads in for the summary band, so
+ * the detail report never shows an empty "Demo (0) / No Demo" section. The
+ * empty-state branch below is retained as a defensive fallback for a caller
+ * that hands us a zero section directly.
+ */
+function renderGenericSection(s: GenericActivitySection): string {
+  const heading = subHeading(`📌 ${s.typeLabel} (${s.total})`);
+  if (s.total === 0) return heading + emptyLine(`No ${s.typeLabel}`);
+  const rows = s.rows
+    .map(
+      (r) =>
+        `<tr>${td(escHtml(fmtTime(r.time)))}${td(escHtml(r.relatedRecord))}${td(escHtml(r.subject))}${td(escHtml(r.outcome))}${td(escHtml(r.notes))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "Related Record", "Subject", "Outcome", "Notes"], rows) +
+    overflowNote(s.total, s.rows.length, s.typeLabel.toLowerCase())
+  );
+}
+
+/**
+ * 📊 Lead Activity Summary — one row per lead the rep worked on in the window.
+ *
+ * A ROLLUP of the sections above, not a new data source, so it is deliberately
+ * absent from Total Activities (that would double-count every row). Sorting and
+ * the breakdown string are decided in digest-detail; this stays presentational.
+ */
+function renderLeadSummary(leads: LeadActivitySummary[], total: number): string {
+  const heading = subHeading(`📊 Lead Activity Summary (${total})`);
+  if (total === 0) {
+    return heading + emptyLine("No lead activity recorded during this reporting period.");
+  }
+  const rows = leads
+    .map(
+      (l) =>
+        `<tr>${td(escHtml(l.leadName))}${td(String(l.total))}${td(escHtml(l.breakdown))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Lead Name", "Total Activities", "Activity Breakdown"], rows) +
+    overflowNote(total, leads.length, "leads")
+  );
+}
+
+/**
+ * Total activities for one user across EVERY type — the four specialized
+ * sections plus all dynamically-discovered ones. Single source of truth so the
+ * per-user summary, the org strip, and the text fallback can never disagree.
+ *
+ * DELIBERATELY EXCLUDES emailRepliesTotal: a reply is the customer's action, not
+ * work the rep logged, so counting it would inflate rep productivity. If the
+ * business later decides replies ARE activities, add it here — this one function
+ * feeds the per-user summary, the org strip, and the text fallback.
+ */
+function userTotal(u: UserActivityDetail): number {
+  return u.callsTotal + u.emailsTotal + u.meetingsTotal + u.tasksTotal + (u.otherTotal ?? 0);
+}
+
 /** Compact per-user vertical key-value summary. */
 function renderUserSummary(u: UserActivityDetail): string {
-  const totalActivities = u.callsTotal + u.emailsTotal + u.meetingsTotal + u.tasksTotal;
+  const totalActivities = userTotal(u);
   // Vertical key : value rows. Label column is fixed-width so the colons line
   // up; a monospace stack keeps the alignment stable across email clients.
   const row = (label: string, n: number, emphasize = false) =>
@@ -173,9 +289,11 @@ function renderUserSummary(u: UserActivityDetail): string {
     </tr>`;
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;border-collapse:collapse;">
     ${row("Calls", u.callsTotal)}
-    ${row("Emails", u.emailsTotal)}
+    ${row("Emails Sent", u.emailsTotal)}
+    ${row("Email Replies", u.emailRepliesTotal ?? 0)}
     ${row("Meetings", u.meetingsTotal)}
     ${row("Tasks", u.tasksTotal)}
+    ${(u.otherSections ?? []).map((s) => row(s.typeLabel, s.total)).join("")}
     ${row("Total Activities", totalActivities, true)}
   </table>`;
 }
@@ -211,14 +329,27 @@ function renderUserSummaryBlock(u: UserActivityDetail): string {
   <tr><td style="padding:0 28px;"><div style="border-top:1px solid #e2e8f0;margin:12px 0;"></div></td></tr>`;
 }
 
-/** One complete per-user detail block (banner + 4 sections + divider). */
+/**
+ * One complete per-user detail block: banner + the four specialized sections +
+ * one section per dynamically-discovered activity type that HAS records.
+ *
+ * Zero-count dynamic sections are filtered out here: digest-detail pads every
+ * active configured type onto otherSections so the Team Member Summary can list
+ * the full menu, but the detail report only shows types with actual activity.
+ * The four specialized sections still render their honest "No Calls"/"No Emails"
+ * empty states — those are fixed columns of the report, not the dynamic menu.
+ */
 function renderUserBlock(u: UserActivityDetail): string {
+  const logged = (u.otherSections ?? []).filter((s) => s.total > 0);
   return `<tr><td style="padding:8px 28px 4px;">
     ${renderUserBanner(u)}
     ${renderCalls(u.calls, u.callsTotal)}
     ${renderEmails(u.emails, u.emailsTotal)}
+    ${renderEmailReplies(u.emailReplies ?? [], u.emailRepliesTotal ?? 0)}
     ${renderMeetings(u.meetings, u.meetingsTotal)}
     ${renderTasks(u.tasks, u.tasksTotal)}
+    ${logged.map(renderGenericSection).join("")}
+    ${renderLeadSummary(u.leadSummary ?? [], u.leadSummaryTotal ?? 0)}
   </td></tr>
   <tr><td style="padding:0 28px;"><div style="border-top:2px solid #e2e8f0;margin:14px 0;"></div></td></tr>`;
 }
@@ -231,11 +362,13 @@ function renderOrgSummary(d: AssembledDigest): string {
       acc.emails += u.emailsTotal;
       acc.meetings += u.meetingsTotal;
       acc.tasks += u.tasksTotal;
+      acc.other += u.otherTotal ?? 0;
       return acc;
     },
-    { calls: 0, emails: 0, meetings: 0, tasks: 0 },
+    { calls: 0, emails: 0, meetings: 0, tasks: 0, other: 0 },
   );
-  const total = totals.calls + totals.emails + totals.meetings + totals.tasks;
+  // Total spans EVERY activity type, including all dynamic ones.
+  const total = d.userDetails.reduce((sum, u) => sum + userTotal(u), 0);
   const cell = (label: string, n: number) =>
     `<td align="center" style="padding:10px 8px;font-family:${FONT_STACK};border-right:1px solid #e2e8f0;">
       <div style="font-size:20px;font-weight:700;color:#1e40af;">${n}</div>
@@ -250,6 +383,7 @@ function renderOrgSummary(d: AssembledDigest): string {
         ${cell("Emails", totals.emails)}
         ${cell("Meetings", totals.meetings)}
         ${cell("Tasks", totals.tasks)}
+        ${totals.other > 0 ? cell("Other", totals.other) : ""}
         <td align="center" style="padding:10px 8px;font-family:${FONT_STACK};background:#eff6ff;">
           <div style="font-size:20px;font-weight:700;color:#1e40af;">${total}</div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:#1e40af;">Total</div>
@@ -297,11 +431,18 @@ function renderUserSections(d: AssembledDigest): string {
 function renderTextBody(d: AssembledDigest): string {
   return d.userDetails
     .map((u) => {
-      const total = u.callsTotal + u.emailsTotal + u.meetingsTotal + u.tasksTotal;
-      return [
-        `👤 ${u.userName}`,
-        `  Calls: ${u.callsTotal} | Emails: ${u.emailsTotal} | Meetings: ${u.meetingsTotal} | Tasks: ${u.tasksTotal} | Total: ${total}`,
-      ].join("\n");
+      const total = userTotal(u);
+      // Dynamic types are appended after the four fixed ones, same order as HTML.
+      const parts = [
+        `Calls: ${u.callsTotal}`,
+        `Emails Sent: ${u.emailsTotal}`,
+        `Email Replies: ${u.emailRepliesTotal ?? 0}`,
+        `Meetings: ${u.meetingsTotal}`,
+        `Tasks: ${u.tasksTotal}`,
+        ...(u.otherSections ?? []).map((s) => `${s.typeLabel}: ${s.total}`),
+        `Total: ${total}`,
+      ];
+      return [`👤 ${u.userName}`, `  ${parts.join(" | ")}`].join("\n");
     })
     .join("\n\n");
 }

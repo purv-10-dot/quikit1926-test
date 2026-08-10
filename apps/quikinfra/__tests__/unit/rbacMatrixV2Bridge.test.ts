@@ -4,6 +4,7 @@ import {
   revokesToMatrix,
   managedPairs,
   siblingMenuKeys,
+  isMatrixCellManaged,
   MENU_TO_RESOURCE,
   type PermissionMatrix,
 } from "@/lib/rbac/matrixV2Bridge";
@@ -78,13 +79,23 @@ describe("matrixToRevokes", () => {
 });
 
 describe("revokesToMatrix", () => {
-  it("an empty revoke set yields an all-true matrix for every bridged menu", () => {
+  it("an empty revoke set grants every cell the matrix can actually manage", () => {
     const matrix = revokesToMatrix([]);
+    expect(Object.keys(matrix).length).toBeGreaterThan(0);
     for (const [key, row] of Object.entries(matrix)) {
       expect(MENU_TO_RESOURCE[key]).toBeDefined();
-      expect(row).toEqual({ add: true, edit: true, delete: true, view: true });
+      for (const action of ["add", "edit", "delete", "view"] as const) {
+        // Cells the matrix can't express (read-only page, or an action the
+        // resource doesn't carry) must read false — assume-allow on those made
+        // them permanently ticked. `system.approvals` is the one row with no
+        // manageable pair at all and keeps the legacy display.
+        const expected =
+          key === "system.approvals"
+            ? action === "view"
+            : isMatrixCellManaged(key, action);
+        expect([key, action, row[action]]).toEqual([key, action, expected]);
+      }
     }
-    expect(Object.keys(matrix).length).toBeGreaterThan(0);
   });
 
   it("sets only the revoked cells to false, leaving the rest true", () => {

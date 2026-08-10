@@ -30,7 +30,7 @@ export const updateTaxDetailsSchema = z.object({
 
 // ─── Pay Schedule ───────────────────────────────────────
 
-export const WorkDayEnum = z.enum([
+const WorkDayEnum = z.enum([
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 ]);
 
@@ -83,7 +83,7 @@ export const updateESISchema = z.object({
 
 // ─── Statutory: Professional Tax ────────────────────────
 
-export const ptSlabSchema = z.object({
+const ptSlabSchema = z.object({
   fromAmount: z.number().min(0),
   toAmount: z.number().min(0).nullable().optional(),
   taxAmount: z.number().min(0),
@@ -162,7 +162,7 @@ export const updateBonusSchema = z.object({
 
 export const SalaryComponentTypeEnum = z.enum(["Earning", "Deduction", "Reimbursement", "Benefit", "StatutoryContribution"]);
 
-export const SalaryComponentCategoryEnum = z.enum([
+const SalaryComponentCategoryEnum = z.enum([
   "Basic", "HRA", "DA", "ConveyanceAllowance", "MedicalAllowance", "SpecialAllowance",
   "ChildrenEducationAllowance", "TransportAllowance", "TravellingAllowance", "FixedAllowance",
   "Bonus", "Overtime", "Incentive", "Commission", "LeaveEncashment", "NoticePay", "HoldSalary",
@@ -214,7 +214,7 @@ export const updateSalaryComponentSchema = salaryComponentSchema.partial();
 
 // ─── Salary Structure (Template) ────────────────────────
 
-export const salaryStructureComponentSchema = z.object({
+const salaryStructureComponentSchema = z.object({
   componentId: z.string().min(1),
   amountType: z.enum(["Fixed", "PercentOfBasic", "PercentOfCTC", "PercentOfGross", "Formula"]),
   amountValue: z.preprocess((v) => v === "" || v == null ? null : Number(v), z.number().nullable().optional()),
@@ -295,7 +295,7 @@ export const adjustPayslipTdsSchema = z.object({
 
 // ─── Loans ──────────────────────────────────────────────
 
-export const LoanTypeEnum = z.enum(["Personal", "Education", "Medical", "Housing", "Vehicle", "Advance", "Other"]);
+const LoanTypeEnum = z.enum(["Personal", "Education", "Medical", "Housing", "Vehicle", "Advance", "Other"]);
 
 const loanBase = z.object({
   employeeId: z.string().min(1),
@@ -422,8 +422,8 @@ export const employeeSubmitClaimSchema = z.object({
 
 // ─── One-Time Earning (Bonus / Arrears / Incentive) ────
 
-export const ONE_TIME_KIND = ["Bonus", "Arrears", "Incentive", "Commission", "PerformanceBonus", "ReferralBonus", "Other", "Deduction"] as const;
-export const ONE_TIME_CATEGORY = [
+const ONE_TIME_KIND = ["Bonus", "Arrears", "Incentive", "Commission", "PerformanceBonus", "ReferralBonus", "Other", "Deduction"] as const;
+const ONE_TIME_CATEGORY = [
   "Bonus", "Incentive", "Commission", "OtherEarning",
   "OtherDeduction", "LoanDeduction", "NoticePayDeduction",
 ] as const;
@@ -445,7 +445,7 @@ export const createOneTimeEarningSchema = z.object({
 
 // Bulk import row — uses employeeCode (human-friendly) instead of employeeId,
 // the API resolves the code to an id before insert.
-export const bulkOneTimeEarningRowSchema = z.object({
+const bulkOneTimeEarningRowSchema = z.object({
   employeeCode: z.string().min(1),
   kind: z.enum(ONE_TIME_KIND),
   category: z.enum(ONE_TIME_CATEGORY).default("OtherEarning"),
@@ -539,7 +539,7 @@ const form12BBDocSchema = z.object({
   uploadedAt: z.string().min(1),
 });
 
-export const form12BBDocumentsSchema = z.object({
+const form12BBDocumentsSchema = z.object({
   hra:        z.array(form12BBDocSchema).max(20).optional(),
   lta:        z.array(form12BBDocSchema).max(20).optional(),
   homeLoan:   z.array(form12BBDocSchema).max(20).optional(),
@@ -772,9 +772,9 @@ export const updatePriorPayrollSchema = z.object({
 const BSR_REGEX = /^\d{7}$/;
 const PAN_TAN_TAN_REGEX = /^[A-Z]{4}\d{5}[A-Z]$/; // TAN format
 
-export const TDS_PAYMENT_MODE = ["OnlineITNS", "NEFT", "RTGS", "Cheque"] as const;
+const TDS_PAYMENT_MODE = ["OnlineITNS", "NEFT", "RTGS", "Cheque"] as const;
 
-export const allocationSplitSchema = z.object({
+const allocationSplitSchema = z.object({
   periodYear: z.number().int().min(2000).max(2100),
   periodMonth: z.number().int().min(1).max(12),
   amount: z.number().positive(),
@@ -814,7 +814,3 @@ export const createTdsChallanSchema = z.object({
   (v) => !v.allocations || Math.abs(v.allocations.reduce((s, a) => s + a.amount, 0) - v.basicTax) < 0.01,
   { path: ["allocations"], message: "Allocation total must equal Basic Tax" },
 );
-
-export const reallocateTdsChallanSchema = z.object({
-  allocations: z.array(allocationSplitSchema).min(1),
-});

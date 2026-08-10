@@ -54,7 +54,25 @@ function stubEmpty() {
   prismaMock.crmOpportunity.findMany.mockResolvedValue([] as never);
   prismaMock.crmTask.findMany.mockResolvedValue([] as never);
   prismaMock.user.findMany.mockResolvedValue([] as never);
+  prismaMock.crmActivityType.findMany.mockResolvedValue([] as never);
   vi.mocked(resolveRelatedLabels).mockResolvedValue(new Map());
+}
+
+/**
+ * crmActivity.findMany is called several times in one assembly (calls,
+ * meetings, then the dynamic "everything else" pass). Route each call by the
+ * `type` filter in its where-clause so a test can supply just the rows it cares
+ * about: `NOT` present → the dynamic pass; otherwise keyed by the exact type.
+ */
+function stubActivitiesByType(byType: Record<string, unknown[]>, other: unknown[] = []) {
+  prismaMock.crmActivity.findMany.mockImplementation((async (args: {
+    where?: { type?: unknown; NOT?: unknown };
+  }) => {
+    const where = args?.where ?? {};
+    if (where.NOT) return other;
+    const t = typeof where.type === "string" ? where.type : "";
+    return byType[t] ?? [];
+  }) as never);
 }
 
 beforeEach(() => {
@@ -290,5 +308,241 @@ describe("assembleUserActivityDetail — cap + empty", () => {
   it("no activity anywhere → empty user list", async () => {
     const result = await assembleUserActivityDetail(ADMIN, RANGE);
     expect(result).toEqual([]);
+  });
+});
+
+/**
+ * DYNAMIC ACTIVITY TYPES — the digest must cover EVERY activity type, including
+ * custom ones created in Settings → Activity Types, with no hardcoded list.
+ * Regression for: only Calls/Emails/Meetings/Tasks appeared in the digest, so
+ * custom types (and 8 of the 12 seeded defaults) were silently missing.
+ */
+describe("assembleUserActivityDetail — dynamic activity types", () => {
+  const genericRow = (type: string, over: Record<string, unknown> = {}) => ({
+    ownerId: "r1",
+    type,
+    occurredAt: new Date("2026-07-19T09:00:00.000Z"),
+    subject: `${type} subject`,
+    outcome: "Positive",
+    detailNotes: `${type} notes`,
+    relatedKind: "Lead",
+    relatedObjectId: "l1",
+    relatedOrphanedAt: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" },
+    ] as never);
+  });
+
+  it("surfaces a CUSTOM activity type as its own section", async () => {
+    stubActivitiesByType({}, [genericRow("Bidding")]);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    const bidding = rep.otherSections.find((s) => s.typeLabel === "Bidding");
+    expect(bidding).toBeDefined();
+    expect(bidding!.total).toBe(1);
+    expect(bidding!.rows[0].subject).toBe("Bidding subject");
+    expect(rep.otherTotal).toBe(1);
+  });
+
+  it("creates one section per distinct type — no hardcoded set", async () => {
+    stubActivitiesByType({}, [
+      genericRow("Bidding"),
+      genericRow("Client Interviews"),
+      genericRow("LinkedIn Connect"),
+      genericRow("Bidding"),
+    ]);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.otherSections.map((s) => s.typeLabel).sort()).toEqual([
+      "Bidding",
+      "Client Interviews",
+      "LinkedIn Connect",
+    ]);
+    expect(rep.otherSections.find((s) => s.typeLabel === "Bidding")!.total).toBe(2);
+    expect(rep.otherTotal).toBe(4);
+  });
+
+  it("includes seeded defaults that have no specialized section (Note, WhatsApp, Site Visit…)", async () => {
+    stubActivitiesByType({}, [
+      genericRow("Note"),
+      genericRow("WhatsApp"),
+      genericRow("Site Visit"),
+      genericRow("Document Shared"),
+    ]);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.otherSections.map((s) => s.typeLabel).sort()).toEqual([
+      "Document Shared",
+      "Note",
+      "Site Visit",
+      "WhatsApp",
+    ]);
+    expect(rep.otherTotal).toBe(4);
+  });
+
+  it("orders sections by the org's Activity Type sortOrder (settings-synchronized)", async () => {
+    prismaMock.crmActivityType.findMany.mockResolvedValue([
+      { label: "Site Visit", sortOrder: 0 },
+      { label: "Bidding", sortOrder: 1 },
+      { label: "Note", sortOrder: 2 },
+    ] as never);
+    stubActivitiesByType({}, [genericRow("Note"), genericRow("Bidding"), genericRow("Site Visit")]);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["Site Visit", "Bidding", "Note"]);
+  });
+
+  it("a type present in data but absent from config still renders (sorted last, never dropped)", async () => {
+    prismaMock.crmActivityType.findMany.mockResolvedValue([
+      { label: "Bidding", sortOrder: 0 },
+    ] as never);
+    stubActivitiesByType({}, [genericRow("Legacy Import Type"), genericRow("Bidding")]);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["Bidding", "Legacy Import Type"]);
+  });
+
+  it("does NOT duplicate types that already have a specialized section", async () => {
+    // The dynamic pass filters case-insensitively even if the coarse SQL NOT-in
+    // let a differently-cased row through.
+    stubActivitiesByType({}, [genericRow("call"), genericRow("EMAIL"), genericRow("Bidding")]);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["Bidding"]);
+    expect(rep.otherTotal).toBe(1);
+  });
+
+  /**
+   * Zero-count padding: every ACTIVE configured type gets a section (total 0)
+   * so the Team Member Summary can list the full activity menu. The email's
+   * detail band filters these out again — see digest-email.test.ts.
+   */
+  describe("zero-count padding for configured types", () => {
+    it("pads active configured types the user did NOT log (total 0, no rows)", async () => {
+      prismaMock.crmActivityType.findMany.mockResolvedValue([
+        { label: "WhatsApp", sortOrder: 0 },
+        { label: "Demo", sortOrder: 1 },
+        { label: "Site Visit", sortOrder: 2 },
+      ] as never);
+      stubActivitiesByType({}, [genericRow("WhatsApp")]);
+
+      const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+      expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["WhatsApp", "Demo", "Site Visit"]);
+      const demo = rep.otherSections.find((s) => s.typeLabel === "Demo")!;
+      expect(demo.total).toBe(0);
+      expect(demo.rows).toEqual([]);
+    });
+
+    it("padding never inflates otherTotal", async () => {
+      prismaMock.crmActivityType.findMany.mockResolvedValue([
+        { label: "WhatsApp", sortOrder: 0 },
+        { label: "Demo", sortOrder: 1 },
+      ] as never);
+      stubActivitiesByType({}, [genericRow("WhatsApp")]);
+
+      const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+      expect(rep.otherTotal).toBe(1);
+    });
+
+    it("pads a user who logged only calls (no generic activity at all)", async () => {
+      prismaMock.crmActivityType.findMany.mockResolvedValue([
+        { label: "Demo", sortOrder: 0 },
+      ] as never);
+      // Only a Call activity — the generic query returns nothing for this user.
+      stubActivitiesByType(
+        {
+          Call: [
+            {
+              ownerId: "r1",
+              occurredAt: new Date("2026-07-19T09:00:00.000Z"),
+              outcome: "Connected",
+              detailNotes: "n",
+              linkedCallLogId: null,
+              relatedKind: "Lead",
+              relatedObjectId: "l1",
+              relatedOrphanedAt: null,
+            },
+          ],
+        },
+        [],
+      );
+
+      const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+      expect(rep.callsTotal).toBe(1);
+      expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["Demo"]);
+      expect(rep.otherTotal).toBe(0);
+    });
+
+    it("does NOT pad a configured type that has a specialized section", async () => {
+      prismaMock.crmActivityType.findMany.mockResolvedValue([
+        { label: "Call", sortOrder: 0 },
+        { label: "Email", sortOrder: 1 },
+        { label: "Meeting", sortOrder: 2 },
+        { label: "Demo", sortOrder: 3 },
+      ] as never);
+      // One logged activity so the rep appears at all (a user with zero
+      // activity is never listed in the digest).
+      stubActivitiesByType({}, [genericRow("Demo")]);
+
+      const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+      // Call/Email/Meeting already render as specialized sections; padding them
+      // would duplicate the label in the summary.
+      expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["Demo"]);
+    });
+
+    it("no configured types → no padding (unchanged behavior)", async () => {
+      prismaMock.crmActivityType.findMany.mockResolvedValue([] as never);
+      stubActivitiesByType({}, [genericRow("Bidding")]);
+
+      const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+      expect(rep.otherSections.map((s) => s.typeLabel)).toEqual(["Bidding"]);
+    });
+  });
+
+  it("caps dynamic section rows but keeps the true total", async () => {
+    const many = Array.from({ length: 60 }, () => genericRow("Bidding"));
+    stubActivitiesByType({}, many);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    const bidding = rep.otherSections[0];
+    expect(bidding.total).toBe(60);
+    expect(bidding.rows.length).toBe(MAX_ROWS_PER_SECTION);
+  });
+
+  it("no other-type activity → empty otherSections, zero otherTotal", async () => {
+    stubActivitiesByType({ Call: [
+      {
+        ownerId: "r1",
+        occurredAt: new Date("2026-07-19T09:00:00.000Z"),
+        outcome: "Connected",
+        detailNotes: null,
+        linkedCallLogId: null,
+        relatedKind: "None",
+        relatedObjectId: "x",
+        relatedOrphanedAt: null,
+      },
+    ] }, []);
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.otherSections).toEqual([]);
+    expect(rep.otherTotal).toBe(0);
   });
 });
