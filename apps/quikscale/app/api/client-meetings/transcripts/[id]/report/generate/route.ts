@@ -11,6 +11,12 @@ import {
 } from "@/lib/ai/meetingReport";
 import { findSemanticDuplicate, type KpiCandidate } from "@/lib/ai/semanticKpiMatch";
 import { GeminiUnavailableError } from "@/lib/ai/geminiKeyPool";
+import {
+  diffAttendance,
+  formatDurationLabel,
+  formatMeetingDateLabel,
+  inferTimeOfDay,
+} from "@/lib/ai/dailyAdherenceFormat";
 
 export const runtime = "nodejs";
 
@@ -73,6 +79,63 @@ const ownerName = (u: { firstName: string | null; lastName: string | null } | nu
   u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || null : null;
 
 /**
+ * DAILY-only: overwrite the model's meeting-details guesses with real data,
+ * and compute `attendance.notPresent`/`comparisonNote` from the most recent
+ * prior DAILY huddle for the same client that has a saved report. Looks back
+ * a few transcripts (not just the immediately-prior one) in case a day's
+ * report was never generated/saved.
+ */
+async function applyDailyDeterministicFields(
+  report: Awaited<ReturnType<typeof generateMeetingReport>>,
+  orgId: string,
+  t: { clientId: string | null; meetingDate: Date | null; startedAt: Date | null; durationMinutes: number | null },
+): Promise<Awaited<ReturnType<typeof generateMeetingReport>>> {
+  if (report.reportType !== "DAILY") return report;
+
+  const meetingDate = t.meetingDate ? new Date(t.meetingDate) : null;
+  const timeSource = t.startedAt ? new Date(t.startedAt) : meetingDate;
+
+  const meetingDetails = {
+    meetingType: report.meetingDetails?.meetingType ?? null,
+    startMark: report.meetingDetails?.startMark ?? null,
+    endMark: report.meetingDetails?.endMark ?? null,
+    dateLabel: meetingDate ? formatMeetingDateLabel(meetingDate) : report.meetingDetails?.dateLabel ?? null,
+    durationLabel: formatDurationLabel(t.durationMinutes) ?? report.meetingDetails?.durationLabel ?? null,
+    timeOfDay: timeSource ? inferTimeOfDay(timeSource) : report.meetingDetails?.timeOfDay ?? null,
+  };
+
+  let notPresent: string[] = [];
+  let comparisonNote: string | null = null;
+  const todayNames = (report.attendance?.present ?? []).map((p) => p.name);
+
+  if (t.clientId && meetingDate) {
+    const priorCandidates = await db.clientMeetingTranscript.findMany({
+      where: { orgId, clientId: t.clientId, type: "DAILY", meetingDate: { lt: meetingDate }, deletedAt: null },
+      orderBy: { meetingDate: "desc" },
+      take: 5,
+      select: { meetingDate: true, report: true },
+    });
+    const prev = priorCandidates.find((p) => p.report);
+    if (prev?.report) {
+      const prevReport = prev.report as { attendance?: { present?: { name?: string | null }[] } };
+      const prevNames = (prevReport.attendance?.present ?? [])
+        .map((p) => p.name)
+        .filter((n): n is string => Boolean(n));
+      notPresent = diffAttendance(prevNames, todayNames);
+      if (prev.meetingDate) {
+        comparisonNote = `compared with the previous huddle of ${formatMeetingDateLabel(new Date(prev.meetingDate))}`;
+      }
+    }
+  }
+
+  return {
+    ...report,
+    meetingDetails,
+    attendance: { present: report.attendance?.present ?? [], notPresent, comparisonNote },
+  };
+}
+
+/**
  * POST /api/client-meetings/transcripts/[id]/report/generate
  *
  * Generate (do NOT persist) an AI meeting report for one transcript, with each
@@ -92,7 +155,9 @@ export const POST = auth.view<{ id: string }>(async ({ orgId, userId }, _req, { 
     select: {
       type: true,
       title: true,
+      clientId: true,
       meetingDate: true,
+      startedAt: true,
       durationMinutes: true,
       attendees: true,
       summary: true,
@@ -129,6 +194,13 @@ export const POST = auth.view<{ id: string }>(async ({ orgId, userId }, _req, { 
     }
     throw err; // unexpected → 500 via withOrgAuth
   }
+
+  report = await applyDailyDeterministicFields(report, orgId, {
+    clientId: t.clientId,
+    meetingDate: t.meetingDate,
+    startedAt: t.startedAt,
+    durationMinutes: t.durationMinutes,
+  });
 
   // Load candidate sets once for duplicate tagging (org-wide, active).
   const [kpis, priorities, wwws] = await Promise.all([

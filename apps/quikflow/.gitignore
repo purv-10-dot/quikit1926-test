@@ -8,3 +8,9 @@ coverage
 *.tsbuildinfo
 .turbo
 .vercel
+
+# Playwright — build artifacts + minted session-cookie storageState (contains
+# a live NextAuth JWT; never commit).
+playwright-report
+test-results
+__tests__/e2e/.auth

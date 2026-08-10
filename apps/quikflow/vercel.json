@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npx turbo run build --filter=quikflow",
   "git": {
     "deploymentEnabled": {
       "main": true

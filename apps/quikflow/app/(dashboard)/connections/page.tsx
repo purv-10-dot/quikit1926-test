@@ -102,6 +102,16 @@ function IntegrationsInner() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["connections"] }),
   });
 
+  const saveNotetaker = useMutation({
+    mutationFn: (vars: { id: string; notetakerEmail: string }) =>
+      apiSend("/api/connections", "PATCH", vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["connections"] });
+      setBanner({ ok: true, text: "Fathom auto-join updated." });
+    },
+    onError: (e) => setBanner({ ok: false, text: `Couldn't save: ${(e as Error).message}` }),
+  });
+
   const sendTest = useMutation({
     mutationFn: (id: string) => apiSend<{ to?: string; ok?: boolean; label?: string }>("/api/connections/test", "POST", { id }),
     onSuccess: (d) =>
@@ -247,23 +257,30 @@ function IntegrationsInner() {
                   {accounts.length > 0 ? (
                     <ul className="mt-4 space-y-2">
                       {accounts.map((c) => (
-                        <li
-                          key={c.id}
-                          className="flex items-center justify-between rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{c.label}</p>
-                            <StatusPill status={c.status} />
+                        <li key={c.id} className="rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2">
+                          <div className="flex items-center justify-between">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{c.label}</p>
+                              <StatusPill status={c.status} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => disconnect.mutate(c.id)}
+                              disabled={disconnect.isPending}
+                              title="Disconnect"
+                              className="ml-3 shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => disconnect.mutate(c.id)}
-                            disabled={disconnect.isPending}
-                            title="Disconnect"
-                            className="ml-3 shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {p.id === "teams" ? (
+                            <NotetakerEmailField
+                              connectionId={c.id}
+                              value={c.notetakerEmail ?? ""}
+                              onSave={(notetakerEmail) => saveNotetaker.mutate({ id: c.id, notetakerEmail })}
+                              saving={saveNotetaker.isPending && saveNotetaker.variables?.id === c.id}
+                            />
+                          ) : null}
                         </li>
                       ))}
                     </ul>
@@ -567,6 +584,53 @@ function FathomConnectModal({
             {connect.isPending ? "Connecting…" : "Connect"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Fathom notetaker bot email for a Teams connection — invited as an attendee
+ * on every online meeting QuikFlow creates so Fathom auto-joins & records.
+ * Blank clears the override (falls back to the org-wide FATHOM_NOTETAKER_EMAIL).
+ */
+function NotetakerEmailField({
+  connectionId,
+  value,
+  onSave,
+  saving,
+}: {
+  connectionId: string;
+  value: string;
+  onSave: (notetakerEmail: string) => void;
+  saving: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const dirty = draft.trim() !== value;
+
+  return (
+    <div className="mt-2 border-t border-[var(--color-border)] pt-2">
+      <label htmlFor={`notetaker-${connectionId}`} className="mb-1 block text-xs font-medium text-gray-500">
+        Fathom notetaker bot email (auto-join & record)
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={`notetaker-${connectionId}`}
+          type="email"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="notetaker@fathom.video"
+          className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent-400"
+        />
+        <button
+          type="button"
+          onClick={() => onSave(draft.trim())}
+          disabled={saving || !dirty}
+          className="shrink-0 rounded-md bg-accent-600 px-2 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
       </div>
     </div>
   );

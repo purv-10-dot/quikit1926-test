@@ -13,6 +13,7 @@ coverage
 playwright-report
 test-results
 .playwright-cache
+__tests__/e2e/.auth
 .DS_Store
 
 # ── Vercel (CLI link, build output, deploy artifacts) ───────────────────────

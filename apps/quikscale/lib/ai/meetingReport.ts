@@ -49,6 +49,39 @@ const adherenceRowSchema = z.object({
   stuck: ADHERENCE_RATING.nullish(),
   score: z.string().nullish(), // e.g. "3/3"
   rating: z.string().nullish(), // FULL / GOOD / PARTIAL / POOR
+  /** Rationale text shown in the Individual Participant Breakdown, one per criterion. */
+  achievementNote: z.string().nullish(),
+  focusNote: z.string().nullish(),
+  stuckNote: z.string().nullish(),
+});
+
+const meetingDetailsSchema = z.object({
+  meetingType: z.string().nullish(),
+  dateLabel: z.string().nullish(),
+  startMark: z.string().nullish(),
+  endMark: z.string().nullish(),
+  durationLabel: z.string().nullish(),
+  timeOfDay: z.string().nullish(),
+});
+
+const attendeeSchema = z.object({
+  name: z.string(),
+  role: z.string().nullish(),
+});
+
+/** `notPresent`/`comparisonNote` are computed server-side, not by the model. */
+const attendanceSchema = z.object({
+  present: z.array(attendeeSchema),
+  notPresent: z.array(z.string()).nullish(),
+  comparisonNote: z.string().nullish(),
+});
+
+const blockerSchema = z.object({
+  raisedBy: z.string(),
+  category: z.string(),
+  description: z.string(),
+  impact: z.string().nullish(),
+  requiredAction: z.string().nullish(),
 });
 
 const scorecardRowSchema = z.object({
@@ -99,6 +132,10 @@ export const meetingReportSchema = z.object({
   sections: z.array(sectionSchema),
   adherence: z.array(adherenceRowSchema).nullish(),
   scorecard: z.array(scorecardRowSchema).nullish(),
+  /** DAILY only — Meeting Details / Attendance / Stucks & Blockers sections. */
+  meetingDetails: meetingDetailsSchema.nullish(),
+  attendance: attendanceSchema.nullish(),
+  blockers: z.array(blockerSchema).nullish(),
   extractedItems: z.object({
     kpis: z.array(kpiCandidateSchema),
     priorities: z.array(priorityCandidateSchema),
@@ -175,9 +212,12 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
   const templateGuidance =
     type === "DAILY"
       ? [
-          "This is a DAILY HUDDLE. Produce an adherence report:",
-          "- `adherence`: one row per participant with achievement/focus/stuck each rated YES|PARTIAL|NO, a score like \"2/3\", and a rating FULL|GOOD|PARTIAL|POOR.",
-          "- `sections`: a short 'Meeting Details' section and an 'Individual Participant Breakdown' section. Leave `scorecard` null.",
+          "This is a DAILY HUDDLE. Produce a structured adherence report:",
+          "- `adherence`: one row per participant who actually spoke in the transcript, with achievement/focus/stuck each rated YES|PARTIAL|NO, a score like \"2/3\", a rating FULL|GOOD|PARTIAL|POOR, and — for the Individual Participant Breakdown — a short rationale in `achievementNote`/`focusNote`/`stuckNote` explaining WHY each was rated that way (e.g. \"Explicitly stated no blockers.\" or \"Vague — activity referenced but not framed as an achievement.\").",
+          "- `meetingDetails`: only `meetingType` (e.g. \"Daily Huddle — Google Meet\", infer the platform from the transcript if mentioned, else omit it) and `timeOfDay` (e.g. \"Morning (inferred from greetings)\") — leave `dateLabel`/`durationLabel`/`startMark`/`endMark` null unless the transcript states an explicit recording timestamp, since the app fills in the real date/duration separately.",
+          "- `attendance.present`: everyone who actually spoke, each with a short `role` inferred from what they discuss (e.g. \"Client Reporting\", \"Senior Coach\") — do not invent a `notPresent` list, the app computes that separately.",
+          "- `blockers`: every stuck/blocker raised, each with `raisedBy`, a short `category` (e.g. \"Technical / Platform\", \"Finance / Collections\", \"Coordination\"), a `description`, an `impact`, and a `requiredAction`. Merge multiple mentions of the same underlying issue into one entry and note the overlap in its description.",
+          "- `sections`: leave empty or include only a brief opening summary paragraph if useful — the structured fields above are the primary content. Leave `scorecard` null.",
         ]
       : type === "WEEKLY"
         ? [
@@ -202,7 +242,7 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
     "Only extract items the transcript actually supports. For each item and for the report overall, include a `confidence` from 0 to 1 reflecting how clearly the transcript supports it. Add a short `sourceQuote` where possible.",
     "",
     "Return ONLY a JSON object with this exact shape (no markdown, no prose outside the JSON):",
-    '{"reportType":"DAILY|WEEKLY|GENERAL","title":string,"overallConfidence":number,"meta":{"client":string|null,"date":string|null,"durationMinutes":number|null,"platform":string|null,"attendees":string[]},"summary":string,"sections":[{"heading":string,"body":string,"assessment":string|null}],"adherence":[{"participant":string,"role":string|null,"achievement":"YES|PARTIAL|NO","focus":"YES|PARTIAL|NO","stuck":"YES|PARTIAL|NO","score":string,"rating":string}]|null,"scorecard":[{"metric":string,"reading":string,"rag":"GREEN|AMBER|RED"}]|null,"extractedItems":{"kpis":[{"name":string,"description":string|null,"measurementUnit":"Number|Percentage|Currency|Ratio"|null,"target":number|null,"confidence":number,"sourceQuote":string|null}],"priorities":[{"name":string,"description":string|null,"owner":string|null,"confidence":number,"sourceQuote":string|null}],"wwws":[{"who":string|null,"what":string,"when":string|null,"confidence":number,"sourceQuote":string|null}]}}',
+    '{"reportType":"DAILY|WEEKLY|GENERAL","title":string,"overallConfidence":number,"meta":{"client":string|null,"date":string|null,"durationMinutes":number|null,"platform":string|null,"attendees":string[]},"summary":string,"sections":[{"heading":string,"body":string,"assessment":string|null}],"adherence":[{"participant":string,"role":string|null,"achievement":"YES|PARTIAL|NO","focus":"YES|PARTIAL|NO","stuck":"YES|PARTIAL|NO","score":string,"rating":string,"achievementNote":string|null,"focusNote":string|null,"stuckNote":string|null}]|null,"scorecard":[{"metric":string,"reading":string,"rag":"GREEN|AMBER|RED"}]|null,"meetingDetails":{"meetingType":string|null,"dateLabel":string|null,"startMark":string|null,"endMark":string|null,"durationLabel":string|null,"timeOfDay":string|null}|null,"attendance":{"present":[{"name":string,"role":string|null}]}|null,"blockers":[{"raisedBy":string,"category":string,"description":string,"impact":string|null,"requiredAction":string|null}]|null,"extractedItems":{"kpis":[{"name":string,"description":string|null,"measurementUnit":"Number|Percentage|Currency|Ratio"|null,"target":number|null,"confidence":number,"sourceQuote":string|null}],"priorities":[{"name":string,"description":string|null,"owner":string|null,"confidence":number,"sourceQuote":string|null}],"wwws":[{"who":string|null,"what":string,"when":string|null,"confidence":number,"sourceQuote":string|null}]}}',
     "",
     "MEETING METADATA:",
     `- Cadence: ${type}`,

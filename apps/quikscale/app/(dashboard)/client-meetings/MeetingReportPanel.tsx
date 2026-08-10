@@ -12,6 +12,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { StoredMeetingReport } from "@/lib/ai/meetingReport";
 import { kpiPayload, priorityPayload, wwwPayload, quarterOfMonth, resolveOwnerId, type CreateContext, type OwnerUser } from "./reportMapping";
+import { DailyAdherenceReport } from "./DailyAdherenceReport";
+import { DownloadDailyAdherencePdfButton } from "./DownloadDailyAdherencePdfButton";
 
 type ItemKind = "kpis" | "priorities" | "wwws";
 
@@ -242,9 +244,10 @@ export function MeetingReportPanel({
           <span className="text-xs font-medium text-gray-600">Overall confidence</span>
           <ConfidenceBar value={report.overallConfidence} />
         </div>
-        {canEdit ? (
-          <div className="flex items-center gap-2">
-            {editing ? (
+        <div className="flex items-center gap-2">
+          {report.reportType === "DAILY" ? <DownloadDailyAdherencePdfButton report={report} /> : null}
+          {canEdit ? (
+            editing ? (
               <>
                 <select value={quarter} onChange={(e) => setQuarter(e.target.value as typeof quarter)} className="rounded-md border border-gray-200 px-2 py-1 text-xs" aria-label="Quarter">
                   {["Q1", "Q2", "Q3", "Q4"].map((q) => <option key={q} value={q}>{q}</option>)}
@@ -257,11 +260,11 @@ export function MeetingReportPanel({
               </>
             ) : (
               <button onClick={() => setEditing(true)} className="rounded-lg border border-accent-300 px-3 py-1.5 text-xs font-medium text-accent-700 hover:bg-accent-50">Edit report</button>
-            )}
-          </div>
-        ) : (
-          <span className="text-[11px] italic text-gray-400">View only</span>
-        )}
+            )
+          ) : (
+            <span className="text-[11px] italic text-gray-400">View only</span>
+          )}
+        </div>
       </div>
 
       {notice ? <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">{notice}</div> : null}
@@ -287,8 +290,10 @@ export function MeetingReportPanel({
         </section>
       ))}
 
-      {/* Daily adherence table */}
-      {report.adherence && report.adherence.length ? (
+      {/* Daily Adherence Report — 5-section shared-deliverable format */}
+      {report.reportType === "DAILY" ? (
+        <DailyAdherenceReport report={report} />
+      ) : report.adherence && report.adherence.length ? (
         <section>
           <h4 className="mb-1 text-sm font-semibold text-gray-800">Adherence</h4>
           <div className="overflow-x-auto">

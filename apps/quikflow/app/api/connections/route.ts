@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 import type { ConnectionDTO } from "@/types";
 
 const PROVIDERS = [
@@ -35,6 +36,10 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     status: r.status,
     external: EXTERNAL.has(r.provider),
     expiresAt: r.expiresAt?.toISOString() ?? null,
+    notetakerEmail:
+      r.provider === "teams"
+        ? ((r.settings as { notetakerEmail?: string } | null)?.notetakerEmail ?? null)
+        : undefined,
   }));
 
   return NextResponse.json({ success: true, data });
@@ -71,6 +76,51 @@ export const POST = withOrgAuth(
       select: { id: true },
     });
     return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });
+  },
+  { requireAdmin: true },
+);
+
+const settingsSchema = z.object({
+  id: z.string().min(1),
+  // Teams calendar connection: the bot email Fathom's auto-join invite goes
+  // to. Empty string clears the override (falls back to FATHOM_NOTETAKER_EMAIL).
+  notetakerEmail: z.string().trim().max(320).optional(),
+});
+
+/**
+ * PATCH /api/connections — update a connection's per-connection settings
+ * (App Admin). Today this is just `notetakerEmail` on a Teams calendar
+ * connection: the Fathom bot address auto-invited to every online meeting
+ * QuikFlow creates, so it auto-joins and records. Merges into the existing
+ * settings JSON rather than replacing it.
+ */
+export const PATCH = withOrgAuth(
+  async ({ orgId }, req) => {
+    const parsed = settingsSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
+        { status: 400 },
+      );
+    }
+    const { id, notetakerEmail } = parsed.data;
+    const existing = await db.wfConnection.findFirst({
+      where: { id, orgId },
+      select: { settings: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const nextSettings = { ...(existing.settings as Record<string, unknown> | null) };
+    if (notetakerEmail !== undefined) {
+      if (notetakerEmail) nextSettings.notetakerEmail = notetakerEmail;
+      else delete nextSettings.notetakerEmail;
+    }
+    await db.wfConnection.update({
+      where: { id },
+      data: { settings: nextSettings as Prisma.InputJsonValue },
+    });
+    return NextResponse.json({ success: true, data: { id } });
   },
   { requireAdmin: true },
 );

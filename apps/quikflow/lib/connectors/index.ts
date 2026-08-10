@@ -83,6 +83,7 @@ interface StoredConnection {
   accessToken: string | null;
   refreshToken: string | null;
   expiresAt: Date | null;
+  settings?: unknown;
 }
 
 /** Upsert (org, provider, mailbox) with freshly-encrypted tokens. */
@@ -215,6 +216,7 @@ const CONNECTION_SELECT = {
   accessToken: true,
   refreshToken: true,
   expiresAt: true,
+  settings: true,
 } as const;
 
 /**
@@ -341,57 +343,81 @@ export async function createCalendarEventForOrg(
         .filter(Boolean)
     : [];
 
+  // Invite Fathom's notetaker bot on online meetings so it auto-joins and
+  // records — no manual "Start Recording" click in Fathom. Per-connection
+  // setting wins (org admins set this per Fathom account on /connections);
+  // falls back to the org-wide env var; no-op when neither is set.
+  const connSettings = found.conn.settings as { notetakerEmail?: string } | null | undefined;
+  const notetaker = connSettings?.notetakerEmail?.trim() || process.env.FATHOM_NOTETAKER_EMAIL?.trim();
+  if (event.onlineMeeting && notetaker && !attendees.some((a) => a.toLowerCase() === notetaker.toLowerCase())) {
+    attendees.push(notetaker);
+  }
+
   const accessToken = await getFreshAccessToken(found.conn);
   const payload = { ...event, attendees };
   const link = opts?.link;
 
   if (link) {
     const kind = link.kind ?? "";
-    const existing = await db.wfCalendarLink.findUnique({
-      where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
-      select: { id: true, externalEventId: true },
-    });
-    if (existing) {
-      const updated = await found.provider.updateEvent(accessToken, existing.externalEventId, payload);
-      await db.wfCalendarLink.update({
-        where: { id: existing.id },
-        data: {
-          connectionId: found.conn.id,
-          provider: found.conn.provider as never,
-          webLink: updated.webLink ?? null,
-          joinUrl: updated.joinUrl ?? null,
-        },
-      });
-      return { ...updated, organizer: found.conn.label, updated: true };
-    }
-    const created = await found.provider.createEvent(accessToken, payload);
-    // findUnique-then-create isn't atomic: a concurrent call for the same
-    // (orgId, refType, refId, kind) can race past the check above and hit
-    // the unique constraint here. Upsert so the loser of the race updates
-    // the winner's row instead of crashing.
-    await db.wfCalendarLink.upsert({
-      where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
-      create: {
-        orgId,
-        provider: found.conn.provider as never,
-        connectionId: found.conn.id,
-        refType: link.refType,
-        refId: link.refId,
-        kind,
-        externalEventId: created.id,
-        webLink: created.webLink ?? null,
-        joinUrl: created.joinUrl ?? null,
-        createdBy: opts?.createdBy ?? "system",
+    // Two independent callers (e.g. the auto-fired clientMaster.created
+    // workflow AND the direct "Create Teams meetings" button) can target the
+    // exact same (orgId, refType, refId, kind) concurrently. A plain
+    // findUnique-then-create isn't atomic — both could see "no link yet" and
+    // both call provider.createEvent(), producing two real Teams events even
+    // though the DB upsert below only ever keeps one row. A Postgres advisory
+    // lock scoped to this transaction serializes same-key callers so the
+    // second one sees the first's row and PATCHes instead of duplicating.
+    const lockKey = `wf-calendar-link:${orgId}:${link.refType}:${link.refId}:${kind}`;
+    return db.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+        const existing = await tx.wfCalendarLink.findUnique({
+          where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
+          select: { id: true, externalEventId: true },
+        });
+        if (existing) {
+          const updated = await found.provider.updateEvent(accessToken, existing.externalEventId, payload);
+          await tx.wfCalendarLink.update({
+            where: { id: existing.id },
+            data: {
+              connectionId: found.conn.id,
+              provider: found.conn.provider as never,
+              webLink: updated.webLink ?? null,
+              joinUrl: updated.joinUrl ?? null,
+            },
+          });
+          return { ...updated, organizer: found.conn.label, updated: true };
+        }
+        const created = await found.provider.createEvent(accessToken, payload);
+        await tx.wfCalendarLink.upsert({
+          where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
+          create: {
+            orgId,
+            provider: found.conn.provider as never,
+            connectionId: found.conn.id,
+            refType: link.refType,
+            refId: link.refId,
+            kind,
+            externalEventId: created.id,
+            webLink: created.webLink ?? null,
+            joinUrl: created.joinUrl ?? null,
+            createdBy: opts?.createdBy ?? "system",
+          },
+          update: {
+            connectionId: found.conn.id,
+            provider: found.conn.provider as never,
+            externalEventId: created.id,
+            webLink: created.webLink ?? null,
+            joinUrl: created.joinUrl ?? null,
+          },
+        });
+        return { ...created, organizer: found.conn.label, updated: false };
       },
-      update: {
-        connectionId: found.conn.id,
-        provider: found.conn.provider as never,
-        externalEventId: created.id,
-        webLink: created.webLink ?? null,
-        joinUrl: created.joinUrl ?? null,
-      },
-    });
-    return { ...created, organizer: found.conn.label, updated: false };
+      // The lock is held across the outbound Graph call, so give it more
+      // headroom than Prisma's 5s default (Graph create/update can be slow).
+      { timeout: 20_000 },
+    );
   }
 
   const created = await found.provider.createEvent(accessToken, payload);

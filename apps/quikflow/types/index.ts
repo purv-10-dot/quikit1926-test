@@ -52,6 +52,8 @@ export interface ConnectionDTO {
   status: string;
   external: boolean;
   expiresAt: string | null;
+  /** Teams connections only: the Fathom notetaker bot email auto-invited to online meetings. */
+  notetakerEmail?: string | null;
 }
 
 export interface ApprovalDTO {

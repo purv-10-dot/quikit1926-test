@@ -22774,6 +22774,10 @@ model WfConnection {
   refreshToken String? // encrypted at rest
   scopes       String[]
   expiresAt    DateTime?
+  /// Per-connection config, e.g. { notetakerEmail } on a Teams calendar
+  /// connection — invited as an attendee on every online meeting it creates
+  /// so Fathom's bot auto-joins and records. Provider-specific; no fixed shape.
+  settings     Json?
   createdBy    String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
