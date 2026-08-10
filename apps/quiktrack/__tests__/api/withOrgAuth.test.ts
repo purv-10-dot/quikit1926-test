@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
@@ -34,6 +34,9 @@ function mockValidPat() {
     revokedAt: null,
     lastUsedAt: new Date(),
     createdAt: new Date(),
+    // One below the auto-revoke threshold, so a single failed access-recheck
+    // in the "lost project access" test below crosses it and revokes.
+    failedAccessChecks: 2,
   } as never);
 }
 
@@ -52,7 +55,7 @@ beforeEach(() => {
 describe("withOrgAuth({ allowPat: true })", () => {
   it("resolves a valid PAT to projectId + actorType 'agent'", async () => {
     mockValidPat();
-    const seen: { projectId?: string; actorType?: string } = {};
+    const seen: { projectId?: string | null; actorType?: string } = {};
     const handler = withOrgAuth(
       async (ctx) => {
         seen.projectId = ctx.projectId;
@@ -71,7 +74,11 @@ describe("withOrgAuth({ allowPat: true })", () => {
     const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
     const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
     expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toBe('Bearer error="invalid_token"');
+    const wwwAuthenticate = res.headers.get("www-authenticate");
+    expect(wwwAuthenticate).toContain('error="invalid_token"');
+    // RFC 9728 challenge so an OAuth-capable client can discover the IdP.
+    expect(wwwAuthenticate).toContain("resource_metadata=");
+    expect(wwwAuthenticate).toContain("/.well-known/oauth-protected-resource");
     const body = await res.json();
     expect(body).toEqual({ error: "invalid_token" });
   });
@@ -115,6 +122,60 @@ describe("withOrgAuth({ allowPat: true })", () => {
   });
 });
 
+describe("withOrgAuth({ allowPat: true }) — OAuth access tokens (QuikIT launcher IdP)", () => {
+  const OAUTH_TOKEN = "qk_test_access_token";
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  function mockUserinfo(claims: Record<string, unknown> | null, status = 200) {
+    vi.stubEnv("QUIKIT_URL", "https://quikit.example.com");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(claims ? JSON.stringify(claims) : "{}", { status })),
+    );
+  }
+
+  it("resolves a valid OAuth access token to projectId: null + actorType 'agent', without ever trying PAT lookup", async () => {
+    mockUserinfo({ sub: "oauth_user_1", tenant_id: "org_1", email: "a@example.com" });
+    const seen: { userId?: string; orgId?: string; projectId?: string | null; actorType?: string } = {};
+    const handler = withOrgAuth(
+      async (ctx) => {
+        seen.userId = ctx.userId;
+        seen.orgId = ctx.orgId;
+        seen.projectId = ctx.projectId;
+        seen.actorType = ctx.actorType;
+        return NextResponse.json({ success: true });
+      },
+      { allowPat: true },
+    );
+    const res = await handler(buildRequest(`Bearer ${OAUTH_TOKEN}`));
+    expect(res.status).toBe(200);
+    expect(seen).toEqual({ userId: "oauth_user_1", orgId: "org_1", projectId: null, actorType: "agent" });
+    expect(mockDb.qtPersonalAccessToken.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects an OAuth token quikit itself rejects, with the RFC 9728 challenge header", async () => {
+    mockUserinfo(null, 401);
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${OAUTH_TOKEN}`));
+    expect(res.status).toBe(401);
+    const wwwAuthenticate = res.headers.get("www-authenticate");
+    expect(wwwAuthenticate).toContain('error="invalid_token"');
+    expect(wwwAuthenticate).toContain("resource_metadata=");
+  });
+
+  it("rejects a valid OAuth token whose user is no longer an active org member", async () => {
+    mockUserinfo({ sub: "oauth_user_1", tenant_id: "org_1", email: "a@example.com" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${OAUTH_TOKEN}`));
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("withOrgAuth without allowPat — the security property this fix depends on", () => {
   it("rejects a PAT sent as a Bearer token on a route that did not opt into allowPat", async () => {
     mockValidPat();
@@ -129,7 +190,7 @@ describe("withOrgAuth without allowPat — the security property this fix depend
 
   it("still authenticates a normal session-cookie caller exactly as before", async () => {
     setSession({ id: CREATED_BY, orgId: ORG, role: "owner" });
-    const seen: { userId?: string; orgId?: string; actorType?: string; projectId?: string } = {};
+    const seen: { userId?: string; orgId?: string; actorType?: string; projectId?: string | null } = {};
     const handler = withOrgAuth(async (ctx) => {
       seen.userId = ctx.userId;
       seen.orgId = ctx.orgId;

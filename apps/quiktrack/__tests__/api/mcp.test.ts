@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { hashPatToken } from "@/lib/api/patToken";
-import { POST } from "@/app/api/mcp/route";
+import { POST, OPTIONS } from "@/app/api/mcp/route";
 import { rateLimitAsync } from "@quikit/shared/rateLimit";
 
 vi.mock("@quikit/shared/rateLimit", () => ({
@@ -2282,5 +2282,304 @@ describe("POST /api/mcp", () => {
     expect(mockDb.qtIssue.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ projectId: PROJECT }) }),
     );
+  });
+
+  describe("projectId resolution — legacy project-scoped vs. user-scoped tokens", () => {
+    function mockPat(projectId: string | null) {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+        failedAccessChecks: 0,
+      } as never);
+    }
+
+    it("rejects a legacy project-scoped token when the call names a different project", async () => {
+      mockPat(PROJECT);
+      // withPatAuth's own live-recheck (loadProjectAccess against the token's
+      // bound project) must pass before the tool handler ever runs.
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "get_issue", arguments: { issueId: "issue_1", projectId: "other_project" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(body.result.content[0].text).toMatch(/scoped to a single project and cannot act on a different one/);
+      expect(mockDb.qtIssue.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("rejects a user-scoped token (no bound project) calling a tool without a projectId argument", async () => {
+      mockPat(null);
+      // withPatAuth's live-recheck for a user-scoped token is isActiveOrgMember,
+      // not loadProjectAccess — just needs an active membership row.
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "get_issue", arguments: { issueId: "issue_1" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(body.result.content[0].text).toMatch(/isn't scoped to a single project/);
+      expect(mockDb.qtIssue.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("resolves a user-scoped token calling get_issue with an explicit projectId it has access to", async () => {
+      mockPat(null);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.qtIssue.findFirst.mockResolvedValue({
+        id: "issue_1",
+        key: "PRJ-1",
+        title: "Fix the bug",
+        description: null,
+        type: "TASK",
+        priority: "MEDIUM",
+        statusId: "status_1",
+        assigneeId: null,
+      } as never);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "get_issue", arguments: { issueId: "issue_1", projectId: PROJECT } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+      expect(mockDb.qtIssue.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ projectId: PROJECT }) }),
+      );
+    });
+
+    it("rejects a user-scoped token when the target project isn't accessible to the creator", async () => {
+      mockPat(null);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: "other_project" } as never);
+      mockDb.qtProjectMember.findFirst.mockResolvedValue(null);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "get_issue", arguments: { issueId: "issue_1", projectId: "other_project" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(body.result.content[0].text).toBe("Not found");
+      expect(mockDb.qtIssue.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("move_issue: a user-scoped token can act on an explicit project it has access to (fan-out case)", async () => {
+      mockPat(null);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.qtIssue.findFirst.mockResolvedValue({
+        id: "issue_1",
+        projectId: PROJECT,
+        key: "PRJ-1",
+        statusId: "status_1",
+        assigneeId: null,
+        parentId: null,
+        epicId: null,
+        sprintId: null,
+        priority: "MEDIUM",
+        type: "TASK",
+        title: "Fix the bug",
+        startDate: null,
+        dueDate: null,
+        storyPoints: null,
+        eta: null,
+        groupId: null,
+      } as never);
+      mockDb.qtIssue.update.mockResolvedValue({
+        id: "issue_1",
+        key: "PRJ-1",
+        orderInColumn: 0,
+        statusId: "status_2",
+      } as never);
+      mockDb.$transaction.mockImplementation((cb: unknown) =>
+        (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb),
+      );
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: {
+              name: "move_issue",
+              arguments: { issueId: "issue_1", statusId: "status_2", projectId: PROJECT },
+            },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+      expect(mockDb.qtIssue.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ projectId: PROJECT }) }),
+      );
+    });
+  });
+
+  describe("list_projects", () => {
+    function mockPat(projectId: string | null) {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+        failedAccessChecks: 0,
+      } as never);
+    }
+
+    it("returns just the bound project for a legacy project-scoped token", async () => {
+      mockPat(PROJECT);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      mockDb.qtProject.findMany.mockResolvedValue([
+        { id: PROJECT, projectKey: "PRJ", name: "Project One" },
+      ] as never);
+
+      const res = await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_projects", arguments: {} } },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(JSON.parse(body.result.content[0].text)).toEqual([
+        { id: PROJECT, projectKey: "PRJ", name: "Project One" },
+      ]);
+      expect(mockDb.qtProject.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: PROJECT, orgId: ORG }) }),
+      );
+    });
+
+    it("returns every org project for an admin's user-scoped token", async () => {
+      mockPat(null);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      mockDb.qtProject.findMany.mockResolvedValue([
+        { id: "p1", projectKey: "P1", name: "Project One" },
+        { id: "p2", projectKey: "P2", name: "Project Two" },
+      ] as never);
+
+      const res = await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_projects", arguments: {} } },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(JSON.parse(body.result.content[0].text)).toHaveLength(2);
+      expect(mockDb.qtProject.findMany).toHaveBeenCalledWith({
+        where: { orgId: ORG, isDeleted: false },
+        select: { id: true, projectKey: true, name: true },
+      });
+    });
+
+    it("returns only member projects for a non-admin's user-scoped token", async () => {
+      mockPat(null);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProject.findMany.mockResolvedValue([
+        { id: "p1", projectKey: "P1", name: "Project One" },
+      ] as never);
+
+      const res = await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_projects", arguments: {} } },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(JSON.parse(body.result.content[0].text)).toHaveLength(1);
+      expect(mockDb.qtProject.findMany).toHaveBeenCalledWith({
+        where: {
+          orgId: ORG,
+          isDeleted: false,
+          members: { some: { userId: CREATED_BY, isDeleted: false } },
+        },
+        select: { id: true, projectKey: true, name: true },
+      });
+    });
+  });
+});
+
+describe("CORS on /api/mcp", () => {
+  it("OPTIONS returns a 204 preflight response with CORS headers", async () => {
+    const res = OPTIONS();
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
+  });
+
+  it("includes CORS headers on a 401 response so a browser-context client can read it", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue(null);
+    const res = await POST(
+      mcpRequest({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_issue", arguments: {} } }),
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
 });

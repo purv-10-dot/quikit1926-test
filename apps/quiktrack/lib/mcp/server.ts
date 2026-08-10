@@ -1,6 +1,6 @@
 import { createMcpHandler, fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
 import { db } from "@/lib/db";
-import { loadProjectAccess } from "@/lib/api/withProjectAccess";
+import { loadAccessibleProjects, loadProjectAccess } from "@/lib/api/withProjectAccess";
 import { userCanInProject } from "@/lib/api/permissions";
 import { createIssueSchema, moveIssueSchema, updateIssueSchema } from "@/lib/validation/issue";
 import { createSprintSchema } from "@/lib/validation/sprint";
@@ -53,28 +53,80 @@ function transitionErrorContent(error: unknown): { content: [{ type: "text"; tex
 
 export interface McpAuthExtra {
   orgId: string;
-  projectId: string;
+  /** The PAT's own bound project, if any — null for a user-scoped token.
+   * Not the project for any given tool call; see `resolveRequestedProjectId`. */
+  projectId: string | null;
   userId: string;
   /** Always "agent" — every MCP caller is a PAT-authenticated tool, never a human session. */
   actorType: "user" | "agent";
 }
 
+/**
+ * Reconciles the PAT's own bound project (if it's a legacy project-scoped
+ * token) with the `projectId` a tool call optionally supplies. A
+ * project-scoped token always resolves to its own project, and rejects a
+ * call that names a different one — preserving the existing "cannot touch
+ * any other project" guarantee. A user-scoped token (no bound project) has
+ * no default and must be told which project to act on.
+ */
+function resolveRequestedProjectId(
+  tokenProjectId: string | null,
+  argsProjectId?: string,
+): { ok: true; projectId: string } | { ok: false; error: string } {
+  if (tokenProjectId) {
+    if (argsProjectId && argsProjectId !== tokenProjectId) {
+      return { ok: false, error: "This token is scoped to a single project and cannot act on a different one." };
+    }
+    return { ok: true, projectId: tokenProjectId };
+  }
+  if (!argsProjectId) {
+    return {
+      ok: false,
+      error: "This token isn't scoped to a single project — pass a projectId (see list_projects).",
+    };
+  }
+  return { ok: true, projectId: argsProjectId };
+}
+
 export const mcpHandler = createMcpHandler(({ authInfo }) => {
-  const { orgId, projectId, userId, actorType } = authInfo?.extra as unknown as McpAuthExtra;
+  const { orgId, projectId: tokenProjectId, userId, actorType } = authInfo?.extra as unknown as McpAuthExtra;
   const server = new McpServer({ name: "quiktrack", version: "1.0.0" });
+
+  server.registerTool(
+    "list_projects",
+    {
+      description:
+        "List the projects this token can act on. A user-scoped token has no default project, so call this first to find a valid projectId to pass to every other tool.",
+      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+    },
+    async () => {
+      const projects = tokenProjectId
+        ? await db.qtProject.findMany({
+            where: { id: tokenProjectId, orgId, isDeleted: false },
+            select: { id: true, projectKey: true, name: true },
+          })
+        : await loadAccessibleProjects(orgId, userId);
+      return { content: [{ type: "text", text: JSON.stringify(projects) }] };
+    },
+  );
 
   server.registerTool(
     "get_issue",
     {
-      description: "Get a QuikTrack issue by id, scoped to the PAT's project",
+      description: "Get a QuikTrack issue by id. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { issueId: { type: "string" } },
+        properties: { issueId: { type: "string" }, projectId: { type: "string" } },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
+      const { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -102,10 +154,19 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "get_project",
     {
-      description: "Get the QuikTrack project the PAT is scoped to",
-      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+      description: "Get a QuikTrack project's details. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { projectId: { type: "string" } },
+      }),
     },
-    async () => {
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -135,10 +196,19 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
     "list_custom_fields",
     {
       description:
-        "List the custom field definitions available on the PAT's scoped project. Use a field's `id` as the key in quiktrack_update_issue's customFields.",
-      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+        "List the custom field definitions available on a project. Use a field's `id` as the key in quiktrack_update_issue's customFields. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { projectId: { type: "string" } },
+      }),
     },
-    async () => {
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -151,15 +221,20 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "get_member",
     {
-      description: "Get a project member's profile by userId, scoped to the PAT's project",
+      description: "Get a project member's profile by userId. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { userId: { type: "string" } },
+        properties: { userId: { type: "string" }, projectId: { type: "string" } },
         required: ["userId"],
       }),
     },
     async (args: unknown) => {
-      const { userId: targetUserId } = args as { userId: string };
+      const { userId: targetUserId, projectId: rawProjectId } = args as { userId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -182,14 +257,19 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "search_users",
     {
-      description: "Find project members to assign an issue to, scoped to the PAT's project",
+      description: "Find project members to assign an issue to. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { query: { type: "string" } },
+        properties: { query: { type: "string" }, projectId: { type: "string" } },
       }),
     },
     async (args: unknown) => {
-      const { query } = args as { query?: string };
+      const { query, projectId: rawProjectId } = args as { query?: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -226,7 +306,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "create_issue",
     {
-      description: "Create a QuikTrack issue in the PAT's scoped project",
+      description: "Create a QuikTrack issue. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -239,11 +319,18 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           epicId: { type: "string" },
           sprintId: { type: "string" },
           assigneeId: { type: "string" },
+          projectId: { type: "string" },
         },
         required: ["title"],
       }),
     },
     async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -313,15 +400,20 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "list_comments",
     {
-      description: "List an issue's comments, oldest first, scoped to the PAT's project",
+      description: "List an issue's comments, oldest first. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { issueId: { type: "string" } },
+        properties: { issueId: { type: "string" }, projectId: { type: "string" } },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
+      const { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -354,15 +446,20 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "start_sprint",
     {
-      description: "Transition a PLANNING sprint to ACTIVE, scoped to the PAT's project",
+      description: "Transition a PLANNING sprint to ACTIVE. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { sprintId: { type: "string" } },
+        properties: { sprintId: { type: "string" }, projectId: { type: "string" } },
         required: ["sprintId"],
       }),
     },
     async (args: unknown) => {
-      const { sprintId } = args as { sprintId: string };
+      const { sprintId, projectId: rawProjectId } = args as { sprintId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -393,7 +490,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "move_issue",
     {
-      description: "Transition an issue between status/sprint/parent/column position, scoped to the PAT's project",
+      description: "Transition an issue between status/sprint/parent/column position. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -402,12 +499,22 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           sprintId: { type: ["string", "null"] },
           parentId: { type: ["string", "null"] },
           orderInColumn: { type: "number" },
+          projectId: { type: "string" },
         },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId, ...rest } = args as { issueId: string; [key: string]: unknown };
+      const { issueId, projectId: rawProjectId, ...rest } = args as {
+        issueId: string;
+        projectId?: string;
+        [key: string]: unknown;
+      };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -519,7 +626,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "create_sprint",
     {
-      description: "Create a sprint in the PAT's scoped project",
+      description: "Create a sprint. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -527,11 +634,18 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           goal: { type: "string" },
           startDate: { type: "string", description: "ISO 8601 date (2026-08-03) or datetime (2026-08-03T00:00:00.000Z)" },
           endDate: { type: "string", description: "ISO 8601 date (2026-08-17) or datetime (2026-08-17T00:00:00.000Z)" },
+          projectId: { type: "string" },
         },
         required: ["name"],
       }),
     },
     async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -575,18 +689,24 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "add_comment",
     {
-      description: "Add a comment to an issue, scoped to the PAT's project",
+      description: "Add a comment to an issue. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
           issueId: { type: "string" },
           body: { type: "string" },
+          projectId: { type: "string" },
         },
         required: ["issueId", "body"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
+      const { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -629,15 +749,20 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
     "complete_sprint",
     {
       description:
-        "Complete an ACTIVE sprint and move its open issues to the backlog, scoped to the PAT's project",
+        "Complete an ACTIVE sprint and move its open issues to the backlog. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { sprintId: { type: "string" } },
+        properties: { sprintId: { type: "string" }, projectId: { type: "string" } },
         required: ["sprintId"],
       }),
     },
     async (args: unknown) => {
-      const { sprintId } = args as { sprintId: string };
+      const { sprintId, projectId: rawProjectId } = args as { sprintId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -694,7 +819,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "search_issues",
     {
-      description: "Search issues by common filters, scoped to the PAT's project",
+      description: "Search issues by common filters. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -709,6 +834,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           search: { type: "string" },
           limit: { type: "number" },
           cursor: { type: "string" },
+          projectId: { type: "string" },
         },
       }),
     },
@@ -725,7 +851,13 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         search?: string;
         limit?: number;
         cursor?: string;
+        projectId?: string;
       };
+      const resolved = resolveRequestedProjectId(tokenProjectId, a.projectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -789,7 +921,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
     "quiktrack_update_issue",
     {
       description:
-        "Update an issue's fields (title, description, type, priority, status, assignee, parent, epic, sprint, dates, eta, storyPoints), scoped to the PAT's project",
+        "Update an issue's fields (title, description, type, priority, status, assignee, parent, epic, sprint, dates, eta, storyPoints). Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -808,12 +940,22 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           eta: { type: "number" },
           storyPoints: { type: "number" },
           customFields: { type: "object" },
+          projectId: { type: "string" },
         },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId, ...rest } = args as { issueId: string; [key: string]: unknown };
+      const { issueId, projectId: rawProjectId, ...rest } = args as {
+        issueId: string;
+        projectId?: string;
+        [key: string]: unknown;
+      };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -991,15 +1133,20 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "list_remote_links",
     {
-      description: "List an issue's remote links (e.g. attached PRs), oldest first, scoped to the PAT's project",
+      description: "List an issue's remote links (e.g. attached PRs), oldest first. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { issueId: { type: "string" } },
+        properties: { issueId: { type: "string" }, projectId: { type: "string" } },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
+      const { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
@@ -1023,7 +1170,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "add_remote_link",
     {
-      description: "Attach an external URL (e.g. a PR) to an issue, scoped to the PAT's project",
+      description: "Attach an external URL (e.g. a PR) to an issue. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -1031,12 +1178,18 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           url: { type: "string" },
           title: { type: "string" },
           type: { type: "string" },
+          projectId: { type: "string" },
         },
         required: ["issueId", "url", "title", "type"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
+      const { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      const { projectId } = resolved;
       const access = await loadProjectAccess(orgId, userId, projectId);
       if (!access) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };

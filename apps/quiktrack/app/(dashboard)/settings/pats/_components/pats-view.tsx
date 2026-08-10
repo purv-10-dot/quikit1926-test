@@ -10,15 +10,18 @@ import { CreatePatModal } from "./create-pat-modal";
 interface Pat {
   id: string;
   name: string;
-  createdById: string;
+  projectId: string | null;
+  project: { name: string } | null;
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string;
   revokedAt: string | null;
 }
 
-async function fetchPats(projectId: string): Promise<Pat[]> {
-  const r = await fetch(`/api/projects/${projectId}/pats`);
+const PATS_QUERY_KEY = ["quiktrack", "org-pats"] as const;
+
+async function fetchPats(): Promise<Pat[]> {
+  const r = await fetch("/api/org/pats");
   const j = await r.json();
   if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to load tokens");
   return j.data as Pat[];
@@ -29,26 +32,28 @@ function formatDate(value: string | null): string {
 }
 
 /**
- * Space settings → Personal Access Tokens. Lets a Space admin mint and revoke
- * PATs that scope an MCP client (e.g. Claude Code) to this project, at
- * exactly the admin's own QuikTrack permissions — no more, no less.
+ * Settings → Personal Access Tokens. Lets any org member mint and revoke PATs
+ * that scope an MCP client (e.g. Claude Code) to act as them, at exactly
+ * their own QuikTrack permissions — no more, no less. Every new token is
+ * user-scoped (acts across every project the creator can reach); a row with
+ * a `project` shows a legacy token issued before user-scoped tokens existed.
  */
-export function SpacePatsView({ projectId }: { projectId: string }) {
+export function PatsView() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["quiktrack", "space-pats", projectId],
-    queryFn: () => fetchPats(projectId),
+    queryKey: PATS_QUERY_KEY,
+    queryFn: fetchPats,
   });
 
   const revoke = useMutation({
     mutationFn: async (patId: string) => {
-      const r = await fetch(`/api/projects/${projectId}/pats/${patId}`, { method: "DELETE" });
+      const r = await fetch(`/api/org/pats/${patId}`, { method: "DELETE" });
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to revoke token");
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["quiktrack", "space-pats", projectId] });
+      qc.invalidateQueries({ queryKey: PATS_QUERY_KEY });
       showToast("Token revoked", "success");
     },
     onError: (e: Error) => showToast(e.message, "error"),
@@ -74,9 +79,9 @@ export function SpacePatsView({ projectId }: { projectId: string }) {
             Personal Access Tokens
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Lets a coding agent (e.g. Claude Code, via the QuikTrack MCP server) act on this project as
-            you, within your own QuikTrack permissions. Each token is scoped to this project only and
-            expires within a year.
+            Lets a coding agent (e.g. Claude Code, via the QuikTrack MCP server) act on your behalf,
+            within your own QuikTrack permissions. A new token acts across every project you have
+            access to in this org, and expires within 90 days.
           </p>
         </div>
         <button
@@ -114,7 +119,10 @@ export function SpacePatsView({ projectId }: { projectId: string }) {
                   <KeyRound className="h-4 w-4 shrink-0 text-gray-500" />
                   <div className="min-w-0 text-sm">
                     <p className="truncate text-[13px] font-medium text-gray-900 dark:text-gray-100">
-                      {pat.name}
+                      {pat.name}{" "}
+                      <span className="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                        {pat.project ? `Project: ${pat.project.name}` : "All projects"}
+                      </span>
                     </p>
                     <p className="text-[11px] text-gray-500 dark:text-gray-400">
                       Created {formatDate(pat.createdAt)} · Expires {formatDate(pat.expiresAt)} · Last used{" "}
@@ -136,7 +144,7 @@ export function SpacePatsView({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      {creating && <CreatePatModal projectId={projectId} onClose={() => setCreating(false)} />}
+      {creating && <CreatePatModal onClose={() => setCreating(false)} />}
     </div>
   );
 }

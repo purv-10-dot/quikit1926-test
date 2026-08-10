@@ -11,7 +11,7 @@ vi.mock("bcryptjs", () => ({
 }));
 import bcrypt from "bcryptjs";
 
-import { POST } from "@/app/api/oauth/token/route";
+import { POST, OPTIONS } from "@/app/api/oauth/token/route";
 
 const ORIGINAL_REDIS_URL = process.env.REDIS_URL;
 
@@ -169,5 +169,21 @@ describe("POST /api/oauth/token — rate limiter + LRU", () => {
 
     // Both calls hit the DB since we don't cache null.
     expect(mockDb.oAuthClient.findUnique).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("CORS on /api/oauth/token", () => {
+  it("OPTIONS returns a 204 preflight response with CORS headers", () => {
+    const res = OPTIONS();
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+  });
+
+  it("includes CORS headers even on an error response", async () => {
+    mockDb.oAuthClient.findUnique.mockResolvedValue(null);
+    const res = await POST(makeTokenRequest({ clientId: "unknown-client", ip: "203.0.113.99" }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
 });
