@@ -9,3 +9,5 @@ coverage
 .turbo
 .vercel
 /.uploads/
+# Personal working-context prompt — deliberately not tracked
+/docs/init-prompt-quikchat.md

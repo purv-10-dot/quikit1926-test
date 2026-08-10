@@ -46,10 +46,30 @@ function resolveQuikitSubpath(source: string): string | null {
   return existsSync(resolved) ? resolved : null;
 }
 
+/**
+ * Vite counterpart to the `asset/source` webpack rule in next.config.js: makes
+ * `import spec from "…/openapi.yaml"` hand back the file's raw text under
+ * Vitest too. Without it, Vite has no loader for `.yaml` and any test that
+ * reaches the /api-docs spec module fails to resolve it.
+ *
+ * `enforce: "pre"` so this claims the .yaml id before Vite's default pipeline
+ * tries to parse it as JS.
+ */
+function yamlRaw() {
+  return {
+    name: "yaml-raw",
+    enforce: "pre" as const,
+    transform(code: string, id: string) {
+      if (!/\.ya?ml(\?.*)?$/.test(id)) return null;
+      return { code: `export default ${JSON.stringify(code)};`, map: null };
+    },
+  };
+}
+
 // Vitest 3 + Vite 5 — runs on Node 20.14+ (no Rolldown / Vitest 4 native bindings).
 // Other monorepo apps may use Vitest 4; quikchat is pinned via root package.json overrides.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), yamlRaw()],
   test: {
     globals: true,
     environment: "jsdom",
