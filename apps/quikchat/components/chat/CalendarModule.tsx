@@ -329,14 +329,18 @@ function EventScheduleModal({
             />
           </label>
 
+          {/* Same field, same name as SchedulingModal — see the note there.
+              Keep the two in step; they are the only two editors of this
+              field and they used to disagree with each other and with
+              themselves. */}
           <label className="qc-field">
-            <span className="qc-field__label">Description</span>
+            <span className="qc-field__label">Agenda</span>
             <input
               className="qc-input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Agenda (optional)"
-              aria-label="Meeting description"
+              placeholder="What to cover (optional)"
+              aria-label="Meeting agenda"
             />
           </label>
 

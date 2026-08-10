@@ -3679,6 +3679,30 @@ body {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Filter over the channel members already offered as attendee chips. */
+.qc-schedule__attfilter {
+  margin-bottom: 8px;
+}
+.qc-schedule__attempty {
+  font-size: 13px;
+  color: var(--qc-text-muted);
+  padding: 4px 0;
+}
+/* Actionable precondition when the active provider needs a per-user connect. */
+.qc-schedule__connect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--qc-border);
+  border-radius: 8px;
+  background: var(--qc-bg-subtle, var(--qc-bg));
+  font-size: 13px;
+  color: var(--qc-text);
+}
 .qc-att-chip {
   display: inline-flex;
   align-items: center;
