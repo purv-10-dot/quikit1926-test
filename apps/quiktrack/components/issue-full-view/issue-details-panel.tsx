@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Zap } from "lucide-react";
 import { useApiData } from "@/lib/hooks/useApiData";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { MemberOption } from "@/components/custom-fields/field-control";
 import type { FieldValue } from "@/lib/customFields/registry";
@@ -22,12 +23,6 @@ import {
 } from "./issue-field-utils";
 
 type Member = FieldMember;
-
-function statusPillClass(category?: string) {
-  if (category === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-700 hover:bg-green-200";
-  if (category === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-700 hover:bg-blue-200";
-  return "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-100 text-gray-700 hover:bg-gray-200";
-}
 
 /**
  * Right-rail Details panel for the full-page issue view. Shows status pill,
@@ -55,8 +50,6 @@ export function IssueDetailsPanel({
     ["quiktrack", "project-sprints", issue.projectId],
     `/api/sprints?projectId=${issue.projectId}`,
   );
-  const [statusOpen, setStatusOpen] = useState(false);
-
   const reporter = members.find((m) => m.userId === issue.reporterId);
 
   // Custom (JPD/global + space) fields for this issue. The full-page view
@@ -87,43 +80,18 @@ export function IssueDetailsPanel({
           so the button reads at-a-glance. Dropdown options use the same
           coloured-pill treatment. */}
       <div className="flex items-center gap-2">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setStatusOpen((v) => !v)}
-            className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold uppercase tracking-wider rounded ${statusPillClass(
-              issue.status?.category,
-            )}`}
-          >
-            {issue.status?.name ?? "To Do"}
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          {statusOpen && (
-            <div className="absolute left-0 top-full mt-1 min-w-[180px] bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1.5">
-              {statuses.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={async () => {
-                    await onPatch({ statusId: s.id });
-                    setStatusOpen(false);
-                  }}
-                  className={`w-full flex items-center px-2.5 py-1 text-left hover:bg-gray-50 ${
-                    s.id === issue.statusId ? "bg-blue-50/60" : ""
-                  }`}
-                >
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${statusPillClass(
-                      s.category,
-                    )}`}
-                  >
-                    {s.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <WorkflowStatusControl
+          issueId={issue.id}
+          projectId={issue.projectId}
+          currentStatusId={issue.statusId}
+          currentStatusName={issue.status?.name ?? "To Do"}
+          currentStatusCategory={issue.status?.category}
+          statuses={statuses}
+          onChange={(statusId) => onPatch({ statusId })}
+          onViewWorkflow={() =>
+            window.open(`/spaces/${issue.projectId}/settings/workflows`, "_blank")
+          }
+        />
       </div>
 
       {/* Details */}

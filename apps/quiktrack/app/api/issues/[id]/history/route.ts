@@ -35,6 +35,7 @@ export const GET = withOrgAuth<{ id: string }>(
         oldValue: true,
         newValue: true,
         createdAt: true,
+        actorType: true,
       },
     });
     const userIds = Array.from(

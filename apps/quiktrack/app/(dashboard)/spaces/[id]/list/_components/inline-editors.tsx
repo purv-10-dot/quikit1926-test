@@ -11,6 +11,7 @@ import {
   type Priority,
   type UserLite,
 } from "./list-types";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 
 const PRIORITY_VALUES: Priority[] = ["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"];
 
@@ -84,53 +85,31 @@ function PopoverPanel({
 // ── Status ───────────────────────────────────────────────────────────────────
 
 export function StatusEditor({
+  issueId,
+  projectId,
   value,
   statuses,
   onChange,
 }: {
+  issueId: string;
+  projectId: string;
   value: ListIssue["status"];
   statuses: IssueStatus[];
   onChange: (statusId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
+  // Workflow-aware: gated → legal transitions only; ungated → free picker.
   return (
-    <div className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium hover:ring-1 hover:ring-gray-300"
-        style={value ? { backgroundColor: `${value.color}20`, color: value.color } : { backgroundColor: "#f3f4f6", color: "#9ca3af" }}
-      >
-        {value?.name ?? "—"}
-      </button>
-      {open && (
-        <PopoverPanel
-          triggerRef={triggerRef}
-          onClose={() => setOpen(false)}
-          className="w-48 rounded border border-gray-200 bg-white py-1 shadow-lg"
-        >
-          {statuses.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => { onChange(s.id); setOpen(false); }}
-              className="flex w-full items-center justify-between px-2 py-1 text-left text-xs hover:bg-gray-50"
-            >
-              <span
-                className="inline-flex items-center rounded px-2 py-0.5 font-medium"
-                style={{ backgroundColor: `${s.color}20`, color: s.color }}
-              >
-                {s.name}
-              </span>
-              {value?.id === s.id && <Check className="h-3 w-3 text-gray-500" />}
-            </button>
-          ))}
-        </PopoverPanel>
-      )}
-    </div>
+    <WorkflowStatusControl
+      issueId={issueId}
+      projectId={projectId}
+      currentStatusId={value?.id ?? ""}
+      currentStatusName={value?.name ?? "—"}
+      currentStatusCategory={value?.category}
+      statuses={statuses.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+      onChange={onChange}
+      onViewWorkflow={() => window.open(`/spaces/${projectId}/settings/workflows`, "_blank")}
+      size="sm"
+    />
   );
 }
 

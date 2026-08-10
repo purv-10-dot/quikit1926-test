@@ -53,9 +53,13 @@ async function fetchDev(issueId: string): Promise<DevData> {
 export function IssueDevelopment({
   issueId,
   issueKey,
+  onDevChanged,
 }: {
   issueId: string;
   issueKey: string;
+  /** Called after a dev action that may have auto-transitioned the item, so the
+   *  parent can refresh the item's status. */
+  onDevChanged?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const { data, isLoading, refetch } = useQuery({
@@ -108,7 +112,7 @@ export function IssueDevelopment({
                   items={branches.map((b) => ({ heading: b.name, repo: b.repoFullName, url: b.url }))}
                 />
               ) : (
-                <CreateBranchRow issueId={issueId} issueKey={issueKey} onCreated={() => refetch()} />
+                <CreateBranchRow issueId={issueId} issueKey={issueKey} onCreated={() => { refetch(); onDevChanged?.(); }} />
               )}
 
               {commits.length > 0 ? (
@@ -145,7 +149,9 @@ export function IssueDevelopment({
                   }))}
                 />
               ) : (
-                <CreatePrRow issueKey={issueKey} />
+                // "Create pull request" needs a branch to base it on — only
+                // offer it once at least one branch is linked.
+                branches.length > 0 && <CreatePrRow issueKey={issueKey} />
               )}
             </div>
           )}

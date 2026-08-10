@@ -18,6 +18,7 @@ import { FilterPanel, FilterRow } from "@/components/filters/filter-panel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useTransitionScreenPrompt } from "@/components/use-transition-screen-prompt";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { CustomFieldFilters } from "@/components/custom-fields/custom-field-filters";
 import type { CustomFilter } from "@/lib/customFields/filterQuery";
@@ -62,6 +63,8 @@ function memberColor(seed: string): string {
 
 export function BoardView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  // "Show a screen" gate: prompt for the transition screen before a DnD move.
+  const { promptForMove, modal: screenModal } = useTransitionScreenPrompt();
   const [statuses, setStatuses] = useState<BoardStatus[]>([]);
   const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
   // Functional spaces have no sprints — the board is a Kanban "Activity Board"
@@ -70,6 +73,11 @@ export function BoardView({ projectId }: { projectId: string }) {
   const [allSprints, setAllSprints] = useState<{ id: string; name: string; status: string }[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
+  // Board-columns config (Board settings → map statuses to columns). When
+  // configured, the board renders these named columns instead of one-per-status.
+  const [boardColumns, setBoardColumns] = useState<
+    { id: string; name: string; statusIds: string[] }[] | null
+  >(null);
   const [epicsById, setEpicsById] = useState<Record<string, EpicLite>>({});
   // Shared with the backlog + work-item views via the same query key, so the
   // avatar stack is cached across navigation and the dev StrictMode double-fetch
@@ -139,14 +147,22 @@ export function BoardView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
+      const [statusesRes, sprintsRes, epicsRes, projectRes, boardColsRes] = await Promise.all([
         fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
         fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
         fetch(`/api/projects/${projectId}`).then((r) => r.json()),
+        fetch(`/api/projects/${projectId}/board-columns`).then((r) => r.json()).catch(() => null),
       ]);
       if (!alive) return;
       if (statusesRes?.success) setStatuses(statusesRes.data || []);
+      // Board columns come from Board Settings only. Workflow attachment does NOT
+      // affect the board's columns — the board always shows its existing columns.
+      if (boardColsRes?.success && boardColsRes.data?.configured) {
+        setBoardColumns(boardColsRes.data.columns as { id: string; name: string; statusIds: string[] }[]);
+      } else {
+        setBoardColumns(null);
+      }
       const functional = projectRes?.success && projectRes.data?.templateKey === "functional";
       setIsFunctional(functional);
       const sprintList: Array<{ id: string; name: string; status: string }> =
@@ -233,18 +249,45 @@ export function BoardView({ projectId }: { projectId: string }) {
       const issueId = e.dataTransfer.getData("application/quiktrack-issue");
       if (issueId) {
         e.preventDefault();
+        const expectedStatusId =
+          e.dataTransfer.getData("application/quiktrack-issue-status") || undefined;
+        if (expectedStatusId === targetId) return; // dropped on the same column
+        // "Show a screen" gate: if this transition has a screen, prompt for its
+        // fields first and move via /move (which carries the inputs). Cancelling
+        // aborts the move.
+        let screenInputs: Record<string, unknown> | undefined;
         try {
-          const res = await fetch(`/api/issues/${issueId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ statusId: targetId }),
-          }).then((r) => r.json());
+          screenInputs = await promptForMove(issueId, targetId);
+        } catch {
+          setRefreshKey((k) => k + 1); // user cancelled → resync the card back
+          return;
+        }
+        try {
+          const r = screenInputs
+            ? await fetch(`/api/issues/${issueId}/move`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statusId: targetId, expectedStatusId, inputs: screenInputs }),
+              })
+            : await fetch(`/api/issues/${issueId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statusId: targetId, expectedStatusId }),
+              });
+          const res = await r.json();
           if (res?.success) {
             window.dispatchEvent(
               new CustomEvent("quiktrack:issue-updated", {
                 detail: { projectId, issueId },
               }),
             );
+          } else if (r.status === 422 && res?.code === "TRANSITION_VALIDATION_FAILED") {
+            // A validator blocked the move (e.g. resolution required).
+            window.alert(res.error ?? "This move needs more information.");
+            setRefreshKey((k) => k + 1);
+          } else if (r.status === 409 || r.status === 403) {
+            // Illegal transition, stale move, or blocked by a condition — resync.
+            setRefreshKey((k) => k + 1);
           }
         } catch {
           // ignore — next refresh reconciles
@@ -286,6 +329,7 @@ export function BoardView({ projectId }: { projectId: string }) {
     // board easily exceeds the viewport width, so we let the inner column
     // strip own the horizontal scrollbar.
     <div className="px-6 py-4 min-w-0">
+      {screenModal}
       <Toolbar
         searchInput={searchInput}
         onSearchChange={setSearchInput}
@@ -332,10 +376,50 @@ export function BoardView({ projectId }: { projectId: string }) {
             </div>
           ))}
 
-        {/* Functional spaces (Kanban) always show populated columns fed by
-            every task (sprintId={null} → no sprint filter). Scrum spaces only
-            populate columns once a sprint is ACTIVE. */}
+        {/* ── Board-columns mode (Board settings configured) ──────────────── */}
         {!bootLoading &&
+          boardColumns &&
+          (isFunctional || activeSprintId) &&
+          boardColumns.map((col) => {
+            // Render EVERY column — including ones with no statuses mapped yet
+            // (e.g. a freshly-added custom column). An unmapped column shows no
+            // cards but must still appear; a card dropped onto it moves to the
+            // column's first mapped status (drop disabled when it has none).
+            const primary = statusesById[col.statusIds[0]] ?? null;
+            return (
+              <BoardColumn
+                key={`${col.id}-${refreshKey}`}
+                status={primary ?? undefined}
+                columnStatusIds={col.statusIds}
+                displayName={col.name}
+                allStatuses={visibleStatuses}
+                projectId={projectId}
+                sprintId={isFunctional ? null : activeSprintId}
+                epicsById={epicsById}
+                statusesById={statusesById}
+                filters={filters}
+                members={members}
+                availableSprints={allSprints.filter((sp) => sp.status !== "COMPLETED")}
+                onOpen={setOpenIssueId}
+                onColumnRenamed={() => {}}
+                onColumnDeleted={() => {}}
+                dragHandlers={{
+                  onDragOver: onColDragOver,
+                  onDrop: primary ? onColDrop(col.statusIds[0]) : undefined,
+                  onDragStart: () => {},
+                }}
+              />
+            );
+          })}
+        {!bootLoading && boardColumns && !isFunctional && !activeSprintId &&
+          boardColumns.map((col, idx) => (
+            <EmptyColumn key={col.id} name={col.name} showCta={idx === 0} projectId={projectId} />
+          ))}
+
+        {/* ── No Board-Settings mapping → show the project's existing statuses
+            as columns (unchanged whether or not a workflow is attached). ─────── */}
+        {!bootLoading &&
+          !boardColumns &&
           (isFunctional || activeSprintId) &&
           visibleStatuses.map((s) => (
             <BoardColumn
@@ -363,24 +447,18 @@ export function BoardView({ projectId }: { projectId: string }) {
               }}
             />
           ))}
-
-        {/* Scrum, no active sprint — render the column shells empty, and put
-            the "Get started in the backlog" CTA inside the first column so the
-            board structure stays visible (matches Jira's behaviour). Functional
-            spaces never hit this branch. */}
         {!bootLoading &&
+          !boardColumns &&
           !isFunctional &&
           !activeSprintId &&
           visibleStatuses.map((s, idx) => (
-            <EmptyColumn
-              key={s.id}
-              name={s.name}
-              showCta={idx === 0}
-              projectId={projectId}
-            />
+            <EmptyColumn key={s.id} name={s.name} showCta={idx === 0} projectId={projectId} />
           ))}
 
-        {!bootLoading && (
+        {/* Add a custom board status. Only offered when there's no saved column
+            mapping; once you map statuses to columns in Board Settings, columns
+            are managed there. Workflow attachment does NOT change this. */}
+        {!bootLoading && !boardColumns && (
           <AddColumnTile
             projectId={projectId}
             defaultCategory="BACKLOG"
