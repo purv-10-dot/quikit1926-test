@@ -11,12 +11,12 @@ const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3011";
 const OAUTH_ENDPOINTS: Partial<Record<Platform, { authUrl: string; clientId: string }>> = {
   google: {
     authUrl:  "https://accounts.google.com/o/oauth2/v2/auth",
-    clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+    clientId: process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID ?? "",
   },
   // Google Ads is a SEPARATE OAuth app from the analytics/organic Google auth.
   google_ads: {
     authUrl:  "https://accounts.google.com/o/oauth2/v2/auth",
-    clientId: process.env.GOOGLE_ADS_CLIENT_ID ?? "",
+    clientId: process.env.QUIKINSIGHT_GOOGLE_ADS_CLIENT_ID ?? "",
   },
   meta: {
     authUrl:  "https://www.facebook.com/v19.0/dialog/oauth",
@@ -42,7 +42,7 @@ const OAUTH_ENDPOINTS: Partial<Record<Platform, { authUrl: string; clientId: str
   gbp: {
     // GBP rides on Google OAuth with the business.manage scope
     authUrl:  "https://accounts.google.com/o/oauth2/v2/auth",
-    clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+    clientId: process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID ?? "",
   },
   mailchimp: {
     authUrl:  "https://login.mailchimp.com/oauth2/authorize",
