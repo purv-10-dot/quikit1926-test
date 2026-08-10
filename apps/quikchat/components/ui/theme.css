@@ -756,6 +756,39 @@ body {
   overflow-y: auto;
   min-height: 0;
   padding: 12px 0;
+  /* Containing block for .qc-msg-load-older below. */
+  position: relative;
+  /* DO NOT REMOVE — this is not a cleanup candidate.
+     MessageList's `decideScroll` "preserve" branch manually restores scrollTop
+     after older history is prepended, and that manual correction is the SINGLE
+     SOURCE OF TRUTH for scroll anchoring here. Chrome/Edge/Firefox also apply
+     their own native CSS scroll anchoring to content inserted above the
+     viewport; with both active the prepend is compensated TWICE and scrollTop
+     clamps to the bottom, throwing the reader to the newest message every time
+     they scroll up. Measured: native moved scrollTop 154 → 2361 on a 2240px
+     prepend, the manual pass added 2240 again, 4601 clamped to maxScroll 3945.
+     Safari implements no scroll anchoring at all, so the manual correction is
+     required regardless — which is why the fix is to disable the native one
+     rather than to drop ours. */
+  overflow-anchor: none;
+}
+/* Scroll-back loading affordance. `position: absolute` is load-bearing, not
+   cosmetic: it keeps this out of flow so it contributes nothing to
+   scrollHeight, which the prepend-anchoring math in MessageList depends on.
+   It sits at the top of the CONTENT (not the viewport), which is precisely
+   where the reader is looking when an older page is being fetched. */
+.qc-msg-load-older {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--qc-text-muted);
 }
 .qc-date-divider {
   display: flex;

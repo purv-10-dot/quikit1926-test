@@ -124,6 +124,16 @@ export interface ConversationViewProps {
    * waiting for a socket echo that will never arrive.
    */
   onChannelLeft?: (p: { channelId: string }) => void;
+  /**
+   * Scroll-back pagination, owned by the caller (it owns the messages query).
+   * OPTIONAL by design: NotificationsModule renders this view against the same
+   * cache key with its own query and does not wire them, so its mini pane keeps
+   * today's newest-page-only behaviour. Reaching history there is a separate
+   * backlog item, not an oversight.
+   */
+  onLoadOlder?: () => void;
+  loadingOlder?: boolean;
+  atEndOfHistory?: boolean;
 }
 
 export function PinnedBanner({ count, onOpen }: { count: number; onOpen?: () => void }) {
@@ -163,6 +173,9 @@ export function ConversationView({
   onToggleKbWiden,
   kbDocCount,
   onChannelLeft,
+  onLoadOlder,
+  loadingOlder,
+  atEndOfHistory,
 }: ConversationViewProps) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -447,6 +460,9 @@ export function ConversationView({
             actions={actions}
             openedUnreadCount={openedUnreadCount}
             messagesFetching={messagesFetching}
+            onLoadOlder={onLoadOlder}
+            loadingOlder={loadingOlder}
+            atEndOfHistory={atEndOfHistory}
           />
         )}
         {replyTarget ? (

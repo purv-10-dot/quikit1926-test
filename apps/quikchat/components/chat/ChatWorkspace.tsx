@@ -56,6 +56,7 @@ import {
   type PresenceStatusEvent,
 } from "@/lib/presence-store";
 import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
+import { useOlderMessages } from "@/lib/use-older-messages";
 import { streamAssist } from "@/lib/assist-client";
 import type { AssistSource } from "@/lib/shared";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
@@ -166,6 +167,11 @@ export function ChatWorkspace({
     queryFn: async () => seedFromApiPage(await fetchMessages(activeId!)),
     enabled: !!activeId,
   });
+
+  // Scroll-back pagination for the active conversation. Writes older pages
+  // straight into the same ["messages", activeId] cache this query owns — see
+  // useOlderMessages for why it deliberately sidesteps React Query.
+  const olderMessages = useOlderMessages(activeId);
 
   const activeChannel: ChannelListItem | undefined = useMemo(() => {
     const data = channelsQuery.data;
@@ -1003,6 +1009,9 @@ export function ChatWorkspace({
             messages={messagesQuery.data}
             loadingMessages={messagesQuery.isLoading}
             messagesFetching={messagesQuery.isFetching}
+            onLoadOlder={olderMessages.loadOlder}
+            loadingOlder={olderMessages.loadingOlder}
+            atEndOfHistory={olderMessages.atEnd}
             channels={channelsQuery.data}
             openedUnreadCount={openedUnreadCount}
             online={presence.online}

@@ -55,8 +55,15 @@ export function fetchChannels(): Promise<ChannelList> {
   return getJson<ChannelList>("/api/channels");
 }
 
+/**
+ * History page size. Exported because end-of-history detection compares a
+ * returned page's length against it — if the two drift apart, scroll-back
+ * either stops one page early or never stops at all.
+ */
+export const MESSAGES_PAGE_SIZE = 30;
+
 export function fetchMessages(channelId: string, before?: string): Promise<MessageDto[]> {
-  const qs = new URLSearchParams({ limit: "30" });
+  const qs = new URLSearchParams({ limit: String(MESSAGES_PAGE_SIZE) });
   if (before) qs.set("before", before);
   return getJson<MessageDto[]>(`/api/channels/${channelId}/messages?${qs.toString()}`);
 }
