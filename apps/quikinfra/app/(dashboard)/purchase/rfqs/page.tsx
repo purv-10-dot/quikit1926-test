@@ -40,6 +40,7 @@ const CompareQuotesModal = dynamic(
 import { ListChecks } from "lucide-react";
 import { GroupedMaterialSelect, GROUPED_MATERIAL_OTHERS_GROUP_ID } from "@/components/GroupedMaterialSelect";
 import { WhitebooksVendorSelect } from "@/components/WhitebooksVendorSelect";
+import { VendorTermsCell } from "@/components/VendorTermsCell";
 import { useProjects, useItemGroups, useVendors, useTermsConditions } from "@/hooks/use-masters";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerTabList } from "@/hooks/use-server-tab-list";
@@ -209,11 +210,13 @@ export default function RFQsPage() {
 
   const allVendors = vendorsData?.data ?? [];
   // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
+  // `||` (not `??`) treats an empty `name` (Vendor / Contact Name) as
+  // "missing" and falls through to the company name.
   const vendorOptions = allVendors
     .filter((v) => v.status === "active" && !(v as { isBlacklisted?: boolean }).isBlacklisted)
     .map((v) => ({
       value: v.id,
-      label: v.companyName || v.name || v.id,
+      label: v.name || v.companyName || v.id,
     }));
   // Indexed lookup so the Vendor picker's onChange can pull the email
   // off the vendor master row.
@@ -330,42 +333,6 @@ export default function RFQsPage() {
         required: true,
         placeholder: "Site address that the vendor should deliver to",
         hint: "Shown on the RFQ PDF sent to vendors",
-      },
-      {
-        // Which T&C template gets attached to the outgoing RFQ PDF.
-        // Defaults to the RFQ-scoped "isDefault" template so the common
-        // case needs no clicks. Required so every RFQ that goes to a
-        // vendor carries a payment / delivery / quality T&C — the raiser
-        // can still pick the org's default in one click, but they can't
-        // skip it entirely.
-        key: "termsTemplateId",
-        label: "Terms & Conditions",
-        type: "select" as const,
-        span: 2 as const,
-        required: true,
-        options: termsOptions,
-        placeholder:
-          termsOptions.length === 0
-            ? "No templates — add one under Masters → T&C"
-            : "Use default / Pick a template…",
-        defaultValue: defaultTermsId,
-        // Inline preview — render the full body of the selected template
-        // so the raiser sees exactly what the vendor will get in the PDF
-        // without having to open the Masters screen.
-        afterNode: (value: string) => {
-          const picked = value ? termsById.get(value) : null;
-          if (!picked) return null;
-          return (
-            <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                Preview · {picked.title}
-              </div>
-              <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed max-h-48 overflow-y-auto">
-                {picked.body || "— no content —"}
-              </pre>
-            </div>
-          );
-        },
       },
     ],
     // Contacts are a repeatable list — multiple buyer-side people can
@@ -495,7 +462,7 @@ export default function RFQsPage() {
               ? vendorById.get(line.vendorId)
               : null;
             const vendorLabel =
-              vendor?.companyName || vendor?.name || "vendor";
+              vendor?.name || vendor?.companyName || "vendor";
 
             return (
               <button
@@ -526,6 +493,39 @@ export default function RFQsPage() {
                   {countLabel}
                 </span>
               </button>
+            );
+          },
+        },
+        {
+          // Per-vendor T&C override. Opening the editor lets the raiser
+          // write vendor-specific clauses (e.g. a different payment term
+          // for one supplier) without touching the shared master
+          // template or the other vendors on this RFQ. Seeds from the
+          // org's default T&C template — there's no shared document-
+          // level text on the RFQ itself.
+          key: "termsAndConditions",
+          label: "Terms",
+          type: "custom" as const,
+          width: "wide" as const,
+          render: (line, update) => {
+            const vendor = line.vendorId ? vendorById.get(line.vendorId) : null;
+            const vendorLabel = vendor?.name || vendor?.companyName || "this vendor";
+            return (
+              <VendorTermsCell
+                line={line}
+                update={update}
+                defaultBody={
+                  defaultTermsId ? termsById.get(defaultTermsId)?.body ?? "" : ""
+                }
+                templates={(termsData?.data ?? [])
+                  .filter((r: TermRow) => r.status === "active")
+                  .map((r: TermRow) => ({
+                    id: r.id,
+                    title: r.title ?? "",
+                    body: r.body ?? "",
+                  }))}
+                vendorLabel={vendorLabel}
+              />
             );
           },
         },

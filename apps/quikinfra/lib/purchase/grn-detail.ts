@@ -9,7 +9,10 @@ export interface GrnLine {
   receivedQty?: number | string | null;
   acceptedQty?: number | string | null;
   rejectedQty?: number | string | null;
+  // Derived from the accepted/rejected split, not user-entered.
   qualityStatus?: string | null;
+  // The Condition picked on the GRN line (Good / Damaged / Partially Damaged).
+  condition?: string | null;
   batchNo?: string | null;
   remarks?: string | null;
 }

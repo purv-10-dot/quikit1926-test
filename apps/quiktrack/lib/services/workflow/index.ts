@@ -13,6 +13,8 @@ export { assertTransitionForIssue } from "./assert-transition-for-issue";
 export { listAvailableTransitionsForIssue } from "./available-transitions";
 export {
   executeTransition,
+  postFunctionPatchToPrisma,
+  screenInputsToPrisma,
   ConditionsFailedError,
   ValidationFailedError,
 } from "./execute-transition";
@@ -35,3 +37,15 @@ export type {
   DraftTransition,
   WorkflowDraft,
 } from "./draft";
+export {
+  buildTemplateFromRows,
+  isWorkflowTemplate,
+  materializeTemplateIntoProject,
+  classicWorkflowTemplate,
+  CLASSIC_TEMPLATE_ID,
+} from "./template";
+export type {
+  TemplateStatus,
+  TemplateTransition,
+  WorkflowTemplate,
+} from "./template";

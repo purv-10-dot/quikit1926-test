@@ -65,3 +65,60 @@ export async function listMemberUserIdsForChannels(
   });
   return [...new Set(rows.map((r) => r.userId))];
 }
+
+/** A user's durable set-status, as read from QcUserPresence (read-only). */
+export interface PresenceStatusRow {
+  status: string; // available | busy | dnd | brb | away | appear_offline
+  statusMessage: string | null;
+  /** ISO expiry instant (null = never). Carried so clients can time the revert. */
+  statusExpiresAt: string | null;
+}
+
+type RawRow = { status: string; statusMessage: string | null; statusExpiresAt: Date | null };
+
+/**
+ * Apply LAZY read-time expiry (no sweeper). A timed status past its instant reads
+ * as `available` with no expiry — the gateway NEVER writes, it only reads and
+ * resolves. The app clears the row lazily on the owner's next GET.
+ */
+function resolveExpiry(r: RawRow): PresenceStatusRow {
+  if (r.statusExpiresAt != null && r.statusExpiresAt.getTime() <= Date.now()) {
+    return { status: "available", statusMessage: null, statusExpiresAt: null };
+  }
+  return {
+    status: r.status,
+    statusMessage: r.statusMessage,
+    statusExpiresAt: r.statusExpiresAt ? r.statusExpiresAt.toISOString() : null,
+  };
+}
+
+/**
+ * Batched read of durable set-status for a set of users. ONE `findMany` over the
+ * candidate ids the snapshot already computes — never N per-user queries. The
+ * gateway is read-only: this seeds the connect-time snapshot, it never writes.
+ */
+export async function getPresenceStatuses(
+  orgId: string,
+  userIds: string[],
+): Promise<Map<string, PresenceStatusRow>> {
+  const out = new Map<string, PresenceStatusRow>();
+  if (userIds.length === 0) return out;
+  const rows = await db.qcUserPresence.findMany({
+    where: { orgId, userId: { in: userIds } },
+    select: { userId: true, status: true, statusMessage: true, statusExpiresAt: true },
+  });
+  for (const r of rows) out.set(r.userId, resolveExpiry(r));
+  return out;
+}
+
+/** A single user's durable set-status (read-only, read-time expiry). Seeds on connect. */
+export async function getPresenceStatus(
+  orgId: string,
+  userId: string,
+): Promise<PresenceStatusRow | null> {
+  const row = await db.qcUserPresence.findUnique({
+    where: { orgId_userId: { orgId, userId } },
+    select: { status: true, statusMessage: true, statusExpiresAt: true },
+  });
+  return row ? resolveExpiry(row) : null;
+}

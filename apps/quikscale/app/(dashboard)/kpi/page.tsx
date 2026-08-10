@@ -7,12 +7,12 @@ import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
-import { useUserOption } from "@/lib/hooks/useUserOption";
+import { useUserOptions } from "@/lib/hooks/useUserOption";
 import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount, useQtdReferenceWeek } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
@@ -28,6 +28,7 @@ import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreAct
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
 import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
+import { kpiQtrPercent } from "./components/kpiStats";
 import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
@@ -44,13 +45,14 @@ export default function IndividualKPIPage() {
   const numberFormat = useNumberFormat();
 
   // Year + quarter via shared FilterContext so they persist across module nav.
-  // filterTeam lives LOCALLY (per-page scope). filterOwner is seeded from
-  // context on mount AND written back on change/clear, so the owner filter
-  // stays in sync across Dashboard / Priority / WWW.
+  // filterTeam lives LOCALLY (per-page scope). The owner selection is seeded
+  // from `ctx.filterOwners` on mount AND written back on change/clear, so the
+  // multi-select owner filter stays in sync across Dashboard / Priority / WWW.
   const ctx = useFilterContext();
   const { year: ctxYear, setYear: ctxSetYear, quarter: ctxQuarter, setQuarter: ctxSetQuarter } = ctx;
   const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
-  const [filterOwner, setFilterOwner] = useState<string>(ctx.filterOwner);
+  // Owner is MULTI-select and shared across KPI / Priority / WWW / Dashboard.
+  const [filterOwner, setFilterOwner] = useState<string[]>(ctx.filterOwners);
 
   // View Trash toggle — when true, list fetches ONLY soft-deleted rows (?includeDeleted=true)
   const [viewTrash, setViewTrash] = useState(false);
@@ -133,8 +135,8 @@ export default function IndividualKPIPage() {
     setFilters(f => ({
       ...f,
       status: undefined,
-      owner: filterOwner || undefined,
-      teamId: filterTeam && !filterOwner ? filterTeam : undefined,
+      owner: filterOwner.length ? filterOwner.join(",") : undefined,
+      teamId: filterTeam && filterOwner.length === 0 ? filterTeam : undefined,
       page: 1,
     }));
   }, [filterOwner, filterTeam]);
@@ -158,7 +160,13 @@ export default function IndividualKPIPage() {
   // useUserOption) and feed it as the picker's `selectedOption` so the applied
   // owner's name is shown even when the filtered list is empty (0 KPIs) — the
   // old approach read the name from loaded KPI rows and broke on an empty list.
-  const selectedOwnerOption = useUserOption(filterOwner);
+  const selectedOwnerOptions = useUserOptions(filterOwner);
+
+  /** Keep the local selection and the shared cross-module filter in step. */
+  function applyOwnerFilter(next: string[]) {
+    setFilterOwner(next);
+    ctx.setFilterOwners(next);
+  }
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();
@@ -196,6 +204,9 @@ export default function IndividualKPIPage() {
 
   // Hidden columns — now driven through Manage Columns modal via TablePrefs
   const weekCount = useQuarterWeekCount(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
+  // QTD reference week for the export's Progress column — same input KPITable
+  // feeds `resolvePace`, so the sheet matches the on-screen column.
+  const qtdWeek = useQtdReferenceWeek(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
   const allTableCols = [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)];
   const tablePrefs = useTablePrefs("kpi");
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set(tablePrefs.hiddenCols));
@@ -250,7 +261,10 @@ export default function IndividualKPIPage() {
               const wg = computeWeeklyGoal(k.weeklyTargets, k.target, k.qtdGoal, fiscalWeek ?? 1, weekCount);
               return wg > 0 ? wg : "";
             }
-            case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
+            // Overall Quarter Progress (Achieved ÷ Quarterly Goal) — recomputed
+            // rather than read off the stale server `progressPercent` column so
+            // the export matches the table + Dashboard card. See kpiStats.ts.
+            case "progress": return `${kpiQtrPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
             case "description": return k.description ?? "";
             default: return "";
           }
@@ -287,7 +301,7 @@ export default function IndividualKPIPage() {
           level: "individual",
           year: sel.range.mode === "quarter" ? sel.range.year : currentYear,
           quarters: sel.range.mode === "quarter" ? sel.range.quarters.join(",") : currentQuarter,
-          owner: filterOwner || undefined,
+          owner: filterOwner.length ? filterOwner.join(",") : undefined,
           teamId: filterTeam || undefined,
           includeDeleted: viewTrash || undefined,
         });
@@ -308,7 +322,7 @@ export default function IndividualKPIPage() {
   const realQuarter = useCurrentQuarter(currentYear);
   const fiscalWeek = useCurrentWeek(currentYear, realQuarter);
   const fiscalWeekRange = useWeekDateRange(currentYear, realQuarter, fiscalWeek);
-  const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
+  const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner.length ? 1 : 0);
 
   return (
     <div className="flex flex-col h-full">
@@ -427,10 +441,11 @@ export default function IndividualKPIPage() {
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                   <FilterPicker
-                    value={filterOwner}
-                    onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
+                    multiple
+                    values={filterOwner}
+                    onChangeMultiple={applyOwnerFilter}
                     options={users.map(userToFilterOption)}
-                    selectedOption={selectedOwnerOption}
+                    selectedOptions={selectedOwnerOptions}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}
@@ -439,9 +454,9 @@ export default function IndividualKPIPage() {
                     allLabel="All owners"
                   />
                 </div>
-                {(filterTeam || filterOwner) && (
+                {(filterTeam || filterOwner.length > 0) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterOwner(""); ctx.setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); applyOwnerFilter([]); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

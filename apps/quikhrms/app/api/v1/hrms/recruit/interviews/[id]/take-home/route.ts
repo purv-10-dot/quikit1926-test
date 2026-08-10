@@ -13,6 +13,7 @@ interface Row {
   type: string;
   takeHomeInstructions: string | null;
   takeHomeAttachmentUrl: string | null;
+  takeHomeAttachmentLink: string | null;
   takeHomeDueDate: Date | null;
   submissionUrl: string | null;
   submissionFileName: string | null;
@@ -24,6 +25,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
     const rows = await prisma.$queryRaw<Row[]>`
       SELECT id, type::text AS type, "takeHomeInstructions", "takeHomeAttachmentUrl",
+             "takeHomeAttachmentLink",
              "takeHomeDueDate", "submissionUrl", "submissionFileName",
              "submissionNote", "submittedAt"
       FROM "app_quikhrms"."Interview"
@@ -37,6 +39,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       instructions: iv.takeHomeInstructions,
       hasAttachment: !!iv.takeHomeAttachmentUrl,
       attachmentUrl: iv.takeHomeAttachmentUrl,
+      attachmentLink: iv.takeHomeAttachmentLink,
       dueDate: iv.takeHomeDueDate ? new Date(iv.takeHomeDueDate).toISOString().slice(0, 10) : null,
       submission: iv.submittedAt
         ? {

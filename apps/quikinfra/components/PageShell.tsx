@@ -231,7 +231,10 @@ export function StatusChip({
     (safeStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "—");
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${color}`}>
+    // `whitespace-nowrap` is load-bearing: multi-word statuses ("Pending
+    // Approval", "Approved L1") otherwise wrap mid-label inside narrow table
+    // cells and read as clipped.
+    <span className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-md text-[11px] font-semibold border ${color}`}>
       {label}
     </span>
   );

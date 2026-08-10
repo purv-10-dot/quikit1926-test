@@ -32,6 +32,8 @@ export interface EditorTransition {
   toStatusId: string;
   fromStatusIds: string[];
   rules: EditorRule[];
+  /** Dev trigger event keys (e.g. "pr_merged"). Auto-fire this transition. */
+  triggers: string[];
 }
 
 export interface EditorDraft {
@@ -89,6 +91,7 @@ export interface WorkflowReadModel {
         groupNo: number;
         orderNo: number;
       }>;
+      triggers?: Array<{ event: string }>;
     }>;
   };
   draft: EditorDraft | null;
@@ -127,6 +130,7 @@ export function draftFromReadModel(rm: WorkflowReadModel): EditorDraft {
         groupNo: r.groupNo,
         orderNo: r.orderNo,
       })),
+      triggers: (t.triggers ?? []).map((tr) => tr.event),
     })),
   };
 }

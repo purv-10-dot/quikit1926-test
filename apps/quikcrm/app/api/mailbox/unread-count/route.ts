@@ -5,7 +5,6 @@
 
 import { NextResponse } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
-import { assertModule } from "@/lib/auth/permissions";
 import { callerConnectionId, unreadCount } from "@/lib/services/email/mailbox-query";
 
 export const runtime = "nodejs";
@@ -13,9 +12,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    // Personal mailbox: authentication is the only gate (own-connection scoped).
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    await assertModule(user, "mailbox", "view");
 
     const connectionId = await callerConnectionId(user.orgId, user.userId);
     const count = connectionId ? await unreadCount(user.orgId, connectionId) : 0;

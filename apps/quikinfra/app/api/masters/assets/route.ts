@@ -4,7 +4,7 @@ import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { listAssets, countAssets, createAsset } from "@/lib/masters/assets-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.master_asset", "view");
@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["assetCode", "name", "category", "condition", "status", "purchaseDate", "purchaseValue", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

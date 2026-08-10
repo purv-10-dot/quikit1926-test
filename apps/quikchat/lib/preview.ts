@@ -1,4 +1,5 @@
 import type { ChannelLastMessage } from "@/lib/shared";
+import { flattenMarkdown } from "@/lib/richtext";
 
 export type PreviewKind = "none" | "deleted" | "media" | "system" | "text";
 
@@ -18,10 +19,10 @@ export function messagePreview(last: ChannelLastMessage | null | undefined): Mes
     case "Delete":
       return { kind: "deleted", text: "This message was deleted" };
     case "Media":
-      return { kind: "media", text: last.content?.trim() || "Attachment" };
+      return { kind: "media", text: flattenMarkdown(last.content ?? "") || "Attachment" };
     case "SystemActivity":
       return { kind: "system", text: last.content ?? "" };
     default:
-      return { kind: "text", text: last.content ?? "" };
+      return { kind: "text", text: flattenMarkdown(last.content ?? "") };
   }
 }

@@ -34,6 +34,7 @@ import {
   seed,
   type NotifState,
 } from "@/lib/notif-store";
+import { playNotificationSound } from "@/lib/notification-sound";
 import {
   fireOsNotification,
   isAppFocused,
@@ -124,13 +125,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const handleInbound = useCallback(
     (payload: NotificationRealtimePayload) => {
       if (!payload?.id) return;
-      const { desktop, ...dto } = payload;
+      // `desktop` / `sound` are transient alert flags, not part of the row —
+      // strip both so neither leaks into the stored DTO or the bell feed.
+      const { desktop, sound, ...dto } = payload;
       const n = dto as NotificationDto;
       setState((s) => applyInbound(s, n));
 
       if (isAppFocused()) {
         // In-app toast for a genuinely new (unread) notification.
         if (!n.isRead) {
+          // Audible cue for the toast. Only when focused: an unfocused tab gets
+          // the OS notification below, which brings its own sound — playing here
+          // too would double up.
+          if (sound) playNotificationSound();
           toast.info({
             icon: <Avatar name={actorName(n)} id={n.actorId ?? undefined} size={32} />,
             title: (
@@ -153,6 +160,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           title: `QuikChat — ${channelLabel(n)}`,
           body: [fullSummary(n), n.preview].filter(Boolean).join(" — "),
           tag: n.channelId ?? n.id,
+          // Distinct from `tag` (which falls back to a message id): the desktop
+          // bridge turns this into its `quikchat://open/<channelId>` deep link.
+          channelId: n.channelId,
           onClick: () => openChannel(n.channelId, n.messageId),
         });
       }

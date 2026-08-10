@@ -27,6 +27,7 @@ const NAV: {
   { key: "user-management", label: "Roles & Permissions", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
   { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields`, perm: { resource: "ProjectMember", action: "update" } },
   { key: "workflows", label: "Workflows", href: (id) => `/spaces/${id}/settings/workflows`, perm: { resource: "Project", action: "update" } },
+  { key: "screens", label: "Screens", href: (id) => `/spaces/${id}/settings/screens`, perm: { resource: "Project", action: "update" } },
   { key: "board", label: "Board", href: (id) => `/spaces/${id}/settings/board`, perm: { resource: "Project", action: "update" } },
   { key: "repositories", label: "Repositories", href: (id) => `/spaces/${id}/settings/repositories`, perm: { resource: "ProjectMember", action: "update" } },
   // Personal Access Tokens moved to /settings/pats (user-scoped now, not

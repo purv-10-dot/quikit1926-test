@@ -30,9 +30,6 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.leave.approve", category: "Leave", name: "Approve Leave", description: "Approve/reject leave requests" },
   { code: "hrms.leave.manage", category: "Leave", name: "Manage Leave Policies", description: "Configure leave types, balances" },
   { code: "hrms.leave.dashboard.read", category: "Leave", name: "View Leave Dashboard", description: "View the leave analytics dashboard" },
-  { code: "hrms.leave_policy.read", category: "Leave", name: "View Leave Policy Docs", description: "List/view uploaded leave-policy documents" },
-  { code: "hrms.leave_policy.write", category: "Leave", name: "Manage Leave Policy Docs", description: "Upload, extract, edit leave-policy documents and their parsed rules" },
-  { code: "hrms.leave_policy.approve", category: "Leave", name: "Approve Leave Policy", description: "Sign off on parsed rules and activate a leave policy" },
 
   // ── Attendance ──
   { code: "hrms.attendance.read", category: "Attendance", name: "View Attendance", description: "View all attendance records" },
@@ -61,6 +58,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates" },
   { code: "hrms.recruit.offer", category: "Recruit", name: "Manage Offers", description: "Send/withdraw offers" },
   { code: "hrms.recruit.interview", category: "Recruit", name: "Manage Interviews", description: "Schedule and score interviews" },
+  { code: "hrms.recruit.approve", category: "Recruit", name: "Approve Requisitions", description: "Approve/reject raised requisitions" },
 
   // ── Performance ──
   { code: "hrms.performance.read", category: "Performance", name: "View Performance", description: "View goals, appraisals (all)" },
@@ -119,7 +117,7 @@ export const PERMISSIONS: PermissionDef[] = [
 ];
 
 export const PERMISSION_CODES = PERMISSIONS.map((p) => p.code);
-export type PermissionCode = (typeof PERMISSION_CODES)[number];
+type PermissionCode = (typeof PERMISSION_CODES)[number];
 
 // ── Default role → permission assignments ──
 

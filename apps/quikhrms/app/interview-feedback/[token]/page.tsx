@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star, CheckCircle2, AlertTriangle, ExternalLink, Phone, Mail, Briefcase, Loader2 } from "lucide-react";
+import { Star, CheckCircle2, AlertTriangle, ExternalLink, Phone, Mail, Briefcase, Loader2, Clock } from "lucide-react";
 import { clsx } from "clsx";
 
 interface Detail {
   alreadySubmitted: boolean;
+  /** Interview hasn't started yet — the scorecard stays locked until then. */
+  notYetOpen?: boolean;
   companyName: string;
   interview: {
     id: string;
@@ -115,6 +117,30 @@ export default function InterviewFeedbackPage({ params }: { params: { token: str
           <CheckCircle2 size={48} className="mx-auto text-emerald-500 mb-3" />
           <h1 className="text-2xl font-bold text-gray-900">Feedback submitted</h1>
           <p className="text-sm text-gray-600 mt-2">Thank you for your input. HR has been notified and will proceed with the next step.</p>
+        </div>
+      </Shell>
+    );
+  }
+
+  // Locked until the interview's scheduled start time — same rule as the
+  // in-app pipeline, enforced again by the API on submit.
+  if (detail.notYetOpen) {
+    const startsAt = new Date(detail.interview.scheduledAt);
+    return (
+      <Shell>
+        <div className="text-center py-16">
+          <Clock size={44} className="mx-auto text-amber-500 mb-3" />
+          <h1 className="text-2xl font-bold text-gray-900">Feedback isn&apos;t open yet</h1>
+          <p className="text-sm text-gray-600 mt-2">
+            This interview is scheduled for{" "}
+            <span className="font-semibold text-gray-900">
+              {startsAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+            </span>.
+          </p>
+          <p className="text-sm text-gray-600 mt-1">
+            You can submit your scorecard for {detail.interview.candidate.name} once the interview begins — open this same link again then.
+          </p>
+          <p className="text-xs text-gray-400 mt-4">{detail.companyName} · {detail.interview.roundName}</p>
         </div>
       </Shell>
     );

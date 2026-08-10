@@ -3,10 +3,10 @@
 
 // API base URL - QuikCRM Next.js app (runs on :3008 in local dev)
 // Change this to your production URL when deploying
-// const API_BASE_URL = 'http://localhost:3008';
+const API_BASE_URL = 'http://localhost:3008';
 
 // UAT
-const API_BASE_URL = 'https://uatcrm.quikit.ai';
+// const API_BASE_URL = 'https://uatcrm.quikit.ai';
 
 // Production
 // const API_BASE_URL = 'https://crm.quikit.ai';

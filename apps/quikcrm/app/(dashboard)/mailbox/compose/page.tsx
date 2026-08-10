@@ -1,13 +1,15 @@
 import { Suspense } from "react";
 import { requireUser } from "@/lib/auth/require";
-import { assertModule } from "@/lib/auth/permissions";
 import { ComposePage } from "@/components/mailbox/compose-page";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Sending from your OWN connected mailbox is a personal action — gated on
+ * requireUser only, matching Settings → Email Accounts. See mailbox/inbox/page.tsx.
+ */
 export default async function MailboxComposePage() {
-  const user = await requireUser();
-  await assertModule(user, "mailbox", "create");
+  await requireUser();
   return (
     <Suspense fallback={null}>
       <ComposePage />

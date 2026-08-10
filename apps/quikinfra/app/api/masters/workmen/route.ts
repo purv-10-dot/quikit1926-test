@@ -8,7 +8,7 @@ import {
   countWorkmen,
   createWorkman,
 } from "@/lib/masters/workmen-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.master_workman", "view");
@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["workmanCode", "fullName", "engagementType", "status", "createdAt"],
     { field: "workmanCode", order: "asc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

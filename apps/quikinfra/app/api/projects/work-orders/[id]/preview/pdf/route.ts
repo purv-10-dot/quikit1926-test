@@ -55,17 +55,26 @@ export async function GET(
     );
   }
 
-  const uomIds = Array.from(
-    new Set(lines.map((l) => l.uomId).filter(Boolean)),
+  // Labour lines print the category name, so resolve the ids in one batch.
+  const labourCategoryIds = Array.from(
+    new Set(lines.map((l) => l.labourCategoryId).filter(Boolean)),
   ) as string[];
-  const uoms = uomIds.length
-    ? await db.cnUOM.findMany({
-        where: { id: { in: uomIds } },
-        select: { id: true, code: true },
+  const labourCategories = labourCategoryIds.length
+    ? await db.cnLabourCategory.findMany({
+        where: { id: { in: labourCategoryIds }, orgId: ctx.orgId },
+        select: { id: true, name: true, skillLevel: true },
       })
     : [];
-  const uomById = new Map<string, string>();
-  for (const u of uoms) uomById.set(u.id, u.code);
+  const labourCategoryById = new Map(
+    labourCategories.map((c) => [
+      c.id,
+      // Skill level is what distinguishes two same-named categories on a rate
+      // sheet ("Mason — Skilled" vs "Mason — Highly Skilled"), so show both.
+      c.skillLevel
+        ? `${c.name} — ${c.skillLevel.replace(/_/g, " ").toLowerCase()}`
+        : c.name,
+    ]),
+  );
 
   let termsBody: string | null = null;
   const woTermsConditionId = (wo as { termsConditionId?: string | null })
@@ -88,11 +97,17 @@ export async function GET(
     const amount = parseFloat(String(l.amount ?? "0")) || qty * rate;
     return {
       itemCode: String(l.boqItemId ?? ""),
-      description: String(l.description ?? ""),
-      uom: l.uomId ? uomById.get(l.uomId) ?? "" : "",
+      // Labour lines carry the trade in `activityName`; fall back to it so the
+      // description column is never empty on a labour work order.
+      description: String(l.description || l.activityName || ""),
       quantity: qty,
       rate,
       amount,
+      labourCategory: l.labourCategoryId
+        ? labourCategoryById.get(l.labourCategoryId) ?? null
+        : null,
+      labourCount:
+        l.labourCount != null ? parseFloat(String(l.labourCount)) || 0 : null,
     };
   });
 

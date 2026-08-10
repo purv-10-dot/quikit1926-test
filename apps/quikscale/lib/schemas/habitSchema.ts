@@ -162,12 +162,27 @@ export const launchCampaignSchema = z.object({
   year: z.number().int().min(2020).max(2035),
   deadline: z.string().datetime().optional(),
   notes: z.string().optional().nullable(),
+  /** Optional team scope picked at creation (display/filtering context). */
+  teamId: z.string().optional().nullable(),
+  /**
+   * Users asked to fill this assessment — REQUIRED at creation.
+   *
+   * Note this is a create-time rule only. Campaigns that predate this column
+   * still carry an empty list, and the read paths (participation panel,
+   * notifications) continue to treat empty as "every active org member" so
+   * those rows keep working.
+   */
+  participantUserIds: z
+    .array(z.string().min(1))
+    .min(1, "Select at least one owner"),
 });
 export type LaunchCampaignInput = z.infer<typeof launchCampaignSchema>;
 
 export const updateCampaignSchema = z.object({
   deadline: z.string().datetime().optional().nullable(),
   notes: z.string().optional().nullable(),
+  teamId: z.string().optional().nullable(),
+  participantUserIds: z.array(z.string().min(1)).optional(),
 });
 export type UpdateCampaignInput = z.infer<typeof updateCampaignSchema>;
 

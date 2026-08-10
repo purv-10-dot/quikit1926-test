@@ -62,6 +62,8 @@ jobs:
               - 'apps/quikchat/**'
             quiklms:
               - 'apps/quiklms/**'
+            quikinsight:
+              - 'apps/quikinsight/**'
             realtime:
               - 'services/realtime/**'
 
@@ -70,7 +72,7 @@ jobs:
         shell: bash
         run: |
           APPS=()
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms realtime)
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -87,6 +89,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikasset }}" = "true" ] && APPS+=("quikasset")
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
             [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
+            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
@@ -178,7 +181,7 @@ jobs:
             NEXT_PUBLIC_QUIKASSET_URL=https://uatasset.quikit.ai
             NEXT_PUBLIC_QUIKCHAT_URL=https://uatchat.quikit.ai
             NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
-            NEXT_PUBLIC_REALTIME_WS_URL=ws://uatsockets.quikit.ai
+            NEXT_PUBLIC_REALTIME_WS_URL=wss://uatsockets.quikit.ai
             NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
   update-gitops:
     name: Update GitOps Repository
@@ -227,6 +230,10 @@ jobs:
               quikscale)
                 FILE="quikitscale-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikscale-runtime:${TAG}"
+                ;;
+              quikinsight)
+                FILE="quikinsight-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikinsight-runtime:${TAG}"
                 ;;
               quikinfra)
                 FILE="quikitinfra-deployment.yaml"

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Database, Users, ListChecks, Github, KeyRound } from "lucide-react";
+import { ArrowLeft, Database, Users, ListChecks, Github, KeyRound, LifeBuoy } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 const NAV: {
@@ -18,6 +18,10 @@ const NAV: {
   { key: "integrations-github", label: "GitHub", href: "/settings/integrations/github", icon: Github, adminOnly: true },
   // Self-service, not admin-gated — every member manages their own tokens.
   { key: "pats", label: "Personal Access Tokens", href: "/settings/pats", icon: KeyRound },
+  // Deliberately NOT adminOnly — the only entry here that isn't. Support status
+  // is per-user: every member sees their own requests, so hiding it behind the
+  // admin flag would hide it from exactly the people who raise tickets.
+  { key: "support", label: "Support Status", href: "/settings/support", icon: LifeBuoy },
   // "General Settings" lives in the header ⚙ popover (see settings-popover.tsx)
   // — keeping it out of this sidebar prevents duplication.
 ];

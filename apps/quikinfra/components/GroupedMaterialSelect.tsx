@@ -209,6 +209,87 @@ export function buildMaterialGroupBuckets(
   return { buckets: map, groupRows };
 }
 
+/** Shortest query that triggers the cross-group material search. */
+const CROSS_GROUP_MIN_CHARS = 2;
+/** Max materials shown inline on the groups step before the "+N more" hint. */
+const CROSS_GROUP_LIMIT = 20;
+
+function matchesItemQuery(it: GroupedMaterialSelectItem, q: string): boolean {
+  const hay = `${it.name ?? ""} ${it.code ?? ""} ${it.groupName ?? ""} ${it.hsnCode ?? ""}`.toLowerCase();
+  return hay.includes(q);
+}
+
+/**
+ * Cross-group material search for the GROUPS step: typing a material name
+ * surfaces matching items from every group alongside the matching group rows,
+ * so a user who doesn't know which group holds an item can still pick it in
+ * one step. Lazy mode queries `/api/masters/items` unscoped (code + name);
+ * eager mode filters the already-loaded `items` prop (name/code/group/HSN).
+ *
+ * Items whose group is inactive/deleted are dropped so the picker never offers
+ * a material the groups list itself would hide.
+ */
+function useCrossGroupMatches(opts: {
+  /** True only on the groups step of an open picker. */
+  enabled: boolean;
+  query: string;
+  debouncedQuery: string;
+  lazy: boolean;
+  items: GroupedMaterialSelectItem[];
+  groups: ItemGroupOption[];
+}): { matches: GroupedMaterialSelectItem[]; total: number; loading: boolean; active: boolean } {
+  const { enabled, query, debouncedQuery, lazy, items, groups } = opts;
+  const q = query.trim().toLowerCase();
+  const active = enabled && q.length >= CROSS_GROUP_MIN_CHARS;
+
+  const search = useLazyGroupItems({
+    groupId: null,
+    search: debouncedQuery.trim().length >= CROSS_GROUP_MIN_CHARS ? debouncedQuery : "",
+    enabled: lazy && active,
+    pageSize: CROSS_GROUP_LIMIT,
+  });
+
+  const hiddenGroupIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const g of groups) {
+      if (g?.id && (g.status === "inactive" || g.status === "deleted")) s.add(g.id);
+    }
+    return s;
+  }, [groups]);
+
+  return useMemo(() => {
+    if (!active) return { matches: [], total: 0, loading: false, active: false };
+    const visible = (rows: GroupedMaterialSelectItem[]) =>
+      rows.filter((it) => !(it.groupId && hiddenGroupIds.has(it.groupId)));
+    if (lazy) {
+      const rows = visible(search.items as GroupedMaterialSelectItem[]);
+      return {
+        matches: rows.slice(0, CROSS_GROUP_LIMIT),
+        // `total` is the server's unfiltered count; it can exceed the rows we
+        // show, which is exactly what the "+N more" hint is for.
+        total: Math.max(search.total, rows.length),
+        loading: search.loading,
+        active: true,
+      };
+    }
+    const rows = visible(items.filter((it) => matchesItemQuery(it, q)));
+    return {
+      matches: rows.slice(0, CROSS_GROUP_LIMIT),
+      total: rows.length,
+      loading: false,
+      active: true,
+    };
+  }, [active, lazy, items, q, hiddenGroupIds, search.items, search.total, search.loading]);
+}
+
+function CrossGroupSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50/60">
+      {children}
+    </div>
+  );
+}
+
 export function GroupedMaterialSelect({
   value,
   onChange,
@@ -246,6 +327,14 @@ export function GroupedMaterialSelect({
     search: debouncedQuery,
     enabled: lazy && open && step === "items",
   });
+  const crossGroup = useCrossGroupMatches({
+    enabled: open && step === "groups",
+    query,
+    debouncedQuery,
+    lazy,
+    items,
+    groups,
+  });
   // Cache items seen (via `items` prop or fetched) so the trigger can render
   // the selected item's label even when it isn't in the current fetched page.
   const itemCacheRef = useRef<Map<string, GroupedMaterialSelectItem>>(new Map());
@@ -257,6 +346,9 @@ export function GroupedMaterialSelect({
       itemCacheRef.current.set(it.id, it as GroupedMaterialSelectItem);
     }
   }, [lazyGroup.items]);
+  useEffect(() => {
+    for (const it of crossGroup.matches) itemCacheRef.current.set(it.id, it);
+  }, [crossGroup.matches]);
 
   const { buckets, groupRows } = useMemo(
     () => buildMaterialGroupBuckets(items, groups),
@@ -290,13 +382,13 @@ export function GroupedMaterialSelect({
     if (lazy) return lazyGroup.items as GroupedMaterialSelectItem[];
     if (!query.trim()) return itemsInActiveGroup;
     const q = query.toLowerCase();
-    return itemsInActiveGroup.filter((it) => {
-      const hay = `${it.name ?? ""} ${it.code ?? ""} ${it.groupName ?? ""} ${it.hsnCode ?? ""}`.toLowerCase();
-      return hay.includes(q);
-    });
+    return itemsInActiveGroup.filter((it) => matchesItemQuery(it, q));
   }, [lazy, lazyGroup.items, itemsInActiveGroup, query]);
 
-  const visibleRows = step === "groups" ? filteredGroups : filteredItems;
+  // Groups step lists matching groups first, then cross-group material hits —
+  // keyboard nav walks that concatenation as one list.
+  const visibleCount =
+    step === "groups" ? filteredGroups.length + crossGroup.matches.length : filteredItems.length;
 
   useEffect(() => {
     if (!open) return;
@@ -316,7 +408,7 @@ export function GroupedMaterialSelect({
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [query, step, open, activeGroupId, visibleRows.length]);
+  }, [query, step, open, activeGroupId, visibleCount]);
 
   const openPicker = useCallback(() => {
     setQuery("");
@@ -339,6 +431,7 @@ export function GroupedMaterialSelect({
       if (onSelect) {
         const picked =
           (filteredItems as GroupedMaterialSelectItem[]).find((it) => it.id === itemId) ??
+          crossGroup.matches.find((it) => it.id === itemId) ??
           itemCacheRef.current.get(itemId) ??
           items.find((it) => it.id === itemId) ??
           null;
@@ -347,7 +440,7 @@ export function GroupedMaterialSelect({
       setOpen(false);
       setQuery("");
     },
-    [onChange, onSelect, filteredItems, items],
+    [onChange, onSelect, filteredItems, crossGroup.matches, items],
   );
 
   const clear = useCallback(
@@ -368,15 +461,21 @@ export function GroupedMaterialSelect({
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, Math.max(visibleRows.length - 1, 0)));
+      setActiveIndex((i) => Math.min(i + 1, Math.max(visibleCount - 1, 0)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (step === "groups") {
-        const g = filteredGroups[activeIndex];
-        if (g) enterGroup(g.id);
+        if (activeIndex < filteredGroups.length) {
+          const g = filteredGroups[activeIndex];
+          if (g) enterGroup(g.id);
+        } else {
+          // Index past the group rows lands in the cross-group material hits.
+          const it = crossGroup.matches[activeIndex - filteredGroups.length];
+          if (it) pickItem(it.id);
+        }
       } else {
         const it = filteredItems[activeIndex];
         if (it) pickItem(it.id);
@@ -487,7 +586,7 @@ export function GroupedMaterialSelect({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={step === "groups" ? "Search groups…" : "Search items…"}
+              placeholder={step === "groups" ? "Search groups or materials…" : "Search items…"}
               className={`flex-1 ${ui.searchInput} outline-none bg-transparent min-w-0`}
             />
             {query && (
@@ -518,12 +617,22 @@ export function GroupedMaterialSelect({
                 : undefined
             }
           >
-            {visibleRows.length === 0 ? (
+            {visibleCount === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-gray-400">
                 {step === "groups"
-                  ? items.length === 0
-                    ? "Loading items…"
-                    : "No matching groups"
+                  ? crossGroup.loading
+                    ? "Searching…"
+                    : lazy
+                      ? groups.length === 0
+                        ? "Loading groups…"
+                        : crossGroup.active
+                          ? "No matching groups or materials"
+                          : "No matching groups"
+                      : items.length === 0
+                        ? "Loading items…"
+                        : crossGroup.active
+                          ? "No matching groups or materials"
+                          : "No matching groups"
                   : lazy
                     ? lazyGroup.loading
                       ? "Loading…"
@@ -533,30 +642,70 @@ export function GroupedMaterialSelect({
                       : "No matching items"}
               </div>
             ) : step === "groups" ? (
-              filteredGroups.map((g, i) => {
-                const active = i === activeIndex;
-                return (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => enterGroup(g.id)}
-                    onMouseEnter={() => setActiveIndex(i)}
-                    className={`w-full text-left ${ui.optionPad} flex items-center gap-2 ${
-                      active ? "bg-accent-50" : "hover:bg-accent-50"
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className={`${ui.optionTitle} text-gray-900 truncate`}>{g.name}</div>
-                      {g.itemCount != null ? (
-                        <div className="text-[10px] text-gray-500">{g.itemCount} material{g.itemCount === 1 ? "" : "s"}</div>
-                      ) : !lazy ? (
-                        <div className="text-[10px] text-gray-500">{g.items.length} material{g.items.length === 1 ? "" : "s"}</div>
-                      ) : null}
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  </button>
-                );
-              })
+              <>
+                {crossGroup.matches.length > 0 && filteredGroups.length > 0 && (
+                  <CrossGroupSectionLabel>Groups</CrossGroupSectionLabel>
+                )}
+                {filteredGroups.map((g, i) => {
+                  const active = i === activeIndex;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => enterGroup(g.id)}
+                      onMouseEnter={() => setActiveIndex(i)}
+                      className={`w-full text-left ${ui.optionPad} flex items-center gap-2 ${
+                        active ? "bg-accent-50" : "hover:bg-accent-50"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className={`${ui.optionTitle} text-gray-900 truncate`}>{g.name}</div>
+                        {g.itemCount != null ? (
+                          <div className="text-[10px] text-gray-500">{g.itemCount} material{g.itemCount === 1 ? "" : "s"}</div>
+                        ) : !lazy ? (
+                          <div className="text-[10px] text-gray-500">{g.items.length} material{g.items.length === 1 ? "" : "s"}</div>
+                        ) : null}
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    </button>
+                  );
+                })}
+                {crossGroup.matches.length > 0 && (
+                  <>
+                    <CrossGroupSectionLabel>Materials ({crossGroup.total})</CrossGroupSectionLabel>
+                    {crossGroup.matches.map((it, i) => {
+                      const idx = filteredGroups.length + i;
+                      const active = idx === activeIndex;
+                      const isSelected = it.id === value;
+                      const sub = [it.code, it.uomCode, it.groupName].filter(Boolean).join(" · ");
+                      return (
+                        <button
+                          key={it.id}
+                          type="button"
+                          onClick={() => pickItem(it.id)}
+                          onMouseEnter={() => setActiveIndex(idx)}
+                          className={`w-full text-left ${ui.optionPad} flex items-center gap-2 ${
+                            active ? "bg-accent-50" : "hover:bg-accent-50"
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className={`${ui.optionTitle} text-gray-900 truncate`}>
+                              {it.name ?? it.code ?? it.id}
+                            </div>
+                            {sub ? <div className={ui.optionSub}>{sub}</div> : null}
+                          </div>
+                          {isSelected ? <Check className="w-3.5 h-3.5 text-accent-600 shrink-0" /> : null}
+                        </button>
+                      );
+                    })}
+                    {crossGroup.total > crossGroup.matches.length && (
+                      <div className="px-2.5 py-1.5 text-[10px] text-gray-400">
+                        +{crossGroup.total - crossGroup.matches.length} more — open the group to see all
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             ) : (
               filteredItems.map((it, i) => {
                 const active = i === activeIndex;
@@ -661,6 +810,14 @@ export function GroupedMaterialMultiSelect({
     search: debouncedQuery,
     enabled: lazy && open && step === "items",
   });
+  const crossGroup = useCrossGroupMatches({
+    enabled: open && step === "groups",
+    query,
+    debouncedQuery,
+    lazy,
+    items,
+    groups,
+  });
   const itemCacheRef = useRef<Map<string, GroupedMaterialSelectItem>>(new Map());
   useEffect(() => {
     for (const it of items) itemCacheRef.current.set(it.id, it);
@@ -670,6 +827,9 @@ export function GroupedMaterialMultiSelect({
       itemCacheRef.current.set(it.id, it as GroupedMaterialSelectItem);
     }
   }, [lazyGroup.items]);
+  useEffect(() => {
+    for (const it of crossGroup.matches) itemCacheRef.current.set(it.id, it);
+  }, [crossGroup.matches]);
 
   const { buckets, groupRows } = useMemo(
     () => buildMaterialGroupBuckets(items, groups),
@@ -692,13 +852,11 @@ export function GroupedMaterialMultiSelect({
     if (lazy) return lazyGroup.items as GroupedMaterialSelectItem[];
     if (!query.trim()) return itemsInActiveGroup;
     const q = query.toLowerCase();
-    return itemsInActiveGroup.filter((it) => {
-      const hay = `${it.name ?? ""} ${it.code ?? ""} ${it.groupName ?? ""} ${it.hsnCode ?? ""}`.toLowerCase();
-      return hay.includes(q);
-    });
+    return itemsInActiveGroup.filter((it) => matchesItemQuery(it, q));
   }, [lazy, lazyGroup.items, itemsInActiveGroup, query]);
 
-  const visibleCount = step === "groups" ? filteredGroups.length : filteredItems.length;
+  const visibleCount =
+    step === "groups" ? filteredGroups.length + crossGroup.matches.length : filteredItems.length;
 
   const labelOf = useCallback(
     (id: string) => {
@@ -721,6 +879,7 @@ export function GroupedMaterialMultiSelect({
         if (onToggleItem) {
           const picked =
             (filteredItems as GroupedMaterialSelectItem[]).find((it) => it.id === id) ??
+            crossGroup.matches.find((it) => it.id === id) ??
             itemCacheRef.current.get(id) ??
             items.find((it) => it.id === id) ??
             null;
@@ -728,7 +887,7 @@ export function GroupedMaterialMultiSelect({
         }
       }
     },
-    [values, onChange, onToggleItem, filteredItems, items],
+    [values, onChange, onToggleItem, filteredItems, crossGroup.matches, items],
   );
 
   useEffect(() => {
@@ -759,21 +918,26 @@ export function GroupedMaterialMultiSelect({
   }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    const len = step === "groups" ? filteredGroups.length : filteredItems.length;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, Math.max(len - 1, 0)));
+      setActiveIndex((i) => Math.min(i + 1, Math.max(visibleCount - 1, 0)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (step === "groups") {
-        const g = filteredGroups[activeIndex];
-        if (g) {
-          setActiveGroupId(g.id);
-          setStep("items");
-          setQuery("");
+        if (activeIndex < filteredGroups.length) {
+          const g = filteredGroups[activeIndex];
+          if (g) {
+            setActiveGroupId(g.id);
+            setStep("items");
+            setQuery("");
+          }
+        } else {
+          // Index past the group rows lands in the cross-group material hits.
+          const it = crossGroup.matches[activeIndex - filteredGroups.length];
+          if (it) toggleItem(it.id);
         }
       } else {
         const it = filteredItems[activeIndex];
@@ -877,7 +1041,7 @@ export function GroupedMaterialMultiSelect({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={step === "groups" ? "Search groups…" : "Search items…"}
+              placeholder={step === "groups" ? "Search groups or materials…" : "Search items…"}
               className="flex-1 text-sm outline-none bg-transparent min-w-0"
             />
             {query && (
@@ -911,13 +1075,19 @@ export function GroupedMaterialMultiSelect({
             {visibleCount === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-gray-400">
                 {step === "groups"
-                  ? lazy
-                    ? groups.length === 0
-                      ? "No item groups"
-                      : "No matching groups"
-                    : items.length === 0
-                      ? "Loading items…"
-                      : "No matching groups"
+                  ? crossGroup.loading
+                    ? "Searching…"
+                    : lazy
+                      ? groups.length === 0
+                        ? "No item groups"
+                        : crossGroup.active
+                          ? "No matching groups or materials"
+                          : "No matching groups"
+                      : items.length === 0
+                        ? "Loading items…"
+                        : crossGroup.active
+                          ? "No matching groups or materials"
+                          : "No matching groups"
                   : lazy
                     ? lazyGroup.loading
                       ? "Loading…"
@@ -927,34 +1097,79 @@ export function GroupedMaterialMultiSelect({
                       : "No matching items"}
               </div>
             ) : step === "groups" ? (
-              filteredGroups.map((g, i) => {
-                const active = i === activeIndex;
-                return (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => enterGroup(g.id)}
-                    onMouseEnter={() => setActiveIndex(i)}
-                    className={`w-full text-left px-2.5 py-2 flex items-center gap-2 ${
-                      active ? "bg-accent-50" : "hover:bg-accent-50"
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-gray-900 truncate">{g.name}</div>
-                      {g.itemCount != null ? (
-                        <div className="text-[10px] text-gray-500">
-                          {g.itemCount} material{g.itemCount === 1 ? "" : "s"}
-                        </div>
-                      ) : !lazy ? (
-                        <div className="text-[10px] text-gray-500">
-                          {g.items.length} material{g.items.length === 1 ? "" : "s"}
-                        </div>
-                      ) : null}
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  </button>
-                );
-              })
+              <>
+                {crossGroup.matches.length > 0 && filteredGroups.length > 0 && (
+                  <CrossGroupSectionLabel>Groups</CrossGroupSectionLabel>
+                )}
+                {filteredGroups.map((g, i) => {
+                  const active = i === activeIndex;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => enterGroup(g.id)}
+                      onMouseEnter={() => setActiveIndex(i)}
+                      className={`w-full text-left px-2.5 py-2 flex items-center gap-2 ${
+                        active ? "bg-accent-50" : "hover:bg-accent-50"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-900 truncate">{g.name}</div>
+                        {g.itemCount != null ? (
+                          <div className="text-[10px] text-gray-500">
+                            {g.itemCount} material{g.itemCount === 1 ? "" : "s"}
+                          </div>
+                        ) : !lazy ? (
+                          <div className="text-[10px] text-gray-500">
+                            {g.items.length} material{g.items.length === 1 ? "" : "s"}
+                          </div>
+                        ) : null}
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    </button>
+                  );
+                })}
+                {crossGroup.matches.length > 0 && (
+                  <>
+                    <CrossGroupSectionLabel>Materials ({crossGroup.total})</CrossGroupSectionLabel>
+                    {crossGroup.matches.map((it, i) => {
+                      const idx = filteredGroups.length + i;
+                      const active = idx === activeIndex;
+                      const selected = values.includes(it.id);
+                      const sub = [it.code, it.uomCode, it.groupName].filter(Boolean).join(" · ");
+                      return (
+                        <button
+                          key={it.id}
+                          type="button"
+                          onClick={() => toggleItem(it.id)}
+                          onMouseEnter={() => setActiveIndex(idx)}
+                          className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition-colors ${
+                            active ? "bg-accent-50" : "hover:bg-gray-100"
+                          } ${selected ? "text-accent-800" : "text-gray-700"}`}
+                        >
+                          <span
+                            className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                              selected ? "bg-accent-600 border-accent-600 text-white" : "border-gray-300 bg-white"
+                            }`}
+                            aria-hidden="true"
+                          >
+                            {selected && <Check className="w-3 h-3" />}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate">{it.name ?? it.code ?? it.id}</div>
+                            {sub ? <div className="text-[10px] text-gray-500 truncate">{sub}</div> : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {crossGroup.total > crossGroup.matches.length && (
+                      <div className="px-3 py-1.5 text-[10px] text-gray-400">
+                        +{crossGroup.total - crossGroup.matches.length} more — open the group to see all
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             ) : (
               filteredItems.map((it, i) => {
                 const active = i === activeIndex;

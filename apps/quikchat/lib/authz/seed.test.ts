@@ -244,4 +244,41 @@ describe("ensureUserRole (per-user seed-before-check)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data.roleId).toBe("role-admin");
   });
+
+  it("mirrors the freshly-bound role onto central UserAppAccess.role", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    await ensureUserRole("u4", ORG);
+    expect(mockDb.userAppAccess.updateMany).toHaveBeenCalledWith({
+      where: { orgId: ORG, userId: "u4", appId: "app-qc" },
+      data: { role: "Member" },
+    });
+  });
+
+  it("mirrors 'admin' for a bound org_admin", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "org_admin" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    await ensureUserRole("u5", ORG);
+    expect(mockDb.userAppAccess.updateMany).toHaveBeenCalledWith({
+      where: { orgId: ORG, userId: "u5", appId: "app-qc" },
+      data: { role: "admin" },
+    });
+  });
+
+  it("does NOT mirror when the user already holds a role (fast path)", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue({ id: "uar-existing" } as never);
+    await ensureUserRole("u6", ORG);
+    expect(mockDb.userAppAccess.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("bind still succeeds when the mirror write throws (best-effort)", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    mockDb.userAppAccess.updateMany.mockRejectedValueOnce(new Error("mirror down") as never);
+    await expect(ensureUserRole("u7", ORG)).resolves.toBeUndefined();
+    expect(mockDb.qcUserAppRole.create).toHaveBeenCalled();
+  });
 });

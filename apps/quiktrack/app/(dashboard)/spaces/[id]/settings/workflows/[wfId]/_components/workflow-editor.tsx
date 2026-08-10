@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
-import { AddStatusDialog, AddTransitionDialog } from "./editor-dialogs";
+import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog, EditStatusDialog, ReplaceStatusDialog } from "./editor-dialogs";
 import { FlowCanvas } from "./flow/flow-canvas";
 import { StatusPanel } from "./flow/status-panel";
 import { TransitionPanel } from "./flow/transition-panel";
@@ -18,12 +18,38 @@ import {
   type StatusMeta,
   type WorkflowReadModel,
 } from "./editor-types";
+import { AddRuleDialog, EditRuleDialog } from "./flow/rule-dialogs";
+import { TriggersDialog } from "./flow/triggers-dialog";
+import { metaFor, type RuleTypeMeta, type BucketId } from "./flow/rule-catalog";
 
 async function fetchResolutions(projectId: string): Promise<{ id: string; name: string }[]> {
   const r = await fetch(`/api/projects/${projectId}/resolutions`);
   const j = await r.json();
   if (!r.ok || !j.success) return [];
   return j.data as { id: string; name: string }[];
+}
+
+/** Org screens → { id, name } for the "Show a screen" (Request input) rule. */
+async function fetchScreens(): Promise<{ id: string; name: string }[]> {
+  const r = await fetch("/api/screens");
+  const j = await r.json();
+  if (!r.ok || !j.success) return [];
+  return (j.data as { id: string; name: string }[]).map((s) => ({ id: s.id, name: s.name }));
+}
+
+/** Project members → { userId, name } for the field-value rule's user dropdowns. */
+async function fetchMembers(projectId: string): Promise<{ userId: string; name: string }[]> {
+  const r = await fetch(`/api/projects/${projectId}/members`);
+  const j = await r.json();
+  if (!r.ok || !j.success) return [];
+  type Row = {
+    userId: string;
+    user: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  };
+  return (j.data as Row[]).map((m) => {
+    const name = [m.user?.firstName, m.user?.lastName].filter(Boolean).join(" ").trim();
+    return { userId: m.userId, name: name || m.user?.email || m.userId };
+  });
 }
 
 async function fetchReadModel(wfId: string): Promise<WorkflowReadModel> {
@@ -108,11 +134,33 @@ function EditorBody({
   // When the Add-transition dialog is opened by drawing an edge on the diagram,
   // pre-fill its From/To with the connected statuses.
   const [transitionPrefill, setTransitionPrefill] = useState<{ from: string; to: string } | null>(null);
+  // "Update workflow ▾" split-button menu + the "Save as new workflow" dialog.
+  const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
+  const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
+  // The right detail panel is collapsible (Jira parity).
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Edit-status / Replace-status modals (opened from the Status panel pencils).
+  const [editStatusOpen, setEditStatusOpen] = useState(false);
+  const [replaceStatusOpen, setReplaceStatusOpen] = useState(false);
+  // Rule dialogs on the Transition panel: pick a rule type (add) or edit one.
+  // Holds the rail bucket the Add-rule catalog should open on, or null (closed).
+  const [addRuleBucket, setAddRuleBucket] = useState<BucketId | null>(null);
+  const [triggersOpen, setTriggersOpen] = useState(false);
+  // The rule being configured — either a fresh pick (add) or an existing index (edit).
+  const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
 
   const resolutions = useQuery({
     queryKey: ["quiktrack", "resolutions", projectId],
     queryFn: () => fetchResolutions(projectId),
+  });
+  const members = useQuery({
+    queryKey: ["quiktrack", "members", projectId],
+    queryFn: () => fetchMembers(projectId),
+  });
+  const screens = useQuery({
+    queryKey: ["quiktrack", "screens", projectId],
+    queryFn: fetchScreens,
   });
 
 
@@ -195,9 +243,14 @@ function EditorBody({
             icon={Zap}
             label="Add Rule"
             onClick={() => {
-              // "Add Rule" selects the first transition so its rule accordions open.
-              const first = ed.draft.transitions[0];
-              if (first) setSelection({ kind: "transition", transitionId: first.id });
+              // Open the Add-rule catalog directly. Needs a target transition —
+              // reuse the selected one, else default to the first transition.
+              const target =
+                selectedTransition?.id ?? ed.draft.transitions[0]?.id ?? null;
+              if (target) {
+                setSelection({ kind: "transition", transitionId: target });
+                setAddRuleBucket("CONDITION");
+              }
             }}
             disabled={ed.draft.transitions.length < 1}
           />
@@ -217,14 +270,42 @@ function EditorBody({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => ed.publish.mutate(undefined)}
-                disabled={ed.publish.isPending}
-                className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
-              >
-                {ed.publish.isPending ? "Publishing…" : "Update workflow"}
-              </button>
+              {/* Split button: "Update workflow" + ▾ "Save as new workflow". */}
+              <div className="relative inline-flex">
+                <button
+                  type="button"
+                  onClick={() => ed.publish.mutate(undefined)}
+                  disabled={ed.publish.isPending}
+                  className="rounded-l bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
+                >
+                  {ed.publish.isPending ? "Publishing…" : "Update workflow"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUpdateMenuOpen((v) => !v)}
+                  aria-label="More update options"
+                  className="rounded-r border-l border-accent-700/40 bg-accent-600 px-1.5 py-1.5 text-white hover:bg-accent-700"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                {updateMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setUpdateMenuOpen(false)} />
+                    <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpdateMenuOpen(false);
+                          setSaveAsNewOpen(true);
+                        }}
+                        className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Save as new workflow
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={onClose}
@@ -361,50 +442,168 @@ function EditorBody({
             <TextView
               draft={ed.draft}
               statusMeta={statusMeta}
-              onRemoveStatus={ed.removeStatus}
-              onSetInitial={ed.setInitial}
-              onRemoveTransition={ed.removeTransition}
+              selectedTransitionId={selection?.kind === "transition" ? selection.transitionId : null}
+              onSelectStatus={(statusId) => setSelection({ kind: "status", statusId })}
+              onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
             />
           )}
         </div>
 
-        {tab === "diagram" && selectedStatusId && (
+        {/* Right detail panel region + its left-edge collapse toggle. */}
+        <div className="relative flex min-h-0">
+        {/* Small round collapse/expand button on the panel's LEFT edge (Jira). */}
+        <button
+          type="button"
+          onClick={() => setPanelCollapsed((v) => !v)}
+          title={panelCollapsed ? "Expand panel" : "Collapse panel"}
+          className="absolute -left-3 top-4 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
+        >
+          {panelCollapsed ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </button>
+
+        {selectedStatusId && !panelCollapsed && (
           <StatusPanel
             statusId={selectedStatusId}
             meta={statusMeta.get(selectedStatusId)}
             draft={ed.draft}
-            onRenamed={(name) => patchStatus(selectedStatusId, { name })}
-            onRecategorised={(category) => patchStatus(selectedStatusId, { category })}
+            statusMeta={statusMeta}
+            onEdit={() => setEditStatusOpen(true)}
+            onReplace={() => setReplaceStatusOpen(true)}
             onSelectTransition={(transitionId) => setSelection({ kind: "transition", transitionId })}
+            onAddIncoming={() => {
+              // Prefill the Create-transition dialog with To = this status.
+              setTransitionPrefill({ from: "", to: selectedStatusId });
+              setAddTransitionOpen(true);
+            }}
+            onAddOutgoing={() => {
+              setTransitionPrefill({ from: selectedStatusId, to: "" });
+              setAddTransitionOpen(true);
+            }}
             onRemove={() => {
               ed.removeStatus(selectedStatusId);
               setSelection(null);
             }}
           />
         )}
-        {tab === "diagram" && selectedTransition && (
+        {selectedTransition && !panelCollapsed && (
           <TransitionPanel
             transition={selectedTransition}
+            draft={ed.draft}
             statusMeta={statusMeta}
-            resolutions={resolutions.data ?? []}
             onRename={(name) => ed.updateTransition(selectedTransition.id, { name })}
-            onAddRule={(rule) => ed.addRule(selectedTransition.id, rule)}
+            onUpdatePath={(patch) => ed.updateTransition(selectedTransition.id, patch)}
+            onOpenAddRule={(bucket) => setAddRuleBucket(bucket)}
+            onOpenTriggers={() => setTriggersOpen(true)}
+            onEditRule={(index) => {
+              const r = selectedTransition.rules[index];
+              const m = metaFor(r.type);
+              if (m) setRulePick({ meta: m, index });
+            }}
             onRemoveRule={(i) => ed.removeRule(selectedTransition.id, i)}
+            conditionsMode={
+              // ANY = all conditions share one group; ALL = distinct groups.
+              (() => {
+                const groups = selectedTransition.rules
+                  .filter((r) => r.kind === "CONDITION")
+                  .map((r) => r.groupNo ?? 0);
+                return new Set(groups).size <= 1 ? "ANY" : "ALL";
+              })()
+            }
+            onSetConditionsMode={(mode) => {
+              // ALL → each condition its own group; ANY → all share group 0.
+              let g = 0;
+              const remapped = selectedTransition.rules.map((r) =>
+                r.kind === "CONDITION" ? { ...r, groupNo: mode === "ANY" ? 0 : g++ } : r,
+              );
+              ed.updateTransition(selectedTransition.id, { rules: remapped });
+            }}
             onDelete={() => {
               ed.removeTransition(selectedTransition.id);
               setSelection(null);
             }}
           />
         )}
-        {tab === "diagram" && !selection && <EmptyStatePanel />}
+        {!selection && !panelCollapsed && <EmptyStatePanel />}
+        </div>
       </div>
 
       {addStatusOpen && (
         <AddStatusDialog
+          projectId={projectId}
           poolStatuses={pool}
           draft={ed.draft}
           onAdd={ed.addStatus}
+          onAddAnyStatus={(statusId, statusName) =>
+            ed.addTransition({
+              name: `To ${statusName}`,
+              type: "GLOBAL",
+              toStatusId: statusId,
+              fromStatusIds: [],
+            })
+          }
           onClose={() => setAddStatusOpen(false)}
+        />
+      )}
+      {editStatusOpen && selectedStatusId && (
+        <EditStatusDialog
+          name={statusMeta.get(selectedStatusId)?.name ?? selectedStatusId}
+          category={statusMeta.get(selectedStatusId)?.category ?? "BACKLOG"}
+          onUpdate={(name, category) => patchStatus(selectedStatusId, { name, category })}
+          onReplace={() => { setEditStatusOpen(false); setReplaceStatusOpen(true); }}
+          onClose={() => setEditStatusOpen(false)}
+        />
+      )}
+      {replaceStatusOpen && selectedStatusId && (
+        <ReplaceStatusDialog
+          projectId={projectId}
+          currentName={statusMeta.get(selectedStatusId)?.name ?? selectedStatusId}
+          currentCategory={statusMeta.get(selectedStatusId)?.category ?? "BACKLOG"}
+          poolStatuses={pool}
+          draft={ed.draft}
+          onReplace={(newStatusId) => {
+            ed.replaceStatus(selectedStatusId, newStatusId);
+            setSelection({ kind: "status", statusId: newStatusId });
+          }}
+          onClose={() => setReplaceStatusOpen(false)}
+        />
+      )}
+      {triggersOpen && selectedTransition && (
+        <TriggersDialog
+          transitionName={selectedTransition.name}
+          selected={selectedTransition.triggers}
+          onDone={(events) => { ed.setTriggers(selectedTransition.id, events); setTriggersOpen(false); }}
+          onClose={() => setTriggersOpen(false)}
+        />
+      )}
+      {/* Add-rule catalog → pick a type → opens the Edit-rule config. */}
+      {addRuleBucket && selectedTransition && (
+        <AddRuleDialog
+          initialBucket={addRuleBucket}
+          onPick={(meta) => { setAddRuleBucket(null); setRulePick({ meta, index: null }); }}
+          onClose={() => setAddRuleBucket(null)}
+        />
+      )}
+      {rulePick && selectedTransition && (
+        <EditRuleDialog
+          meta={rulePick.meta}
+          initialConfig={rulePick.index != null ? selectedTransition.rules[rulePick.index]?.config : undefined}
+          transitionName={selectedTransition.name}
+          fromNames={selectedTransition.fromStatusIds.map((id) => statusMeta.get(id)?.name ?? id)}
+          toName={statusMeta.get(selectedTransition.toStatusId)?.name ?? selectedTransition.toStatusId}
+          resolutions={resolutions.data ?? []}
+          statuses={pool.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+          members={members.data ?? []}
+          screens={screens.data ?? []}
+          onSubmit={(rule) => {
+            if (rulePick.index != null) ed.updateRule(selectedTransition.id, rulePick.index, rule);
+            else ed.addRule(selectedTransition.id, rule);
+          }}
+          onDelete={
+            rulePick.index != null
+              ? () => ed.removeRule(selectedTransition.id, rulePick.index as number)
+              : undefined
+          }
+          onClose={() => setRulePick(null)}
         />
       )}
       {addTransitionOpen && (
@@ -412,12 +611,23 @@ function EditorBody({
           draft={ed.draft}
           statusMeta={statusMeta}
           onAdd={ed.addTransition}
-          prefillFrom={transitionPrefill?.from}
-          prefillTo={transitionPrefill?.to}
+          prefillFrom={transitionPrefill?.from || undefined}
+          prefillTo={transitionPrefill?.to || undefined}
           onClose={() => {
             setAddTransitionOpen(false);
             setTransitionPrefill(null);
           }}
+        />
+      )}
+      {saveAsNewOpen && (
+        <SaveAsNewWorkflowDialog
+          sourceWorkflowId={wfId}
+          defaultName={ed.draft.name}
+          onSaved={() => {
+            // Refresh the org template list so the new one appears in pickers.
+            void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-templates"] });
+          }}
+          onClose={() => setSaveAsNewOpen(false)}
         />
       )}
     </div>
@@ -427,7 +637,7 @@ function EditorBody({
 /** Jira's default right-hand panel shown when nothing is selected. */
 function EmptyStatePanel() {
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col items-center justify-center border-l border-gray-200 bg-gray-50 px-8 text-center">
+    <aside className="flex w-[340px] shrink-0 flex-col items-center justify-center self-stretch border-l border-gray-200 bg-gray-50 px-8 text-center">
       <svg width="120" height="90" viewBox="0 0 120 90" className="mb-6" aria-hidden>
         <g stroke="#cbd5e1" strokeWidth="1.5">
           <line x1="30" y1="20" x2="70" y2="16" />

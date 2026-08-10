@@ -19,11 +19,6 @@ export const LineChartView = dynamic(
   { ssr: false, loading: () => SKELETON },
 );
 
-export const FunnelView = dynamic(
-  () => import("./_recharts-bundle").then((m) => m.FunnelView),
-  { ssr: false, loading: () => SKELETON },
-);
-
 export const TrendLineChart = dynamic(
   () => import("./_recharts-bundle").then((m) => m.TrendLineChart),
   { ssr: false, loading: () => SKELETON },

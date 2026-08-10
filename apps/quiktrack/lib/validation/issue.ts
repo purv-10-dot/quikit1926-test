@@ -58,4 +58,10 @@ export const moveIssueSchema = z.object({
    * Optional for backward compatibility (older clients omit it).
    */
   expectedStatusId: z.string().min(1).optional(),
+  /**
+   * Field values submitted from a workflow "Show a screen" (Request input) rule.
+   * Consumed by the transition-screen gate + post-functions. Keyed by screen
+   * field key (e.g. "summary", "description", or a custom "cf:<key>").
+   */
+  inputs: z.record(z.unknown()).optional(),
 });

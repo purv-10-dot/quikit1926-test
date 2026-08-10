@@ -754,7 +754,7 @@ function WorkOrderRow({
       {/* Status */}
       <td className="px-4 py-3">
         <span
-          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusColor}`}
+          className={`inline-block whitespace-nowrap text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusColor}`}
         >
           {(row.status ?? "draft").replace(/_/g, " ")}
         </span>
@@ -844,7 +844,7 @@ function WorkOrderRow({
             </>
           )}
           {isPending && !canApprove && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
               Awaiting approver
             </span>
           )}

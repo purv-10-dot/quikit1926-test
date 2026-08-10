@@ -8,7 +8,7 @@ import {
   countCustomers,
   createCustomer,
 } from "@/lib/masters/customers-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.master_customer", "view");
@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "contactPerson", "phone", "city", "gstin", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

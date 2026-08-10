@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { db } from "@/lib/db";
 import { hasMatrixAction, tenantCreate } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["hindranceNo", "dateFrom", "dateTo", "daysLost", "category", "status", "createdAt"],
     { field: "dateFrom", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const [rows, total] = await Promise.all([
     db.cnHindrance.findMany({

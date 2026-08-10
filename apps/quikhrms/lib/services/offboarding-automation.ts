@@ -45,7 +45,7 @@ function actionDetail(stepType: string | null, cfg: Record<string, unknown>): st
   return undefined;
 }
 
-export function isSendableStep(t: TaskRow): boolean {
+function isSendableStep(t: TaskRow): boolean {
   const st = t.stepType ?? "CustomTask";
   const cfg = cfgOf(t);
   if (st === "SendEmail") return Array.isArray(cfg.templates) && (cfg.templates as unknown[]).filter(Boolean).length > 0;
@@ -193,7 +193,7 @@ export async function sendStepRequest(t: TaskRow, orgId: string): Promise<boolea
   return false;
 }
 
-export async function isAutomated(instanceId: string, orgId: string): Promise<boolean> {
+async function isAutomated(instanceId: string, orgId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ automated: boolean }[]>`
     SELECT "automated" FROM "app_quikhrms"."OffboardingInstance" WHERE id = ${instanceId} AND "orgId" = ${orgId} LIMIT 1`;
   return !!rows[0]?.automated;

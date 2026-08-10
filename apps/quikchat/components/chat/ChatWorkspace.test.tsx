@@ -1,21 +1,31 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ChannelListItem } from "@/lib/shared";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@/components/ui";
 
 // createClientSpy counts how many times the realtime socket is constructed —
 // Bug 1 asserts it's exactly once per session (no disconnect/recreate churn).
-const { joinSpy, createClientSpy } = vi.hoisted(() => ({
-  joinSpy: vi.fn().mockResolvedValue(true),
-  createClientSpy: vi.fn(),
-}));
+// clientHandlers captures the `client.on(event, …)` wiring so tests can fire a
+// real inbound socket event; fireClientEvent invokes the registered handler.
+const { joinSpy, createClientSpy, clientHandlers, fireClientEvent } = vi.hoisted(() => {
+  const handlers = new Map<string, (arg: unknown) => void>();
+  return {
+    joinSpy: vi.fn().mockResolvedValue(true),
+    createClientSpy: vi.fn(),
+    clientHandlers: handlers,
+    fireClientEvent: (event: string, payload: unknown) => handlers.get(event)?.(payload),
+  };
+});
 vi.mock("@/lib/realtime-client", () => ({
   createRealtimeClient: (...args: unknown[]) => {
     createClientSpy(...args);
     return {
       socket: { on: vi.fn(), off: vi.fn(), emit: vi.fn() },
-      on: vi.fn(),
+      on: (event: string, handler: (arg: unknown) => void) => {
+        clientHandlers.set(event, handler);
+      },
       off: vi.fn(),
       join: joinSpy,
       typing: vi.fn(),
@@ -59,6 +69,7 @@ import { ChatWorkspace } from "./ChatWorkspace";
 const newDm: ChannelListItem = {
   channelId: "new1",
   name: "Bob",
+  description: null,
   avatarUrl: null,
   type: "dm",
   visibility: "private",
@@ -71,9 +82,35 @@ const newDm: ChannelListItem = {
   lastMessage: null,
 };
 
+// A group the current user is created INTO by someone else (no local POST) —
+// exists server-side and appears in the list only once `remotePresent` is set.
+const remoteGroup: ChannelListItem = {
+  channelId: "grp1",
+  name: "Team Rocket",
+  description: null,
+  avatarUrl: null,
+  type: "group",
+  visibility: "private",
+  isPriority: false,
+  unreadCount: 0,
+  lastActivityAt: new Date().toISOString(),
+  members: [{ id: "u-bob", displayName: "Bob", avatarUrl: null }],
+  memberReadAt: {},
+  memberDeliveredAt: {},
+  lastMessage: null,
+};
+
+// Server-fidelity flags for the channels fetch: `created` = a DM we POSTed,
+// `remotePresent` = a channel someone else created us into (set by the test
+// right before firing the first inbound message).
+let created = false;
+let remotePresent = false;
+
 beforeEach(() => {
   createClientSpy.mockClear();
-  let created = false;
+  clientHandlers.clear();
+  created = false;
+  remotePresent = false;
   global.fetch = vi.fn(async (url, init) => {
     const u = String(url);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -84,8 +121,11 @@ beforeEach(() => {
       body = newDm;
     } else if (u.includes("/messages")) body = [];
     else if (u.match(/\/api\/channels(\?|$)/)) {
-      // The list reflects the new DM once it's been created (server fidelity).
-      body = { priority: [], recent: created ? [newDm] : [] };
+      // The list reflects the new DM once POSTed + any channel we've been added to.
+      const recent: ChannelListItem[] = [];
+      if (created) recent.push(newDm);
+      if (remotePresent) recent.push(remoteGroup);
+      body = { priority: [], recent };
     } else body = {};
     return { ok: true, status: 200, json: async () => body } as unknown as Response;
   }) as unknown as typeof fetch;
@@ -98,12 +138,14 @@ function renderWorkspace() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <ChatWorkspace
-        currentUserId="u-me"
-        currentUserName="Alice"
-        workspaceName="Acme"
-        realtimeUrl="http://rt"
-      />
+      <ToastProvider>
+        <ChatWorkspace
+          currentUserId="u-me"
+          currentUserName="Alice"
+          workspaceName="Acme"
+          realtimeUrl="http://rt"
+        />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -137,5 +179,80 @@ describe("ChatWorkspace socket lifecycle (Bug 1)", () => {
     await screen.findByLabelText("Message");
 
     expect(createClientSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChatWorkspace group-live (new-channel first message)", () => {
+  it("surfaces a channel we were added into when its first message arrives — no refresh", async () => {
+    renderWorkspace();
+    // Initial list is empty; the group isn't rendered yet.
+    await screen.findByRole("button", { name: "New direct message" });
+    expect(screen.queryByText("Team Rocket")).not.toBeInTheDocument();
+
+    // The gateway already socket-joined us to the room (server-side); the group
+    // now exists on the server. The FIRST message is the only client signal.
+    remotePresent = true;
+    act(() => {
+      fireClientEvent("message", {
+        id: "m-grp-1",
+        channelId: "grp1",
+        senderId: "u-bob",
+        actorType: "human",
+        type: "Text",
+        content: "welcome to the team",
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    // onMessage saw an unknown channel → invalidated ["channels"] → refetch →
+    // the group row appears live.
+    expect(await screen.findByText("Team Rocket")).toBeInTheDocument();
+  });
+});
+
+describe("ChatWorkspace group call live notification (CALL-3 §3)", () => {
+  it("ignores call_group_started for a call we ourselves started", async () => {
+    renderWorkspace();
+    await screen.findByRole("button", { name: "New direct message" });
+
+    act(() => {
+      fireClientEvent("call_group_started", {
+        callId: "call-1",
+        channelId: "grp1",
+        initiatorId: "u-me",
+        type: "video",
+      });
+    });
+
+    expect(screen.queryByText(/Group call started/)).not.toBeInTheDocument();
+  });
+
+  it("shows a joinable toast when another member starts a group call, and clicking it opens the call window", async () => {
+    remotePresent = true;
+    renderWorkspace();
+    // Get "grp1" → "Team Rocket" into the channels cache before the event fires.
+    await screen.findByText("Team Rocket");
+
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    act(() => {
+      fireClientEvent("call_group_started", {
+        callId: "call-1",
+        channelId: "grp1",
+        initiatorId: "u-bob",
+        type: "video",
+      });
+    });
+
+    // Click the toast's title text; the click bubbles to the toast's own
+    // onClick handler (the toast div itself, not this text node, owns it).
+    const toastTitle = await screen.findByText(/Group call started in #Team Rocket/);
+    fireEvent.click(toastTitle);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const [url] = openSpy.mock.calls[0]!;
+    expect(String(url)).toContain("/call/call-1?");
+    expect(String(url)).toContain("group=1");
+    expect(String(url)).toContain("myUserId=u-me");
   });
 });

@@ -18,11 +18,37 @@ interface QuikchatElectronDeepLinks {
   onUrl(cb: (url: string) => void): () => void;
 }
 
+interface QuikchatElectronNotifications {
+  /**
+   * Fire a real OS notification from the MAIN process. Only the main process can
+   * un-minimize/restore + focus the window on click, which a renderer-side
+   * `new Notification()` cannot do.
+   *
+   * The main process's own click handler sends a `deeplink` IPC message —
+   * `quikchat://open/<channelId>` when `channelId` is given, or `url` verbatim —
+   * which `DesktopBridge` already listens for. There is deliberately no click
+   * callback here: a function cannot cross the IPC boundary.
+   *
+   * Resolves `false` when the OS reports notifications unsupported.
+   */
+  show(opts: {
+    title: string;
+    body?: string;
+    icon?: string;
+    channelId?: string;
+    url?: string;
+  }): Promise<boolean>;
+  /** The shell always resolves "granted" — real delivery is gated by the OS. */
+  requestPermission(): Promise<string>;
+}
+
 export interface QuikchatElectronApi {
   isElectron: true;
   platform: "win32" | "darwin" | "linux";
   unread: QuikchatElectronUnread;
   deepLinks: QuikchatElectronDeepLinks;
+  /** Optional like everything else here: gate on it, never assume it exists. */
+  notifications?: QuikchatElectronNotifications;
 
   // Present on the preload but not consumed this session — typed loosely as
   // optional so future work can reach for them without a shape change here.
@@ -30,7 +56,6 @@ export interface QuikchatElectronApi {
     set(count: number): Promise<unknown>;
     clear(): Promise<unknown>;
   };
-  notifications?: unknown;
   window?: unknown;
   shell?: unknown;
   updater?: unknown;

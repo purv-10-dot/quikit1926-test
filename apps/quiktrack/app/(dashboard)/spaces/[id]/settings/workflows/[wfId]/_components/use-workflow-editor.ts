@@ -118,6 +118,33 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     [mutate],
   );
 
+  /**
+   * Replace a status in THIS workflow with another (which must NOT already be a
+   * node here): swap the node (keep its initial flag/position) and re-point every
+   * transition's To/From from old → new. Other workflows are untouched.
+   */
+  const replaceStatus = useCallback(
+    (oldStatusId: string, newStatusId: string) =>
+      mutate((d) => {
+        if (oldStatusId === newStatusId) return d;
+        if (d.statuses.some((s) => s.statusId === newStatusId)) return d; // already present
+        return {
+          ...d,
+          statuses: d.statuses.map((s) =>
+            s.statusId === oldStatusId ? { ...s, statusId: newStatusId } : s,
+          ),
+          transitions: d.transitions.map((t) => ({
+            ...t,
+            toStatusId: t.toStatusId === oldStatusId ? newStatusId : t.toStatusId,
+            fromStatusIds: Array.from(
+              new Set(t.fromStatusIds.map((id) => (id === oldStatusId ? newStatusId : id))),
+            ),
+          })),
+        };
+      }),
+    [mutate],
+  );
+
   const moveNode = useCallback(
     (statusId: string, x: number, y: number) =>
       mutate((d) => ({
@@ -147,7 +174,19 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     }) =>
       mutate((d) => ({
         ...d,
-        transitions: [...d.transitions, { id: newId(), rules: [], ...t }],
+        transitions: [...d.transitions, { id: newId(), rules: [], triggers: [], ...t }],
+      })),
+    [mutate],
+  );
+
+  /** Replace a transition's dev trigger set (checkbox list in the modal). */
+  const setTriggers = useCallback(
+    (transitionId: string, triggers: string[]) =>
+      mutate((d) => ({
+        ...d,
+        transitions: d.transitions.map((t) =>
+          t.id === transitionId ? { ...t, triggers } : t,
+        ),
       })),
     [mutate],
   );
@@ -156,9 +195,14 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     (transitionId: string, rule: EditorRule) =>
       mutate((d) => ({
         ...d,
-        transitions: d.transitions.map((t) =>
-          t.id === transitionId ? { ...t, rules: [...t.rules, rule] } : t,
-        ),
+        transitions: d.transitions.map((t) => {
+          if (t.id !== transitionId) return t;
+          // Only one "Show a screen" rule is allowed per transition.
+          if (rule.type === "show_screen" && t.rules.some((r) => r.type === "show_screen")) {
+            return t;
+          }
+          return { ...t, rules: [...t.rules, rule] };
+        }),
       })),
     [mutate],
   );
@@ -170,6 +214,20 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
         transitions: d.transitions.map((t) =>
           t.id === transitionId
             ? { ...t, rules: t.rules.filter((_, i) => i !== index) }
+            : t,
+        ),
+      })),
+    [mutate],
+  );
+
+  /** Replace the rule at `index` on a transition (Edit Rule modal). */
+  const updateRule = useCallback(
+    (transitionId: string, index: number, rule: EditorRule) =>
+      mutate((d) => ({
+        ...d,
+        transitions: d.transitions.map((t) =>
+          t.id === transitionId
+            ? { ...t, rules: t.rules.map((r, i) => (i === index ? rule : r)) }
             : t,
         ),
       })),
@@ -205,6 +263,7 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     clearMigration: () => setMigration(null),
     addStatus,
     removeStatus,
+    replaceStatus,
     moveNode,
     setInitial,
     addTransition,
@@ -212,5 +271,7 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     removeTransition,
     addRule,
     removeRule,
+    updateRule,
+    setTriggers,
   };
 }

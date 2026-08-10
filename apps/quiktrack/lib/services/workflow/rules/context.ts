@@ -22,6 +22,24 @@ export interface RuleIssueSnapshot {
   assigneeId: string | null;
   resolutionId: string | null;
   priority: string | null;
+  // Extra fields the "Restrict to when a field is a specific value" rule can
+  // test. Optional so existing snapshot builders/tests keep compiling; the
+  // field-value rule treats an absent field as null (never-equal).
+  reporterId?: string | null;
+  title?: string | null;
+  description?: string | null;
+  storyPoints?: number | null;
+  eta?: number | null;
+  /** ISO strings (or null). Date rules parse these to timestamps. */
+  dueDate?: string | null;
+  startDate?: string | null;
+}
+
+/** One recorded status change on a work item (from the transition log). */
+export interface TransitionHistoryEntry {
+  fromStatusId: string | null;
+  toStatusId: string;
+  actorId: string | null;
 }
 
 /** Injected async primitives (backed by the DB in production, stubs in tests). */
@@ -30,10 +48,37 @@ export interface RulePrimitives {
   userCanInProject: (resource: string, action: string) => Promise<boolean>;
   /** Is the acting user assigned the named project role in this project? */
   userInProjectRole: (roleName: string) => Promise<boolean>;
+  /** Status ids of this work item's (non-deleted) subtasks. Empty if none. */
+  subtaskStatusIds: () => Promise<string[]>;
+  /**
+   * This work item's status changes in chronological order (oldest → newest),
+   * from the transition log. Empty when the item has never moved. Used by the
+   * "been through a status" and "previous updater" rules.
+   */
+  transitionHistory: () => Promise<TransitionHistoryEntry[]>;
+  /**
+   * The status id of this work item's parent, or null when it has no parent.
+   * Used by the "validate parent work items are in a specific status" rule.
+   */
+  parentStatusId: () => Promise<string | null>;
+  /** The project lead / space owner's user id, or null. Used by the assign action. */
+  projectLeadId: () => Promise<string | null>;
+  /**
+   * A field value read from this work item's PARENT (by snapshot key), or null
+   * when there's no parent / no value. Used by the copy-field action's
+   * "parent work item" source.
+   */
+  parentFieldValue: (key: string) => Promise<string | null>;
 }
 
 export interface RuleContext {
   userId: string;
+  /**
+   * True when the move is driven by an API/automation actor rather than a human.
+   * Undefined today (no API-actor plumbing) — read by restrict_from_all's
+   * "allow APIs" mode, which treats undefined as "not an API actor".
+   */
+  isApiActor?: boolean;
   issue: RuleIssueSnapshot;
   /** The transition being taken (id + target). */
   toStatusId: string;
@@ -76,17 +121,27 @@ export interface ValidatorHandler {
   validateConfig?: (config: Record<string, unknown>) => string[];
 }
 
+/** Fields a post-function may write on the issue. A safe subset of scalar
+ * columns the transition routes apply. */
+export type PostFunctionPatch = Partial<
+  Pick<
+    RuleIssueSnapshot,
+    | "assigneeId" | "resolutionId" | "priority" | "reporterId"
+    | "title" | "description" | "storyPoints" | "eta" | "dueDate" | "startDate"
+  >
+>;
+
 /** Post-functions return a partial patch + optional side effects to apply in-txn. */
 export interface PostFunctionResult {
   /** Fields to write on the issue (e.g. { resolutionId, assigneeId }). */
-  patch?: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  patch?: PostFunctionPatch;
   /** Comment bodies to append to the issue (add_comment post-function). */
   comments?: string[];
 }
 
 /** The aggregated effects of all post-functions on a transition. */
 export interface PostFunctionEffects {
-  patch: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  patch: PostFunctionPatch;
   comments: string[];
 }
 

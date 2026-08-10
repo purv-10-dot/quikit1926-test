@@ -1,62 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildRequisitionApprovalEmail } from "@/lib/email-templates/requisition-approval";
-import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
 import { appBaseUrl } from "@/lib/utils/app-url";
-
-export async function resolveDeptHeadApprover(orgId: string, departmentId: string | null, raiserId: string): Promise<{ id: string; firstName: string; lastName: string; workEmail: string | null } | null> {
-  if (departmentId) {
-    const dept = await prisma.department.findFirst({
-      where: { id: departmentId, orgId, deletedAt: null },
-      select: {
-        headId: true,
-        head: { select: { id: true, firstName: true, lastName: true, workEmail: true } },
-      },
-    });
-    if (dept?.head && dept.head.id !== raiserId) return dept.head;
-  }
-  // Fallback: highest-priority active manager in same department (excluding raiser).
-  // Priority gone from AppRole — fetch candidates + JS-sort by ROLE_PRIORITY.
-  if (departmentId) {
-    const mgrs = await prisma.employee.findMany({
-      where: {
-        orgId, deletedAt: null, status: "Active",
-        departmentId,
-        id: { not: raiserId },
-        ...whereEmployeeHasAnyRole(["admin"]),
-      },
-      select: { id: true, firstName: true, lastName: true, workEmail: true, ...appRolesNameSelect },
-    });
-    const mgr = sortByMaxRolePriorityDesc(mgrs)[0] ?? null;
-    if (mgr) return { id: mgr.id, firstName: mgr.firstName, lastName: mgr.lastName, workEmail: mgr.workEmail };
-  }
-  // Absolute fallback: raiser's reporting manager
-  const raiser = await prisma.employee.findUnique({
-    where: { id: raiserId },
-    select: { reportingManagerId: true },
-  });
-  if (raiser?.reportingManagerId) {
-    return prisma.employee.findFirst({
-      where: { id: raiser.reportingManagerId, orgId, deletedAt: null, status: "Active" },
-      select: { id: true, firstName: true, lastName: true, workEmail: true },
-    });
-  }
-  return null;
-}
-
-export async function resolveHrApprover(orgId: string, excludeId?: string | null): Promise<{ id: string; firstName: string; lastName: string; workEmail: string | null } | null> {
-  const hrs = await prisma.employee.findMany({
-    where: {
-      orgId, deletedAt: null, status: "Active",
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-      ...whereEmployeeHasAnyRole(["admin"]),
-    },
-    select: { id: true, firstName: true, lastName: true, workEmail: true, ...appRolesNameSelect },
-  });
-  const hr = sortByMaxRolePriorityDesc(hrs)[0] ?? null;
-  if (!hr) return null;
-  return { id: hr.id, firstName: hr.firstName, lastName: hr.lastName, workEmail: hr.workEmail };
-}
 
 export async function openHeadcountForDept(orgId: string, departmentId: string | null): Promise<number> {
   if (!departmentId) return 0;

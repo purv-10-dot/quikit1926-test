@@ -51,7 +51,7 @@ const emptyKra = (): KraDraft => ({
   title: "", description: "", weight: 100, kpis: [emptyKpi()],
 });
 
-export const emptyDraft = (): ScorecardDraft => ({
+const emptyDraft = (): ScorecardDraft => ({
   name: "",
   description: "",
   designationId: "",

@@ -14,6 +14,7 @@ import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
 import {
   executeTransition,
+  postFunctionPatchToPrisma,
   TransitionNotAllowedError,
   ConditionsFailedError,
   ValidationFailedError,
@@ -116,6 +117,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         projectId: true,
         resolutionId: true, // for the workflow pipeline (resolution post-functions)
         description: true, // for the mention diff (only email newly-added @mentions)
+        reporterId: true, // for the workflow field-value rule (Reporter field)
         // Snapshot every tracked field for the activity-history diff.
         // (`title`, `statusId`, `assigneeId` are part of this snapshot too.)
         ...selectIssueHistorySnapshot,
@@ -212,6 +214,13 @@ export const PATCH = withOrgAuth<{ id: string }>(
             assigneeId: issue.assigneeId ?? null,
             resolutionId: issue.resolutionId ?? null,
             priority: issue.priority ?? null,
+            reporterId: issue.reporterId ?? null,
+            title: issue.title ?? null,
+            description: issue.description ?? null,
+            storyPoints: issue.storyPoints ?? null,
+            eta: issue.eta ?? null,
+            dueDate: issue.dueDate ? new Date(issue.dueDate).toISOString() : null,
+            startDate: issue.startDate ? new Date(issue.startDate).toISOString() : null,
           },
           toStatusId: allowedFields.statusId as string,
           userId,
@@ -250,10 +259,8 @@ export const PATCH = withOrgAuth<{ id: string }>(
           ...allowedFields,
           startDate: dateValue("startDate"),
           dueDate: dateValue("dueDate"),
-          // Workflow post-function effects (resolution / assignee / priority).
-          ...("assigneeId" in workflowPatch ? { assigneeId: workflowPatch.assigneeId } : {}),
-          ...("resolutionId" in workflowPatch ? { resolutionId: workflowPatch.resolutionId } : {}),
-          ...(typeof workflowPatch.priority === "string" ? { priority: workflowPatch.priority } : {}),
+          // Workflow post-function effects (writable scalar columns only).
+          ...postFunctionPatchToPrisma(workflowPatch),
           updatedBy: userId,
         },
       });

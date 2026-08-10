@@ -22,10 +22,16 @@ export const GET = withOrgAuth(async (_req, ctx) => {
 export const PATCH = withOrgAuth(
   async (req, ctx) => {
     const body = await readJson(req);
+    // Per-field allow-list with type guards. NOTE: this is the FIRST of two
+    // gates — `SETTINGS_FIELDS` in notifications.service.ts is the second. A new
+    // settings field needs a line in BOTH or it is silently dropped here and the
+    // PATCH still returns 200. route.test.ts asserts every boolean DTO field
+    // survives this chain, so a forgotten line fails there.
     const patch: SettingsPatch = {};
     if (isLevel(body.defaultChannelLevel)) patch.defaultChannelLevel = body.defaultChannelLevel;
     if (isLevel(body.dmsLevel)) patch.dmsLevel = body.dmsLevel;
     if (isBool(body.soundEnabled)) patch.soundEnabled = body.soundEnabled;
+    if (isBool(body.callSoundsEnabled)) patch.callSoundsEnabled = body.callSoundsEnabled;
     if (isBool(body.desktopEnabled)) patch.desktopEnabled = body.desktopEnabled;
     if (isBool(body.emailEnabled)) patch.emailEnabled = body.emailEnabled;
     if (isBool(body.dndEnabled)) patch.dndEnabled = body.dndEnabled;

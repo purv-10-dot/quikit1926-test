@@ -232,6 +232,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         UPDATE "app_quikhrms"."Interview"
         SET "takeHomeInstructions" = ${data.takeHomeInstructions ?? null},
             "takeHomeAttachmentUrl" = ${data.takeHomeAttachmentUrl ?? null},
+            "takeHomeAttachmentLink" = ${data.takeHomeAttachmentLink ?? null},
             "takeHomeDueDate" = ${data.takeHomeDueDate ?? null}::date,
             "submissionToken" = ${token},
             "submissionTokenExpiresAt" = ${expiresAt}
@@ -254,12 +255,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         : isTechnicalRound
           ? (interview.application?.requisition?.jobDescription ?? null)
           : null;
+    // Phone Screen is an informal qualifying call the recruiter makes directly —
+    // no candidate/interviewer email should fire for it (unlike every other round).
+    const isPhoneScreenRound = roundStage.toLowerCase() === "phonescreen";
+    // HR round is internal-only — the candidate is never emailed for it, only
+    // the HR interviewer (who still gets their normal notify + feedback link).
+    const isHRRound = roundStage.toLowerCase() === "hrinterview";
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {
       candidate: { sent: false, to: null }, interviewer: { sent: false, to: null },
     };
     try {
+      if (isPhoneScreenRound) {
+        // Skip every email below — see isPhoneScreenRound comment above.
+      } else {
       const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
       const companyName = company?.companyName ?? "Our Company";
       const dt = new Date(interview.scheduledAt);
@@ -272,7 +282,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "Candidate";
       const jobTitle = interview.application?.requisition?.title ?? "the role";
 
-      if (candidate?.email && interview.type === "TakeHome") {
+      if (isHRRound) {
+        mailStatus.candidate = { sent: false, to: null, error: "Skipped — HR round is interviewer-only" };
+      } else if (candidate?.email && interview.type === "TakeHome") {
         // Take-Home: send the task brief + tokenised submit link INSTEAD of the
         // standard interview invite. No meeting link is generated for this type.
         const base = appBaseUrl();
@@ -287,11 +299,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           dueDate: dueStr,
           submitUrl,
           hasAttachment: !!data.takeHomeAttachmentUrl,
+          attachmentLink: data.takeHomeAttachmentLink ?? null,
         };
         void resolveAndSend(orgId, {
           key: "recruit.take-home-task",
           to: candidate.email,
-          vars: { ...thData, roundName: thData.roundName ?? "", dueDate: thData.dueDate ?? "", hasAttachment: thData.hasAttachment },
+          vars: { ...thData, roundName: thData.roundName ?? "", dueDate: thData.dueDate ?? "", hasAttachment: thData.hasAttachment, attachmentLink: thData.attachmentLink ?? "" },
           fallback: () => buildTakeHomeTaskEmail(thData),
         }).catch((e) => console.error("[interview] take-home mail failed:", e));
         mailStatus.candidate = { sent: true, to: candidate.email };
@@ -416,6 +429,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           });
         }
       }
+      } // end !isPhoneScreenRound
     } catch (e) {
       console.error("Interview auto-mail failed:", e);
     }

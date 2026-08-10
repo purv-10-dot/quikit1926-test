@@ -76,6 +76,7 @@ export default function MyWfhPage() {
       setShowCreate(false);
       setForm({ startDate: today, endDate: today, isHalfDay: false, session: "FullDay", reason: "" });
     },
+    onError: (e: unknown) => toast.error("Couldn't submit request", e instanceof Error ? e.message : undefined),
   });
 
   const cancelMut = useMutation({

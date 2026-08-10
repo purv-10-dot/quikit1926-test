@@ -93,12 +93,14 @@ describe("POST /api/approvals/[id]/[action] — auth + validation", () => {
     // a step pinned to a different user.
     setContext(makeAdminCtx({ roleKey: "user" }));
     db.cnApprovalInstance.findFirst.mockResolvedValue(instanceRow());
-    db.cnApprovalWorkflowStep.findFirst.mockResolvedValue({
-      stepOrder: 1,
-      approverUserId: "someone-else",
-      approverUserIds: null,
-      approverRoleId: null,
-    });
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      {
+        stepOrder: 1,
+        approverUserId: "someone-else",
+        approverUserIds: [],
+        approverRoleId: null,
+      },
+    ] as never);
     const res = await POST(req("approve"), params("approve"));
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe("APPROVAL_PERMISSION_DENIED");
@@ -107,12 +109,17 @@ describe("POST /api/approvals/[id]/[action] — auth + validation", () => {
 
 describe("POST /api/approvals/[id]/[action] — approve", () => {
   beforeEach(() => setContext(makeAdminCtx({ roleKey: "super_admin" })));
+  // The instance status change is an atomic claim (updateMany gated on
+  // status: pending_approval), so the mock must report a matched row.
+  beforeEach(() =>
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never),
+  );
 
   it("approves the final step and marks the instance approved", async () => {
     db.cnApprovalInstance.findFirst.mockResolvedValue(instanceRow());
-    db.cnApprovalWorkflowStep.findFirst.mockResolvedValue({
-      stepOrder: 1, approverUserId: null, approverUserIds: null, approverRoleId: "SITE_ADMIN",
-    });
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never);
     db.cnApprovalWorkflowStep.count.mockResolvedValue(1); // single step → final
 
     const res = await POST(req("approve"), params("approve"));
@@ -122,31 +129,31 @@ describe("POST /api/approvals/[id]/[action] — approve", () => {
     expect(body.newInstanceStatus).toBe("approved");
     expect(body.completedAt).toBeTruthy();
     // instance flipped to approved
-    expect(db.cnApprovalInstance.update.mock.calls[0][0].data.status).toBe("approved");
+    expect(db.cnApprovalInstance.updateMany.mock.calls[0][0].data.status).toBe("approved");
     // history row written
     expect(db.cnApprovalHistory.create).toHaveBeenCalled();
   });
 
   it("advances to the next step on an intermediate approval", async () => {
     db.cnApprovalInstance.findFirst.mockResolvedValue(instanceRow({ currentStepOrder: 1 }));
-    db.cnApprovalWorkflowStep.findFirst.mockResolvedValue({
-      stepOrder: 1, approverUserId: null, approverUserIds: null, approverRoleId: "SITE_ADMIN",
-    });
-    db.cnApprovalWorkflowStep.count.mockResolvedValue(2); // 2 steps → not final
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+      { stepOrder: 2, approverUserId: null, approverUserIds: [], approverRoleId: "ADMIN" },
+    ] as never); // 2 steps → not final
 
     const res = await POST(req("approve"), params("approve"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.newInstanceStatus).toBe("pending_approval");
     expect(body.nextStepOrder).toBe(2);
-    expect(db.cnApprovalInstance.update.mock.calls[0][0].data.currentStepOrder).toBe(2);
+    expect(db.cnApprovalInstance.updateMany.mock.calls[0][0].data.currentStepOrder).toBe(2);
   });
 
   it("returns 409 when the same user already acted on this step", async () => {
     db.cnApprovalInstance.findFirst.mockResolvedValue(instanceRow());
-    db.cnApprovalWorkflowStep.findFirst.mockResolvedValue({
-      stepOrder: 1, approverUserId: null, approverUserIds: null, approverRoleId: "SITE_ADMIN",
-    });
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never);
     // Double-action guard: prior history row by THIS user on this step.
     db.cnApprovalHistory.findFirst.mockResolvedValue({
       action: "approve", actionById: "user-test-1", actionAt: new Date(), stepOrder: 1,
@@ -159,12 +166,17 @@ describe("POST /api/approvals/[id]/[action] — approve", () => {
 
 describe("POST /api/approvals/[id]/[action] — reject / return", () => {
   beforeEach(() => setContext(makeAdminCtx({ roleKey: "super_admin" })));
+  // The instance status change is an atomic claim (updateMany gated on
+  // status: pending_approval), so the mock must report a matched row.
+  beforeEach(() =>
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never),
+  );
 
   function liveStep() {
     db.cnApprovalInstance.findFirst.mockResolvedValue(instanceRow());
-    db.cnApprovalWorkflowStep.findFirst.mockResolvedValue({
-      stepOrder: 1, approverUserId: null, approverUserIds: null, approverRoleId: "SITE_ADMIN",
-    });
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never);
     db.cnApprovalWorkflowStep.count.mockResolvedValue(1);
   }
 
@@ -174,7 +186,7 @@ describe("POST /api/approvals/[id]/[action] — reject / return", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.newInstanceStatus).toBe("rejected");
-    expect(db.cnApprovalInstance.update.mock.calls[0][0].data.status).toBe("rejected");
+    expect(db.cnApprovalInstance.updateMany.mock.calls[0][0].data.status).toBe("rejected");
   });
 
   it("returns the instance to the raiser with a comment", async () => {

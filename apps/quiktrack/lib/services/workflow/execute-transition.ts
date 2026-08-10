@@ -14,6 +14,8 @@
  */
 import { db } from "@/lib/db";
 import { userCanInProject } from "@/lib/api/permissions";
+import { requiredKeysForScreen } from "../screens/screen-required";
+import { isCustomFieldKey } from "../screens/field-registry";
 import { findTransition } from "./graph";
 import { resolveWorkflowGraph } from "./resolve-workflow";
 import { TransitionNotAllowedError } from "./types";
@@ -28,6 +30,7 @@ import type {
   RuleIssueSnapshot,
   RuleSpec,
   ValidatorFailure,
+  PostFunctionPatch,
 } from "./rules/context";
 
 export class ConditionsFailedError extends Error {
@@ -50,11 +53,79 @@ export interface ExecuteResult {
   /** True when a published workflow governed this move (rules ran). */
   gated: boolean;
   /** Field patch from post-functions to merge into the issue update. */
-  patch: Partial<Pick<RuleIssueSnapshot, "assigneeId" | "resolutionId" | "priority">>;
+  patch: PostFunctionPatch;
   /** Comment bodies from add_comment post-functions (persist in the same txn). */
   comments: string[];
   /** The transition id taken (for the audit log), if gated. */
   transitionId: string | null;
+}
+
+/**
+ * Map a post-function patch to a Prisma issue-update fragment. Only the
+ * post-function-writable scalar columns; date fields (ISO strings) become Date.
+ * `priority` is a non-null column, so a null priority is skipped.
+ */
+export function postFunctionPatchToPrisma(patch: PostFunctionPatch): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if ("assigneeId" in patch) out.assigneeId = patch.assigneeId ?? null;
+  if ("resolutionId" in patch) out.resolutionId = patch.resolutionId ?? null;
+  if ("reporterId" in patch) out.reporterId = patch.reporterId ?? null;
+  if (typeof patch.priority === "string") out.priority = patch.priority;
+  if ("title" in patch && typeof patch.title === "string") out.title = patch.title;
+  if ("description" in patch) out.description = patch.description ?? null;
+  if ("storyPoints" in patch) out.storyPoints = patch.storyPoints ?? null;
+  if ("eta" in patch) out.eta = patch.eta ?? null;
+  if ("dueDate" in patch) out.dueDate = patch.dueDate ? new Date(patch.dueDate) : null;
+  if ("startDate" in patch) out.startDate = patch.startDate ? new Date(patch.startDate) : null;
+  return out;
+}
+
+/** Screen field key → issue snapshot key (built-ins only). */
+const SCREEN_KEY_TO_SNAPSHOT: Record<string, string> = {
+  summary: "title", type: "type", status: "statusId", priority: "priority",
+  assignee: "assigneeId", reporter: "reporterId", resolution: "resolutionId",
+  description: "description", storyPoints: "storyPoints", eta: "eta",
+  dueDate: "dueDate", startDate: "startDate",
+};
+
+/**
+ * Map "Show a screen" inputs (built-in fields only) to a Prisma issue-update
+ * fragment, so values entered in the transition screen persist on the move.
+ * Custom-field (cf:*) inputs are not written here (they satisfy the required
+ * gate but their value persistence is a later pass). `statusId` is skipped —
+ * the move sets it. Numbers/dates are coerced.
+ */
+export function screenInputsToPrisma(inputs: Record<string, unknown>): Record<string, unknown> {
+  const NUMERIC = new Set(["storyPoints", "eta"]);
+  const DATE = new Set(["dueDate", "startDate"]);
+  const out: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(inputs)) {
+    const col = SCREEN_KEY_TO_SNAPSHOT[key];
+    if (!col || col === "statusId" || col === "type") continue;
+    if (raw === "" || raw === undefined) continue;
+    if (NUMERIC.has(key)) { const n = Number(raw); if (!Number.isNaN(n)) out[col] = n; }
+    else if (DATE.has(key)) { out[col] = raw ? new Date(String(raw)) : null; }
+    else out[col] = raw === null ? null : String(raw);
+  }
+  return out;
+}
+
+/**
+ * A required screen field is "empty" when neither the submitted inputs nor the
+ * issue currently holds a value. Custom-field keys (cf:*) only come from inputs.
+ */
+function screenFieldIsEmpty(
+  key: string,
+  inputs: Record<string, unknown>,
+  issue: RuleIssueSnapshot,
+): boolean {
+  const notEmpty = (v: unknown) => !(v === null || v === undefined || v === "");
+  if (key in inputs) return !notEmpty(inputs[key]);
+  if (isCustomFieldKey(key)) return true; // no input for a required custom field
+  const snapKey = SCREEN_KEY_TO_SNAPSHOT[key];
+  if (!snapKey) return false; // unknown built-in → don't block
+  if (snapKey in inputs) return !notEmpty(inputs[snapKey]);
+  return !notEmpty((issue as unknown as Record<string, unknown>)[snapKey]);
 }
 
 const toRuleSpec = (r: GraphRule): RuleSpec => ({
@@ -108,6 +179,46 @@ export async function executeTransition(params: {
         });
         return assignment?.projectRole.name === roleName;
       },
+      subtaskStatusIds: async () => {
+        const kids = await db.qtIssue.findMany({
+          where: { parentId: issue.id, isDeleted: false },
+          select: { statusId: true },
+        });
+        return kids.map((k) => k.statusId);
+      },
+      transitionHistory: async () => {
+        const rows = await db.qtIssueTransitionLog.findMany({
+          where: { issueId: issue.id },
+          orderBy: { createdAt: "asc" },
+          select: { fromStatusId: true, toStatusId: true, actorId: true },
+        });
+        return rows;
+      },
+      parentStatusId: async () => {
+        if (!issue.id) return null;
+        const self = await db.qtIssue.findUnique({
+          where: { id: issue.id },
+          select: { parent: { select: { statusId: true } } },
+        });
+        return self?.parent?.statusId ?? null;
+      },
+      projectLeadId: async () => {
+        const project = await db.qtProject.findUnique({
+          where: { id: issue.projectId },
+          select: { leadUserId: true },
+        });
+        return project?.leadUserId ?? null;
+      },
+      parentFieldValue: async (key) => {
+        if (!issue.id) return null;
+        const self = await db.qtIssue.findUnique({
+          where: { id: issue.id },
+          select: { parent: true },
+        });
+        const parent = self?.parent as Record<string, unknown> | null | undefined;
+        const v = parent ? parent[key] : null;
+        return v == null ? null : String(v);
+      },
     },
   };
 
@@ -121,6 +232,18 @@ export async function executeTransition(params: {
   // 3. validators (execution) — abort before any write.
   const failures = await runValidators(ctx, validators);
   if (failures.length > 0) throw new ValidationFailedError(failures);
+
+  // 3b. "Show a screen" gate — the move can't complete until the screen's
+  //     required fields have a value (from the submitted inputs or the issue).
+  const screenRule = transition.rules.find((r) => r.type === "show_screen");
+  const screenId = screenRule ? String(screenRule.config.screenId ?? "") : "";
+  if (screenId) {
+    const requiredKeys = await requiredKeysForScreen(issue.orgId, screenId);
+    const screenFailures = requiredKeys
+      .filter((key) => screenFieldIsEmpty(key, inputs, issue))
+      .map((key) => ({ field: key, message: `${key} is required on this transition's screen.` }));
+    if (screenFailures.length > 0) throw new ValidationFailedError(screenFailures);
+  }
 
   // 4. post-functions — collect the patch + side effects (caller applies both
   //    in the same DB transaction as the status write).

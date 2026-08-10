@@ -51,12 +51,15 @@ export const ALLOWED_UPLOAD_TYPES: readonly string[] = [
   "video/quicktime",
   // audio
   "audio/mpeg",
+  "audio/mp4", // Safari's MediaRecorder output for voice notes
   "audio/ogg",
   "audio/wav",
   "audio/webm",
   // docs
   "application/pdf",
   "text/plain",
+  "text/csv",
+  "text/markdown",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
@@ -68,6 +71,69 @@ export const ALLOWED_UPLOAD_TYPES: readonly string[] = [
 
 export function isAllowedUploadType(contentType: string): boolean {
   return ALLOWED_UPLOAD_TYPES.includes(contentType);
+}
+
+/**
+ * Known-safe code/text file extensions admitted when the browser reports an
+ * empty or generic-binary MIME (the common case for source files — a `.py` or
+ * `.ts` often arrives as `""` or `application/octet-stream`). Active-content
+ * types that execute if a browser is ever coaxed into rendering them inline
+ * (`.html`, `.svg`) are deliberately EXCLUDED — those must arrive under an
+ * allowlisted MIME or not at all.
+ */
+export const ALLOWED_CODE_EXTENSIONS: readonly string[] = [
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".jsx",
+  ".py",
+  ".rb",
+  ".go",
+  ".rs",
+  ".java",
+  ".c",
+  ".h",
+  ".cpp",
+  ".cs",
+  ".php",
+  ".sh",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".sql",
+  ".css",
+];
+
+/** Lowercased file extension including the dot (e.g. `.py`), or `""` if none. */
+export function fileExtension(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot < 0 ? "" : filename.slice(dot).toLowerCase();
+}
+
+/**
+ * MIME values that carry no useful type signal — the browser couldn't classify
+ * the file. Only for these do we fall back to an extension check.
+ */
+function isGenericMime(contentType: string): boolean {
+  return contentType === "" || contentType === "application/octet-stream";
+}
+
+/**
+ * The full upload gate: an allowlisted MIME, OR — when the MIME is empty/generic
+ * — a known-safe code extension. BOTH the client (`validateFile`) and the server
+ * (`POST /api/uploads/sign`) route through this, so a crafted request that skips
+ * the client guard is still rejected server-side.
+ */
+export function isAllowedUpload(contentType: string, filename: string): boolean {
+  if (isAllowedUploadType(contentType)) return true;
+  if (isGenericMime(contentType)) {
+    return ALLOWED_CODE_EXTENSIONS.includes(fileExtension(filename));
+  }
+  return false;
 }
 
 /**
@@ -94,6 +160,13 @@ export interface MediaMeta {
   mediaType: string;
   originalName: string;
   size: number;
+  /**
+   * Voice notes only: the recorder's measured length in whole seconds. Set from
+   * `useVoiceRecorder` (never sniffed from the container) and persisted on the
+   * message `data` so the duration survives a reload — a plain audio *attachment*
+   * leaves it undefined. Session 2's custom player reads this.
+   */
+  durationSec?: number;
 }
 
 /** Build the org-scoped object key. `uuid` keeps it unguessable. */

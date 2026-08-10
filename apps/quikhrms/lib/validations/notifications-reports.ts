@@ -5,12 +5,12 @@ import { z } from "zod";
 
 // ─── Reports ────────────────────────────────────────────
 
-export const ReportTypeEnum = z.enum([
+const ReportTypeEnum = z.enum([
   "Headcount", "Attrition", "Attendance", "ExpenseSummary",
   "LeaveBalance", "Recruitment", "Performance", "Custom",
 ]);
 
-export const ReportFormatEnum = z.enum(["PDF", "XLSX", "CSV", "JSON"]);
+const ReportFormatEnum = z.enum(["PDF", "XLSX", "CSV", "JSON"]);
 
 export const generateReportSchema = z.object({
   name: z.string().min(1),
@@ -37,7 +37,7 @@ export const scheduleReportSchema = z.object({
 
 // ─── Dashboards ─────────────────────────────────────────
 
-export const widgetSchema = z.object({
+const widgetSchema = z.object({
   id: z.string().optional(),
   type: z.enum(["metric", "bar", "line", "pie", "table", "list", "calendar"]),
   title: z.string(),
@@ -67,6 +67,3 @@ export const exportAuditSchema = z.object({
   action: z.string().optional(),
   format: z.enum(["CSV", "JSON"]).default("CSV"),
 });
-
-export type GenerateReportInput = z.infer<typeof generateReportSchema>;
-export type CreateDashboardInput = z.infer<typeof createDashboardSchema>;

@@ -4,6 +4,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Zap, GitBranch, HelpCircle } from "lucide-react";
+import { TransitionScreenModal, type TransitionScreenData } from "./transition-screen-modal";
+
+async function fetchTransitionScreen(issueId: string, toStatusId: string): Promise<TransitionScreenData | null> {
+  const r = await fetch(`/api/issues/${issueId}/transition-screen?to=${encodeURIComponent(toStatusId)}`);
+  const j = await r.json();
+  if (!r.ok || !j.success) return null;
+  return (j.data?.screen ?? null) as TransitionScreenData | null;
+}
 
 /**
  * The one status control that honours the workflow (the design guide's §4:
@@ -133,9 +141,45 @@ export function WorkflowStatusControl({
   const legal = transitions.data?.transitions ?? [];
   const pad = size === "sm" ? "h-6 px-2 text-[11px]" : "h-8 px-3 text-xs";
 
-  const pick = async (statusId: string) => {
+  // "Show a screen" gate: when the chosen transition has a screen, prompt for
+  // its fields before completing the move.
+  const [screenPrompt, setScreenPrompt] = useState<
+    { screen: TransitionScreenData; toStatusId: string; transitionName: string } | null
+  >(null);
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+
+  /** Perform the move via the API with optional screen inputs, then notify parent. */
+  const doMove = async (statusId: string, inputs?: Record<string, unknown>) => {
+    if (!inputs) { await onChange(statusId); return; }
+    setMoving(true);
+    setMoveError(null);
+    try {
+      const r = await fetch(`/api/issues/${issueId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statusId, inputs }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to move");
+      setScreenPrompt(null);
+      await onChange(statusId); // let the parent refresh its view
+    } catch (e: unknown) {
+      setMoveError(e instanceof Error ? e.message : "Failed to move");
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  const pick = async (statusId: string, transitionName: string) => {
     setOpen(false);
-    if (statusId !== currentStatusId) await onChange(statusId);
+    if (statusId === currentStatusId) return;
+    const screen = await fetchTransitionScreen(issueId, statusId);
+    if (screen && screen.fields.length > 0) {
+      setScreenPrompt({ screen, toStatusId: statusId, transitionName });
+    } else {
+      await onChange(statusId);
+    }
   };
 
   return (
@@ -171,7 +215,7 @@ export function WorkflowStatusControl({
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => pick(t.toStatusId)}
+                      onClick={() => pick(t.toStatusId, t.name)}
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50"
                     >
                       <Zap className="h-3.5 w-3.5 shrink-0 text-gray-500" fill="currentColor" />
@@ -214,7 +258,7 @@ export function WorkflowStatusControl({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => pick(s.id)}
+                onClick={() => pick(s.id, s.name)}
                 className={`flex w-full items-center px-2.5 py-1 text-left hover:bg-gray-50 ${
                   s.id === currentStatusId ? "bg-blue-50/60" : ""
                 }`}
@@ -231,6 +275,17 @@ export function WorkflowStatusControl({
           )}
         </div>,
         document.body,
+      )}
+
+      {screenPrompt && (
+        <TransitionScreenModal
+          screen={screenPrompt.screen}
+          transitionName={screenPrompt.transitionName}
+          submitting={moving}
+          error={moveError}
+          onSubmit={(inputs) => doMove(screenPrompt.toStatusId, inputs)}
+          onCancel={() => { setScreenPrompt(null); setMoveError(null); }}
+        />
       )}
     </div>
   );

@@ -19,6 +19,11 @@ import {
   PrimaryButton, ApprovalTimeline, PageSkeleton,
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import {
+  MasterApprovalAction,
+  MasterApprovedBadge,
+} from "@/components/MasterApprovalAction";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ProcurementCells } from "@/components/ProcurementCells";
 import dynamic from "next/dynamic";
@@ -46,6 +51,12 @@ interface TimelineEntry {
   actionAt: string;
   comments?: string;
   title?: string;
+}
+
+function actionTitle(action: string): string {
+  if (action === "reject") return "Rejected";
+  if (action === "return") return "Returned";
+  return "Approve";
 }
 
 /** Human-readable label for a userType key stored in workflow steps. */
@@ -165,6 +176,7 @@ export default function IndentDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <StatusChip status={indent.status ?? ""} />
+            <MasterApprovedBadge approval={indent.approval} />
             {indent.status === "draft" && (
               <PrimaryButton onClick={handleSubmit} disabled={submitMutation.isPending}>
                 <Send className="w-4 h-4" /> Submit for Approval
@@ -191,6 +203,13 @@ export default function IndentDetailPage() {
               // can still approve when it's their turn.
               hidden={!canActOnCurrentStep(me, indent)}
             />
+            <MasterApprovalAction
+              approval={indent.approval}
+              me={me}
+              entityLabel="indent"
+              actionEndpoint={`/api/purchase/indents/${id}/approve`}
+              invalidateKeys={[["indents"], ["indent", id]]}
+            />
           </div>
         }
       />
@@ -198,6 +217,14 @@ export default function IndentDetailPage() {
       <PageContainer>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            <RepairApprovalNotice
+              repair={indent.approval?.repair}
+              entityLabel="indent"
+              actionEndpoint={`/api/purchase/indents/${id}/approve`}
+              invalidateKeys={[["indents"], ["indent", id]]}
+              me={me}
+            />
+
             {/* Header Info */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -382,7 +409,20 @@ export default function IndentDetailPage() {
                       entries.push({
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
-                        actionBy: acted.actionByName || approverLabel,
+                        // A master approval — and each step it skipped — still
+                        // belongs to its configured approver. Naming only the
+                        // master approver loses who the step was actually
+                        // routed to, so both are shown.
+                        title: acted.isMasterSkip
+                          ? `Skipped — Step ${s.stepOrder}`
+                          : acted.isMasterApproval
+                            ? `Master Approval — Step ${s.stepOrder}`
+                            : undefined,
+                        actionBy: acted.isMasterSkip
+                          ? `${approverLabel} — skipped by ${acted.actionByName || "master approver"}`
+                          : acted.isMasterApproval
+                            ? `${acted.actionByName || "Master approver"} (Master Approver) — in place of ${approverLabel}`
+                            : acted.actionByName || approverLabel,
                         actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
@@ -402,6 +442,45 @@ export default function IndentDetailPage() {
                       actionAt: isCurrent ? "Awaiting action" : "Not yet reached",
                     });
                   });
+
+                  // Approvals recorded against steps the workflow no longer
+                  // has. Without this they vanish from the timeline — a real
+                  // approval silently unrendered, which reads as if it never
+                  // happened. Appended after the configured steps because
+                  // their numbering no longer slots into the current chain.
+                  (approval.repair?.orphanedHistorySteps ?? []).forEach(
+                    (stepOrder: number) => {
+                      const acted = [...(approval.history ?? [])]
+                        .reverse()
+                        .find((h) => h.stepOrder === stepOrder);
+                      if (!acted) return;
+                      entries.push({
+                        step: stepOrder,
+                        action: acted.action,
+                        title: `${actionTitle(acted.action)} — Step ${stepOrder} (step since removed)`,
+                        actionBy: acted.actionByName || "User",
+                        actionAt: formatDateTimeIST(acted.actionAt),
+                        comments: acted.comments || undefined,
+                      });
+                    },
+                  );
+
+                  // Named fallback approver, shown while the request is still
+                  // open so the requester knows who can unblock it rather than
+                  // only discovering the path after it is used.
+                  if (
+                    approval.status === "pending_approval" &&
+                    approval.masterApprover
+                  ) {
+                    entries.push({
+                      step: 99,
+                      action: "upcoming",
+                      title: "Master Approver",
+                      actionBy: approval.masterApprover.name,
+                      actionAt: "Can approve from any step, without waiting",
+                    });
+                  }
+
                   return <ApprovalTimeline entries={entries} />;
                 })()
               )}

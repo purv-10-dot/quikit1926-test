@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useApiClient } from "@/lib/hooks/use-api";
+import { useApiClient, ApiError } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, Check, Trophy, X, AlertTriangle, Upload, Paperclip, Shield, BadgeCheck, Plus, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp, Banknote, Send, UserCog, FileText, Play, Pause, CalendarClock } from "lucide-react";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
@@ -473,27 +473,30 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                 {inst.automated ? <><Pause size={13} /> Stop automation</> : <><Play size={13} /> Start onboarding</>}
               </button>
             )}
-            {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (() => {
+            {/* Complete / Force Complete finalize the ONBOARDING phase (Day-1
+                checklist) — during Pre-Onboarding "Move to Onboarding" above is
+                the only way forward, so this stays hidden until that phase. */}
+            {!isPreOnboarding && (!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (() => {
               const pendingMandatory = inst.tasks.filter((t) => t.isMandatory && t.status !== "TaskCompleted" && t.status !== "TaskSkipped").length;
               const allDone = pendingMandatory === 0;
               return (
-                <>
-                  <button
-                    onClick={() => setConfirmComplete({ force: !allDone, pending: pendingMandatory })}
-                    disabled={completeMut.isPending}
-                    className={clsx("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50",
-                      allDone ? "bg-green-600 text-white hover:bg-green-700" : "bg-yellow-100 text-yellow-700 border border-yellow-300 hover:bg-yellow-200")}>
-                    {allDone ? <><Trophy size={13} /> Complete Onboarding</> : <><Check size={13} /> Force Complete ({pendingMandatory} pending)</>}
-                  </button>
-                  <button
-                    onClick={() => { setCancelReason(""); setConfirmCancel(true); }}
-                    disabled={cancelMut.isPending}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-700 border border-red-300 hover:bg-red-100 disabled:opacity-50">
-                    <X size={13} /> Cancel
-                  </button>
-                </>
+                <button
+                  onClick={() => setConfirmComplete({ force: !allDone, pending: pendingMandatory })}
+                  disabled={completeMut.isPending}
+                  className={clsx("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50",
+                    allDone ? "bg-green-600 text-white hover:bg-green-700" : "bg-yellow-100 text-yellow-700 border border-yellow-300 hover:bg-yellow-200")}>
+                  {allDone ? <><Trophy size={13} /> Complete Onboarding</> : <><Check size={13} /> Force Complete ({pendingMandatory} pending)</>}
+                </button>
               );
             })()}
+            {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
+              <button
+                onClick={() => { setCancelReason(""); setConfirmCancel(true); }}
+                disabled={cancelMut.isPending}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-700 border border-red-300 hover:bg-red-100 disabled:opacity-50">
+                <X size={13} /> Cancel
+              </button>
+            )}
               </div>
             </div>
 
@@ -518,7 +521,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                 {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
                   <button
                     onClick={() => {
-                      if (window.confirm("Re-apply the latest template?\n\nThis rebuilds the checklist from the current template — existing template steps (and their progress/uploads) are replaced. The BGV / Complete Profile step is kept.")) {
+                      if (window.confirm("Re-apply the latest template?\n\nThis syncs the checklist with the current template — matching steps are updated in place (progress, uploads and approvals are kept), removed steps are deleted, and new steps are added. The BGV / Complete Profile step is kept.")) {
                         reApplyMut.mutate(inst.template!.id);
                       }
                     }}
@@ -1486,14 +1489,41 @@ function ProvisionsPanel({ employeeId }: { employeeId: string }) {
 // saves them to the employee, then marks the onboarding step complete.
 
 const GENDERS = ["Male", "Female", "Transgender", "NonBinary", "PreferNotToSay"];
+const EC_RELATIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Relative", "Other"];
 const PINPUT = "w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500";
+
+const PROFILE_FIELD_LABEL: Record<string, string> = {
+  dateOfBirth: "Date of Birth", gender: "Gender", personalPhone: "Personal Phone",
+  reportingManagerId: "Reporting Manager", panNumber: "PAN Number", aadhaarNumber: "Aadhaar Number",
+  noticePeriodId: "Notice Period", currentAddress: "Current Address", emergencyContacts: "Emergency Contact",
+};
+
+/**
+ * The API returns a generic top-level message ("Validation failed") plus the
+ * REAL per-field reason in `error.details` (zod's `flatten().fieldErrors`).
+ * The modal used to show only the generic message — e.g. a bad phone number
+ * surfaced as "Validation failed" instead of "Personal Phone: Enter a valid
+ * 10-digit mobile number". Pull the specific reason(s) out when present.
+ */
+function profileErrorMessage(e: unknown): string {
+  if (e instanceof ApiError && e.details && typeof e.details === "object") {
+    const entries = Object.entries(e.details as Record<string, unknown>)
+      .flatMap(([field, msgs]) => (Array.isArray(msgs) ? msgs : [msgs]).map((m) => `${PROFILE_FIELD_LABEL[field] ?? field}: ${m}`));
+    if (entries.length) return entries.join(" · ");
+  }
+  return e instanceof Error ? e.message : "Something went wrong";
+}
 
 interface EmpProfile {
   dateOfBirth?: string | null; gender?: string | null; personalPhone?: string | null;
   panNumber?: string | null; aadhaarNumber?: string | null; reportingManagerId?: string | null;
+  noticePeriodId?: string | null;
   currentAddress?: { line1?: string; city?: string; state?: string; country?: string; zipCode?: string } | null;
   emergencyContacts?: Array<{ name?: string; relationship?: string; phone?: string }> | null;
 }
+
+type NoticePeriodOption = { id: string; name: string; duration: number; unit: "Days" | "Weeks" | "Months" };
+const periodToDays = (p: NoticePeriodOption) => p.unit === "Months" ? p.duration * 30 : p.unit === "Weeks" ? p.duration * 7 : p.duration;
 
 function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: string; task: Task; onClose: () => void; onSaved: () => void }) {
   const api = useApiClient();
@@ -1509,9 +1539,15 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
   const managerOpts = (peopleResp?.data?.employees ?? [])
     .filter((e) => e.id !== employeeId)
     .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() }));
+  const { data: noticePeriodsData } = useQuery({
+    queryKey: ["notice-periods", "all"],
+    queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100"),
+  });
+  const noticePeriods = noticePeriodsData?.data ?? [];
 
   const [form, setForm] = useState({
     dateOfBirth: "", gender: "", personalPhone: "", panNumber: "", aadhaarNumber: "", reportingManagerId: "",
+    noticePeriodId: "",
     line1: "", city: "", state: "", country: "", zipCode: "",
     ecName: "", ecRelationship: "", ecPhone: "",
   });
@@ -1531,6 +1567,7 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
       panNumber: e.panNumber ?? "",
       aadhaarNumber: e.aadhaarNumber ?? "",
       reportingManagerId: e.reportingManagerId ?? "",
+      noticePeriodId: e.noticePeriodId ?? "",
       line1: a.line1 ?? "", city: a.city ?? "", state: a.state ?? "", country: a.country ?? "", zipCode: a.zipCode ?? "",
       ecName: ec.name ?? "", ecRelationship: ec.relationship ?? "", ecPhone: ec.phone ?? "",
     }));
@@ -1558,6 +1595,11 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
         reportingManagerId: form.reportingManagerId,
       };
       if (form.gender) payload.gender = form.gender;
+      if (form.noticePeriodId) {
+        const p = noticePeriods.find((n) => n.id === form.noticePeriodId);
+        payload.noticePeriodId = form.noticePeriodId;
+        if (p) payload.noticePeriodDays = periodToDays(p);
+      }
       if (form.personalPhone.trim()) payload.personalPhone = form.personalPhone.trim();
       if (form.panNumber.trim()) payload.panNumber = form.panNumber.trim();
       if (form.aadhaarNumber.trim()) payload.aadhaarNumber = form.aadhaarNumber.trim();
@@ -1569,7 +1611,7 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
     },
     meta: { suppressGlobalError: true },
     onSuccess: onSaved,
-    onError: (e: Error) => setError(e.message),
+    onError: (e: unknown) => setError(profileErrorMessage(e)),
   });
 
   return (
@@ -1604,6 +1646,9 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
                 <input value={form.panNumber} onChange={(e) => set("panNumber", e.target.value.toUpperCase())} placeholder="ABCDE1234F" className={PINPUT} /></div>
               <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Aadhaar Number</label>
                 <input value={form.aadhaarNumber} onChange={(e) => set("aadhaarNumber", e.target.value)} placeholder="12-digit" className={PINPUT} /></div>
+              <div><label className="block text-[11px] font-semibold text-slate-600 mb-1">Notice Period</label>
+                <Select size="sm" value={form.noticePeriodId} onChange={(v) => set("noticePeriodId", v)}
+                  options={[{ value: "", label: "Select…" }, ...noticePeriods.map((n) => ({ value: n.id, label: `${n.name} (${n.duration} ${n.unit})` }))]} /></div>
             </div>
 
             <div>
@@ -1621,7 +1666,8 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
               <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Emergency Contact</div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <input value={form.ecName} onChange={(e) => set("ecName", e.target.value)} placeholder="Name" className={PINPUT} />
-                <input value={form.ecRelationship} onChange={(e) => set("ecRelationship", e.target.value)} placeholder="Relationship" className={PINPUT} />
+                <Select size="sm" value={form.ecRelationship} onChange={(v) => set("ecRelationship", v)} placeholder="Relationship"
+                  options={EC_RELATIONS.map((r) => ({ value: r, label: r }))} />
                 <input value={form.ecPhone} onChange={(e) => set("ecPhone", e.target.value)} placeholder="Phone" className={PINPUT} />
               </div>
             </div>

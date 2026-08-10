@@ -175,12 +175,14 @@ interface LineFieldDef<TLine = DynamicLine> {
    *   - the full row (may carry array values, not just strings),
    *   - an `update(patch)` helper to set fields on THIS row,
    *   - a context with the primary line-items list so the renderer
-   *     can, for instance, enumerate which items to show in a picker.
+   *     can, for instance, enumerate which items to show in a picker,
+   *     plus the current header fields so a per-row editor can seed
+   *     itself from a header-level default (e.g. per-vendor T&C).
    */
   render?: (
     line: TLine,
     update: (patch: Partial<TLine>) => void,
-    ctx: { primaryLines: TLine[] },
+    ctx: { primaryLines: TLine[]; formData: Record<string, string> },
   ) => ReactNode;
 }
 
@@ -1195,7 +1197,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                                   next[i] = { ...(next[i] ?? {}), ...patch } as DynamicLine;
                                   return next;
                                 }),
-                              { primaryLines: lines as unknown as TLine[] },
+                              { primaryLines: lines as unknown as TLine[], formData },
                             )
                           ) : lf.type === "select" && lf.searchable ? (
                             <SearchableSelect
@@ -1286,7 +1288,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                                   next[i] = { ...(next[i] ?? {}), ...patch } as DynamicLine;
                                   return next;
                                 }),
-                              { primaryLines: lines as unknown as TSec[] },
+                              { primaryLines: lines as unknown as TSec[], formData },
                             )
                           ) : lf.type === "select" && lf.searchable ? (
                             <SearchableSelect
@@ -1378,7 +1380,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
                                   next[i] = { ...(next[i] ?? {}), ...patch };
                                   return next;
                                 }),
-                              { primaryLines: lines },
+                              { primaryLines: lines, formData },
                             )
                           ) : lf.type === "select" && lf.searchable ? (
                             <SearchableSelect

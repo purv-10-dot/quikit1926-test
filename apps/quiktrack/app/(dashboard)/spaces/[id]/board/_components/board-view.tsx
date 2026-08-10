@@ -18,6 +18,7 @@ import { FilterPanel, FilterRow } from "@/components/filters/filter-panel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useTransitionScreenPrompt } from "@/components/use-transition-screen-prompt";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { CustomFieldFilters } from "@/components/custom-fields/custom-field-filters";
 import type { CustomFilter } from "@/lib/customFields/filterQuery";
@@ -62,6 +63,8 @@ function memberColor(seed: string): string {
 
 export function BoardView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  // "Show a screen" gate: prompt for the transition screen before a DnD move.
+  const { promptForMove, modal: screenModal } = useTransitionScreenPrompt();
   const [statuses, setStatuses] = useState<BoardStatus[]>([]);
   const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
   // Functional spaces have no sprints — the board is a Kanban "Activity Board"
@@ -249,12 +252,28 @@ export function BoardView({ projectId }: { projectId: string }) {
         const expectedStatusId =
           e.dataTransfer.getData("application/quiktrack-issue-status") || undefined;
         if (expectedStatusId === targetId) return; // dropped on the same column
+        // "Show a screen" gate: if this transition has a screen, prompt for its
+        // fields first and move via /move (which carries the inputs). Cancelling
+        // aborts the move.
+        let screenInputs: Record<string, unknown> | undefined;
         try {
-          const r = await fetch(`/api/issues/${issueId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ statusId: targetId, expectedStatusId }),
-          });
+          screenInputs = await promptForMove(issueId, targetId);
+        } catch {
+          setRefreshKey((k) => k + 1); // user cancelled → resync the card back
+          return;
+        }
+        try {
+          const r = screenInputs
+            ? await fetch(`/api/issues/${issueId}/move`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statusId: targetId, expectedStatusId, inputs: screenInputs }),
+              })
+            : await fetch(`/api/issues/${issueId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statusId: targetId, expectedStatusId }),
+              });
           const res = await r.json();
           if (res?.success) {
             window.dispatchEvent(
@@ -310,6 +329,7 @@ export function BoardView({ projectId }: { projectId: string }) {
     // board easily exceeds the viewport width, so we let the inner column
     // strip own the horizontal scrollbar.
     <div className="px-6 py-4 min-w-0">
+      {screenModal}
       <Toolbar
         searchInput={searchInput}
         onSearchChange={setSearchInput}

@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
 import { DashboardProviders } from "@/components/layout/dashboard-providers";
 import { SessionGuard } from "@/components/session-guard";
+import { SupportLauncher } from "@quikit/ui/support";
 
 const ADMIN_ROLE = "Administrator";
 
@@ -79,6 +80,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </main>
         </div>
       </div>
+      {/* Floating support launcher — outside the scroll containers above so it
+          stays pinned to the viewport on every dashboard route. */}
+      <SupportLauncher appSlug="quikcrm" />
     </DashboardProviders>
     </SessionGuard>
   );
