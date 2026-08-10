@@ -49,8 +49,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const [purpose, setPurpose] = useState("");
   const [workCategoryId, setWorkCategoryId] = useState("");
   const [deliveryLocationId, setDeliveryLocationId] = useState("");
-  const [isUrgent, setIsUrgent] = useState(false);
-  const [urgencyJustification, setUrgencyJustification] = useState("");
   const [lines, setLines] = useState<PRLine[]>([newLine()]);
   const [selectedBoq, setSelectedBoq] = useState<BoqRow | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<ActivityLeafOption | null>(null);
@@ -274,8 +272,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
       setPurpose("");
       setWorkCategoryId("");
       setDeliveryLocationId("");
-      setIsUrgent(false);
-      setUrgencyJustification("");
       setLines([newLine()]);
       setSelectedBoq(null);
       setSelectedActivity(null);
@@ -417,7 +413,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
         return;
       }
     }
-    if (isUrgent && !urgencyJustification.trim()) { setError("Urgency justification is required"); return; }
 
     // Pull the row indices the user actually filled in so the error
     // messages line up with the visible row numbers (filtering would
@@ -463,8 +458,8 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
         scopeType: selectedActivity ? "ACTIVITY" : undefined,
         scopeId: selectedActivity?.id || undefined,
         deliveryLocationId: deliveryLocationId || undefined,
-        isUrgent,
-        urgencyJustification: isUrgent ? urgencyJustification : "",
+        isUrgent: false,
+        urgencyJustification: "",
         footerNote: "",
         lines: validLines.map(l => ({
           itemId: l.itemId,
@@ -590,22 +585,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
               <label className="block text-xs font-medium text-gray-700 mb-1">Purpose / Reason</label>
               <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. Foundation work phase 2"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500" />
-            </div>
-
-            {/* Urgent */}
-            <div className={`p-3 rounded-lg border ${isUrgent ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"}`}>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-accent-600 focus:ring-accent-500" />
-                <span className="text-sm font-medium text-gray-700">Mark as URGENT</span>
-              </label>
-              {isUrgent && (
-                <div className="mt-2">
-                  <input type="text" value={urgencyJustification} onChange={e => setUrgencyJustification(e.target.value)}
-                    placeholder="Justification for urgency (required)"
-                    className="w-full px-3 py-2 rounded-lg border border-amber-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
-                </div>
-              )}
             </div>
           </div>
 

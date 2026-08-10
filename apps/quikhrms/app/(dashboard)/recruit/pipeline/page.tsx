@@ -62,6 +62,19 @@ interface ApplicationItem {
   docGate: { blocking: boolean; pending: string[] } | null;
 }
 
+// A sourced candidate with no requisition link yet (Candidate Pool). Shown as a
+// lightweight pseudo-row in the Source column — distinct shape from
+// ApplicationItem since there's no application/stage/interview data at all.
+interface PoolCandidateItem {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  expectedCTC: string | null;
+}
+
+interface OpenRequisition { id: string; title: string; requisitionNumber: string; status: string }
+
 const REMINDER_COOLDOWN_HOURS = 24;
 function reminderCooldownRemaining(lastReminderAt: string | null): number {
   if (!lastReminderAt) return 0;
@@ -350,6 +363,14 @@ export default function PipelinePage() {
   const [offerDecision, setOfferDecision] = useState<{ app: ApplicationItem; kind: "accept" | "decline" } | null>(null);
   const [offerFb, setOfferFb] = useState(emptyOfferFb);
 
+  // Candidate Pool candidates (sourced, never linked to any requisition) — shown
+  // merged into the Source (Screening) column so HR can assign them a JR without
+  // leaving the pipeline. Only meaningful in the "all requisitions" view — a
+  // pool candidate isn't part of any specific requisition, so they drop out the
+  // moment a requisition filter narrows the board.
+  const [assignPoolTarget, setAssignPoolTarget] = useState<PoolCandidateItem | null>(null);
+  const [assignReqId, setAssignReqId] = useState("");
+
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline-apps", reqFilter, showClosed],
     // Include offered / on-hold candidates so the Offer stage shows the whole
@@ -366,6 +387,42 @@ export default function PipelinePage() {
   const { data: pipelinesData } = useQuery({
     queryKey: ["pipelines"],
     queryFn: () => api.get<PipelineItem[]>("/api/v1/hrms/recruit/pipelines"),
+  });
+
+  // Pool candidates only make sense in the "all requisitions" view — a pool
+  // candidate isn't part of any specific requisition.
+  const poolEligible = !reqFilter && requisitionFilters.size === 0;
+  const { data: poolData } = useQuery({
+    queryKey: ["candidates", "pool-for-pipeline"],
+    queryFn: () => api.get<PoolCandidateItem[]>("/api/v1/hrms/recruit/candidates?noApplication=1&limit=200"),
+    enabled: poolEligible,
+  });
+  const poolCandidates = poolEligible ? (poolData?.data ?? []) : [];
+
+  const { data: openReqsData } = useQuery({
+    queryKey: ["requisitions-open-for-pool-assign"],
+    queryFn: () => api.get<OpenRequisition[]>("/api/v1/hrms/recruit/requisitions?limit=200"),
+    enabled: !!assignPoolTarget,
+  });
+  const openReqs = (openReqsData?.data ?? []).filter((r) => r.status === "ReqOpen" || r.status === "ReqApproved");
+
+  const assignPoolMut = useMutation({
+    mutationFn: () => {
+      if (!assignPoolTarget) throw new Error("No candidate selected");
+      // Linking to a requisition skips straight to Phone Screening — matches
+      // the same rule applied when linking a candidate at creation time.
+      return api.post("/api/v1/hrms/recruit/applications", {
+        candidateId: assignPoolTarget.id, requisitionId: assignReqId, currentStage: "PhoneScreen",
+      });
+    },
+    onSuccess: () => {
+      invalidateAll();
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Assigned to requisition", "Candidate moved to Phone Screening.");
+      setAssignPoolTarget(null);
+      setAssignReqId("");
+    },
+    onError: (e) => toast.error("Couldn't assign", e instanceof Error ? e.message : undefined),
   });
   const defaultPipeline = (pipelinesData?.data ?? []).find((p) => p.isDefault) ?? pipelinesData?.data?.[0];
   const stageConfigs: StageConfig[] = defaultPipeline?.stages && defaultPipeline.stages.length > 0
@@ -795,6 +852,18 @@ export default function PipelinePage() {
     return true;
   });
 
+  // Pool candidates shown merged into the Source column's list view — only
+  // when Source (Screening) is the single selected stage, and never alongside
+  // a date-range filter (they have no appliedDate to match against).
+  const showingSourceOnly = stageFilters.size === 1 && stageFilters.has("Screening");
+  const poolFiltered = showingSourceOnly && fromTs === null && toTs === null
+    ? poolCandidates.filter((c) => {
+        if (!nq) return true;
+        const hay = `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase();
+        return hay.includes(nq);
+      })
+    : [];
+
   // Flat, human-readable rows for the styled .xlsx export — same filtered set
   // the CSV export uses.
   const excelRows = apps.map((a) => ({
@@ -923,10 +992,11 @@ export default function PipelinePage() {
 
       {/* Stage counter bar — connected segments with a colored top rule, count,
           and label. Click a stage to view its candidates. */}
-      {allApps.length > 0 && (
+      {(allApps.length > 0 || poolCandidates.length > 0) && (
         <div className="flex items-stretch overflow-x-auto no-scrollbar bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
           {STAGES.map((stage, i) => {
-            const value = allApps.filter((a) => (a.currentStage ?? STAGES[0]) === stage).length;
+            const value = allApps.filter((a) => (a.currentStage ?? STAGES[0]) === stage).length
+              + (stage === "Screening" ? poolCandidates.length : 0);
             const on = stageFilters.has(stage);
             return (
               <button
@@ -1044,9 +1114,45 @@ export default function PipelinePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {apps.length === 0 && (
+              {apps.length === 0 && poolFiltered.length === 0 && (
                 <tr><td colSpan={7} className="text-center py-8 text-slate-400 text-sm">No applications match current filters.</td></tr>
               )}
+              {poolFiltered.map((c) => (
+                <tr key={`pool-${c.id}`} onClick={() => router.push(`/recruit/candidates/${c.id}`)} className="hover:bg-slate-50/60 transition cursor-pointer">
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-[11px] font-bold shrink-0">
+                        {(c.firstName[0] ?? "") + (c.lastName[0] ?? "")}
+                      </div>
+                      <div className="min-w-0">
+                        <Link href={`/recruit/candidates/${c.id}`} className="font-semibold text-slate-900 truncate hover:text-green-700 hover:underline">{c.firstName} {c.lastName}</Link>
+                        <p className="text-[11px] text-slate-500 truncate">{c.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
+                  <td className="px-3 py-2.5">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium ring-1 bg-slate-50 text-slate-500 ring-slate-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Not applied
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
+                  <td className="px-3 py-2.5 text-slate-600 text-xs">
+                    {c.expectedCTC ? `₹ ${Number(c.expectedCTC).toLocaleString("en-IN")}` : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-[11px] text-slate-400">—</td>
+                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end">
+                      <button
+                        onClick={() => { setAssignPoolTarget(c); setAssignReqId(""); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100"
+                      >
+                        <Briefcase size={10} /> Assign to Requisition
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
               {apps.map((app, i) => {
                 const stageName = app.currentStage ?? "—";
                 const si = STAGES.indexOf(stageName);
@@ -1450,6 +1556,39 @@ export default function PipelinePage() {
       })()}
 
       {/* Reject candidate — capture a reason before rejecting */}
+      {/* Assign a Candidate Pool candidate to a requisition — creates the
+          application directly at Phone Screening. */}
+      <Modal open={!!assignPoolTarget} onClose={() => !assignPoolMut.isPending && setAssignPoolTarget(null)} title="Assign to Requisition" size="md">
+        {assignPoolTarget && (
+          <form onSubmit={(e) => { e.preventDefault(); if (assignReqId) assignPoolMut.mutate(); }} className="space-y-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+              <span className="font-semibold text-slate-900">{assignPoolTarget.firstName} {assignPoolTarget.lastName}</span>
+              <span className="text-slate-500"> · {assignPoolTarget.email}</span>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Requisition <span className="text-red-500">*</span></label>
+              <Select
+                value={assignReqId}
+                onChange={setAssignReqId}
+                placeholder="Select a requisition"
+                options={openReqs.map((r) => ({ value: r.id, label: `${r.title} · ${r.requisitionNumber}` }))}
+              />
+              {openReqs.length === 0 && (
+                <p className="mt-1.5 text-[11px] text-gray-400">No open requisitions found.</p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setAssignPoolTarget(null)} disabled={assignPoolMut.isPending}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={!assignReqId || assignPoolMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold disabled:opacity-50">
+                <Briefcase size={13} /> {assignPoolMut.isPending ? "Assigning…" : "Assign"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       <Modal open={!!rejectApp} onClose={() => !rejectMut.isPending && setRejectApp(null)} title="Reject candidate" size="md">
         {rejectApp && (
           <form
@@ -1871,7 +2010,6 @@ export default function PipelinePage() {
                   onChange={(v) => setSchedule({ ...schedule, type: v as typeof schedule.type })}
                   options={[
                     { value: "Video",            label: "Video Call",        description: "Zoom / Meet / Teams" },
-                    { value: "Phone",            label: "Phone Screen",      description: "Voice only" },
                     { value: "InPerson",         label: "In-Person",         description: "On-site" },
                     { value: "Panel",            label: "Panel",             description: "Multiple interviewers" },
                     { value: "TakeHome",         label: "Take-Home Task",    description: "Async assignment" },
@@ -2189,8 +2327,11 @@ export default function PipelinePage() {
                       // need the dedicated Send Offer / Onboard flow) — leaving
                       // them selectable just leads to a dead end. Excluding
                       // them here caps this dropdown at the last real interview
-                      // stage, matching what's actually achievable.
-                      .filter((s) => s !== "Hired" && !/^offer$/i.test(s))
+                      // stage, matching what's actually achievable. Screening
+                      // is excluded too — it's kept only as the pipeline
+                      // board's "Source" column (for Candidate Pool display),
+                      // never a stage a candidate should be moved back into.
+                      .filter((s) => s !== "Hired" && s !== "Screening" && !/^offer$/i.test(s))
                       .map((s) => ({
                         value: s,
                         label: s.replace(/([A-Z])/g, " $1").trim(),
@@ -2689,7 +2830,11 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
 
 // ─── Pipeline stat cards + stage visuals ────────────────
 function prettyStage(stage: string): string {
-  return stage === "HRInterview" ? "HR Interview" : stage.replace(/([A-Z])/g, " $1").trim();
+  if (stage === "HRInterview") return "HR Interview";
+  // "Screening" is the stage's internal name (required, matched elsewhere via
+  // showScreening()/REQUIRED_STAGES) — only the displayed label reads "Source".
+  if (stage === "Screening") return "Source";
+  return stage.replace(/([A-Z])/g, " $1").trim();
 }
 
 function stageMeta(stage: string): { icon: React.ReactNode; color: string } {

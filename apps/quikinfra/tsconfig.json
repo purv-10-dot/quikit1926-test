@@ -9,7 +9,6 @@
       "@/lib/*": ["./lib/*"],
       "@/components/*": ["./components/*"],
       "@/hooks/*": ["./hooks/*"],
-      "@/domain/*": ["./domain/*"],
       "@/types/*": ["./types/*"],
       "@quikit/database": ["../../packages/database"],
       "@quikit/auth": ["../../packages/auth"],

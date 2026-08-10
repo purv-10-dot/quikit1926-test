@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { signToken, verifyToken, type UploadTokenPayload } from "./tokens";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { logger } from "@/lib/shared";
+import {
+  signToken,
+  verifyToken,
+  uploadTokenSecret,
+  __resetUploadTokenSecretWarnForTest,
+  type UploadTokenPayload,
+} from "./tokens";
 
 const SECRET = "test-secret";
 const future = Date.now() + 60_000;
@@ -47,5 +54,32 @@ describe("signToken / verifyToken", () => {
     expect(verifyToken("garbage", SECRET)).toBeNull();
     expect(verifyToken("a.b.c", SECRET)).toBeNull();
     expect(verifyToken("", SECRET)).toBeNull();
+  });
+});
+
+describe("uploadTokenSecret", () => {
+  const ORIGINAL = process.env.UPLOAD_TOKEN_SECRET;
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.UPLOAD_TOKEN_SECRET;
+    else process.env.UPLOAD_TOKEN_SECRET = ORIGINAL;
+    __resetUploadTokenSecretWarnForTest();
+    vi.restoreAllMocks();
+  });
+
+  it("uses the env var when set, with no warning", () => {
+    process.env.UPLOAD_TOKEN_SECRET = "real-prod-secret";
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined as never);
+    expect(uploadTokenSecret()).toBe("real-prod-secret");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the dev secret and warns exactly once when unset", () => {
+    delete process.env.UPLOAD_TOKEN_SECRET;
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined as never);
+    expect(uploadTokenSecret()).toBe("dev-only-upload-secret-change-me");
+    expect(uploadTokenSecret()).toBe("dev-only-upload-secret-change-me");
+    expect(uploadTokenSecret()).toBe("dev-only-upload-secret-change-me");
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

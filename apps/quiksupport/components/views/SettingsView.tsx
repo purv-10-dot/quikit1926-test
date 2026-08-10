@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { SupportStatusTab } from '@quikit/ui/support'
 import { useHelpdesk } from '@/components/layout/HelpdeskProvider'
 import { THEMES } from '@/lib/themes'
 
@@ -153,6 +154,24 @@ export function SettingsView() {
           <div style={{ marginLeft: 'auto', fontSize: 12, color: '#CBD5E1', textAlign: 'right' }}>
             Profile info is managed<br />by your administrator
           </div>
+        </div>
+      </SettingCard>
+
+      {/* Support Status — the agent's own requests to the QuikIT team, which is
+          a different thing entirely from the customer tickets this app manages. */}
+      <SettingCard
+        icon={<svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" />
+          <line x1="4.93" y1="4.93" x2="9.17" y2="9.17" /><line x1="14.83" y1="14.83" x2="19.07" y2="19.07" />
+          <line x1="14.83" y1="9.17" x2="19.07" y2="4.93" /><line x1="4.93" y1="19.07" x2="9.17" y2="14.83" />
+        </svg>}
+        title="Support Status"
+        subtitle="Requests you have raised with the QuikIT team"
+        accent={theme.accent}
+        theme={theme}
+      >
+        <div style={{ padding: '16px 24px' }}>
+          <SupportStatusTab />
         </div>
       </SettingCard>
 

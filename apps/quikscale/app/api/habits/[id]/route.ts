@@ -5,6 +5,8 @@ import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
 import { aggregateResponses, updateCampaignSchema } from "@/lib/schemas/habitSchema";
 import { validationError } from "@/lib/api/validationError";
 import { annotateRounds } from "@/lib/utils/habitRounds";
+import { notifyHabitCampaign } from "@/lib/services/habitNotifications";
+import { getPastWeekFlags } from "@/lib/utils/featureFlags";
 
 /**
  * GET /api/habits/[id]
@@ -95,7 +97,10 @@ export const PUT = withOrgAuth<{ id: string }>(
 
     const existing = await db.habitAssessment.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, isLegacy: true, status: true },
+      select: {
+        id: true, isLegacy: true, status: true,
+        quarter: true, year: true, deadline: true, participantUserIds: true,
+      },
     });
     if (!existing) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -111,6 +116,40 @@ export const PUT = withOrgAuth<{ id: string }>(
     if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
 
+    // Only the DEADLINE is worth interrupting people for — a notes-only edit
+    // shouldn't mail everyone. Compared at millisecond precision against the
+    // stored value so a no-op save stays silent.
+    const deadlineChanged =
+      input.deadline !== undefined &&
+      (existing.deadline?.getTime() ?? null) !==
+        (input.deadline ? new Date(input.deadline).getTime() : null);
+
+    // Past-deadline gate — mirrors the `add_past_week_data` rule KPI/Priority
+    // already enforce for past-week writes, so the client-side `min` on the
+    // date picker can't be bypassed with a direct API call.
+    //
+    // Deliberately scoped to deadlines that are *moving* to a past date: an
+    // assessment that was already overdue before this check shipped must still
+    // be re-savable (e.g. a notes-only edit that echoes back the same deadline),
+    // otherwise existing rows become permanently uneditable.
+    if (deadlineChanged && input.deadline) {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      if (new Date(input.deadline) < startOfToday) {
+        const { canAddPastWeek } = await getPastWeekFlags(orgId);
+        if (!canAddPastWeek) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "Past deadlines are disabled. Enable \"Add Past Week Data\" in Settings → Configurations to set one.",
+            },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     const updated = await db.habitAssessment.update({
       where: { id: params.id },
       data: {
@@ -120,6 +159,21 @@ export const PUT = withOrgAuth<{ id: string }>(
         ...(input.notes !== undefined && { notes: input.notes }),
       },
     });
+
+    if (deadlineChanged) {
+      await notifyHabitCampaign({
+        orgId,
+        campaignId: updated.id,
+        event: "deadline_changed",
+        actorUserId: userId,
+        quarter: existing.quarter,
+        year: existing.year,
+        deadline: updated.deadline,
+        participantUserIds: existing.participantUserIds ?? [],
+      }).catch((err) => {
+        console.error("[PUT /api/habits/[id]] notifyHabitCampaign failed:", err);
+      });
+    }
 
     return NextResponse.json({ success: true, data: updated });
   },

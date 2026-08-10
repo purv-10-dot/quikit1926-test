@@ -147,6 +147,9 @@ export function TaskCard({
           // Custom MIME so the column drop handler can tell an issue drop
           // apart from a column reorder drop.
           e.dataTransfer.setData("application/quiktrack-issue", task.id);
+          // Source status → sent as expectedStatusId for optimistic-lock (409
+          // if the issue moved out from under this drag).
+          e.dataTransfer.setData("application/quiktrack-issue-status", task.statusId);
         }}
         className="qt-board-card bg-white border border-gray-200 rounded-md p-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
       >

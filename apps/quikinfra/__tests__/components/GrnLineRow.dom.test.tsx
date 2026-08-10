@@ -25,8 +25,9 @@ describe("renderGrnLine (GRN line row)", () => {
   it("renders the material name and UOM chip", () => {
     setup({ itemName: "TMT Steel Bar", uomCode: "kg" });
     expect(screen.getByText("TMT Steel Bar")).toBeInTheDocument();
-    // UOM is uppercased
-    expect(screen.getByText("KG")).toBeInTheDocument();
+    // UOM is uppercased, and shown in more than one chip on the row
+    // (identity header + the quantity group), so match all occurrences.
+    expect(screen.getAllByText("KG").length).toBeGreaterThan(0);
   });
 
   it("renders the read-only reference tiles (PO Qty / Prev. Rcvd / Pending)", () => {

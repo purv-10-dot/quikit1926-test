@@ -5,6 +5,7 @@ import Link from "next/link";
 import { showToast } from "@/lib/ui/toast";
 import { confirmDialog } from "@/lib/ui/confirm";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
@@ -197,13 +198,14 @@ function InlineCreator(props: {
 
 function InlineCreatorInner({
   projectId,
-  defaultStatusId,
   sprintId,
   members,
   currentUserId,
   onCreated,
 }: {
   projectId: string;
+  /** Accepted for API compatibility but no longer used — the server picks the
+   *  correct initial status (workflow INITIAL, else first-by-order). */
   defaultStatusId?: string;
   sprintId: string | null;
   members: Member[];
@@ -263,7 +265,10 @@ function InlineCreatorInner({
           projectId,
           title: t,
           type,
-          statusId: defaultStatusId,
+          // Don't force a status here — let the server pick the correct initial
+          // status: the workflow's INITIAL (e.g. classic "Open") when a workflow
+          // governs the project, else the first status by order. Forcing the
+          // client's "To Do" here overrode that (item wrongly landed on To Do).
           sprintId: sprintId ?? undefined,
           assigneeId: assigneeId ?? undefined,
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
@@ -1160,6 +1165,7 @@ function DeleteSprintModal({
 
 function IssueRow({
   issue,
+  projectId,
   statuses,
   epics,
   members,
@@ -1175,6 +1181,7 @@ function IssueRow({
   canDelete,
 }: {
   issue: Issue;
+  projectId: string;
   statuses: Status[];
   epics: EpicLite[];
   members: Member[];
@@ -1200,7 +1207,6 @@ function IssueRow({
   // clientWidth). Recomputed on each hover so it tracks resize/zoom.
   const [showTitleTip, setShowTitleTip] = useState(false);
   const titleRef = useRef<HTMLSpanElement>(null);
-  const [statusOpen, setStatusOpen] = useState(false);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
   const epicRef = useRef<HTMLButtonElement>(null);
@@ -1266,7 +1272,6 @@ function IssueRow({
       setDeleting(false);
     }
   }
-  const statusRef = useRef<HTMLButtonElement>(null);
 
   // Click-outside + Escape for the status and epic dropdowns are handled by
   // PopoverPanel, which also portals the menu to document.body so the backlog's
@@ -1536,52 +1541,19 @@ function IssueRow({
         )
       )}
 
-      {/* Status pill (clickable popover) */}
+      {/* Status pill — workflow-aware (gated → legal transitions; else free). */}
       {fields.status && (
-      <>
-        <button
-          ref={statusRef}
-          type="button"
-          onClick={() => setStatusOpen((v) => !v)}
-          className={`inline-flex shrink-0 items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-            issue.status?.category,
-          )}`}
-        >
-          {issue.status?.name ?? "—"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        <PopoverPanel
-          anchorRef={statusRef}
-          open={statusOpen}
-          onClose={() => setStatusOpen(false)}
-          align="right"
-          width={200}
-          placement="auto"
-          estimatedHeight={220}
-        >
-          {statuses
-            .filter((s) => s.id !== issue.statusId)
-            .map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  setStatusOpen(false);
-                  void patch({ statusId: s.id });
-                }}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
-              >
-                <span
-                  className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-                    s.category,
-                  )}`}
-                >
-                  {s.name}
-                </span>
-              </button>
-            ))}
-        </PopoverPanel>
-      </>
+        <WorkflowStatusControl
+          issueId={issue.id}
+          projectId={projectId}
+          currentStatusId={issue.statusId}
+          currentStatusName={issue.status?.name ?? "—"}
+          currentStatusCategory={issue.status?.category}
+          statuses={statuses.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+          onChange={(statusId) => void patch({ statusId })}
+          onViewWorkflow={() => window.open(`/spaces/${projectId}/settings/workflows`, "_blank")}
+          size="sm"
+        />
       )}
 
       {/* Overdue badge — shows the due date with a warning when it's past. */}
@@ -2058,6 +2030,10 @@ function SectionBody({
         sprintId: sprintId ?? "null",
         excludeType: "EPIC,SUBTASK",
         limit: String(ISSUE_PAGE),
+        // Like Jira: the backlog only shows items whose status is mapped to a
+        // board column. Unmapped-status items are hidden here (but visible in
+        // List/Task Table). No-op when the project has no configured columns.
+        boardMappedOnly: "1",
       });
       if (filters.search) params.set("search", filters.search);
       if (filters.statusId) params.set("statusId", filters.statusId);
@@ -2170,6 +2146,7 @@ function SectionBody({
       {state.issues.map((i) => (
         <IssueRow
           key={i.id}
+          projectId={projectId}
           issue={{ ...i, status: statusesById.get(i.statusId) }}
           statuses={Array.from(statusesById.values())}
           epics={epics}
@@ -2437,6 +2414,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
       sprintId: sprintId ?? "null",
       excludeType: "EPIC,SUBTASK",
       idsOnly: "1",
+      // Match what the backlog actually shows (board-mapped statuses only).
+      boardMappedOnly: "1",
     });
     if (sectionFilters.search) params.set("search", sectionFilters.search);
     if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);

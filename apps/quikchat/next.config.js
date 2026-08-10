@@ -30,6 +30,22 @@ const realtimeConnectOrigin = (() => {
 // wss→https. Empty string stays empty (dropped by .filter(Boolean) below).
 const realtimeHttpOrigin = realtimeConnectOrigin.replace(/^ws/, "http");
 
+// LiveKit SFU origin (group + 1:1 calls). Server-only var — the browser never
+// reads process.env directly; the LiveKit client SDK gets the URL and token
+// from an API response body, so no NEXT_PUBLIC_* mirror is needed here.
+// next.config.js always runs server-side regardless of the var's prefix.
+const livekitConnectOrigin = (() => {
+  const raw = process.env.LIVEKIT_URL || "";
+  try {
+    return raw ? new URL(raw).origin : "";
+  } catch {
+    return "";
+  }
+})();
+// LiveKit's REST API (room/token validation) shares the same host over https;
+// the wss origin alone doesn't cover it. Same ws→http derivation as above.
+const livekitHttpOrigin = livekitConnectOrigin.replace(/^ws/, "http");
+
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
@@ -65,9 +81,15 @@ const nextConfig = {
     // and .filter(Boolean) drops empties so the directive stays valid.
     const connectSrc = [
       ...new Set(
-        ["'self'", quikitConnectOrigin, realtimeHttpOrigin, realtimeConnectOrigin, "https://storage.googleapis.com"].filter(
-          Boolean,
-        ),
+        [
+          "'self'",
+          quikitConnectOrigin,
+          realtimeHttpOrigin,
+          realtimeConnectOrigin,
+          livekitConnectOrigin,
+          livekitHttpOrigin,
+          "https://storage.googleapis.com",
+        ].filter(Boolean),
       ),
     ].join(" ");
     return [

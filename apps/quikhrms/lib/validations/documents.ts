@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const DocumentCategoryEnum = z.enum([
   "OfferLetter", "Policy", "IdProof", "Certificate", "Contract",
-  "AppointmentLetter", "ExperienceLetter", "RelievingLetter", "NDA", "Other",
+  "AppointmentLetter", "ExperienceLetter", "RelievingLetter", "NDA", "Insurance", "Other",
 ]);
 
 const DocumentStatusEnum = z.enum(["Draft", "Active", "Archived", "Expired"]);

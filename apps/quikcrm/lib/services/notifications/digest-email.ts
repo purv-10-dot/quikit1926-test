@@ -13,9 +13,12 @@
  * tables of ACTUAL records logged in the window:
  *   📞 Calls    — Time · Contact · Company · Duration · Outcome · Notes
  *   📧 Emails   — Time · To · Subject · Delivery · Reply Status
+ *   📩 Email Replies — Time · From · Subject · Original Email · Reply Received
  *   🤝 Meetings — Time · Client · Meeting Type · Status · Notes
  *   ✅ Tasks    — Time · Task · Related Record · Status
  *   📌 <Any other type> — Time · Related Record · Subject · Outcome · Notes
+ *   📊 Lead Activity Summary — Lead Name · Total Activities · Activity Breakdown
+ *      (a rollup of the sections above, grouped by lead; last in each user block)
  * Each empty section shows an honest "No Calls" / "No Emails" / … line, and each
  * user's block ends with a compact count summary (Calls/Emails/Meetings/Tasks/
  * every dynamic type/Total). A small org-wide totals strip sits at the very top.
@@ -57,9 +60,11 @@ import type {
   UserActivityDetail,
   CallDetail,
   EmailDetail,
+  EmailReplyDetail,
   MeetingDetail,
   TaskDetail,
   GenericActivitySection,
+  LeadActivitySummary,
 } from "@/lib/services/notifications/digest-detail";
 import { MAX_ROWS_PER_SECTION } from "@/lib/services/notifications/digest-detail";
 
@@ -151,6 +156,29 @@ function renderEmails(emails: EmailDetail[], total: number): string {
   );
 }
 
+/**
+ * 📩 Email Replies — inbound replies to this rep's outbound mail.
+ *
+ * "Reply Received" is always "Yes": a row exists only because a reply landed.
+ * The column is kept because the spec asks for it and it makes the table
+ * self-describing when skimmed out of context.
+ */
+function renderEmailReplies(replies: EmailReplyDetail[], total: number): string {
+  const heading = subHeading(`📩 Email Replies (${total})`);
+  if (total === 0) return heading + emptyLine("No Email Replies");
+  const rows = replies
+    .map(
+      (r) =>
+        `<tr>${td(escHtml(fmtTime(r.time)))}${td(escHtml(r.from))}${td(escHtml(r.subject))}${td(escHtml(r.originalEmail))}${td(escHtml(r.replyReceived))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Time", "From", "Subject", "Original Email", "Reply Received"], rows) +
+    overflowNote(total, replies.length, "email replies")
+  );
+}
+
 function renderMeetings(meetings: MeetingDetail[], total: number): string {
   const heading = subHeading(`🤝 Meetings (${total})`);
   if (total === 0) return heading + emptyLine("No Meetings");
@@ -210,9 +238,39 @@ function renderGenericSection(s: GenericActivitySection): string {
 }
 
 /**
+ * 📊 Lead Activity Summary — one row per lead the rep worked on in the window.
+ *
+ * A ROLLUP of the sections above, not a new data source, so it is deliberately
+ * absent from Total Activities (that would double-count every row). Sorting and
+ * the breakdown string are decided in digest-detail; this stays presentational.
+ */
+function renderLeadSummary(leads: LeadActivitySummary[], total: number): string {
+  const heading = subHeading(`📊 Lead Activity Summary (${total})`);
+  if (total === 0) {
+    return heading + emptyLine("No lead activity recorded during this reporting period.");
+  }
+  const rows = leads
+    .map(
+      (l) =>
+        `<tr>${td(escHtml(l.leadName))}${td(String(l.total))}${td(escHtml(l.breakdown))}</tr>`,
+    )
+    .join("");
+  return (
+    heading +
+    dataTable(["Lead Name", "Total Activities", "Activity Breakdown"], rows) +
+    overflowNote(total, leads.length, "leads")
+  );
+}
+
+/**
  * Total activities for one user across EVERY type — the four specialized
  * sections plus all dynamically-discovered ones. Single source of truth so the
  * per-user summary, the org strip, and the text fallback can never disagree.
+ *
+ * DELIBERATELY EXCLUDES emailRepliesTotal: a reply is the customer's action, not
+ * work the rep logged, so counting it would inflate rep productivity. If the
+ * business later decides replies ARE activities, add it here — this one function
+ * feeds the per-user summary, the org strip, and the text fallback.
  */
 function userTotal(u: UserActivityDetail): number {
   return u.callsTotal + u.emailsTotal + u.meetingsTotal + u.tasksTotal + (u.otherTotal ?? 0);
@@ -231,7 +289,8 @@ function renderUserSummary(u: UserActivityDetail): string {
     </tr>`;
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;border-collapse:collapse;">
     ${row("Calls", u.callsTotal)}
-    ${row("Emails", u.emailsTotal)}
+    ${row("Emails Sent", u.emailsTotal)}
+    ${row("Email Replies", u.emailRepliesTotal ?? 0)}
     ${row("Meetings", u.meetingsTotal)}
     ${row("Tasks", u.tasksTotal)}
     ${(u.otherSections ?? []).map((s) => row(s.typeLabel, s.total)).join("")}
@@ -286,9 +345,11 @@ function renderUserBlock(u: UserActivityDetail): string {
     ${renderUserBanner(u)}
     ${renderCalls(u.calls, u.callsTotal)}
     ${renderEmails(u.emails, u.emailsTotal)}
+    ${renderEmailReplies(u.emailReplies ?? [], u.emailRepliesTotal ?? 0)}
     ${renderMeetings(u.meetings, u.meetingsTotal)}
     ${renderTasks(u.tasks, u.tasksTotal)}
     ${logged.map(renderGenericSection).join("")}
+    ${renderLeadSummary(u.leadSummary ?? [], u.leadSummaryTotal ?? 0)}
   </td></tr>
   <tr><td style="padding:0 28px;"><div style="border-top:2px solid #e2e8f0;margin:14px 0;"></div></td></tr>`;
 }
@@ -374,7 +435,8 @@ function renderTextBody(d: AssembledDigest): string {
       // Dynamic types are appended after the four fixed ones, same order as HTML.
       const parts = [
         `Calls: ${u.callsTotal}`,
-        `Emails: ${u.emailsTotal}`,
+        `Emails Sent: ${u.emailsTotal}`,
+        `Email Replies: ${u.emailRepliesTotal ?? 0}`,
         `Meetings: ${u.meetingsTotal}`,
         `Tasks: ${u.tasksTotal}`,
         ...(u.otherSections ?? []).map((s) => `${s.typeLabel}: ${s.total}`),

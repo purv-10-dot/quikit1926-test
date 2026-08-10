@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
-import { parseSort } from "@/lib/http/pagination";
+import { parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * GET /api/projects/dpr/export
@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["dprNumber", "reportDate", "status", "createdAt"],
     { field: "reportDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
 
   const rows = await db.cnDailyProgressReport.findMany({
@@ -97,11 +98,16 @@ export async function GET(req: NextRequest) {
   const uomIds = new Set<string>();
   const woIds = new Set<string>();
   const contractorIds = new Set<string>();
+  // FREE_SCOPE work items anchor on an activity (scopeId) instead of a BOQ
+  // item — boqItemId is null for these, so target qty must come from
+  // CnActivityItem.scopeQty, not the BOQ lookup.
+  const activityIds = new Set<string>();
   for (const r of rows) {
     for (const w of r.workItems) {
       if (w.boqItemId) boqIds.add(w.boqItemId);
       if (w.uomId) uomIds.add(w.uomId);
       if (w.woId) woIds.add(w.woId);
+      if (w.scopeType === "ACTIVITY" && w.scopeId) activityIds.add(w.scopeId);
     }
     for (const m of r.materialEntries) {
       if (m.itemId) itemIds.add(m.itemId);
@@ -112,7 +118,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [boqRows, itemRows, uomRows, woRows] = await Promise.all([
+  const [boqRows, itemRows, uomRows, woRows, activityRows] = await Promise.all([
     boqIds.size
       ? db.cnBOQItemV2.findMany({
           where: { id: { in: [...boqIds] }, orgId: ctx.orgId },
@@ -137,7 +143,31 @@ export async function GET(req: NextRequest) {
           select: { id: true, woNumber: true, contractorId: true },
         })
       : Promise.resolve([]),
+    activityIds.size
+      ? db.cnActivityItem.findMany({
+          where: { id: { in: [...activityIds] }, orgId: ctx.orgId },
+          select: {
+            id: true,
+            activityCode: true,
+            uomId: true,
+            tenderQty: true,
+            scopeQty: true,
+          },
+        })
+      : Promise.resolve([]),
   ]);
+
+  // Activity rows carry their own uomId, which is not on the work item —
+  // resolve the codes the first uom query didn't already cover.
+  const extraUomIds = activityRows
+    .map((a) => a.uomId)
+    .filter((v): v is string => typeof v === "string" && v.length > 0 && !uomIds.has(v));
+  const extraUomRows = extraUomIds.length
+    ? await db.cnUOM.findMany({
+        where: { id: { in: [...new Set(extraUomIds)] } },
+        select: { id: true, code: true },
+      })
+    : [];
 
   // Work orders carry their contractor id — fold those in before resolving names.
   for (const wo of woRows) if (wo.contractorId) contractorIds.add(wo.contractorId);
@@ -151,10 +181,23 @@ export async function GET(req: NextRequest) {
   const boqNoById = new Map(boqRows.map((b) => [b.id, b.boqNo]));
   const boqUnitById = new Map(boqRows.map((b) => [b.id, b.unit ?? ""]));
   const boqScopeById = new Map(boqRows.map((b) => [b.id, num(b.scopeQty)]));
+  const activityCodeById = new Map(activityRows.map((a) => [a.id, a.activityCode ?? ""]));
+  // A revised scope qty supersedes the tender baseline — same precedence the
+  // DPR read path applies, so the export and the edit form agree on the
+  // denominator behind % Completed.
+  const activityScopeById = new Map(
+    activityRows.map((a) => {
+      const revised = num(a.scopeQty);
+      return [a.id, revised > 0 ? revised : num(a.tenderQty)];
+    }),
+  );
   const itemNameById = new Map(
     itemRows.map((i) => [i.id, i.code ? `${i.code} — ${i.name}` : i.name]),
   );
-  const uomById = new Map(uomRows.map((u) => [u.id, u.code]));
+  const uomById = new Map([...uomRows, ...extraUomRows].map((u) => [u.id, u.code]));
+  const activityUnitById = new Map(
+    activityRows.map((a) => [a.id, (a.uomId ? uomById.get(a.uomId) : "") ?? ""]),
+  );
   const contractorNameById = new Map(contractorRows.map((c) => [c.id, c.name]));
   const woLabelById = new Map(
     woRows.map((wo) => {
@@ -203,12 +246,21 @@ export async function GET(req: NextRequest) {
       const cumulative = num(w.cumulativeQty);
       const today = num(w.todayQty);
       const prev = Math.max(0, cumulative - today);
-      const target = w.boqItemId ? boqScopeById.get(w.boqItemId) ?? 0 : 0;
+      const isActivity = w.scopeType === "ACTIVITY";
+      const target = isActivity
+        ? (w.scopeId ? activityScopeById.get(w.scopeId) ?? 0 : 0)
+        : (w.boqItemId ? boqScopeById.get(w.boqItemId) ?? 0 : 0);
       workAoa.push([
         dprNo,
-        (w.boqItemId ? boqNoById.get(w.boqItemId) : "") || "",
+        (isActivity
+          ? (w.scopeId ? activityCodeById.get(w.scopeId) : "")
+          : (w.boqItemId ? boqNoById.get(w.boqItemId) : "")) || "",
         w.description ?? "",
-        (w.boqItemId ? boqUnitById.get(w.boqItemId) : "") || uomById.get(w.uomId ?? "") || "",
+        (isActivity
+          ? (w.scopeId ? activityUnitById.get(w.scopeId) : "")
+          : (w.boqItemId ? boqUnitById.get(w.boqItemId) : "")) ||
+          uomById.get(w.uomId ?? "") ||
+          "",
         target,
         w.woId ? woLabelById.get(w.woId) ?? "" : "Self Work",
         prev,

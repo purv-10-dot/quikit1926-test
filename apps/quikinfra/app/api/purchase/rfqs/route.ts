@@ -10,7 +10,7 @@ import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { assertVendorGstActiveForPo } from "@/lib/integrations/whitebooks-gst";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import { db } from "@/lib/db";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * RFQ API — Postgres-backed via `rfq-repository`.
@@ -95,6 +95,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["rfqNumber", "rfqDate", "status", "createdAt"],
     { field: "rfqDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     p,
@@ -122,6 +123,9 @@ interface RfqVendorInput {
   email?: string | null;
   vendorName?: string | null;
   assignedItemIds?: unknown;
+  /** Per-vendor T&C override — empty/absent means "use the RFQ default". */
+  termsAndConditions?: string | null;
+  termsTemplateId?: string | null;
 }
 interface RfqCreateBody {
   sourceIndentId?: string | null;
@@ -134,7 +138,6 @@ interface RfqCreateBody {
   contacts?: unknown;
   contactPerson?: string | null;
   contactMobile?: string | null;
-  termsTemplateId?: string | null;
   status?: string;
 }
 
@@ -292,8 +295,14 @@ export async function POST(req: NextRequest) {
           vendorId: v.vendorId,
           email: String(v.email ?? master?.email ?? "").trim() || null,
           vendorName:
-            master?.companyName || master?.name || v.vendorName || null,
+            master?.name || master?.companyName || v.vendorName || null,
           assignedItemIds,
+          termsAndConditions: v.termsAndConditions
+            ? String(v.termsAndConditions).trim() || null
+            : null,
+          termsTemplateId: v.termsTemplateId
+            ? String(v.termsTemplateId).trim() || null
+            : null,
         };
       });
 
@@ -333,9 +342,11 @@ export async function POST(req: NextRequest) {
       // single-field legacy payload for older callers.
       contactPerson: joinContactNames(body.contacts, body.contactPerson),
       contactMobile: joinContactMobiles(body.contacts, body.contactMobile),
-      termsTemplateId: body.termsTemplateId
-        ? String(body.termsTemplateId).trim() || null
-        : null,
+      // No document-level T&C on the RFQ itself — each vendor row
+      // carries its own override (or falls back to the tenant default
+      // at send time; see `resolveTermsBodyForRfq` in rfq-email.ts).
+      termsTemplateId: null,
+      termsAndConditions: null,
       status: body.status ?? "draft",
       createdBy: ctx.userId,
       lines: repoLines,

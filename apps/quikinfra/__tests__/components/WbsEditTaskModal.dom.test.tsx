@@ -118,6 +118,59 @@ describe("WbsEditTaskModal", () => {
     expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
   });
 
+  // An end date before the start date used to only grey out Save, with no
+  // explanation anywhere on the form.
+  describe("end-date validation", () => {
+    /** Set End Date to a day before the task's 2026-01-01 start. */
+    const setInvalidEndDate = () =>
+      fireEvent.change(screen.getByDisplayValue("2026-01-10"), {
+        target: { value: "2025-12-31" },
+      });
+
+    it("shows an inline message under End Date", () => {
+      setup();
+      setInvalidEndDate();
+      expect(
+        screen.getByText(/end date must be on or after the start date/i),
+      ).toBeInTheDocument();
+    });
+
+    it("marks the End Date input invalid", () => {
+      setup();
+      setInvalidEndDate();
+      expect(screen.getByDisplayValue("2025-12-31")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+    });
+
+    it("blocks saving until the range is corrected", async () => {
+      setup();
+      setInvalidEndDate();
+      const save = screen.getByRole("button", { name: /save changes/i });
+      expect(save).toBeDisabled();
+
+      fireEvent.change(screen.getByDisplayValue("2025-12-31"), {
+        target: { value: "2026-01-05" },
+      });
+      expect(
+        screen.queryByText(/end date must be on or after the start date/i),
+      ).not.toBeInTheDocument();
+      expect(save).toBeEnabled();
+    });
+
+    it("accepts an end date equal to the start date (zero-duration task)", () => {
+      setup();
+      fireEvent.change(screen.getByDisplayValue("2026-01-10"), {
+        target: { value: "2026-01-01" },
+      });
+      expect(
+        screen.queryByText(/end date must be on or after the start date/i),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /save changes/i })).toBeEnabled();
+    });
+  });
+
   it("saving fires the update mutation then onSaved + onClose", async () => {
     const { onClose, onSaved } = setup();
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));

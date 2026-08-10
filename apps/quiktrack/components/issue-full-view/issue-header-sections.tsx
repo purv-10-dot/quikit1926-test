@@ -8,19 +8,15 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
-  ChevronRight,
   Edit3,
   ListTree,
   Zap,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor-lazy";
-import { sanitizeRichText } from "@/lib/sanitize";
-import { RichTextView } from "@/components/rich-text-view";
-import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";
 import { ChildWorkItems } from "./child-work-items";
+import { IssueDescriptionSection } from "./issue-description-section";
 import type { IssuePageData, IssueType } from "./types";
 
 // Matches the edit modal's TYPE_META icons so the breadcrumb + change-type menu
@@ -69,15 +65,8 @@ export function IssueHeaderSections({
   onPatch,
   mentions,
 }: Props) {
-  const [descOpen, setDescOpen] = useState(false);
-  const [descEditing, setDescEditing] = useState(false);
-  const [descDraft, setDescDraft] = useState("");
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const typeMenuRef = useRef<HTMLDivElement>(null);
-  // Auto-open Description when there's content.
-  useEffect(() => {
-    if (issue.description) setDescOpen(true);
-  }, [issue.description]);
   // Close the work-type menu on outside click.
   useEffect(() => {
     if (!typeMenuOpen) return;
@@ -216,80 +205,12 @@ export function IssueHeaderSections({
       </div>
 
       {/* Description (collapsible) */}
-      <section className="mb-5">
-        <button
-          type="button"
-          onClick={() => setDescOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-900"
-        >
-          {descOpen ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
-          Description
-        </button>
-        {descOpen && (
-          <div className="mt-2">
-            {descEditing ? (
-              <div>
-                <RichTextEditor
-                  value={descDraft}
-                  onChange={setDescDraft}
-                  placeholder="Add a description..."
-                  mentions={mentions ?? []}
-                  uploadImage={(file) => uploadProjectImage(projectId, file)}
-                />
-                <div className="mt-2 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDescEditing(false);
-                      setDescDraft("");
-                    }}
-                    className="h-7 px-3 text-xs text-gray-700 rounded hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await onPatch({ description: descDraft });
-                      setDescEditing(false);
-                    }}
-                    className="h-7 px-3 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            ) : issue.description ? (
-              <div
-                onClick={() => {
-                  setDescDraft(issue.description ?? "");
-                  setDescEditing(true);
-                }}
-                className="qt-rich-content text-sm text-gray-800 rounded p-2 -mx-2 cursor-text hover:bg-gray-50"
-              >
-                {/* Read-only render via the SAME TipTap extensions as the editor,
-                    so file attachments render as identical inline cards. */}
-                <RichTextView html={sanitizeRichText(issue.description)} />
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setDescDraft("");
-                  setDescEditing(true);
-                }}
-                className="text-sm text-gray-400 hover:text-gray-600 px-2 -mx-2 py-2 block w-full text-left rounded hover:bg-gray-50"
-              >
-                Add a description...
-              </button>
-            )}
-          </div>
-        )}
-      </section>
+      <IssueDescriptionSection
+        issue={issue}
+        projectId={projectId}
+        onPatch={onPatch}
+        mentions={mentions}
+      />
 
       {/* Children section — Epics list "Child work items" (anything with
           this issue's id as their epicId); regular Tasks/Stories/Bugs list

@@ -10,23 +10,6 @@ vi.mock("@/lib/session", () => ({
 }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 
-const mockProvider = {
-  createRoom: vi.fn(async (roomId: string) => ({ roomId, name: roomId, createdAt: new Date() })),
-  generateToken: vi.fn(async (_roomId: string, userId: string) => `token-${userId}`),
-  listParticipants: vi.fn(async () => []),
-  removeParticipant: vi.fn(async () => undefined),
-  muteParticipant: vi.fn(async () => undefined),
-  muteAllParticipants: vi.fn(async () => undefined),
-};
-
-vi.mock("@/lib/server/calling/sfu-provider", async () => {
-  return {
-    selectSFUMode: () => ({ mode: "stub" }),
-    getSFUProvider: () => mockProvider,
-    __resetSFUForTest: vi.fn(),
-  };
-});
-
 import { getRawSession } from "@/lib/session";
 
 const mockSession = getRawSession as unknown as Mock;
@@ -94,21 +77,24 @@ beforeEach(async () => {
 });
 
 describe("POST /api/calls/group", () => {
-  it("creates an active group call and returns SFU tokens", async () => {
+  it("creates an active group call and returns a room id (no tokens)", async () => {
     const res = await POST(postJson({ channelId: groupChannelId, type: "video" }));
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       call: { id: string; status: string; participants: { userId: string; state: string }[] };
-      sfu: { roomId: string; tokens: Record<string, string> } | null;
+      roomId: string;
     };
 
     expect(body.call.status).toBe("active");
     expect(body.call.participants).toHaveLength(2);
     expect(body.call.participants.every((p) => p.state === "connected")).toBe(true);
-    expect(body.sfu).toBeTruthy();
-    expect(body.sfu?.tokens[aliceId]).toBeTruthy();
-    expect(body.sfu?.tokens[bobId]).toBeTruthy();
+    // Room id is per-call, not per-channel — a second call in the same channel
+    // must not reuse the first call's room.
+    expect(body.roomId).toBe(`call-${body.call.id}`);
+    // No participant tokens in this response — each participant mints its own
+    // via POST /api/calls/:id/token (CALL-3 hardening).
+    expect(body).not.toHaveProperty("sfu");
   });
 
   it("returns 400 when channelId is missing", async () => {

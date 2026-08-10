@@ -42,6 +42,9 @@ export const updateIssueSchema = createIssueSchema
     storyPoints: z.number().int().min(0).max(1000).nullable().optional(),
     eta: z.number().min(0).max(10_000).nullable().optional(),
     customFields: z.record(z.unknown()).optional(),
+    // Optimistic-lock guard for a status change (not a persisted column) — the
+    // status the client believed the issue was on. Stale → 409. See move route.
+    expectedStatusId: z.string().min(1).optional(),
   });
 
 export const moveIssueSchema = z.object({
@@ -49,4 +52,16 @@ export const moveIssueSchema = z.object({
   sprintId: z.string().min(1).nullable().optional(),
   parentId: z.string().min(1).nullable().optional(),
   orderInColumn: z.number().int().min(0).optional(),
+  /**
+   * Optimistic-lock guard: the status the client believed the issue was on when
+   * it initiated the move. If it no longer matches, the move is stale → 409.
+   * Optional for backward compatibility (older clients omit it).
+   */
+  expectedStatusId: z.string().min(1).optional(),
+  /**
+   * Field values submitted from a workflow "Show a screen" (Request input) rule.
+   * Consumed by the transition-screen gate + post-functions. Keyed by screen
+   * field key (e.g. "summary", "description", or a custom "cf:<key>").
+   */
+  inputs: z.record(z.unknown()).optional(),
 });

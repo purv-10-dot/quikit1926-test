@@ -8,6 +8,7 @@ import { AuthGuard } from "@/components/hrms/layout/auth-guard";
 import { RouteGuard } from "@/components/hrms/layout/route-guard";
 import { SessionGuard } from "@/components/session-guard";
 import { SetupGate } from "@/components/hrms/setup/setup-gate";
+import { SupportLauncher } from "@quikit/ui/support";
 
 // Reads the session per request and gates on app access — never prerender.
 export const dynamic = "force-dynamic";
@@ -42,7 +43,11 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
                 <TopBar />
               </div>
             </div>
-            <div className="px-4 py-4 lg:px-6 lg:py-5">
+            {/* pb-24: the SetupGate "Setup x/10" reminder floats fixed at
+                bottom-right on every /settings and /payroll page until org
+                setup is complete — without this clearance it sits directly
+                over a page's bottom-right action button (e.g. Save). */}
+            <div className="px-4 py-4 pb-24 lg:px-6 lg:py-5 lg:pb-24">
               <DelegationBanner />
               {/* Permission gate — a hidden sidebar link must also be an
                   unreachable URL (Quick actions, pasted links, history). */}
@@ -50,6 +55,9 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
             </div>
           </main>
         </div>
+        {/* Floating support launcher — outside <main> so it stays pinned to the
+            viewport rather than scrolling with the page. */}
+        <SupportLauncher appSlug="quikhrms" />
       </SessionGuard>
     </AuthGuard>
   );

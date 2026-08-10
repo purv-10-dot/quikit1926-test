@@ -9,7 +9,7 @@ import {
   countTermsConditions,
   createTermsCondition,
 } from "@/lib/masters/terms-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * GET  /api/masters/terms — list tenant T&C templates (seeded on first call).
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["title", "applicableTo", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

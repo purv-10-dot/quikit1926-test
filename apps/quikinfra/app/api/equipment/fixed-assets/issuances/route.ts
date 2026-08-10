@@ -2,7 +2,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { createIssuance, listIssuances } from "@/lib/equipment/fixed-assets-service";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const sort = parseSort(req, FA_ISSUANCE_SORT_COLUMNS, {
     field: "createdAt",
     order: "desc",
-  });
+  }, NEWEST_FIRST_TIEBREAK);
   const result = await listIssuances({
     orgId: ctxOrResp.orgId,
     search: search || undefined,

@@ -8,7 +8,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
 import { BOQError, boqService } from "@/lib/boq";
 import { computeRABill } from "@/lib/rab/compute";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 const round2 = (n: number): number => Number(n.toFixed(2));
 const round4 = (n: number): number => Number(n.toFixed(4));
@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
       "createdAt",
     ],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const [rows, total] = await Promise.all([
     db.cnRunningAccountBill.findMany({
@@ -205,7 +206,7 @@ export async function POST(req: NextRequest) {
 
       const woLines = await db.cnWorkOrderLine.findMany({
         where: { woId },
-        select: { id: true, boqItemId: true, uomId: true },
+        select: { id: true, boqItemId: true, uomCode: true },
       });
       // FREE_SCOPE WO lines have a null boqItemId and cannot be matched to a
       // BOQ leaf, so they never enter the lookup.
@@ -254,7 +255,7 @@ export async function POST(req: NextRequest) {
           description: String(
             l.description ?? leaf.display_name ?? leaf.description ?? "",
           ),
-          uomId: String(l.uomId ?? woLine?.uomId ?? leaf.unit ?? ""),
+          uomId: String(l.uomId ?? woLine?.uomCode ?? leaf.unit ?? ""),
           totalQty,
           previousQty,
           currentQty,

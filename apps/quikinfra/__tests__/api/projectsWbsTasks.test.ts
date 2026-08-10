@@ -148,6 +148,35 @@ describe("POST /api/projects/[projectId]/wbs/tasks", () => {
     expect(res.status).toBe(404);
   });
 
+  it("returns 400 when the end date precedes the start date", async () => {
+    setContext(makeAdminCtx());
+    db.cnProject.findFirst.mockResolvedValue({ id: PROJECT });
+    const res = await POST(
+      buildPOST({ wbsCode: "1", name: "Task", startDate: "2026-01-10", endDate: "2026-01-01" }),
+      params,
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/earlier than start date/i);
+    // Rejected before any write.
+    expect(db.cnWBSTask.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts an end date equal to the start date (zero-duration task)", async () => {
+    setContext(makeAdminCtx());
+    db.cnProject.findFirst.mockResolvedValue({ id: PROJECT });
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    db.cnWBSTask.create.mockResolvedValue({
+      id: "t1", parentId: null, wbsCode: "1", name: "Task",
+      startDate: new Date("2026-01-01"), endDate: new Date("2026-01-01"),
+      status: "not_started", progress: 0,
+    });
+    const res = await POST(
+      buildPOST({ wbsCode: "1", name: "Task", startDate: "2026-01-01", endDate: "2026-01-01" }),
+      params,
+    );
+    expect(res.status).toBe(201);
+  });
+
   it("creates a task scoped to the org + project and returns 201", async () => {
     setContext(makeAdminCtx());
     db.cnProject.findFirst.mockResolvedValue({ id: PROJECT });

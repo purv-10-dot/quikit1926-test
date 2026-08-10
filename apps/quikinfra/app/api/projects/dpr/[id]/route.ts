@@ -6,6 +6,10 @@ import { getTenantContext, tenantUpdate, hasMatrixAction } from "@/lib/auth/cont
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { resolveUserNames } from "@/lib/users/resolve-names";
+import {
+  buildApprovalDto,
+  collectApprovalUserIds,
+} from "@/lib/approvals/approval-dto";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 import { resolveMaterialMeta } from "@/lib/projects/dpr-material-meta";
@@ -429,16 +433,7 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
       },
     });
     if (instance) {
-      const userIds = Array.from(
-        new Set<string>([
-          instance.requestedById,
-          ...instance.history.map((h) => h.actionById),
-          ...(instance.workflow.steps
-            .map((s) => s.approverUserId)
-            .filter(Boolean) as string[]),
-        ]),
-      );
-      const nameById = await resolveUserNames(userIds);
+      const nameById = await resolveUserNames(collectApprovalUserIds(instance));
       const callerCanActOnCurrentStep = canActOnCurrentStep(
         {
           userId: auth.userId,
@@ -448,36 +443,14 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
         instance,
         row.projectId ?? null,
       );
-      approval = {
-        id: instance.id,
-        status: instance.status,
-        currentStepOrder: instance.currentStepOrder,
-        canActOnCurrentStep: callerCanActOnCurrentStep,
-        completedAt: instance.completedAt?.toISOString?.() ?? null,
-        requestedAt: instance.requestedAt.toISOString(),
-        requestedById: instance.requestedById,
-        requestedByName: nameById.get(instance.requestedById) ?? "User",
-        workflow: {
-          id: instance.workflow.id,
-          name: instance.workflow.name,
-          steps: instance.workflow.steps.map((s) => ({
-            stepOrder: s.stepOrder,
-            approverRoleId: s.approverRoleId,
-            approverUserId: s.approverUserId,
-            approverUserName: s.approverUserId
-              ? (nameById.get(s.approverUserId) ?? null)
-              : null,
-          })),
-        },
-        history: instance.history.map((h) => ({
-          stepOrder: h.stepOrder,
-          action: h.action,
-          actionById: h.actionById,
-          actionByName: nameById.get(h.actionById) ?? "User",
-          actionAt: h.actionAt.toISOString(),
-          comments: h.comments,
-        })),
-      };
+      // Shared builder rather than a local copy — it also resolves the
+      // instance's submit-time step snapshot and the workflow-repair state the
+      // detail page's banner needs.
+      approval = buildApprovalDto(
+        instance,
+        nameById,
+        callerCanActOnCurrentStep,
+      );
     }
   }
 

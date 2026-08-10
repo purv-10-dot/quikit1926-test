@@ -35,7 +35,6 @@ const EPIC_PAGE = 20;
  */
 export function EpicPanel({
   projectId,
-  defaultStatusId,
   onOpenEpic,
   onCreated,
   onClose,
@@ -43,6 +42,8 @@ export function EpicPanel({
   onSelectEpic,
 }: {
   projectId: string;
+  /** Accepted for API compatibility but no longer used — the server assigns the
+   *  correct initial status. */
   defaultStatusId?: string;
   onOpenEpic: (id: string) => void;
   /** Notify the parent so its epic-linker list refreshes too. */
@@ -167,7 +168,10 @@ export function EpicPanel({
       const res = await fetch("/api/issues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, title: t, type: "EPIC", statusId: defaultStatusId }),
+        // No forced status — the server assigns the workflow's INITIAL status
+        // (e.g. classic "Open") when a workflow governs the project, else the
+        // first status by order.
+        body: JSON.stringify({ projectId, title: t, type: "EPIC" }),
       }).then((r) => r.json());
       if (res?.success) {
         setTitle("");

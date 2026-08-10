@@ -70,6 +70,15 @@ describe("RolePermissionMatrix", () => {
     expect(screen.getByRole("button", { name: /discard/i })).toBeInTheDocument();
   });
 
+  it("automatically enables View when a write permission is granted", () => {
+    setup();
+    const row = screen.getByText("Companies").closest("tr")!;
+    const [view, create] = within(row).getAllByRole("checkbox") as HTMLInputElement[];
+    expect(view.checked).toBe(false);
+    fireEvent.click(create);
+    expect(create.checked).toBe(true);
+    expect(view.checked).toBe(true);
+  });
   it("Discard reverts toggled cells back to the initial grants", () => {
     setup();
     const firstBox = screen.getAllByRole("checkbox")[0]! as HTMLInputElement;

@@ -7,7 +7,14 @@ import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findRfqById } from "@/lib/purchase/rfq-repository";
 import { sendRfqEmailsToVendors } from "@/lib/purchase/rfq-email";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 
 /**
  * POST /api/purchase/rfqs/:id/approve — multi-step RFQ approval.
@@ -29,7 +36,7 @@ import { canActOnStep } from "@/lib/approvals/workflow-rbac";
  * Body: { action: "approve" | "reject" | "return", comments? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -52,7 +59,7 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!GATE_ACTIONS.includes(action)) {
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
   if ((action === "reject" || action === "return") && !comments) {
@@ -77,118 +84,48 @@ export async function POST(
   if (!instance) {
     return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
   }
-  if (instance.status !== "pending_approval") {
-    return NextResponse.json(
-      { error: `Approval already ${instance.status} — no further actions allowed.` },
-      { status: 409 },
-    );
-  }
-
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
+  // Authorisation, step resolution and the repair / master-approval branches
+  // live in the shared gate; this route keeps only the RFQ's own fields and the
+  // vendor fan-out.
+  const gate = await gateApprovalAction({
+    ctx,
+    instance,
+    entityLabel: "RFQ",
+    action,
+    comments,
+    projectId: rfq.projectId ?? null,
   });
-  if (!currentStep) {
-    return NextResponse.json(
-      {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this RFQ was mid-flight.`,
-      },
-      { status: 500 },
-    );
+  if (gate.kind === "error") {
+    return NextResponse.json(gate.body, { status: gate.status });
   }
-
-  if (
-    !canActOnStep(
-      { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-      {
-        approverUserId: currentStep.approverUserId,
-        approverUserIds: Array.isArray(currentStep.approverUserIds)
-          ? currentStep.approverUserIds
-          : null,
-        approverRoleId: currentStep.approverRoleId,
-      },
-      rfq.projectId ?? null,
-    )
-  ) {
-    let expected = "an authorized approver";
-    if (currentStep.approverUserId) {
-      const pinned = await findCnUserById(currentStep.approverUserId);
-      expected = pinned?.fullName
-        ? `${pinned.fullName} (pinned approver)`
-        : "the pinned approver for this step";
-    } else if (currentStep.approverRoleId) {
-      expected =
-        `a user with role "${currentStep.approverRoleId}"` +
-        (rfq.projectId ? ` assigned to this project` : "");
-    }
-    return NextResponse.json(
-      {
-        error: `You are not authorized to ${action} this RFQ at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-      },
-      { status: 403 },
-    );
-  }
-
-  // Find the next step by ascending stepOrder so approvals follow the
-  // admin's actual numbering, even if it's non-contiguous.
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
 
   let finalRfqStatus: string | null = null;
-  let isFinalApprove = false;
+  const isFinalApprove = gate.isFinalApprove;
+  let conflict: ClaimResult["conflict"] | undefined;
 
   await db.$transaction(async (tx) => {
-    await tx.cnApprovalHistory.create({
-      data: {
-        instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
-        actionById: ctx.userId,
-        comments: comments || null,
-      },
-    });
+    const claim = await claimAndRecord(tx, ctx, instance, gate);
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
 
-    if (action === "approve") {
-      if (!nextStep) {
-        // Final step — close instance and flip the RFQ.
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
-        });
+    if (gate.effectiveAction === "approve") {
+      if (gate.isFinalApprove) {
         await tx.cnRfq.update({
           where: { id: rfq.id },
           data: { status: "approved", updatedBy: ctx.userId },
         });
         finalRfqStatus = "approved";
-        isFinalApprove = true;
-      } else {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { currentStepOrder: nextStep.stepOrder },
-        });
       }
-    } else if (action === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
+      // Intermediate — RFQ stays as it is; the gate advanced the instance.
+    } else if (gate.effectiveAction === "reject") {
       await tx.cnRfq.update({
         where: { id: rfq.id },
         data: { status: "rejected", updatedBy: ctx.userId },
       });
       finalRfqStatus = "rejected";
     } else {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
       await tx.cnRfq.update({
         where: { id: rfq.id },
         data: { status: "draft", approvalId: null, updatedBy: ctx.userId },
@@ -196,6 +133,14 @@ export async function POST(
       finalRfqStatus = "draft";
     }
   });
+
+  // Lost the claim — someone else settled this RFQ first. Nothing was written,
+  // so return before the vendor fan-out below.
+  if (conflict) {
+    return NextResponse.json(await gateConflictResponse(conflict, "RFQ"), {
+      status: 409,
+    });
+  }
 
   // Fan out the RFQ PDF to vendors ONLY at final approve — never on
   // intermediate steps, reject, or return. This is the whole point of

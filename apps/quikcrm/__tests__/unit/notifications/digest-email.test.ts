@@ -46,6 +46,16 @@ function repOne(): UserActivityDetail {
       },
     ],
     emailsTotal: 1,
+    emailReplies: [
+      {
+        time: new Date("2026-07-19T10:42:00.000Z"),
+        from: "Rahul Sharma",
+        subject: "Re: Proposal",
+        originalEmail: "Proposal Sent",
+        replyReceived: "Yes",
+      },
+    ],
+    emailRepliesTotal: 1,
     meetings: [
       {
         time: new Date("2026-07-19T11:30:00.000Z"),
@@ -67,6 +77,11 @@ function repOne(): UserActivityDetail {
     tasksTotal: 1,
     otherSections: [],
     otherTotal: 0,
+    leadSummary: [
+      { leadId: "l1", leadName: "ABC Pvt Ltd", total: 8, breakdown: "3 Emails, 2 Replies, 1 Task" },
+      { leadId: "l2", leadName: "XYZ Industries", total: 5, breakdown: "2 Tasks, 1 Meeting, 2 Emails" },
+    ],
+    leadSummaryTotal: 2,
   };
 }
 
@@ -78,12 +93,16 @@ function repTwoEmpty(): UserActivityDetail {
     callsTotal: 0,
     emails: [],
     emailsTotal: 0,
+    emailReplies: [],
+    emailRepliesTotal: 0,
     meetings: [],
     meetingsTotal: 0,
     tasks: [],
     tasksTotal: 0,
     otherSections: [],
     otherTotal: 0,
+    leadSummary: [],
+    leadSummaryTotal: 0,
   };
 }
 
@@ -180,6 +199,107 @@ describe("renderDigestEmail — detailed per-user layout (redesign)", () => {
   it("renders a per-user count summary (Calls/Emails/Meetings/Tasks/Total Activities)", () => {
     const { html } = renderDigestEmail(sampleDigest());
     expect(html).toMatch(/Total Activities/);
+  });
+
+  // ── Email Replies section ──────────────────────────────────────────────────
+  it("renders the 📩 Email Replies section with all five columns and real values", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toMatch(/Email Replies \(1\)/);
+    expect(html).toContain("Original Email");
+    expect(html).toContain("Reply Received");
+    expect(html).toContain("Re: Proposal");
+    expect(html).toContain("Proposal Sent");
+  });
+
+  it("Email Replies appears immediately after the Emails section, before Meetings", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    const emails = html.search(/Emails \(1\)/);
+    const replies = html.search(/Email Replies \(1\)/);
+    const meetings = html.search(/Meetings \(1\)/);
+    expect(emails).toBeGreaterThanOrEqual(0);
+    expect(replies).toBeGreaterThan(emails);
+    expect(meetings).toBeGreaterThan(replies);
+  });
+
+  it("zero replies → honest 'No Email Replies' empty state", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toMatch(/No Email Replies/);
+  });
+
+  it("renames the summary row to 'Emails Sent' and adds an 'Email Replies' row", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toContain("Emails Sent");
+    expect(html).toContain("Email Replies");
+  });
+
+  it("EXCLUDES email replies from Total Activities (a reply is not rep-logged work)", () => {
+    // rep one: 1 call + 1 email + 1 meeting + 1 task = 4, plus 1 reply that must NOT count.
+    const { text } = renderDigestEmail(sampleDigest());
+    expect(text).toContain("Email Replies: 1");
+    expect(text).toContain("Total: 4");
+    expect(text).not.toContain("Total: 5");
+  });
+
+  it("a fixture omitting the reply fields still renders (defensive ?? guards)", () => {
+    const legacy = sampleDigest();
+    // Simulate a caller built before this field existed.
+    const u = legacy.userDetails[0] as unknown as Record<string, unknown>;
+    delete u.emailReplies;
+    delete u.emailRepliesTotal;
+    const { html } = renderDigestEmail(legacy);
+    expect(html).toMatch(/Email Replies \(0\)/);
+    expect(html).toMatch(/No Email Replies/);
+  });
+
+  // ── Lead Activity Summary section ──────────────────────────────────────────
+  it("renders the 📊 Lead Activity Summary with all three columns and real values", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toMatch(/Lead Activity Summary \(2\)/);
+    expect(html).toContain("Lead Name");
+    expect(html).toContain("Total Activities");
+    expect(html).toContain("Activity Breakdown");
+    expect(html).toContain("ABC Pvt Ltd");
+    expect(html).toContain("3 Emails, 2 Replies, 1 Task");
+  });
+
+  it("Lead Activity Summary is LAST in the user block (after Tasks and dynamic types)", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    const tasks = html.search(/Tasks Completed \(1\)/);
+    const lead = html.search(/Lead Activity Summary/);
+    expect(tasks).toBeGreaterThanOrEqual(0);
+    expect(lead).toBeGreaterThan(tasks);
+  });
+
+  it("lists most-active leads first (sorted by total desc)", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html.search(/ABC Pvt Ltd/)).toBeLessThan(html.search(/XYZ Industries/));
+  });
+
+  it("no lead activity → honest empty state, not a fabricated row", () => {
+    const { html } = renderDigestEmail(sampleDigest());
+    expect(html).toContain("No lead activity recorded during this reporting period.");
+  });
+
+  it("EXCLUDES the lead rollup from Total Activities (it would double-count)", () => {
+    // rep one: 4 real activities; leadSummary totals 13 and must not leak in.
+    const { text } = renderDigestEmail(sampleDigest());
+    expect(text).toContain("Total: 4");
+  });
+
+  it("reuses the shared overflow note when the lead list is capped", () => {
+    const d = sampleDigest();
+    d.userDetails[0].leadSummaryTotal = 60; // 2 shown, 60 distinct leads
+    const { html } = renderDigestEmail(d);
+    expect(html).toMatch(/\+58 more leads not shown/);
+  });
+
+  it("a fixture omitting the lead fields still renders (defensive ?? guards)", () => {
+    const legacy = sampleDigest();
+    const u = legacy.userDetails[0] as unknown as Record<string, unknown>;
+    delete u.leadSummary;
+    delete u.leadSummaryTotal;
+    const { html } = renderDigestEmail(legacy);
+    expect(html).toMatch(/Lead Activity Summary \(0\)/);
   });
 
   it("shows an org-wide totals strip near the top (before the first user block)", () => {

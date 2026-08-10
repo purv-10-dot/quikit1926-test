@@ -72,6 +72,21 @@ export interface EmailDetail {
   delivery: string; // "Sent" — recorded; the model has no real delivery tracking
   replyStatus: string; // "Customer Replied" | "No Reply"
 }
+/**
+ * One inbound reply received on a thread the rep sent into during the window.
+ *
+ * "Original Email" is the subject of the LATEST outbound message in the same
+ * thread sent before this reply arrived — the mail the customer was answering.
+ * Thread-based, matching how EmailDetail.replyStatus is already derived, so the
+ * two can never disagree about whether a thread got a reply.
+ */
+export interface EmailReplyDetail {
+  time: Date | null; // receivedAt
+  from: string;
+  subject: string;
+  originalEmail: string;
+  replyReceived: string; // always "Yes" — a row exists only because a reply landed
+}
 export interface MeetingDetail {
   time: Date | null;
   client: string;
@@ -111,6 +126,25 @@ export interface GenericActivitySection {
   total: number;
 }
 
+/**
+ * One lead the rep worked on during the window, with a per-category breakdown.
+ *
+ * Built ENTIRELY from data already assembled for the other sections — no extra
+ * queries. Every contributing source carries relatedKind/relatedObjectId, so a
+ * row is attributed to a lead only when relatedKind === "Lead"; activity against
+ * an Opportunity/Contact/Account, or standalone activity, is excluded rather than
+ * bucketed under a misleading lead name.
+ *
+ * `breakdown` is pre-formatted ("3 Emails, 2 Replies, 1 Task") so the renderer
+ * stays presentation-only, consistent with the other detail shapes.
+ */
+export interface LeadActivitySummary {
+  leadId: string;
+  leadName: string;
+  total: number;
+  breakdown: string;
+}
+
 export interface UserActivityDetail {
   userId: string;
   userName: string;
@@ -118,6 +152,13 @@ export interface UserActivityDetail {
   callsTotal: number;
   emails: EmailDetail[];
   emailsTotal: number;
+  /**
+   * Inbound replies to this user's outbound emails. Deliberately NOT added to
+   * Total Activities — a reply is the customer's action, not the rep's logged
+   * work. See userTotal() in digest-email.ts.
+   */
+  emailReplies: EmailReplyDetail[];
+  emailRepliesTotal: number;
   meetings: MeetingDetail[];
   meetingsTotal: number;
   tasks: TaskDetail[];
@@ -134,6 +175,15 @@ export interface UserActivityDetail {
   otherSections: GenericActivitySection[];
   /** Sum of `total` across otherSections — counted in Total Activities. */
   otherTotal: number;
+  /**
+   * Lead-wise rollup of everything above, sorted by total desc. A VIEW of the
+   * other sections, not a new data source — it adds nothing to Total Activities.
+   * Capped at MAX_ROWS_PER_SECTION with `leadSummaryTotal` carrying the true
+   * lead count so the renderer can show "+N more leads not shown".
+   */
+  leadSummary: LeadActivitySummary[];
+  /** Distinct leads worked on — may exceed leadSummary.length when capped. */
+  leadSummaryTotal: number;
 }
 
 type Range = { from: Date; to: Date };
@@ -382,6 +432,10 @@ export async function assembleUserActivityDetail(
           sentAt: true,
           toAddresses: true,
           subject: true,
+          // For the lead-wise rollup — CrmEmailMessage carries its own related
+          // record (indexed on orgId+relatedKind+relatedObjectId).
+          relatedKind: true,
+          relatedObjectId: true,
         },
         orderBy: { sentAt: "asc" },
       })
@@ -389,11 +443,23 @@ export async function assembleUserActivityDetail(
 
   // Reply derivation: a thread has a reply if it holds any inbound message after
   // the outbound sentAt. Batch: for the threads we touched, find inbound rows.
+  //
+  // The same rows feed the 📩 Email Replies section, so we select the display
+  // columns (fromAddress/subject) too — one query serves both the replyStatus
+  // flag and the detailed reply table.
   const threadIds = [...new Set(emailMessages.map((m) => m.threadId))];
   const inboundRows = threadIds.length
     ? await prisma.crmEmailMessage.findMany({
         where: { orgId, threadId: { in: threadIds }, direction: "inbound" },
-        select: { threadId: true, receivedAt: true },
+        select: {
+          threadId: true,
+          receivedAt: true,
+          fromAddress: true,
+          subject: true,
+          relatedKind: true,
+          relatedObjectId: true,
+        },
+        orderBy: { receivedAt: "asc" },
       })
     : [];
   const inboundByThread = new Map<string, Date[]>();
@@ -404,12 +470,33 @@ export async function assembleUserActivityDetail(
     inboundByThread.set(r.threadId, arr);
   }
 
+  // Thread → the rep's outbound messages, so a reply can name the mail it
+  // answers and be attributed to the right user. A thread can hold outbound
+  // mail from more than one scoped rep; each reply is credited to the rep whose
+  // send most recently preceded it.
+  const outboundByThread = new Map<string, { sentAt: Date; subject: string; userId: string }[]>();
+  for (const m of emailMessages) {
+    const uid = mailboxUserById.get(m.mailboxConnectionId);
+    if (!uid || !m.sentAt) continue;
+    const arr = outboundByThread.get(m.threadId) ?? [];
+    arr.push({ sentAt: m.sentAt, subject: m.subject || "(no subject)", userId: uid });
+    outboundByThread.set(m.threadId, arr);
+  }
+
   // ── Meetings ─────────────────────────────────────────────────────────────────
   // Meeting activities are type="OpportunityClientMeeting"; rich detail lives on
   // CrmOpportunityClientMeeting (join via opportunityId). Client = opp's account.
   const meetingActivities = await prisma.crmActivity.findMany({
     where: { ...windowWhere, ...owner, type: "OpportunityClientMeeting" },
-    select: { ownerId: true, occurredAt: true, opportunityId: true, relatedObjectId: true },
+    select: {
+      ownerId: true,
+      occurredAt: true,
+      opportunityId: true,
+      relatedObjectId: true,
+      // relatedKind lets the lead-wise rollup tell a Lead-linked meeting from an
+      // Opportunity-linked one; the meeting section itself doesn't need it.
+      relatedKind: true,
+    },
     orderBy: { occurredAt: "asc" },
   });
   const meetingOppIds = [
@@ -495,6 +582,34 @@ export async function assembleUserActivityDetail(
   const genericLabels = await resolveRelatedLabels(orgId, genericActivities);
   const { rankOf: rankOfType, activeLabels } = await activityTypeOrder(orgId);
 
+  // ── Lead-wise rollup accumulator ────────────────────────────────────────────
+  // A VIEW over the collections already fetched above — no new queries. Keyed
+  // (userId → leadId → category → count). Declared before the fold loops so
+  // every one of them (including email replies) can contribute.
+  const leadRollup = new Map<string, Map<string, Map<string, number>>>();
+  const bumpLead = (
+    userId: string | null | undefined,
+    relatedKind: string | null | undefined,
+    relatedObjectId: string | null | undefined,
+    category: string,
+  ): void => {
+    // Only Lead-related rows belong in a lead summary. Opportunity/Contact/
+    // Account and standalone ("None") activity is intentionally excluded.
+    if (!userId || !relatedObjectId) return;
+    if ((relatedKind ?? "").toLowerCase() !== "lead") return;
+    let byLead = leadRollup.get(userId);
+    if (!byLead) {
+      byLead = new Map();
+      leadRollup.set(userId, byLead);
+    }
+    let counts = byLead.get(relatedObjectId);
+    if (!counts) {
+      counts = new Map();
+      byLead.set(relatedObjectId, counts);
+    }
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  };
+
   // ── Fold everything into per-user buckets ────────────────────────────────────
   const byUser = new Map<string, UserActivityDetail>();
   const ensure = (uid: string | null | undefined): UserActivityDetail | null => {
@@ -508,12 +623,16 @@ export async function assembleUserActivityDetail(
         callsTotal: 0,
         emails: [],
         emailsTotal: 0,
+        emailReplies: [],
+        emailRepliesTotal: 0,
         meetings: [],
         meetingsTotal: 0,
         tasks: [],
         tasksTotal: 0,
         otherSections: [],
         otherTotal: 0,
+        leadSummary: [],
+        leadSummaryTotal: 0,
       };
       byUser.set(uid, u);
     }
@@ -556,6 +675,34 @@ export async function assembleUserActivityDetail(
     });
   }
 
+  // ── Email replies ───────────────────────────────────────────────────────────
+  // One row per inbound message that landed after one of the rep's sends on the
+  // same thread. Attributed to the rep whose outbound most recently preceded the
+  // reply, so a thread touched by two reps credits each fairly. Inbound mail on
+  // a thread the rep never sent into is not a reply to them and is skipped
+  // (outboundByThread is keyed off this window's outbound messages only).
+  for (const r of inboundRows) {
+    if (!r.receivedAt) continue;
+    const sends = outboundByThread.get(r.threadId);
+    if (!sends?.length) continue;
+    const preceding = sends.filter((s) => s.sentAt.getTime() < r.receivedAt!.getTime());
+    if (!preceding.length) continue; // inbound predates every send — not a reply
+    const original = preceding.reduce((a, b) => (a.sentAt >= b.sentAt ? a : b));
+    const u = ensure(original.userId);
+    if (!u) continue;
+    u.emailRepliesTotal += 1;
+    // Lead-wise rollup: attribute the reply to the same rep credited above.
+    bumpLead(original.userId, r.relatedKind, r.relatedObjectId, "Replies");
+    if (u.emailReplies.length >= MAX_ROWS_PER_SECTION) continue;
+    u.emailReplies.push({
+      time: r.receivedAt,
+      from: r.fromAddress || "—",
+      subject: r.subject || "(no subject)",
+      originalEmail: original.subject,
+      replyReceived: "Yes",
+    });
+  }
+
   for (const m of meetingActivities) {
     const u = ensure(m.ownerId);
     if (!u) continue;
@@ -591,6 +738,22 @@ export async function assembleUserActivityDetail(
       relatedRecord: related,
       status: t.status,
     });
+  }
+
+  for (const c of callActivities) bumpLead(c.ownerId, c.relatedKind, c.relatedObjectId, "Calls");
+  for (const m of emailMessages) {
+    bumpLead(mailboxUserById.get(m.mailboxConnectionId), m.relatedKind, m.relatedObjectId, "Emails");
+  }
+  for (const m of meetingActivities) {
+    bumpLead(m.ownerId, m.relatedKind, m.relatedObjectId, "Meetings");
+  }
+  for (const t of completedTasks) {
+    bumpLead(t.assignedToUserId, t.relatedKind, t.relatedObjectId, "Tasks");
+  }
+  // Dynamic types keep their own label ("Notes", "Stage Changed", custom types),
+  // so the breakdown names exactly what the Activities module recorded.
+  for (const a of genericActivities) {
+    bumpLead(a.ownerId, a.relatedKind, a.relatedObjectId, a.type.trim() || "Other");
   }
 
   // Dynamic sections: bucket per (user → type label). The section list is built
@@ -639,6 +802,72 @@ export async function assembleUserActivityDetail(
       if (ra !== rb) return ra - rb;
       return a.typeLabel.localeCompare(b.typeLabel);
     });
+  }
+
+  // ── Lead-wise summary: fold the accumulator into sorted display rows ─────────
+  //
+  // Lead NAMES: the label maps built for the other sections already cover most
+  // leads (rowKey is "lead:<id>"). A lead reached only via a source with no
+  // resolver pass — e.g. an email whose lead had no call/task/generic activity —
+  // wouldn't be in them, so we batch-fetch exactly those stragglers in ONE query
+  // rather than leaving rows labelled "—".
+  const leadNameById = new Map<string, string>();
+  for (const map of [callContactLabels, taskRelatedLabels, genericLabels]) {
+    for (const [k, label] of map) {
+      if (!k.startsWith("lead:")) continue;
+      const id = k.slice("lead:".length);
+      // Skip placeholder labels so a real name from another map can win.
+      if (label && label !== "—" && label !== "(deleted)") leadNameById.set(id, label);
+    }
+  }
+  const allLeadIds = new Set<string>();
+  for (const byLead of leadRollup.values()) for (const id of byLead.keys()) allLeadIds.add(id);
+  const missingLeadIds = [...allLeadIds].filter((id) => !leadNameById.has(id));
+  if (missingLeadIds.length) {
+    const rows = await prisma.crmLead.findMany({
+      where: { orgId, id: { in: missingLeadIds } },
+      select: { id: true, name: true, company: true },
+    });
+    for (const l of rows) leadNameById.set(l.id, l.name || l.company || "—");
+  }
+
+  // Category display order: the fixed sections first (matching the order they
+  // appear in the email), then dynamic types alphabetically for stability.
+  const CATEGORY_ORDER = ["Calls", "Emails", "Replies", "Meetings", "Tasks"];
+  const categoryRank = (c: string): number => {
+    const i = CATEGORY_ORDER.indexOf(c);
+    return i === -1 ? CATEGORY_ORDER.length : i;
+  };
+  /** "3 Emails, 2 Replies, 1 Task" — singularises a trailing "s" when count is 1. */
+  const formatBreakdown = (counts: Map<string, number>): string =>
+    [...counts.entries()]
+      .sort((a, b) => {
+        const ra = categoryRank(a[0]);
+        const rb = categoryRank(b[0]);
+        if (ra !== rb) return ra - rb;
+        return a[0].localeCompare(b[0]);
+      })
+      .map(([label, n]) => {
+        const word = n === 1 && label.endsWith("s") ? label.slice(0, -1) : label;
+        return `${n} ${word}`;
+      })
+      .join(", ");
+
+  for (const u of byUser.values()) {
+    const byLead = leadRollup.get(u.userId);
+    if (!byLead?.size) continue; // leaves the [] / 0 defaults → honest empty state
+    const summaries: LeadActivitySummary[] = [...byLead.entries()].map(([leadId, counts]) => ({
+      leadId,
+      leadName: leadNameById.get(leadId) ?? "—",
+      total: [...counts.values()].reduce((s, n) => s + n, 0),
+      breakdown: formatBreakdown(counts),
+    }));
+    // Most active leads first; name then id break ties so output is deterministic.
+    summaries.sort(
+      (a, b) => b.total - a.total || a.leadName.localeCompare(b.leadName) || a.leadId.localeCompare(b.leadId),
+    );
+    u.leadSummaryTotal = summaries.length;
+    u.leadSummary = summaries.slice(0, MAX_ROWS_PER_SECTION);
   }
 
   // Sort users by total activity (busiest first), then by name for stability.

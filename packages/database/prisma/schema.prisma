@@ -8,7 +8,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikchat", "app_quikcredflow", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcredflow", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikinsight", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -220,6 +220,7 @@ model Org {
   userAppRoles             UserAppRole[]
   userPermissionExtras     UserPermissionExtra[]
   userTablePreferences     UserTablePreference[]
+  qsUserViewPrefs          QsUserViewPref[]
   wwwItems                 WWWItem[]
   brands                   Brand[]
   AppRole                  QtAppRole[]
@@ -234,6 +235,10 @@ model Org {
   qtCustomFields           QtCustomField[]
   qtIssueFieldValues       QtIssueFieldValue[]
   qtCustomFieldAudits      QtCustomFieldAudit[]
+  qtWorkflows              QtWorkflow[]
+  qtResolutions            QtResolution[]
+  qtWorkflowSchemes        QtWorkflowScheme[]
+  qtScreens                QtScreen[]
   QtTimesheetEntry         QtTimesheetEntry[]
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
@@ -282,6 +287,7 @@ model Org {
   featureFlags             FeatureFlag[]
   invoices                 Invoice[]
   notifications            Notification[]
+  supportTickets           SupportTicket[]
   sessionEvents            SessionEvent[]
   teams                    Team[]
   userTeams                UserTeam[]
@@ -371,6 +377,7 @@ model Org {
   qcfFieldValues                    QcfFieldValue[]
   qcfSetSelectionLogs               QcfSetSelectionLog[]
   qcfFileAttachments                QcfFileAttachment[]
+  demoDataState            DemoDataState?
 
   @@index([slug])
   @@index([status])
@@ -440,6 +447,7 @@ model User {
   appRoles                UserAppRole[]
   permissionExtras        UserPermissionExtra[]
   tablePreferences        UserTablePreference[]
+  qsUserViewPrefs         QsUserViewPref[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   cnUserAppRoles          CnUserAppRole[]
@@ -643,6 +651,7 @@ model QsTeam {
   updatedAt               DateTime                 @updatedAt
   createdBy               String?
   deletedAt               DateTime?
+  isDemoData              Boolean                  @default(false)
   accountabilityFunctions AccountabilityFunction[]
   kpis                    KPI[]
   priorities              Priority[]
@@ -692,6 +701,7 @@ model AccountabilityFunction {
   expectedOutcomes  String?
   leadingIndicators String?
   deletedAt         DateTime?
+  isDemoData        Boolean                  @default(false)
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   assignedTo        User?                    @relation(fields: [assignedToUserId], references: [id])
@@ -756,6 +766,7 @@ model KPI {
   lastNotesAt        DateTime?
   lastNotedBy        String?
   deletedAt          DateTime?
+  isDemoData         Boolean          @default(false)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   createdBy          String
@@ -934,6 +945,7 @@ model Priority {
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
+  isDemoData       Boolean                @default(false)
   org              Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user       User                   @relation("PriorityOwner", fields: [owner], references: [id])
   team             QsTeam?                @relation(fields: [teamId], references: [id])
@@ -983,11 +995,17 @@ model WWWItem {
   category         String?
   originalDueDate  DateTime?
   revisedDates     String[]
+  /// "To Be Decided" due date. When true, `when` holds a placeholder (the
+  /// creation date) and the UI renders "To be decided" instead of the date.
+  /// `when` deliberately stays NOT NULL so every existing reader, sort and
+  /// index keeps working unchanged.
+  dueDateTBD       Boolean          @default(false)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
+  isDemoData       Boolean          @default(false)
   whoIds           String[]         @default([])
   org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs     WWWRevisionLog[]
@@ -1067,6 +1085,7 @@ model CategoryMaster {
   /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
   /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
   position      Float?
+  isDemoData    Boolean  @default(false)
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
@@ -1093,6 +1112,7 @@ model UnitMaster {
   deletedAt   DateTime?
   /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
   position    Float?
+  isDemoData  Boolean  @default(false)
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
@@ -1212,6 +1232,24 @@ model UserTablePreference {
   @@schema("app_quikscale")
 }
 
+/// Generic per-user, per-org flag store for QuikScale (e.g. onboarding tour
+/// completion). Mirrors QtUserViewPref's shape, pared down to what QuikScale
+/// needs today — a viewKey lookup, no project/column-state fields. Add
+/// columns here (rather than a new model) for future one-off view flags.
+model QsUserViewPref {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  viewKey   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, viewKey])
+  @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
 model Client {
   id              String                @id @default(cuid())
   orgId           String
@@ -1230,6 +1268,7 @@ model Client {
   createdBy       String
   updatedBy       String?
   deletedAt       DateTime?
+  isDemoData      Boolean               @default(false)
   org             Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   dailyHuddles    ClientDailyHuddle[]
   memberships     ClientMembership[]
@@ -1299,6 +1338,7 @@ model ClientMember {
   createdBy         String
   updatedBy         String?
   deletedAt         DateTime?
+  isDemoData        Boolean                              @default(false)
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   org               Org                                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   clientLinks       ClientTeamMember[]
@@ -1341,6 +1381,7 @@ model ClientDailyHuddle {
   createdBy           String
   updatedBy           String?
   deletedAt           DateTime?
+  isDemoData          Boolean                        @default(false)
   client              Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   org                 Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers       ClientDailyHuddleAbsence[]
@@ -1427,6 +1468,7 @@ model ClientWeeklyMeeting {
   createdBy              String
   updatedBy              String?
   deletedAt              DateTime?
+  isDemoData             Boolean                              @default(false)
   client                 Client                               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   org                    Org                                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers          ClientWeeklyMeetingAbsence[]
@@ -1588,6 +1630,7 @@ model OPSPData {
   updatedAt               DateTime          @updatedAt
   createdBy               String
   updatedBy               String?
+  isDemoData              Boolean           @default(false)
   org                     Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewEntries           OPSPReviewEntry[]
@@ -1618,6 +1661,7 @@ model OPSPUserSection {
   updatedAt            DateTime @updatedAt
   createdBy            String
   updatedBy            String?
+  isDemoData           Boolean  @default(false)
   org                  Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1715,6 +1759,7 @@ model OPSPPlan {
   tags               String[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  isDemoData         Boolean  @default(false)
   org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1752,6 +1797,14 @@ model HabitAssessment {
   closedAt           DateTime?
   deadline           DateTime?
   isLegacy           Boolean                   @default(false)
+  /// Optional team scope chosen at creation. Display/filtering only — the
+  /// authoritative participant list is `participantUserIds`.
+  teamId             String?
+  /// Users asked to fill this assessment. EMPTY = every active org member,
+  /// which is the pre-existing behaviour every campaign created before this
+  /// column relies on — so old rows keep working untouched.
+  participantUserIds String[]                  @default([])
+  isDemoData         Boolean                   @default(false)
   org                Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   responses          HabitAssessmentResponse[]
 
@@ -1789,6 +1842,10 @@ model QuarterSetting {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   createdBy  String
+  /// True when auto-generated by demo-data seeding. Informational only —
+  /// Clear All Demo Data deliberately never deletes quarters (an org needs
+  /// a fiscal calendar to function at all, real content or not).
+  isDemoData Boolean  @default(false)
   org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, fiscalYear, quarter])
@@ -1885,6 +1942,7 @@ model SWTEntry {
   createdBy      String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  isDemoData     Boolean  @default(false)
   org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -1981,6 +2039,7 @@ model Goal {
   updatedAt       DateTime  @updatedAt
   createdBy       String
   completedAt     DateTime?
+  isDemoData      Boolean   @default(false)
   org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner           User      @relation("GoalOwner", fields: [ownerId], references: [id])
   parentGoal      Goal?     @relation("GoalHierarchy", fields: [parentGoalId], references: [id])
@@ -2058,6 +2117,21 @@ enum ClientMeetingStatus {
   HOLIDAY_FOR_CLIENT
   HOLIDAY_FOR_SUCCESS_ALCHEMIST
   OTHER
+
+  @@schema("app_quikscale")
+}
+
+/// Tracks whether an org's first-login demo/sample data has been seeded
+/// and/or cleared. `clearedAt` is a permanent guard — once an admin clears
+/// demo data, seeding never re-fires for that org.
+model DemoDataState {
+  id        String    @id @default(cuid())
+  orgId     String    @unique
+  seededAt  DateTime?
+  clearedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@schema("app_quikscale")
 }
@@ -2431,6 +2505,124 @@ model PlatformAlert {
   @@index([resolvedAt])
   @@index([severity, lastSeenAt])
   @@index([rule, subjectKey, resolvedAt])
+  @@schema("public")
+}
+
+/// Platform support ticket — raised by an app user (QuikScale today, any app
+/// tomorrow via `appSlug`) and triaged by the QuikIT super-admin team.
+///
+/// Deliberately NOT the QuikSupport `Hd*` domain: that is a per-org helpdesk
+/// PRODUCT (the org's own agents serving the org's own customers, gated behind
+/// OrgAppAccess licensing). These tickets go org-user → QuikIT vendor, need
+/// cross-org super-admin visibility, and must work for orgs that never license
+/// QuikSupport. Hence `public`, alongside BroadcastAnnouncement/PlatformAlert.
+///
+/// `requestType`/`status`/`priority` are Strings, not enums — the house style
+/// for this schema (see Notification.type, AuditLog.action). Value space and
+/// legal transitions live in `@quikit/shared` (SUPPORT_* constants).
+model SupportTicket {
+  id       String @id @default(cuid())
+  /// Race-free human id, rendered `TKT-000042` via formatSupportTicketNo().
+  /// Backed by a Postgres sequence created in the migration.
+  ticketNo Int    @unique @default(dbgenerated("nextval('\"public\".\"SupportTicket_ticketNo_seq\"')"))
+
+  /// Raising org. FK to quikit.Org — the org-wise admin filter and the
+  /// isolation predicate on every user-facing query.
+  orgId String
+  /// Raising user (auth.User.id). No FK, matching Notification.userId and
+  /// AuditLog.actorId; names are stitched in via a batched findMany.
+  userId String
+  /// Which app the ticket was raised from — quikit.App.id. No FK (the App
+  /// registry is in another schema and rows are never hard-deleted), so a
+  /// retired app still resolves historical tickets.
+  appId String
+  /// Denormalized App.slug ("quikscale"). Kept alongside appId so the
+  /// app-wise filter and the admin table need no join. Same style as
+  /// BroadcastAnnouncement.targetAppSlugs.
+  appSlug String
+  /// Snapshot of the raiser's OrgMember.role at submit time ("admin",
+  /// "member", …). Snapshot, not a live lookup: triage needs to know what the
+  /// user could see WHEN they hit the problem, and roles change later.
+  roleName String?
+
+  subject     String
+  description String @db.Text
+  requestType String
+  priority    String @default("medium")
+  status      String @default("open")
+
+  /// Latest super-admin remark, denormalized so the user's Support Status
+  /// table renders in a single query. Full history lives in messages[].
+  adminResponse String?   @db.Text
+  respondedById String?
+  respondedAt   DateTime?
+
+  resolvedAt DateTime?
+  closedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  messages    SupportTicketMessage[]
+  attachments SupportTicketAttachment[]
+
+  @@index([orgId])
+  @@index([orgId, userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([appSlug, status])
+  @@index([appId])
+  @@index([orgId, status])
+  @@schema("public")
+}
+
+/// Reply thread + status history for a SupportTicket. A message carrying
+/// statusFrom/statusTo IS the status-history record — no fourth table needed.
+model SupportTicketMessage {
+  id         String  @id @default(cuid())
+  ticketId   String
+  authorId   String
+  /// "user" | "super_admin"
+  authorRole String
+  body       String  @db.Text
+  statusFrom String?
+  statusTo   String?
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@schema("public")
+}
+
+/// Screenshots / files attached to a SupportTicket at submit time.
+///
+/// The row stores the GCS OBJECT KEY, never a URL: bucket objects are private
+/// and signed URLs expire in minutes, so a persisted URL would be dead on
+/// arrival. Readers mint a fresh signed GET through the app's
+/// `/api/support/uploads/view/<key>` route.
+///
+/// `orgId` is denormalized off the parent ticket so the view route can check
+/// tenant ownership from the KEY ALONE, without a ticket join — the key layout
+/// is `support/<orgId>/<yyyy-mm>/<random>.<ext>`, and the route compares the
+/// segment against the caller's org before signing anything.
+model SupportTicketAttachment {
+  id       String @id @default(cuid())
+  ticketId String
+  orgId    String
+  /// Original client-side filename, shown in the UI. Never used to build the
+  /// object key — that is randomised so a hostile name cannot traverse paths.
+  fileName  String
+  /// Path within the bucket. Unique: the random basename makes collisions
+  /// vanishingly unlikely, and the constraint turns "impossible" into "checked".
+  objectKey String @unique
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId])
   @@schema("public")
 }
 
@@ -4078,6 +4270,10 @@ model CnStockReconciliation {
   locationId           String
   reconciliationDate   DateTime
   conductedById        String
+  // Free-typed name of the person who conducted the count. Kept alongside
+  // conductedById (always the creator) because the conductor is often not a
+  // system user — a contractor's storekeeper, for example.
+  conductedByName      String?
   approvedById         String?
   status               String   @default("draft")
   approvalId           String?
@@ -4222,7 +4418,10 @@ model CnWorkOrderLine {
   scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   description    String
   quantity       Decimal @db.Decimal(18, 4)
-  uomId          String
+  /// Holds the UOM *code* ("CUM", "DAY"), not a CnUOM id — the write paths have
+  /// always stored the code here. Named `uomId` until the rename; readers that
+  /// assumed an id silently rendered blank UOM cells (WO PDF + Excel export).
+  uomCode        String
   negotiatedRate Decimal @db.Decimal(18, 2)
   amount         Decimal @db.Decimal(18, 2)
 
@@ -4530,6 +4729,9 @@ model CnRfq {
   /// create time so later edits to the template don't retroactively
   /// change what was sent to the vendor.
   termsTemplateId    String?
+  /// Snapshot of the T&C body at RFQ create time, editable per RFQ.
+  /// Edits here never write back to the template master.
+  termsAndConditions String?
   status             String    @default("draft")
   approvalId         String?
   createdAt          DateTime  @default(now())
@@ -4579,6 +4781,11 @@ model CnRfqVendor {
   // list for this specific vendor. Stored as a JSON string for
   // Postgres + SQLite portability via Prisma's String type.
   assignedItemIds Json      @default("[]")
+  /// Per-vendor T&C override. Null/empty = use the RFQ's default
+  /// `termsAndConditions`. Never written back to the T&C master.
+  termsAndConditions String?
+  /// Template the override was seeded from, kept for audit only.
+  termsTemplateId    String?
   sentAt          DateTime?
   respondedAt     DateTime?
 
@@ -4955,6 +5162,12 @@ model CnApprovalWorkflow {
   projectId  String?
   name       String
   entityType String // purchase_requisitions | purchase_indents | purchase_order | grn | work_order | dpr | stock_reconciliation | good_return
+  /// Single fallback approver for the whole workflow. When set, this user can
+  /// approve a request from any step without waiting — the escape hatch for a
+  /// listed approver being on leave or simply never acting. Null = none, and the
+  /// workflow behaves exactly as before. Any active user qualifies regardless of
+  /// role; they may not approve a request they raised themselves.
+  masterApproverUserId String?
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -5012,6 +5225,16 @@ model CnApprovalInstance {
   requestedById    String
   requestedAt      DateTime  @default(now())
   completedAt      DateTime?
+  /// Copy of the workflow's steps as they stood when this instance was
+  /// created: [{ stepOrder, approverRoleId, approverUserId, approverUserIds }].
+  /// Editing a workflow replaces its step rows wholesale, which used to
+  /// retro-change in-flight instances — a shrunk workflow left them parked on
+  /// a step that no longer existed (unactionable by anyone), and a grown one
+  /// made already-approved instances look under-approved. Resolution reads
+  /// this first so a submitted request keeps the chain it was submitted under.
+  /// Null for rows created before this column existed; those fall back to the
+  /// live workflow steps.
+  stepsSnapshot    Json?
 
   workflow CnApprovalWorkflow  @relation(fields: [workflowId], references: [id])
   history  CnApprovalHistory[]
@@ -6224,6 +6447,10 @@ model QtProject {
   ideas            QtIdea[]
   ideaStatuses     QtIdeaStatus[]
   ideaViews        QtIdeaView[]
+  workflows        QtWorkflow[]
+  workflowScheme   QtWorkflowScheme?
+  boardColumns     QtBoardColumn[]
+  personalAccessTokens QtPersonalAccessToken[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -6249,6 +6476,30 @@ model QtProjectMember {
   @@unique([projectId, userId])
   @@index([projectId, role])
   @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+/// Long-lived, opaque, project-scoped credential for the QuikTrack MCP Server
+/// (V0, docs/adr/0001, docs/adr/0002). tokenHash is the only stored form of
+/// the token — the raw value is shown once at creation and never persisted.
+/// expiresAt is mandatory (max 1 year from issuance); there is no
+/// non-expiring option.
+model QtPersonalAccessToken {
+  id          String    @id @default(cuid())
+  orgId       String
+  projectId   String
+  createdById String
+  /// User-supplied label (e.g. "Claude Code — laptop") — never the token itself.
+  name        String    @default("Unnamed token")
+  tokenHash   String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash])
+  @@index([orgId, projectId])
   @@schema("app_quiktrack")
 }
 
@@ -6594,9 +6845,43 @@ model QtIssueStatus {
   updatedAt  DateTime  @updatedAt
   issues     QtIssue[]
   project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflowStatuses    QtWorkflowStatus[]
+  transitionTargets   QtWorkflowTransition[]     @relation("TransitionToStatus")
+  transitionSources   QtWorkflowTransitionFrom[]
+  boardColumnStatuses QtBoardColumnStatus[]
 
   @@unique([projectId, name])
   @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+// Board Settings — Jira-style "map statuses to columns". A board column is a
+// named container that can hold one or more statuses; a status not mapped to any
+// column is hidden from the board (the "Unmapped" bucket). Opt-in: a project
+// with no QtBoardColumn rows falls back to one-column-per-status.
+model QtBoardColumn {
+  id         String                @id @default(cuid())
+  projectId  String
+  name       String
+  orderIndex Int                   @default(0)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  project    QtProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  statuses   QtBoardColumnStatus[]
+
+  @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+model QtBoardColumnStatus {
+  // A status belongs to at most one column, so statusId IS the primary key.
+  statusId   String        @id
+  columnId   String
+  orderIndex Int           @default(0)
+  column     QtBoardColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  status     QtIssueStatus @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@index([columnId, orderIndex])
   @@schema("app_quiktrack")
 }
 
@@ -6611,6 +6896,7 @@ model QtIssueType {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  schemeItems QtWorkflowSchemeItem[]
 
   @@unique([projectId, name])
   @@schema("app_quiktrack")
@@ -6625,6 +6911,10 @@ model QtIssue {
   description      String?
   type             String              @default("TASK")
   statusId         String
+  /// Workflow resolution. NULL = issue is still open (this is the source of
+  /// truth for "open", NOT the status name). Set by a Done-category transition's
+  /// post-function; cleared on Reopen. See lib/services/workflow.
+  resolutionId     String?
   priority         String              @default("MEDIUM")
   parentId         String?
   epicId           String?
@@ -6655,9 +6945,11 @@ model QtIssue {
   project          QtProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sprint           QtSprint?           @relation(fields: [sprintId], references: [id])
   status           QtIssueStatus       @relation(fields: [statusId], references: [id])
+  resolution       QtResolution?       @relation(fields: [resolutionId], references: [id])
   group            QtTaskGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
   comments         QtIssueComment[]
   history          QtIssueHistory[]
+  transitionLogs   QtIssueTransitionLog[]
   outgoingLinks    QtIssueLink[]       @relation("IssueLinkSource")
   incomingLinks    QtIssueLink[]       @relation("IssueLinkTarget")
   timesheetEntries QtTimesheetEntry[]
@@ -6666,11 +6958,13 @@ model QtIssue {
   devBranches      QtDevBranch[]
   devCommits       QtDevCommit[]
   devPullRequests  QtDevPullRequest[]
+  remoteLinks      QtRemoteLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
   @@index([projectId, statusId])
   @@index([projectId, type])
+  @@index([resolutionId])
   @@index([assigneeId])
   @@index([epicId])
   @@index([parentId])
@@ -6724,6 +7018,8 @@ model QtIssueComment {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   editedAt  DateTime?
+  /// "user" | "agent" — was this authored by a person or an MCP-authenticated tool.
+  actorType String    @default("user")
   issue     QtIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -6756,6 +7052,25 @@ model QtIssueAttachment {
   @@schema("app_quiktrack")
 }
 
+/// External URL attached to an issue (e.g. a PR link) — distinct from
+/// QtIssueLink, which only links two QtIssue rows to each other.
+model QtRemoteLink {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  issueId   String
+  url       String
+  title     String
+  type      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  issue     QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, projectId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
 model QtIssueHistory {
   id        String   @id @default(cuid())
   orgId     String
@@ -6766,7 +7081,271 @@ model QtIssueHistory {
   oldValue  String?
   newValue  String?
   createdAt DateTime @default(now())
+  /// "user" | "agent" — was this change made by a person or an MCP-authenticated tool.
+  actorType String   @default("user")
   issue     QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurable Workflows (Phase 1 — see apps/quiktrack/WORKFLOW_INTEGRATION_PLAN.md)
+// A workflow is a directed graph over a project's existing QtIssueStatus rows
+// (nodes) + transitions (edges). A workflow scheme maps issue types → workflows
+// per project. Status writes (move / bulk-status / PATCH) are gated against the
+// active workflow; projects with no PUBLISHED scheme keep today's any→any behaviour.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A named directed graph. projectId NULL = org-shared template (e.g. the seeded
+/// "classic default workflow"); set = owned by one project. isActive=false is a
+/// draft; publish (graph-validate) flips it true and sets initialTransitionId.
+model QtWorkflow {
+  id                  String                 @id @default(cuid())
+  orgId               String
+  projectId           String?
+  name                String
+  description         String?
+  isActive            Boolean                @default(false)
+  /// The single INITIAL transition (set on publish). No DB-level FK to avoid a
+  /// cycle with QtWorkflowTransition.workflowId; integrity enforced in app code.
+  initialTransitionId String?
+  isDeleted           Boolean                @default(false)
+  /// For reusable org-level templates (projectId = null): a self-contained,
+  /// name-based snapshot of the graph — { statuses:[{name,category,isInitial}],
+  /// transitions:[{name,type,from:[names],to:name,rules}] }. Independent of any
+  /// project's status rows, so the template survives if the source project (or
+  /// its statuses) change or are deleted. Materialized BY NAME on import.
+  templateJson        Json?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  createdBy           String?
+  updatedBy           String?
+  org                 Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project             QtProject?             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflowStatuses    QtWorkflowStatus[]
+  transitions         QtWorkflowTransition[]
+  schemeItems         QtWorkflowSchemeItem[]
+
+  @@unique([orgId, projectId, name])
+  @@index([orgId])
+  @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
+/// Which project statuses (nodes) a workflow uses. `properties` holds arbitrary
+/// Jira-style status key/values; x/y persist the diagram layout.
+model QtWorkflowStatus {
+  id         String        @id @default(cuid())
+  workflowId String
+  statusId   String
+  isInitial  Boolean       @default(false)
+  x          Float?
+  y          Float?
+  properties Json?
+  workflow   QtWorkflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status     QtIssueStatus @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, statusId])
+  @@index([statusId])
+  @@schema("app_quiktrack")
+}
+
+/// A directed edge to `toStatus`. type=NORMAL uses transition_from sources;
+/// GLOBAL is available from ANY status; INITIAL runs on issue creation.
+model QtWorkflowTransition {
+  id          String                    @id @default(cuid())
+  workflowId  String
+  name        String
+  type        String                    @default("NORMAL")
+  toStatusId  String
+  orderIndex  Int                       @default(0)
+  isDeleted   Boolean                   @default(false)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  workflow    QtWorkflow                @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  toStatus    QtIssueStatus             @relation("TransitionToStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
+  fromStatuses QtWorkflowTransitionFrom[]
+  rules       QtWorkflowRule[]
+  triggers    QtWorkflowTrigger[]
+
+  @@unique([workflowId, name])
+  @@index([workflowId])
+  @@index([toStatusId])
+  @@schema("app_quiktrack")
+}
+
+/// Source statuses for a NORMAL transition (multi-select "From statuses").
+/// Empty for GLOBAL / INITIAL.
+model QtWorkflowTransitionFrom {
+  transitionId String
+  statusId     String
+  transition   QtWorkflowTransition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+  status       QtIssueStatus        @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@id([transitionId, statusId])
+  @@index([statusId])
+  @@schema("app_quiktrack")
+}
+
+/// A rule attached to a transition. kind discriminates the three families:
+///   CONDITION    — gates availability (silent). groupNo: same group = OR,
+///                  across groups = AND.
+///   VALIDATOR    — gates execution (loud, 422). orderNo = run order.
+///   POSTFUNCTION — side effect inside the commit TX. orderNo = run order.
+/// `type` is a registry key (e.g. is_assignee / field_required / set_field);
+/// `config` is the per-type JSON payload.
+model QtWorkflowRule {
+  id           String               @id @default(cuid())
+  transitionId String
+  kind         String
+  type         String
+  config       Json?
+  errorMessage String?
+  groupNo      Int                  @default(0)
+  orderNo      Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  transition   QtWorkflowTransition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@index([transitionId, kind, orderNo])
+  @@schema("app_quiktrack")
+}
+
+/// Why an issue is closed. Org-scoped catalog. QtIssue.resolutionId NULL = open.
+model QtResolution {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  orderIndex Int       @default(0)
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  issues     QtIssue[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// One scheme per project. draftJson holds the unpublished editor state while
+/// hasDraft is true (the DRAFT badge / Publish-Discard banner).
+model QtWorkflowScheme {
+  id        String                 @id @default(cuid())
+  orgId     String
+  projectId String                 @unique
+  name      String
+  hasDraft  Boolean                @default(false)
+  draftJson Json?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  org       Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project   QtProject              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items     QtWorkflowSchemeItem[]
+
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A dev trigger on a transition: when a GitHub event (`event`) fires on an
+/// issue linked to a connected repo, and the issue is currently in one of the
+/// transition's source statuses, the transition auto-executes. `event` is one
+/// of: pr_created | pr_merged | pr_declined | pr_reopened | branch_created |
+/// commit_created.
+model QtWorkflowTrigger {
+  id           String               @id @default(cuid())
+  transitionId String
+  event        String
+  transition   QtWorkflowTransition  @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@unique([transitionId, event])
+  @@index([transitionId])
+  @@schema("app_quiktrack")
+}
+
+/// issue-type → workflow map. issueTypeId NULL + isDefault = the fallback used
+/// for any unmapped type.
+model QtWorkflowSchemeItem {
+  id          String           @id @default(cuid())
+  schemeId    String
+  issueTypeId String?
+  workflowId  String
+  isDefault   Boolean          @default(false)
+  scheme      QtWorkflowScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  issueType   QtIssueType?     @relation(fields: [issueTypeId], references: [id], onDelete: Cascade)
+  workflow    QtWorkflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([schemeId, issueTypeId])
+  @@index([workflowId])
+  @@schema("app_quiktrack")
+}
+
+/// A Screen — an org-level, ordered arrangement of fields shown when a work
+/// item is transitioned (the workflow "Show a screen" rule references one). A
+/// screen owns one or more tabs; each tab owns ordered field rows. `isDefault`
+/// marks the seeded "Default Screen".
+model QtScreen {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  isDefault   Boolean        @default(false)
+  isDeleted   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  org         Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tabs        QtScreenTab[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A tab within a screen (Jira "Field Tab"). Ordered by `orderNo`.
+model QtScreenTab {
+  id       String          @id @default(cuid())
+  screenId String
+  name     String
+  orderNo  Int             @default(0)
+  screen   QtScreen        @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  fields   QtScreenField[]
+
+  @@index([screenId])
+  @@schema("app_quiktrack")
+}
+
+/// One field row on a screen tab. `fieldKey` is a key from the app's screen
+/// field registry (Summary / Priority / Assignee / …). Ordered by `orderNo`.
+model QtScreenField {
+  id       String      @id @default(cuid())
+  tabId    String
+  fieldKey String
+  orderNo  Int         @default(0)
+  tab      QtScreenTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@unique([tabId, fieldKey])
+  @@index([tabId])
+  @@schema("app_quiktrack")
+}
+
+/// Append-only audit of status moves (complements QtIssueHistory field diffs).
+/// transitionId NULL for system / migration moves; reason e.g. "migration".
+model QtIssueTransitionLog {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  transitionId String?
+  fromStatusId String?
+  toStatusId   String
+  actorId      String?
+  /// "user" | "agent" — was this transition triggered by a person or an MCP-authenticated tool.
+  actorType    String   @default("user")
+  reason       String?
+  createdAt    DateTime @default(now())
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([issueId, createdAt])
@@ -11243,6 +11822,8 @@ model Employee {
   appRoles            HrmsUserAppRole[]
   permissionOverrides HrmsUserPermissionExtra[]
 
+  insurancePolicyMemberships InsurancePolicyMember[]
+
   @@unique([orgId, employeeCode])
   // One Employee per central user per tenant — stops the first-login race from
   // creating duplicate records. authUserId is nullable (manual employees), and
@@ -13492,6 +14073,7 @@ enum DocumentCategory {
   ExperienceLetter
   RelievingLetter
   NDA
+  Insurance
   Other
 
   @@schema("app_quikhrms")
@@ -13547,10 +14129,11 @@ model Document {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  parentDocument  Document?                @relation("DocumentVersions", fields: [parentDocumentId], references: [id])
-  versions        Document[]               @relation("DocumentVersions")
-  acknowledgments DocumentAcknowledgment[]
-  shares          DocumentShare[]
+  parentDocument   Document?                @relation("DocumentVersions", fields: [parentDocumentId], references: [id])
+  versions         Document[]               @relation("DocumentVersions")
+  acknowledgments  DocumentAcknowledgment[]
+  shares           DocumentShare[]
+  insuranceMembers InsurancePolicyMember[]
 
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -13563,6 +14146,33 @@ model Document {
 
 // (DocumentTemplate model removed with the Document Templates feature — 2026-06-04.
 //  The DocumentCategory enum is retained — it's shared with the Document model.)
+
+// Employees enrolled under a company-wide/group Insurance policy (a Document
+// row with category = Insurance). The policy document itself carries no
+// employeeId — coverage membership is tracked here instead, added/removed
+// one employee at a time from the policy's detail page.
+model InsurancePolicyMember {
+  id         String @id @default(cuid())
+  orgId      String
+  documentId String
+  employeeId String
+
+  // Optional per-employee sum-insured amount for this policy (shown in the
+  // Coverage column + summed for the policy's "Total Coverage" stat).
+  coverageAmount Decimal? @db.Decimal(15, 2)
+
+  addedBy   String?
+  createdAt DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([documentId, employeeId])
+  @@index([orgId])
+  @@index([orgId, documentId])
+  @@index([orgId, employeeId])
+  @@schema("app_quikhrms")
+}
 
 model DocumentAcknowledgment {
   id         String @id @default(cuid())
@@ -25151,4 +25761,2613 @@ model QcfUserPermissionExtra {
   @@index([userId, orgId])
   @@map("UserPermissionExtra")
   @@schema("app_quikcredflow")
+}
+
+// ===========================================================================
+// CredFlow (apps/credflow) — de-vendored from its private schema fork.
+// Identifiers are Qcf*-prefixed and @@map'd to their original table/type
+// names; all blocks live in the isolated app_quikcredflow Postgres schema.
+// NOTE: these models still scope on `tenantId`. The tenantId -> orgId
+// conversion is a separate follow-up task and is intentionally not done here.
+// ===========================================================================
+
+enum QcfOpportunityStage {
+  Prospecting
+  Qualification
+  Proposal
+  Negotiation
+  ClosedWon
+  ClosedLost
+  @@map("CrmOpportunityStage")
+  @@schema("app_quikcredflow")
+}
+enum QcfTaskStatus {
+  Open
+  InProgress
+  Completed
+  Cancelled
+  @@map("CrmTaskStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfTaskPriority {
+  Low
+  Medium
+  High
+  @@map("CrmTaskPriority")
+  @@schema("app_quikcredflow")
+}
+enum QcfAccountSegment {
+  Enterprise
+  MidMarket
+  SMB
+  @@map("CrmAccountSegment")
+  @@schema("app_quikcredflow")
+}
+enum QcfImportJobStatus {
+  queued
+  processing
+  completed
+  completed_with_errors
+  dead_letter
+  @@map("CrmImportJobStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfImportEntityType {
+  leads
+  activities
+  workflows
+  sla
+  @@map("CrmImportEntityType")
+  @@schema("app_quikcredflow")
+}
+enum QcfAutomationStepStatus {
+  pending
+  processing
+  completed
+  failed
+  @@map("CrmAutomationStepStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfWorkflowStatus {
+  Draft
+  Active
+  Paused
+  Archived
+  // Phase 3 (S1) — publish lifecycle states, added additively (never rename).
+  // Draining  = unpublish "Delayed": admits no NEW leads, in-flight (mid-Wait)
+  //             leads still resume & finish; non-deletable until drained.
+  // Stopped   = unpublish "Immediate": stops in-flight at once, admits nothing.
+  // Deleted   = soft-delete (recoverable); paired with `deletedAt` on the row.
+  Draining
+  Stopped
+  Deleted
+  @@map("CrmWorkflowStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfQuoteStatus {
+  Draft
+  Active
+  Won
+  Lost
+  Revised
+  @@map("CrmQuoteStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfQuotePricingMode {
+  Exclusive
+  Inclusive
+  @@map("CrmQuotePricingMode")
+  @@schema("app_quikcredflow")
+}
+enum QcfQuoteApprovalStatus {
+  None
+  Pending
+  Approved
+  Rejected
+  @@map("CrmQuoteApprovalStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfQuoteEngagementStatus {
+  NotSent
+  Sent
+  Viewed
+  Signed
+  Accepted
+  Rejected
+  @@map("CrmQuoteEngagementStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfInvoiceStatus {
+  Draft
+  Sent
+  Paid
+  Void
+  @@map("CrmInvoiceStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfProductType {
+  Product
+  Service
+  Bundle
+  @@map("CrmProductType")
+  @@schema("app_quikcredflow")
+}
+enum QcfProductTaxonomyKind {
+  Category
+  Subcategory
+  Brand
+  Family
+  @@map("CrmProductTaxonomyKind")
+  @@schema("app_quikcredflow")
+}
+enum QcfStockMovementType {
+  Receipt
+  Issue
+  Adjustment
+  Reserve
+  Release
+  Transfer
+  @@map("CrmStockMovementType")
+  @@schema("app_quikcredflow")
+}
+enum QcfOrderStatus {
+  Open
+  Confirmed
+  Fulfilled
+  Closed
+  Cancelled
+  @@map("CrmOrderStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormSurface {
+  call_disposition
+  @@map("CrmFormSurface")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormSetVersionStatus {
+  draft
+  published
+  retired
+  @@map("CrmFormSetVersionStatus")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormFieldTab {
+  contact_details
+  call_disposition
+  @@map("CrmFormFieldTab")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormFieldType {
+  text
+  datetime
+  dropdown
+  number
+  user_picker
+  file_upload
+  @@map("CrmFormFieldType")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormFieldRequiredLevel {
+  none
+  soft
+  hard
+  @@map("CrmFormFieldRequiredLevel")
+  @@schema("app_quikcredflow")
+}
+enum QcfFieldValueType {
+  text
+  datetime
+  dropdown
+  number
+  user_picker
+  file_upload
+  @@map("CrmFieldValueType")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormTabVisibility {
+  always
+  rule_driven
+  @@map("CrmFormTabVisibility")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormRuleMatchType {
+  all
+  any
+  @@map("CrmFormRuleMatchType")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormRuleSubjectKind {
+  field
+  stage
+  status
+  sub_stage
+  @@map("CrmFormRuleSubjectKind")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormRuleOperator {
+  is
+  is_not
+  is_any_of
+  is_none_of
+  is_empty
+  is_not_empty
+  @@map("CrmFormRuleOperator")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormRuleActionType {
+  show_field
+  hide_field
+  make_mandatory
+  make_optional
+  show_tab
+  set_stage
+  @@map("CrmFormRuleActionType")
+  @@schema("app_quikcredflow")
+}
+enum QcfFormRuleTargetKind {
+  field
+  section
+  tab
+  stage
+  @@map("CrmFormRuleTargetKind")
+  @@schema("app_quikcredflow")
+}
+enum QcfUserPickerMode {
+  single
+  multi
+  @@map("CrmUserPickerMode")
+  @@schema("app_quikcredflow")
+}
+enum QcfUserPickerScope {
+  all_users
+  team
+  role
+  @@map("CrmUserPickerScope")
+  @@schema("app_quikcredflow")
+}
+enum QcfFieldVisibility {
+  visible
+  hidden
+  @@map("CrmFieldVisibility")
+  @@schema("app_quikcredflow")
+}
+model QcfPermissionTemplate {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  matrix    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     QcfUserPermissionTemplate[]
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("CrmPermissionTemplate")
+  @@schema("app_quikcredflow")
+}
+model QcfUserPermissionTemplate {
+  userId     String
+  templateId String
+  template   QcfPermissionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  @@id([userId, templateId])
+  @@map("CrmUserPermissionTemplate")
+  @@schema("app_quikcredflow")
+}
+model QcfUserAccountAccess {
+  userId    String
+  accountId String
+  account   QcfAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@id([userId, accountId])
+  @@map("CrmUserAccountAccess")
+  @@schema("app_quikcredflow")
+}
+model QcfAccount {
+  id                    String   @id @default(cuid())
+  orgId              String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name                  String
+  segment               String?
+  ownerId               String?
+  ownerName             String?
+  industry              String?
+  website               String?
+  city                  String?
+  status                String?  @default("Active")
+  annualRevenueDisplay  String?
+  annualRevenueAmount   Decimal? @db.Decimal(18, 2)
+  annualRevenueCurrency String?  @default("INR")
+  segmentEnum           QcfAccountSegment?
+  industryKey           String?
+  countryCode           String?
+  state                 String?
+  postalCode            String?
+  parentAccountId       String?
+  healthScore           Int?
+  contractStart         DateTime?
+  contractEnd           DateTime?
+  renewalDate           DateTime?
+  npsScore              Int?
+  /// Filter labels (VIP, High Risk, Enterprise, …).
+  tags                  String[]               @default([])
+  defaultPriceListId    String?
+  deletedAt             DateTime?
+  createdByUserId       String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  parent                QcfAccount?            @relation("CrmAccountHierarchy", fields: [parentAccountId], references: [id])
+  children              QcfAccount[]           @relation("CrmAccountHierarchy")
+  defaultPriceList      QcfPriceList?          @relation("AccountDefaultPriceList", fields: [defaultPriceListId], references: [id], onDelete: SetNull)
+  contacts              QcfContact[]
+  leads                 QcfLead[]
+  opportunities         QcfOpportunity[]
+  userAccess            QcfUserAccountAccess[]
+  groupAccess           QcfSalesGroupAccount[]
+  @@index([orgId])
+  @@index([orgId, name])
+  @@index([orgId, ownerId])
+  @@index([orgId, status])
+  @@index([orgId, deletedAt])
+  @@index([orgId, parentAccountId])
+  @@index([orgId, industryKey])
+  @@index([orgId, segmentEnum])
+  @@index([orgId, defaultPriceListId])
+  @@map("CrmAccount")
+  @@schema("app_quikcredflow")
+}
+model QcfContact {
+  id           String   @id @default(cuid())
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  firstName    String
+  lastName     String?
+  email        String?
+  phone        String?
+  title        String?
+  accountId    String?
+  leadId       String?
+  ownerId      String?
+  ownerName    String?
+  city         String?
+  contactStage String?
+  source       String?
+  deletedAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  account      QcfAccount? @relation(fields: [accountId], references: [id])
+  lead         QcfLead?    @relation(fields: [leadId], references: [id])
+  @@index([orgId])
+  @@index([orgId, email])
+  @@index([orgId, accountId])
+  @@index([orgId, ownerId])
+  @@index([orgId, phone])
+  @@index([orgId, deletedAt])
+  @@map("CrmContact")
+  @@schema("app_quikcredflow")
+}
+model QcfLead {
+  id               String    @id @default(cuid())
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name             String
+  email            String?
+  phone            String?
+  mobile           String?
+  company          String?
+  jobTitle         String?
+  source           String?
+  stage            String    @default("New")
+  status           String    @default("Open")
+  substatus        String?
+  score            Int       @default(0)
+  ownerId          String?
+  ownerName        String?
+  accountId        String?
+  linkedContactId  String?
+  externalId       String?
+  sourceSystem     String?
+  country              String?
+  industry             String?
+  secondaryEmail       String?
+  website              String?
+  linkedinUrl          String?
+  annualRevenueDisplay String?
+  descriptionInformation String?
+  leadQuality          String?
+  firstName            String?
+  lastName             String?
+  leadType             String?
+  contactLinkedinUrl   String?
+  requirementDetails   Json?
+  isDisengaged     Boolean   @default(false)
+  isStarred        Boolean   @default(false)
+  followupPriority String?
+  addressLine1     String?
+  addressLine2     String?
+  area             String?
+  cityName         String?
+  stateName        String?
+  postalCode       String?
+  lat              Float?
+  long             Float?
+  convertedAt      DateTime?
+  dynamicFields    Json?
+  // [P3.B2] Email suppression flags (SPEC §5.1). Additive + nullable: NULL = not
+  // flagged = mailable. The send_email action skips-and-records a dispatch when
+  // doNotEmail or unsubscribed is true, or the address is invalid.
+  doNotEmail       Boolean?
+  unsubscribed     Boolean?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+  account          QcfAccount?          @relation(fields: [accountId], references: [id])
+  attachments      QcfLeadAttachment[]
+  contacts         QcfContact[]
+  activities       QcfActivity[]
+  tasks            QcfTask[]
+  notes            QcfNote[]
+  callLogs         QcfCallLog[]
+  slaTracking      QcfSlaLeadTracking[]
+  leadSquaredSyncMap QcfLeadSquaredSyncMap?
+  @@unique([orgId, sourceSystem, externalId], name: "lead_external_uk")
+  @@index([orgId])
+  @@index([orgId, stage])
+  @@index([orgId, ownerId])
+  @@index([orgId, accountId])
+  @@index([orgId, isStarred])
+  @@index([orgId, deletedAt])
+  @@map("CrmLead")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadSquaredSyncMap {
+  id              String    @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK to the QuikCRM lead. One mapping row per lead.
+  crmLeadId       String    @unique
+  /// LeadSquared ProspectId. Null until the first outbound push returns one
+  /// (or the first inbound webhook matches an existing lead).
+  lsqProspectId   String?
+  /// Which system authored the write we last recorded: "crm" | "leadsquared".
+  /// Stored as a String (matching the QcfLead.stage/status convention) and
+  /// narrowed to the SyncOrigin union in the loop-guard module.
+  syncOrigin      String
+  /// Stable sha256 of the last payload we synced. Used to drop echoes.
+  lastPayloadHash String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lead            QcfLead   @relation(fields: [crmLeadId], references: [id], onDelete: Cascade)
+  @@unique([orgId, lsqProspectId], name: "leadsquared_prospect_uk")
+  @@index([orgId])
+  @@map("LeadSquaredSyncMap")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadAttachment {
+  id          String   @id @default(cuid())
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId      String
+  fileName    String
+  contentType String
+  size        Int
+  storageKey  String
+  uploadedBy  String
+  createdAt   DateTime @default(now())
+  lead        QcfLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  @@index([orgId, leadId])
+  @@index([orgId])
+  @@map("CrmLeadAttachment")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadListView {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  name      String
+  filters   Json
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId, userId])
+  @@index([orgId])
+  @@map("CrmLeadListView")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadSavedList {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  name      String
+  filters   Json
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId, userId])
+  @@index([orgId])
+  @@map("CrmLeadSavedList")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadSource {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  type      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, active])
+  @@map("CrmLeadSource")
+  @@schema("app_quikcredflow")
+}
+model QcfOpportunity {
+  id                  String              @id @default(cuid())
+  orgId            String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name                String
+  stage               QcfOpportunityStage @default(Prospecting)
+  probability         Int                 @default(10)
+  amount              Decimal?            @db.Decimal(18, 2)
+  currency            String?             @default("INR")
+  closeDate           DateTime?
+  accountId           String?
+  leadId              String?
+  ownerId             String?
+  ownerName           String?
+  weightedAmount      Decimal?            @db.Decimal(18, 2)
+  closeReason         String?
+  closeReasonCategory String?
+  competitorName      String?
+  lastStageChangeAt   DateTime?
+  lastActivityAt      DateTime?
+  priceListId         String?
+  deletedAt           DateTime?
+  createdByUserId     String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  account             QcfAccount?                     @relation(fields: [accountId], references: [id])
+  priceList           QcfPriceList?                   @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  clientMeetings      QcfOpportunityClientMeeting[]
+  products            QcfOpportunityProduct[]
+  transitions         QcfOpportunityStageTransition[]
+  @@index([orgId])
+  @@index([orgId, stage])
+  @@index([orgId, accountId])
+  @@index([orgId, ownerId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, priceListId])
+  @@map("CrmOpportunity")
+  @@schema("app_quikcredflow")
+}
+model QcfOpportunityClientMeeting {
+  id             String   @id @default(cuid())
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  opportunityId  String
+  subject        String
+  meetingAt      DateTime
+  meetingType    String?
+  competitorName String?
+  outcome        String?
+  attendees      Json?
+  notes          String?
+  createdAt      DateTime @default(now())
+  opportunity    QcfOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  @@index([orgId, opportunityId])
+  @@index([orgId])
+  @@map("CrmOpportunityClientMeeting")
+  @@schema("app_quikcredflow")
+}
+model QcfOpportunityProduct {
+  id            String   @id @default(cuid())
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  opportunityId String
+  productName   String
+  quantity      Int      @default(1)
+  unitPrice     Decimal  @db.Decimal(18, 2)
+  discountPct   Int      @default(0)
+  lineTotal     Decimal  @db.Decimal(18, 2)
+  notes         String?
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  opportunity   QcfOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  @@index([orgId, opportunityId])
+  @@index([orgId])
+  @@map("CrmOpportunityProduct")
+  @@schema("app_quikcredflow")
+}
+model QcfOpportunityStageTransition {
+  id                  String              @id @default(cuid())
+  orgId            String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  opportunityId       String
+  fromStage           QcfOpportunityStage
+  toStage             QcfOpportunityStage
+  changedByUserId     String?
+  changedByName       String?
+  closeReason         String?
+  closeReasonCategory String?
+  notes               String?
+  occurredAt          DateTime            @default(now())
+  opportunity         QcfOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  @@index([orgId, opportunityId, occurredAt])
+  @@index([orgId])
+  @@map("CrmOpportunityStageTransition")
+  @@schema("app_quikcredflow")
+}
+model QcfActivity {
+  id                String    @id @default(cuid())
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type              String
+  relatedKind       String
+  relatedObjectId   String
+  subject           String?
+  outcome           String?
+  ownerId           String?
+  ownerName         String?
+  externalId        String?
+  sourceSystem      String?
+  occurredAt        DateTime?
+  outreach          Json?
+  activityCode      String?
+  logOutcome        String?
+  detailNotes       String?
+  followUpAt        DateTime?
+  opportunityId     String?
+  linkedCallLogId   String?
+  leadId            String?
+  relatedOrphanedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lead              QcfLead?  @relation(fields: [leadId], references: [id])
+  @@unique([orgId, sourceSystem, externalId])
+  @@index([orgId])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@index([orgId, ownerId, occurredAt])
+  @@index([orgId, relatedOrphanedAt])
+  @@map("CrmActivity")
+  @@schema("app_quikcredflow")
+}
+model QcfTask {
+  id               String          @id @default(cuid())
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  subject          String
+  taskType         String?
+  priority         QcfTaskPriority @default(Medium)
+  dueDate          DateTime?
+  status           QcfTaskStatus   @default(Open)
+  assignedToUserId String?
+  createdByUserId  String?
+  relatedKind      String?
+  relatedObjectId  String?
+  leadId           String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  lead             QcfLead? @relation(fields: [leadId], references: [id])
+  @@index([orgId])
+  @@index([orgId, assignedToUserId])
+  @@index([orgId, status])
+  @@map("CrmTask")
+  @@schema("app_quikcredflow")
+}
+model QcfNote {
+  id              String   @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  content         String
+  relatedKind     String
+  relatedObjectId String
+  createdByUserId String?
+  leadId          String?
+  createdAt       DateTime @default(now())
+  lead            QcfLead? @relation(fields: [leadId], references: [id])
+  @@index([orgId, relatedKind, relatedObjectId])
+  @@index([orgId])
+  @@map("CrmNote")
+  @@schema("app_quikcredflow")
+}
+model QcfCompanyProfile {
+  id          String   @id @default(cuid())
+  orgId    String   @unique
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  companyName String
+  logoUrl     String?
+  website     String?
+  phone       String?
+  industry    String?
+  employees   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmCompanyProfile")
+  @@schema("app_quikcredflow")
+}
+model QcfOrgWorkspaceSettings {
+  id        String   @id @default(cuid())
+  orgId  String   @unique
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  settings  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmOrgWorkspaceSettings")
+  @@schema("app_quikcredflow")
+}
+model QcfQuickFilter {
+  id            String   @id @default(cuid())
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId        String
+  module        String
+  name          String
+  filterConfig  Json
+  isLastApplied Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([orgId, userId, module])
+  @@index([orgId])
+  @@map("CrmQuickFilter")
+  @@schema("app_quikcredflow")
+}
+model QcfDashboardPin {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  reportId  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  @@unique([orgId, userId, reportId])
+  @@index([orgId, userId])
+  @@index([orgId])
+  @@map("CrmDashboardPin")
+  @@schema("app_quikcredflow")
+}
+model QcfCampaign {
+  id        String    @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  status    String    @default("Draft")
+  type      String?
+  startDate DateTime?
+  endDate   DateTime?
+  config    Json?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  @@index([orgId])
+  @@map("CrmCampaign")
+  @@schema("app_quikcredflow")
+}
+model QcfLandingPage {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
+  status    String   @default("Draft")
+  content   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([orgId, slug])
+  @@index([orgId])
+  @@map("CrmLandingPage")
+  @@schema("app_quikcredflow")
+}
+model QcfWebWidget {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  type      String
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmWebWidget")
+  @@schema("app_quikcredflow")
+}
+model QcfFormDefinition {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  fields    Json
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmFormDefinition")
+  @@schema("app_quikcredflow")
+}
+model QcfAutomationRule {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  trigger   Json
+  action    Json
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId, isActive, sortOrder])
+  @@index([orgId])
+  @@map("CrmAutomationRule")
+  @@schema("app_quikcredflow")
+}
+model QcfWorkflowDefinition {
+  id                String            @id @default(cuid())
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name              String
+  status            QcfWorkflowStatus @default(Draft)
+  triggerSummary    String?
+  triggerType       String?
+  scope             String?
+  triggerCount      Int               @default(0)
+  externalId        String?
+  sourceSystem      String?
+  lastPublishedOn   DateTime?
+  // Phase 3 (S1) — soft-delete marker (CredFlow app-wide convention). Set on
+  // softDelete(), cleared on restore(); the lifecycle service filters on it.
+  deletedAt         DateTime?
+  graphNodes        Json
+  graphEdges        Json
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  pendingSteps      QcfAutomationPendingStep[]
+  distributionState QcfAutomationDistributionState[]
+  @@unique([orgId, sourceSystem, externalId])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, deletedAt])
+  @@map("CrmWorkflowDefinition")
+  @@schema("app_quikcredflow")
+}
+model QcfAutomationPendingStep {
+  id            String                  @id @default(cuid())
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workflowId    String
+  leadId        String
+  resumeNodeId  String
+  resumeAt      DateTime
+  status        QcfAutomationStepStatus @default(pending)
+  ownerSnapshot String?
+  bullJobId     String?
+  failedReason  String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  workflow      QcfWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  @@index([orgId, status, resumeAt])
+  @@index([orgId, workflowId, leadId])
+  @@index([orgId])
+  @@map("CrmAutomationPendingStep")
+  @@schema("app_quikcredflow")
+}
+model QcfAutomationDistributionState {
+  id         String   @id @default(cuid())
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workflowId String
+  nodeId     String
+  lastIndex  Int      @default(0)
+  updatedAt  DateTime @updatedAt
+  workflow   QcfWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  @@unique([orgId, workflowId, nodeId])
+  @@index([orgId])
+  @@map("CrmAutomationDistributionState")
+  @@schema("app_quikcredflow")
+}
+model QcfAutomationLeadDayCount {
+  id         String   @id @default(cuid())
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId     String
+  day        String
+  count      Int      @default(0)
+  terminated Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@unique([orgId, leadId, day])
+  @@index([orgId, terminated])
+  @@index([orgId])
+  @@map("CrmAutomationLeadDayCount")
+  @@schema("app_quikcredflow")
+}
+model QcfAutomationAttribution {
+  id              String   @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId          String
+  engineSource    String
+  workflowId      String?
+  nodeId          String?
+  ruleId          String?
+  triggerEventId  String?
+  triggerType     String?
+  field           String
+  beforeValue     String?
+  afterValue      String?
+  triggerSnapshot Json?
+  createdAt       DateTime @default(now())
+  @@index([orgId, leadId, createdAt])
+  @@index([orgId, engineSource])
+  @@index([orgId])
+  @@map("CrmAutomationAttribution")
+  @@schema("app_quikcredflow")
+}
+model QcfProcessDefinition {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmProcessDefinition")
+  @@schema("app_quikcredflow")
+}
+model QcfSlaRule {
+  id           String   @id @default(cuid())
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name         String
+  targetHours  Int
+  appliesTo    String?
+  externalId   String?
+  sourceSystem String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@unique([orgId, sourceSystem, externalId])
+  @@index([orgId])
+  @@map("CrmSlaRule")
+  @@schema("app_quikcredflow")
+}
+model QcfSlaLeadTracking {
+  id            String    @id @default(cuid())
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId        String
+  ruleName      String
+  status        String
+  breachAtLabel String?
+  breachAt      DateTime?
+  externalId    String?
+  sourceSystem  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lead          QcfLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  @@index([orgId, leadId])
+  @@index([orgId, status])
+  @@index([orgId])
+  @@map("CrmSlaLeadTracking")
+  @@schema("app_quikcredflow")
+}
+model QcfTelephonyProvider {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  type      String
+  config    Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmTelephonyProvider")
+  @@schema("app_quikcredflow")
+}
+model QcfVirtualNumber {
+  id         String   @id @default(cuid())
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number     String
+  label      String?
+  providerId String?
+  createdAt  DateTime @default(now())
+  @@unique([orgId, number])
+  @@index([orgId])
+  @@map("CrmVirtualNumber")
+  @@schema("app_quikcredflow")
+}
+model QcfCallLog {
+  id                           String    @id @default(cuid())
+  orgId                     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId                       String?
+  agentUserId                  String?
+  callSid                      String?
+  sourceNumber                 String?
+  destinationNumber            String?
+  direction                    String?
+  status                       String?
+  durationSec                  Int?
+  talkSec                      Int?
+  startTime                    DateTime?
+  endTime                      DateTime?
+  recordingUrl                 String?
+  disposition                  String?
+  notes                        String?
+  rawPayload                   Json?
+  providerCallSid              String?
+  dispositionName              String?
+  callDispositionId            String?
+  smbDispositionSnapshot       String?
+  smbSubDispositionSnapshot    String?
+  smbSubSubDispositionSnapshot String?
+  ownerName                    String?
+  linkedContactId              String?
+  linkedPartyDisplay           String?
+  webhookStatus                String?
+  endedBy                      String?
+  followUpAt                   DateTime?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+  lead                         QcfLead?  @relation(fields: [leadId], references: [id])
+  @@unique([orgId, callSid])
+  @@index([orgId])
+  @@index([orgId, leadId])
+  @@index([orgId, providerCallSid, createdAt])
+  @@map("CrmCallLog")
+  @@schema("app_quikcredflow")
+}
+model QcfCallDisposition {
+  id                          String   @id @default(cuid())
+  orgId                    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  code                        String
+  label                       String
+  category                    String?
+  triggersPaymentVerification Boolean  @default(false)
+  config                      Json?
+  name                        String?
+  smbDispositionValue         String?
+  smbSubDispositionValue      String?
+  smbSubSubDispositionValue   String?
+  sortOrder                   Int      @default(0)
+  targetLeadStage             String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  @@unique([orgId, code])
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("CrmCallDisposition")
+  @@schema("app_quikcredflow")
+}
+model QcfCtcCallAudit {
+  id               String   @id @default(cuid())
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  agentUserId      String?
+  partyA           String?
+  partyB           String?
+  callSid          String?
+  providerName     String?
+  responseStatus   Int?
+  providerType     String?
+  message          String?
+  success          Boolean  @default(false)
+  httpStatus       Int?
+  errorMessage     String?  @db.Text
+  providerResponse String?  @db.Text
+  kind             String?
+  createdAt        DateTime @default(now())
+  @@index([orgId])
+  @@index([orgId, agentUserId, createdAt])
+  @@map("CrmCtcCallAudit")
+  @@schema("app_quikcredflow")
+}
+model QcfIndiaVoiceWebhookLog {
+  id                String    @id @default(cuid())
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  callSid           String?
+  campid            String?
+  vendorEventType   String?
+  sourceNumber      String?
+  destinationNumber String?
+  dialWhomNumber    String?
+  status            String?
+  callDurationSec   Int?
+  talkDurationSec   Int?
+  coins             Int?
+  direction         String?
+  callRecordingUrl  String?
+  startTime         DateTime?
+  endTime           DateTime?
+  matchedCallLogId  String?
+  rawPayload        Json
+  processDedupeKey  String?
+  createdAt         DateTime  @default(now())
+  @@unique([orgId, processDedupeKey])
+  @@index([orgId])
+  @@index([orgId, callSid])
+  @@index([orgId, campid])
+  @@map("CrmIndiaVoiceWebhookLog")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadImportJob {
+  id              String              @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  fileName        String?
+  status          QcfImportJobStatus  @default(queued)
+  entityType      QcfImportEntityType
+  sourceType      String?
+  totalRows       Int                 @default(0)
+  importedCount   Int                 @default(0)
+  errorMessages   Json?
+  rowErrors       Json?
+  payloadCsvText  String?             @db.Text
+  payloadJsonText String?             @db.Text
+  sourceSystem    String?
+  idempotencyKey  String?
+  batchId         String?
+  attempts        Int                 @default(0)
+  createdByUserId String?
+  queuedAt        DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  nextRetryAt     DateTime?
+  deadLetteredAt  DateTime?
+  lastError       String?
+  bullJobId       String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  @@unique([orgId, entityType, sourceSystem, idempotencyKey])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, batchId])
+  @@index([orgId, entityType, status, nextRetryAt])
+  @@map("CrmLeadImportJob")
+  @@schema("app_quikcredflow")
+}
+model QcfReportDefinition {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  category  String?
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([orgId])
+  @@map("CrmReportDefinition")
+  @@schema("app_quikcredflow")
+}
+model QcfNotification {
+  id        String    @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  title     String
+  body      String?
+  category  String?
+  link      String?
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+  @@index([orgId, userId, readAt])
+  @@index([orgId])
+  @@map("CrmNotification")
+  @@schema("app_quikcredflow")
+}
+model QcfOutboundMessageLog {
+  id        String    @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  channel   String
+  to        String
+  subject   String?
+  body      String?
+  status    String    @default("queued")
+  metadata  Json?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([orgId])
+  @@map("CrmOutboundMessageLog")
+  @@schema("app_quikcredflow")
+}
+model QcfAttendanceLog {
+  id        String    @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  checkIn   DateTime
+  checkOut  DateTime?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+  @@index([orgId, userId])
+  @@index([orgId])
+  @@map("CrmAttendanceLog")
+  @@schema("app_quikcredflow")
+}
+model QcfSalesTeam {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  managerId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("CrmSalesTeam")
+  @@schema("app_quikcredflow")
+}
+model QcfSalesGroup {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members   QcfSalesGroupMember[]
+  managers  QcfSalesGroupManager[]
+  accounts  QcfSalesGroupAccount[]
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("CrmSalesGroup")
+  @@schema("app_quikcredflow")
+}
+model QcfSalesGroupMember {
+  groupId String
+  userId  String
+  group   QcfSalesGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([groupId, userId])
+  @@map("CrmSalesGroupMember")
+  @@schema("app_quikcredflow")
+}
+model QcfSalesGroupManager {
+  groupId String
+  userId  String
+  group   QcfSalesGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([groupId, userId])
+  @@map("CrmSalesGroupManager")
+  @@schema("app_quikcredflow")
+}
+model QcfSalesGroupAccount {
+  groupId   String
+  accountId String
+  group     QcfSalesGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  account   QcfAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@id([groupId, accountId])
+  @@map("CrmSalesGroupAccount")
+  @@schema("app_quikcredflow")
+}
+model QcfAuditLog {
+  id         String   @id @default(cuid())
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId     String?
+  module     String
+  action     String
+  resourceId String?
+  before     Json?
+  after      Json?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  @@index([orgId, createdAt])
+  @@index([orgId, module, resourceId])
+  @@index([orgId, userId, createdAt])
+  @@index([orgId])
+  @@map("CrmAuditLog")
+  @@schema("app_quikcredflow")
+}
+model QcfIntegrationConfig {
+  id                   String    @id @default(cuid())
+  orgId             String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name                 String
+  type                 String
+  status               String    @default("inactive")
+  credentialsEncrypted String?
+  config               Json?
+  lastSyncAt           DateTime?
+  lastError            String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  @@unique([orgId, name])
+  @@index([orgId, status])
+  @@index([orgId])
+  @@map("CrmIntegrationConfig")
+  @@schema("app_quikcredflow")
+}
+model QcfPaymentVerification {
+  id         String   @id @default(cuid())
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId     String?
+  callLogId  String?
+  amount     Float
+  currency   String   @default("INR")
+  status     String   @default("Pending")
+  externalId String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@index([orgId, status])
+  @@index([orgId])
+  @@map("CrmPaymentVerification")
+  @@schema("app_quikcredflow")
+}
+model QcfDocumentFolder {
+  id             String    @id @default(cuid())
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name           String
+  parentFolderId String?
+  parentFolder   QcfDocumentFolder?  @relation("FolderHierarchy", fields: [parentFolderId], references: [id], onDelete: Restrict)
+  children       QcfDocumentFolder[] @relation("FolderHierarchy")
+
+  refType String?
+  refId   String?
+
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  documents QcfDocument[]
+  @@index([orgId])
+  @@index([orgId, parentFolderId])
+  @@index([orgId, refType, refId])
+  @@index([orgId, deletedAt])
+  @@map("CrmDocumentFolder")
+  @@schema("app_quikcredflow")
+}
+model QcfDocument {
+  id          String    @id @default(cuid())
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  refType     String
+  refId       String
+  folderId    String?
+  folder      QcfDocumentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  fileName    String
+  contentType String
+  size        Int
+  storageKey  String
+  uploadedBy  String
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  linksFrom QcfDocumentLink[] @relation("DocumentLinkSource")
+  @@index([orgId, refType, refId])
+  @@index([orgId, deletedAt])
+  @@index([folderId])
+  @@index([orgId])
+  @@map("CrmDocument")
+  @@schema("app_quikcredflow")
+}
+model QcfDocumentLink {
+  id               String    @id @default(cuid())
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  sourceDocumentId String
+  sourceDocument   QcfDocument @relation("DocumentLinkSource", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  targetFolderId   String?
+  refType          String?
+  refId            String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+  @@index([orgId, targetFolderId])
+  @@index([orgId, sourceDocumentId])
+  @@index([orgId, refType, refId])
+  @@index([orgId, deletedAt])
+  @@index([orgId])
+  @@map("CrmDocumentLink")
+  @@schema("app_quikcredflow")
+}
+model QcfProductTaxonomy {
+  id        String                 @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kind      QcfProductTaxonomyKind
+  name      String
+  parentId  String?
+  parent    QcfProductTaxonomy?    @relation("ProductTaxonomyTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  QcfProductTaxonomy[]   @relation("ProductTaxonomyTree")
+  sortOrder Int                    @default(0)
+  isActive  Boolean                @default(true)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  productsAsCategory    QcfProduct[] @relation("ProductCategory")
+  productsAsSubcategory QcfProduct[] @relation("ProductSubcategory")
+  productsAsBrand       QcfProduct[] @relation("ProductBrand")
+  productsAsFamily      QcfProduct[] @relation("ProductFamily")
+  @@unique([orgId, kind, name, parentId])
+  @@index([orgId, kind])
+  @@index([orgId, parentId])
+  @@index([orgId])
+  @@map("CrmProductTaxonomy")
+  @@schema("app_quikcredflow")
+}
+model QcfProduct {
+  id              String         @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name            String
+  sku             String
+  /// Legacy free-text category — prefer categoryId when set.
+  category        String?
+  categoryId      String?
+  subcategoryId   String?
+  brandId         String?
+  familyId        String?
+  barcode         String?
+  tags            String[]       @default([])
+  hsnCode         String?
+  sacCode         String?
+  unitGroup       String         @default("Each")
+  defaultUnit     String         @default("Each")
+  standardCost    Decimal?       @db.Decimal(18, 2)
+  listPrice       Decimal        @db.Decimal(18, 2)
+  currency        String         @default("INR")
+  gstRate         Decimal        @db.Decimal(5, 2)
+  /// Optional explicit split; when null, CGST/SGST/IGST are derived from gstRate.
+  cgstRate        Decimal?       @db.Decimal(5, 2)
+  sgstRate        Decimal?       @db.Decimal(5, 2)
+  igstRate        Decimal?       @db.Decimal(5, 2)
+  manufacturer    String?
+  warrantyMonths  Int?
+  weightKg        Decimal?       @db.Decimal(10, 3)
+  lengthCm        Decimal?       @db.Decimal(10, 2)
+  widthCm         Decimal?       @db.Decimal(10, 2)
+  heightCm        Decimal?       @db.Decimal(10, 2)
+  serialTracked   Boolean        @default(false)
+  dynamicFields   Json?
+  description     String?
+  imageUrl        String?
+  productType     QcfProductType @default(Product)
+  isActive        Boolean        @default(true)
+  deletedAt       DateTime?
+  createdByUserId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  categoryRef    QcfProductTaxonomy? @relation("ProductCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryRef QcfProductTaxonomy? @relation("ProductSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  brandRef       QcfProductTaxonomy? @relation("ProductBrand", fields: [brandId], references: [id], onDelete: SetNull)
+  familyRef      QcfProductTaxonomy? @relation("ProductFamily", fields: [familyId], references: [id], onDelete: SetNull)
+
+  priceListItems  QcfPriceListItem[]
+  variants        QcfProductVariant[]
+  images          QcfProductImage[]
+  inventory       QcfProductInventory[]
+  stockMovements  QcfStockMovement[]
+  @@unique([orgId, sku])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, isActive])
+  @@index([orgId, categoryId])
+  @@index([orgId, brandId])
+  @@index([orgId, barcode])
+  @@map("CrmProduct")
+  @@schema("app_quikcredflow")
+}
+model QcfProductVariant {
+  id           String    @id @default(cuid())
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  productId    String
+  sku          String
+  name         String?
+  attributes   Json?
+  barcode      String?
+  listPrice    Decimal?  @db.Decimal(18, 2)
+  standardCost Decimal?  @db.Decimal(18, 2)
+  gstRate      Decimal?  @db.Decimal(5, 2)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  product      QcfProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventory    QcfProductInventory[]
+  stockMovements QcfStockMovement[]
+  @@unique([orgId, sku])
+  @@index([orgId, productId])
+  @@index([orgId])
+  @@map("CrmProductVariant")
+  @@schema("app_quikcredflow")
+}
+model QcfWarehouse {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  code      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  inventory QcfProductInventory[]
+  stockMovements QcfStockMovement[]
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("CrmWarehouse")
+  @@schema("app_quikcredflow")
+}
+model QcfProductInventory {
+  id                String   @id @default(cuid())
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  productId         String
+  variantId         String?
+  warehouseId       String
+  quantityOnHand    Int      @default(0)
+  quantityReserved  Int      @default(0)
+  lowStockThreshold Int?
+  updatedAt         DateTime @updatedAt
+  product           QcfProduct        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant           QcfProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse         QcfWarehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  @@unique([orgId, productId, variantId, warehouseId])
+  @@index([orgId, productId])
+  @@index([orgId, warehouseId])
+  @@index([orgId])
+  @@map("CrmProductInventory")
+  @@schema("app_quikcredflow")
+}
+model QcfStockMovement {
+  id              String               @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  productId       String
+  variantId       String?
+  warehouseId     String
+  quantity        Int
+  movementType    QcfStockMovementType
+  reference       String?
+  notes           String?
+  createdByUserId String?
+  createdAt       DateTime             @default(now())
+  product         QcfProduct           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant         QcfProductVariant?   @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse       QcfWarehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  @@index([orgId, productId, createdAt])
+  @@index([orgId, warehouseId])
+  @@index([orgId])
+  @@map("CrmStockMovement")
+  @@schema("app_quikcredflow")
+}
+model QcfProductImage {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  productId String
+  url       String
+  label     String?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  product   QcfProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@index([orgId, productId])
+  @@index([orgId])
+  @@map("CrmProductImage")
+  @@schema("app_quikcredflow")
+}
+model QcfPriceList {
+  id                String    @id @default(cuid())
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  currency          String    @default("INR")
+  effectiveFrom     DateTime?
+  effectiveTo       DateTime?
+  isActive          Boolean   @default(true)
+  isDefault         Boolean   @default(false)
+  regionCode        String?
+  customerTier      String?
+  versionNumber     Int       @default(1)
+  sourcePriceListId String?
+  deletedAt         DateTime?
+  createdByUserId   String?
+  updatedByUserId   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  items             QcfPriceListItem[]
+  quotes            QcfQuote[]
+  opportunities     QcfOpportunity[]
+  accountsDefault   QcfAccount[] @relation("AccountDefaultPriceList")
+  sourcePriceList   QcfPriceList?  @relation("PriceListClone", fields: [sourcePriceListId], references: [id], onDelete: SetNull)
+  clonedLists       QcfPriceList[] @relation("PriceListClone")
+  auditLogs         QcfPriceListAuditLog[]
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, isActive])
+  @@index([orgId, regionCode])
+  @@index([orgId, customerTier])
+  @@map("CrmPriceList")
+  @@schema("app_quikcredflow")
+}
+model QcfPriceListItem {
+  id              String       @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  priceListId     String
+  productId       String
+  unitPrice       Decimal      @db.Decimal(18, 2)
+  discountPct     Decimal      @default(0) @db.Decimal(5, 2)
+  minQuantity     Int          @default(1)
+  floorPrice      Decimal?     @db.Decimal(18, 2)
+  notes           String?
+  sortOrder       Int          @default(0)
+  deletedAt       DateTime?
+  updatedByUserId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  priceList       QcfPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  product         QcfProduct   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@index([orgId, priceListId])
+  @@index([orgId, priceListId, deletedAt])
+  @@index([orgId, productId])
+  @@index([orgId])
+  @@map("CrmPriceListItem")
+  @@schema("app_quikcredflow")
+}
+model QcfPriceListAuditLog {
+  id          String   @id @default(cuid())
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  priceListId String
+  itemId      String?
+  action      String
+  summary     String
+  changes     Json?
+  userId      String?
+  userName    String?
+  createdAt   DateTime @default(now())
+  priceList   QcfPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  @@index([orgId, priceListId, createdAt])
+  @@index([orgId])
+  @@map("CrmPriceListAuditLog")
+  @@schema("app_quikcredflow")
+}
+model QcfQuote {
+  id                    String             @id @default(cuid())
+  orgId              String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteNumber           String
+  versionNumber         Int                @default(1)
+  parentQuoteId         String?
+  accountId             String
+  contactId             String?
+  opportunityId         String?
+  priceListId           String?
+  currency              String             @default("INR")
+  effectiveFrom         DateTime?
+  effectiveTo           DateTime?
+  status                QcfQuoteStatus     @default(Draft)
+  pricingMode           QcfQuotePricingMode @default(Exclusive)
+  companyState          String?
+  billingState          String?
+  subtotal              Decimal            @default(0) @db.Decimal(18, 2)
+  totalLineDiscount     Decimal            @default(0) @db.Decimal(18, 2)
+  overallDiscountAmount Decimal            @default(0) @db.Decimal(18, 2)
+  freightAmount         Decimal            @default(0) @db.Decimal(18, 2)
+  taxableAmount         Decimal            @default(0) @db.Decimal(18, 2)
+  cgstAmount            Decimal            @default(0) @db.Decimal(18, 2)
+  sgstAmount            Decimal            @default(0) @db.Decimal(18, 2)
+  igstAmount            Decimal            @default(0) @db.Decimal(18, 2)
+  roundOffAmount        Decimal            @default(0) @db.Decimal(18, 2)
+  grandTotal            Decimal            @default(0) @db.Decimal(18, 2)
+  grandTotalInWords     String?
+  termsText             String?
+  ownerId               String?
+  ownerName             String?
+  sentAt                DateTime?
+  wonAt                 DateTime?
+  lostAt                DateTime?
+  lostReason            String?
+  lostNotes             String?
+  templateKey           String             @default("b2b-standard")
+  approvalStatus        QcfQuoteApprovalStatus @default(None)
+  engagementStatus      QcfQuoteEngagementStatus @default(NotSent)
+  portalTokenHash       String?
+  portalExpiresAt       DateTime?
+  firstViewedAt         DateTime?
+  lastViewedAt          DateTime?
+  lastViewedIp          String?
+  acceptedAt            DateTime?
+  rejectedAt            DateTime?
+  rejectedReason        String?
+  customerComment       String?
+  signedAt              DateTime?
+  signatureJson         Json?
+  signatureOtpVerified  Boolean            @default(false)
+  watermarkText         String?
+  bankDetailsJson       Json?
+  lockedSnapshotAt      DateTime?
+  deletedAt             DateTime?
+  createdByUserId       String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  priceList             QcfPriceList?      @relation(fields: [priceListId], references: [id])
+  lines                 QcfQuoteLine[]
+  transitions           QcfQuoteStatusTransition[]
+  order                 QcfOrder?
+  approvals             QcfQuoteApproval[]
+  pdfSnapshots          QcfQuotePdfSnapshot[]
+  comments              QcfQuoteComment[]
+  engagements           QcfQuoteEngagementEvent[]
+  portalAccess          QcfQuotePortalAccess[]
+  invoice               QcfInvoice?
+  @@unique([orgId, quoteNumber])
+  @@unique([orgId, portalTokenHash])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, accountId])
+  @@index([orgId, opportunityId])
+  @@index([orgId, ownerId])
+  @@index([orgId, parentQuoteId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, approvalStatus])
+  @@map("CrmQuote")
+  @@schema("app_quikcredflow")
+}
+model QcfQuoteLine {
+  id             String   @id @default(cuid())
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId        String
+  lineNumber     Int
+  productId      String?
+  productName    String
+  sku            String?
+  hsnCode        String?
+  description    String?
+  quantity       Decimal  @db.Decimal(18, 4)
+  unit           String   @default("Each")
+  unitPrice      Decimal  @db.Decimal(18, 2)
+  discountPct    Decimal  @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(18, 2)
+  taxableAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  gstRate        Decimal  @db.Decimal(5, 2)
+  cgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  sgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  igstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  lineTotal      Decimal  @default(0) @db.Decimal(18, 2)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  quote          QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@index([orgId, quoteId])
+  @@index([orgId])
+  @@map("CrmQuoteLine")
+  @@schema("app_quikcredflow")
+}
+model QcfQuoteStatusTransition {
+  id              String         @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId         String
+  fromStatus      QcfQuoteStatus
+  toStatus        QcfQuoteStatus
+  changedByUserId String?
+  changedByName   String?
+  reason          String?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  quote           QcfQuote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@index([orgId, quoteId])
+  @@index([orgId])
+  @@map("CrmQuoteStatusTransition")
+  @@schema("app_quikcredflow")
+}
+model QcfQuoteTemplate {
+  id              String   @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  key             String
+  name            String
+  description     String?
+  layout          String   @default("b2b")
+  themeColor      String   @default("#1d4ed8")
+  headerHtml      String?
+  footerHtml      String?
+  termsDefault    String?
+  bankDetailsJson Json?
+  watermarkText   String?
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@unique([orgId, key])
+  @@index([orgId, isActive])
+  @@index([orgId])
+  @@map("CrmQuoteTemplate")
+  @@schema("app_quikcredflow")
+}
+model QcfQuoteApproval {
+  id              String                @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId         String
+  status          QcfQuoteApprovalStatus @default(Pending)
+  triggerReason   String
+  requestedById   String?
+  requestedByName String?
+  decidedById     String?
+  decidedByName   String?
+  decisionNotes   String?
+  requestedAt     DateTime              @default(now())
+  decidedAt       DateTime?
+  quote           QcfQuote              @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@index([orgId, quoteId])
+  @@index([orgId, status])
+  @@index([orgId])
+  @@map("CrmQuoteApproval")
+  @@schema("app_quikcredflow")
+}
+model QcfQuotePdfSnapshot {
+  id              String   @id @default(cuid())
+  orgId        String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId         String
+  versionNumber   Int
+  templateKey     String
+  documentId      String?
+  storageKey      String?
+  contentHash     String?
+  fileName        String
+  contentType     String   @default("application/pdf")
+  size            Int      @default(0)
+  isLocked        Boolean  @default(true)
+  generatedById   String?
+  generatedByName String?
+  createdAt       DateTime @default(now())
+  quote           QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@index([orgId, quoteId, createdAt])
+  @@index([orgId])
+  @@map("CrmQuotePdfSnapshot")
+  @@schema("app_quikcredflow")
+}
+model QcfQuoteComment {
+  id          String   @id @default(cuid())
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId     String
+  body        String
+  mentions    Json?
+  authorId    String?
+  authorName  String?
+  isInternal  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  quote       QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@index([orgId, quoteId, createdAt])
+  @@index([orgId])
+  @@map("CrmQuoteComment")
+  @@schema("app_quikcredflow")
+}
+model QcfQuoteEngagementEvent {
+  id         String   @id @default(cuid())
+  orgId   String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId    String
+  eventType  String
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  quote      QcfQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@index([orgId, quoteId, createdAt])
+  @@index([orgId, eventType])
+  @@index([orgId])
+  @@map("CrmQuoteEngagementEvent")
+  @@schema("app_quikcredflow")
+}
+model QcfQuotePortalAccess {
+  id           String    @id @default(cuid())
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quoteId      String
+  tokenHash    String
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+  quote        QcfQuote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  @@unique([tokenHash])
+  @@index([orgId, quoteId])
+  @@index([orgId])
+  @@map("CrmQuotePortalAccess")
+  @@schema("app_quikcredflow")
+}
+model QcfInvoice {
+  id                String           @id @default(cuid())
+  orgId          String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invoiceNumber     String
+  quoteId           String?          @unique
+  orderId           String?
+  accountId         String?
+  contactId         String?
+  currency          String           @default("INR")
+  status            QcfInvoiceStatus @default(Draft)
+  subtotal          Decimal          @default(0) @db.Decimal(18, 2)
+  totalDiscount     Decimal          @default(0) @db.Decimal(18, 2)
+  taxableAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  cgstAmount        Decimal          @default(0) @db.Decimal(18, 2)
+  sgstAmount        Decimal          @default(0) @db.Decimal(18, 2)
+  igstAmount        Decimal          @default(0) @db.Decimal(18, 2)
+  freightAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  grandTotal        Decimal          @default(0) @db.Decimal(18, 2)
+  grandTotalInWords String?
+  dueDate           DateTime?
+  paidAt            DateTime?
+  sentAt            DateTime?
+  termsText         String?
+  ownerId           String?
+  ownerName         String?
+  deletedAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  quote             QcfQuote?        @relation(fields: [quoteId], references: [id])
+  @@unique([orgId, invoiceNumber])
+  @@index([orgId, status])
+  @@index([orgId, accountId])
+  @@index([orgId])
+  @@map("CrmInvoice")
+  @@schema("app_quikcredflow")
+}
+model QcfSequence {
+  id        String   @id @default(cuid())
+  orgId  String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  counter   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  @@unique([orgId, name], name: "sequence_uk")
+  @@index([orgId])
+  @@map("CrmSequence")
+  @@schema("app_quikcredflow")
+}
+model QcfOrder {
+  id                  String          @id @default(cuid())
+  orgId            String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orderNumber         String
+  quoteId             String?         @unique
+  opportunityId       String?
+  accountId           String?
+  contactId           String?
+  currency            String          @default("INR")
+  status              QcfOrderStatus  @default(Open)
+  subtotal            Decimal         @default(0) @db.Decimal(18, 2)
+  totalDiscount       Decimal         @default(0) @db.Decimal(18, 2)
+  taxableAmount       Decimal         @default(0) @db.Decimal(18, 2)
+  cgstAmount          Decimal         @default(0) @db.Decimal(18, 2)
+  sgstAmount          Decimal         @default(0) @db.Decimal(18, 2)
+  igstAmount          Decimal         @default(0) @db.Decimal(18, 2)
+  freightAmount       Decimal         @default(0) @db.Decimal(18, 2)
+  grandTotal          Decimal         @default(0) @db.Decimal(18, 2)
+  grandTotalInWords   String?
+  orderDate           DateTime        @default(now())
+  expectedDeliveryDate DateTime?
+  confirmedAt         DateTime?
+  fulfilledAt         DateTime?
+  closedAt            DateTime?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  internalNotes       String?
+  termsText           String?
+  ownerId             String?
+  ownerName           String?
+  deletedAt           DateTime?
+  createdByUserId     String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  quote               QcfQuote?       @relation(fields: [quoteId], references: [id])
+  lines               QcfOrderLine[]
+  @@unique([orgId, orderNumber])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([orgId, accountId])
+  @@index([orgId, deletedAt])
+  @@map("CrmOrder")
+  @@schema("app_quikcredflow")
+}
+model QcfOrderLine {
+  id             String   @id @default(cuid())
+  orgId       String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orderId        String
+  lineNumber     Int
+  productId      String?
+  productName    String
+  sku            String?
+  hsnCode        String?
+  description    String?
+  quantity       Decimal  @db.Decimal(18, 4)
+  unit           String   @default("Each")
+  unitPrice      Decimal  @db.Decimal(18, 2)
+  discountPct    Decimal  @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(18, 2)
+  taxableAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  gstRate        Decimal  @db.Decimal(5, 2)
+  cgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  sgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  igstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  lineTotal      Decimal  @default(0) @db.Decimal(18, 2)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  order          QcfOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@index([orgId, orderId])
+  @@index([orgId])
+  @@map("CrmOrderLine")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadStatus {
+  id          String                   @id @default(cuid())
+  name        String                   @unique
+  subStatuses QcfLeadStatusSubStatus[]
+  @@map("CrmLeadStatus")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadSubStatus {
+  id       String                   @id @default(cuid())
+  name     String                   @unique
+  statuses QcfLeadStatusSubStatus[]
+  @@map("CrmLeadSubStatus")
+  @@schema("app_quikcredflow")
+}
+model QcfLeadStatusSubStatus {
+  id              String           @id @default(cuid())
+  leadStatusId    String
+  leadSubStatusId String
+  leadStatus      QcfLeadStatus    @relation(fields: [leadStatusId], references: [id], onDelete: Cascade)
+  leadSubStatus   QcfLeadSubStatus @relation(fields: [leadSubStatusId], references: [id], onDelete: Cascade)
+  @@unique([leadStatusId, leadSubStatusId])
+  @@index([leadStatusId])
+  @@index([leadSubStatusId])
+  @@map("CrmLeadStatusSubStatus")
+  @@schema("app_quikcredflow")
+}
+model QcfFormSet {
+  id               String              @id @default(cuid())
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  surface          QcfFormSurface
+  name             String
+  isDefault        Boolean             @default(false)
+  isActive         Boolean             @default(true)
+  /// Points to the live version agents receive. Null until first publish.
+  currentVersionId String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  currentVersion   QcfFormSetVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions         QcfFormSetVersion[] @relation("FormSetVersions")
+  selectionLogsAsDefault QcfSetSelectionLog[] @relation("DefaultSet")
+  selectionLogsAsChosen  QcfSetSelectionLog[] @relation("ChosenSet")
+  @@unique([orgId, surface, name])
+  @@index([orgId, surface, isDefault])
+  @@index([orgId])
+  @@map("CrmFormSet")
+  @@schema("app_quikcredflow")
+}
+model QcfFormSetVersion {
+  id            String                  @id @default(cuid())
+  formSetId     String
+  versionNumber Int
+  status        QcfFormSetVersionStatus @default(draft)
+  publishedAt   DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  formSet       QcfFormSet              @relation("FormSetVersions", fields: [formSetId], references: [id])
+  currentFor    QcfFormSet[]            @relation("CurrentVersion")
+  fields        QcfFormField[]
+  mappingRules  QcfFormSetMappingRule[]
+  fieldValues   QcfFieldValue[]
+  selectionLogs QcfSetSelectionLog[]
+  tabs          QcfFormTab[]
+  rules         QcfFormRule[]
+  @@unique([formSetId, versionNumber])
+  @@index([formSetId, status])
+  @@map("CrmFormSetVersion")
+  @@schema("app_quikcredflow")
+}
+model QcfFormField {
+  id               String                    @id @default(cuid())
+  formSetVersionId String
+  tab              QcfFormFieldTab
+  fieldKey         String
+  label            String
+  fieldType        QcfFormFieldType
+  isProtected      Boolean                   @default(false)
+  requiredLevel    QcfFormFieldRequiredLevel  @default(soft)
+  sortOrder        Int
+  isActive         Boolean                   @default(true)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  version          QcfFormSetVersion         @relation(fields: [formSetVersionId], references: [id])
+  options          QcfFormFieldOption[]
+  formTabId         String?
+  formSectionId     String?
+  userPickerMode    QcfUserPickerMode?
+  userPickerScope   QcfUserPickerScope?
+  defaultVisibility QcfFieldVisibility        @default(visible)
+  formTab           QcfFormTab?               @relation(fields: [formTabId], references: [id])
+  formSection       QcfFormSection?           @relation(fields: [formSectionId], references: [id])
+  @@unique([formSetVersionId, tab, fieldKey])
+  @@unique([formSetVersionId, tab, label])
+  @@index([formSetVersionId, tab, sortOrder])
+  @@map("CrmFormField")
+  @@schema("app_quikcredflow")
+}
+model QcfFormFieldOption {
+  id          String       @id @default(cuid())
+  formFieldId String
+  /// Stable internal identifier; data attaches to this, not the label.
+  valueKey    String
+  label       String
+  sortOrder   Int
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  field       QcfFormField @relation(fields: [formFieldId], references: [id])
+  @@unique([formFieldId, valueKey])
+  @@index([formFieldId, isActive, sortOrder])
+  @@map("CrmFormFieldOption")
+  @@schema("app_quikcredflow")
+}
+model QcfFieldValue {
+  id               String            @id @default(cuid())
+  orgId         String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  activityId       String
+  formSetVersionId String
+  fieldKey         String
+  valueType        QcfFieldValueType
+  valueText        String?
+  valueNumber      Decimal?          @db.Decimal(18, 4)
+  valueDatetime    DateTime?
+  valueFileId      String?
+  valueUserIds     String[]           @default([])
+  createdAt        DateTime          @default(now())
+  version          QcfFormSetVersion @relation(fields: [formSetVersionId], references: [id])
+  valueFile        QcfFileAttachment? @relation(fields: [valueFileId], references: [id])
+  @@unique([activityId, fieldKey])
+  @@index([orgId, fieldKey, valueText])
+  @@index([orgId, fieldKey, valueNumber])
+  @@index([orgId, fieldKey, valueDatetime])
+  @@index([valueUserIds], type: Gin)
+  @@index([orgId])
+  @@map("CrmFieldValue")
+  @@schema("app_quikcredflow")
+}
+model QcfSetSelectionLog {
+  id            String            @id @default(cuid())
+  orgId      String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId        String
+  activityId    String?
+  defaultSetId  String
+  chosenSetId   String
+  formSetVersionId String
+  wasOverridden Boolean
+  chosenBy      String
+  createdAt     DateTime          @default(now())
+  defaultSet    QcfFormSet        @relation("DefaultSet", fields: [defaultSetId], references: [id])
+  chosenSet     QcfFormSet        @relation("ChosenSet", fields: [chosenSetId], references: [id])
+  version       QcfFormSetVersion @relation(fields: [formSetVersionId], references: [id])
+  @@index([orgId, leadId])
+  @@index([orgId, wasOverridden])
+  @@index([orgId])
+  @@map("CrmSetSelectionLog")
+  @@schema("app_quikcredflow")
+}
+model QcfFormSetMappingRule {
+  id               String            @id @default(cuid())
+  formSetVersionId String
+  trigger          Json
+  action           Json
+  sortOrder        Int
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  version          QcfFormSetVersion @relation(fields: [formSetVersionId], references: [id])
+  @@index([formSetVersionId, isActive, sortOrder])
+  @@map("CrmFormSetMappingRule")
+  @@schema("app_quikcredflow")
+}
+model QcfFormTab {
+  id                String               @id @default(cuid())
+  formSetVersionId  String
+  name              String
+  sortOrder         Int
+  visibility        QcfFormTabVisibility @default(always)
+  isProtected       Boolean              @default(false)
+  createdByUserId   String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  version           QcfFormSetVersion    @relation(fields: [formSetVersionId], references: [id])
+  sections          QcfFormSection[]
+  fields            QcfFormField[]
+  targetedByActions QcfFormRuleAction[]
+  @@index([formSetVersionId, sortOrder])
+  @@map("CrmFormTab")
+  @@schema("app_quikcredflow")
+}
+model QcfFormSection {
+  id        String         @id @default(cuid())
+  formTabId String
+  name      String?
+  sortOrder Int
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  tab       QcfFormTab     @relation(fields: [formTabId], references: [id])
+  fields    QcfFormField[]
+  @@index([formTabId, sortOrder])
+  @@map("CrmFormSection")
+  @@schema("app_quikcredflow")
+}
+model QcfFormRule {
+  id               String                 @id @default(cuid())
+  formSetVersionId String
+  name             String
+  matchType        QcfFormRuleMatchType
+  sortOrder        Int
+  isActive         Boolean                @default(true)
+  createdByUserId  String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  version          QcfFormSetVersion      @relation(fields: [formSetVersionId], references: [id])
+  conditions       QcfFormRuleCondition[]
+  actions          QcfFormRuleAction[]
+  @@index([formSetVersionId, isActive, sortOrder])
+  @@map("CrmFormRule")
+  @@schema("app_quikcredflow")
+}
+model QcfFormRuleCondition {
+  id              String                 @id @default(cuid())
+  formRuleId      String
+  subjectKind     QcfFormRuleSubjectKind
+  subjectFieldKey String?
+  operator        QcfFormRuleOperator
+  /// Value key(s) compared against. Array for is_any_of/is_none_of; empty for is_empty/is_not_empty.
+  valueKeys       Json?
+  sortOrder       Int
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  rule            QcfFormRule            @relation(fields: [formRuleId], references: [id], onDelete: Cascade)
+  @@index([formRuleId, sortOrder])
+  @@map("CrmFormRuleCondition")
+  @@schema("app_quikcredflow")
+}
+model QcfFormRuleAction {
+  id             String                @id @default(cuid())
+  formRuleId     String
+  actionType     QcfFormRuleActionType
+  targetKind     QcfFormRuleTargetKind
+  targetFieldKey String?
+  targetTabId    String?
+  setStatusId    String?
+  setSubStatusId String?
+  sortOrder      Int
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  rule           QcfFormRule           @relation(fields: [formRuleId], references: [id], onDelete: Cascade)
+  targetTab      QcfFormTab?           @relation(fields: [targetTabId], references: [id])
+  @@index([formRuleId, sortOrder])
+  @@map("CrmFormRuleAction")
+  @@schema("app_quikcredflow")
+}
+model QcfFileAttachment {
+  id          String          @id @default(cuid())
+  orgId    String
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  activityId  String
+  storageKey  String
+  filename    String
+  contentType String
+  sizeBytes   Int
+  uploadedBy  String
+  createdAt   DateTime        @default(now())
+  fieldValues QcfFieldValue[]
+  @@index([orgId, activityId])
+  @@index([orgId])
+  @@map("CrmFileAttachment")
+  @@schema("app_quikcredflow")
+}
+
+// ===========================================================================
+// CredFlow — isolated QuikIT RBAC tables in app_quikcredflow. Mirror the
+// app_quikcrm AppRole/RolePermission/RoleNavigation/UserAppRole/
+// UserPermissionExtra shapes exactly, but Qcf*-prefixed and scoped to
+// CredFlow's own schema (completes the de-vendor — the dormant RBAC code
+// previously pointed at app_quikcrm). Scalar orgId/userId/appId (no shared-
+// model relations), so this is purely additive — no reverse fields on
+// Org/User/App. Tables map to the same names inside app_quikcredflow.
+// ===========================================================================
+
+model QcfAppRole {
+  id          String              @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean             @default(false)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   String?
+  permissions QcfRolePermission[]
+  navigations QcfRoleNavigation[]
+  members     QcfUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikcredflow")
+}
+
+model QcfRolePermission {
+  id       String     @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QcfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikcredflow")
+}
+
+model QcfRoleNavigation {
+  id     String     @id @default(cuid())
+  roleId String
+  navKey String
+  role   QcfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quikcredflow")
+}
+
+model QcfUserAppRole {
+  id         String     @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime   @default(now())
+  assignedBy String?
+  role       QcfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikcredflow")
+}
+
+model QcfUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quikcredflow")
+}
+
+// --- QuikInsight schema -------------------------------------------------------
+
+model QiWorkspace {
+  id          String   @id @default(cuid())
+  userId      String
+  orgId       String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  connections QiPlatformConnection[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiPlatformConnection {
+  id             String    @id @default(cuid())
+  userId         String
+  orgId          String
+  workspaceId    String
+  platform       String
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  scopes         String[]  @default([])
+  metadata       Json      @default("{}")
+  status         String    @default("CONNECTED")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  workspace QiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncs     QiDataSync[]
+
+  @@unique([workspaceId, platform])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiDataSync {
+  id            String    @id @default(cuid())
+  userId        String
+  connectionId  String
+  platform      String
+  syncType      String    @default("incremental")
+  status        String
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  recordCount   Int?
+  errorMessage  String?
+
+  connection QiPlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, connectionId])
+  @@index([connectionId, startedAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiConnectedAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  teamId      String
+  provider    String
+  accountName String
+  credentials Json?
+  createdAt   DateTime @default(now())
+
+  @@index([teamId])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboard {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String   @default("Dashboard")
+  config    Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  snapshots QiDashboardSnapshot[]
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboardSnapshot {
+  id          String   @id @default(cuid())
+  dashboardId String
+  data        Json
+  snapshotAt  DateTime @default(now())
+
+  dashboard QiDashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId, snapshotAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiEmailReportSettings {
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  enabled    Boolean   @default(false)
+  recipients String[]  @default([])
+  frequency  String    @default("WEEKLY")
+  lastSentAt DateTime?
+
+  @@schema("app_quikinsight")
+}
+
+model QiAiInsightCache {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  data        Json
+  source      String   @default("rules")
+  generatedAt DateTime @default(now())
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiUserRole {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  role      String
+  teamId    String?
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiInvitation {
+  id         String    @id @default(cuid())
+  email      String
+  orgId      String
+  role       String    @default("MEMBER")
+  teamId     String?
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+  @@index([email])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenBalance {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  totalTokens Int      @default(100000)
+  usedTokens  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenUsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  orgId        String
+  feature      String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  status       String   @default("success")
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  orgId         String
+  type          String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  reason        String
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
 }

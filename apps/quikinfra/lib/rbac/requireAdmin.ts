@@ -20,7 +20,7 @@
  */
 
 import { createRequireAdmin } from "@quikit/auth/require-admin";
-import { db } from "@quikit/database";
+import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getQuikInfraAppId } from "./userCan";
 

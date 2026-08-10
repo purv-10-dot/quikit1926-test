@@ -187,6 +187,9 @@ describe("POST /api/issues", () => {
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
     mockDb.$transaction.mockImplementation(async (cb: unknown) => {
       const tx = {
+        // getInitialStatusId checks for an active workflow first; null → falls
+        // back to getDefaultStatusId (qtIssueStatus.findFirst below).
+        qtWorkflow: { findFirst: () => Promise.resolve(null) },
         qtIssueStatus: {
           findFirst: () => Promise.resolve({ id: "status_1" }),
         },

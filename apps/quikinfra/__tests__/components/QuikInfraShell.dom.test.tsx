@@ -13,6 +13,9 @@ const permState = {
   can: (_p: string | string[]) => true,
   hasModule: (_k: string) => true,
   canViewMenu: (_u: string | undefined) => true,
+  // Direct-URL gate: the shell renders an Access Denied body instead of the
+  // page children when this returns false.
+  canViewPath: (_p: string | undefined) => true,
   isMenuGranted: (_u: string | undefined) => true,
   isLoading: false,
   roleKey: "admin" as string | null,
@@ -33,6 +36,7 @@ beforeEach(() => {
   permState.roleKey = "admin";
   permState.hasModule = () => true;
   permState.canViewMenu = () => true;
+  permState.canViewPath = () => true;
   permState.isMenuGranted = () => true;
 });
 
