@@ -8,14 +8,13 @@ export default function DialerPage() {
   const status = dialerStatus();
   return (
     <div>
-      <PageHeader title="Dialer" subtitle="Click-to-call via IndiaVoice / RP Digital" />
+      <PageHeader title="Dialer" subtitle="Click-to-call" />
       {!status.configured && (
         <Card className="mb-4 border-amber-200 bg-amber-50">
           <CardBody className="text-sm text-amber-900">
-            Provider not configured. Set <code>RP_DIGITAL_AUTHCODE</code> (preferred) or
-            <code> RP_DIGITAL_BASIC_USER</code> + <code>RP_DIGITAL_BASIC_PASSWORD</code> as a
-            fallback, plus <code>RP_DIGITAL_DESKPHONE</code>, in your environment to enable
-            click-to-call. Your client IP must also be whitelisted on IndiaVoice&apos;s firewall.
+            Telephony provider not configured. Set the telephony credentials and
+            calling number in your environment to enable click-to-call. Your
+            server IP must also be whitelisted with the telephony provider.
           </CardBody>
         </Card>
       )}
@@ -35,7 +34,6 @@ export default function DialerPage() {
           <CardBody>
             <dl className="grid gap-2 text-sm">
               <Item k="Configured" v={status.configured ? "Yes" : "No"} />
-              <Item k="Base URL" v={status.baseUrl} />
               <Item k="Auth method" v={status.authMethod === "none" ? "Not set" : status.authMethod} />
               <Item k="Has credentials" v={status.hasCredentials ? "Yes" : "No"} />
               <Item k="Deskphone set" v={status.deskphoneSet ? "Yes" : "No"} />

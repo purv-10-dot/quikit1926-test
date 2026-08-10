@@ -2,9 +2,9 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 
 const INTEGRATIONS = [
-  { name: "IndiaVoice / RP Digital", status: "configured-via-env", description: "Click-to-call + webhook receiver" },
-  { name: "PostgreSQL", status: "system", description: "Primary database (via Prisma)" },
-  { name: "Redis", status: "system", description: "BullMQ queue backend" },
+  { name: "Telephony", status: "configured-via-env", description: "Click-to-call + webhook receiver" },
+  { name: "Database", status: "system", description: "Primary database" },
+  { name: "Queue", status: "system", description: "Background job processing" },
 ];
 
 export default function IntegrationsPage() {

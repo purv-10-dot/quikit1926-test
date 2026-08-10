@@ -9,8 +9,7 @@ export default function OutboundCampaignsPage() {
         <CardBody>
           <p className="text-sm text-crm-muted">
             {/* TODO(post-mvp): port full outbound campaign builder from quikcrm-frontend/src/pages/telephony/OutboundCampaignPage.tsx */}
-            Outbound campaign builder — coming soon. The IndiaVoice provider supports per-campaign member registration via{" "}
-            <code>POST /api/telephony/register-member</code>.
+            Outbound campaign builder — coming soon.
           </p>
         </CardBody>
       </Card>
