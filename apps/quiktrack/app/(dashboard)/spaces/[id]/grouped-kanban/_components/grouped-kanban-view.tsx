@@ -256,6 +256,7 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
             <GroupSection
               key={g.id}
               group={g}
+              projectId={projectId}
               virtual={isVirtual}
               statuses={statuses}
               members={members}

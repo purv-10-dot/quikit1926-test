@@ -35,6 +35,8 @@ const empty: ColumnState = {
  */
 export function BoardColumn({
   status,
+  columnStatusIds,
+  displayName,
   allStatuses,
   projectId,
   sprintId,
@@ -47,7 +49,17 @@ export function BoardColumn({
   onColumnDeleted,
   dragHandlers,
 }: {
-  status: BoardStatus;
+  /**
+   * The column's primary status. Required in classic (one-status-per-column)
+   * mode. In board-columns mode it may be undefined when the column has NO
+   * statuses mapped yet (a freshly-added custom column) — the column still
+   * renders (header + "No items"), just fetches nothing.
+   */
+  status?: BoardStatus;
+  /** When set (board-columns mode), fetch issues across this status set. */
+  columnStatusIds?: string[];
+  /** Column display name override (board-columns mode). */
+  displayName?: string;
   allStatuses: BoardStatus[];
   projectId: string;
   sprintId: string | null;
@@ -62,18 +74,31 @@ export function BoardColumn({
   dragHandlers?: {
     onDragStart: (e: React.DragEvent) => void;
     onDragOver: (e: React.DragEvent) => void;
-    onDrop: (e: React.DragEvent) => void;
+    // Optional: an unmapped board column (no primary status) has no drop target.
+    onDrop?: (e: React.DragEvent) => void;
   };
 }) {
   const [state, setState] = useState<ColumnState>(empty);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<ColumnState>(empty);
+  // Stable fetch identity: the status set this column shows. An unmapped
+  // board column (no statuses, no primary) has no fetch key → renders empty.
+  const columnKey = (columnStatusIds && columnStatusIds.length > 0)
+    ? columnStatusIds.join(",")
+    : (status?.id ?? "");
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   const loadMore = useCallback(
     async (initial = false) => {
+      // An unmapped board column (no status set at all) fetches nothing — it
+      // just shows as an empty column until statuses are mapped to it.
+      const hasStatusSet = (columnStatusIds && columnStatusIds.length > 0) || !!status;
+      if (!hasStatusSet) {
+        setState((s) => ({ ...s, loading: false, loaded: true }));
+        return;
+      }
       setState((s) => {
         if (s.loading) return s;
         if (!initial && !s.hasMore) return s;
@@ -81,10 +106,16 @@ export function BoardColumn({
       });
       const params = new URLSearchParams({
         projectId,
-        statusId: status.id,
         excludeType: "SUBTASK",
         limit: String(PAGE_SIZE),
       });
+      // Board-columns mode: one column may span several statuses → statusIds
+      // IN-list. Otherwise the classic one-status-per-column filter.
+      if (columnStatusIds && columnStatusIds.length > 0) {
+        params.set("statusIds", columnStatusIds.join(","));
+      } else if (status) {
+        params.set("statusId", status.id);
+      }
       // Scrum boards scope to the active sprint(s) via a sprintId id-list.
       // Functional ("Activity Board") boards pass null → no sprint filter, so
       // the issues API returns every task for the status (Kanban-style).
@@ -126,14 +157,17 @@ export function BoardColumn({
         setState((s) => ({ ...s, loading: false, loaded: true }));
       }
     },
-    [projectId, sprintId, status.id, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters],
+    // columnKey is the stable string form of columnStatusIds (its identity would
+    // change every render); depend on the key, not the array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projectId, sprintId, status?.id, columnKey, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters],
   );
 
   useEffect(() => {
     setState(empty);
     void loadMore(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, sprintId, status.id, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
+  }, [projectId, sprintId, status?.id, columnKey, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -164,7 +198,7 @@ export function BoardColumn({
     for (const m of members) map[m.userId] = m;
     return map;
   }, [members]);
-  const Icon = STATUS_ICON(status.category);
+  const Icon = STATUS_ICON(status?.category ?? "BACKLOG");
   const total = state.total || state.issues.length;
 
   return (
@@ -175,24 +209,28 @@ export function BoardColumn({
     >
       <div
         className="flex items-center justify-between px-1 mb-2 shrink-0"
-        draggable={!!dragHandlers}
-        onDragStart={dragHandlers?.onDragStart}
-        style={{ cursor: dragHandlers ? "grab" : "default" }}
+        draggable={!!dragHandlers && !columnStatusIds}
+        onDragStart={columnStatusIds ? undefined : dragHandlers?.onDragStart}
+        style={{ cursor: dragHandlers && !columnStatusIds ? "grab" : "default" }}
       >
         <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase text-gray-700">
-          {status.name}
-          <Icon className={`h-3.5 w-3.5 ${STATUS_ICON_CLASS(status.category)}`} />
+          {displayName ?? status?.name}
+          <Icon className={`h-3.5 w-3.5 ${STATUS_ICON_CLASS(status?.category ?? "BACKLOG")}`} />
           <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
             {state.issues.length} of {total}
           </span>
         </div>
-        <ColumnMenu
-          status={status}
-          otherStatuses={allStatuses.filter((s) => s.id !== status.id)}
-          projectId={projectId}
-          onRenamed={onColumnRenamed}
-          onDeleted={onColumnDeleted}
-        />
+        {/* The inline status menu is only for classic one-status-per-column
+            mode; in board-columns mode, columns are managed in Board settings. */}
+        {!columnStatusIds && status && (
+          <ColumnMenu
+            status={status}
+            otherStatuses={allStatuses.filter((s) => s.id !== status.id)}
+            projectId={projectId}
+            onRenamed={onColumnRenamed}
+            onDeleted={onColumnDeleted}
+          />
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-2 pr-1">

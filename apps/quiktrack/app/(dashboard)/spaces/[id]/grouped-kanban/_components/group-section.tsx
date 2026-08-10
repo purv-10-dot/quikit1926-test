@@ -15,6 +15,7 @@ import { ROW_GRID_MIN_WIDTH, ROW_GRID_TEMPLATE, TaskRow } from "./task-row";
 
 interface GroupSectionProps {
   group: GroupedBoardGroup;
+  projectId: string;
   statuses: GroupedBoardStatus[];
   members: BoardMemberLite[];
   sprints: SprintLite[];
@@ -41,6 +42,7 @@ interface GroupSectionProps {
 
 export function GroupSection({
   group,
+  projectId,
   statuses,
   members,
   sprints,
@@ -113,6 +115,7 @@ export function GroupSection({
                 <TaskRow
                   key={t.id}
                   task={t}
+                  projectId={projectId}
                   groupId={group.id}
                   statuses={statuses}
                   members={members}

@@ -17,6 +17,7 @@ import { SortableTask } from "./dnd/sortable-task";
 
 interface TaskRowProps {
   task: GroupedBoardTask;
+  projectId: string;
   groupId: string;
   statuses: GroupedBoardStatus[];
   members: BoardMemberLite[];
@@ -41,6 +42,7 @@ export const ROW_GRID_MIN_WIDTH = 892;
 
 function TaskRowImpl({
   task,
+  projectId,
   groupId,
   statuses,
   members,
@@ -87,6 +89,8 @@ function TaskRowImpl({
             onOpenDetail={() => onOpenDetail(task.id)}
           />
           <StatusCell
+            issueId={task.id}
+            projectId={projectId}
             value={task.statusId}
             statuses={statuses}
             onCommit={(statusId) => onPatch(task.id, { statusId })}

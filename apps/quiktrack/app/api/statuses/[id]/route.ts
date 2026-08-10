@@ -48,6 +48,26 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!status) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
+    // Block deletion when the status is used by any workflow (node / transition
+    // target / source) — those FKs cascade, so guard first (WF-2.2).
+    const [asNode, asTarget, asSource] = await Promise.all([
+      db.qtWorkflowStatus.count({ where: { statusId: params.id } }),
+      db.qtWorkflowTransition.count({ where: { toStatusId: params.id, isDeleted: false } }),
+      db.qtWorkflowTransitionFrom.count({ where: { statusId: params.id } }),
+    ]);
+    const workflowRefs = asNode + asTarget + asSource;
+    if (workflowRefs > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `This status is used by ${workflowRefs} workflow reference(s). Remove it from the workflow before deleting.`,
+          code: "STATUS_IN_USE_BY_WORKFLOW",
+          references: workflowRefs,
+        },
+        { status: 409 },
+      );
+    }
+
     const url = new URL(req.url);
     const reassignTo = url.searchParams.get("reassignTo");
     const inUse = await db.qtIssue.count({
