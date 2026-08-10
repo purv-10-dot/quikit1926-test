@@ -8,6 +8,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildOnHoldEmail } from "@/lib/email-templates/application-on-hold";
 import { buildInterviewPassedEmail } from "@/lib/email-templates/interview-passed";
 import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
+import { feedbackNotYetOpen, feedbackNotOpenMessage } from "@/lib/recruit/feedback-window";
 
 /**
  * POST /api/v1/hrms/recruit/applications/:id/stage-feedback
@@ -55,6 +56,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       where: { orgId, applicationId: app.id, round, deletedAt: null },
       orderBy: { scheduledAt: "desc" },
     });
+    // A scheduled interview for this stage that hasn't started yet blocks
+    // feedback — same rule as the pipeline UI and the emailed feedback link.
+    if (interview && feedbackNotYetOpen(interview.scheduledAt)) {
+      return validationError(feedbackNotOpenMessage(interview.scheduledAt));
+    }
     if (!interview) {
       interview = await prisma.interview.create({
         data: {

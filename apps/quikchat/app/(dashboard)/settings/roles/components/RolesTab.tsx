@@ -112,7 +112,7 @@ export function RolesTab() {
           <h2 className="text-sm font-bold text-gray-800">Roles</h2>
           <button
             onClick={() => setCreating(true)}
-            className="h-7 w-7 rounded-full bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center justify-center"
+            className="h-7 w-7 rounded-full bg-[var(--qc-accent)] hover:bg-[var(--qc-accent-strong)] text-[var(--qc-accent-fg)] inline-flex items-center justify-center"
             title="Add role"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -133,7 +133,7 @@ export function RolesTab() {
                 }
               }}
               placeholder="Role name"
-              className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--qc-accent)]"
             />
             <div className="flex items-center gap-2">
               <button
@@ -180,7 +180,7 @@ export function RolesTab() {
                   onClick={() => setSelectedId(role.id)}
                   className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 group transition-colors ${
                     isSelected
-                      ? "bg-blue-50 border-l-2 border-blue-600"
+                      ? "bg-[var(--qc-accent-soft)] border-l-2 border-[var(--qc-accent)]"
                       : "border-l-2 border-transparent hover:bg-gray-50"
                   }`}
                 >
@@ -188,13 +188,13 @@ export function RolesTab() {
                     {role.isSystem && <Shield className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />}
                     <span
                       className={`text-sm truncate ${
-                        isSelected ? "font-semibold text-blue-700" : "text-gray-800"
+                        isSelected ? "font-semibold text-[var(--qc-accent-strong)]" : "text-gray-800"
                       }`}
                     >
                       {role.name}
                     </span>
                     {role.isDefault && (
-                      <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-blue-100 text-blue-700 flex-shrink-0">
+                      <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-[var(--qc-accent-soft)] text-[var(--qc-accent-strong)] flex-shrink-0">
                         Default
                       </span>
                     )}

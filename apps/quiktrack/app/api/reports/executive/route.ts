@@ -294,16 +294,29 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     usersWithActivity.add(u);
     return row;
   }
-  // userId -> role-name key (department). A user can have different project
-  // roles in different projects; we take the first for grouping. We key by
-  // the lowercased name so the same role label across projects collapses
-  // into a single department row.
+  // userId -> role-name key (department). A user can hold different project
+  // roles in different projects, so we pick one. We key by the lowercased name
+  // so the same role label across projects collapses into a single department
+  // row.
+  //
+  // When a role filter is active the chosen role MUST be one the filter asked
+  // for. Everyone in the result set already holds that role (they were matched
+  // on it in `teamScopedUserIds`), but picking whichever role happened to come
+  // back first labelled e.g. a Contributor-filtered row as "Space Admin" — and
+  // worse, dropped that user's activity out of the heatmap, whose rows are
+  // filtered to the requested roles further down. Absent a filter, first-seen
+  // wins as before.
+  const wantedRoleKeys = new Set(teamFilter.map((s) => s.toLowerCase()));
   const userTeam = new Map<string, string>();
   const teamLabel = new Map<string, string>();
   for (const tm of teamMembers) {
     const key = tm.projectRole.name.toLowerCase();
-    if (!userTeam.has(tm.userId)) userTeam.set(tm.userId, key);
     if (!teamLabel.has(key)) teamLabel.set(key, tm.projectRole.name);
+    const current = userTeam.get(tm.userId);
+    const matchesFilter = wantedRoleKeys.has(key);
+    if (current === undefined || (matchesFilter && !wantedRoleKeys.has(current))) {
+      userTeam.set(tm.userId, key);
+    }
   }
 
   function bumpTeamForUser(u: string | null): WeekBuckets | null {

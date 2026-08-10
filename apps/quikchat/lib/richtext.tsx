@@ -121,6 +121,66 @@ function parseInline(text: string): Inline[] {
   return out;
 }
 
+/**
+ * Flatten inline markdown to plain text (for previews/quotes). Walks the SAME
+ * `Inline` AST the renderer uses, so it can never drift from how messages
+ * render: emphasis unwraps to its text, `code` → its literal, `link` → its label.
+ */
+function flattenInline(nodes: Inline[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.kind) {
+        case "text":
+          return n.value;
+        case "code":
+          return n.value;
+        case "link":
+          return n.label;
+        case "bold":
+        case "italic":
+        case "underline":
+        case "strike":
+          return flattenInline(n.children);
+      }
+    })
+    .join("");
+}
+
+/**
+ * Strip markdown to a single line of readable plain text for PREVIEWS (channel
+ * list, reply strip, quote). Reuses the inline grammar via `parseInline` and
+ * mirrors exactly the block syntax `renderBlocks` recognises — code fences
+ * (markers dropped, inner text kept), `> ` quotes, `- ` bullets, `N.` numbered —
+ * collapsing everything to one whitespace-normalised line. Pure, no React.
+ *
+ * Faithful to the real grammar: `__x__` → x (underline), a lone `_` stays
+ * literal (there is no single-`_` italic token), so previews match rendering.
+ */
+export function flattenMarkdown(content: string): string {
+  if (!content) return "";
+  const lines = content.split("\n");
+  const out: string[] = [];
+  let inFence = false;
+  for (const line of lines) {
+    // Mirror `renderBlocks` recognition EXACTLY so previews match rendering:
+    if (/^```\s*$/.test(line)) {
+      inFence = !inFence; // fence marker line — dropped
+      continue;
+    }
+    if (inFence) {
+      out.push(line); // code body is already plain — keep verbatim
+      continue;
+    }
+    if (line.startsWith("> ") || line.startsWith("- ")) {
+      out.push(flattenInline(parseInline(line.slice(2)))); // blockquote / bullet
+      continue;
+    }
+    const numbered = line.match(/^(\d+)\.\s+(.*)$/);
+    out.push(flattenInline(parseInline(numbered ? numbered[2]! : line)));
+  }
+  return out.join(" ").replace(/\s+/g, " ").trim();
+}
+
 function renderInline(nodes: Inline[]): ReactNode {
   return nodes.map((n, i) => {
     switch (n.kind) {

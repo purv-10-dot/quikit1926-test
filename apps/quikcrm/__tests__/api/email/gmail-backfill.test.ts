@@ -51,6 +51,15 @@ describe("gmail backfillMessages", () => {
     expect(listUrl).not.toContain("pageToken"); // first page has no cursor
   });
 
+  it("skips history pagination and captures nothing when there is no cursor", async () => {
+    // Guard for the test below: backfill (no historyId) must not hit /history.
+    fetchMock
+      .mockResolvedValueOnce(ok({ messages: [] }))
+      .mockResolvedValueOnce(ok({ historyId: "1" }));
+    await gmailProvider.backfillMessages(ctx, { sinceMs: SINCE });
+    expect((fetchMock.mock.calls[0][0] as string)).not.toContain("/history");
+  });
+
   it("continues from a cursor and captures historyId on the final page", async () => {
     fetchMock
       .mockResolvedValueOnce(ok({ messages: [{ id: "m2" }] })) // no nextPageToken → last page
@@ -72,5 +81,97 @@ describe("gmail backfillMessages", () => {
     expect(r.messages[0].direction).toBe("inbound");
     // The continuation cursor was threaded into the list request.
     expect(fetchMock.mock.calls[0][0]).toContain("pageToken=PAGE2");
+  });
+});
+
+/**
+ * Regression: mail sent from the Gmail UI is usually recorded as the SENT label
+ * being applied to an already-existing message (Gmail auto-saves a draft), i.e.
+ * a `labelAdded` event — NOT `messageAdded`. Listening only for messageAdded
+ * meant Gmail-origin sends never reached the CRM and no Email Activity was made.
+ */
+describe("gmail fetchNewMessages — history labelsAdded", () => {
+  it("requests both messageAdded and labelAdded history types", async () => {
+    fetchMock.mockResolvedValueOnce(ok({ historyId: "1001" }));
+    await gmailProvider.fetchNewMessages({ ...ctx, historyId: "1000" }, { backfillSinceMs: SINCE });
+    const url = decodeURIComponent(fetchMock.mock.calls[0][0] as string);
+    expect(url).toContain("/history?");
+    expect(url).toContain("historyTypes=messageAdded");
+    expect(url).toContain("historyTypes=labelAdded");
+  });
+
+  it("picks up a Gmail-sent message that only appears as a SENT labelAdded", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        ok({
+          history: [{ labelsAdded: [{ message: { id: "sent1" }, labelIds: ["SENT"] }] }],
+          historyId: "1002",
+        }),
+      )
+      .mockResolvedValueOnce(
+        ok({
+          id: "sent1",
+          threadId: "t9",
+          labelIds: ["SENT"],
+          internalDate: String(SINCE),
+          payload: {
+            headers: [
+              { name: "From", value: "rep@company.com" },
+              { name: "To", value: "buyer@acme.com" },
+              { name: "Subject", value: "Quote" },
+            ],
+          },
+        }),
+      );
+
+    const r = await gmailProvider.fetchNewMessages({ ...ctx, historyId: "1000" }, { backfillSinceMs: SINCE });
+
+    expect(r.messages).toHaveLength(1);
+    expect(r.messages[0].providerMessageId).toBe("sent1");
+    expect(r.messages[0].direction).toBe("outbound"); // → standalone/linked Email Activity
+    expect(r.messages[0].folder).toBe("sent");
+    expect(r.historyId).toBe("1002");
+  });
+
+  it("ignores non-SENT label churn (READ/STARRED) so ticks stay cheap", async () => {
+    fetchMock.mockResolvedValueOnce(
+      ok({
+        history: [
+          { labelsAdded: [{ message: { id: "x1" }, labelIds: ["UNREAD"] }] },
+          { labelsAdded: [{ message: { id: "x2" }, labelIds: ["STARRED", "IMPORTANT"] }] },
+        ],
+        historyId: "1003",
+      }),
+    );
+
+    const r = await gmailProvider.fetchNewMessages({ ...ctx, historyId: "1000" }, { backfillSinceMs: SINCE });
+
+    expect(r.messages).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledOnce(); // no hydrate calls
+  });
+
+  it("dedupes an id reported as both messageAdded and SENT labelAdded", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        ok({
+          history: [
+            { messagesAdded: [{ message: { id: "dup1" } }] },
+            { labelsAdded: [{ message: { id: "dup1" }, labelIds: ["SENT"] }] },
+          ],
+          historyId: "1004",
+        }),
+      )
+      .mockResolvedValueOnce(
+        ok({
+          id: "dup1",
+          threadId: "t10",
+          labelIds: ["SENT"],
+          internalDate: String(SINCE),
+          payload: { headers: [{ name: "From", value: "rep@company.com" }] },
+        }),
+      );
+
+    const r = await gmailProvider.fetchNewMessages({ ...ctx, historyId: "1000" }, { backfillSinceMs: SINCE });
+    expect(r.messages).toHaveLength(1); // hydrated once, not twice
   });
 });

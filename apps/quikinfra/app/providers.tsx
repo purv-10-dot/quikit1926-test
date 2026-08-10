@@ -10,6 +10,7 @@ import { useState, type ReactNode } from "react";
 import { ConfirmProvider } from "@quikit/ui";
 import { Toaster } from "@/components/Toaster";
 import {
+  areToastsSuppressed,
   isSilentMutation,
   resolveErrorMessage,
   resolveSuccessMessage,
@@ -37,12 +38,18 @@ export function Providers({ children }: { children: ReactNode }) {
             },
           },
         },
+        // A batch caller (bulk import) opens a suppression scope so N rows
+        // don't stack N identical toasts — it reports one summary instead.
+        // Errors are suppressed with it: the batch itemises its own row
+        // failures, so the per-row toasts would be duplicate noise too.
         mutationCache: new MutationCache({
           onSuccess: (_data, _vars, _ctx, mutation) => {
+            if (areToastsSuppressed()) return;
             if (isSilentMutation(mutation.options.meta)) return;
             toast.success(resolveSuccessMessage(mutation.options.meta));
           },
           onError: (error, _vars, _ctx, mutation) => {
+            if (areToastsSuppressed()) return;
             if (isSilentMutation(mutation.options.meta)) return;
             toast.error(resolveErrorMessage(mutation.options.meta, error));
           },

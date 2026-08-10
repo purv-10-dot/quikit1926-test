@@ -98,8 +98,13 @@ export function renderGrnLine(
       {/* 3. Action strip — the primary inputs */}
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-[11px] font-semibold text-gray-700 mb-1">
-            Received <span className="text-red-500">*</span>
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-700 mb-1">
+            <span>Received <span className="text-red-500">*</span></span>
+            {uom && (
+              <span className="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                {uom}
+              </span>
+            )}
           </label>
           <input
             type="number"

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 
-export type AvailabilityCategory = "Sick" | "Parental" | "WFH" | "Holiday" | "OnLeave";
+type AvailabilityCategory = "Sick" | "Parental" | "WFH" | "Holiday" | "OnLeave";
 
 export interface AvailabilityRow {
   category: AvailabilityCategory;

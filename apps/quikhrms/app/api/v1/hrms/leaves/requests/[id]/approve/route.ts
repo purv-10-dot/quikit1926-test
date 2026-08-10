@@ -6,7 +6,6 @@ import { leaveApprovalActionSchema } from "@/lib/validations/leave";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildLeaveDecisionEmail } from "@/lib/email-templates/leave-decision";
-import { publishNotification } from "@/lib/services/realtime";
 import {
   getActiveChainLevels,
   getCallerRoleIds,
@@ -128,14 +127,24 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     });
 
     if (updated && (updated.status === "Approved" || updated.status === "Rejected")) {
-      // Real-time notification to employee
+      // In-app notification to employee. `publishNotification` (lib/services/
+      // realtime.ts) was a Pub/Sub no-op left behind after realtime removal —
+      // this call looked wired but silently notified no one; write the row
+      // directly like every other module (Requisition, Delegation, etc.) does.
       const decision = updated.status === "Approved" ? "approved" : "rejected";
-      publishNotification(orgId, [updated.employeeId], {
-        title: `Leave ${decision}`,
-        message: `Your ${updated.leaveType?.name ?? "leave"} request has been ${decision}.`,
-        type: updated.status === "Approved" ? "Success" : "Error",
-        link: `/leaves`,
-      }).catch(() => {});
+      prisma.hrmsNotification.create({
+        data: {
+          orgId,
+          employeeId: updated.employeeId,
+          type: updated.status === "Approved" ? "Success" : "Error",
+          channel: "InApp",
+          title: `Leave ${decision}`,
+          message: `Your ${updated.leaveType?.name ?? "leave"} request has been ${decision}.`,
+          link: "/leaves",
+          entityType: "LeaveRequest",
+          entityId: updated.id,
+        },
+      }).catch((err) => console.error("[notify] leave decision in-app notify failed:", err));
 
       void fireWorkflow({
         orgId,
@@ -210,12 +219,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
               nextApproverIds = holders.map((h) => h.id);
             }
             if (nextApproverIds.length > 0) {
-              publishNotification(orgId, nextApproverIds, {
-                title: "Leave awaiting your approval",
-                message: `A ${updated.leaveType?.name ?? "leave"} request has advanced to your approval level.`,
-                type: "Info",
-                link: `/leaves/team-leaves`,
-              }).catch(() => {});
+              await prisma.hrmsNotification.createMany({
+                data: nextApproverIds.map((id) => ({
+                  orgId,
+                  employeeId: id,
+                  type: "Info" as const,
+                  channel: "InApp" as const,
+                  title: "Leave awaiting your approval",
+                  message: `A ${updated.leaveType?.name ?? "leave"} request has advanced to your approval level.`,
+                  link: "/leaves/team-leaves",
+                  entityType: "LeaveRequest",
+                  entityId: updated.id,
+                })),
+              });
             }
           } catch (err) {
             console.error("[notify] next-level leave approver notify failed:", err);

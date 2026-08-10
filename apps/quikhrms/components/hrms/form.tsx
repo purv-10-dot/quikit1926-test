@@ -72,5 +72,3 @@ export function FormActions({ children, className }: { children: ReactNode; clas
   );
 }
 
-export const formInputClass = baseField;
-export const formInputErrorClass = errorField;

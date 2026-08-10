@@ -50,7 +50,7 @@ export const updateCompanySettingsSchema = z.object({
 
 // ─── Holidays ───────────────────────────────────────────
 
-export const CompanyHolidayTypeEnum = z.enum(["National", "Regional", "Company", "Optional"]);
+const CompanyHolidayTypeEnum = z.enum(["National", "Regional", "Company", "Optional"]);
 
 export const createCompanyHolidaySchema = z.object({
   name: z.string().min(1, "Name required"),
@@ -75,7 +75,7 @@ export const bulkCompanyHolidaySchema = z.object({
 
 // ─── Approval Chain ─────────────────────────────────────
 
-export const ApprovalModuleEnum = z.enum([
+const ApprovalModuleEnum = z.enum([
   "Leave", "Expense", "Asset", "Onboarding", "Offboarding", "Attendance", "Document",
   "Engagement", "Feedback",
   "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
@@ -89,9 +89,9 @@ export const ApprovalModuleEnum = z.enum([
  * Legacy approverType ("ReportingManager" etc.) accepted for backward compat
  * on read, but new chains must use kind + roleId/userId.
  */
-export const ApproverKindEnum = z.enum(["ROLE", "USER"]);
+const ApproverKindEnum = z.enum(["ROLE", "USER"]);
 
-export const approvalLevelSchema = z.object({
+const approvalLevelSchema = z.object({
   level: z.number().int().min(1),
   kind: ApproverKindEnum,
   roleId: z.string().optional(),
@@ -112,7 +112,3 @@ export const createApprovalChainSchema = z.object({
 });
 
 export const updateApprovalChainSchema = createApprovalChainSchema.partial();
-
-export type UpdateCompanySettingsInput = z.infer<typeof updateCompanySettingsSchema>;
-export type CreateCompanyHolidayInput = z.infer<typeof createCompanyHolidaySchema>;
-export type CreateApprovalChainInput = z.infer<typeof createApprovalChainSchema>;

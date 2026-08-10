@@ -34,8 +34,11 @@ export interface PersistMessageInput {
   bodyHtml?: string;
   bodyText?: string;
   timestamp: Date;
+  /** A primary kind, or "None" for a standalone (unlinked) email activity. */
   relatedKind: string;
   relatedObjectId: string;
+  /** Opportunity the matched record rolls up to, when known. */
+  opportunityId?: string;
   attachments?: {
     providerAttachmentId?: string;
     filename: string;
@@ -109,11 +112,12 @@ export async function persistMessage(input: PersistMessageInput): Promise<Persis
       orgId: input.orgId,
       userId: input.userId,
       type: "email",
-      relatedKind: input.relatedKind as "Lead" | "Opportunity" | "Contact" | "Account",
+      relatedKind: input.relatedKind as "Lead" | "Opportunity" | "Contact" | "Account" | "None",
       relatedObjectId: input.relatedObjectId,
       subject: `${directionVerb}: ${subjectForActivity}`,
       outcome: input.direction === "outbound" ? "Sent" : "Received",
       occurredAt,
+      opportunityId: input.opportunityId,
       sourceSystem: input.provider,
       externalId: input.providerMessageId,
       detailNotes: snippet,

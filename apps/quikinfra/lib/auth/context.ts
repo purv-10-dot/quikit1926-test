@@ -26,7 +26,7 @@
 import { cache } from "react";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { db as dbCentral } from "@quikit/database";
+import { db } from "@/lib/db";
 import { logger } from "@/lib/observability/logger";
 import { ROLE_DEFINITIONS } from "@/lib/rbac/roles";
 import { ALL_PERMISSION_KEYS } from "@/lib/rbac/permissions";
@@ -160,7 +160,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         rolePermissions: Array<{ resource: string; action: string }>;
       };
       let assignment: { role: RoleWithPerms } | null =
-        await dbCentral.cnUserAppRole.findFirst({
+        await db.cnUserAppRole.findFirst({
         where: { userId, orgId, role: { appId } },
         include: {
           role: {
@@ -199,7 +199,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
           ? { orgId, appId, isSystem: true, name: "admin" }
           : { orgId, appId, isDefault: true };
 
-        let defaultRole = await dbCentral.cnAppRole.findFirst({
+        let defaultRole = await db.cnAppRole.findFirst({
           where: targetRoleQuery,
           select: {
             id: true,
@@ -213,7 +213,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         // run for this org yet), fall back to whatever isDefault role exists.
         // Better to land them on a real role than bounce to 401.
         if (!defaultRole) {
-          defaultRole = await dbCentral.cnAppRole.findFirst({
+          defaultRole = await db.cnAppRole.findFirst({
             where: { orgId, appId, isDefault: true },
             select: {
               id: true,
@@ -225,7 +225,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         }
         if (defaultRole) {
           try {
-            await dbCentral.cnUserAppRole.upsert({
+            await db.cnUserAppRole.upsert({
               where: {
                 userId_orgId_roleId: {
                   userId,
@@ -261,7 +261,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
                 (err as { code?: string }).code === "P2002");
 
             if (isUniqueViolation) {
-              const refetched = await dbCentral.cnUserAppRole.findFirst({
+              const refetched = await db.cnUserAppRole.findFirst({
                 where: { userId, orgId, role: { appId } },
                 include: {
                   role: {
@@ -313,7 +313,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         resource: string;
         action: string;
         revoke: boolean;
-      }> = await dbCentral.cnUserPermissionExtra.findMany({
+      }> = await db.cnUserPermissionExtra.findMany({
         where: { userId, orgId },
         select: { resource: true, action: true, revoke: true },
       });
@@ -451,7 +451,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     if (!isAdminRole && !isCrossSite) {
       try {
         scopedProjectIds = await loadProjectAccess(
-          dbCentral as never,
+          db as never,
           userId,
           orgId,
         );
@@ -465,7 +465,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     // independent of the project-scope decision above.
     if (!isAdminRole) {
       try {
-        const revokes = (await dbCentral.cnUserPermissionExtra.findMany({
+        const revokes = (await db.cnUserPermissionExtra.findMany({
           where: { userId, orgId, revoke: true },
           select: { resource: true, action: true },
         })) as Array<{ resource: string; action: string }>;
@@ -566,6 +566,14 @@ export async function requireAuth(): Promise<AuthResult> {
  *   - The matrix row exists and explicitly allows the action
  * Returns false (deny) only when the matrix exists AND the row has the
  * action set to `false`.
+ *
+ * NOTE: this is a matrix check ONLY — it is deliberately fail-open, because
+ * the matrix is derived purely from per-user revoke rows and a user with no
+ * revokes must not be locked out. It is therefore NOT sufficient on its own
+ * to gate a mutation: a role that never granted edit/delete produces no
+ * revoke rows, so this returns true. Every create/edit/delete route must ALSO
+ * assert the real grant (`requireMastersAction` / `requirePermission` /
+ * `withMutationRoute`'s `requirePermission`).
  */
 export function hasMatrixAction(
   ctx: TenantContext,

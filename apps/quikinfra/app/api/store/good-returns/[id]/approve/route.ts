@@ -8,7 +8,14 @@ import {
   findGoodReturnById,
   patchGoodReturnStatus,
 } from "@/lib/store/good-return-repository";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 
 /**
  * POST /api/store/good-returns/:id/approve
@@ -27,7 +34,7 @@ import { canActOnStep } from "@/lib/approvals/workflow-rbac";
  * Body: { action: "approve" | "reject" | "return", comments? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -50,7 +57,7 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!GATE_ACTIONS.includes(action)) {
     return NextResponse.json(
       { error: `Unknown action: ${action}` },
       { status: 400 },
@@ -89,102 +96,41 @@ export async function POST(
       { status: 404 },
     );
   }
-  if (instance.status !== "pending_approval") {
-    return NextResponse.json(
-      {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
-      },
-      { status: 409 },
-    );
-  }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
+  // Authorisation, step resolution and the repair / master-approval branches
+  // live in the shared gate; this route keeps only the return's own patch.
+  const gate = await gateApprovalAction({
+    ctx,
+    instance,
+    entityLabel: "good return",
+    action,
+    comments,
+    projectId: gr.projectId ?? null,
   });
-  if (!currentStep) {
-    return NextResponse.json(
-      {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this return was mid-flight.`,
-      },
-      { status: 500 },
-    );
+  if (gate.kind === "error") {
+    return NextResponse.json(gate.body, { status: gate.status });
   }
-
-  if (
-    !canActOnStep(
-      { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-      {
-        approverUserId: currentStep.approverUserId,
-        approverRoleId: currentStep.approverRoleId,
-      },
-      gr.projectId ?? null,
-    )
-  ) {
-    let expected = "an authorized approver";
-    if (currentStep.approverUserId) {
-      const pinned = await findCnUserById(currentStep.approverUserId);
-      expected = pinned?.fullName
-        ? `${pinned.fullName} (pinned approver)`
-        : "the pinned approver for this step";
-    } else if (currentStep.approverRoleId) {
-      expected =
-        `a user with role "${currentStep.approverRoleId}"` +
-        (gr.projectId ? ` assigned to this project` : "");
-    }
-    return NextResponse.json(
-      {
-        error: `You are not authorized to ${action} this good return at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-      },
-      { status: 403 },
-    );
-  }
-
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
 
   let grStatusUpdate: Record<string, unknown> | null = null;
+  let conflict: ClaimResult["conflict"] | undefined;
 
   await db.$transaction(async (tx) => {
-    await tx.cnApprovalHistory.create({
-      data: {
-        instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
-        actionById: ctx.userId,
-        comments: comments || null,
-      },
-    });
+    const claim = await claimAndRecord(tx, ctx, instance, gate);
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
 
-    if (action === "approve") {
-      if (!nextStep) {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
-        });
+    if (gate.effectiveAction === "approve") {
+      if (gate.isFinalApprove) {
         grStatusUpdate = {
           status: "approved",
           approvedAt: new Date(),
           approvedBy: ctx.userId,
         };
-      } else {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { currentStepOrder: nextStep.stepOrder },
-        });
       }
-    } else if (action === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
+      // Intermediate — the return stays as it is.
+    } else if (gate.effectiveAction === "reject") {
       grStatusUpdate = {
         status: "rejected",
         rejectedAt: new Date(),
@@ -192,10 +138,6 @@ export async function POST(
         rejectionReason: comments,
       };
     } else {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
       grStatusUpdate = {
         status: "draft",
         approvalId: null,
@@ -205,6 +147,15 @@ export async function POST(
       };
     }
   });
+
+  // Lost the claim — someone else settled it first. Nothing was written, so
+  // return before the status patch below.
+  if (conflict) {
+    return NextResponse.json(
+      await gateConflictResponse(conflict, "good return"),
+      { status: 409 },
+    );
+  }
 
   if (grStatusUpdate) {
     await patchGoodReturnStatus(ctx.orgId, gr.id, {

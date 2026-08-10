@@ -18,7 +18,7 @@
  * Mirrors apps/quikscale/lib/api/seedAdminAppRole.ts.
  */
 
-import { db } from "@quikit/database";
+import { db } from "@/lib/db";
 import { PERMISSIONS, ROLES, type ConstructionRole } from "@/lib/permissions";
 import { parsePermissionKey, allPermissionPairs } from "./permissionsRegistry";
 import { getQuikInfraAppId } from "./userCan";
@@ -144,6 +144,25 @@ function newPageGrants(role: ConstructionRole): Array<{ resource: string; action
     grants.push({ resource: "construction.master_item", action: "export" });
   }
   return grants;
+}
+
+/**
+ * Activity Scope is the manual-BOQ screen for FREE_SCOPE projects. It was split
+ * out of `construction.boq` into its own `construction.activity_scope` resource
+ * so its Permissions checkbox moves independently of BOQ's. No legacy
+ * `PERMISSIONS.*` constant exists for it, so mirror whatever the role already
+ * holds on `construction.boq` — cutover stays loss-free, and a role that can't
+ * see BOQ can't see Activity Scope either.
+ *
+ * `import` has no Activity Scope equivalent (rows are hand-entered, never
+ * imported from Excel), so it is dropped.
+ */
+function activityScopeGrants(
+  pairs: Array<{ resource: string; action: string }>,
+): Array<{ resource: string; action: string }> {
+  return pairs
+    .filter((p) => p.resource === "construction.boq" && p.action !== "import")
+    .map((p) => ({ resource: "construction.activity_scope", action: p.action }));
 }
 
 /** Map ROLE_PERMISSIONS["admin"] etc. into (resource, action) pairs. */
@@ -305,7 +324,8 @@ export async function seedDefaultRoles(orgId: string): Promise<SeedResult | null
       select: { resource: true, action: true },
     });
     const haveSet = new Set(have.map((p) => `${p.resource}::${p.action}`));
-    const want = roleGrants(role);
+    const base = roleGrants(role);
+    const want = [...base, ...activityScopeGrants(base)];
     const missing = want.filter((p) => !haveSet.has(`${p.resource}::${p.action}`));
     if (missing.length > 0) {
       await db.cnRolePermissionV2.createMany({

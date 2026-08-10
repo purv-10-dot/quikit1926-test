@@ -8,7 +8,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikinsight", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -220,6 +220,7 @@ model Org {
   userAppRoles             UserAppRole[]
   userPermissionExtras     UserPermissionExtra[]
   userTablePreferences     UserTablePreference[]
+  qsUserViewPrefs          QsUserViewPref[]
   wwwItems                 WWWItem[]
   brands                   Brand[]
   AppRole                  QtAppRole[]
@@ -286,6 +287,7 @@ model Org {
   featureFlags             FeatureFlag[]
   invoices                 Invoice[]
   notifications            Notification[]
+  supportTickets           SupportTicket[]
   sessionEvents            SessionEvent[]
   teams                    Team[]
   userTeams                UserTeam[]
@@ -295,6 +297,7 @@ model Org {
   users                    OrgMember[]
   userAppAccess            UserAppAccess[]
   subscription             Subscription?
+  demoDataState            DemoDataState?
 
   @@index([slug])
   @@index([status])
@@ -364,6 +367,7 @@ model User {
   appRoles                UserAppRole[]
   permissionExtras        UserPermissionExtra[]
   tablePreferences        UserTablePreference[]
+  qsUserViewPrefs         QsUserViewPref[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   cnUserAppRoles          CnUserAppRole[]
@@ -567,6 +571,7 @@ model QsTeam {
   updatedAt               DateTime                 @updatedAt
   createdBy               String?
   deletedAt               DateTime?
+  isDemoData              Boolean                  @default(false)
   accountabilityFunctions AccountabilityFunction[]
   kpis                    KPI[]
   priorities              Priority[]
@@ -616,6 +621,7 @@ model AccountabilityFunction {
   expectedOutcomes  String?
   leadingIndicators String?
   deletedAt         DateTime?
+  isDemoData        Boolean                  @default(false)
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   assignedTo        User?                    @relation(fields: [assignedToUserId], references: [id])
@@ -680,6 +686,7 @@ model KPI {
   lastNotesAt        DateTime?
   lastNotedBy        String?
   deletedAt          DateTime?
+  isDemoData         Boolean          @default(false)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   createdBy          String
@@ -858,6 +865,7 @@ model Priority {
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
+  isDemoData       Boolean                @default(false)
   org              Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user       User                   @relation("PriorityOwner", fields: [owner], references: [id])
   team             QsTeam?                @relation(fields: [teamId], references: [id])
@@ -907,11 +915,17 @@ model WWWItem {
   category         String?
   originalDueDate  DateTime?
   revisedDates     String[]
+  /// "To Be Decided" due date. When true, `when` holds a placeholder (the
+  /// creation date) and the UI renders "To be decided" instead of the date.
+  /// `when` deliberately stays NOT NULL so every existing reader, sort and
+  /// index keeps working unchanged.
+  dueDateTBD       Boolean          @default(false)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
+  isDemoData       Boolean          @default(false)
   whoIds           String[]         @default([])
   org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs     WWWRevisionLog[]
@@ -991,6 +1005,7 @@ model CategoryMaster {
   /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
   /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
   position      Float?
+  isDemoData    Boolean  @default(false)
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
@@ -1017,6 +1032,7 @@ model UnitMaster {
   deletedAt   DateTime?
   /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
   position    Float?
+  isDemoData  Boolean  @default(false)
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
@@ -1136,6 +1152,24 @@ model UserTablePreference {
   @@schema("app_quikscale")
 }
 
+/// Generic per-user, per-org flag store for QuikScale (e.g. onboarding tour
+/// completion). Mirrors QtUserViewPref's shape, pared down to what QuikScale
+/// needs today — a viewKey lookup, no project/column-state fields. Add
+/// columns here (rather than a new model) for future one-off view flags.
+model QsUserViewPref {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  viewKey   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, viewKey])
+  @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
 model Client {
   id              String                @id @default(cuid())
   orgId           String
@@ -1154,6 +1188,7 @@ model Client {
   createdBy       String
   updatedBy       String?
   deletedAt       DateTime?
+  isDemoData      Boolean               @default(false)
   org             Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   dailyHuddles    ClientDailyHuddle[]
   memberships     ClientMembership[]
@@ -1223,6 +1258,7 @@ model ClientMember {
   createdBy         String
   updatedBy         String?
   deletedAt         DateTime?
+  isDemoData        Boolean                              @default(false)
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   org               Org                                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   clientLinks       ClientTeamMember[]
@@ -1265,6 +1301,7 @@ model ClientDailyHuddle {
   createdBy           String
   updatedBy           String?
   deletedAt           DateTime?
+  isDemoData          Boolean                        @default(false)
   client              Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   org                 Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers       ClientDailyHuddleAbsence[]
@@ -1351,6 +1388,7 @@ model ClientWeeklyMeeting {
   createdBy              String
   updatedBy              String?
   deletedAt              DateTime?
+  isDemoData             Boolean                              @default(false)
   client                 Client                               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   org                    Org                                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   absentMembers          ClientWeeklyMeetingAbsence[]
@@ -1512,6 +1550,7 @@ model OPSPData {
   updatedAt               DateTime          @updatedAt
   createdBy               String
   updatedBy               String?
+  isDemoData              Boolean           @default(false)
   org                     Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewEntries           OPSPReviewEntry[]
@@ -1542,6 +1581,7 @@ model OPSPUserSection {
   updatedAt            DateTime @updatedAt
   createdBy            String
   updatedBy            String?
+  isDemoData           Boolean  @default(false)
   org                  Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1639,6 +1679,7 @@ model OPSPPlan {
   tags               String[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  isDemoData         Boolean  @default(false)
   org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1676,6 +1717,14 @@ model HabitAssessment {
   closedAt           DateTime?
   deadline           DateTime?
   isLegacy           Boolean                   @default(false)
+  /// Optional team scope chosen at creation. Display/filtering only — the
+  /// authoritative participant list is `participantUserIds`.
+  teamId             String?
+  /// Users asked to fill this assessment. EMPTY = every active org member,
+  /// which is the pre-existing behaviour every campaign created before this
+  /// column relies on — so old rows keep working untouched.
+  participantUserIds String[]                  @default([])
+  isDemoData         Boolean                   @default(false)
   org                Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   responses          HabitAssessmentResponse[]
 
@@ -1713,6 +1762,10 @@ model QuarterSetting {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   createdBy  String
+  /// True when auto-generated by demo-data seeding. Informational only —
+  /// Clear All Demo Data deliberately never deletes quarters (an org needs
+  /// a fiscal calendar to function at all, real content or not).
+  isDemoData Boolean  @default(false)
   org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, fiscalYear, quarter])
@@ -1809,6 +1862,7 @@ model SWTEntry {
   createdBy      String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  isDemoData     Boolean  @default(false)
   org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -1905,6 +1959,7 @@ model Goal {
   updatedAt       DateTime  @updatedAt
   createdBy       String
   completedAt     DateTime?
+  isDemoData      Boolean   @default(false)
   org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner           User      @relation("GoalOwner", fields: [ownerId], references: [id])
   parentGoal      Goal?     @relation("GoalHierarchy", fields: [parentGoalId], references: [id])
@@ -1982,6 +2037,21 @@ enum ClientMeetingStatus {
   HOLIDAY_FOR_CLIENT
   HOLIDAY_FOR_SUCCESS_ALCHEMIST
   OTHER
+
+  @@schema("app_quikscale")
+}
+
+/// Tracks whether an org's first-login demo/sample data has been seeded
+/// and/or cleared. `clearedAt` is a permanent guard — once an admin clears
+/// demo data, seeding never re-fires for that org.
+model DemoDataState {
+  id        String    @id @default(cuid())
+  orgId     String    @unique
+  seededAt  DateTime?
+  clearedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@schema("app_quikscale")
 }
@@ -2355,6 +2425,124 @@ model PlatformAlert {
   @@index([resolvedAt])
   @@index([severity, lastSeenAt])
   @@index([rule, subjectKey, resolvedAt])
+  @@schema("public")
+}
+
+/// Platform support ticket — raised by an app user (QuikScale today, any app
+/// tomorrow via `appSlug`) and triaged by the QuikIT super-admin team.
+///
+/// Deliberately NOT the QuikSupport `Hd*` domain: that is a per-org helpdesk
+/// PRODUCT (the org's own agents serving the org's own customers, gated behind
+/// OrgAppAccess licensing). These tickets go org-user → QuikIT vendor, need
+/// cross-org super-admin visibility, and must work for orgs that never license
+/// QuikSupport. Hence `public`, alongside BroadcastAnnouncement/PlatformAlert.
+///
+/// `requestType`/`status`/`priority` are Strings, not enums — the house style
+/// for this schema (see Notification.type, AuditLog.action). Value space and
+/// legal transitions live in `@quikit/shared` (SUPPORT_* constants).
+model SupportTicket {
+  id       String @id @default(cuid())
+  /// Race-free human id, rendered `TKT-000042` via formatSupportTicketNo().
+  /// Backed by a Postgres sequence created in the migration.
+  ticketNo Int    @unique @default(dbgenerated("nextval('\"public\".\"SupportTicket_ticketNo_seq\"')"))
+
+  /// Raising org. FK to quikit.Org — the org-wise admin filter and the
+  /// isolation predicate on every user-facing query.
+  orgId String
+  /// Raising user (auth.User.id). No FK, matching Notification.userId and
+  /// AuditLog.actorId; names are stitched in via a batched findMany.
+  userId String
+  /// Which app the ticket was raised from — quikit.App.id. No FK (the App
+  /// registry is in another schema and rows are never hard-deleted), so a
+  /// retired app still resolves historical tickets.
+  appId String
+  /// Denormalized App.slug ("quikscale"). Kept alongside appId so the
+  /// app-wise filter and the admin table need no join. Same style as
+  /// BroadcastAnnouncement.targetAppSlugs.
+  appSlug String
+  /// Snapshot of the raiser's OrgMember.role at submit time ("admin",
+  /// "member", …). Snapshot, not a live lookup: triage needs to know what the
+  /// user could see WHEN they hit the problem, and roles change later.
+  roleName String?
+
+  subject     String
+  description String @db.Text
+  requestType String
+  priority    String @default("medium")
+  status      String @default("open")
+
+  /// Latest super-admin remark, denormalized so the user's Support Status
+  /// table renders in a single query. Full history lives in messages[].
+  adminResponse String?   @db.Text
+  respondedById String?
+  respondedAt   DateTime?
+
+  resolvedAt DateTime?
+  closedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  messages    SupportTicketMessage[]
+  attachments SupportTicketAttachment[]
+
+  @@index([orgId])
+  @@index([orgId, userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([appSlug, status])
+  @@index([appId])
+  @@index([orgId, status])
+  @@schema("public")
+}
+
+/// Reply thread + status history for a SupportTicket. A message carrying
+/// statusFrom/statusTo IS the status-history record — no fourth table needed.
+model SupportTicketMessage {
+  id         String  @id @default(cuid())
+  ticketId   String
+  authorId   String
+  /// "user" | "super_admin"
+  authorRole String
+  body       String  @db.Text
+  statusFrom String?
+  statusTo   String?
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@schema("public")
+}
+
+/// Screenshots / files attached to a SupportTicket at submit time.
+///
+/// The row stores the GCS OBJECT KEY, never a URL: bucket objects are private
+/// and signed URLs expire in minutes, so a persisted URL would be dead on
+/// arrival. Readers mint a fresh signed GET through the app's
+/// `/api/support/uploads/view/<key>` route.
+///
+/// `orgId` is denormalized off the parent ticket so the view route can check
+/// tenant ownership from the KEY ALONE, without a ticket join — the key layout
+/// is `support/<orgId>/<yyyy-mm>/<random>.<ext>`, and the route compares the
+/// segment against the caller's org before signing anything.
+model SupportTicketAttachment {
+  id       String @id @default(cuid())
+  ticketId String
+  orgId    String
+  /// Original client-side filename, shown in the UI. Never used to build the
+  /// object key — that is randomised so a hostile name cannot traverse paths.
+  fileName  String
+  /// Path within the bucket. Unique: the random basename makes collisions
+  /// vanishingly unlikely, and the constraint turns "impossible" into "checked".
+  objectKey String @unique
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId])
   @@schema("public")
 }
 
@@ -4002,6 +4190,10 @@ model CnStockReconciliation {
   locationId           String
   reconciliationDate   DateTime
   conductedById        String
+  // Free-typed name of the person who conducted the count. Kept alongside
+  // conductedById (always the creator) because the conductor is often not a
+  // system user — a contractor's storekeeper, for example.
+  conductedByName      String?
   approvedById         String?
   status               String   @default("draft")
   approvalId           String?
@@ -4146,7 +4338,10 @@ model CnWorkOrderLine {
   scopeId        String? // CnActivityItem.id when scopeType = ACTIVITY
   description    String
   quantity       Decimal @db.Decimal(18, 4)
-  uomId          String
+  /// Holds the UOM *code* ("CUM", "DAY"), not a CnUOM id — the write paths have
+  /// always stored the code here. Named `uomId` until the rename; readers that
+  /// assumed an id silently rendered blank UOM cells (WO PDF + Excel export).
+  uomCode        String
   negotiatedRate Decimal @db.Decimal(18, 2)
   amount         Decimal @db.Decimal(18, 2)
 
@@ -4454,6 +4649,9 @@ model CnRfq {
   /// create time so later edits to the template don't retroactively
   /// change what was sent to the vendor.
   termsTemplateId    String?
+  /// Snapshot of the T&C body at RFQ create time, editable per RFQ.
+  /// Edits here never write back to the template master.
+  termsAndConditions String?
   status             String    @default("draft")
   approvalId         String?
   createdAt          DateTime  @default(now())
@@ -4503,6 +4701,11 @@ model CnRfqVendor {
   // list for this specific vendor. Stored as a JSON string for
   // Postgres + SQLite portability via Prisma's String type.
   assignedItemIds Json      @default("[]")
+  /// Per-vendor T&C override. Null/empty = use the RFQ's default
+  /// `termsAndConditions`. Never written back to the T&C master.
+  termsAndConditions String?
+  /// Template the override was seeded from, kept for audit only.
+  termsTemplateId    String?
   sentAt          DateTime?
   respondedAt     DateTime?
 
@@ -4879,6 +5082,12 @@ model CnApprovalWorkflow {
   projectId  String?
   name       String
   entityType String // purchase_requisitions | purchase_indents | purchase_order | grn | work_order | dpr | stock_reconciliation | good_return
+  /// Single fallback approver for the whole workflow. When set, this user can
+  /// approve a request from any step without waiting — the escape hatch for a
+  /// listed approver being on leave or simply never acting. Null = none, and the
+  /// workflow behaves exactly as before. Any active user qualifies regardless of
+  /// role; they may not approve a request they raised themselves.
+  masterApproverUserId String?
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -4936,6 +5145,16 @@ model CnApprovalInstance {
   requestedById    String
   requestedAt      DateTime  @default(now())
   completedAt      DateTime?
+  /// Copy of the workflow's steps as they stood when this instance was
+  /// created: [{ stepOrder, approverRoleId, approverUserId, approverUserIds }].
+  /// Editing a workflow replaces its step rows wholesale, which used to
+  /// retro-change in-flight instances — a shrunk workflow left them parked on
+  /// a step that no longer existed (unactionable by anyone), and a grown one
+  /// made already-approved instances look under-approved. Resolution reads
+  /// this first so a submitted request keeps the chain it was submitted under.
+  /// Null for rows created before this column existed; those fall back to the
+  /// live workflow steps.
+  stepsSnapshot    Json?
 
   workflow CnApprovalWorkflow  @relation(fields: [workflowId], references: [id])
   history  CnApprovalHistory[]
@@ -9063,9 +9282,38 @@ model CrmActivityType {
   updatedAt DateTime @updatedAt
 
   fieldDefinitions CrmActivityFieldDefinition[]
+  userTargets      CrmActivityTypeTarget[]
 
   @@unique([orgId, code])
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+/// Per-salesperson DAILY target for ONE activity type.
+///
+/// Separate table (not a JSON sub-key) so targets are indexed, queryable and
+/// referentially tied to the activity type they belong to: deleting a type
+/// cascades its targets away. The org-wide OVERALL daily target continues to
+/// live on CrmOrgWorkspaceSettings.settings.activityTargets and is untouched by
+/// this model — the two coexist.
+///
+/// `dailyTarget` is a non-negative integer; 0 means "tracked but nothing
+/// expected today". A missing row means no target for that (user, type) pair.
+model CrmActivityTypeTarget {
+  id             String   @id @default(cuid())
+  orgId          String
+  userId         String
+  activityTypeId String
+  dailyTarget    Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, activityTypeId])
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([activityTypeId])
   @@schema("app_quikcrm")
 }
 
@@ -11487,14 +11735,14 @@ model Employee {
   notifications HrmsNotification[]
 
   // Ticket / Help Desk relations
-  ticketsRaised    Ticket[]         @relation("TicketRaiser")
-  ticketsAssigned  Ticket[]         @relation("TicketAssignee")
-  ticketComments   TicketComment[]
-  ticketActivities TicketActivity[]
+  ticketsRaised   Ticket[] @relation("TicketRaiser")
+  ticketsAssigned Ticket[] @relation("TicketAssignee")
 
   // RBAC v2 — quikscale mirror
   appRoles            HrmsUserAppRole[]
   permissionOverrides HrmsUserPermissionExtra[]
+
+  insurancePolicyMemberships InsurancePolicyMember[]
 
   @@unique([orgId, employeeCode])
   // One Employee per central user per tenant — stops the first-login race from
@@ -13105,6 +13353,9 @@ model Interview {
   // above. Read/written via raw SQL (regen-free).
   takeHomeInstructions   String?
   takeHomeAttachmentUrl  String?
+  // Optional reference link HR pastes instead of (or alongside) an uploaded
+  // spec file — e.g. a Google Doc / GitHub repo for the assignment.
+  takeHomeAttachmentLink String?
   takeHomeDueDate        DateTime? @db.Date
   submissionToken        String?   @unique
   submissionTokenExpiresAt DateTime?
@@ -13742,6 +13993,7 @@ enum DocumentCategory {
   ExperienceLetter
   RelievingLetter
   NDA
+  Insurance
   Other
 
   @@schema("app_quikhrms")
@@ -13797,10 +14049,11 @@ model Document {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  parentDocument  Document?                @relation("DocumentVersions", fields: [parentDocumentId], references: [id])
-  versions        Document[]               @relation("DocumentVersions")
-  acknowledgments DocumentAcknowledgment[]
-  shares          DocumentShare[]
+  parentDocument   Document?                @relation("DocumentVersions", fields: [parentDocumentId], references: [id])
+  versions         Document[]               @relation("DocumentVersions")
+  acknowledgments  DocumentAcknowledgment[]
+  shares           DocumentShare[]
+  insuranceMembers InsurancePolicyMember[]
 
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -13813,6 +14066,33 @@ model Document {
 
 // (DocumentTemplate model removed with the Document Templates feature — 2026-06-04.
 //  The DocumentCategory enum is retained — it's shared with the Document model.)
+
+// Employees enrolled under a company-wide/group Insurance policy (a Document
+// row with category = Insurance). The policy document itself carries no
+// employeeId — coverage membership is tracked here instead, added/removed
+// one employee at a time from the policy's detail page.
+model InsurancePolicyMember {
+  id         String @id @default(cuid())
+  orgId      String
+  documentId String
+  employeeId String
+
+  // Optional per-employee sum-insured amount for this policy (shown in the
+  // Coverage column + summed for the policy's "Total Coverage" stat).
+  coverageAmount Decimal? @db.Decimal(15, 2)
+
+  addedBy   String?
+  createdAt DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([documentId, employeeId])
+  @@index([orgId])
+  @@index([orgId, documentId])
+  @@index([orgId, employeeId])
+  @@schema("app_quikhrms")
+}
 
 model DocumentAcknowledgment {
   id         String @id @default(cuid())
@@ -14038,6 +14318,13 @@ model OnboardingTask {
   @@index([orgId, instanceId])
   @@index([orgId, assigneeId])
   @@index([orgId, status])
+  // At most one auto-injected system step (BGV / CompleteProfile, always
+  // sortOrder=-1) per instance+phase — prevents the GET route's lazy-create
+  // from double-inserting under concurrent requests. Partial index (filtered
+  // on sortOrder=-1), can't be expressed as a Prisma @@unique — applied via
+  // raw SQL:
+  //   CREATE UNIQUE INDEX IF NOT EXISTS "OnboardingTask_instanceId_phase_autostep_key"
+  //     ON "app_quikhrms"."OnboardingTask" ("instanceId", phase) WHERE "sortOrder" = -1;
   @@schema("app_quikhrms")
 }
 
@@ -14259,149 +14546,6 @@ model OffboardingTask {
   @@index([orgId, assigneeId])
   @@index([orgId, status])
   @@index([orgId, department])
-  @@schema("app_quikhrms")
-}
-
-// ─── MODULE D: ASSET MANAGEMENT ─────────────────────────
-
-enum AssetCategory {
-  Laptop
-  Desktop
-  Mobile
-  Tablet
-  IdCard
-  AccessCard
-  Furniture
-  Vehicle
-  SoftwareLicense
-  Peripheral
-  AssetOther
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetStatus {
-  Available
-  Assigned
-  InRepair
-  Retired
-  AssetLost
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetCondition {
-  New
-  Good
-  Fair
-  Poor
-
-  @@schema("app_quikhrms")
-}
-
-enum AssetAssignmentStatus {
-  AssignmentActive
-  AssignmentReturned
-  AssignmentOverdue
-  AssignmentLost
-
-  @@schema("app_quikhrms")
-}
-
-model Asset {
-  id    String @id @default(cuid())
-  orgId String
-
-  assetCode      String
-  name           String
-  category       String         @default("AssetOther")
-  quantity       Int            @default(1)
-  serialNumber   String?
-  brand          String?
-  model          String?
-  purchaseDate   DateTime?      @db.Date
-  purchasePrice  Decimal?       @db.Decimal(15, 2)
-  warrantyExpiry DateTime?      @db.Date
-  status         AssetStatus    @default(Available)
-  condition      AssetCondition @default(New)
-  location       String?
-  specs          Json?
-  notes          String?
-
-  disposalDate   DateTime? @db.Date
-  disposalReason String?
-  scrapValue     Decimal?  @db.Decimal(15, 2)
-  scrappedBy     String?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  assignments AssetAssignment[]
-  scraps      AssetScrap[]
-
-  @@unique([orgId, assetCode])
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, status])
-  @@index([orgId, category])
-  @@index([orgId, serialNumber])
-  @@schema("app_quikhrms")
-}
-
-model AssetAssignment {
-  id         String @id @default(cuid())
-  orgId      String
-  assetId    String
-  employeeId String
-
-  assignedBy         String
-  assignedAt         DateTime              @default(now())
-  expectedReturnDate DateTime?             @db.Date
-  returnedAt         DateTime?
-  returnedTo         String?
-  returnCondition    AssetCondition?
-  status             AssetAssignmentStatus @default(AssignmentActive)
-  notes              String?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  asset Asset @relation(fields: [assetId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, assetId])
-  @@index([orgId, employeeId])
-  @@index([orgId, status])
-  @@schema("app_quikhrms")
-}
-
-model AssetScrap {
-  id      String @id @default(cuid())
-  orgId   String
-  assetId String
-
-  quantity   Int
-  reason     String
-  scrapDate  DateTime @db.Date
-  scrapValue Decimal? @db.Decimal(15, 2)
-  markedLost Boolean  @default(false)
-  scrappedBy String
-  notes      String?
-
-  createdAt DateTime @default(now())
-
-  asset Asset @relation(fields: [assetId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, assetId])
-  @@index([orgId, scrapDate])
   @@schema("app_quikhrms")
 }
 
@@ -14775,56 +14919,6 @@ model EmploymentHistory {
 // AIConversation + AIMessage + AIConversationScope removed with the AI Copilot
 // chat. lib/ai/* is retained — it's shared infra for document extraction,
 // recruit ATS scoring, and leave-policy parsing (non-copilot AI features).
-
-// ─── GAP-FILL: E-SIGN ───────────────────────────────────
-
-enum ESignStatus {
-  ESignDraft
-  ESignSent
-  ESignPartiallySigned
-  ESignCompleted
-  ESignDeclined
-  ESignCancelled
-  ESignExpired
-
-  @@schema("app_quikhrms")
-}
-
-enum ESignProvider {
-  Internal
-  DocuSign
-  AdobeSign
-  LeegalityProvider
-
-  @@schema("app_quikhrms")
-}
-
-model ESignRequest {
-  id         String  @id @default(cuid())
-  orgId      String
-  documentId String?
-
-  title       String
-  provider    ESignProvider @default(Internal)
-  signers     Json
-  message     String?
-  status      ESignStatus   @default(ESignDraft)
-  sentAt      DateTime?
-  completedAt DateTime?
-  expiresAt   DateTime?
-
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([orgId])
-  @@index([orgId, deletedAt])
-  @@index([orgId, documentId])
-  @@index([orgId, status])
-  @@schema("app_quikhrms")
-}
 
 // ─── GAP-FILL: CANDIDATE PORTAL ─────────────────────────
 
@@ -15376,6 +15470,23 @@ model PayRun {
   @@index([orgId])
   @@index([orgId, status])
   @@index([orgId, payDate])
+  @@schema("app_quikhrms")
+}
+
+// Short-lived OTP gate for the destructive "Reset Payroll Setup" action. One
+// row per active reset attempt; emailed to the requester + every employee
+// holding the "admin" role. Single-use — usedAt is stamped on successful
+// verification so a captured code can't be replayed.
+model PayrollResetOtp {
+  id          String    @id @default(cuid())
+  orgId       String
+  codeHash    String
+  requestedBy String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId])
   @@schema("app_quikhrms")
 }
 
@@ -16200,34 +16311,8 @@ model BankReconciliation {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  lines BankReconciliationLine[]
-
   @@index([orgId])
   @@index([orgId, payRunId])
-  @@schema("app_quikhrms")
-}
-
-model BankReconciliationLine {
-  id               String @id @default(cuid())
-  orgId            String
-  reconciliationId String
-
-  payslipId    String?
-  employeeName String
-  bankAccount  String?
-  ifsc         String?
-  amount       Decimal   @db.Decimal(15, 2)
-  txnDate      DateTime? @db.Date
-  txnRef       String?
-  matched      Boolean   @default(false)
-  matchReason  String?
-
-  createdAt DateTime @default(now())
-
-  reconciliation BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([reconciliationId])
   @@schema("app_quikhrms")
 }
 
@@ -16684,13 +16769,10 @@ model Ticket {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  category    TicketCategory?    @relation(fields: [categoryId], references: [id])
-  department  Department?        @relation("TicketDepartment", fields: [departmentId], references: [id])
-  raisedBy    Employee           @relation("TicketRaiser", fields: [raisedById], references: [id])
-  assignedTo  Employee?          @relation("TicketAssignee", fields: [assignedToId], references: [id])
-  comments    TicketComment[]
-  attachments TicketAttachment[]
-  activities  TicketActivity[]
+  category   TicketCategory? @relation(fields: [categoryId], references: [id])
+  department Department?     @relation("TicketDepartment", fields: [departmentId], references: [id])
+  raisedBy   Employee        @relation("TicketRaiser", fields: [raisedById], references: [id])
+  assignedTo Employee?       @relation("TicketAssignee", fields: [assignedToId], references: [id])
 
   @@unique([orgId, ticketNo])
   @@index([orgId])
@@ -16709,72 +16791,6 @@ model Ticket {
   @@index([orgId, assignedToId, status])
   @@index([orgId, raisedById, status])
   @@index([orgId, deletedAt, status, createdAt(sort: Desc)])
-  @@schema("app_quikhrms")
-}
-
-model TicketComment {
-  id       String @id @default(cuid())
-  orgId    String
-  ticketId String
-  userId   String
-
-  message    String
-  isInternal Boolean @default(false)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  ticket Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user   Employee @relation(fields: [userId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@index([orgId, deletedAt])
-  @@schema("app_quikhrms")
-}
-
-model TicketAttachment {
-  id       String @id @default(cuid())
-  orgId    String
-  ticketId String
-
-  fileUrl  String
-  fileName String
-  fileType String?
-  fileSize Int?
-
-  uploadedById String?
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
-
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@schema("app_quikhrms")
-}
-
-model TicketActivity {
-  id       String  @id @default(cuid())
-  orgId    String
-  ticketId String
-  actorId  String?
-  isSystem Boolean @default(false)
-
-  action  String
-  fromVal String?
-  toVal   String?
-  meta    Json?
-
-  createdAt DateTime @default(now())
-
-  ticket Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actor  Employee? @relation(fields: [actorId], references: [id])
-
-  @@index([orgId])
-  @@index([orgId, ticketId])
-  @@index([orgId, actorId])
   @@schema("app_quikhrms")
 }
 
@@ -23014,7 +23030,8 @@ model QcUserNotificationSettings {
   userId              String
   defaultChannelLevel String    @default("all") // all | mentions | none
   dmsLevel            String    @default("all")
-  soundEnabled        Boolean   @default(true)
+  soundEnabled        Boolean   @default(true) // message-notification chime
+  callSoundsEnabled   Boolean   @default(true) // ringtone / ringback / call tones
   desktopEnabled      Boolean   @default(true) // master OS-popup switch
   emailEnabled        Boolean   @default(false)
   dndEnabled          Boolean   @default(false)
@@ -23066,6 +23083,34 @@ model QcUserUiPrefs {
   theme     String   @default("system") // system | light | dark
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Rich presence set-status (Teams-style). Stores ONLY the durable, user-set
+// status; the ephemeral `on_call` / `online` / `offline` states are derived by
+// the gateway (from socket + call lifecycle) and reconciled client-side — they
+// are NEVER written here (the gateway is write-free). String (not a Prisma enum)
+// to match every other Qc* table. Rides the pending `app_quikchat` migration;
+// local via `prisma db push`, prod-gated on that migration like the rest.
+model QcUserPresence {
+  id            String    @id @default(uuid())
+  orgId         String
+  userId        String
+  status        String    @default("available") // available | busy | dnd | brb | away | appear_offline
+  statusMessage String?
+  // Optional expiry for a timed status ("Busy for 30 min"). Absolute instant
+  // (computed client-side so end-of-day/week honour the user's timezone). Expiry
+  // is LAZY read-time: any read past this treats the status as `available`; there
+  // is no sweeper/background job (expiry needs no active event, only correct reads).
+  statusExpiresAt DateTime?
+  // Last-seen visibility, WhatsApp-style MUTUAL: a viewer sees this user's last
+  // seen only when BOTH sides have it true (see presence.service.ts
+  // #getEffectiveLastSeen). Default on; `appear_offline` overrides it outright.
+  shareLastSeen Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([orgId, userId])
   @@schema("app_quikchat")
@@ -23226,4 +23271,203 @@ model QcCallParticipant {
 
   @@unique([callId, userId])
   @@schema("app_quikchat")
+}
+
+// --- QuikInsight schema -------------------------------------------------------
+
+model QiWorkspace {
+  id          String   @id @default(cuid())
+  userId      String
+  orgId       String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  connections QiPlatformConnection[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiPlatformConnection {
+  id             String    @id @default(cuid())
+  userId         String
+  orgId          String
+  workspaceId    String
+  platform       String
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  scopes         String[]  @default([])
+  metadata       Json      @default("{}")
+  status         String    @default("CONNECTED")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  workspace QiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncs     QiDataSync[]
+
+  @@unique([workspaceId, platform])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiDataSync {
+  id            String    @id @default(cuid())
+  userId        String
+  connectionId  String
+  platform      String
+  syncType      String    @default("incremental")
+  status        String
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  recordCount   Int?
+  errorMessage  String?
+
+  connection QiPlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, connectionId])
+  @@index([connectionId, startedAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiConnectedAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  teamId      String
+  provider    String
+  accountName String
+  credentials Json?
+  createdAt   DateTime @default(now())
+
+  @@index([teamId])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboard {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String   @default("Dashboard")
+  config    Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  snapshots QiDashboardSnapshot[]
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboardSnapshot {
+  id          String   @id @default(cuid())
+  dashboardId String
+  data        Json
+  snapshotAt  DateTime @default(now())
+
+  dashboard QiDashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId, snapshotAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiEmailReportSettings {
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  enabled    Boolean   @default(false)
+  recipients String[]  @default([])
+  frequency  String    @default("WEEKLY")
+  lastSentAt DateTime?
+
+  @@schema("app_quikinsight")
+}
+
+model QiAiInsightCache {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  data        Json
+  source      String   @default("rules")
+  generatedAt DateTime @default(now())
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiUserRole {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  role      String
+  teamId    String?
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiInvitation {
+  id         String    @id @default(cuid())
+  email      String
+  orgId      String
+  role       String    @default("MEMBER")
+  teamId     String?
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+  @@index([email])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenBalance {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  totalTokens Int      @default(100000)
+  usedTokens  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenUsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  orgId        String
+  feature      String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  status       String   @default("success")
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  orgId         String
+  type          String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  reason        String
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
 }

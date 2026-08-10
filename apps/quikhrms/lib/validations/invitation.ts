@@ -20,7 +20,7 @@ export const createInvitationSchema = z.object({
 
 /** One parsed CSV row for bulk invite. `roles` is a comma-separated list of
  *  role NAMES (resolved to ids server-side); empty falls back to defaultRoleIds. */
-export const bulkInvitationRowSchema = z.object({
+const bulkInvitationRowSchema = z.object({
   email: z.string().trim().email("Valid email required"),
   firstName: z.string().trim().min(1, "First name required").max(80),
   lastName: z.string().trim().min(1, "Last name required").max(80),
@@ -43,8 +43,3 @@ export const bulkInvitationSchema = z.object({
   // per-row central provisioning + the accept link in the email.
   invitationMethod: z.enum(["native", "sso"]).default("native"),
 });
-
-export type BulkInvitationRow = z.infer<typeof bulkInvitationRowSchema>;
-export type BulkInvitationInput = z.infer<typeof bulkInvitationSchema>;
-
-export type CreateInvitationInput = z.infer<typeof createInvitationSchema>;

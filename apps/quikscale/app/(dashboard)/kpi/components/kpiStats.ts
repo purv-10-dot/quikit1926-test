@@ -186,15 +186,22 @@ export function kpiProgressPercent(
  * `resolveProgressQtd` which divides by the to-date goal (33.2K / 125.2K = 27%,
  * a "pace vs where you should be by now" view).
  *
- * It mirrors EXACTLY the formula the Individual-KPI table's Progress column and
- * the Stats modal's "Overall Progress" headline already use, so the dashboard
- * KPI Overview cards agree with both:
- *   • Cumulative — achieved = server-stamped `kpi.qtdAchieved` (a cumulative
- *     SUM), goal = `kpi.qtdGoal ?? kpi.target` (the full quarterly goal).
- *   • Standalone — `kpi.qtdAchieved` is a SUM regardless of division type, so
- *     re-derive the per-week average via `computeQtd`; its `qtdGoal` is already
- *     the constant quarterly target. (Identical to `resolveProgressQtd` for
- *     Standalone — only Cumulative changes denominator.)
+ * `achieved` is ALWAYS derived from `computeQtd()` (both division types) —
+ * the same function `resolveProgressQtd`, `StatsTab`, `KPITable`'s "QTD
+ * Achieved" column, and `kpiAuditConfig` all use. `computeQtd` sums weekly
+ * actuals through the LAST COMPLETED week only (excludes the current
+ * in-progress week — see its own doc comment). The raw server-stamped
+ * `kpi.qtdAchieved` DB column is a DIFFERENT, wider aggregate: the batch
+ * weekly-save route (`api/kpi/[id]/weekly/batch/route.ts` `recalcKPI`) sums
+ * EVERY entered week, including the current one. Reading that raw field here
+ * (as this function used to, for Cumulative KPIs only) made the Dashboard
+ * KPICard headline disagree with its own QTD bar and with the KPI table's
+ * "QTD Achieved" column the moment a user logged a value for the current
+ * week — the two numbers are both "real", just scoped differently, and
+ * showing both under the same "QTD Achieved" label read as a calculation bug.
+ * `computeQtd` internally falls back to the raw field when `currentWeek` is
+ * null (quarter not started/already ended), so this stays safe for
+ * historical/future KPIs.
  */
 export function resolveProgressOverall(
   kpi: KPIRow,
@@ -203,16 +210,24 @@ export function resolveProgressOverall(
 ): { achieved: number; goal: number } {
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  const std = divisionType === "Standalone" ? computeQtd(kpi, currentWeek, "Standalone", weeksPerQuarter) : null;
-  const achieved = std != null ? (std.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
-  const goal = std != null ? (std.qtdGoal ?? kpi.target ?? 0) : (kpi.qtdGoal ?? kpi.target ?? 0);
+  const { qtdAchieved } = computeQtd(kpi, currentWeek, divisionType, weeksPerQuarter);
+  const achieved = qtdAchieved ?? 0;
+  // Goal priority mirrors the "Quarterly Goal" column shown on-screen
+  // (quarterlyGoal ?? target ?? qtdGoal) so this percentage always agrees
+  // with the number the user sees, instead of a different KPI field.
+  const goal = kpi.quarterlyGoal ?? kpi.target ?? kpi.qtdGoal ?? 0;
   return { achieved, goal };
 }
 
 /**
  * Overall quarterly progress percentage (achieved-to-date ÷ full quarterly
- * goal). The number the dashboard KPI Overview card prints. Returns 0 when the
- * goal is non-positive.
+ * goal) — the dashboard KPI Overview card's HEADLINE figure (the card computes
+ * the same ratio inline from `resolveProgressOverall`).
+ *
+ * NOTE: this is no longer the "Progress" number on the KPI grids, the Stats
+ * drawer, the modal badge or the exports — those all moved to `kpiQtrPercent`
+ * so they match the card's QTR bar for Standalone KPIs. The two agree for
+ * Cumulative KPIs by construction. Returns 0 when the goal is non-positive.
  */
 export function kpiOverallPercent(
   kpi: KPIRow,
@@ -223,29 +238,154 @@ export function kpiOverallPercent(
   return goal > 0 ? (achieved / goal) * 100 : 0;
 }
 
+/**
+ * QTR achieved/goal pair — the FIRST bar on the dashboard KPI Overview card
+ * (labelled "QTR"; called "Pace" before the 2026-08 rename).
+ *
+ * ONE concept, expressed per division type:
+ *
+ *     QTR % = achieved-to-date ÷ the full quarter's potential
+ *
+ * "Full quarter's potential" is the only part that differs, because the two
+ * division types define their target differently:
+ *
+ *   Cumulative — weekly targets add up to the quarterly goal, so the potential
+ *     IS the quarterly goal:
+ *
+ *       QTR % = Σ achieved[1..currentWeek-1] / quarterlyGoal × 100
+ *
+ *     This is `resolveProgressOverall`, i.e. the same pair as the card's
+ *     headline figure. It replaced the previous definition (Σ weekly targets
+ *     due so far ÷ quarterly goal), which was a pure calendar line: it ignored
+ *     performance entirely, so every Cumulative KPI in a quarter showed roughly
+ *     the same QTR no matter how it was doing. See git history if that
+ *     schedule reference is ever wanted back.
+ *
+ *   Standalone — the target is the SAME flat number every week and never
+ *     accrues, so the quarterly goal is a per-WEEK number. The full-quarter
+ *     potential is therefore `target × weeksPerQuarter`:
+ *
+ *       QTR % = Σ achieved[1..currentWeek-1] / (target × weeksPerQuarter) × 100
+ *
+ *     Unchanged by the 2026-08 revision.
+ *
+ * Either way QTR can only reach 100% once the whole quarter's worth of work is
+ * banked. It stays a DIFFERENT number from the QTD bar (`resolveProgressQtd`),
+ * which divides by the goal due SO FAR and so answers "am I ahead or behind
+ * schedule right now" rather than "how much of the quarter is done".
+ *
+ * Note for Cumulative KPIs this now equals the card's headline percentage by
+ * construction. That redundancy is intentional and product-approved.
+ */
+export function resolvePace(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): { achieved: number; goal: number } {
+  const divisionType: "Cumulative" | "Standalone" =
+    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+
+  if (divisionType === "Cumulative") {
+    return resolveProgressOverall(kpi, currentWeek, weeksPerQuarter);
+  }
+
+  if (currentWeek == null || currentWeek <= 1) return { achieved: 0, goal: 0 };
+  const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
+  const scaleCeiling = totalTarget * weeksPerQuarter;
+  const sumOfValues = (kpi.weeklyValues ?? [])
+    .filter((v) => v.weekNumber < currentWeek)
+    .reduce((sum, v) => sum + (v.value ?? 0), 0);
+  return { achieved: sumOfValues, goal: scaleCeiling };
+}
+
+/**
+ * QTR percentage — the percentage form of `resolvePace`, and since 2026-08 the
+ * ONE definition of "Progress" on every KPI surface outside the dashboard card:
+ *
+ *   - the "Progress (Quarterly Goal)" column on the Individual + Team KPI grids
+ *   - the Team KPI section header average
+ *   - the Stats drawer's "Overall Progress" panel
+ *   - the Log/Stats modal header badge
+ *   - the `progress` column in both KPI exports
+ *
+ * Why this replaced `kpiOverallPercent` on those surfaces: for CUMULATIVE KPIs
+ * the two are the same call (`resolvePace` delegates straight to
+ * `resolveProgressOverall`), so Cumulative rows always agreed with the
+ * dashboard's QTR bar. STANDALONE rows did not — `resolveProgressOverall`
+ * divides the per-week AVERAGE by the (per-week) target, which answers "how are
+ * the weeks I've reported doing", while QTR divides the raw sum by the full
+ * quarter's potential (`target × weeksPerQuarter`), answering "how much of the
+ * quarter is banked". Same KPI, two legitimate numbers, two different surfaces
+ * — e.g. a Standalone KPI with target 80 and 540 logged across 4 reported weeks
+ * read 169% on the grid (135 ÷ 80) and 52% on the dashboard QTR bar
+ * (540 ÷ 1040). Routing every grid/modal/export surface through this helper
+ * makes them all print the dashboard's 52%.
+ *
+ * The two definitions converge once a quarter is complete (all `weeksPerQuarter`
+ * weeks have a target and are in the past), so closed quarters are unaffected —
+ * only in-progress quarters shift.
+ *
+ * Returns 0 when the goal is non-positive (no target, or `currentWeek` is null /
+ * ≤ 1 for Standalone).
+ */
+export function kpiQtrPercent(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): number {
+  const { achieved, goal } = resolvePace(kpi, currentWeek, weeksPerQuarter);
+  return goal > 0 ? (achieved / goal) * 100 : 0;
+}
+
 export interface KpiOverviewStats {
-  /** Rounded mean of each ENTERED KPI's `kpiProgressPercent`. */
+  /** Rounded `(Σ QTD Achieved / Σ QTD Goal) × 100` over each ENTERED KPI. */
   avg: number;
-  /** Card colored Blue (≥120%) or Green (≥100%). */
+  /** Card colored Green — target achieved (100–119% forward). */
   onTrack: number;
   /** Card colored Yellow (80–99%). */
   atRisk: number;
   /** Card colored Red (<80%, value entered). */
   behind: number;
+  /**
+   * Card colored Blue — target exceeded significantly (≥120% forward, ≤80%
+   * reverse). Split out of `onTrack` so the pill reports it as its own status;
+   * `reverseColor` KPIs are bucketed by the SAME color helper, so a
+   * lower-is-better KPI comfortably under target lands here too.
+   */
+  overAchieved: number;
+  /** No weekly value entered yet — the gray "Not Started" card on the dashboard pill. */
+  notStarted: number;
+  /**
+   * Σ QTD Achieved over the ENTERED KPIs — the numerator behind `avg`.
+   * Exposed so the avg-KPI formula tooltip can show the real substitution
+   * (`351 ÷ 472 × 100 = 74%`) instead of restating the formula abstractly.
+   * Purely additive; `avg` and the four buckets are unchanged.
+   */
+  achievedSum: number;
+  /** Σ QTD Goal over the ENTERED KPIs — the denominator behind `avg`. */
+  goalSum: number;
+  /** How many KPIs contributed to `achievedSum` / `goalSum` (i.e. not idle). */
+  entered: number;
 }
 
 /**
  * Aggregate stats for the dashboard "avg KPI" pill (AvgKPICard).
  *
- * The on-track / at-risk / behind buckets are derived from the EXACT card color
- * each KPI shows — we run the canonical `getColorByPercentage` (the same helper
- * `KPICard`/`getProgressBadgeColors` use) on each card's `resolveProgressQtd`
- * pair, then bucket by color so the pill always matches what's on screen:
+ * The over-achieved / on-track / at-risk / behind buckets are derived from the
+ * EXACT card color each KPI shows — we run the canonical `getColorByPercentage`
+ * (the same helper `KPICard`/`getProgressBadgeColors` use) on each card's
+ * `resolveProgressQtd` pair, then bucket by color so the pill always matches
+ * what's on screen:
  *
- *   Blue (≥120%) | Green (≥100%) → onTrack
+ *   Blue (≥120%)                 → overAchieved
+ *   Green (≥100%)                → onTrack
  *   Yellow (80–99%)              → atRisk
  *   Red (<80%, entered)          → behind
- *   Neutral (no value entered)   → excluded from all three counts
+ *   Neutral (no value entered)   → notStarted (excluded from the other four counts + avg)
+ *
+ * Blue used to be folded into `onTrack`, which hid over-achievement behind the
+ * same green count. It is now its own bucket, so `onTrack` means strictly
+ * "achieved but not exceeded". The four counts remain mutually exclusive.
  *
  * Previously this used arbitrary 80/50 thresholds on the raw percentage, so the
  * counts disagreed with the cards (a 54% card is RED/below-target but was
@@ -254,9 +394,13 @@ export interface KpiOverviewStats {
  * and empty KPIs are excluded (so the three counts need not sum to the card
  * total).
  *
- * `avg` is the rounded mean of the per-card percentage over ENTERED KPIs only
- * (the gray 0/X cards are excluded so the average reflects tracked KPIs and
- * stays coherent with the buckets).
+ * `avg` is `(Σ QTD Achieved / Σ QTD Goal) × 100` — a single aggregate ratio
+ * across every ENTERED KPI's raw achieved/goal numbers, NOT a mean of each
+ * card's individual percentage. This intentionally weights larger-goal KPIs
+ * more heavily (a KPI with a 1M goal moves the pill far more than one with a
+ * 10 goal) — see the three examples in docs/kpi-avg-calc-examples.md for the
+ * reasoning and worked numbers. The gray 0/X cards are still excluded so the
+ * average reflects only tracked KPIs, same as before.
  */
 export function computeKpiOverviewStats(
   kpis: KPIRow[],
@@ -266,23 +410,31 @@ export function computeKpiOverviewStats(
   let onTrack = 0;
   let atRisk = 0;
   let behind = 0;
-  let pctSum = 0;
+  let overAchieved = 0;
+  let notStarted = 0;
+  let achievedSum = 0;
+  let goalSum = 0;
   let entered = 0;
 
   for (const kpi of kpis) {
     const { achieved, goal } = resolveProgressQtd(kpi, currentWeek, weeksPerQuarter);
     const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
-    if (!hasAnyWeeklyValue) continue; // neutral/gray card — excluded
+    if (!hasAnyWeeklyValue) {
+      notStarted += 1; // neutral/gray card — excluded from avg + the other 4 buckets
+      continue;
+    }
     entered += 1;
-    pctSum += goal > 0 ? (achieved / goal) * 100 : 0;
+    achievedSum += achieved;
+    goalSum += goal;
     const { bg } = getColorByPercentage(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false);
-    if (bg === "bg-blue-600" || bg === "bg-green-600") onTrack += 1;
+    if (bg === "bg-blue-600") overAchieved += 1;
+    else if (bg === "bg-green-600") onTrack += 1;
     else if (bg === "bg-yellow-500") atRisk += 1;
     else if (bg === "bg-red-600") behind += 1;
   }
 
-  const avg = entered > 0 ? Math.round(pctSum / entered) : 0;
-  return { avg, onTrack, atRisk, behind };
+  const avg = goalSum > 0 ? Math.round((achievedSum / goalSum) * 100) : 0;
+  return { avg, onTrack, atRisk, behind, overAchieved, notStarted, achievedSum, goalSum, entered };
 }
 
 /**
@@ -369,8 +521,9 @@ export function weeklyGoalTile(
  *
  *   - `qtdGoal` / `qtdAchieved` — `computeQtd(kpi, qtdWeek, …)` (Σ weekly goals /
  *     actuals through the reference week; Standalone → constant goal + avg).
- *   - `progressPercent`        — `kpiOverallPercent(kpi, qtdWeek, …)` (achieved-
- *     to-date ÷ full quarterly goal; identical to the table's Progress column).
+ *   - `progressPercent`        — `kpiQtrPercent(kpi, qtdWeek, …)` (achieved-
+ *     to-date ÷ the full quarter's potential; identical to the table's Progress
+ *     column and the dashboard card's QTR bar).
  *   - `weeklyGoal`             — `weeklyGoalFor(kpi, currentWeek, …)` (the KPI
  *     table's Weekly Goal column: the current week's target or the flat split).
  *
@@ -393,7 +546,7 @@ export function computeExportStats(
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
   const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, divisionType, weeksPerQuarter);
-  const progressPercent = kpiOverallPercent(kpi, qtdWeek, weeksPerQuarter);
+  const progressPercent = kpiQtrPercent(kpi, qtdWeek, weeksPerQuarter);
   const weeklyGoal = weeklyGoalFor(kpi, currentWeek ?? 1, weeksPerQuarter);
   return { qtdGoal, qtdAchieved, progressPercent, weeklyGoal };
 }

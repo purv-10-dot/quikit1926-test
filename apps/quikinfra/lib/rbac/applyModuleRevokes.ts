@@ -50,6 +50,9 @@ export interface ApplyModuleRevokesResult {
  * @param orgId  tenant scope
  * @param tickedModules array of module keys the admin ticked on the form
  * @param actorUserId who triggered the change (for `grantedBy` audit)
+ * @param previouslyTicked modules the user ALREADY had before this save.
+ *        Pass it on edits so a module that didn't change is reconciled
+ *        non-destructively — see the pairsToClear block below.
  */
 export async function applyModuleRevokes(
   db: DbCentralLike,
@@ -57,6 +60,7 @@ export async function applyModuleRevokes(
   orgId: string,
   tickedModules: string[],
   actorUserId: string | null,
+  previouslyTicked?: readonly string[] | null,
 ): Promise<ApplyModuleRevokesResult> {
   // Normalise + sanity-filter the input — anything outside the known
   // module keys is ignored so a typo in the form payload can't blow up
@@ -65,17 +69,31 @@ export async function applyModuleRevokes(
     tickedModules.filter((m) => ALL_MODULE_KEYS.includes(m)),
   );
 
+  // Modules the user already had. A module present in BOTH lists is
+  // "unchanged" — the admin didn't touch it on this save, so its pairs are
+  // reconciled non-destructively (fill gaps, never flip an existing row).
+  // Without this, every Edit-User save re-granted the FULL action set on
+  // every page of every assigned module, wiping the per-page rights the
+  // admin had set on the Permissions screen — the "grant 2-3 sub-modules,
+  // the rest get selected again" report.
+  const knownPrevious = previouslyTicked
+    ? new Set(previouslyTicked.filter((m) => ALL_MODULE_KEYS.includes(m)))
+    : null;
+
   // Bucket every pair in the module universe by ticked / unticked.
   const pairsToRevoke: Array<{ resource: string; action: Action }> = [];
   const pairsToClear: Array<{ resource: string; action: Action }> = [];
+  const pairsToBackfill: Array<{ resource: string; action: Action }> = [];
 
   for (const moduleKey of ALL_MODULE_KEYS) {
     const pairs = modulePermissionPairs(moduleKey);
     if (pairs.length === 0) continue;
-    if (knownTicked.has(moduleKey)) {
-      pairsToClear.push(...pairs);
-    } else {
+    if (!knownTicked.has(moduleKey)) {
       pairsToRevoke.push(...pairs);
+    } else if (knownPrevious?.has(moduleKey)) {
+      pairsToBackfill.push(...pairs);
+    } else {
+      pairsToClear.push(...pairs);
     }
   }
 
@@ -137,6 +155,33 @@ export async function applyModuleRevokes(
       },
     });
     revokesCleared++;
+  }
+
+  // 3) Modules that were ALREADY ticked before this save: create any pair
+  //    that has no row yet (so a module assigned before the additive-grant
+  //    era still gets its grants) but leave existing rows exactly as they
+  //    are. That is what preserves a per-page revoke written from the
+  //    Permissions matrix across an unrelated Edit-User save.
+  for (const p of pairsToBackfill) {
+    await db.cnUserPermissionExtra.upsert({
+      where: {
+        orgId_userId_resource_action: {
+          orgId,
+          userId,
+          resource: p.resource,
+          action: p.action,
+        },
+      },
+      update: {},
+      create: {
+        orgId,
+        userId,
+        resource: p.resource,
+        action: p.action,
+        revoke: false,
+        grantedBy: actorUserId,
+      },
+    });
   }
 
   return {

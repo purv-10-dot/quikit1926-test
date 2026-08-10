@@ -5,7 +5,14 @@ import { FANOUT_CHANNEL, type FanoutEvent, type FanoutEventType } from "./fanout
 import { logger } from "./logger";
 import { createMetrics, type Metrics } from "./metrics";
 import { markOffline, markOnline, onlineUserIds, refresh, type PresenceRedis } from "./presence";
-import { assertMembership, listChannelIdsForMember, listMemberUserIdsForChannels } from "./queries";
+import { broadcastConnectivity, broadcastSetStatus } from "./presence-broadcast";
+import {
+  assertMembership,
+  getPresenceStatus,
+  getPresenceStatuses,
+  listChannelIdsForMember,
+  listMemberUserIdsForChannels,
+} from "./queries";
 import { channelRoom, userRoom } from "./rooms";
 import { startSweeper, type RingingRedis } from "./ringing";
 import { verifyToken } from "./token";
@@ -163,20 +170,54 @@ export function createGateway(opts: GatewayOptions): Gateway {
     }
     updateRoomsGauge();
 
-    const broadcastPresence = (status: "online" | "offline", lastSeen?: string) => {
-      const payload = { userId, status, ...(lastSeen ? { lastSeen } : {}) };
-      for (const id of channelIds) io.to(channelRoom(orgId, id)).emit("presence", payload);
-    };
+    const broadcastPresence = (status: "online" | "offline", lastSeen?: string) =>
+      broadcastConnectivity(io, orgId, userId, channelIds, status, lastSeen);
 
     // Presence: mark online (Redis), broadcast to shared-channel rooms only, and
     // seed this socket with a snapshot of who's already online in its channels.
     if (presence) {
       try {
         const { firstSocket } = await markOnline(presence, orgId, userId, socket.id, presenceTtl);
-        if (firstSocket) broadcastPresence("online");
+        if (firstSocket) {
+          broadcastPresence("online");
+          // Seed observers with this user's DURABLE set-status on connect (read
+          // read-only). Closes the gap where an observer connected before this
+          // user set their status and so never received the live change. Live
+          // changes still ride the app → Redis → dispatch path.
+          try {
+            const own = await getPresenceStatus(orgId, userId);
+            if (own)
+              broadcastSetStatus(
+                io,
+                orgId,
+                userId,
+                channelIds,
+                own.status,
+                own.statusMessage,
+                own.statusExpiresAt,
+              );
+          } catch {
+            // best-effort seed
+          }
+        }
         const candidates = await listMemberUserIdsForChannels(orgId, channelIds);
         const online = await onlineUserIds(presence, orgId, candidates);
-        socket.emit("presence_snapshot", { userIds: online });
+        // Batched (single findMany) set-status read over the online candidates —
+        // never one query per user. The snapshot carries each online user's
+        // durable status so a fresh client renders the right dot immediately.
+        const statuses = await getPresenceStatuses(orgId, online);
+        const users = online.map((uid) => {
+          const s = statuses.get(uid);
+          return s
+            ? {
+                userId: uid,
+                status: s.status,
+                ...(s.statusMessage ? { statusMessage: s.statusMessage } : {}),
+                ...(s.statusExpiresAt ? { statusExpiresAt: s.statusExpiresAt } : {}),
+              }
+            : { userId: uid };
+        });
+        socket.emit("presence_snapshot", { users });
       } catch {
         // presence is best-effort; the socket still works without it
       }
@@ -334,6 +375,47 @@ export function dispatchFanout(io: IOServer, evt: FanoutEvent): void {
   if (event === "notification") {
     if (!evt.userId) return;
     io.to(userRoom(orgId, evt.userId)).emit("notification", payload);
+    return;
+  }
+
+  // Durable set-status change (app-published). Fans out like channel_created:
+  // the payload names the author's channel ids and we relay to each channel
+  // room. Rooms built from orgId — never from the payload.
+  if (event === "presence_status") {
+    const p = payload as {
+      userId?: string;
+      status?: string;
+      statusMessage?: string;
+      statusExpiresAt?: string;
+      channelIds?: string[];
+    };
+    if (!p?.userId || !p.status || !Array.isArray(p.channelIds)) return;
+    const out = {
+      userId: p.userId,
+      status: p.status,
+      ...(p.statusMessage ? { statusMessage: p.statusMessage } : {}),
+      ...(p.statusExpiresAt ? { statusExpiresAt: p.statusExpiresAt } : {}),
+    };
+    for (const cid of p.channelIds) io.to(channelRoom(orgId, cid)).emit("presence_status", out);
+    return;
+  }
+
+  // Group details changed → relay to the channel room so members update the
+  // channel in place. Room from orgId + top-level channelId — never the payload.
+  if (event === "channel_updated") {
+    const p = payload as { channelId?: string };
+    if (!p?.channelId) return;
+    io.to(channelRoom(orgId, evt.channelId)).emit("channel_updated", payload);
+    return;
+  }
+
+  // Group deleted-for-everyone → relay to the channel room so members remove it
+  // live. Sockets stay joined to the (now-defunct) room in the adapter, so this
+  // still reaches every connected member. Room from orgId — never the payload.
+  if (event === "channel_deleted") {
+    const p = payload as { channelId?: string };
+    if (!p?.channelId) return;
+    io.to(channelRoom(orgId, evt.channelId)).emit("channel_deleted", payload);
     return;
   }
 

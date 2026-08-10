@@ -2,8 +2,6 @@
 // run() pulls tenant-scoped data and returns columns + rows; the engine renders those
 // to CSV / XLSX / PDF. Adding a report = adding one definition, no engine changes.
 
-export type ReportFormat = "json" | "csv" | "xlsx" | "pdf";
-
 export const REPORT_CATEGORIES = [
   "Organization",
   "Payroll",

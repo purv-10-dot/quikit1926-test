@@ -3,7 +3,9 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz/requireAdmin";
+import { getQuikChatAppId } from "@/lib/authz/permissions";
 import { assertRoleDeletable, AdminLockoutError } from "@/lib/authz/preventAdminLockout";
+import { fallbackRoleNames, mirrorRolesToCentral } from "@/lib/authz/mirror-role";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +96,25 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         updatedAt: true,
       },
     });
+
+    // A rename changes the effective role NAME of every current member — re-mirror
+    // it onto central UserAppAccess.role. Best-effort; only when the name changed.
+    if (data.name && data.name !== existing.name) {
+      try {
+        const members = await db.qcUserAppRole.findMany({
+          where: { roleId: existing.id, orgId },
+          select: { userId: true },
+        });
+        await mirrorRolesToCentral({
+          orgId,
+          appId: existing.appId,
+          entries: members.map((m) => ({ userId: m.userId, roleName: updated.name })),
+        });
+      } catch {
+        // Non-fatal: central mirror stays stale until the next role change / entry.
+      }
+    }
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update role";
@@ -118,7 +139,36 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       throw e;
     }
 
+    // Capture affected members + appId BEFORE the delete — the CASCADE wipes the
+    // QcUserAppRole links, so we can't read them afterwards.
+    const [affected, appId] = await Promise.all([
+      db.qcUserAppRole.findMany({
+        where: { roleId: params.id, orgId },
+        select: { userId: true },
+      }),
+      getQuikChatAppId(),
+    ]);
+
     await db.qcAppRole.delete({ where: { id: params.id } });
+
+    // Affected members now hold no role → mirror their rebind role (admin/default)
+    // onto central UserAppAccess.role. Best-effort; never fail the delete on it.
+    if (appId && affected.length > 0) {
+      try {
+        const userIds = affected.map((a) => a.userId);
+        const fallback = await fallbackRoleNames(orgId, userIds);
+        await mirrorRolesToCentral({
+          orgId,
+          appId,
+          entries: userIds.map((userId) => ({
+            userId,
+            roleName: fallback.get(userId) ?? "Member",
+          })),
+        });
+      } catch {
+        // Non-fatal: central mirror stays stale until the next role change / entry.
+      }
+    }
 
     return NextResponse.json({
       success: true,

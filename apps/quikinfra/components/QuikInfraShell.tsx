@@ -20,7 +20,7 @@ import {
   FileText, BarChart3, Fuel, ArrowLeftRight,
   CalendarCheck, GitCompareArrows, HardHat, Hammer,
   Receipt, GanttChart, ListTodo, BadgeCheck, UserCog,
-  ShieldCheck, Workflow, Globe, Boxes, MapPin,
+  ShieldCheck, Workflow, Globe, Boxes, MapPin, LifeBuoy,
   CreditCard, Calculator, FileSpreadsheet,
   ChevronRight, Menu, X, Search,
   PanelLeftClose, PanelLeftOpen,
@@ -288,6 +288,10 @@ const CONSTRUCTION_NAV: NavItem[] = [
     children: [
       { label: "Users",     href: "/settings/users",     iconComponent: UserCog,     requiredPermission: "settings.users",     superAdminOnly: true, featureKey: "settings.users" },
       { label: "Workflows", href: "/settings/workflows", iconComponent: Workflow,    requiredPermission: "settings.workflows", superAdminOnly: true, featureKey: "settings.workflows" },
+      // No requiredPermission / superAdminOnly — support status is per-user, so
+      // every member sees their own requests. Its page lives outside the
+      // `(admin)` route group for the same reason (see settings/(admin)/layout.tsx).
+      { label: "Support Status", href: "/settings/support", iconComponent: LifeBuoy },
     ],
   },
 ];
@@ -617,13 +621,37 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
   );
 }
 
+/**
+ * Shown in place of the page body when the user navigates (or types a URL) to a
+ * page their permission matrix denies. The matching API routes return 403
+ * independently — this is the UI half, so a denied page never renders its
+ * chrome and controls.
+ */
+function AccessDenied() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-inset ring-rose-200">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <h1 className="text-lg font-semibold text-gray-900">Access denied</h1>
+        <p className="mt-2 text-sm text-gray-600">
+          You don&apos;t have permission to view this page. If you think you
+          should, ask an administrator to grant it in Settings → Users →
+          Permissions.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Shell ─────────────────────────────────────────────────────
 
 export function QuikInfraShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { can, hasModule, canViewMenu, isMenuGranted, isLoading: permsLoading, roleKey, userType } = usePermissions();
+  const { can, hasModule, canViewMenu, canViewPath, isMenuGranted, isLoading: permsLoading, roleKey, userType } = usePermissions();
   const disabledModules = useDisabledModules();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -684,6 +712,13 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
     () => filterNavBySearch(visibleNav, navSearch),
     [visibleNav, navSearch],
   );
+
+  // Direct-URL gate. Hiding a nav link never stopped anyone typing the address,
+  // and these dashboard pages have no server-side authorization (middleware
+  // only validates the session), so without this a revoked module stayed fully
+  // reachable by URL. Held until permissions resolve so we never flash a denial
+  // at a user who does have access.
+  const pageDenied = !permsLoading && !canViewPath(pathname);
 
   const searchActive = navSearch.trim().length > 0;
 
@@ -933,7 +968,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
             </div>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto bg-white">
-            {children}
+            {pageDenied ? <AccessDenied /> : children}
           </main>
         </div>
       </div>

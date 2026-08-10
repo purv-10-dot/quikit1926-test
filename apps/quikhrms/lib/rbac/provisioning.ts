@@ -18,7 +18,7 @@ import { PERMISSIONS, DEFAULT_ROLES } from "@/lib/rbac/permissions";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
 
 /** Central membership roles that should map to the HRMS `admin` role. */
-export const CENTRAL_ADMIN_ROLES = new Set(["super_admin", "org_admin", "app_admin", "admin"]);
+const CENTRAL_ADMIN_ROLES = new Set(["super_admin", "org_admin", "app_admin", "admin"]);
 
 /**
  * Seed the tenant's HRMS AppRoles + RolePermissions if none exist yet.
@@ -176,7 +176,7 @@ export async function provisionEmployee(args: ProvisionArgs): Promise<string> {
 }
 
 /** A pending invitation, narrowed to the fields needed to materialize an employee. */
-export interface InvitationProvisionData {
+interface InvitationProvisionData {
   id: string;
   firstName: string | null;
   lastName: string | null;

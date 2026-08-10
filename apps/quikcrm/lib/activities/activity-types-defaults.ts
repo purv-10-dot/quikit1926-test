@@ -47,6 +47,19 @@ export interface DefaultActivityType {
   code: string;
   label: string;
   category?: string;
+  /**
+   * Seed value for CrmActivityType.config. Only set where a default type needs
+   * non-default behavior — currently `countsSources`, which tells the Activity
+   * Type-wise target tracker which record sources count toward this type.
+   *
+   * Omitted (the common case) means activities-only: CrmActivity rows whose
+   * `type` matches this type's code. "call" additionally counts CrmCallLog rows
+   * and "task" additionally counts completed CrmTask rows, because those two
+   * sources carry no activity-type code but DO count toward the overall target.
+   * Keeping this in config (rather than in tracker code) means an admin-created
+   * type needs no code change, and an admin can retune the mapping as data.
+   */
+  config?: Record<string, unknown>;
   fields: DefaultActivityFieldDef[];
 }
 
@@ -59,6 +72,8 @@ export const DEFAULT_ACTIVITY_TYPES: readonly DefaultActivityType[] = [
     code: "call",
     label: "Call",
     category: "Communication",
+    // Telephony call logs have no activity-type code but count toward targets.
+    config: { countsSources: ["activity", "call"] },
     // NOTE ON ORDERING: fields are APPENDED, never inserted mid-array. The
     // self-healing backfill (ensure-defaults) derives sortOrder from array
     // index; inserting would renumber only NEW rows on already-seeded orgs and
@@ -115,6 +130,8 @@ export const DEFAULT_ACTIVITY_TYPES: readonly DefaultActivityType[] = [
     code: "task",
     label: "Task",
     category: "Productivity",
+    // Completed CrmTask rows have no activity-type code but count toward targets.
+    config: { countsSources: ["activity", "task"] },
     fields: [
       { key: "due_date", label: "Due Date", fieldType: "Date", requirement: "Optional" },
       { key: "priority", label: "Priority", fieldType: "Select", requirement: "Optional", options: ["Low", "Medium", "High", "Urgent"] },

@@ -12,7 +12,7 @@ const STATUS_ORDER = { SurveyDraft: 0, SurveyActive: 1, SurveyClosed: 2, SurveyA
 export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
     const { orgId, permissions } = ctx;
-    const isAdmin = permissions.includes("*") || permissions.includes("hrms.engage.manage");
+    const isAdmin = permissions.includes("*") || permissions.includes("hrms.engage.survey.manage");
     const survey = await prisma.hrmsSurvey.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {
@@ -64,7 +64,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     return successResponse(survey);
   } catch (error) { console.error("PATCH /engage/surveys/:id error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.engage.manage"] });
+}, { requiredPermissions: ["hrms.engage.survey.manage"] });
 
 async function fanOutSurveyNotifications(args: {
   orgId: string; surveyId: string; title: string; audience: unknown; endDate: Date;
@@ -109,4 +109,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     await prisma.hrmsSurvey.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /engage/surveys/:id error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.engage.manage"] });
+}, { requiredPermissions: ["hrms.engage.survey.manage"] });

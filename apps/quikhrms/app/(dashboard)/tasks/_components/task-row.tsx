@@ -7,7 +7,7 @@ import { useDialog } from "@/components/hrms/dialog";
 import { Check, AlertTriangle, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 
-export interface Employee {
+interface Employee {
   id: string;
   firstName: string;
   lastName: string;

@@ -64,10 +64,3 @@ Sincerely,
 {{signatoryName}}
 {{signatoryDesignation}}
 {{companyName}}`;
-
-/** Sample value map for the Settings "Preview sample" render. */
-export function sampleFieldValues(): Record<string, string> {
-  const m: Record<string, string> = {};
-  for (const f of OFFER_LETTER_FIELDS) m[f.name] = f.sample;
-  return m;
-}

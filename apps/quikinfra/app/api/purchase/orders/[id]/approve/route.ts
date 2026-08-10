@@ -7,7 +7,14 @@ import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findPOById } from "@/lib/purchase/po-repository";
 import { sendPoEmailToVendor } from "@/lib/purchase/po-email";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 
 /**
  * POST /api/purchase/orders/:id/approve — multi-step PO approval.
@@ -29,7 +36,7 @@ import { canActOnStep } from "@/lib/approvals/workflow-rbac";
  * Body: { action: "approve" | "reject" | "return", comments? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -52,7 +59,9 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  // Cheap input checks before any lookup, so a bad action is a 400 rather than
+  // a 404 for an id we never needed. The gate re-checks both.
+  if (!GATE_ACTIONS.includes(action)) {
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
   if ((action === "reject" || action === "return") && !comments) {
@@ -77,115 +86,48 @@ export async function POST(
   if (!instance) {
     return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
   }
-  if (instance.status !== "pending_approval") {
-    return NextResponse.json(
-      { error: `Approval already ${instance.status} — no further actions allowed.` },
-      { status: 409 },
-    );
-  }
-
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
+  // Authorisation, step resolution and the repair / master-approval branches all
+  // live in the shared gate; this route keeps only the PO's own status fields
+  // and the vendor email.
+  const gate = await gateApprovalAction({
+    ctx,
+    instance,
+    entityLabel: "PO",
+    action,
+    comments,
+    projectId: po.projectId ?? null,
   });
-  if (!currentStep) {
-    return NextResponse.json(
-      {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this PO was mid-flight.`,
-      },
-      { status: 500 },
-    );
+  if (gate.kind === "error") {
+    return NextResponse.json(gate.body, { status: gate.status });
   }
-
-  if (
-    !canActOnStep(
-      { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-      {
-        approverUserId: currentStep.approverUserId,
-        approverUserIds: Array.isArray(currentStep.approverUserIds)
-          ? currentStep.approverUserIds
-          : null,
-        approverRoleId: currentStep.approverRoleId,
-      },
-      po.projectId ?? null,
-    )
-  ) {
-    let expected = "an authorized approver";
-    if (currentStep.approverUserId) {
-      const pinned = await findCnUserById(currentStep.approverUserId);
-      expected = pinned?.fullName
-        ? `${pinned.fullName} (pinned approver)`
-        : "the pinned approver for this step";
-    } else if (currentStep.approverRoleId) {
-      expected =
-        `a user with role "${currentStep.approverRoleId}"` +
-        (po.projectId ? ` assigned to this project` : "");
-    }
-    return NextResponse.json(
-      {
-        error: `You are not authorized to ${action} this PO at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-      },
-      { status: 403 },
-    );
-  }
-
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
 
   let finalPOStatus: string | null = null;
-  let isFinalApprove = false;
+  const isFinalApprove = gate.isFinalApprove;
+  let conflict: ClaimResult["conflict"] | undefined;
 
   await db.$transaction(async (tx) => {
-    await tx.cnApprovalHistory.create({
-      data: {
-        instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
-        actionById: ctx.userId,
-        comments: comments || null,
-      },
-    });
+    const claim = await claimAndRecord(tx, ctx, instance, gate);
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
 
-    if (action === "approve") {
-      if (!nextStep) {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
-        });
+    if (gate.effectiveAction === "approve") {
+      if (gate.isFinalApprove) {
         await tx.cnPurchaseOrder.update({
           where: { id: po.id },
           data: { status: "approved", updatedBy: ctx.userId },
         });
         finalPOStatus = "approved";
-        isFinalApprove = true;
-      } else {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { currentStepOrder: nextStep.stepOrder },
-        });
       }
-    } else if (action === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
+      // Intermediate — PO stays as it is; the gate advanced the instance.
+    } else if (gate.effectiveAction === "reject") {
       await tx.cnPurchaseOrder.update({
         where: { id: po.id },
         data: { status: "rejected", updatedBy: ctx.userId },
       });
       finalPOStatus = "rejected";
     } else {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
       await tx.cnPurchaseOrder.update({
         where: { id: po.id },
         data: { status: "draft", approvalId: null, updatedBy: ctx.userId },
@@ -193,6 +135,14 @@ export async function POST(
       finalPOStatus = "draft";
     }
   });
+
+  // Lost the claim — someone else settled this PO first. Nothing was written, so
+  // return before the vendor email below.
+  if (conflict) {
+    return NextResponse.json(await gateConflictResponse(conflict, "PO"), {
+      status: 409,
+    });
+  }
 
   // Vendor email goes out ONLY at the final approve — never on
   // intermediate steps, reject, or return.

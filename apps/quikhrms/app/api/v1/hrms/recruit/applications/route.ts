@@ -258,7 +258,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     const stages = stageNames(pipeline?.stages);
     const firstStage = stages[0] ?? "Screening";
-    const initialStage = currentStage ?? firstStage;
+    // Only honor a requested stage if it's actually part of this requisition's
+    // pipeline — otherwise silently fall back to the first stage rather than
+    // writing a currentStage that never appears on the pipeline board.
+    const initialStage = (currentStage && stages.includes(currentStage)) ? currentStage : firstStage;
 
     const freshHistory = JSON.parse(JSON.stringify([{ stage: initialStage, date: new Date().toISOString(), movedBy: userId }]));
     const app = existing

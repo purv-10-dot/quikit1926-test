@@ -50,13 +50,8 @@ interface VendorEditRow {
 
 const columns: MasterColumnDef<VendorRow>[] = [
   { key: "code", label: "Code", width: "90px" },
-  { key: "companyName", label: "Company / Firm", render: (row) => (
-    <div>
-      <span className="font-medium text-gray-900">{row.companyName || row.name}</span>
-      {row.companyName && row.name && row.companyName !== row.name && (
-        <span className="text-[10px] text-gray-500 block">{row.name}</span>
-      )}
-    </div>
+  { key: "name", label: "Vendor Name", render: (row) => (
+    <span className="font-medium text-gray-900">{row.name || row.companyName}</span>
   )},
   { key: "vendorType", label: "Type", width: "100px", type: "select",
     options: ["Supplier", "Transporter", "Service"] },

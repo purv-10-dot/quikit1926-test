@@ -11,7 +11,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { User, Users, ArrowRight, ArrowRightLeft, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, FastForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
+import { User, Users, ArrowRight, ArrowRightLeft, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
@@ -61,6 +61,19 @@ interface ApplicationItem {
   } | null;
   docGate: { blocking: boolean; pending: string[] } | null;
 }
+
+// A sourced candidate with no requisition link yet (Candidate Pool). Shown as a
+// lightweight pseudo-row in the Source column — distinct shape from
+// ApplicationItem since there's no application/stage/interview data at all.
+interface PoolCandidateItem {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  expectedCTC: string | null;
+}
+
+interface OpenRequisition { id: string; title: string; requisitionNumber: string; status: string }
 
 const REMINDER_COOLDOWN_HOURS = 24;
 function reminderCooldownRemaining(lastReminderAt: string | null): number {
@@ -232,12 +245,16 @@ export default function PipelinePage() {
 
   const [feedbackApp, setFeedbackApp] = useState<ApplicationItem | null>(null);
   const [feedback, setFeedback] = useState({ overallRating: 7, recommendation: "" as string, strengths: "", concerns: "", overallComments: "" });
-  // "Move forward" reuses the `feedback` state above for rating/strengths/etc.
-  const [skipApp, setSkipApp] = useState<ApplicationItem | null>(null);
-  const [skipTarget, setSkipTarget] = useState<string>("");
 
+  // Change Stage — single entry point for moving a candidate to any stage.
+  // Picking a FORWARD stage reuses the `feedback` state above (rating/
+  // strengths/concerns/comments) via moveForwardMut; picking a BACKWARD stage
+  // only asks for `moveReason` via the plain moveMut. (Used to be two separate
+  // menu items — "Skip stage" for forward-only, "Change stage" for any
+  // direction with no reason captured — merged into one.)
   const [moveApp, setMoveApp] = useState<ApplicationItem | null>(null);
   const [moveTarget, setMoveTarget] = useState<string>("");
+  const [moveReason, setMoveReason] = useState("");
 
   const [historyApp, setHistoryApp] = useState<ApplicationItem | null>(null);
   const [screeningApp, setScreeningApp] = useState<ApplicationItem | null>(null);
@@ -311,6 +328,7 @@ export default function PipelinePage() {
     takeHomeInstructions: "",
     takeHomeAttachmentUrl: "",
     takeHomeAttachmentName: "",
+    takeHomeAttachmentLink: "",
     takeHomeDueDate: "",
   });
   const [takeHomeUploading, setTakeHomeUploading] = useState(false);
@@ -345,6 +363,14 @@ export default function PipelinePage() {
   const [offerDecision, setOfferDecision] = useState<{ app: ApplicationItem; kind: "accept" | "decline" } | null>(null);
   const [offerFb, setOfferFb] = useState(emptyOfferFb);
 
+  // Candidate Pool candidates (sourced, never linked to any requisition) — shown
+  // merged into the Source (Screening) column so HR can assign them a JR without
+  // leaving the pipeline. Only meaningful in the "all requisitions" view — a
+  // pool candidate isn't part of any specific requisition, so they drop out the
+  // moment a requisition filter narrows the board.
+  const [assignPoolTarget, setAssignPoolTarget] = useState<PoolCandidateItem | null>(null);
+  const [assignReqId, setAssignReqId] = useState("");
+
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline-apps", reqFilter, showClosed],
     // Include offered / on-hold candidates so the Offer stage shows the whole
@@ -362,6 +388,42 @@ export default function PipelinePage() {
     queryKey: ["pipelines"],
     queryFn: () => api.get<PipelineItem[]>("/api/v1/hrms/recruit/pipelines"),
   });
+
+  // Pool candidates only make sense in the "all requisitions" view — a pool
+  // candidate isn't part of any specific requisition.
+  const poolEligible = !reqFilter && requisitionFilters.size === 0;
+  const { data: poolData } = useQuery({
+    queryKey: ["candidates", "pool-for-pipeline"],
+    queryFn: () => api.get<PoolCandidateItem[]>("/api/v1/hrms/recruit/candidates?noApplication=1&limit=200"),
+    enabled: poolEligible,
+  });
+  const poolCandidates = poolEligible ? (poolData?.data ?? []) : [];
+
+  const { data: openReqsData } = useQuery({
+    queryKey: ["requisitions-open-for-pool-assign"],
+    queryFn: () => api.get<OpenRequisition[]>("/api/v1/hrms/recruit/requisitions?limit=200"),
+    enabled: !!assignPoolTarget,
+  });
+  const openReqs = (openReqsData?.data ?? []).filter((r) => r.status === "ReqOpen" || r.status === "ReqApproved");
+
+  const assignPoolMut = useMutation({
+    mutationFn: () => {
+      if (!assignPoolTarget) throw new Error("No candidate selected");
+      // Linking to a requisition skips straight to Phone Screening — matches
+      // the same rule applied when linking a candidate at creation time.
+      return api.post("/api/v1/hrms/recruit/applications", {
+        candidateId: assignPoolTarget.id, requisitionId: assignReqId, currentStage: "PhoneScreen",
+      });
+    },
+    onSuccess: () => {
+      invalidateAll();
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Assigned to requisition", "Candidate moved to Phone Screening.");
+      setAssignPoolTarget(null);
+      setAssignReqId("");
+    },
+    onError: (e) => toast.error("Couldn't assign", e instanceof Error ? e.message : undefined),
+  });
   const defaultPipeline = (pipelinesData?.data ?? []).find((p) => p.isDefault) ?? pipelinesData?.data?.[0];
   const stageConfigs: StageConfig[] = defaultPipeline?.stages && defaultPipeline.stages.length > 0
     ? defaultPipeline.stages
@@ -372,16 +434,6 @@ export default function PipelinePage() {
   // Static screening checklist — shown ONLY in the Screening stage.
   // Screening sheet is only for the Screening round itself (not Phone Screen etc.).
   const showScreening = (app: ApplicationItem) => (app.currentStage ?? "").trim().toLowerCase() === "screening";
-  // Manual "Move forward" / "Skip" only advances through pre-offer stages — a
-  // candidate can be pushed up to (and into) the HR/interview rounds, but NOT
-  // into Offer/Hired via these buttons. Those transitions happen through the
-  // offer flow (send offer) and onboarding.
-  const canMoveForward = (current: string | null | undefined) => {
-    const idx = current ? STAGES.indexOf(current) : -1;
-    if (idx < 0 || idx >= STAGES.length - 1) return false;
-    const next = STAGES[idx + 1];
-    return !/offer|hired/i.test(next);
-  };
   const getNextStage = (current: string | null | undefined) => {
     const idx = current ? STAGES.indexOf(current) : -1;
     return idx >= 0 && idx < STAGES.length - 1 ? STAGES[idx + 1] : null;
@@ -459,7 +511,7 @@ export default function PipelinePage() {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
       tomorrow.setMinutes(0, 0, 0);
       const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeDueDate: "" });
+      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
       setScheduleResult(null);
       setScheduleApp({ app, stage: next });
     } else {
@@ -487,19 +539,25 @@ export default function PipelinePage() {
     qc.invalidateQueries({ queryKey: ["offers"] });
   };
 
+  // Plain stage move — used by (1) the row's primary "Move to X" CTA once
+  // feedback was already captured earlier in the normal flow (no reason
+  // needed there), and (2) Change Stage's BACKWARD branch, where `moveReason`
+  // is the mandatory justification for moving a candidate back.
   const moveMut = useMutation({
-    mutationFn: ({ id, stage }: { id: string; stage: string }) =>
+    mutationFn: ({ id, stage, moveReason }: { id: string; stage: string; moveReason?: string }) =>
       api.patch<{ mailFired?: { template: string; to?: string; skipped?: string } | null }>(
         `/api/v1/hrms/recruit/applications/${id}`,
-        { currentStage: stage },
+        { currentStage: stage, ...(moveReason && { moveReason }) },
       ),
     onSuccess: (res) => {
       invalidateAll();
-      setMoveApp(null);
+      setMoveApp(null); setMoveTarget(""); setMoveReason("");
       const fired = res?.data?.mailFired;
       if (fired) {
         if (fired.skipped) toast.warning("Mail skipped", fired.skipped);
         else if (fired.to) toast.success("Mail sent", `${fired.template} → ${fired.to}`);
+      } else {
+        toast.success("Stage changed");
       }
     },
   });
@@ -510,12 +568,13 @@ export default function PipelinePage() {
     onSuccess: () => { invalidateAll(); setRejectApp(null); setRejectReason(""); },
   });
 
-  // "Move forward" uses the same rich feedback form as stage feedback, but with
-  // an explicit target-stage picker instead of a recommendation. It records the
-  // real feedback (rating/strengths/concerns/comments) for the current stage
-  // WITHOUT auto-moving (deferStageMove), then moves to the chosen stage — or,
-  // for an interview stage, opens the scheduler (booking does the move).
-  const skipMut = useMutation({
+  // Change Stage's FORWARD branch — uses the same rich feedback form as stage
+  // feedback, but with an explicit target-stage picker instead of a
+  // recommendation. It records the real feedback (rating/strengths/concerns/
+  // comments) for the current stage WITHOUT auto-moving (deferStageMove), then
+  // moves to the chosen stage — or, for an interview stage, opens the
+  // scheduler (booking does the move).
+  const moveForwardMut = useMutation({
     mutationFn: async ({ id, target, body, openScheduler }: {
       id: string; target: string; openScheduler: boolean;
       body: { overallRating: number; strengths: string; concerns: string; overallComments: string };
@@ -537,13 +596,13 @@ export default function PipelinePage() {
     },
     onSuccess: (_res, vars) => {
       invalidateAll();
-      const app = skipApp;
-      setSkipApp(null); setSkipTarget("");
+      const app = moveApp;
+      setMoveApp(null); setMoveTarget(""); setMoveReason("");
       if (vars.openScheduler && app) {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeDueDate: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: vars.target });
       } else {
@@ -578,7 +637,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeDueDate: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: nextStage });
       }
@@ -706,6 +765,7 @@ export default function PipelinePage() {
         ...(schedule.type === "TakeHome" && {
           takeHomeInstructions: schedule.takeHomeInstructions || undefined,
           takeHomeAttachmentUrl: schedule.takeHomeAttachmentUrl || undefined,
+          takeHomeAttachmentLink: schedule.takeHomeAttachmentLink || undefined,
           takeHomeDueDate: schedule.takeHomeDueDate || undefined,
         }),
       });
@@ -791,6 +851,18 @@ export default function PipelinePage() {
     }
     return true;
   });
+
+  // Pool candidates shown merged into the Source column's list view — only
+  // when Source (Screening) is the single selected stage, and never alongside
+  // a date-range filter (they have no appliedDate to match against).
+  const showingSourceOnly = stageFilters.size === 1 && stageFilters.has("Screening");
+  const poolFiltered = showingSourceOnly && fromTs === null && toTs === null
+    ? poolCandidates.filter((c) => {
+        if (!nq) return true;
+        const hay = `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase();
+        return hay.includes(nq);
+      })
+    : [];
 
   // Flat, human-readable rows for the styled .xlsx export — same filtered set
   // the CSV export uses.
@@ -920,10 +992,11 @@ export default function PipelinePage() {
 
       {/* Stage counter bar — connected segments with a colored top rule, count,
           and label. Click a stage to view its candidates. */}
-      {allApps.length > 0 && (
+      {(allApps.length > 0 || poolCandidates.length > 0) && (
         <div className="flex items-stretch overflow-x-auto no-scrollbar bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
           {STAGES.map((stage, i) => {
-            const value = allApps.filter((a) => (a.currentStage ?? STAGES[0]) === stage).length;
+            const value = allApps.filter((a) => (a.currentStage ?? STAGES[0]) === stage).length
+              + (stage === "Screening" ? poolCandidates.length : 0);
             const on = stageFilters.has(stage);
             return (
               <button
@@ -1041,9 +1114,45 @@ export default function PipelinePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {apps.length === 0 && (
+              {apps.length === 0 && poolFiltered.length === 0 && (
                 <tr><td colSpan={7} className="text-center py-8 text-slate-400 text-sm">No applications match current filters.</td></tr>
               )}
+              {poolFiltered.map((c) => (
+                <tr key={`pool-${c.id}`} onClick={() => router.push(`/recruit/candidates/${c.id}`)} className="hover:bg-slate-50/60 transition cursor-pointer">
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-[11px] font-bold shrink-0">
+                        {(c.firstName[0] ?? "") + (c.lastName[0] ?? "")}
+                      </div>
+                      <div className="min-w-0">
+                        <Link href={`/recruit/candidates/${c.id}`} className="font-semibold text-slate-900 truncate hover:text-green-700 hover:underline">{c.firstName} {c.lastName}</Link>
+                        <p className="text-[11px] text-slate-500 truncate">{c.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
+                  <td className="px-3 py-2.5">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium ring-1 bg-slate-50 text-slate-500 ring-slate-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Not applied
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
+                  <td className="px-3 py-2.5 text-slate-600 text-xs">
+                    {c.expectedCTC ? `₹ ${Number(c.expectedCTC).toLocaleString("en-IN")}` : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-[11px] text-slate-400">—</td>
+                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end">
+                      <button
+                        onClick={() => { setAssignPoolTarget(c); setAssignReqId(""); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100"
+                      >
+                        <Briefcase size={10} /> Assign to Requisition
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
               {apps.map((app, i) => {
                 const stageName = app.currentStage ?? "—";
                 const si = STAGES.indexOf(stageName);
@@ -1355,12 +1464,6 @@ export default function PipelinePage() {
                           <ClipboardList size={12} />
                         </button>
                       )}
-                      {stage !== "Hired" && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
-                        <button onClick={() => { setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} title="Skip & move forward"
-                          className="inline-flex items-center justify-center w-8 h-8 bg-amber-50 text-amber-600 ring-1 ring-amber-200 hover:bg-amber-100 rounded-lg transition">
-                          <FastForward size={13} />
-                        </button>
-                      )}
                       {app.docRequest?.status !== "Completed" && (
                         <button onClick={() => openDocRequest(app, /offer/i.test(stage) ? "PreOffer" : "PostOffer")} title="Request documents"
                           className="inline-flex items-center justify-center w-8 h-8 bg-violet-50 text-violet-600 ring-1 ring-violet-200 hover:bg-violet-100 rounded-lg transition">
@@ -1415,16 +1518,22 @@ export default function PipelinePage() {
             <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
             <div style={{ top: menu.top, left: menu.left }} className="fixed z-50 w-52 rounded-xl border border-gray-200 bg-white shadow-xl p-1.5">
               <div className="absolute -top-1.5 right-4 w-3 h-3 bg-white border-l border-t border-gray-200 rotate-45" />
-              {!isHired && canMoveForward(app.currentStage) && (
-                <div className="px-2 pt-1 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Move</div>
-              )}
-              {!isHired && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
-                <MenuItem icon={<SkipForward size={14} />} label="Skip stage"
-                  onClick={() => { setMenu(null); setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} />
-              )}
               {!isHired && (
-                <MenuItem icon={<ArrowRightLeft size={14} />} label="Change stage"
-                  onClick={() => { setMenu(null); setMoveTarget(app.currentStage ?? STAGES[0]); setMoveApp(app); }} />
+                <>
+                  <div className="px-2 pt-1 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Move</div>
+                  <MenuItem icon={<ArrowRightLeft size={14} />} label="Change stage"
+                    onClick={() => { setMenu(null); setFeedback({ ...BLANK_FEEDBACK }); setMoveReason(""); setMoveTarget(app.currentStage ?? STAGES[0]); setMoveApp(app); prefillFeedback(app).then(setFeedback); }} />
+                </>
+              )}
+              {/* Documents — the request flow's only live entry point (the card
+                  view that used to host it never renders; viewMode is fixed to
+                  "list"). Hired candidates get the post-offer bundle. */}
+              {app.docRequest?.status !== "Completed" && (
+                <>
+                  <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Documents</div>
+                  <MenuItem icon={<FileText size={14} />} label={app.docRequest?.status === "Pending" ? "Update doc request" : "Request documents"}
+                    onClick={() => { setMenu(null); openDocRequest(app, isHired ? "PostOffer" : "PreOffer"); }} />
+                </>
               )}
               <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Review</div>
               {showScreening(app) && (
@@ -1447,6 +1556,39 @@ export default function PipelinePage() {
       })()}
 
       {/* Reject candidate — capture a reason before rejecting */}
+      {/* Assign a Candidate Pool candidate to a requisition — creates the
+          application directly at Phone Screening. */}
+      <Modal open={!!assignPoolTarget} onClose={() => !assignPoolMut.isPending && setAssignPoolTarget(null)} title="Assign to Requisition" size="md">
+        {assignPoolTarget && (
+          <form onSubmit={(e) => { e.preventDefault(); if (assignReqId) assignPoolMut.mutate(); }} className="space-y-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+              <span className="font-semibold text-slate-900">{assignPoolTarget.firstName} {assignPoolTarget.lastName}</span>
+              <span className="text-slate-500"> · {assignPoolTarget.email}</span>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Requisition <span className="text-red-500">*</span></label>
+              <Select
+                value={assignReqId}
+                onChange={setAssignReqId}
+                placeholder="Select a requisition"
+                options={openReqs.map((r) => ({ value: r.id, label: `${r.title} · ${r.requisitionNumber}` }))}
+              />
+              {openReqs.length === 0 && (
+                <p className="mt-1.5 text-[11px] text-gray-400">No open requisitions found.</p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setAssignPoolTarget(null)} disabled={assignPoolMut.isPending}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={!assignReqId || assignPoolMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold disabled:opacity-50">
+                <Briefcase size={13} /> {assignPoolMut.isPending ? "Assigning…" : "Assign"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       <Modal open={!!rejectApp} onClose={() => !rejectMut.isPending && setRejectApp(null)} title="Reject candidate" size="md">
         {rejectApp && (
           <form
@@ -1516,128 +1658,6 @@ export default function PipelinePage() {
             </div>
           </div>
         )}
-      </Modal>
-
-      <Modal open={!!skipApp} onClose={() => !skipMut.isPending && setSkipApp(null)} title="Move Candidate Forward" size="lg" bodyClassName="p-4 overflow-hidden flex flex-col">
-        {skipApp && (() => {
-          const curStage = skipApp.currentStage ?? STAGES[0];
-          const curIdx = STAGES.indexOf(curStage);
-          // Skip can advance only up to the last interview round (HR Interview).
-          // "Offer" and "Hired" are never a direct jump — Offer is reached via the
-          // dedicated Send-Offer flow, and Hired via offer-accept.
-          const forwardStages = (curIdx >= 0 ? STAGES.slice(curIdx + 1) : []).filter((s) => s !== "Hired" && !/^offer$/i.test(s));
-          const targetIdx = STAGES.indexOf(skipTarget);
-          const steps = targetIdx >= 0 && curIdx >= 0 ? targetIdx - curIdx : 0;
-          return (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!skipTarget || steps < 1) { toast.error("Select a stage to move forward to"); return; }
-              skipMut.mutate({
-                id: skipApp.id,
-                target: skipTarget,
-                openScheduler: isInterviewStage(skipTarget),
-                body: { overallRating: feedback.overallRating, strengths: feedback.strengths, concerns: feedback.concerns, overallComments: feedback.overallComments },
-              });
-            }}
-            className="flex flex-col min-h-0 flex-1"
-          >
-            <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4">
-              <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                <div className="w-11 h-11 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold uppercase shrink-0">
-                  {`${skipApp.candidate.firstName?.[0] ?? ""}${skipApp.candidate.lastName?.[0] ?? ""}`}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[15px] font-bold text-slate-900 truncate">{skipApp.candidate.firstName} {skipApp.candidate.lastName}</div>
-                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                    <span>{skipApp.requisition.title}</span>
-                    <span>·</span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#22c55e] font-semibold">
-                      <MessageSquare size={10} /> Stage: {curStage.replace(/([A-Z])/g, " $1").trim()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-2">
-                  Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span>
-                  <Info size={13} className="text-gray-300" />
-                </label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                    <button key={n} type="button" onClick={() => setFeedback({ ...feedback, overallRating: n })}
-                      className={clsx("w-9 h-9 rounded-lg border-2 flex items-center justify-center text-sm font-semibold transition",
-                        n === feedback.overallRating ? "border-amber-400 bg-amber-400 text-white"
-                          : n < feedback.overallRating ? "border-amber-300 bg-amber-50 text-amber-600"
-                            : "border-slate-200 text-slate-400 hover:border-slate-300")}>
-                      {n}
-                    </button>
-                  ))}
-                  <span className="ml-2 text-sm font-bold text-slate-800">{feedback.overallRating}/10</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-1"><ArrowRight size={14} className="text-[#16a34a]" /> Move forward to <span className="text-red-500">*</span></label>
-                <Select
-                  value={skipTarget}
-                  onChange={setSkipTarget}
-                  placeholder="Select a stage..."
-                  options={forwardStages.map((s) => ({ value: s, label: s.replace(/([A-Z])/g, " $1").trim() }))}
-                />
-                <p className="text-[11px] text-gray-500 mt-1">Only forward stages — you can&apos;t move a candidate backward. An interview stage opens the scheduler.</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
-                    <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 inline-flex items-center justify-center"><ThumbsUp size={12} /></span>
-                    Strengths
-                  </label>
-                  <div className="relative">
-                    <textarea rows={4} maxLength={500} placeholder="What did the candidate do well?" value={feedback.strengths} onChange={(e) => setFeedback({ ...feedback, strengths: e.target.value })}
-                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
-                    <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.strengths.length}/500</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
-                    <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 inline-flex items-center justify-center"><AlertTriangle size={12} /></span>
-                    Concerns
-                  </label>
-                  <div className="relative">
-                    <textarea rows={4} maxLength={500} placeholder="What are the areas of concern?" value={feedback.concerns} onChange={(e) => setFeedback({ ...feedback, concerns: e.target.value })}
-                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
-                    <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.concerns.length}/500</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
-                  <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 inline-flex items-center justify-center"><MessageSquare size={12} /></span>
-                  Overall Comments
-                </label>
-                <div className="relative">
-                  <textarea rows={3} maxLength={1000} placeholder="Reason for moving forward / additional comments…" value={feedback.overallComments} onChange={(e) => setFeedback({ ...feedback, overallComments: e.target.value })}
-                    className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
-                  <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.overallComments.length}/1000</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 mt-1 border-t border-gray-100">
-              <button type="button" onClick={() => setSkipApp(null)} disabled={skipMut.isPending}
-                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-              <button type="submit" disabled={skipMut.isPending || !skipTarget}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
-                <SkipForward size={13} /> {skipMut.isPending ? "Moving..." : "Move Forward"}
-              </button>
-            </div>
-          </form>
-          );
-        })()}
       </Modal>
 
       <Modal open={!!feedbackApp} onClose={() => setFeedbackApp(null)} title="Stage Feedback" size="lg" bodyClassName="p-4 overflow-hidden flex flex-col">
@@ -1949,7 +1969,7 @@ export default function PipelinePage() {
       </Modal>
 
       {/* Schedule Interview Modal — opens after Approve when next stage is interview */}
-      <Modal open={!!scheduleApp} onClose={() => { if (!scheduleMut.isPending) { setScheduleApp(null); setScheduleResult(null); } }} title="Schedule Interview" size="lg">
+      <Modal open={!!scheduleApp} onClose={() => { if (!scheduleMut.isPending) { setScheduleApp(null); setScheduleResult(null); } }} title="Schedule Interview" size="xl">
         {scheduleApp && !scheduleResult && (
           <form
             onSubmit={(e) => {
@@ -1990,7 +2010,6 @@ export default function PipelinePage() {
                   onChange={(v) => setSchedule({ ...schedule, type: v as typeof schedule.type })}
                   options={[
                     { value: "Video",            label: "Video Call",        description: "Zoom / Meet / Teams" },
-                    { value: "Phone",            label: "Phone Screen",      description: "Voice only" },
                     { value: "InPerson",         label: "In-Person",         description: "On-site" },
                     { value: "Panel",            label: "Panel",             description: "Multiple interviewers" },
                     { value: "TakeHome",         label: "Take-Home Task",    description: "Async assignment" },
@@ -2009,40 +2028,30 @@ export default function PipelinePage() {
                       .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`, description: e.jobTitle ?? undefined })),
                   ]}
                 />
-                <p className="mt-1 text-[11px] text-gray-400">
-                  {schedulePanelEmps.length > 0 ? "Showing this role's interview panel." : "Pick one or more interviewers."}
-                </p>
               </div>
             </div>
 
-            <div>
-              {schedule.interviewerIds.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {schedule.interviewerIds.map((id, idx) => {
-                    const emp = scheduleInterviewerChoices.find((e) => e.id === id);
-                    const name = emp ? `${emp.firstName} ${emp.lastName}` : id;
-                    return (
-                      <span key={id} className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 text-xs font-medium pl-2.5 pr-1 py-1 ring-1 ring-green-200">
-                        {name}
-                        {idx === 0 && <span className="text-[10px] font-semibold text-green-500">· Primary</span>}
-                        <button
-                          type="button"
-                          onClick={() => setSchedule({ ...schedule, interviewerIds: schedule.interviewerIds.filter((x) => x !== id) })}
-                          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-green-500 hover:bg-green-100"
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[11px] text-gray-400">No interviewers selected yet — add at least one above.</p>
-              )}
-              <p className="mt-1 text-[11px] text-gray-400">
-                The first interviewer is the primary (submits feedback); everyone receives the same invite email &amp; calendar entry.
-              </p>
-            </div>
+            {schedule.interviewerIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {schedule.interviewerIds.map((id, idx) => {
+                  const emp = scheduleInterviewerChoices.find((e) => e.id === id);
+                  const name = emp ? `${emp.firstName} ${emp.lastName}` : id;
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 text-xs font-medium pl-2.5 pr-1 py-1 ring-1 ring-green-200">
+                      {name}
+                      {idx === 0 && <span className="text-[10px] font-semibold text-green-500">· Primary</span>}
+                      <button
+                        type="button"
+                        onClick={() => setSchedule({ ...schedule, interviewerIds: schedule.interviewerIds.filter((x) => x !== id) })}
+                        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-green-500 hover:bg-green-100"
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -2115,7 +2124,7 @@ export default function PipelinePage() {
                     className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 resize-y"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><FileText size={12} /> Task File <span className="text-gray-400 font-normal">(optional)</span></label>
                     <input
@@ -2148,6 +2157,16 @@ export default function PipelinePage() {
                     )}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Link2 size={12} /> Task Link <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input
+                      type="url"
+                      placeholder="https://…"
+                      value={schedule.takeHomeAttachmentLink}
+                      onChange={(e) => setSchedule({ ...schedule, takeHomeAttachmentLink: e.target.value })}
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5"><Calendar size={12} /> Due Date <span className="text-gray-400 font-normal">(optional)</span></label>
                     <input
                       type="date"
@@ -2172,13 +2191,8 @@ export default function PipelinePage() {
                   placeholder="Job description shared with the interviewer(s) in their invite email…"
                   className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 resize-y"
                 />
-                <p className="text-[11px] text-gray-500 mt-1">Pre-filled from the requisition. Edit as needed — this exact text is emailed to the interviewer(s) for this technical round.</p>
               </div>
             )}
-
-            <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-              Stage will move to <strong>{scheduleApp.stage.replace(/([A-Z])/g, " $1").trim()}</strong> only after interview is scheduled. Closing this dialog keeps candidate at current stage.
-            </p>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="submit" disabled={scheduleMut.isPending}
@@ -2248,37 +2262,173 @@ export default function PipelinePage() {
         )}
       </Modal>
 
-      {/* Move / Edit Stage Modal */}
-      <Modal open={!!moveApp} onClose={() => setMoveApp(null)} title="Edit Stage">
-        {moveApp && (
-          <form onSubmit={(e) => { e.preventDefault(); moveMut.mutate({ id: moveApp.id, stage: moveTarget }); }} className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
-              <div className="font-semibold text-slate-900">{moveApp.candidate.firstName} {moveApp.candidate.lastName}</div>
-              <div className="text-xs text-slate-500">{moveApp.requisition.title}</div>
-            </div>
+      {/* Change Stage — single modal for any direction. Forward picks reuse the
+          rich feedback form (rating/strengths/concerns/comments) and can open
+          the interview scheduler; backward picks just require a reason, kept
+          in the application's stage history for audit. */}
+      <Modal open={!!moveApp} onClose={() => { if (!moveMut.isPending && !moveForwardMut.isPending) setMoveApp(null); }} title="Change Stage" size="lg" bodyClassName="p-4 overflow-hidden flex flex-col">
+        {moveApp && (() => {
+          const curStage = moveApp.currentStage ?? STAGES[0];
+          const curIdx = STAGES.indexOf(curStage);
+          const targetIdx = STAGES.indexOf(moveTarget);
+          const isForward = targetIdx > curIdx;
+          const isBackward = targetIdx >= 0 && targetIdx < curIdx;
+          // Offer/Hired have dedicated flows (Send Offer wizard, Onboard action)
+          // that create the records a raw stage-patch would skip — block a
+          // direct forward jump onto either, same guard "Skip stage" used to
+          // enforce before it was merged into this modal.
+          const blockedTarget = isForward && (moveTarget === "Hired" || /^offer$/i.test(moveTarget));
+          const busy = moveMut.isPending || moveForwardMut.isPending;
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Move to Stage</label>
-              <Select value={moveTarget} onChange={setMoveTarget}
-                options={STAGES.map((s) => ({
-                  value: s,
-                  label: s.replace(/([A-Z])/g, " $1").trim(),
-                  description: s === moveApp.currentStage
-                    ? "Current stage"
-                    : stageHasMail(s) ? "Auto-mail enabled" : undefined,
-                }))} />
-            </div>
+          const submit = (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!moveTarget || targetIdx === curIdx) return;
+            if (blockedTarget) {
+              toast.error("Use the dedicated action instead", moveTarget === "Hired" ? "Use \"Onboard\" to move a candidate to Hired." : "Use \"Send Offer\" to move a candidate to Offer.");
+              return;
+            }
+            if (isForward) {
+              moveForwardMut.mutate({
+                id: moveApp.id,
+                target: moveTarget,
+                openScheduler: isInterviewStage(moveTarget),
+                body: { overallRating: feedback.overallRating, strengths: feedback.strengths, concerns: feedback.concerns, overallComments: feedback.overallComments },
+              });
+            } else {
+              if (!moveReason.trim()) { toast.error("Reason required", "Explain why this candidate is moving back a stage."); return; }
+              moveMut.mutate({ id: moveApp.id, stage: moveTarget, moveReason: moveReason.trim() });
+            }
+          };
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setMoveApp(null)}
-                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button type="submit" disabled={moveMut.isPending || moveTarget === moveApp.currentStage}
-                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
-                {moveMut.isPending ? "Moving..." : "Move"}
-              </button>
-            </div>
-          </form>
-        )}
+          return (
+            <form onSubmit={submit} className="flex flex-col min-h-0 flex-1">
+              <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4">
+                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                  <div className="w-11 h-11 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold uppercase shrink-0">
+                    {`${moveApp.candidate.firstName?.[0] ?? ""}${moveApp.candidate.lastName?.[0] ?? ""}`}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-bold text-slate-900 truncate">{moveApp.candidate.firstName} {moveApp.candidate.lastName}</div>
+                    <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>{moveApp.requisition.title}</span>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#22c55e] font-semibold">
+                        <MessageSquare size={10} /> Stage: {curStage.replace(/([A-Z])/g, " $1").trim()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Move to Stage</label>
+                  <Select value={moveTarget} onChange={setMoveTarget}
+                    options={STAGES
+                      // Offer/Hired always get rejected on submit anyway (they
+                      // need the dedicated Send Offer / Onboard flow) — leaving
+                      // them selectable just leads to a dead end. Excluding
+                      // them here caps this dropdown at the last real interview
+                      // stage, matching what's actually achievable. Screening
+                      // is excluded too — it's kept only as the pipeline
+                      // board's "Source" column (for Candidate Pool display),
+                      // never a stage a candidate should be moved back into.
+                      .filter((s) => s !== "Hired" && s !== "Screening" && !/^offer$/i.test(s))
+                      .map((s) => ({
+                        value: s,
+                        label: s.replace(/([A-Z])/g, " $1").trim(),
+                        description: s === curStage ? "Current stage" : stageHasMail(s) ? "Auto-mail enabled" : undefined,
+                      }))} />
+                </div>
+
+                {blockedTarget && (
+                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                    {moveTarget === "Hired" ? "Hired" : "Offer"} can&apos;t be set directly here — use the {moveTarget === "Hired" ? "Onboard" : "Send Offer"} action for this candidate instead.
+                  </div>
+                )}
+
+                {isForward && !blockedTarget && (
+                  <>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-2">
+                        Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span>
+                        <Info size={13} className="text-gray-300" />
+                      </label>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                          <button key={n} type="button" onClick={() => setFeedback({ ...feedback, overallRating: n })}
+                            className={clsx("w-9 h-9 rounded-lg border-2 flex items-center justify-center text-sm font-semibold transition",
+                              n === feedback.overallRating ? "border-amber-400 bg-amber-400 text-white"
+                                : n < feedback.overallRating ? "border-amber-300 bg-amber-50 text-amber-600"
+                                  : "border-slate-200 text-slate-400 hover:border-slate-300")}>
+                            {n}
+                          </button>
+                        ))}
+                        <span className="ml-2 text-sm font-bold text-slate-800">{feedback.overallRating}/10</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                          <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 inline-flex items-center justify-center"><ThumbsUp size={12} /></span>
+                          Strengths
+                        </label>
+                        <div className="relative">
+                          <textarea rows={4} maxLength={500} placeholder="What did the candidate do well?" value={feedback.strengths} onChange={(e) => setFeedback({ ...feedback, strengths: e.target.value })}
+                            className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                          <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.strengths.length}/500</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                          <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 inline-flex items-center justify-center"><AlertTriangle size={12} /></span>
+                          Concerns
+                        </label>
+                        <div className="relative">
+                          <textarea rows={4} maxLength={500} placeholder="What are the areas of concern?" value={feedback.concerns} onChange={(e) => setFeedback({ ...feedback, concerns: e.target.value })}
+                            className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                          <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.concerns.length}/500</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                        <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 inline-flex items-center justify-center"><MessageSquare size={12} /></span>
+                        Overall Comments
+                      </label>
+                      <div className="relative">
+                        <textarea rows={3} maxLength={1000} placeholder="Reason for moving forward / additional comments…" value={feedback.overallComments} onChange={(e) => setFeedback({ ...feedback, overallComments: e.target.value })}
+                          className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                        <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.overallComments.length}/1000</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {isBackward && (
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                      Reason for moving back <span className="text-red-500">*</span>
+                    </label>
+                    <textarea rows={3} maxLength={500} required placeholder="Why is this candidate moving to an earlier stage?"
+                      value={moveReason} onChange={(e) => setMoveReason(e.target.value)}
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 mt-1 border-t border-gray-100">
+                <button type="button" onClick={() => setMoveApp(null)} disabled={busy}
+                  className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+                <button type="submit"
+                  disabled={busy || !moveTarget || targetIdx === curIdx || blockedTarget || (isBackward && !moveReason.trim())}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                  {busy ? "Saving..." : isForward ? "Move Forward" : isBackward ? "Move Back" : "Save"}
+                </button>
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
 
 
@@ -2530,7 +2680,7 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
   const res = data?.data;
 
   return (
-    <Modal open={true} onClose={onClose} title="Feedback History" size="lg">
+    <Modal open={true} onClose={onClose} title="Feedback History" maxWidthClass="max-w-4xl">
       <div className="space-y-4">
         <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs">
           <div className="font-semibold text-slate-900">{app.candidate.firstName} {app.candidate.lastName}</div>
@@ -2598,7 +2748,7 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
             <p className="text-xs text-slate-500 mt-1">Submit stage feedback to see it here.</p>
           </div>
         ) : (
-          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+          <div className="space-y-3">
             {res.history.map((h) => {
               const rec = REC_META[h.recommendation];
               return (
@@ -2680,7 +2830,11 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
 
 // ─── Pipeline stat cards + stage visuals ────────────────
 function prettyStage(stage: string): string {
-  return stage === "HRInterview" ? "HR Interview" : stage.replace(/([A-Z])/g, " $1").trim();
+  if (stage === "HRInterview") return "HR Interview";
+  // "Screening" is the stage's internal name (required, matched elsewhere via
+  // showScreening()/REQUIRED_STAGES) — only the displayed label reads "Source".
+  if (stage === "Screening") return "Source";
+  return stage.replace(/([A-Z])/g, " $1").trim();
 }
 
 function stageMeta(stage: string): { icon: React.ReactNode; color: string } {

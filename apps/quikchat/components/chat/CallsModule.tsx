@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { CallDirection } from "@/lib/shared";
 import {
   Avatar,
   MessageSquare,
@@ -10,19 +12,34 @@ import {
   PhoneOutgoing,
   Search,
   Send,
+  Spinner,
+  useToast,
   Users,
   Video,
-  Voicemail,
 } from "@/components/ui";
+import { createChannel, fetchCallHistory, sendMessage } from "@/lib/api";
+import {
+  dateDividerLabel,
+  formatCallDuration,
+  formatFullDate,
+  formatMessageTime,
+} from "@/lib/format";
 
-type Direction = "incoming" | "outgoing" | "missed" | "voicemail";
-type CallFilter = "all" | "missed" | "incoming" | "outgoing" | "voicemail";
+// Mirrors the server's CallDirection — there is no voicemail feature anywhere in
+// the product, so the old fourth "voicemail" direction (and its always-empty
+// filter chip) are gone.
+type Direction = CallDirection;
+type CallFilter = "all" | "missed" | "incoming" | "outgoing";
 
 interface CallLog {
   id: string;
   name: string;
   avatarUrl?: string;
   direction: Direction;
+  /** Channel the call belonged to, when it had one — a quick-reply target. */
+  channelId?: string | null;
+  /** Other party on a 1:1 call; lets a quick reply find-or-create the DM. */
+  otherUserId?: string | null;
   /** Relative day label shown on the right. */
   day: string;
   /** Clock time of the call. */
@@ -33,195 +50,91 @@ interface CallLog {
   date: string;
 }
 
-const CALLS: CallLog[] = [
-  {
-    id: "1",
-    name: "Sanjana Shah",
-    direction: "incoming",
-    day: "Saturday",
-    time: "8:26 PM",
-    duration: "37s",
-    date: "Saturday, July 4, 2026",
-  },
-  {
-    id: "2",
-    name: "Sanjana Shah",
-    direction: "outgoing",
-    day: "Saturday",
-    time: "5:12 PM",
-    duration: "52s",
-    date: "Saturday, July 4, 2026",
-  },
-  {
-    id: "3",
-    name: "Akash Makhija",
-    avatarUrl: "https://i.pravatar.cc/150?img=12",
-    direction: "outgoing",
-    day: "Friday",
-    time: "3:04 PM",
-    duration: "2m 11s",
-    date: "Friday, July 3, 2026",
-  },
-  {
-    id: "4",
-    name: "Bhavya Thakkar",
-    avatarUrl: "https://i.pravatar.cc/150?img=32",
-    direction: "missed",
-    day: "Friday",
-    time: "1:20 PM",
-    date: "Friday, July 3, 2026",
-  },
-  {
-    id: "5",
-    name: "Bhavya Thakkar",
-    avatarUrl: "https://i.pravatar.cc/150?img=32",
-    direction: "outgoing",
-    day: "Friday",
-    time: "11:48 AM",
-    duration: "6s",
-    date: "Friday, July 3, 2026",
-  },
-  {
-    id: "6",
-    name: "Rishika Arora",
-    avatarUrl: "https://i.pravatar.cc/150?img=45",
-    direction: "outgoing",
-    day: "Tuesday",
-    time: "6:30 PM",
-    duration: "44s",
-    date: "Tuesday, June 30, 2026",
-  },
-  {
-    id: "7",
-    name: "Ajay Kumar Bhargava",
-    avatarUrl: "https://i.pravatar.cc/150?img=68",
-    direction: "missed",
-    day: "Tuesday",
-    time: "4:15 PM",
-    duration: "15s",
-    date: "Tuesday, June 30, 2026",
-  },
-  {
-    id: "8",
-    name: "Sanjana Shah",
-    direction: "outgoing",
-    day: "Monday",
-    time: "5:02 PM",
-    duration: "1m 3s",
-    date: "Monday, June 29, 2026",
-  },
-  {
-    id: "9",
-    name: "Sanjana Shah",
-    direction: "outgoing",
-    day: "Monday",
-    time: "2:41 PM",
-    duration: "1m 9s",
-    date: "Monday, June 29, 2026",
-  },
-  {
-    id: "10",
-    name: "Sanjana Shah",
-    direction: "outgoing",
-    day: "Monday",
-    time: "12:10 PM",
-    duration: "1m 43s",
-    date: "Monday, June 29, 2026",
-  },
-  {
-    id: "11",
-    name: "Sheetal Rana",
-    direction: "missed",
-    day: "Monday",
-    time: "10:55 AM",
-    duration: "19s",
-    date: "Monday, June 29, 2026",
-  },
-  {
-    id: "12",
-    name: "Abhilasha Paliwal",
-    avatarUrl: "https://i.pravatar.cc/150?img=47",
-    direction: "missed",
-    day: "Monday",
-    time: "9:30 AM",
-    date: "Monday, June 29, 2026",
-  },
-  {
-    id: "13",
-    name: "Sanjana Shah",
-    direction: "incoming",
-    day: "6/23/2026",
-    time: "4:12 PM",
-    duration: "7s",
-    date: "Tuesday, June 23, 2026",
-  },
-  {
-    id: "14",
-    name: "Jayshree Umath",
-    direction: "outgoing",
-    day: "6/23/2026",
-    time: "3:00 PM",
-    duration: "13s",
-    date: "Tuesday, June 23, 2026",
-  },
-  {
-    id: "15",
-    name: "Akash Makhija",
-    avatarUrl: "https://i.pravatar.cc/150?img=12",
-    direction: "outgoing",
-    day: "6/23/2026",
-    time: "11:20 AM",
-    duration: "12m 46s",
-    date: "Tuesday, June 23, 2026",
-  },
-  {
-    id: "16",
-    name: "Akash Makhija",
-    avatarUrl: "https://i.pravatar.cc/150?img=12",
-    direction: "outgoing",
-    day: "6/23/2026",
-    time: "10:02 AM",
-    duration: "1m 48s",
-    date: "Tuesday, June 23, 2026",
-  },
-  {
-    id: "17",
-    name: "Akash Makhija",
-    avatarUrl: "https://i.pravatar.cc/150?img=12",
-    direction: "incoming",
-    day: "6/22/2026",
-    time: "6:41 PM",
-    duration: "35s",
-    date: "Monday, June 22, 2026",
-  },
-];
-
 const FILTERS: { key: CallFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "missed", label: "Missed" },
   { key: "incoming", label: "Incoming" },
   { key: "outgoing", label: "Outgoing" },
-  { key: "voicemail", label: "Voicemail" },
 ];
 
 const DIR_META: Record<Direction, { icon: ReactNode; label: string; missed?: boolean }> = {
   incoming: { icon: <PhoneIncoming size={13} />, label: "Incoming" },
   outgoing: { icon: <PhoneOutgoing size={13} />, label: "Outgoing" },
   missed: { icon: <PhoneMissed size={13} />, label: "Missed", missed: true },
-  voicemail: { icon: <Voicemail size={13} />, label: "Voicemail" },
 };
 
 export function CallsModule() {
   const [filter, setFilter] = useState<CallFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [quickMsg, setQuickMsg] = useState("");
+  // In-flight guard: blocks a second submit (button OR Enter) while a send is
+  // outstanding, which an empty/whitespace check alone would not.
+  const [sending, setSending] = useState(false);
+  const toast = useToast();
 
-  const visible = useMemo(
-    () => (filter === "all" ? CALLS : CALLS.filter((c) => c.direction === filter)),
-    [filter],
+  const historyQuery = useQuery({ queryKey: ["calls-history"], queryFn: fetchCallHistory });
+
+  // The DTO carries ISO timestamps + raw seconds; every label is formatted here
+  // with the same helpers the rest of the app uses.
+  const calls = useMemo<CallLog[]>(
+    () =>
+      (historyQuery.data ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        avatarUrl: c.avatarUrl ?? undefined,
+        direction: c.direction,
+        channelId: c.channelId ?? null,
+        otherUserId: c.otherUserId ?? null,
+        day: dateDividerLabel(c.startedAt),
+        time: formatMessageTime(c.startedAt),
+        duration: formatCallDuration(c.durationSeconds),
+        date: formatFullDate(c.startedAt),
+      })),
+    [historyQuery.data],
   );
 
-  const selected = useMemo(() => CALLS.find((c) => c.id === selectedId) ?? null, [selectedId]);
+  const visible = useMemo(
+    () => (filter === "all" ? calls : calls.filter((c) => c.direction === filter)),
+    [calls, filter],
+  );
+
+  const selected = useMemo(
+    () => calls.find((c) => c.id === selectedId) ?? null,
+    [calls, selectedId],
+  );
+
+  // A quick reply needs somewhere to send. A group call placed outside a channel
+  // has neither target, so the control is disabled rather than failing on click.
+  const canQuickSend = !!(selected?.channelId || selected?.otherUserId);
+
+  /**
+   * Inline quick reply. Reuses the normal send path (`sendMessage`, and
+   * `createChannel({type:"dm"})` which is find-or-create) rather than a one-off
+   * fetch. Deliberately does NOT navigate: this is a reply from the history pane,
+   * so the user stays here.
+   */
+  async function sendQuickMessage() {
+    const content = quickMsg.trim();
+    if (!content || sending || !selected || !canQuickSend) return;
+    setSending(true);
+    try {
+      // Prefer the call's own channel; otherwise open (or reopen) the DM.
+      const channelId =
+        selected.channelId ??
+        (await createChannel({ type: "dm", memberIds: [selected.otherUserId!] })).channelId;
+      await sendMessage(channelId, { content });
+      setQuickMsg("");
+      toast.success({ title: "Message sent", body: `Sent to ${selected.name}.` });
+    } catch (err) {
+      // Keep the draft — the text is the user's, and a retry shouldn't retype it.
+      toast.error({
+        title: "Couldn't send message",
+        body: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="qc-card qc-calls">
@@ -248,11 +161,24 @@ export function CallsModule() {
           </header>
 
           <div className="qc-calls-scroll">
-            {visible.length === 0 ? (
+            {historyQuery.isLoading ? (
+              <div className="qc-nempty">
+                <Spinner label="Loading call history" />
+              </div>
+            ) : visible.length === 0 ? (
               <div className="qc-nempty">
                 <Phone size={26} aria-hidden />
-                <div className="qc-nempty__title">No calls</div>
-                <div className="qc-nempty__hint">Nothing matches this filter.</div>
+                {calls.length === 0 ? (
+                  <>
+                    <div className="qc-nempty__title">No calls yet</div>
+                    <div className="qc-nempty__hint">Your call history will show up here.</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="qc-nempty__title">No calls</div>
+                    <div className="qc-nempty__hint">Nothing matches this filter.</div>
+                  </>
+                )}
               </div>
             ) : (
               visible.map((c) => {
@@ -315,13 +241,27 @@ export function CallsModule() {
                 <div className="qc-calls-det__quick">
                   <input
                     className="qc-input"
-                    placeholder="Send a quick message"
+                    placeholder={
+                      canQuickSend ? "Send a quick message" : "No conversation for this call"
+                    }
                     aria-label="Send a quick message"
                     value={quickMsg}
+                    disabled={!canQuickSend || sending}
                     onChange={(e) => setQuickMsg(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" || e.shiftKey) return;
+                      e.preventDefault();
+                      void sendQuickMessage();
+                    }}
                   />
-                  <button type="button" className="qc-iconbtn qc-calls-det__send" aria-label="Send">
-                    <Send size={15} />
+                  <button
+                    type="button"
+                    className="qc-iconbtn qc-calls-det__send"
+                    aria-label="Send"
+                    disabled={!canQuickSend || sending || !quickMsg.trim()}
+                    onClick={() => void sendQuickMessage()}
+                  >
+                    {sending ? <Spinner label="Sending" /> : <Send size={15} />}
                   </button>
                 </div>
               </div>

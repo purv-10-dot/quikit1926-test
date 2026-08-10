@@ -40,6 +40,13 @@ vi.mock("@/lib/web-notifications", () => ({
     desktop && !web.focused && web.permission === "granted",
 }));
 
+// --- mock the chime (WebAudio can't run in jsdom; we assert the routing) ---
+const sound = { play: vi.fn() };
+vi.mock("@/lib/notification-sound", () => ({
+  playNotificationSound: () => sound.play(),
+  notificationSoundSupported: () => true,
+}));
+
 import { NotificationBell } from "./NotificationBell";
 import {
   NotificationProvider,
@@ -62,11 +69,23 @@ function Harness() {
     n.attachClient(fakeClient);
     n.registerChannelOpener(opener);
   }, [n]);
-  return <NotificationBell />;
+  return (
+    <>
+      <NotificationBell />
+      {/* Field names only (never values) so this can't collide with the text
+          queries other tests run — used to assert the transient alert flags
+          don't leak into the stored row. */}
+      <span data-testid="top-row-keys">{Object.keys(n.feed[0] ?? {}).join(",")}</span>
+    </>
+  );
 }
 
 function dto(
-  over: Partial<NotificationDto> & { meta?: Record<string, unknown>; desktop?: boolean },
+  over: Partial<NotificationDto> & {
+    meta?: Record<string, unknown>;
+    desktop?: boolean;
+    sound?: boolean;
+  },
 ): NotificationDto {
   return {
     id: "x",
@@ -122,6 +141,7 @@ beforeEach(() => {
   web.focused = true;
   web.permission = "granted";
   web.fire.mockReset();
+  sound.play.mockReset();
   api.fetchNotifications.mockResolvedValue({ items: SEED, unreadCount: 2 });
   api.fetchUnreadByChannel.mockResolvedValue({ byChannel: { c1: 2 }, total: 2 });
   api.fetchUnreadCount.mockResolvedValue({ count: 2 });
@@ -236,6 +256,32 @@ describe("inbound realtime + toast/OS routing", () => {
     expect(screen.queryByText("should be OS only")).not.toBeInTheDocument();
   });
 
+  // Regression: the desktop bridge builds `quikchat://open/<channelId>` from
+  // `channelId`, so it must be passed separately from `tag` — `tag` falls back to
+  // the message id, and sending that as a channel id deep-links nowhere.
+  it("forwards channelId to the OS notification separately from tag", async () => {
+    web.focused = false;
+    web.permission = "granted";
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+
+    await act(async () => {
+      inbound!(dto({ id: "9", channelId: "c1", desktop: true }) as NotificationRealtimePayload);
+    });
+    expect(web.fire).toHaveBeenLastCalledWith(
+      expect.objectContaining({ channelId: "c1", tag: "c1" }),
+    );
+
+    // No channel (e.g. a system row): `tag` degrades to the id, `channelId` stays
+    // null rather than inheriting that id.
+    await act(async () => {
+      inbound!(dto({ id: "10", channelId: null, desktop: true }) as NotificationRealtimePayload);
+    });
+    expect(web.fire).toHaveBeenLastCalledWith(
+      expect.objectContaining({ channelId: null, tag: "10" }),
+    );
+  });
+
   it("desktop:false never fires an OS notification even when unfocused", async () => {
     web.focused = false;
     renderBell();
@@ -244,6 +290,93 @@ describe("inbound realtime + toast/OS routing", () => {
       inbound!(dto({ id: "9", desktop: false }) as NotificationRealtimePayload);
     });
     expect(web.fire).not.toHaveBeenCalled();
+  });
+
+  // Sound routing. The server already applied mute/snooze/DND/soundEnabled, so
+  // the client's only job is the focus split: the toast gets an audible cue, the
+  // OS notification brings its own.
+  it("focused inbound with sound:true plays the chime alongside the toast", async () => {
+    web.focused = true;
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({
+          id: "9",
+          preview: "audible toast",
+          desktop: true,
+          sound: true,
+        }) as NotificationRealtimePayload,
+      );
+    });
+    expect(await screen.findByText("audible toast")).toBeInTheDocument();
+    expect(sound.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("focused inbound with sound:false is silent (toast still shows)", async () => {
+    web.focused = true;
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({
+          id: "9",
+          preview: "silent toast",
+          desktop: true,
+          sound: false,
+        }) as NotificationRealtimePayload,
+      );
+    });
+    expect(await screen.findByText("silent toast")).toBeInTheDocument();
+    expect(sound.play).not.toHaveBeenCalled();
+  });
+
+  // sound is gated on soundEnabled ALONE — a user who turned desktop popups off
+  // must still hear the chime.
+  it("focused inbound with sound:true + desktop:false still plays", async () => {
+    web.focused = true;
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(dto({ id: "9", desktop: false, sound: true }) as NotificationRealtimePayload);
+    });
+    expect(sound.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("unfocused inbound does NOT play — the OS notification carries its own sound", async () => {
+    web.focused = false;
+    web.permission = "granted";
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(dto({ id: "9", desktop: true, sound: true }) as NotificationRealtimePayload);
+    });
+    expect(web.fire).toHaveBeenCalledTimes(1);
+    expect(sound.play).not.toHaveBeenCalled(); // no double-alert
+  });
+
+  it("a pre-read (muted) row is silent even if the sound flag is set", async () => {
+    web.focused = true;
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", isRead: true, desktop: false, sound: true }) as NotificationRealtimePayload,
+      );
+    });
+    expect(sound.play).not.toHaveBeenCalled();
+  });
+
+  it("strips the transient desktop/sound flags from the stored row", async () => {
+    renderBell();
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(dto({ id: "9", desktop: true, sound: true }) as NotificationRealtimePayload);
+    });
+    const keys = screen.getByTestId("top-row-keys").textContent!.split(",");
+    expect(keys).not.toContain("sound");
+    expect(keys).not.toContain("desktop");
+    expect(keys).toContain("preview"); // sanity: it IS the inbound row
   });
 
   it("a muted (isRead) inbound updates the feed but not the badge", async () => {

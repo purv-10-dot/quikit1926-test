@@ -127,6 +127,8 @@ export interface CreateGSTInput {
   codeType?: string | null;
   description: string;
   igstRate: number | string;
+  /** Optional import value. When omitted, CGST is derived as IGST / 2. */
+  cgstRate?: number | string | null;
   isRcm?: boolean;
   effectiveFrom?: string | Date | null;
   effectiveTo?: string | Date | null;
@@ -154,7 +156,10 @@ function numOrZero(v: unknown): number {
 
 export async function createGSTCode(input: CreateGSTInput): Promise<GSTCodeRecord> {
   const igst = numOrZero(input.igstRate);
-  if (igst < 0) throw new Error("IGST rate must be non-negative");
+  const cgst = input.cgstRate === undefined || input.cgstRate === null || input.cgstRate === ""
+    ? igst / 2
+    : numOrZero(input.cgstRate);
+  if (igst < 0 || cgst < 0) throw new Error("GST rates must be non-negative");
 
   const row = await db.cnGSTCode.create({
     data: {
@@ -163,8 +168,8 @@ export async function createGSTCode(input: CreateGSTInput): Promise<GSTCodeRecor
       codeType: sOrNull(input.codeType),
       description: String(input.description).trim(),
       rate: String(igst),
-      cgstRate: String(igst / 2),
-      sgstRate: String(igst / 2),
+      cgstRate: String(cgst),
+      sgstRate: String(cgst),
       igstRate: String(igst),
       isRcm: !!input.isRcm,
       effectiveFrom: dateOrNull(input.effectiveFrom),

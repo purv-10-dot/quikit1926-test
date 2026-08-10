@@ -224,14 +224,14 @@ export default function PurchaseOrdersPage() {
   }));
   // Match the RFQ drawer's vendor label format exactly so the picker
   // reads the same in both flows. `||` (not `??`) treats an empty
-  // `companyName` as "missing" and falls through to the contact name
-  // — matters for vendors created without a registered company.
+  // `name` (Vendor / Contact Name) as "missing" and falls through to
+  // the company name — matters for vendors saved without a contact name.
   // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
   const vendorOptions = (vendorsData?.data ?? [])
     .filter((v) => v.status === "active" && !(v as { isBlacklisted?: boolean }).isBlacklisted)
     .map((v) => ({
       value: v.id,
-      label: v.companyName || v.name || v.id,
+      label: v.name || v.companyName || v.id,
     }));
   const sourceRfqOptions = useMemo(
     () =>

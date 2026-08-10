@@ -5,6 +5,7 @@ import { successResponse, validationError, notFound, internalError } from "@/lib
 import { assignLeaveGroupSchema } from "@/lib/validations/leave";
 import { createAuditLog } from "@/lib/utils/audit";
 import { APP_ID } from "@/lib/rbac/registry";
+import { allocateGroupLeaveBalances } from "@/lib/services/leave-allocation";
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -63,6 +64,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     }
 
     const created = [];
+    // Employees whose leave balances need (re)allocating once the assignment
+    // rows exist — a direct Employee assignment covers just that employee; a
+    // Role assignment covers every active employee holding that role, EXCEPT
+    // those with their OWN direct assignment to a different group (a direct
+    // assignment always wins over a role one — see resolveEmployeeLeaveGroup).
+    // Computed even when the assignment row ALREADY existed (duplicate insert
+    // below), so re-submitting an existing assignment self-heals an employee
+    // who was assigned before this backfill existed — no separate "recalculate"
+    // action needed.
+    const employeesToAllocate = new Map<string, { dateOfJoining: Date }>();
     for (const a of assignments) {
       try {
         const row = await prisma.leaveGroupAssignment.create({
@@ -77,7 +88,47 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         });
         created.push(row);
       } catch {
-        // ignore duplicates (unique constraint)
+        // Duplicate (unique constraint) — assignment already exists; still
+        // fall through to backfill below.
+      }
+
+      if (a.assigneeType === "Employee" && a.employeeId) {
+        const emp = await prisma.employee.findFirst({
+          where: { id: a.employeeId, orgId, deletedAt: null },
+          select: { dateOfJoining: true },
+        });
+        if (emp?.dateOfJoining) employeesToAllocate.set(a.employeeId, { dateOfJoining: emp.dateOfJoining });
+      } else if (a.assigneeType === "Role" && a.roleId) {
+        const holders = await prisma.employee.findMany({
+          where: { orgId, deletedAt: null, status: "Active", appRoles: { some: { roleId: a.roleId } } },
+          select: { id: true, dateOfJoining: true },
+        });
+        // Skip employees already directly assigned elsewhere — their direct
+        // assignment wins, so this role grant never governs them.
+        const directlyAssigned = await prisma.leaveGroupAssignment.findMany({
+          where: {
+            orgId, assigneeType: "Employee",
+            employeeId: { in: holders.map((h) => h.id) },
+            leaveGroup: { deletedAt: null, isActive: true },
+          },
+          select: { employeeId: true },
+        });
+        const excluded = new Set(directlyAssigned.map((d) => d.employeeId));
+        for (const h of holders) {
+          if (h.dateOfJoining && !excluded.has(h.id)) employeesToAllocate.set(h.id, { dateOfJoining: h.dateOfJoining });
+        }
+      }
+    }
+
+    // Backfill LeaveBalance rows for the group's leave types so the
+    // employee(s) actually see their leave count — assigning to a group used
+    // to leave this to chance (only join-time/onboarding allocation touched
+    // LeaveBalance, and it never looked at group rules).
+    for (const [employeeId, { dateOfJoining }] of employeesToAllocate) {
+      try {
+        await allocateGroupLeaveBalances({ orgId, employeeId, leaveGroupId: params.id, dateOfJoining, userId });
+      } catch (e) {
+        console.error(`[groups.assignments] leave balance allocation failed for ${employeeId}:`, e);
       }
     }
 

@@ -67,6 +67,9 @@ export default function OffboardingDashboardPage() {
   // hrms.offboarding.attrition.read.
   const canRead = hasPermission("hrms.offboarding.read") || hasPermission("hrms.offboarding.write");
   const canAttrition = hasPermission("hrms.offboarding.attrition.read");
+  // Notice Period create/edit/delete needs the stricter .write permission —
+  // canRead alone (read-only) must not show those actions.
+  const canManageNoticePeriods = hasPermission("hrms.offboarding.write");
 
   // Per-tab navigation allow-list (mirrors the sidebar). Default-allow — a role
   // with no configured navKeys (or super-admin) sees every tab its permissions
@@ -246,7 +249,7 @@ export default function OffboardingDashboardPage() {
 
       {tab === "exited" && showExited && <ExitedEmployeesTab />}
       {tab === "attrition" && showAttrition && <AttritionTab />}
-      {tab === "notice" && showNotice && <NoticePeriodTab />}
+      {tab === "notice" && showNotice && <NoticePeriodTab canManage={canManageNoticePeriods} />}
 
       {tab === "active" && showActive && (
       <>
