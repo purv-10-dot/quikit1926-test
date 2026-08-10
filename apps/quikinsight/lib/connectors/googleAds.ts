@@ -31,8 +31,8 @@ async function refreshGoogleToken(refreshToken: string): Promise<string> {
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      client_id: process.env.GOOGLE_ADS_CLIENT_ID ?? "",
-      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET ?? "",
+      client_id: process.env.QUIKINSIGHT_GOOGLE_ADS_CLIENT_ID ?? "",
+      client_secret: process.env.QUIKINSIGHT_GOOGLE_ADS_CLIENT_SECRET ?? "",
     }),
   });
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
