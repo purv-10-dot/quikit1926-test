@@ -7,6 +7,7 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { verifyApiToken, bearerFromHeader } from "@/lib/api/apiToken";
 import { resolvePatAuth } from "@/lib/api/withPatAuth";
+import { verifyAgentJwt } from "@/lib/api/agentJwt";
 
 export interface OrgAuthContext {
   session: Session;
@@ -14,8 +15,17 @@ export interface OrgAuthContext {
   orgId: string;
   /** Only set when resolved via a PAT (see `WithOrgAuthOptions.allowPat`) — the single project that PAT is scoped to. */
   projectId?: string;
-  /** "agent" only for PAT-resolved identities; "user" for every session/API-token caller. */
+  /** "agent" for PAT-resolved and agent-JWT-resolved identities; "user" for every session/API-token caller. */
   actorType: "user" | "agent";
+  /**
+   * Which service acted, when `actorType` is "agent" via an agent JWT (see
+   * `WithOrgAuthOptions.allowAgentJwt`) — e.g. "ai-runtime". Undefined for
+   * session/API-token/PAT identities. Carries the specificity `actorType`
+   * deliberately doesn't: the auth service's `actingAs` vocabulary
+   * (`ai_agent | platform_service | scheduled_job`) all collapse to
+   * `actorType: "agent"` here, with `actingAgentId` recording which one.
+   */
+  actingAgentId?: string;
 }
 
 export interface WithOrgAuthOptions {
@@ -28,6 +38,14 @@ export interface WithOrgAuthOptions {
    * route that doesn't explicitly ask for it. Only `/api/mcp` sets this.
    */
   allowPat?: boolean;
+  /**
+   * Opt-in: also accept the platform auth service's short-lived agent JWT
+   * (`lib/api/agentJwt.ts`) as an identity source — how the AI Runtime (and
+   * other internal services) call in on a user's behalf. Off by default,
+   * same reasoning as `allowPat`: a route must explicitly ask for it. Name
+   * is fixed platform-wide — every app implementing this mirrors this flag.
+   */
+  allowAgentJwt?: boolean;
 }
 
 interface ResolvedIdentity {
@@ -36,6 +54,7 @@ interface ResolvedIdentity {
   session: Session;
   projectId?: string;
   actorType: "user" | "agent";
+  actingAgentId?: string;
 }
 
 /**
@@ -92,10 +111,41 @@ async function resolvePatIdentity(req: NextRequest): Promise<ResolvedIdentity | 
 }
 
 /**
+ * Agent-JWT-only identity resolution for routes that opt into
+ * `allowAgentJwt`. Mirrors `resolvePatIdentity`: a fully separate branch,
+ * never falls back to a session cookie or any other identity source. Live
+ * org membership is NOT separately rechecked here — unlike the long-lived
+ * API-token/PAT paths, this token's own `exp` (≤900s, enforced inside
+ * `verifyAgentJwt`) is the freshness guarantee; the issuing auth service is
+ * responsible for only minting one for a currently-active user.
+ */
+async function resolveAgentJwtIdentity(req: NextRequest): Promise<ResolvedIdentity | NextResponse> {
+  const bearer = bearerFromHeader(req.headers.get("authorization"));
+  if (bearer) {
+    const claims = await verifyAgentJwt(bearer);
+    if (claims) {
+      const session = {
+        user: { id: claims.userId, orgId: claims.orgId },
+        expires: "",
+      } as unknown as Session;
+      return {
+        userId: claims.userId,
+        orgId: claims.orgId,
+        actorType: "agent",
+        actingAgentId: claims.actingAgentId,
+        session,
+      };
+    }
+  }
+  return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+}
+
+/**
  * Resolve the caller's identity from either a Bearer API token OR the NextAuth
- * session cookie (or, when `allowPat` is set, a Personal Access Token —
- * see `resolvePatIdentity` above, which is a fully separate branch and never
- * falls through into the logic below).
+ * session cookie (or, when `allowPat`/`allowAgentJwt` is set, a Personal
+ * Access Token or platform agent JWT respectively — see
+ * `resolvePatIdentity`/`resolveAgentJwtIdentity` above, each a fully separate
+ * branch that never falls through into the logic below).
  *
  * Bearer tokens (minted by POST /api/v1/token) are how external Swagger/Scalar
  * consumers and API scripts authenticate — they have no session cookie. When a
@@ -110,8 +160,13 @@ async function resolvePatIdentity(req: NextRequest): Promise<ResolvedIdentity | 
  * Returns the resolved identity, or a NextResponse to short-circuit with
  * (401 / 403).
  */
-async function resolveIdentity(req: NextRequest, allowPat: boolean): Promise<ResolvedIdentity | NextResponse> {
+async function resolveIdentity(
+  req: NextRequest,
+  allowPat: boolean,
+  allowAgentJwt: boolean,
+): Promise<ResolvedIdentity | NextResponse> {
   if (allowPat) return resolvePatIdentity(req);
+  if (allowAgentJwt) return resolveAgentJwtIdentity(req);
 
   const bearer = bearerFromHeader(req.headers.get("authorization"));
   if (bearer) {
@@ -161,15 +216,15 @@ export function withOrgAuth<Params = Record<string, never>>(
 ) {
   return async (req: NextRequest, routeCtx?: { params: Params }): Promise<Response> => {
     try {
-      const identity = await resolveIdentity(req, options.allowPat ?? false);
+      const identity = await resolveIdentity(req, options.allowPat ?? false, options.allowAgentJwt ?? false);
       if (identity instanceof NextResponse) return identity;
-      const { userId, orgId, session, projectId, actorType } = identity;
+      const { userId, orgId, session, projectId, actorType, actingAgentId } = identity;
       if (options.moduleKey) {
         const blocked = await gateModuleApi("quiktrack", options.moduleKey, orgId);
         if (blocked) return blocked as NextResponse;
       }
       return await handler(
-        { session, userId, orgId, projectId, actorType },
+        { session, userId, orgId, projectId, actorType, actingAgentId },
         req,
         routeCtx ?? ({ params: {} as Params }),
       );

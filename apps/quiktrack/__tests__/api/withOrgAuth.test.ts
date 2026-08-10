@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
+import { EncryptJWT } from "jose";
+import hkdf from "@panva/hkdf";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
@@ -16,6 +18,21 @@ const RAW_TOKEN = "test-raw-token-value";
 const ORG = "org_1";
 const PROJECT = "proj_1";
 const CREATED_BY = "user_1";
+const AGENT_NEXTAUTH_SECRET = "test-nextauth-secret-for-agent-jwt";
+
+async function mintAgentJwt(
+  claims: Record<string, unknown>,
+  opts: { ttlSeconds?: number } = {},
+) {
+  const key = await hkdf("sha256", AGENT_NEXTAUTH_SECRET, "", "NextAuth.js Generated Encryption Key", 32);
+  const now = Math.floor(Date.now() / 1000);
+  const { ttlSeconds = 300 } = opts;
+  return new EncryptJWT(claims)
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + ttlSeconds)
+    .encrypt(key);
+}
 
 function buildRequest(token?: string): NextRequest {
   const headers: Record<string, string> = {};
@@ -112,6 +129,105 @@ describe("withOrgAuth({ allowPat: true })", () => {
         data: expect.objectContaining({ revokedAt: expect.any(Date) }),
       }),
     );
+  });
+});
+
+describe("withOrgAuth({ allowAgentJwt: true })", () => {
+  beforeEach(() => {
+    process.env.NEXTAUTH_SECRET = AGENT_NEXTAUTH_SECRET;
+  });
+
+  afterEach(() => {
+    delete process.env.NEXTAUTH_SECRET;
+  });
+
+  it("resolves a valid agent JWT to actorType 'agent' + actingAgentId, with no projectId (org-wide, unlike a PAT)", async () => {
+    const token = await mintAgentJwt({
+      sub: CREATED_BY,
+      orgId: ORG,
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+    const seen: { userId?: string; orgId?: string; actorType?: string; actingAgentId?: string; projectId?: string } = {};
+    const handler = withOrgAuth(
+      async (ctx) => {
+        seen.userId = ctx.userId;
+        seen.orgId = ctx.orgId;
+        seen.actorType = ctx.actorType;
+        seen.actingAgentId = ctx.actingAgentId;
+        seen.projectId = ctx.projectId;
+        return NextResponse.json({ success: true });
+      },
+      { allowAgentJwt: true },
+    );
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    expect(res.status).toBe(200);
+    expect(seen).toEqual({
+      userId: CREATED_BY,
+      orgId: ORG,
+      actorType: "agent",
+      actingAgentId: "ai-runtime",
+      projectId: undefined,
+    });
+  });
+
+  it("returns 401 without consulting loadProjectAccess/the DB — the JWT's own exp is the only recheck", async () => {
+    const token = await mintAgentJwt({
+      sub: CREATED_BY,
+      orgId: ORG,
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    expect(res.status).toBe(200);
+    expect(mockDb.qtProject.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 for an expired agent JWT", async () => {
+    const token = await mintAgentJwt(
+      { sub: CREATED_BY, orgId: ORG, actingAs: "ai_agent", actingAgentId: "ai-runtime" },
+      { ttlSeconds: -10 },
+    );
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when there's no bearer token at all, without falling back to a session cookie", async () => {
+    setSession({ id: CREATED_BY, orgId: ORG, role: "owner" }); // present, but must never be consulted
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest());
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body).toEqual({ success: false, error: "Unauthorized" });
+  });
+
+  it("returns 401 when a PAT is sent as the bearer token — allowAgentJwt does not also accept PATs", async () => {
+    mockValidPat();
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("withOrgAuth without allowAgentJwt — the security property this feature depends on", () => {
+  it("rejects an agent JWT sent as a Bearer token on a route that did not opt into allowAgentJwt", async () => {
+    process.env.NEXTAUTH_SECRET = AGENT_NEXTAUTH_SECRET;
+    const token = await mintAgentJwt({
+      sub: CREATED_BY,
+      orgId: ORG,
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true, data: "should never run" }));
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    // Falls through to the ordinary Bearer-API-token branch, which rejects
+    // it as an unrecognized token — never even attempts JWE decryption.
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body).toEqual({ success: false, error: "Unauthorized" });
+    delete process.env.NEXTAUTH_SECRET;
   });
 });
 
