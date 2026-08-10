@@ -327,7 +327,7 @@ function CreateUserModal({
             />
             {linkUserId && (
               <div className="mt-1 flex items-center gap-2 text-xs text-crm-muted">
-                <span>Granting CredFlow access to an existing member.</span>
+                <span>Granting QuikCredFlow access to an existing member.</span>
                 <button type="button" className="underline" onClick={clearLink}>
                   Change
                 </button>
@@ -355,7 +355,7 @@ function CreateUserModal({
                         <span className="text-crm-muted">{m.email}</span>
                       </span>
                       <span className="text-xs">
-                        {m.hasCredflowAccess ? "Already in CredFlow" : "Add"}
+                        {m.hasCredflowAccess ? "Already in QuikCredFlow" : "Add"}
                       </span>
                     </button>
                   </li>

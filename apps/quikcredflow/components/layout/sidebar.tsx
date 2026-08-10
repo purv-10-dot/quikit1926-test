@@ -202,20 +202,20 @@ function SidebarBrand({
       }
     >
       {collapsed ? (
-        <Link href="/dashboard" aria-label="QuikCRM home" className="shrink-0">
+        <Link href="/dashboard" aria-label="QuikCredFlow home" className="shrink-0">
           <QuikcredflowMark />
         </Link>
       ) : (
         <Link
           href="/dashboard"
-          aria-label="QuikCRM home"
+          aria-label="QuikCredFlow home"
           className="flex min-w-0 items-center gap-2.5"
         >
           <QuikcredflowMark className="h-8 w-8 shrink-0 rounded-lg object-cover" />
           <div className="min-w-0 leading-tight">
             <p className="truncate text-sm font-semibold text-crm-text">
               <span>Quik</span>
-              <span className="text-crm-blue">CRM</span>
+              <span className="text-crm-blue">CredFlow</span>
             </p>
             <p className="text-[10px] uppercase tracking-wider text-crm-muted">
               Sales OS

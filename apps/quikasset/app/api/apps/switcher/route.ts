@@ -72,6 +72,7 @@ export async function GET() {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikcredflow: process.env.QUIKCREDFLOW_URL,
     quikasset: process.env.QUIKASSET_URL,
   };
   const isDev = process.env.NODE_ENV !== "production";
@@ -85,6 +86,7 @@ export async function GET() {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
+    quikcredflow: "http://localhost:3076",
     quikasset: "http://localhost:3012",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {

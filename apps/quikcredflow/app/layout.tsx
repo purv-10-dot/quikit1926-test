@@ -11,7 +11,7 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "QuikCRM",
+  title: "QuikCredFlow",
   description: "Leads, accounts, contacts, automations, and telephony — sales execution on QuikIT.",
   icons: {
     icon: [

@@ -33,7 +33,7 @@ export interface AppManifest {
 
 const manifest: AppManifest = {
   appId: "quikcredflow",
-  name: "CredFlow",
+  name: "QuikCredFlow",
   description: "Leads, accounts, contacts, opportunities, automations, and telephony — sales execution.",
   routePrefix: "/quikcredflow",
   icon: "Users",
