@@ -6,7 +6,6 @@ export function OPTIONS(): Response {
   return oauthCorsPreflight();
 }
 
-
 /**
  * GET /.well-known/openid-configuration
  *
