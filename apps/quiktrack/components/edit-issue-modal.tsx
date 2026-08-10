@@ -6,6 +6,11 @@ import { useSession } from "next-auth/react";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { sanitizeRichText } from "@/lib/sanitize";
+import {
+  readDescriptionDraft,
+  writeDescriptionDraft,
+  clearDescriptionDraft,
+} from "@/lib/utils/description-draft";
 import type { FieldValue } from "@/lib/customFields/registry";
 import {
   X,
@@ -615,7 +620,14 @@ export function EditIssueModal({
           const d = i.data as IssueFull;
           setIssue(d);
           setTitle(d.title);
-          setDescription(d.description ?? "");
+          const savedDescription = d.description ?? "";
+          const draft = readDescriptionDraft(d.id);
+          if (draft !== null && draft !== savedDescription) {
+            setDescription(draft);
+            setDescEditing(true);
+          } else {
+            setDescription(savedDescription);
+          }
           setStatusId(d.statusId);
           setPriority((d.priority as Priority) ?? "MEDIUM");
           setAssigneeId(d.assigneeId ?? "");
@@ -1098,7 +1110,10 @@ export function EditIssueModal({
                   <div>
                     <RichTextEditor
                       value={description}
-                      onChange={setDescription}
+                      onChange={(value) => {
+                        setDescription(value);
+                        writeDescriptionDraft(issue.id, value);
+                      }}
                       mentions={memberMentions}
                       uploadImage={(file) => uploadProjectImage(projectId, file)}
                       uploadFile={(file) => uploadProjectFile(projectId, file)}
@@ -1109,6 +1124,7 @@ export function EditIssueModal({
                         onClick={() => {
                           setDescEditing(false);
                           void patch({ description: description ?? "" });
+                          clearDescriptionDraft(issue.id);
                         }}
                         className="h-8 px-3 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
                       >
@@ -1119,6 +1135,7 @@ export function EditIssueModal({
                         onClick={() => {
                           setDescription(issue.description ?? "");
                           setDescEditing(false);
+                          clearDescriptionDraft(issue.id);
                         }}
                         className="h-8 px-3 text-xs text-gray-700 hover:bg-gray-100 rounded"
                       >
