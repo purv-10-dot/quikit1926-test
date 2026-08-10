@@ -61,12 +61,23 @@ export function getRedis(): Redis {
 
 /**
  * BullMQ-flavored Redis client. Retries forever (BullMQ requirement).
- * Throws if Redis is disabled — callers should check isRedisEnabled() first.
+ *
+ * Uses a DEDICATED, queue-safe Redis (QUEUE_REDIS_URL) so the job queue does
+ * not share the cache-tuned shared Redis (REDIS_URL) that other Quikit apps
+ * use — a cache-tuned (allkeys-lru) Redis would silently evict queued jobs.
+ * Falls back to REDIS_URL when QUEUE_REDIS_URL is unset, so single-Redis
+ * local/dev setups keep working unchanged.
+ *
+ * NOTE: for a TLS endpoint (e.g. managed Redis / Upstash), the URL scheme must
+ * be rediss:// (not redis://) — ioredis reads TLS from the scheme.
  */
 export function getQueueRedis(): Redis {
   if (globalThis.__redisQueue) return globalThis.__redisQueue;
-  if (!isRedisEnabled()) throw new Error("REDIS_URL is not set");
-  const client = new IORedis(process.env.REDIS_URL!, {
+  const queueUrl = process.env.QUEUE_REDIS_URL || process.env.REDIS_URL;
+  if (!queueUrl || queueUrl.trim().length === 0) {
+    throw new Error("QUEUE_REDIS_URL / REDIS_URL is not set");
+  }
+  const client = new IORedis(queueUrl, {
     maxRetriesPerRequest: null, // BullMQ requirement
     enableReadyCheck: false,
   });
