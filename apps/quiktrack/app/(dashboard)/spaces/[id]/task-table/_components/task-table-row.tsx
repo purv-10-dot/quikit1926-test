@@ -23,6 +23,7 @@ import {
 } from "../../list/_components/inline-editors";
 
 export interface TaskRowContext {
+  projectId: string;
   statuses: IssueStatus[];
   sprints: Map<string, SprintLite>;
   members: Map<string, UserLite>;
@@ -161,6 +162,8 @@ export function TaskTableRow({ issue, depth, expanded, onToggleExpand, ctx }: Ro
       </td>
       <td className="w-32 px-3 py-2 align-middle">
         <StatusEditor
+          issueId={issue.id}
+          projectId={ctx.projectId}
           value={status}
           statuses={ctx.statuses}
           onChange={(statusId) => ctx.onPatchIssue(issue.id, { statusId })}

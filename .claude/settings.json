@@ -1,11 +1,19 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(Get-ChildItem \"c:\\\\workStation_3\\\\QuikIT\\\\packages\\\\database\\\\prisma\" -Filter \"*.prisma\")",
-      "Bash(Select-Object FullName)"
-    ],
-    "additionalDirectories": [
-      "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
+    "deny": [
+      "Read(//**/*.dump)",
+      "Read(//**/package-lock.json)",
+      "Read(//**/.next/**)",
+      "Read(//**/.turbo/**)",
+      "Read(//**/coverage/**)",
+      "Bash(psql*)",
+      "Bash(pg_restore*)",
+      "Bash(pg_dump*)",
+      "Bash(*prisma migrate*)",
+      "Bash(*prisma db push*)",
+      "Bash(git push origin main*)",
+      "Bash(git push origin uat*)",
+      "Bash(git push origin dev*)"
     ]
   },
   "hooks": {

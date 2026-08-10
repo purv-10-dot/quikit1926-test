@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
 import { getProvider } from "@/lib/services/github/repo-service";
+import { fireTriggerForIssues } from "@/lib/services/workflow/fire-trigger";
 
 const bodySchema = z.object({
   repoId: z.string().trim().min(1),
@@ -79,6 +80,11 @@ export const POST = withOrgAuth<{ id: string }>(
       },
       update: { url: created.url },
     });
+
+    // Fire any "Branch created" workflow trigger for this item now — the GitHub
+    // webhook can't reach a local dev server, and even in prod this endpoint
+    // already owns the link, so we drive the auto-transition here directly.
+    await fireTriggerForIssues(orgId, [issueId], "branch_created");
 
     return NextResponse.json(
       { success: true, data: { name: created.name, url: created.url } },
