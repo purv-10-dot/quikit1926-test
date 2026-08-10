@@ -8,8 +8,8 @@ async function getGSCClient(userId: string, workspaceId?: string) {
   if (!conn || conn.status !== "CONNECTED") throw new Error("Google Search Console not connected");
 
   const oauth2 = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID,
+    process.env.QUIKINSIGHT_GOOGLE_CLIENT_SECRET,
   );
   oauth2.setCredentials({
     access_token:  conn.accessToken,

@@ -23,8 +23,8 @@ async function getClient(userId: string, workspaceId?: string) {
       "https://oauth2.googleapis.com/token",
       new URLSearchParams({
         grant_type:    "refresh_token",
-        client_id:     process.env.GOOGLE_CLIENT_ID ?? "",
-        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+        client_id:     process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID ?? "",
+        client_secret: process.env.QUIKINSIGHT_GOOGLE_CLIENT_SECRET ?? "",
         refresh_token: conn.refreshToken,
       }).toString(),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }

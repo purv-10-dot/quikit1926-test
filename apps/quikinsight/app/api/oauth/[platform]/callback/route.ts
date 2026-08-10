@@ -40,13 +40,13 @@ const TOKEN_ENDPOINTS: Partial<Record<
 >> = {
   google: {
     tokenUrl:     "https://oauth2.googleapis.com/token",
-    clientId:     process.env.GOOGLE_CLIENT_ID     ?? "",
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    clientId:     process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID     ?? "",
+    clientSecret: process.env.QUIKINSIGHT_GOOGLE_CLIENT_SECRET ?? "",
   },
   google_ads: {
     tokenUrl:     "https://oauth2.googleapis.com/token",
-    clientId:     process.env.GOOGLE_ADS_CLIENT_ID     ?? "",
-    clientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET ?? "",
+    clientId:     process.env.QUIKINSIGHT_GOOGLE_ADS_CLIENT_ID     ?? "",
+    clientSecret: process.env.QUIKINSIGHT_GOOGLE_ADS_CLIENT_SECRET ?? "",
   },
   meta_ads: {
     tokenUrl:     "https://graph.facebook.com/v19.0/oauth/access_token",
@@ -75,8 +75,8 @@ const TOKEN_ENDPOINTS: Partial<Record<
   },
   gbp: {
     tokenUrl:     "https://oauth2.googleapis.com/token",
-    clientId:     process.env.GOOGLE_CLIENT_ID     ?? "",
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    clientId:     process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID     ?? "",
+    clientSecret: process.env.QUIKINSIGHT_GOOGLE_CLIENT_SECRET ?? "",
   },
   mailchimp: {
     tokenUrl:     "https://login.mailchimp.com/oauth2/token",

@@ -56,9 +56,9 @@ export async function GET() {
 
   // Which platforms have OAuth/API credentials present in the environment
   const CREDS: Record<Platform, boolean> = {
-    google:     !!process.env.GOOGLE_CLIENT_ID,
-    google_ads: !!process.env.GOOGLE_ADS_CLIENT_ID,
-    gbp:        !!process.env.GOOGLE_CLIENT_ID,
+    google:     !!process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID,
+    google_ads: !!process.env.QUIKINSIGHT_GOOGLE_ADS_CLIENT_ID,
+    gbp:        !!process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID,
     meta:       !!process.env.META_APP_ID,
     meta_ads:   !!process.env.META_ADS_APP_ID,
     linkedin:   !!process.env.LINKEDIN_CLIENT_ID,
