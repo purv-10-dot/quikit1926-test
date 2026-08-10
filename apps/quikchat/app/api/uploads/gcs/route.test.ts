@@ -8,19 +8,16 @@ const StorageMock = vi.fn(() => ({ bucket: bucketFn }));
 vi.mock("@google-cloud/storage", () => ({ Storage: StorageMock }));
 
 import { GcsDriver } from "@/lib/server/storage/gcs";
-import { signToken, uploadTokenSecret } from "@/lib/server/storage/tokens";
+import { UPLOAD_TOKEN_HEADER, signToken, uploadTokenSecret } from "@/lib/server/storage/tokens";
 import { logger } from "@/lib/shared/logger";
 import { PUT } from "./route";
 
-const tokenOf = (url: string) => url.split("/").pop()!;
 const driver = new GcsDriver();
 
-function putReq(token: string, body: BodyInit, contentType: string) {
-  return new Request(`http://test.local/api/uploads/gcs/${token}`, {
-    method: "PUT",
-    body,
-    headers: { "content-type": contentType },
-  });
+function putReq(token: string | null, body: BodyInit, contentType: string) {
+  const headers: Record<string, string> = { "content-type": contentType };
+  if (token !== null) headers[UPLOAD_TOKEN_HEADER] = token;
+  return new Request("http://test.local/api/uploads/gcs", { method: "PUT", body, headers });
 }
 
 beforeAll(() => {
@@ -59,23 +56,28 @@ async function freshUploadToken(over: Record<string, unknown> = {}) {
     size: 1024,
     ...over,
   });
-  return { token: tokenOf(target.uploadUrl), objectPath: target.objectPath };
+  return { token: target.headers[UPLOAD_TOKEN_HEADER]!, objectPath: target.objectPath };
 }
 
-describe("PUT /api/uploads/gcs/[token]", () => {
+describe("PUT /api/uploads/gcs", () => {
   it("pushes the body to GCS on a valid token", async () => {
     const { token, objectPath } = await freshUploadToken();
-    const res = await PUT(putReq(token, "PNGBYTES", "image/png"), { params: { token } });
+    const res = await PUT(putReq(token, "PNGBYTES", "image/png"));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, objectPath });
     expect(fileFn).toHaveBeenCalledWith(objectPath);
     expect((save.mock.calls[0]![0] as Buffer).toString()).toBe("PNGBYTES");
   });
 
+  it("rejects a request with no token header (401)", async () => {
+    const res = await PUT(putReq(null, "x", "image/png"));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Invalid or expired upload token" });
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid/tampered token (401)", async () => {
-    const res = await PUT(putReq("not-a-token", "x", "image/png"), {
-      params: { token: "not-a-token" },
-    });
+    const res = await PUT(putReq("not-a-token", "x", "image/png"));
     expect(res.status).toBe(401);
     expect(save).not.toHaveBeenCalled();
   });
@@ -93,21 +95,21 @@ describe("PUT /api/uploads/gcs/[token]", () => {
       },
       uploadTokenSecret(),
     );
-    const res = await PUT(putReq(token, "x", "image/png"), { params: { token } });
+    const res = await PUT(putReq(token, "x", "image/png"));
     expect(res.status).toBe(401);
     expect(save).not.toHaveBeenCalled();
   });
 
   it("rejects a content-type mismatch (400)", async () => {
     const { token } = await freshUploadToken();
-    const res = await PUT(putReq(token, "x", "image/jpeg"), { params: { token } });
+    const res = await PUT(putReq(token, "x", "image/jpeg"));
     expect(res.status).toBe(400);
     expect(save).not.toHaveBeenCalled();
   });
 
   it("rejects an oversize body (413)", async () => {
     const { token } = await freshUploadToken({ size: 4 }); // maxBytes = 4
-    const res = await PUT(putReq(token, "way too many bytes", "image/png"), { params: { token } });
+    const res = await PUT(putReq(token, "way too many bytes", "image/png"));
     expect(res.status).toBe(413);
     expect(save).not.toHaveBeenCalled();
   });
@@ -130,7 +132,7 @@ describe("PUT /api/uploads/gcs/[token]", () => {
     save.mockRejectedValueOnce(gaxiosLike);
 
     const { token, objectPath } = await freshUploadToken();
-    const res = await PUT(putReq(token, "PNGBYTES", "image/png"), { params: { token } });
+    const res = await PUT(putReq(token, "PNGBYTES", "image/png"));
 
     // Observability-only: the response is byte-for-byte what it was before.
     expect(res.status).toBe(400);

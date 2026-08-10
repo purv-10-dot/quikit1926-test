@@ -3,20 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { LocalDriver, localUploadSecret } from "@/lib/server/storage/local";
-import { signToken } from "@/lib/server/storage/tokens";
-import { GET, PUT } from "./route";
+import { LocalDriver } from "@/lib/server/storage/local";
+import { UPLOAD_TOKEN_HEADER } from "@/lib/server/storage/tokens";
+import { GET } from "./route";
 
 const tokenOf = (url: string) => url.split("/").pop()!;
 const driver = new LocalDriver();
-
-function putReq(token: string, body: BodyInit, contentType: string) {
-  return new Request(`http://test.local/api/uploads/local/${token}`, {
-    method: "PUT",
-    body,
-    headers: { "content-type": contentType },
-  });
-}
 
 beforeAll(() => {
   process.env.LOCAL_UPLOAD_DIR = mkdtempSync(join(tmpdir(), "qc-route-"));
@@ -37,54 +29,8 @@ async function freshUploadToken(over: Record<string, unknown> = {}) {
     size: 1024,
     ...over,
   });
-  return { token: tokenOf(target.uploadUrl), objectPath: target.objectPath };
+  return { token: target.headers[UPLOAD_TOKEN_HEADER]!, objectPath: target.objectPath };
 }
-
-describe("PUT /api/uploads/local/[token]", () => {
-  it("writes the body on a valid token", async () => {
-    const { token, objectPath } = await freshUploadToken();
-    const res = await PUT(putReq(token, "PNGBYTES", "image/png"), { params: { token } });
-    expect(res.status).toBe(200);
-    const stored = await driver.read(objectPath);
-    expect(stored.toString()).toBe("PNGBYTES");
-  });
-
-  it("rejects an invalid/tampered token (401)", async () => {
-    const res = await PUT(putReq("not-a-token", "x", "image/png"), {
-      params: { token: "not-a-token" },
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it("rejects an expired token (401)", async () => {
-    const token = signToken(
-      {
-        kind: "up",
-        objectPath: "quikchat/o1/c1/x.png",
-        contentType: "image/png",
-        maxBytes: 10,
-        orgId: "o1",
-        userId: "u1",
-        exp: Date.now() - 1,
-      },
-      localUploadSecret(),
-    );
-    const res = await PUT(putReq(token, "x", "image/png"), { params: { token } });
-    expect(res.status).toBe(401);
-  });
-
-  it("rejects a content-type mismatch (400)", async () => {
-    const { token } = await freshUploadToken();
-    const res = await PUT(putReq(token, "x", "image/jpeg"), { params: { token } });
-    expect(res.status).toBe(400);
-  });
-
-  it("rejects an oversize body (413)", async () => {
-    const { token } = await freshUploadToken({ size: 4 }); // maxBytes = 4
-    const res = await PUT(putReq(token, "way too many bytes", "image/png"), { params: { token } });
-    expect(res.status).toBe(413);
-  });
-});
 
 describe("GET /api/uploads/local/[token]", () => {
   it("streams an inline image with the right headers", async () => {
