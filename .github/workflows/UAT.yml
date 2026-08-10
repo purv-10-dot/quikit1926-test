@@ -66,6 +66,8 @@ jobs:
               - 'apps/quikinsight/**'
             realtime:
               - 'services/realtime/**'
+            quikcredflow:
+              - 'apps/quikcredflow/**'
 
       - name: Generate matrix
         id: set-matrix
@@ -90,6 +92,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
             [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
             [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
+            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikcredflow")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
@@ -183,6 +186,7 @@ jobs:
             NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
             NEXT_PUBLIC_REALTIME_WS_URL=wss://uatsockets.quikit.ai
             NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
+            NEXT_PUBLIC_QUIKCREDFLOW_URL=https://uatcrmexpress.quikit.ai
             NEXT_PUBLIC_QUIKINSIGHT_URL=https://uatinsights.quikit.ai
   update-gitops:
     name: Update GitOps Repository
@@ -263,6 +267,10 @@ jobs:
               quiklms)
                 FILE="lms-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quiklms-runtime:${TAG}"
+                ;;
+              quikcredflow)
+                FILE="crmexpress-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikcredflow-runtime:${TAG}"
                 ;;
               realtime)
                 FILE="socket-deployment.yaml"
