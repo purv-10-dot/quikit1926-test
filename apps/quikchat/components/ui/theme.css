@@ -3988,6 +3988,39 @@ body {
   padding: 6px 14px;
   text-decoration: none;
 }
+/* The Teams fallback. Deliberately de-emphasised against the QuikChat action
+   above it — same affordance, lower visual weight, so the in-product join is
+   the default choice and this is the escape hatch for external guests. */
+.qc-meeting__join--secondary {
+  color: var(--qc-text-muted);
+  background: transparent;
+  border: 1px solid var(--qc-border);
+  font-weight: 500;
+}
+
+/* /meeting/[id]/join — the resolving state and its dead ends. */
+.qc-meeting-join {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 60vh;
+  padding: 24px;
+  text-align: center;
+  color: var(--qc-text);
+}
+.qc-meeting-join__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.qc-meeting-join__body {
+  font-size: 14px;
+  color: var(--qc-text-muted);
+  max-width: 46ch;
+  margin: 0;
+}
 .qc-meeting__attendees {
   display: flex;
   flex-wrap: wrap;

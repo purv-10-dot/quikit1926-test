@@ -164,6 +164,33 @@ multi-day **"find best time"**. The nearest existing thing is `FreeBusyGrid`,
 which *renders* busy blocks but has no suggestion logic — a visualization, not
 a solver.
 
+### Meeting join — open rows (from the `/meeting/{id}/join` work)
+
+- **Meeting access is channel-derived, and it should probably be
+  meeting-scoped.** The QuikChat join link needs a QuikChat account **and**
+  membership of the meeting's channel — the token route requires call
+  participation, and participants come from the meeting's attendee list, which
+  is itself drawn from channel members. So an external guest invited by email
+  and an internal colleague who simply isn't in the channel **fail identically**.
+  This is the constraint that limits the value of shipping both links: the
+  QuikChat one is narrower than "has an account". A real fix is probably
+  meeting-scoped access (an attendee can join the call without being a channel
+  member) and is a bigger design question than a session — **not solved, filed
+  deliberately.**
+- **Starting a group call marks every channel member as being on a call**,
+  whether or not they ever open it — `createCall` inserts a `QcCallParticipant`
+  per member in `connected` state, and its one-call-per-user guard then blocks
+  every one of them from starting or joining any other call until it ends.
+  Pre-existing, and previously rare because group calls were started by hand.
+  **A working meeting-join link makes it routine** — expect it several times a
+  day once calendar invites carry the link. The meeting path narrows the blast
+  radius (participants are attendees, not all channel members) but does not fix
+  the underlying rule.
+- **The race is reasoned, not covered.** `getOrStartMeetingCall`'s claim relies
+  on Postgres row locks serialising two conditional `updateMany`s. The unit
+  tests use mocked Prisma and prove branch logic only. Real verification needs a
+  DB-backed test (blocked: no Postgres in CI) or a two-context Playwright spec.
+
 ### Related defects found while inventorying
 
 - **CalendarModule's "New meeting" is not a meeting, and fabricates a join
@@ -366,3 +393,40 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
 - **DEP0169 `url.parse()` deprecation warning** — traced to
   `next/dist/server/lib/router-server.js`, called per-request in Next 14.0.4's
   own dev-server routing. Not our code, not our dependencies. Upstream; leave it.
+
+## 11. Meeting scheduling — QA intake (11 items, Aug 2026)
+
+Two models, and conflating them is the trap:
+- `QcMeeting` + `QcMeetingAttendee` — the chat meeting flow. This is QA's flow.
+- `QcCalendarEvent` — S17 personal calendar, what CalendarModule creates.
+
+| Field | QcMeeting | QcCalendarEvent | Graph | Verdict for the meeting flow |
+|---|---|---|---|---|
+| agenda | `description` | `description` | sent | **Done** — was one field under three names |
+| location | ❌ | `location` | not sent | **Migration** (Pravin) |
+| allDay | ❌ | `allDay` | not sent | **Migration** (Pravin) |
+| recurrence | ❌ | ❌ | not sent | **Migration + program** — Graph wants a nested pattern/range object |
+| attendee required/optional | ❌ | n/a | hardcoded `"required"` | **Migration**, then one line in `microsoft.ts` |
+
+⚠️ `location` and `allDay` exist — **on `QcCalendarEvent`, not `QcMeeting`.**
+A schema grep will say "we already have location." For the meeting flow we do not.
+
+**Status against QA's list**
+- #2 agenda — done (settled on one label across both editors).
+- #11 attendee search — done (filters channel members). Org-wide search is a
+  follow-up, tangled with RBAC Phase 3.
+- #4 availability — was the stub honestly reporting `"unknown"`. Fixed by
+  `CALENDAR_MODE=microsoft`. **Requires each attendee to connect individually**
+  (per-user OAuth, not domain-wide delegation) — unconnected users legitimately
+  render as "unknown".
+- #1 meeting icon — no dead control; all three entry points have handlers.
+  QA's report predates the mode flip, so it was almost certainly CalendarModule,
+  which creates a personal event with no attendees and no chat card.
+- #3, #8, #9 — blocked on migrations. Send to Pravin via Teams.
+- #5 poll, #6 find-best-time, #7 availability scheduler, #10 recurrence —
+  greenfield programs, no scaffolding exists. Size separately; not bug fixes.
+
+**New defect found during intake:** `CalendarModule.tsx:232` hardcodes
+`joinUrl: "https://meet.quikchat.dev/new"` on an event that creates no meeting
+and notifies nobody. Same fabrication pattern the calendar stub was cleaned up
+to avoid.

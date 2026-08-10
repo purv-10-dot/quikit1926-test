@@ -50,9 +50,29 @@ describe("MeetingCard (S15a)", () => {
     renderCard(meeting());
     expect(screen.getByText("Roadmap sync")).toBeInTheDocument();
     expect(screen.getByText("Q3 planning")).toBeInTheDocument();
-    const join = screen.getByRole("link", { name: /Join meeting/i });
-    expect(join).toHaveAttribute("href", "https://meet.stub/abc");
+    // Two join links, and the ORDER matters. `meeting.joinUrl` is a Teams link
+    // by construction (Graph answers `isOnlineMeeting` with Teams), so leading
+    // with it sent users out of the product and into the competitor. The
+    // QuikChat one must come first in the DOM and point at the stable
+    // meeting-scoped address that is safe to paste into a calendar invite.
+    const links = screen.getAllByRole("link", { name: /^Join in/ });
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
+      "/meeting/m1/join",
+      "https://meet.stub/abc",
+    ]);
+    expect(screen.getByRole("link", { name: "Join in QuikChat" })).toHaveAttribute(
+      "href",
+      "/meeting/m1/join",
+    );
     expect(screen.getByTestId("meeting-attendees").querySelectorAll("button")).toHaveLength(2);
+  });
+
+  it("still offers the QuikChat join when the provider returned no Teams link", () => {
+    // Dropping `isOnlineMeeting` in microsoft.ts (Option A, later) makes
+    // joinUrl null. The in-product join must not depend on it.
+    renderCard(meeting({ joinUrl: null }));
+    expect(screen.getByRole("link", { name: "Join in QuikChat" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Join in Teams" })).toBeNull();
   });
 
   it("RSVP buttons patch the server and reflect the selection optimistically", async () => {

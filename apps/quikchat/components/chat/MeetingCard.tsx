@@ -81,14 +81,30 @@ export function MeetingCard({ meeting, currentUserId, onStartCall }: MeetingCard
 
       {meeting.description ? <p className="qc-meeting__desc">{meeting.description}</p> : null}
 
+      {/* PRIMARY, and first for a reason: `meeting.joinUrl` is a TEAMS link by
+          construction — `conferencing: true` asks Graph for an online meeting
+          and Graph always answers with Teams. Leading with it sent people out
+          of the product and into the competitor. This one stays inside
+          QuikChat (LiveKit), resolving to the meeting's own call. Same address
+          every time, so it is safe to paste into a calendar invite. */}
+      {!cancelled ? (
+        <a className="qc-meeting__join" href={`/meeting/${meeting.id}/join`}>
+          <Video size={15} aria-hidden /> Join in QuikChat
+        </a>
+      ) : null}
+
+      {/* Secondary, and retained deliberately: the QuikChat link needs a
+          QuikChat account AND membership of this channel, so external guests
+          invited by email have nothing else to click. Dropping this is a
+          two-line change in microsoft.ts once usage says nobody needs it. */}
       {meeting.joinUrl && !cancelled ? (
         <a
-          className="qc-meeting__join"
+          className="qc-meeting__join qc-meeting__join--secondary"
           href={meeting.joinUrl}
           target="_blank"
           rel="noopener noreferrer"
         >
-          <Video size={15} aria-hidden /> Join meeting
+          <Video size={15} aria-hidden /> Join in Teams
         </a>
       ) : null}
 
