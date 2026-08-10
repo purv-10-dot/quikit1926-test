@@ -1,0 +1,108 @@
+# QuikInsight — weekly report email, every Monday at 08:00 IST.
+#
+# WHERE THIS LIVES: the cluster manifests are in the separate GitOps repo
+# (akhileshgandhi/uat-k8s-infra-quikit, alongside quikinsight-deployment.yaml).
+# This copy is kept in the app repo so the schedule is reviewable next to the
+# route it triggers; copy it into the GitOps repo to actually deploy it.
+#
+# WHAT IT DOES: issues one authenticated GET to /api/cron/weekly-report. All the
+# work — selecting opted-in users, building each report, sending — happens in
+# that route. This Pod is only a timer with a curl in it, so the schedule can
+# change without rebuilding the app image.
+#
+# TIMEZONE: `timeZone` is used rather than converting to UTC by hand, so 08:00
+# stays 08:00 regardless of DST anywhere. Requires Kubernetes >= 1.27 (stable;
+# beta from 1.25 behind the CronJobTimeZone gate). If your cluster is older,
+# DELETE the timeZone line and use the UTC equivalent instead:
+#     schedule: "30 2 * * 1"     # 02:30 UTC == 08:00 IST
+# IST has no DST, so that conversion is safe year-round.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: quikinsight-weekly-report
+  # Match the namespace quikinsight-deployment.yaml uses.
+  namespace: quikit
+  labels:
+    app: quikinsight
+    component: weekly-report
+spec:
+  schedule: "0 8 * * 1"
+  timeZone: "Asia/Kolkata"
+
+  # The report send is not idempotent — a second concurrent run would email
+  # everyone twice. Never overlap.
+  concurrencyPolicy: Forbid
+
+  # If the controller was down at 08:00, only fire when it comes back within
+  # 15 minutes. Past that, skip the week rather than emailing a "Monday report"
+  # on Wednesday.
+  startingDeadlineSeconds: 900
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      # One retry. The route is resilient per-user (a failure for one recipient
+      # doesn't abort the run), so a retry only helps for whole-request failures
+      # like a rollout restart mid-call.
+      backoffLimit: 1
+
+      # Hard stop well under a week so a hung request can never overlap the next
+      # scheduled run.
+      activeDeadlineSeconds: 900
+
+      template:
+        metadata:
+          labels:
+            app: quikinsight
+            component: weekly-report
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.10.1
+              env:
+                - name: CRON_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      # Must be the SAME secret the quikinsight Deployment reads
+                      # CRON_SECRET from — the route compares them directly.
+                      # Adjust name/key to match your existing secret.
+                      name: quikinsight-secrets
+                      key: CRON_SECRET
+                - name: TARGET_URL
+                  # In-cluster call: skips ingress/TLS and keeps the secret off
+                  # the public path. Replace `quikinsight` / `80` with the
+                  # Service name and port from quikinsight-deployment.yaml.
+                  # To go through the public host instead, use:
+                  #   https://uatinsight.quikit.ai/api/cron/weekly-report
+                  value: "http://quikinsight.quikit.svc.cluster.local:80/api/cron/weekly-report"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  # --fail-with-body: non-2xx exits non-zero (so the Job is
+                  # marked Failed and shows up in alerting) while still printing
+                  # the response, which carries the sent/skipped/failed counts.
+                  curl --fail-with-body \
+                       --silent --show-error \
+                       --max-time 600 \
+                       --retry 2 --retry-delay 30 --retry-connrefused \
+                       -H "Authorization: Bearer ${CRON_SECRET}" \
+                       "${TARGET_URL}"
+                  echo
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
