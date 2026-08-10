@@ -18,6 +18,7 @@ export function OPTIONS(): Response {
  * fails silently with OAUTH_CALLBACK_ERROR before calling userinfo.
  */
 
+
 export async function GET(request: NextRequest) {
   // Prefer NEXTAUTH_URL as the canonical issuer; fall back to request origin
   // for local dev. The `iss` claim in id_tokens uses the same value
