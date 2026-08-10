@@ -297,7 +297,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  /* Rounded square, not a circle — 20% (not a fixed --qc-r-* token) so the
+     roundedness stays proportional across the avatar's many render sizes. */
+  border-radius: 20%;
   overflow: hidden;
 }
 .qc-avatar--group .qc-avatar__inner {
@@ -671,7 +673,7 @@ body {
 .qc-avatar-stack > * {
   margin-left: -6px;
   border: 2px solid var(--qc-surface);
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-pinned-banner {
   display: flex;
@@ -709,7 +711,7 @@ body {
 .qc-typing__avatars > * {
   margin-left: -6px;
   border: 2px solid var(--qc-surface);
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-typing__text {
   display: inline-flex;
@@ -3498,7 +3500,7 @@ body {
   border: none;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-avatar-btn:focus-visible {
   outline: 2px solid var(--qc-accent);
@@ -6105,9 +6107,6 @@ body {
   background: var(--qc-surface-2);
   border-left-color: transparent;
 }
-.qc-card .qc-chan-row .qc-avatar__inner {
-  border-radius: 20%;
-}
 .qc-chan-toprow {
   display: flex;
   align-items: center;
@@ -6183,9 +6182,6 @@ body {
   flex: 1;
   min-width: 0;
 }
-.qc-convo-head__id .qc-avatar__inner {
-  border-radius: 20%;
-}
 .qc-card .qc-convo-head__actions .qc-iconbtn {
   border: 0.5px solid var(--qc-border);
   border-radius: var(--qc-r-md);
@@ -6220,9 +6216,6 @@ body {
   padding: 6px 4px 18px;
   margin-bottom: 4px;
   border-bottom: 0.5px solid var(--qc-border);
-}
-.qc-drawer-hero .qc-avatar__inner {
-  border-radius: 20%;
 }
 .qc-drawer-hero__name {
   margin-top: 6px;

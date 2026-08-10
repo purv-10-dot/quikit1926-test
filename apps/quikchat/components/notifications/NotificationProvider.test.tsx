@@ -65,12 +65,15 @@ const opener = vi.fn();
 // Exposes provider state directly via testids instead of through a consumer
 // UI (the bell popover used to be that UI; it's gone) — assertions here are
 // about NotificationProvider's own state/behavior, not any particular render.
-function Harness() {
+function Harness({ activeChannel = null }: { activeChannel?: string | null }) {
   const n = useNotifications();
   useEffect(() => {
     n.attachClient(fakeClient);
     n.registerChannelOpener(opener);
   }, [n]);
+  useEffect(() => {
+    n.setActiveChannel(activeChannel);
+  }, [n, activeChannel]);
   return (
     <>
       <span data-testid="unread-count">{n.unreadCount}</span>
@@ -123,11 +126,11 @@ const SEED: NotificationDto[] = [
   }),
 ];
 
-function renderProvider() {
+function renderProvider(activeChannel: string | null = null) {
   return render(
     <ToastProvider>
       <NotificationProvider>
-        <Harness />
+        <Harness activeChannel={activeChannel} />
       </NotificationProvider>
     </ToastProvider>,
   );
@@ -355,5 +358,55 @@ describe("inbound realtime + toast/OS routing", () => {
     expect(screen.getByTestId("feed-previews").textContent).toContain("muted row");
     // Unread count stays at the seeded 2 (no bump for a read row).
     expect(screen.getByTestId("unread-count").textContent).toBe("2");
+  });
+});
+
+describe("open-channel suppression", () => {
+  it("focused + open channel: no toast, no unread bump, and syncs the row as read server-side", async () => {
+    web.focused = true;
+    renderProvider("c1"); // c1 is the "open" channel
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("2"));
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", channelId: "c1", preview: "already looking at this" }) as NotificationRealtimePayload,
+      );
+    });
+    // Still lands in the feed (history is preserved)...
+    expect(screen.getByTestId("feed-previews").textContent).toContain("already looking at this");
+    // ...but neither the unread count nor a toast shows for it.
+    expect(screen.getByTestId("unread-count").textContent).toBe("2");
+    expect(screen.queryByText("already looking at this")).not.toBeInTheDocument();
+    // Server row is reconciled so a later full refetch doesn't resurrect it unread.
+    expect(api.markNotificationsReadApi).toHaveBeenCalledWith(["9"]);
+  });
+
+  it("focused + a DIFFERENT channel: toasts and bumps the count as usual", async () => {
+    web.focused = true;
+    renderProvider("some-other-channel");
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("2"));
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", channelId: "c1", preview: "different channel toast" }) as NotificationRealtimePayload,
+      );
+    });
+    expect(await screen.findByText("different channel toast")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("3"));
+    expect(api.markNotificationsReadApi).not.toHaveBeenCalled();
+  });
+
+  it("unfocused: still fires the OS notification even though the channel is 'open'", async () => {
+    web.focused = false;
+    web.permission = "granted";
+    renderProvider("c1");
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", channelId: "c1", desktop: true, preview: "unfocused" }) as NotificationRealtimePayload,
+      );
+    });
+    expect(web.fire).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("unfocused")).not.toBeInTheDocument();
   });
 });

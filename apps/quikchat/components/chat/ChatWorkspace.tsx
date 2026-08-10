@@ -144,6 +144,13 @@ export function ChatWorkspace({
   activeIdRef.current = activeId;
   const clientRef = useRef<RealtimeClient | null>(null);
 
+  // Tell the bell which channel is open so an inbound notification for it (tab
+  // focused) is suppressed instead of toasting/bumping the unread count — the
+  // user is already looking at it.
+  useEffect(() => {
+    notifications.setActiveChannel(activeId);
+  }, [activeId, notifications.setActiveChannel]);
+
   // Check for active calls on mount (rejoin after refresh)
   useEffect(() => {
     void fetchActiveCall().then((call) => {
@@ -221,6 +228,28 @@ export function ChatWorkspace({
     );
   }, []);
 
+  // Debounced per-channel read advance: bumpChannelList already zeroes the
+  // active channel's unread count LOCALLY on each inbound message, but the
+  // server's `lastReadAt` cutoff only moves on the mark-read PATCH fired once
+  // at channel-open. Left alone, any later refetch of ["channels"] (window
+  // focus, or the invalidate below for an unrelated new channel) pulls the
+  // server's real — and by then stale — count back in, resurrecting the badge
+  // for a channel the user never left. Re-firing the PATCH on each arrival
+  // while the channel stays open keeps the server truth current too. Coalesced
+  // like advanceDelivered so a burst of messages is one PATCH, not one each.
+  const readTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const advanceReadForOpenChannel = useCallback((channelId: string) => {
+    const timers = readTimers.current;
+    if (timers.has(channelId)) return; // already scheduled
+    timers.set(
+      channelId,
+      setTimeout(() => {
+        timers.delete(channelId);
+        void markChannelReadApi(channelId).catch(() => undefined);
+      }, 400),
+    );
+  }, []);
+
   // --- realtime cache merge ---
   const onMessage = useCallback(
     (dto: MessageDto) => {
@@ -251,8 +280,11 @@ export function ChatWorkspace({
       }
       // Our client received someone else's message → mark it delivered.
       if (dto.senderId && dto.senderId !== currentUserId) advanceDelivered(dto.channelId);
+      // The channel stays open through this arrival → keep the server's
+      // lastReadAt current (see advanceReadForOpenChannel above).
+      if (dto.channelId === activeIdRef.current) advanceReadForOpenChannel(dto.channelId);
     },
-    [qc, currentUserId, advanceDelivered],
+    [qc, currentUserId, advanceDelivered, advanceReadForOpenChannel],
   );
 
   const onPatch = useCallback(
@@ -936,10 +968,13 @@ export function ChatWorkspace({
 
   useEffect(() => {
     const timers = deliveredTimers.current;
+    const readTs = readTimers.current;
     return () => {
       assistAbort.current?.abort();
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
+      for (const t of readTs.values()) clearTimeout(t);
+      readTs.clear();
     };
   }, []);
 

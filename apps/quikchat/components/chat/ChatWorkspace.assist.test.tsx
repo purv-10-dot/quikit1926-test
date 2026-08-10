@@ -125,6 +125,7 @@ vi.mock("@/components/notifications/NotificationProvider", () => ({
     requestOsPermission: vi.fn(),
     attachClient: vi.fn(),
     registerChannelOpener: vi.fn(),
+    setActiveChannel: vi.fn(),
   }),
 }));
 

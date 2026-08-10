@@ -61,6 +61,7 @@ vi.mock("@/components/notifications/NotificationProvider", () => ({
     requestOsPermission: vi.fn(),
     attachClient: vi.fn(),
     registerChannelOpener: vi.fn(),
+    setActiveChannel: vi.fn(),
   }),
 }));
 
@@ -207,6 +208,54 @@ describe("ChatWorkspace group-live (new-channel first message)", () => {
     // onMessage saw an unknown channel → invalidated ["channels"] → refetch →
     // the group row appears live.
     expect(await screen.findByText("Team Rocket")).toBeInTheDocument();
+  });
+});
+
+describe("ChatWorkspace read-advance while the channel stays open", () => {
+  it("re-fires the mark-read PATCH on a later message for the still-open channel", async () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "New direct message" }));
+    fireEvent.click(await screen.findByText("Bob"));
+    fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
+    await waitFor(() => expect(joinSpy).toHaveBeenCalledWith("new1"));
+    await screen.findByLabelText("Message");
+
+    const readPatchCount = () =>
+      vi
+        .mocked(global.fetch)
+        .mock.calls.filter(
+          ([url, init]) =>
+            String(url).includes("/api/channels/new1/read") &&
+            (init as RequestInit | undefined)?.method === "PATCH",
+        ).length;
+
+    // Opening the channel already fired one (selectChannel → markChannelReadApi).
+    const openedCount = readPatchCount();
+    expect(openedCount).toBeGreaterThanOrEqual(1);
+
+    // A later message arrives while "new1" is still open — the server's
+    // lastReadAt must keep advancing so a future ["channels"] refetch doesn't
+    // resurrect a stale unread count for it (see advanceReadForOpenChannel).
+    act(() => {
+      fireClientEvent("message", {
+        id: "m-new1-1",
+        channelId: "new1",
+        senderId: "u-bob",
+        actorType: "human",
+        type: "Text",
+        content: "still here?",
+        data: null,
+        parentMessageId: null,
+        parentPreview: null,
+        isPinned: false,
+        reactions: [],
+        mentions: [],
+        createdAt: new Date().toISOString(),
+        editedAt: null,
+      });
+    });
+
+    await waitFor(() => expect(readPatchCount()).toBeGreaterThan(openedCount), { timeout: 1000 });
   });
 });
 
