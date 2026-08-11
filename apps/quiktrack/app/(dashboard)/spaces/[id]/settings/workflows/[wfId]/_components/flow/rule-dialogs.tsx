@@ -131,9 +131,9 @@ export function AddRuleDialog({
         </>
       }
     >
-      <div className="flex min-h-[24rem]">
+      <div className="flex h-[60vh] min-h-[24rem]">
         {/* Rule-type rail */}
-        <div className="w-56 shrink-0 border-r border-gray-200 px-3 py-4">
+        <div className="w-56 shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-4">
           <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Rule types</div>
           {RULE_BUCKETS.map((b) => (
             <button
@@ -161,7 +161,7 @@ export function AddRuleDialog({
             />
           </div>
           {activeBucket && <p className="mb-3 text-xs text-gray-500">{activeBucket.blurb}</p>}
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-1 py-1">
             {list.map((m) => (
               <button
                 key={m.type}
