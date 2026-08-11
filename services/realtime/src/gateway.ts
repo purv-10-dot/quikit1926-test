@@ -59,6 +59,14 @@ interface SocketBucket {
   resetAt: number;
 }
 
+/**
+ * Re-send `presence_snapshot` every Nth heartbeat. The client heartbeats every
+ * 15s (`createRealtimeClient`), so 4 puts the re-sync at ~60s. Piggybacking on
+ * traffic that already exists means no server-side timer to own and nothing left
+ * running when the client goes away.
+ */
+export const PRESENCE_RESYNC_EVERY = 4;
+
 export interface Gateway {
   io: IOServer;
   httpServer: HttpServer;
@@ -156,11 +164,60 @@ export function createGateway(opts: GatewayOptions): Gateway {
     logger.info({ socketId: socket.id, orgId, userId }, "ws connect");
     metrics.connections.inc();
 
+    // Populated below; `broadcastPresence` reads it through the closure so the
+    // disconnect path uses whatever rooms we had managed to join.
+    let channelIds: string[] = [];
+
+    const broadcastPresence = (status: "online" | "offline", lastSeen?: string) =>
+      broadcastConnectivity(io, orgId, userId, channelIds, status, lastSeen);
+
+    /** Has `markOnline`'s `sadd` landed for THIS socket? Gates the release. */
+    let presenceAdded = false;
+
+    const releasePresence = async (): Promise<void> => {
+      if (!presence) return;
+      try {
+        const { lastSocket, lastSeen } = await markOffline(presence, orgId, userId, socket.id);
+        if (lastSocket) broadcastPresence("offline", lastSeen);
+      } catch {
+        // best-effort
+      }
+    };
+
+    // --- disconnect: REGISTERED FIRST, before any await ---
+    //
+    // This listener used to be registered at the BOTTOM of this handler, after
+    // the room joins and four sequential DB round-trips below. Socket.IO emits
+    // `disconnect` once; a socket that died inside that window was already in
+    // the presence set (markOnline's `sadd` runs early) but never got a listener
+    // to take it back out. The id then sat in the set forever — not even ageing
+    // out, because every LATER socket's `pexpire` refreshed the TTL under it. So
+    // the user's real last tab would close, `scard` would still see the orphan,
+    // `lastSocket` would be false, and no `presence:lastseen:` write and no
+    // `offline` broadcast ever happened. That is permanent presence corruption
+    // from a sub-second socket, and this app churns them: view switches tear the
+    // client down, and React StrictMode double-invokes the effect in dev.
+    //
+    // Registering it here closes the window rather than compensating for it —
+    // there is no reconciliation sweep, because there is nothing left to
+    // reconcile.
+    socket.on("disconnect", async (reason) => {
+      logger.info({ socketId: socket.id, orgId, userId, reason }, "ws disconnect");
+      metrics.connections.dec();
+      updateRoomsGauge();
+      // Firing mid-setup is the case this reordering exists for. Do NOT release
+      // here when markOnline hasn't landed yet: our `srem` would race the
+      // in-flight `sadd` and lose, re-creating the exact orphan we just fixed.
+      // The connect path re-checks `socket.disconnected` immediately after
+      // markOnline and releases there instead, so the id is always removed by
+      // exactly one of the two paths.
+      if (presenceAdded) await releasePresence();
+    });
+
     // Personal room (fan-out targeting + channel_created joins).
     await socket.join(userRoom(orgId, userId));
 
     // Auto-join current channel rooms (read-only, org-scoped).
-    let channelIds: string[] = [];
     try {
       channelIds = await listChannelIdsForMember(orgId, userId);
       for (const id of channelIds) await socket.join(channelRoom(orgId, id));
@@ -170,14 +227,52 @@ export function createGateway(opts: GatewayOptions): Gateway {
     }
     updateRoomsGauge();
 
-    const broadcastPresence = (status: "online" | "offline", lastSeen?: string) =>
-      broadcastConnectivity(io, orgId, userId, channelIds, status, lastSeen);
+    /**
+     * Who is online in this socket's channels, plus their durable set-status.
+     *
+     * Sent on connect AND re-sent periodically from the heartbeat (see below).
+     * `applySnapshot` on the client REPLACES its online set wholesale, so this
+     * is idempotent and self-correcting — a client that missed a transition is
+     * put right by the next one.
+     */
+    const sendPresenceSnapshot = async (): Promise<void> => {
+      if (!presence) return;
+      const candidates = await listMemberUserIdsForChannels(orgId, channelIds);
+      const online = await onlineUserIds(presence, orgId, candidates);
+      // Batched (single findMany) set-status read over the online candidates —
+      // never one query per user. The snapshot carries each online user's
+      // durable status so a fresh client renders the right dot immediately.
+      const statuses = await getPresenceStatuses(orgId, online);
+      const users = online.map((uid) => {
+        const s = statuses.get(uid);
+        return s
+          ? {
+              userId: uid,
+              status: s.status,
+              ...(s.statusMessage ? { statusMessage: s.statusMessage } : {}),
+              ...(s.statusExpiresAt ? { statusExpiresAt: s.statusExpiresAt } : {}),
+            }
+          : { userId: uid };
+      });
+      socket.emit("presence_snapshot", { users });
+    };
 
     // Presence: mark online (Redis), broadcast to shared-channel rooms only, and
     // seed this socket with a snapshot of who's already online in its channels.
     if (presence) {
       try {
         const { firstSocket } = await markOnline(presence, orgId, userId, socket.id, presenceTtl);
+        presenceAdded = true;
+
+        // The socket may have died while markOnline was in flight — the listener
+        // above deliberately declined to act on it. Undo our own `sadd` and stop:
+        // everything past this point (snapshot, heartbeat, join/leave, calling)
+        // belongs to a socket that no longer exists.
+        if (socket.disconnected) {
+          await releasePresence();
+          return;
+        }
+
         if (firstSocket) {
           broadcastPresence("online");
           // Seed observers with this user's DURABLE set-status on connect (read
@@ -200,45 +295,34 @@ export function createGateway(opts: GatewayOptions): Gateway {
             // best-effort seed
           }
         }
-        const candidates = await listMemberUserIdsForChannels(orgId, channelIds);
-        const online = await onlineUserIds(presence, orgId, candidates);
-        // Batched (single findMany) set-status read over the online candidates —
-        // never one query per user. The snapshot carries each online user's
-        // durable status so a fresh client renders the right dot immediately.
-        const statuses = await getPresenceStatuses(orgId, online);
-        const users = online.map((uid) => {
-          const s = statuses.get(uid);
-          return s
-            ? {
-                userId: uid,
-                status: s.status,
-                ...(s.statusMessage ? { statusMessage: s.statusMessage } : {}),
-                ...(s.statusExpiresAt ? { statusExpiresAt: s.statusExpiresAt } : {}),
-              }
-            : { userId: uid };
-        });
-        socket.emit("presence_snapshot", { users });
+        await sendPresenceSnapshot();
       } catch {
-        // presence is best-effort; the socket still works without it
+        // presence is best-effort; the socket still works without it. markOnline
+        // may or may not have got its `sadd` in before throwing, so assume it did
+        // and let the disconnect path clean up — `srem` of a member that was
+        // never added is a harmless no-op.
+        presenceAdded = true;
+        if (socket.disconnected) void releasePresence();
       }
+
+      // Heartbeat: refresh the TTL, and every RESYNC_EVERY beats re-send the
+      // snapshot so a client that missed a transition converges.
+      //
+      // CONVERGENT, NOT CORRECT: presence keys expire silently — a TTL lapse
+      // broadcasts nothing — so an observer can hold a stale `online` until the
+      // next re-sync lands. This bounds that staleness at roughly
+      // RESYNC_EVERY × the client's heartbeat interval (~60s at today's 15s);
+      // it does not make presence exact, and it is not a substitute for the
+      // disconnect ordering above.
+      let beats = 0;
       socket.on("heartbeat", () => {
-        void refresh(presence, orgId, userId, presenceTtl).catch(() => undefined);
+        void refresh(presence, orgId, userId, socket.id, presenceTtl).catch(() => undefined);
+        beats += 1;
+        if (beats % PRESENCE_RESYNC_EVERY === 0) {
+          void sendPresenceSnapshot().catch(() => undefined);
+        }
       });
     }
-
-    socket.on("disconnect", async (reason) => {
-      logger.info({ socketId: socket.id, orgId, userId, reason }, "ws disconnect");
-      metrics.connections.dec();
-      updateRoomsGauge();
-      if (presence) {
-        try {
-          const { lastSocket, lastSeen } = await markOffline(presence, orgId, userId, socket.id);
-          if (lastSocket) broadcastPresence("offline", lastSeen);
-        } catch {
-          // best-effort
-        }
-      }
-    });
 
     // Signal that rooms are joined (clients/tests wait on this before relying
     // on fan-out delivery).
@@ -318,7 +402,15 @@ export function createGateway(opts: GatewayOptions): Gateway {
         // the incoming toast). Rooms built from the record's orgId — never a payload.
         io.to(userRoom(rec.orgId, rec.initiatorId)).emit("call:timed_out", { callId: rec.callId });
         io.to(userRoom(rec.orgId, rec.targetUserId)).emit("call:timed_out", { callId: rec.callId });
-        logger.info({ callId: rec.callId }, "call ringing timed out (swept)");
+        logger.info(
+          {
+            callId: rec.callId,
+            orgId: rec.orgId,
+            initiatorId: rec.initiatorId,
+            targetUserId: rec.targetUserId,
+          },
+          "call ringing timed out (swept)",
+        );
       },
       opts.sweepIntervalMs,
     );
