@@ -21,8 +21,10 @@ export const POST = withSuperAdminAuth<{ id: string }>(async (auth, request: Nex
       );
     }
 
-    // Check if OAuth client already exists for this app
-    const existingClient = await db.oAuthClient.findUnique({ where: { appId: id } });
+    // Check if a first-party OAuth client already exists for this app.
+    // A dynamically self-registered client (purpose "dynamic") does not
+    // block this — the two coexist against the same appId.
+    const existingClient = await db.oAuthClient.findFirst({ where: { appId: id, purpose: "first_party" } });
     if (existingClient) {
       return NextResponse.json(
         { success: false, error: "OAuth client already exists for this app" },
@@ -41,6 +43,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async (auth, request: Nex
     const oauthClient = await db.oAuthClient.create({
       data: {
         appId: id,
+        purpose: "first_party",
         clientId,
         clientSecret: hashedSecret,
         redirectUris,
@@ -83,7 +86,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async (auth, _request: N
   try {
     const { id } = params;
 
-    const oauthClient = await db.oAuthClient.findUnique({ where: { appId: id } });
+    const oauthClient = await db.oAuthClient.findFirst({ where: { appId: id, purpose: "first_party" } });
     if (!oauthClient) {
       return NextResponse.json(
         { success: false, error: "OAuth client not found for this app" },
@@ -95,7 +98,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async (auth, _request: N
     const hashedSecret = await bcrypt.hash(plainSecret, 12);
 
     await db.oAuthClient.update({
-      where: { appId: id },
+      where: { id: oauthClient.id },
       data: { clientSecret: hashedSecret },
     });
 
@@ -126,7 +129,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async (auth, _request: 
   try {
     const { id } = params;
 
-    const oauthClient = await db.oAuthClient.findUnique({ where: { appId: id } });
+    const oauthClient = await db.oAuthClient.findFirst({ where: { appId: id, purpose: "first_party" } });
     if (!oauthClient) {
       return NextResponse.json(
         { success: false, error: "OAuth client not found for this app" },
@@ -134,7 +137,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async (auth, _request: 
       );
     }
 
-    await db.oAuthClient.delete({ where: { appId: id } });
+    await db.oAuthClient.delete({ where: { id: oauthClient.id } });
 
     logAudit({
       action: "delete",
