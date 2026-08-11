@@ -386,6 +386,22 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   `<video>` elements that can't attach a header.
 - **Scroll-to-divider on open** — Teams/WhatsApp scroll to the unread line; a
   divider above a large unread block is currently off-screen.
+- **`PATCH /api/org/roles/[id]` can clear the LAST default role** — sending
+  `isDefault: false` for the only default is accepted, leaving the org with zero
+  defaults. That is not a cosmetic gap: zero defaults is precisely the state that
+  makes the Admin Portal's invite modal preselect **admin** for every newly
+  invited user (it falls back to `data[0]` ordered `isSystem DESC`). Today
+  `convergeDefaultRole` repairs it on the next seed pass, so the window is up to
+  the 5-minute cache TTL — but the route should refuse the write rather than rely
+  on a background repair. Fix is a guard in the PATCH handler (409 when the
+  target is the last default and `isDefault: false`). The queued partial unique
+  index does NOT cover this: it prevents two defaults, not zero.
+- **Committed DDL for QuikChat has never existed** — `create_app_quikasset.sql`
+  and `create_app_quikfinance.sql` are in `packages/database/sql/`; there is no
+  `create_app_quikchat.sql`. The gap was never "recent migrations went missing" —
+  a fresh database has never been reproducible from this repo. The three queued
+  SQL files (last-seen privacy, RBAC substrate, one-default index) cover 4 of the
+  22 tables; the remaining 18 are the artifact that actually closes it.
 - **`postCallSummary` silent branches** — "call not found" / "no channel to post
   to" return with no log line.
 - **`timeout-sweep.ts` uses `console.error`** — bypasses pino.

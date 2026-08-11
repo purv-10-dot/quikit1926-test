@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-// Registers vi.mock for "@/lib/db" + "@quikit/database" (hoisted).
+// Registers vi.mock for "@/lib/db" + "@quikit/database" (hoisted). That mock
+// re-exports the real Prisma namespace, so PrismaClientKnownRequestError below
+// is the same class the production code instanceof-checks.
 import { mockDb, resetMockDb } from "../../__tests__/helpers/mockDb";
+import { Prisma } from "@quikit/database";
 import { allPermissionPairs } from "./permissionsRegistry";
 import { seedAllDefaultRoles, ensureSeeded, ensureUserRole, collapseToLatestRole } from "./seed";
 
@@ -9,12 +12,17 @@ const ORG = "org-1";
 /** Configure the deep mock for a "fresh org, no existing members" seed run. */
 function freshOrgMocks() {
   mockDb.app.findUnique.mockResolvedValue({ id: "app-qc" } as never);
-  mockDb.qcAppRole.findFirst.mockResolvedValue(null as never);
+  mockDb.qcAppRole.findUnique.mockResolvedValue(null as never);
   mockDb.qcAppRole.updateMany.mockResolvedValue({ count: 0 } as never);
+  mockDb.qcAppRole.update.mockResolvedValue({ id: "role-Member" } as never);
   mockDb.qcAppRole.create.mockImplementation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (args: any) => Promise.resolve({ id: `role-${args.data.name}` }) as never,
   );
+  // convergeDefaultRole's read. Default: the Member create already set the flag,
+  // so exactly one default exists and convergence is a no-op. Tests that
+  // exercise the repair branches override this.
+  mockDb.qcAppRole.findMany.mockResolvedValue([{ id: "role-Member" }] as never);
   mockDb.qcRolePermission.count.mockResolvedValue(0 as never);
   mockDb.qcRolePermission.createMany.mockResolvedValue({ count: 0 } as never);
   // Backfill sees every pair already present → never re-grants (keeps createMany
@@ -88,7 +96,8 @@ describe("seedAllDefaultRoles", () => {
 
   it("is idempotent — existing roles with grants are not re-created or re-granted", async () => {
     mockDb.app.findUnique.mockResolvedValue({ id: "app-qc" } as never);
-    mockDb.qcAppRole.findFirst.mockResolvedValue({ id: "role-existing" } as never);
+    mockDb.qcAppRole.findUnique.mockResolvedValue({ id: "role-existing" } as never);
+    mockDb.qcAppRole.findMany.mockResolvedValue([{ id: "role-existing" }] as never);
     mockDb.qcRolePermission.count.mockResolvedValue(5 as never); // already has grants
     mockDb.qcRolePermission.findMany.mockResolvedValue(allPermissionPairs() as never);
     mockDb.userAppAccess.findMany.mockResolvedValue([] as never);
@@ -97,6 +106,105 @@ describe("seedAllDefaultRoles", () => {
 
     expect(mockDb.qcAppRole.create).not.toHaveBeenCalled();
     expect(mockDb.qcRolePermission.createMany).not.toHaveBeenCalled();
+  });
+
+  // REGRESSION: seedRole used to demote every isDefault row BEFORE creating,
+  // which is what cleared a concurrent pass's freshly-set flag. Nothing in the
+  // seed path may issue a blanket demote any more — convergence owns the flag.
+  it("never issues a blanket isDefault demote (the write that lost the flag)", async () => {
+    freshOrgMocks();
+    await seedAllDefaultRoles(ORG);
+
+    const demotes = mockDb.qcAppRole.updateMany.mock.calls.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (c: any) => c[0]?.where?.isDefault === true,
+    );
+    expect(demotes).toHaveLength(0);
+  });
+});
+
+/**
+ * The invariant: exactly one default role per (orgId, appId).
+ *
+ * WHAT THESE PROVE — and it matters, because the bug they fix is a race:
+ * these assert BRANCH LOGIC only. Given a DB state, which writes are issued.
+ * They prove nothing about serialization — a mocked Prisma enforces no unique
+ * index and interleaves no transactions, so no test here can show that two real
+ * passes collide the way they did in production. Convergence is what makes
+ * correctness independent of winning the race; these tests check that the
+ * repair rule is right, not that the race is gone.
+ */
+describe("convergeDefaultRole (exactly one default per org+app)", () => {
+  it("repairs ZERO defaults by promoting the seeded Member role", async () => {
+    freshOrgMocks();
+    mockDb.qcAppRole.findMany.mockResolvedValue([] as never); // the live bug state
+
+    await seedAllDefaultRoles(ORG);
+
+    expect(mockDb.qcAppRole.update).toHaveBeenCalledWith({
+      where: { id: "role-Member" },
+      data: { isDefault: true },
+    });
+  });
+
+  it("collapses MULTIPLE defaults to the oldest, clearing the rest", async () => {
+    freshOrgMocks();
+    // Ordered createdAt ASC by the query — first row is the keeper.
+    mockDb.qcAppRole.findMany.mockResolvedValue([
+      { id: "role-oldest" },
+      { id: "role-newer" },
+      { id: "role-newest" },
+    ] as never);
+
+    await seedAllDefaultRoles(ORG);
+
+    expect(mockDb.qcAppRole.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["role-newer", "role-newest"] } },
+      data: { isDefault: false },
+    });
+    // The keeper is never rewritten.
+    expect(mockDb.qcAppRole.update).not.toHaveBeenCalled();
+  });
+
+  // THE PHASE 3 GUARD. An admin picking a non-Member default via
+  // PATCH /api/org/roles/[id] must survive every later seed pass. If this ever
+  // fails we have traded a privilege-escalation bug for a config-clobbering one.
+  it("leaves a deliberate single default untouched, even when it is not Member", async () => {
+    freshOrgMocks();
+    mockDb.qcAppRole.findMany.mockResolvedValue([{ id: "role-Guest" }] as never);
+
+    await seedAllDefaultRoles(ORG);
+
+    expect(mockDb.qcAppRole.update).not.toHaveBeenCalled();
+    expect(mockDb.qcAppRole.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("seedRole — concurrent create (P2002)", () => {
+  it("re-reads the winner's row instead of failing the pass", async () => {
+    freshOrgMocks();
+    // Every role: the pre-read misses, the create loses the race, the re-read
+    // returns the winner. mockResolvedValueOnce chains per call, so drive it
+    // from call order instead: miss, then winner, alternating.
+    let call = 0;
+    mockDb.qcAppRole.findUnique.mockImplementation(
+      () => Promise.resolve(call++ % 2 === 0 ? null : { id: "role-winner" }) as never,
+    );
+    mockDb.qcAppRole.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", {
+        code: "P2002",
+        clientVersion: "test",
+      }) as never,
+    );
+
+    await expect(seedAllDefaultRoles(ORG)).resolves.toBeTruthy();
+  });
+
+  it("rethrows a non-P2002 create failure rather than masking it", async () => {
+    freshOrgMocks();
+    mockDb.qcAppRole.create.mockRejectedValue(new Error("connection reset") as never);
+
+    await expect(seedAllDefaultRoles(ORG)).rejects.toThrow("connection reset");
   });
 });
 
@@ -127,6 +235,27 @@ describe("backfillExistingMembers (DECISION 1)", () => {
     const roleByUser = new Map(rows.map((r: { userId: string; roleId: string }) => [r.userId, r.roleId]));
     expect(roleByUser.get("u1")).toBe("role-admin");
     expect(roleByUser.get("u2")).toBe("role-Member");
+  });
+
+  // Same regression as ensureUserRole's, on the Phase-1 backfill path. The two
+  // classifiers must agree or a legacy-admin owner's role depends on which one
+  // happened to run first.
+  it("promotes a LEGACY 'admin' membership role to admin", async () => {
+    freshOrgMocks();
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u-legacy" }] as never);
+    mockDb.qcUserAppRole.findMany.mockResolvedValue([] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([
+      { userId: "u-legacy", role: "admin" },
+    ] as never);
+    mockDb.user.findMany.mockResolvedValue([
+      { id: "u-legacy", isSuperAdmin: false },
+    ] as never);
+
+    await seedAllDefaultRoles(ORG);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (mockDb.qcUserAppRole.createMany.mock.calls[0][0] as any).data;
+    expect(rows[0].roleId).toBe("role-admin");
   });
 
   it("promotes a platform super-admin (isSuperAdmin) to admin", async () => {
@@ -189,11 +318,47 @@ describe("ensureSeeded", () => {
     const org = "org-ensure-unique";
 
     await ensureSeeded(org);
-    const afterFirst = mockDb.qcAppRole.findFirst.mock.calls.length;
+    const afterFirst = mockDb.qcAppRole.findUnique.mock.calls.length;
     expect(afterFirst).toBeGreaterThan(0);
 
     await ensureSeeded(org); // cache hit — no further DB work
-    expect(mockDb.qcAppRole.findFirst.mock.calls.length).toBe(afterFirst);
+    expect(mockDb.qcAppRole.findUnique.mock.calls.length).toBe(afterFirst);
+  });
+
+  // SINGLE-FLIGHT. Without this, N concurrent requests on a cold process all
+  // miss the cache and all run a full pass — which IS the cross-pass
+  // concurrency that lost the isDefault flag and tripped P2002.
+  it("shares ONE pass across concurrent callers for the same org", async () => {
+    freshOrgMocks();
+    const org = "org-single-flight";
+
+    await Promise.all([ensureSeeded(org), ensureSeeded(org), ensureSeeded(org)]);
+
+    // Four roles seeded exactly once, not three times over.
+    expect(mockDb.qcAppRole.create).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not conflate different orgs in the in-flight map", async () => {
+    freshOrgMocks();
+    await Promise.all([ensureSeeded("org-sf-a"), ensureSeeded("org-sf-b")]);
+    expect(mockDb.qcAppRole.create).toHaveBeenCalledTimes(8); // 4 per org
+  });
+
+  // A failed pass used to cache NOTHING — `seededOrgs.set` was the last
+  // statement of seedAllDefaultRoles — so every later request re-ran the whole
+  // seed and re-entered the same race, silently. Failure must now be recorded.
+  it("swallows a failed pass but caches a backoff so it does not retry per-request", async () => {
+    freshOrgMocks();
+    mockDb.qcAppRole.create.mockRejectedValue(new Error("db down") as never);
+    const org = "org-seed-fails";
+
+    await expect(ensureSeeded(org)).resolves.toBeUndefined();
+    const afterFirst = mockDb.qcAppRole.create.mock.calls.length;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    // Within the backoff window the next caller must NOT re-run the pass.
+    await ensureSeeded(org);
+    expect(mockDb.qcAppRole.create.mock.calls.length).toBe(afterFirst);
   });
 });
 
@@ -234,6 +399,28 @@ describe("ensureUserRole (per-user seed-before-check)", () => {
     await ensureUserRole("u2", ORG);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data.roleId).toBe("role-admin");
+  });
+
+  // REGRESSION: the classifier hardcoded "org_admin"/"super_admin" and missed
+  // the LEGACY "admin" membership role. ROLE_HIERARCHY["admin"] === 5, so
+  // createRequireAdmin admitted such a user to /settings/roles while this bound
+  // them to Member — two gates, two answers for the same person.
+  it("binds admin to a LEGACY 'admin' membership role", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    await ensureUserRole("u-legacy", ORG);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data.roleId).toBe("role-admin");
+  });
+
+  it("still binds Member for a non-admin tier (app_admin is NOT org-wide admin)", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "app_admin" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    await ensureUserRole("u-appadmin", ORG);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data.roleId).toBe("role-Member");
   });
 
   it("binds admin to a platform super-admin (isSuperAdmin) with no role", async () => {
