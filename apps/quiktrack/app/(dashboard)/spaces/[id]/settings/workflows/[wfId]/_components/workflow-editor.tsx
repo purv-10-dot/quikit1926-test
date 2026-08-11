@@ -587,16 +587,33 @@ function EditorBody({
         <EditRuleDialog
           meta={rulePick.meta}
           initialConfig={rulePick.index != null ? selectedTransition.rules[rulePick.index]?.config : undefined}
-          transitionName={selectedTransition.name}
-          fromNames={selectedTransition.fromStatusIds.map((id) => statusMeta.get(id)?.name ?? id)}
-          toName={statusMeta.get(selectedTransition.toStatusId)?.name ?? selectedTransition.toStatusId}
+          transitions={ed.draft.transitions.map((t) => ({
+            id: t.id,
+            name: t.name,
+            fromNames: t.fromStatusIds.map((id) => statusMeta.get(id)?.name ?? id),
+            toName: statusMeta.get(t.toStatusId)?.name ?? t.toStatusId,
+          }))}
+          initialTransitionId={selectedTransition.id}
           resolutions={resolutions.data ?? []}
           statuses={pool.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
           members={members.data ?? []}
           screens={screens.data ?? []}
-          onSubmit={(rule) => {
-            if (rulePick.index != null) ed.updateRule(selectedTransition.id, rulePick.index, rule);
-            else ed.addRule(selectedTransition.id, rule);
+          onSubmit={(rule, targetId) => {
+            const movedTransition = targetId !== selectedTransition.id;
+            if (rulePick.index != null) {
+              if (movedTransition) {
+                // Rule reassigned to a different transition: remove from the
+                // original, add to the target.
+                ed.removeRule(selectedTransition.id, rulePick.index);
+                ed.addRule(targetId, rule);
+              } else {
+                ed.updateRule(selectedTransition.id, rulePick.index, rule);
+              }
+            } else {
+              ed.addRule(targetId, rule);
+            }
+            // Follow the rule to whichever transition it now lives on.
+            if (movedTransition) setSelection({ kind: "transition", transitionId: targetId });
           }}
           onDelete={
             rulePick.index != null
