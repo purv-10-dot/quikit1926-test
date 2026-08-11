@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardIssue, BoardStatus, EpicLite } from "./board-meta";
 import { STATUS_ICON, STATUS_ICON_CLASS } from "./board-meta";
 import { TaskCard } from "./task-card";
+import { DroppableColumnBody } from "./board-dnd";
 import { ColumnMenu } from "./column-menu";
 import type { ColumnInlineCreateMember } from "./column-inline-create";
 
@@ -200,8 +201,16 @@ export function BoardColumn({
   }, [members]);
   const Icon = STATUS_ICON(status?.category ?? "BACKLOG");
   const total = state.total || state.issues.length;
+  // @dnd-kit drop target for CARD moves: the column's primary statusId (the
+  // same id board-view feeds onColDrop). An unmapped board column (no status
+  // set) has no target → null, so cards can't be dropped onto it.
+  const dropStatusId =
+    (columnStatusIds && columnStatusIds.length > 0 ? columnStatusIds[0] : status?.id) ?? null;
 
   return (
+    // Native onDragOver/onDrop remain ONLY for the HTML5 column-header reorder
+    // (dataTransfer 'application/quiktrack-column'); CARD moves now go through
+    // the @dnd-kit droppable body below.
     <div
       className="group w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col max-h-full"
       onDragOver={dragHandlers?.onDragOver}
@@ -233,7 +242,7 @@ export function BoardColumn({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+      <DroppableColumnBody id={dropStatusId} className="flex-1 overflow-y-auto space-y-2 pr-1">
         {!state.loaded && (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, j) => (
@@ -268,7 +277,7 @@ export function BoardColumn({
             )}
           </div>
         )}
-      </div>
+      </DroppableColumnBody>
     </div>
   );
 }
