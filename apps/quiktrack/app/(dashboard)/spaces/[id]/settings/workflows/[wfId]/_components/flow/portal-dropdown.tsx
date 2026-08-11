@@ -24,6 +24,7 @@ export function PortalDropdown({
   multiple,
   placeholder = "Select option",
   usePills,
+  disabled,
 }: {
   options: DropdownOption[];
   selected: string[];
@@ -32,6 +33,8 @@ export function PortalDropdown({
   placeholder?: string;
   /** Render chosen values as colored pills instead of plain text. */
   usePills?: boolean;
+  /** When true, the trigger is greyed out and won't open the menu. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -85,8 +88,9 @@ export function PortalDropdown({
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex min-h-[38px] w-full items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-left text-sm focus:border-accent-500 focus:outline-none"
+        disabled={disabled}
+        onClick={() => { if (!disabled) setOpen((v) => !v); }}
+        className="flex min-h-[38px] w-full items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-left text-sm focus:border-accent-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-60"
       >
         <span className="flex flex-1 flex-wrap items-center gap-1">
           {selected.length === 0 ? (
