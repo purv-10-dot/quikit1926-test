@@ -23,7 +23,14 @@ import { TIER_HEX, TIER_UNKNOWN } from "../tierPalette";
 import type { CriticalNumberFrequency } from "@/lib/schemas/criticalNumberSchema";
 
 const CHART_W = 560;
-const CHART_H = 240;
+/**
+ * Aspect-ratio height (the SVG is `w-full h-auto` over a viewBox, so this sets
+ * the chart's PROPORTIONS, not a pixel height). `compact` — the in-card usage —
+ * gets a shorter, wider ratio so the card stays compact; the standalone chart in
+ * the detail modal keeps the taller original.
+ */
+const CHART_H_FULL = 240;
+const CHART_H_COMPACT = 150;
 /**
  * Minimum y-axis gutter. The ACTUAL gutter is computed per-render from the
  * widest tick label (see `PAD_LEFT` below) — this fixed 40 used to be the whole
@@ -99,6 +106,8 @@ export function ComboTrendChart({ record, compact = false }: Props) {
   );
 
   if (points.length < 2) return null;
+
+  const CHART_H = compact ? CHART_H_COMPACT : CHART_H_FULL;
 
   const rawMax = Math.max(record.targetValue, ...points.map((p) => p.value));
   const { ticks, axisMax } = niceTicks(rawMax);

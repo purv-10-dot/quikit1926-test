@@ -21,8 +21,9 @@ import type { PreviewCriticalNumber } from "./types";
 
 const PAGE_SIZE = 10;
 /** Below this, the body pads out with blank rows — reserves a consistent
- *  vertical footprint instead of the table looking collapsed at 1 row. */
-const MIN_VISIBLE_ROWS = 5;
+ *  vertical footprint instead of the table looking collapsed at 1 row.
+ *  Stays under PAGE_SIZE so a full page never gets padded. */
+const MIN_VISIBLE_ROWS = 8;
 
 /**
  * Relative column widths (converted to `%` below), applied via `<colgroup>`

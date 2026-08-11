@@ -123,9 +123,11 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
       ? Math.min(Math.max(current / record.targetValue, 0), 1)
       : 0;
 
-  // Donut geometry — same construction as AvgKPICard, bigger radius.
-  const SIZE = 208;
-  const STROKE = 16;
+  // Donut geometry — same construction as AvgKPICard, bigger radius. Sized so
+  // several cards fit on screen at once; the readout below still sets the
+  // minimum, so don't shrink much further without dropping the type scale too.
+  const SIZE = 132;
+  const STROKE = 11;
   const R = (SIZE - STROKE) / 2;
   const CIRC = 2 * Math.PI * R;
   const dash = pct * CIRC;
@@ -133,7 +135,7 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
+      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-100">
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-gray-900 truncate">{record.title}</h3>
           <p className="text-xs text-gray-500 mt-0.5 truncate">
@@ -150,7 +152,7 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
       </div>
 
       {/* Classification — category › sub-category, plus cadence */}
-      <div className="flex items-center gap-2 px-5 py-2.5 border-b border-gray-100 bg-gray-50/60">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50/60">
         <span className="text-[11px] text-gray-600 truncate">
           {record.categoryName ?? "Uncategorised"}
           {record.subCategoryName ? ` › ${record.subCategoryName}` : ""}
@@ -161,7 +163,7 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
       </div>
 
       {/* Gauge */}
-      <div className="px-5 py-6 flex flex-col items-center">
+      <div className="px-4 py-4 flex flex-col items-center">
         <div className="relative" style={{ width: SIZE, height: SIZE }}>
           <svg width={SIZE} height={SIZE} className="-rotate-90">
             <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="#f1f5f9" strokeWidth={STROKE} />
@@ -181,19 +183,19 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
           </svg>
           {/* Centre readout */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-4xl font-bold tracking-tight tabular-nums text-gray-900">
+            <span className="text-2xl font-bold tracking-tight tabular-nums text-gray-900">
               {current !== null && prefix && (
-                <span className="text-lg font-semibold text-gray-400">{prefix}</span>
+                <span className="text-sm font-semibold text-gray-400">{prefix}</span>
               )}
               {scaledFormat(current)}
               {current !== null && isScaled && (
-                <span className="text-lg font-semibold text-gray-400"> {record.targetScale}</span>
+                <span className="text-sm font-semibold text-gray-400"> {record.targetScale}</span>
               )}
               {current !== null && suffix && (
-                <span className="text-lg font-semibold text-gray-400">{suffix}</span>
+                <span className="text-sm font-semibold text-gray-400">{suffix}</span>
               )}
             </span>
-            <span className="text-xs text-gray-400 mt-1 tabular-nums">
+            <span className="text-[10px] text-gray-400 mt-0.5 tabular-nums">
               of {prefix}
               {scaledFormat(record.targetValue)}
               {isScaled && ` ${record.targetScale}`}
@@ -203,7 +205,7 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
         </div>
 
         {result.percentage !== null && (
-          <p className="mt-4 text-xs text-gray-500 tabular-nums">
+          <p className="mt-3 text-xs text-gray-500 tabular-nums">
             <span className="font-semibold text-gray-800">
               {Math.round(result.percentage)}%
             </span>{" "}
@@ -212,13 +214,13 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
         )}
 
         {!tier && result.reason && (
-          <p className="mt-4 text-xs text-gray-400">{REASON_COPY[result.reason] ?? "No status"}</p>
+          <p className="mt-3 text-xs text-gray-400">{REASON_COPY[result.reason] ?? "No status"}</p>
         )}
 
         <button
           type="button"
           onClick={onAddUpdate}
-          className="mt-5 inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-accent-700 bg-accent-50 border border-accent-200 rounded-lg hover:bg-accent-100 transition-colors"
+          className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-accent-700 bg-accent-50 border border-accent-200 rounded-lg hover:bg-accent-100 transition-colors"
         >
           <Plus className="h-3.5 w-3.5" /> Add past update
         </button>
@@ -227,8 +229,8 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
       {/* Trend — the list endpoint's batched `updates` include (last 8,
           oldest-first). Falls back to a placeholder below 2 points, since
           that's not enough to plot a line against. */}
-      <div className="border-t border-gray-100 px-5 py-4">
-        <div className="flex items-center gap-1.5 mb-2">
+      <div className="border-t border-gray-100 px-4 py-3">
+        <div className="flex items-center gap-1.5 mb-1.5">
           <TrendingUp className="h-3.5 w-3.5 text-gray-400" />
           <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
             Trend
@@ -246,7 +248,7 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
             }}
           />
         ) : (
-          <div className="h-28 rounded-lg bg-gray-50 border border-dashed border-gray-200 flex flex-col items-center justify-center gap-1.5 px-4 text-center">
+          <div className="h-20 rounded-lg bg-gray-50 border border-dashed border-gray-200 flex flex-col items-center justify-center gap-1.5 px-4 text-center">
             <TrendingUp className="h-5 w-5 text-gray-300" />
             <span className="text-xs text-gray-400">Log a couple of updates to see your trend here</span>
           </div>
