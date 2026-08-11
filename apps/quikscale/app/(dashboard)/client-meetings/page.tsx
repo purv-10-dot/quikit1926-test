@@ -107,12 +107,20 @@ export default function ClientMeetingsDashboardPage() {
     setLoading(true);
     try {
       const qs = new URLSearchParams({ clientId, mode });
-      if (mode === "weekly" && punchUserId) qs.set("punchInUserId", punchUserId);
+      if (mode === "weekly" && punchUserId) {
+        qs.set("punchInUserId", punchUserId);
+        // Scope the Member Punch-In query to the selected month — without
+        // this the backend fell back to the Performance tab's rolling
+        // 6-month window, so "Total Avg" reflected months the user never
+        // picked while the displayed rows were filtered to just this one.
+        qs.set("punchYear", String(punchYear));
+        qs.set("punchMonth", String(punchMonth));
+      }
       const res = await fetch(`/api/client-meetings/dashboard?${qs.toString()}`);
       const json = await res.json();
       if (json.success) setData(json.data);
     } finally { setLoading(false); }
-  }, [clientId, mode, punchUserId]);
+  }, [clientId, mode, punchUserId, punchYear, punchMonth]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -324,12 +332,7 @@ export default function ClientMeetingsDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.punchIn.weeks
-                      .filter(w => {
-                        const d = new Date(w.meetingDate);
-                        return d.getUTCFullYear() === punchYear && d.getUTCMonth() + 1 === punchMonth;
-                      })
-                      .map(w => (
+                    {data.punchIn.weeks.map(w => (
                       <tr key={w.meetingDate} className="border-b border-gray-100">
                         <td className="px-3 py-2 text-gray-700">{w.meetingDate}</td>
                         {[w.kpiWeeklyQTD, w.kpiCoding, w.priorityNotes, w.priorityStartEndDate, w.priorityColor].map((v, i) => {

@@ -2,7 +2,25 @@
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem \"c:\\\\workStation_3\\\\QuikIT\\\\packages\\\\database\\\\prisma\" -Filter \"*.prisma\")",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Bash(xargs -I{} dirname {})",
+      "Bash(xargs -I{} basename {})",
+      "Bash(npx prisma *)",
+      "Bash(export PGPASSWORD='sa@123')",
+      "Bash(psql -h localhost -U postgres -d \"quikit_Moreyeahs_27.7.26\" -c \"\\\\dt app_quiklms.*\")",
+      "Bash(psql -h localhost -U postgres -d \"quikit_Moreyeahs_27.7.26\" -c \"SELECT migration_name, started_at, finished_at, rolled_back_at FROM public._prisma_migrations WHERE migration_name LIKE '%quiklms%' OR migration_name LIKE '%close_v4_drift%' ORDER BY started_at;\")",
+      "Bash(psql -h localhost -U postgres -d \"quikit_Moreyeahs_27.7.26\" -c \"SELECT count\\(*\\) FROM pg_namespace WHERE nspname='app_quiklms';\")",
+      "Bash(psql -h localhost -U postgres -d \"quikit_Moreyeahs_27.7.26\" -c \"SELECT migration_name FROM public._prisma_migrations ORDER BY started_at;\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(xargs grep -liE \"ClientWeeklyMemberScore|dashboardNA|absent.*team|clientweeklymeeting\")",
+      "Bash(git stash *)",
+      "Bash(npx vitest *)",
+      "Bash(npx tsx *)",
+      "Bash(timeout 40 npx tsx apps/quikscale/scripts/_debug-quality-mismatch.ts \"Foods\" 2026 6)",
+      "Bash(timeout 40 npx tsx apps/quikscale/scripts/_debug-quality-mismatch.ts \"Foods\" 2026 5)",
+      "Bash(timeout 40 npx tsx apps/quikscale/scripts/_verify_punchin_fix.ts)",
+      "Bash(rm \"c:/workStation_3/quikit1926/apps/quikscale/scripts/_verify_punchin_fix.ts\")",
+      "Bash(timeout 40 npx tsx apps/quikscale/scripts/_verify_rounding.ts)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
@@ -22,4 +40,3 @@
     ]
   }
 }
- 

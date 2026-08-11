@@ -47,6 +47,12 @@ export interface WeeklyMeetingForMath {
     kpiWeeklyQTD: number; kpiCoding: number; priorityNotes: number;
     priorityStartEndDate: number; priorityColor: number;
   }>;
+  // Absent / Dashboard-NA flags for this meeting — a memberScores row can be
+  // stale (saved before the member was later marked absent/NA, or vice versa).
+  // memberWeightedQuality must exclude those rows the same way
+  // computeMemberPunchIn does, or the two disagree whenever such a row exists.
+  absentUserIds: string[];
+  dashboardNAUserIds: string[];
 }
 
 export interface MonthlyStatRow {
@@ -241,6 +247,7 @@ export function calculateWeeklyMonthlyStats(
   months: Array<{ year: number; month: number }>,
   plannedStart: string | null,
   plannedEnd: string | null,
+  roster: Array<{ id: string; name: string }>,
 ): MonthlyStatRow[] {
   return months.map(({ year, month }) => {
     const rows = meetings.filter(m =>
@@ -263,18 +270,11 @@ export function calculateWeeklyMonthlyStats(
     const avgCI  = pctYesNA(held.map(r => r.collectiveIntelligence),  held.length);
 
     // avgAuality ("Quality of the dashboards") — MUST equal the Member
-    // Punch-In Excel export's "Total Average of All Members". That figure is
-    // MEMBER-weighted (see memberWeightedQuality below): each member averages
-    // their own 5 KPIs across the meetings they were scored in, then those
-    // per-member totals are averaged across members.
-    //
-    // The previous implementation was MEETING-weighted (mean of per-meeting
-    // member-averages). With a single meeting the two agree, but once a month
-    // had 2+ meetings with uneven attendance they diverged — a sparse meeting
-    // (e.g. only 2 of 4 members scored, the rest NA/AB) was given the same
-    // weight as a full meeting, dragging the number off the Excel value. See
-    // clientMeetingsMath.test.ts.
-    const avgAuality = memberWeightedQuality(held);
+    // Punch-In Excel export's "Total Average of All Members". Computed by
+    // calling the SAME computeMemberPunchIn/calculateOverallFinalAverage the
+    // export uses, per roster member, rather than a hand-written
+    // reimplementation — see monthlyMemberWeightedQuality below for why.
+    const avgAuality = monthlyMemberWeightedQuality(held, roster);
 
     const attendancePercents = held.map(r => r.totalMembers > 0 ? ((r.totalMembers - r.absentCount) / r.totalMembers) * 100 : 0);
     const avgAttendance = attendancePercents.length ? attendancePercents.reduce((a, b) => a + b, 0) / attendancePercents.length : 0;
@@ -294,8 +294,9 @@ export function calculateWeeklyMonthlyStats(
       avgFormat: smartRound(avgFormat),
       avgAttendance: smartRound(avgAttendance),
       avgStuckCalls: 0,
-      // 2-decimal precision (not smartRound) so the cell matches the Excel
-      // "Total Average of All Members" exactly (e.g. 49.75%).
+      // Already whole-number-rounded by calculateOverallFinalAverage —
+      // matches every other metric here and the Excel "Total Average of All
+      // Members" figure exactly, since both call the same function.
       avgAuality,
       avgKP:  smartRound(avgKP),
       avgWWW: smartRound(avgWWW),
@@ -313,41 +314,49 @@ function avg(nums: number[]): number {
 }
 
 /**
- * Member-weighted "Quality of the dashboards" — byte-for-byte the same math
- * as computeMemberPunchIn + calculateOverallFinalAverage, so the dashboard
- * cell always equals the Member Punch-In Excel "Total Average of All Members".
+ * Member-weighted "Quality of the dashboards" for one month — delegates to
+ * computeMemberPunchIn + calculateOverallFinalAverage (the same functions the
+ * Excel Member Punch-In export uses) so the dashboard cell is mathematically
+ * guaranteed to equal the export's "Total Average of All Members", instead of
+ * maintaining a second hand-written implementation that can silently drift.
  *
- *   per member → for each of the 5 KPIs, average across the meetings the
- *                member was scored in, then Math.round                (per KPI)
- *   per member → Math.round( sum of the 5 rounded KPI averages / 5 )  (total)
- *   overall    → average every member's total, kept to 2 decimals
- *
- * NA / Absent members never produce a memberScores row, so they're naturally
- * excluded here — matching `eligibleReports` (present-at-least-once) in the
- * Excel export.
+ * This function used to walk `memberScores` rows directly, which caused two
+ * distinct real-world mismatches once roster/attendance data got messy:
+ *   1. A member removed from the client's roster (no current ClientTeamMember
+ *      link) can still have old ClientWeeklyMemberScore rows from when they
+ *      were on the team. Walking memberScores counted those forever;
+ *      computeMemberPunchIn is roster-driven, so it correctly ignores them.
+ *   2. A present, non-flagged member who was simply never scored for a held
+ *      meeting has no memberScores row at all. computeMemberPunchIn defaults
+ *      that week to 0 (present?.x ?? 0) and counts it, correctly dragging
+ *      their average down; walking memberScores silently skipped such
+ *      members instead of counting them as 0.
+ * Iterating the roster through computeMemberPunchIn fixes both by construction.
  */
-function memberWeightedQuality(
-  held: Array<{ memberScores: WeeklyMeetingForMath["memberScores"] }>,
+function monthlyMemberWeightedQuality(
+  held: Array<{
+    meetingDate: Date;
+    memberScores: WeeklyMeetingForMath["memberScores"];
+    absentUserIds: string[];
+    dashboardNAUserIds: string[];
+  }>,
+  roster: Array<{ id: string; name: string }>,
 ): number {
-  const KPI_KEYS = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"] as const;
-  // Collect each member's per-KPI scores across every held meeting they appear in.
-  const byMember = new Map<string, Record<(typeof KPI_KEYS)[number], number[]>>();
-  for (const r of held) {
-    for (const s of r.memberScores) {
-      let acc = byMember.get(s.userId);
-      if (!acc) {
-        acc = { kpiWeeklyQTD: [], kpiCoding: [], priorityNotes: [], priorityStartEndDate: [], priorityColor: [] };
-        byMember.set(s.userId, acc);
-      }
-      for (const k of KPI_KEYS) acc[k].push(s[k]);
-    }
-  }
-  if (!byMember.size) return 0;
-  const weeklyTotals = [...byMember.values()].map(acc => {
-    const kpiAvgs = KPI_KEYS.map(k => Math.round(acc[k].reduce((a, b) => a + b, 0) / acc[k].length));
-    return Math.round(kpiAvgs.reduce((a, b) => a + b, 0) / kpiAvgs.length);
-  });
-  return Math.round((weeklyTotals.reduce((a, b) => a + b, 0) / weeklyTotals.length) * 100) / 100;
+  if (!roster.length) return 0;
+  const punchMeetings = held.map((m, i) => ({
+    id: `held-${i}`,
+    meetingDate: m.meetingDate,
+    callStatus: "HELD" as const,
+    absentUserIds: m.absentUserIds,
+    dashboardNAUserIds: m.dashboardNAUserIds,
+    memberScores: m.memberScores,
+  }));
+  const reports = roster.map(member => computeMemberPunchIn(punchMeetings, member));
+  // Same eligibility rule as the export: a member with zero numeric weeks
+  // (AB/NA the whole month) is dropped from the overall average, not counted
+  // as 0 — see export/punch/route.ts's `eligibleReports` filter.
+  const eligibleReports = reports.filter(rep => rep.weeks.some(w => typeof w.kpiWeeklyQTD === "number"));
+  return calculateOverallFinalAverage(eligibleReports);
 }
 
 /* ─── Member Punch-In aggregator (spec §7.8) ────────────────────────────────── */
@@ -451,11 +460,20 @@ export function computeMemberPunchIn(
   return { memberId: member.id, memberName: member.name, weeks, totals, WeeklyTotalAverage };
 }
 
-/** §7.9 — average of every member's WeeklyTotalAverage. */
+/**
+ * §7.9 — average of every member's WeeklyTotalAverage.
+ *
+ * Whole-number rounding — every other Meeting Rhythm metric (Avg. % of Calls
+ * happened, punctuality, attendance, …) rounds to a whole percent in both the
+ * dashboard and the Excel exports; "Quality of the dashboards" previously
+ * kept 2-decimal precision here so it could byte-match a still-decimal
+ * export figure, which is no longer necessary now that the dashboard calls
+ * this same function directly instead of a separate reimplementation.
+ */
 export function calculateOverallFinalAverage(reports: MemberPunchReport[]): number {
   if (!reports.length) return 0;
   const sum = reports.reduce((a, r) => a + r.WeeklyTotalAverage, 0);
-  return Math.round((sum / reports.length) * 100) / 100;
+  return Math.round(sum / reports.length);
 }
 
 /* ─── Color rules (for UI rendering) — spec §10 ─────────────────────────────── */
