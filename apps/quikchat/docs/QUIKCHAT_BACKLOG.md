@@ -134,6 +134,34 @@ accurately but a developer reading it still cannot log in.
 
 ---
 
+## Settings toggles — removed, and who owns what happens next
+
+All seven "fake" toggles were **removed**, not wired: none had a persistence
+column and none had a consumer, and a toggle that persists a value nothing
+reads is the same bug in a new place. What is left needs an owner:
+
+- **Four desktop toggles → `quikchat-desktop/`, not us.** Auto-start, open in
+  background, keep running on close, and register-as-workspace-app are Electron
+  **main-process** settings. `window.electron` (see `types/electron.d.ts`)
+  exposes `unread`, `deepLinks` and `notifications` — and nothing for any of
+  them, so in a browser they could never do anything. **These are not "too big";
+  they are someone else's repo.** The ask is concrete: the desktop preload must
+  expose get/set for the four, after which the web side is a small settings
+  panel. Until then, re-adding them here is re-adding a lie.
+- **Read receipts + typing indicators → a real feature, not a wiring job.**
+  Honouring them means the server suppressing read-receipt fan-out and typing
+  events per user, AND every other client respecting the sender's choice.
+  Server + gateway work; needs a design before an estimate.
+- **Confirm-on-leaving-a-meeting → no consumer to hook into.** The only
+  leave-confirm in the app is `InfoDrawer`'s CHANNEL leave. If we want this, the
+  call UI needs a leave confirmation first.
+
+Privacy now holds `shareLastSeen` alone, which is genuinely wired
+(`PUT /api/me/presence`). The "System" and "Meeting" sections emptied entirely
+and were removed with their headers.
+
+---
+
 ## Meeting flow — field inventory (the answer to QA's list)
 
 **Read this before estimating any "add field X to meetings" ticket.** There are

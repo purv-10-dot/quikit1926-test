@@ -63,6 +63,13 @@
   --qc-text-muted: #9a9aa1;
   --qc-bg-hover: #f6f6f5;
 
+  /* Was referenced at three call sites and never defined, so `border-radius:
+     var(--qc-r-sm)` was an invalid declaration and those elements rendered
+     SQUARE. Defining it is therefore a visual change, not bookkeeping. 6px
+     rather than reusing --qc-r-md because every call site is a deliberate
+     step DOWN from md: `.qc-act-rowmenu.qc-iconbtn` overrides the 32px/8px
+     `.qc-iconbtn` base to 24px, and `.qc-cal2-event__more` is 22px. */
+  --qc-r-sm: 6px;
   --qc-r-md: 8px;
   --qc-r-lg: 12px;
   --qc-r-xl: 18px;

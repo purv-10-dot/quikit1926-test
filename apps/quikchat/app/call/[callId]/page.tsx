@@ -298,6 +298,10 @@ function CallPageInner() {
         localUserId={myUserId || "local"}
         callType={callType}
         isHost={tokenData.isHost}
+        // `?name=` is the window title the opener passes (the channel name for
+        // a group call) — reused so a removed participant is told WHICH call
+        // they were removed from.
+        channelName={remoteName}
         onEndCall={handleEndCall}
       />
     );

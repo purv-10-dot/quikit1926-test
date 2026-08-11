@@ -32,10 +32,16 @@ describe("ChannelList", () => {
       recent: [item({ channelId: "random", name: "random", unreadCount: 3 })],
     };
     render(
-      <ChannelList data={data} workspaceName="Acme" activeChannelId="general" onPick={vi.fn()} />,
+      <ChannelList data={data} activeChannelId="general" onPick={vi.fn()} />,
     );
-    expect(screen.getByText("Pinned")).toBeInTheDocument();
-    expect(screen.getByText("Recent")).toBeInTheDocument();
+    // Scoped to the section labels: "Pinned" is ALSO a filter tab, so an
+    // unscoped getByText is ambiguous. It was unambiguous only while these
+    // tests exercised the non-chromeless layout, which no caller ever used —
+    // i.e. the assertion was describing a screen nobody saw.
+    const sections = Array.from(document.querySelectorAll(".qc-list-section")).map(
+      (n) => n.textContent,
+    );
+    expect(sections).toEqual(["Pinned", "All messages"]);
 
     const active = screen.getByText("general").closest(".qc-chan-row")!;
     expect(active.getAttribute("data-active")).toBe("true");
@@ -45,7 +51,7 @@ describe("ChannelList", () => {
 
   it("shows an empty state when there are no conversations", () => {
     render(
-      <ChannelList data={{ priority: [], recent: [] }} workspaceName="Acme" onPick={vi.fn()} />,
+      <ChannelList data={{ priority: [], recent: [] }} onPick={vi.fn()} />,
     );
     expect(screen.getByText("No conversations yet")).toBeInTheDocument();
   });
@@ -65,7 +71,7 @@ describe("ChannelList", () => {
         item({ channelId: "quiet", name: "quiet", unreadCount: 0 }),
       ],
     };
-    render(<ChannelList data={data} workspaceName="Acme" onPick={vi.fn()} />);
+    render(<ChannelList data={data} onPick={vi.fn()} />);
 
     // All (default): everything visible.
     expect(screen.getByText("quiet")).toBeInTheDocument();
@@ -77,17 +83,18 @@ describe("ChannelList", () => {
     expect(screen.queryByText("quiet")).toBeNull();
     expect(screen.getByText("random")).toBeInTheDocument();
     expect(screen.getByText("pinned-unread")).toBeInTheDocument();
-    expect(screen.getByText("Pinned")).toBeInTheDocument();
-    expect(screen.getByText("Recent")).toBeInTheDocument();
+    // Section labels survive the filter (scoped — "Pinned" is a tab too).
+    const sections = Array.from(document.querySelectorAll(".qc-list-section")).map(
+      (n) => n.textContent,
+    );
+    expect(sections).toEqual(["Pinned", "All messages"]);
   });
 
-  it("renders the Discover button in chromeless mode and calls onDiscover", () => {
+  it("renders the Discover button and calls onDiscover", () => {
     const onDiscover = vi.fn();
     render(
       <ChannelList
         data={{ priority: [], recent: [] }}
-        workspaceName="Acme"
-        chromeless
         onPick={vi.fn()}
         onDiscover={onDiscover}
       />,

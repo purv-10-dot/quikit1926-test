@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track } from "livekit-client";
-import type { DisconnectReason } from "livekit-client";
+// `DisconnectReason` is a VALUE import (a TS enum), not a type-only one — the
+// removed-by-host check below compares against a real member at runtime.
+import { DisconnectReason, Room, RoomEvent, Track } from "livekit-client";
 import type { Participant } from "@/components/calling/GroupCallGrid";
 
 export interface UseLiveKitRoomOptions {
@@ -34,6 +35,15 @@ export interface UseLiveKitRoomResult {
    * intentional hangup (that's already handled by the caller).
    */
   terminalDisconnect: boolean;
+  /**
+   * The host removed this participant from the call (LiveKit's
+   * `DisconnectReason.PARTICIPANT_REMOVED`). A STRICT SUBSET of
+   * `terminalDisconnect` — when true, that is true as well. False for every
+   * other ending, including reasons this hook does not recognise, so a caller
+   * can safely treat it as "say you were removed" without risking that claim on
+   * an ordinary hangup.
+   */
+  removedByHost: boolean;
   toggleMute: () => void;
   toggleCamera: () => void;
   toggleScreenShare: () => void;
@@ -65,6 +75,7 @@ export function useLiveKitRoom({
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [terminalDisconnect, setTerminalDisconnect] = useState(false);
+  const [removedByHost, setRemovedByHost] = useState(false);
   // Distinguishes OUR OWN room.disconnect() (unmount / explicit hangup) from a
   // server-initiated one (room deleted, kicked, reconnect exhausted) — only the
   // latter should surface as `terminalDisconnect`.
@@ -181,7 +192,17 @@ export function useLiveKitRoom({
       .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
         setIsReconnecting(false);
         if (intentionalDisconnectRef.current) return;
-        void reason; // reason is informational only — any non-intentional disconnect ends the call
+        // Any non-intentional disconnect still ends the call — that behaviour is
+        // unchanged. The reason is now inspected for ONE extra fact: whether the
+        // host removed us, which is the only case that earns a different
+        // explanation in the UI.
+        //
+        // Deliberately an explicit positive match, never an else-branch: an
+        // unmapped or absent reason (SERVER_SHUTDOWN, SIGNAL_CLOSE, a reason
+        // added by a future livekit-client, or `undefined`) falls through as a
+        // normal end. Telling someone they were removed when they were not is
+        // worse than the silence this replaces.
+        if (reason === DisconnectReason.PARTICIPANT_REMOVED) setRemovedByHost(true);
         setTerminalDisconnect(true);
       });
 
@@ -252,6 +273,7 @@ export function useLiveKitRoom({
     mediaError,
     isReconnecting,
     terminalDisconnect,
+    removedByHost,
     toggleMute,
     toggleCamera,
     toggleScreenShare,

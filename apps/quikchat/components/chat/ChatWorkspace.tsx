@@ -21,7 +21,7 @@ import {
   sendMessage,
 } from "@/lib/api";
 import { useNotifications } from "@/components/notifications/NotificationProvider";
-import { useProfile } from "@/components/profile/ProfileProvider";
+import { useProfile, type CallType } from "@/components/profile/ProfileProvider";
 import {
   createRealtimeClient,
   fetchRealtimeToken,
@@ -79,7 +79,6 @@ const ASSISTANT_BOT_USER_ID = "quikchat-assistant-bot";
 export interface ChatWorkspaceProps {
   currentUserId: string;
   currentUserName: string;
-  workspaceName: string;
   realtimeUrl: string;
   /** Deep-link target (e.g. after accepting an invite at /?channel=...). */
   initialChannelId?: string;
@@ -104,7 +103,6 @@ function lastMessageOf(dto: MessageDto) {
 export function ChatWorkspace({
   currentUserId,
   currentUserName,
-  workspaceName,
   realtimeUrl,
   initialChannelId,
 }: ChatWorkspaceProps) {
@@ -597,6 +595,13 @@ export function ChatWorkspace({
     notifications.registerChannelOpener((channelId) => selectChannel(channelId));
   }, [notifications, selectChannel]);
 
+  // Same pattern for the "new chat" composer, whose trigger is local state here
+  // and therefore unreachable from DesktopBridge's `quikchat://new-chat` deep
+  // link without a registered opener.
+  useEffect(() => {
+    notifications.registerNewChatOpener(() => setNewChatOpen(true));
+  }, [notifications]);
+
   const onChannelReady = useCallback(
     (channel: ChannelListItem) => {
       qc.setQueryData<ChannelList>(["channels"], (old) =>
@@ -618,10 +623,15 @@ export function ChatWorkspace({
     });
   }, [registerStartDm, onChannelReady, toast]);
 
-  // "Call" from a profile card: initiate a call with that user.
+  // "Call" from a profile card, or from a call-log row in CallsModule.
   const [callTargetUserId, setCallTargetUserId] = useState<string | null>(null);
+  // `callType` used to be hardcoded "audio" at the CallHandler call site, so a
+  // caller could not ask for video. Defaulting to "audio" when the opener is
+  // called without a type keeps the profile card's existing behaviour exactly.
+  const [callType, setCallType] = useState<CallType>("audio");
   useEffect(() => {
-    registerStartCall((userId) => {
+    registerStartCall((userId, type) => {
+      setCallType(type ?? "audio");
       setCallTargetUserId(userId);
     });
   }, [registerStartCall]);
@@ -990,12 +1000,10 @@ export function ChatWorkspace({
         <ChannelListView
           data={channelsQuery.data}
           loading={channelsQuery.isLoading}
-          workspaceName={workspaceName}
           activeChannelId={activeId}
           currentUserId={currentUserId}
           onlineUserIds={presence.online}
           statusOf={statusOfUser}
-          chromeless
           onPick={pickChannel}
           onNewChat={() => setNewChatOpen(true)}
           onNewGroup={() => setNewGroupOpen(true)}
@@ -1110,7 +1118,7 @@ export function ChatWorkspace({
           currentUserName={currentUserName}
           socket={clientRef.current?.socket ?? null}
           callTargetUserId={callTargetUserId}
-          callType="audio"
+          callType={callType}
           onCallStarted={() => setCallTargetUserId(null)}
           getUserName={(userId) => {
             const member = activeChannel?.members.find((m) => m.id === userId);

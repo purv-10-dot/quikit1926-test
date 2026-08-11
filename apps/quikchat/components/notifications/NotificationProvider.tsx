@@ -72,6 +72,14 @@ export interface NotificationContextValue {
   attachClient(client: NotifRealtimeClient | null): void;
   registerChannelOpener(fn: (channelId: string, messageId?: string | null) => void): void;
   /**
+   * Open the "new direct message" composer. Mirrors `openChannel` — the trigger
+   * lives in ChatWorkspace local state, so anything outside it (the
+   * `quikchat://new-chat` desktop deep link) needs a registered opener to reach
+   * it. No-op when nothing has registered, exactly like `openChannel`.
+   */
+  openNewChat(): void;
+  registerNewChatOpener(fn: () => void): void;
+  /**
    * Tell the provider which channel is currently open (null when none is).
    * Called from ChatWorkspace on every `activeId` change. An inbound
    * notification for this channel, while the tab is focused, is suppressed
@@ -98,6 +106,8 @@ const defaultValue: NotificationContextValue = {
   requestOsPermission: noopAsync,
   attachClient: () => undefined,
   registerChannelOpener: () => undefined,
+  openNewChat: () => undefined,
+  registerNewChatOpener: () => undefined,
   setActiveChannel: () => undefined,
 };
 
@@ -137,6 +147,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const newChatOpenerRef = useRef<(() => void) | null>(null);
+  const openNewChat = useCallback(() => {
+    newChatOpenerRef.current?.();
+  }, []);
+  const registerNewChatOpener = useCallback((fn: () => void) => {
+    newChatOpenerRef.current = fn;
+  }, []);
 
   // ---- inbound realtime event ----
   const handleInbound = useCallback(
@@ -320,6 +338,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       requestOsPermission,
       attachClient,
       registerChannelOpener,
+      openNewChat,
+      registerNewChatOpener,
       setActiveChannel,
     }),
     [
@@ -336,6 +356,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       requestOsPermission,
       attachClient,
       registerChannelOpener,
+      openNewChat,
+      registerNewChatOpener,
       setActiveChannel,
     ],
   );
