@@ -13557,6 +13557,18 @@ model CompanySettings {
   relievingLetterBody  String?
   experienceLetterBody String?
 
+  // Public "Career Page" (Phase 1) — a no-login job-listing + apply page at
+  // /careers/{Org.slug}. Off by default so a fresh org doesn't accidentally
+  // expose an empty page before HR configures it.
+  careerPageEnabled Boolean @default(false)
+  careerPageIntro   String?
+  // Optional custom URL slug for the career page, editable by HR — an
+  // ADDITIONAL alias alongside the default /careers/{Org.slug} link (which
+  // always keeps working; Org.slug itself is immutable and used elsewhere,
+  // so this never touches it). Globally unique across orgs since it's
+  // resolved with no other scoping key. Null = no custom slug set.
+  careerPageSlug String? @unique
+
   // First-run org setup gate (admin onboarding). Latched true once Departments,
   // Locations, a complete Approval chain, and Payroll setup are all done — after
   // which HRMS is unlocked permanently (deleting records later never re-locks).

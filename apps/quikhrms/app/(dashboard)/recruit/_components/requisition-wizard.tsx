@@ -269,6 +269,13 @@ const reqSection = "text-[11px] font-bold uppercase tracking-wide text-gray-400"
 
 /** Minimum characters required in the Business Justification field. */
 const JUSTIFICATION_MIN = 10;
+
+/** Whole days between Start Date and End Date (YYYY-MM-DD strings), floored at 0. */
+function calcEtaDays(startDate: string, endDate: string): number {
+  const start = new Date(startDate + "T00:00:00").getTime();
+  const end = new Date(endDate + "T00:00:00").getTime();
+  return Math.max(0, Math.ceil((end - start) / 86400000));
+}
 const errRing = "border-red-400 focus:border-red-500 focus:ring-red-500/20";
 const errText = "text-[11px] text-red-600 mt-1";
 
@@ -295,15 +302,15 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   const [weightDraft, setWeightDraft] = useState(7);
   const [generating, setGenerating] = useState(false);
 
-  // ETA to Fill is auto-calculated from today → Timeline to Close. Keep it in
-  // sync whenever the close date is present (covers editing older requisitions
-  // whose etaToFillDays was never stored, so the field isn't left blank).
+  // ETA to Fill is auto-calculated from Start Date → End Date. Keep it in sync
+  // whenever both dates are present (covers editing older requisitions whose
+  // etaToFillDays was never stored, so the field isn't left blank).
   useEffect(() => {
-    if (!form.closedDate) return;
-    const eta = Math.max(0, Math.ceil((new Date(form.closedDate + "T00:00:00").getTime() - Date.now()) / 86400000));
+    if (!form.closedDate || !form.targetJoiningDate) return;
+    const eta = calcEtaDays(form.closedDate, form.targetJoiningDate);
     if (eta !== form.etaToFillDays) setForm((p) => ({ ...p, etaToFillDays: eta }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.closedDate]);
+  }, [form.closedDate, form.targetJoiningDate]);
 
   const empOpts: MSOption[] = employees.map((e) => ({
     value: e.id,
@@ -316,7 +323,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   // Office / Hybrid roles must have a job location (Remote doesn't).
   const jobLocationOk = form.workLocation === "Remote" || form.jobLocation.trim().length > 0;
   const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk && jobLocationOk;
-  const canStep2 = !!form.pipelineId && !!form.hiringManagerId && !!form.recruiterId;
+  const canStep2 = !!form.pipelineId && !!form.hiringManagerId;
 
   // Step 3 (Compensation & Planning) cross-field logic checks.
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -336,11 +343,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     closedDate: form.closedDate && form.closedDate < todayStr
       ? "Timeline to close can’t be in the past." : "",
   };
-  // Experience + salary ranges are required for NEW requisitions. Edits of older
-  // requisitions (created before these fields existed / left blank) aren't forced
-  // — mirrors the questionsOk edit exemption below. Cross-field checks (compErrors)
-  // are still enforced in step3Valid regardless.
-  const compRequiredFilled = isEdit || (form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null);
+  // Experience + salary ranges, plus Start/End Date, are required for NEW
+  // requisitions. Edits of older requisitions (created before these fields
+  // existed / left blank) aren't forced — mirrors the questionsOk edit
+  // exemption below. Cross-field checks (compErrors) are still enforced in
+  // step3Valid regardless.
+  const compRequiredFilled = isEdit || (form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null && !!form.closedDate && !!form.targetJoiningDate);
   const step3Valid = compRequiredFilled && !compErrors.exp && !compErrors.salary && !compErrors.budget && !compErrors.targetJoiningDate && !compErrors.closedDate;
   // At least one technical question is required for NEW requisitions. Edits of
   // older requisitions (created before this field existed) aren't forced.
@@ -548,7 +556,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   placeholder="— Select —" options={empOpts} />
               </div>
               <div>
-                <label className={reqLabel}>Recruiter <span className="text-red-500">*</span></label>
+                <label className={reqLabel}>Recruiter</label>
                 <Select value={form.recruiterId} onChange={(v) => setForm({ ...form, recruiterId: v })} searchable
                   placeholder="— Select —" options={empOpts} />
               </div>
@@ -603,35 +611,39 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               {/* Explain why Next is disabled when the required ranges are blank
                   (only for NEW requisitions — edits are exempt above). */}
               {!compRequiredFilled && (
-                <p className={clsx(errText, "mt-1.5")}>Experience and salary range are required.</p>
+                <p className={clsx(errText, "mt-1.5")}>Experience, salary range, Start Date and End Date are required.</p>
               )}
             </div>
             <div>
               <p className={clsx(reqSection, "mb-2")}>Planning & Budget</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className={reqLabel}>Timeline to Close</label>
+                  <label className={reqLabel}>Start Date <span className="text-red-500">*</span></label>
                   <input type="date" min={todayStr} value={form.closedDate}
                     onChange={(e) => {
                       const closedDate = e.target.value;
-                      const eta = closedDate
-                        ? Math.max(0, Math.ceil((new Date(closedDate + "T00:00:00").getTime() - Date.now()) / 86400000))
-                        : null;
+                      const eta = closedDate && form.targetJoiningDate ? calcEtaDays(closedDate, form.targetJoiningDate) : null;
                       setForm({ ...form, closedDate, etaToFillDays: eta });
                     }}
                     className={clsx(reqInput, compErrors.closedDate && errRing)} />
                   {compErrors.closedDate && <p className={errText}>{compErrors.closedDate}</p>}
                 </div>
                 <div>
-                  <label className={reqLabel}>Target Joining Date</label>
-                  <input type="date" min={todayStr} value={form.targetJoiningDate} onChange={(e) => setForm({ ...form, targetJoiningDate: e.target.value })} className={clsx(reqInput, compErrors.targetJoiningDate && errRing)} />
+                  <label className={reqLabel}>End Date <span className="text-red-500">*</span></label>
+                  <input type="date" min={todayStr} value={form.targetJoiningDate}
+                    onChange={(e) => {
+                      const targetJoiningDate = e.target.value;
+                      const eta = form.closedDate && targetJoiningDate ? calcEtaDays(form.closedDate, targetJoiningDate) : null;
+                      setForm({ ...form, targetJoiningDate, etaToFillDays: eta });
+                    }}
+                    className={clsx(reqInput, compErrors.targetJoiningDate && errRing)} />
                   {compErrors.targetJoiningDate && <p className={errText}>{compErrors.targetJoiningDate}</p>}
                 </div>
                 <div>
                   <label className={reqLabel}>ETA to Fill (days)</label>
                   <NumberInput allowDecimal={false} min={0} value={form.etaToFillDays} onChange={() => {}}
                     readOnly tabIndex={-1} className={clsx(reqInput, "bg-gray-50 text-gray-600 cursor-not-allowed")} />
-                  <p className="mt-1 text-[11px] text-gray-400">Auto-calculated from today to Timeline to Close.</p>
+                  <p className="mt-1 text-[11px] text-gray-400">Auto-calculated from Start Date to End Date.</p>
                 </div>
               </div>
             </div>
@@ -690,16 +702,6 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
                     onChange={(v) => setForm({ ...form, passingYear: v })}
                     placeholder="e.g. 2020" className={reqInput} />
-                </div>
-                <div>
-                  <label className={reqLabel}>Referral Bonus (₹) <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <NumberInput min={0} max={1000000} value={form.referralBonusAmount}
-                    onChange={(v) => setForm({ ...form, referralBonusAmount: v })}
-                    onBlur={() => { if (form.referralBonusAmount != null && form.referralBonusAmount > 1000000) setForm((p) => ({ ...p, referralBonusAmount: 1000000 })); }}
-                    className={clsx(reqInput, (form.referralBonusAmount ?? 0) > 1000000 && errRing)} />
-                  {(form.referralBonusAmount ?? 0) > 1000000
-                    ? <p className={errText}>Maximum ₹10,00,000.</p>
-                    : <p className="mt-1 text-[11px] text-gray-400">Max ₹10,00,000</p>}
                 </div>
               </div>
             </div>

@@ -35,6 +35,8 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
             department: { select: { id: true, name: true } },
             hiringManager: { select: { id: true, firstName: true, lastName: true } },
             recruiter: { select: { id: true, firstName: true, lastName: true } },
+            raiser: { select: { id: true, firstName: true, lastName: true } },
+            creator: { select: { id: true, firstName: true, lastName: true } },
             pipeline: { select: { id: true, name: true, isDefault: true } },
             _count: { select: { applications: true } },
           },

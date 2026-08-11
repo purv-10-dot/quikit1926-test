@@ -128,7 +128,7 @@ export default function RequisitionApprovalsPage() {
   // using the same shared wizard as New Requisition, in edit mode.
   const { data: deptsData } = useQuery({ queryKey: ["departments"], queryFn: () => api.get<DeptOption[]>("/api/v1/hrms/departments?limit=200") });
   const { data: pipelinesData } = useQuery({ queryKey: ["pipelines"], queryFn: () => api.get<PipelineOption[]>("/api/v1/hrms/recruit/pipelines") });
-  const { data: empData } = useQuery({ queryKey: ["employees-picker"], queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active") });
+  const { data: empData } = useQuery({ queryKey: ["employees-picker"], queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1") });
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ReqFormShape>(emptyReqForm);

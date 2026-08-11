@@ -245,7 +245,7 @@ function NewEmployeePageInner() {
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100&picker=1") });
   const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
   const noticePeriods = noticePeriodsData?.data ?? [];
   const { data: roles } = useRoles();
@@ -349,13 +349,12 @@ function NewEmployeePageInner() {
       scrollToStep("employment");
       return;
     }
-    if (!form.salaryTemplateId) {
-      toast.error("Salary template required", "Pick a template in Employment step.");
-      scrollToStep("employment");
-      return;
-    }
-    if (form.ctcLpa == null || form.ctcLpa <= 0) {
-      toast.error("CTC (LPA) required", "Enter annual CTC in lakhs in Employment step.");
+    // Salary template + CTC are optional together — if HR picked a template,
+    // CTC must come with it; if they left it blank (e.g. no templates exist
+    // yet), salary is simply skipped and can be assigned later via Payroll →
+    // Employee Salaries.
+    if (form.salaryTemplateId && (form.ctcLpa == null || form.ctcLpa <= 0)) {
+      toast.error("CTC (LPA) required", "Enter annual CTC in lakhs, or clear the salary template to skip salary for now.");
       scrollToStep("employment");
       return;
     }
@@ -922,31 +921,35 @@ function NewEmployeePageInner() {
                     options={(roles?.data ?? []).map((r) => ({ value: r.id, label: r.name }))}
                   />
                 </Field>
-                <Field label="Salary Template" required>
+                <Field label="Salary Template">
                   {noSalaryTemplates ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-                      No salary templates exist yet. An employee can&apos;t be created without one.{" "}
-                      <Link href="/payroll/setup/salary-templates/new" className="font-semibold underline hover:text-amber-900">
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
+                      No salary templates exist yet — salary will be skipped for now.{" "}
+                      <Link href="/payroll/setup/salary-templates/new" className="font-semibold underline hover:text-gray-900">
                         Create a salary template
                       </Link>{" "}
-                      in Payroll setup first, then reopen this form.
+                      to assign it later via Payroll &rarr; Employee Salaries.
                     </div>
                   ) : (
-                    <Select
-                      value={form.salaryTemplateId}
-                      onChange={(v) => setForm({ ...form, salaryTemplateId: v })}
-                      placeholder="Select template"
-                      searchable
-                      options={(salaryTemplates?.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))}
-                    />
+                    <>
+                      <Select
+                        value={form.salaryTemplateId}
+                        onChange={(v) => setForm({ ...form, salaryTemplateId: v })}
+                        placeholder="Select template (optional — can be added later)"
+                        searchable
+                        options={(salaryTemplates?.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))}
+                      />
+                      <p className="mt-1 text-[11px] text-gray-400">Optional — leave blank to assign salary later via Payroll &rarr; Employee Salaries.</p>
+                    </>
                   )}
                 </Field>
-                <Field label="CTC (LPA)" required>
+                <Field label="CTC (LPA)" required={!!form.salaryTemplateId}>
                   <NumberInput
                     min={0}
                     value={form.ctcLpa}
                     onChange={(v) => setForm({ ...form, ctcLpa: v })}
                     placeholder="e.g. 12.5"
+                    disabled={!form.salaryTemplateId}
                     className={inputCls}
                   />
                 </Field>
@@ -1272,8 +1275,7 @@ function NewEmployeePageInner() {
               {isLastStep ? (
                 <button
                   type="submit"
-                  disabled={createMut.isPending || noSalaryTemplates}
-                  title={noSalaryTemplates ? "Create a salary template in Payroll setup before adding an employee" : undefined}
+                  disabled={createMut.isPending}
                   className="btn btn-primary"
                 >
                   <Save size={13} /> {createMut.isPending ? "Saving..." : "Create Employee"}

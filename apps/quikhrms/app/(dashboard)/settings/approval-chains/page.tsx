@@ -121,7 +121,7 @@ export default function ApprovalChainsPage() {
 
   const { data: empResp } = useQuery({
     queryKey: ["approval-chains", "employees"],
-    queryFn: () => api.get<EmployeeRef[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    queryFn: () => api.get<EmployeeRef[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
   });
   const employees = empResp?.data ?? [];
   const empById = new Map(employees.map((e) => [e.id, e]));

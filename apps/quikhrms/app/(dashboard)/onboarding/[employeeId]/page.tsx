@@ -9,6 +9,7 @@ import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { ArrowLeft, CheckCircle, Clock, PauseCircle, SkipForward, Check, Trophy, X, AlertTriangle, Upload, Paperclip, Shield, BadgeCheck, Plus, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp, Banknote, Send, UserCog, FileText, Play, Pause, CalendarClock } from "lucide-react";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { useToast } from "@/components/hrms/toast";
+import { useDialog } from "@/components/hrms/dialog";
 import { clsx } from "clsx";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { Select } from "@/components/hrms/ui/select";
@@ -117,6 +118,7 @@ interface Instance {
   employee: {
     id: string; firstName: string | null; lastName: string | null; employeeCode: string | null;
     jobTitle: string | null; dateOfJoining: string | null;
+    workEmail: string | null; personalEmail: string | null;
     department: { name: string } | null;
     designation: { title: string } | null;
     reportingManager: { firstName: string; lastName: string } | null;
@@ -128,6 +130,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
+  const dialog = useDialog();
   const { employee: meEmp, hasPermission } = useDashboardConfig();
   // Self-view: the employee is looking at their own onboarding page. Hide
   // tasks assigned to other roles (IT/HR/Manager) — they can't act on those.
@@ -500,9 +503,10 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-px rounded-xl overflow-hidden border border-gray-100 bg-gray-100">
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px rounded-xl overflow-hidden border border-gray-100 bg-gray-100">
               {[
                 { label: "Employee ID", value: emp?.employeeCode ?? "—" },
+                { label: "Email", value: emp?.workEmail ?? emp?.personalEmail ?? "—" },
                 { label: "Department", value: emp?.department?.name ?? "—" },
                 { label: "Reporting Manager", value: managerName },
                 { label: "Start Date", value: fmtDate(inst.startDate) },
@@ -520,10 +524,15 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
                 <span><span className="font-medium text-gray-600">Template:</span> {inst.template.name}</span>
                 {(!isSelfView || isAdminViewer) && inst.status !== "OnboardCompleted" && inst.status !== "OnboardCancelled" && (
                   <button
-                    onClick={() => {
-                      if (window.confirm("Re-apply the latest template?\n\nThis syncs the checklist with the current template — matching steps are updated in place (progress, uploads and approvals are kept), removed steps are deleted, and new steps are added. The BGV / Complete Profile step is kept.")) {
-                        reApplyMut.mutate(inst.template!.id);
-                      }
+                    onClick={async () => {
+                      const ok = await dialog.confirm({
+                        title: "Re-apply the latest template?",
+                        description: "This syncs the checklist with the current template — matching steps are updated in place (progress, uploads and approvals are kept), removed steps are deleted, and new steps are added. The BGV / Complete Profile step is kept.",
+                        confirmLabel: "Re-apply template",
+                        cancelLabel: "Cancel",
+                        variant: "info",
+                      });
+                      if (ok) reApplyMut.mutate(inst.template!.id);
                     }}
                     disabled={reApplyMut.isPending}
                     title="Rebuild the checklist from the latest version of this template"
@@ -859,6 +868,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
               {[
                 { label: "Name", value: employeeName },
                 { label: "Employee ID", value: emp?.employeeCode ?? "—" },
+                { label: "Email", value: emp?.workEmail ?? emp?.personalEmail ?? "—" },
                 { label: "Designation", value: emp?.designation?.title ?? emp?.jobTitle ?? "—" },
                 { label: "Department", value: emp?.department?.name ?? "—" },
                 { label: "Manager", value: managerName },
@@ -868,7 +878,7 @@ export default function OnboardingTrackerPage({ params }: { params: { employeeId
               ].map((r) => (
                 <div key={r.label} className="flex items-start justify-between gap-3">
                   <dt className="text-gray-500 flex-shrink-0">{r.label}</dt>
-                  <dd className="font-medium text-gray-900 text-right">{r.value}</dd>
+                  <dd className="font-medium text-gray-900 text-right truncate max-w-[65%]" title={r.value}>{r.value}</dd>
                 </div>
               ))}
             </dl>

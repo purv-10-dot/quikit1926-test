@@ -431,9 +431,9 @@ export default function PipelinePage() {
   const STAGES: string[] = stageConfigs.map((s) => s.name);
   const stageHasMail = (name: string) => stageConfigs.find((s) => s.name === name)?.sendMail ?? false;
   const isInterviewStage = (s: string | null | undefined) => !!s && /interview|screen/i.test(s);
-  // Static screening checklist — shown ONLY in the Screening stage.
-  // Screening sheet is only for the Screening round itself (not Phone Screen etc.).
-  const showScreening = (app: ApplicationItem) => (app.currentStage ?? "").trim().toLowerCase() === "screening";
+  // Static screening checklist — shown ONLY in the Phone Screen stage (the
+  // actual screening-call round; Source is just the initial applicant list).
+  const showScreening = (app: ApplicationItem) => (app.currentStage ?? "").trim().toLowerCase() === "phonescreen";
   const getNextStage = (current: string | null | undefined) => {
     const idx = current ? STAGES.indexOf(current) : -1;
     return idx >= 0 && idx < STAGES.length - 1 ? STAGES[idx + 1] : null;
@@ -523,7 +523,7 @@ export default function PipelinePage() {
 
   const { data: empData } = useQuery({
     queryKey: ["employees-active-list"],
-    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; jobTitle: string | null; employeeCode?: string }[]>("/api/v1/hrms/employees?status=Active&limit=200"),
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; jobTitle: string | null; employeeCode?: string }[]>("/api/v1/hrms/employees?status=Active&limit=200&picker=1"),
     enabled: !!scheduleApp,
   });
   const employees = empData?.data ?? [];
@@ -1138,7 +1138,7 @@ export default function PipelinePage() {
                   </td>
                   <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
                   <td className="px-3 py-2.5 text-slate-600 text-xs">
-                    {c.expectedCTC ? `₹ ${Number(c.expectedCTC).toLocaleString("en-IN")}` : "—"}
+                    {c.expectedCTC ? `₹${Number(c.expectedCTC).toLocaleString("en-IN")}L` : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-center text-[11px] text-slate-400">—</td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -1199,7 +1199,7 @@ export default function PipelinePage() {
                       {app.appliedDate ? new Date(app.appliedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-slate-600 text-xs">
-                      {app.candidate.expectedCTC ? `₹ ${Number(app.candidate.expectedCTC).toLocaleString("en-IN")}` : "—"}
+                      {app.candidate.expectedCTC ? `₹${Number(app.candidate.expectedCTC).toLocaleString("en-IN")}L` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       {app._count.scorecards > 0 ? (

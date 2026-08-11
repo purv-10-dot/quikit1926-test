@@ -96,7 +96,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const { data: locs } = useLocations();
   const { data: roles } = useRoles();
   const { data: templatesData } = useSalaryTemplates();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/employees?limit=200") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/employees?limit=200&picker=1") });
   // This wizard is launched from Pre-Onboarding, so it uses Pre-Onboarding templates.
   const { data: onbTemplates } = useQuery({ queryKey: ["onboarding", "templates", "PreOnboarding"], queryFn: () => api.get<RefItem[]>("/api/v1/hrms/onboarding/templates?isActive=true&kind=PreOnboarding&limit=100") });
 

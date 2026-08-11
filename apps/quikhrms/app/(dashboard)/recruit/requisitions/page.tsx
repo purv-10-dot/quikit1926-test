@@ -39,6 +39,8 @@ interface ReqItem {
   department: { id: string; name: string } | null;
   hiringManager: { id: string; firstName: string; lastName: string } | null;
   recruiter: { id: string; firstName: string; lastName: string } | null;
+  raiser?: { id: string; firstName: string; lastName: string } | null;
+  creator?: { id: string; firstName: string; lastName: string } | null;
   rolePurpose?: string | null;
   raisedAt?: string | null;
   closedDate?: string | null;
@@ -239,7 +241,7 @@ export default function RequisitionsPage() {
 
   const { data: empData } = useQuery({
     queryKey: ["employees-picker"],
-    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
   });
   const employees = empData?.data ?? [];
 
@@ -558,6 +560,10 @@ export default function RequisitionsPage() {
       {viewReq && (() => {
         const rcv = viewReq.recruiter ? `${viewReq.recruiter.firstName} ${viewReq.recruiter.lastName}`.trim() : "—";
         const hm = viewReq.hiringManager ? `${viewReq.hiringManager.firstName} ${viewReq.hiringManager.lastName}`.trim() : "—";
+        // Prefer the approval-flow "raiser" when this went through Raise Requisition;
+        // otherwise fall back to whoever directly created it.
+        const raisedByEmp = viewReq.raiser ?? viewReq.creator;
+        const raisedBy = raisedByEmp ? `${raisedByEmp.firstName} ${raisedByEmp.lastName}`.trim() : "—";
         const STATUS_LABEL: Record<string, string> = {
           ReqDraft: "Draft", PendingApproval: "Pending Approval", ReqApproved: "Approved",
           ReqOpen: "Open", ReqOnHold: "On Hold", ReqClosed: "Closed", ReqCancelled: "Cancelled",
@@ -573,6 +579,7 @@ export default function RequisitionsPage() {
           ["Department", viewReq.department?.name ?? "—"],
           ["Recruiter (HR)", rcv],
           ["Hiring Manager", hm],
+          ["Raised By", raisedBy],
           ["Employment Type", viewReq.employmentType ?? "—"],
           ["Work Location", viewReq.workLocation ?? "—"],
           ["Job Location", viewReq.jobLocation ?? "—"],

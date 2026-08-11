@@ -30,7 +30,7 @@ export default function RaiseRequisitionPage() {
   });
   const { data: empData } = useQuery({
     queryKey: ["employees-picker"],
-    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
   });
 
   const raiseMut = useMutation({

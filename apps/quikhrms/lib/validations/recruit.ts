@@ -67,14 +67,14 @@ const requisitionBaseObject = z.object({
   postToJobPortal: z.boolean().default(false),
   referralBonusAmount: z.number().min(0).max(1000000, "Referral bonus can’t exceed ₹10,00,000").optional(),
   hiringManagerId: z.string().min(1, "Hiring manager required"),
-  recruiterId: z.string().min(1, "Recruiter required"),
+  recruiterId: z.string().optional(),
 
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
   budget: z.number().nullable().optional(),
-  targetJoiningDate: z.string().optional(),
-  closedDate: z.string().optional(), // "Timeline to Close"
+  targetJoiningDate: z.string().min(1, "End Date required"), // UI label: "End Date"
+  closedDate: z.string().min(1, "Start Date required"), // UI label: "Start Date"
   etaToFillDays: z.number().int().optional(),
   jobGrade: z.string().optional(),
   costCenter: z.string().optional(),

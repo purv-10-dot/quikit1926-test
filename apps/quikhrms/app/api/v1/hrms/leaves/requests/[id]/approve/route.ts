@@ -9,7 +9,8 @@ import { buildLeaveDecisionEmail } from "@/lib/email-templates/leave-decision";
 import {
   getActiveChainLevels,
   getCallerRoleIds,
-  callerCanActionLevel,
+  getDelegatedApprovers,
+  resolveLevelActor,
 } from "@/lib/services/approval-chain";
 
 /** POST /api/v1/hrms/leaves/requests/:id/approve */
@@ -45,16 +46,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     // Role-aware authorization: whoever holds the current level's role (or is
     // the specific assigned user) may action it — not just the one employee the
     // chain happened to route to at apply time. Keeps approvals chain-driven
-    // while letting any holder of the level's role act.
+    // while letting any holder of the level's role act. A user holding an
+    // active "Approve Leave" delegation may also action it on the delegator's
+    // behalf (matches the Requisition approve route).
     const chainLevels = await getActiveChainLevels(orgId, "Leave");
     const levelCfg = chainLevels?.find((l) => l.level === current.level);
     const roleIds = await getCallerRoleIds(orgId, userId);
-    const authorized = callerCanActionLevel(
-      levelCfg,
-      { employeeId: userId, roleIds },
-      current.approverId,
-    );
-    if (!authorized) {
+    const delegated = await getDelegatedApprovers(orgId, userId, "hrms.leave.approve");
+    const actor = resolveLevelActor(levelCfg, { employeeId: userId, roleIds }, delegated, current.approverId);
+    if (!actor.canAction) {
       return forbidden("You are not authorized to approve this request");
     }
 

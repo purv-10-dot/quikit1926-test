@@ -9,13 +9,20 @@ import {
   FileText, ClipboardList, LayoutGrid, Link2, RotateCcw, ShieldAlert,
   Home, Mail, Clock, Receipt,
   ShieldCheck, CalendarClock,
-  LifeBuoy, ExternalLink,
+  LifeBuoy, ExternalLink, Rss,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { PageBackground } from "@/components/hrms/page-background";
+import { Modal } from "@/components/hrms/modal";
+import { CareerPageSettingsContent } from "@/components/hrms/settings/career-page-settings";
 import type { HrmsSetupProgress, HrmsSettingsChecklist } from "@/lib/services/hrms-setup";
+
+// Items whose href matches this open in a popup Modal instead of navigating
+// to a separate page — currently just Career Page, since it's a quick
+// toggle+link config, not a full workspace worth its own route switch.
+const MODAL_ITEM_HREFS = new Set(["/settings/career-page"]);
 
 interface Item {
   label: string;
@@ -90,6 +97,7 @@ const CATEGORIES: CategoryDef[] = [
     accent: "blue",
     icon: <Palette size={18} />,
     items: [
+      { label: "Career Page", href: "/settings/career-page", icon: <Rss size={14} />, perms: ["hrms.settings.write"] },
       { label: "Pre-Onboarding Templates", href: "/pre-onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"] },
       { label: "Onboarding Templates", href: "/onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"] },
       { label: "Offboarding Templates", href: "/offboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.offboarding.write"] },
@@ -131,6 +139,7 @@ export default function SettingsPage() {
   // "all" shows every category card; picking one from the left nav narrows
   // the grid to just that category.
   const [activeKey, setActiveKey] = useState<string>("all");
+  const [showCareerPageModal, setShowCareerPageModal] = useState(false);
 
   const visibleCategories = useMemo(
     () =>
@@ -270,6 +279,7 @@ export default function SettingsPage() {
                       key={i.href}
                       item={i}
                       needsSetup={!!i.checklistKey && settingsChecklist ? !settingsChecklist[i.checklistKey] : false}
+                      onModalOpen={MODAL_ITEM_HREFS.has(i.href) ? () => setShowCareerPageModal(true) : undefined}
                     />
                   ))}
                 </div>
@@ -278,16 +288,24 @@ export default function SettingsPage() {
           })}
         </div>
       </div>
+
+      <Modal
+        open={showCareerPageModal}
+        onClose={() => setShowCareerPageModal(false)}
+        title="Career Page"
+        subtitle="A public, no-login page where candidates can browse your open jobs and apply directly."
+        size="lg"
+      >
+        <CareerPageSettingsContent />
+      </Modal>
     </div>
   );
 }
 
-function SettingRow({ item, needsSetup }: { item: Item; needsSetup: boolean }) {
-  return (
-    <Link
-      href={item.href}
-      className="group flex items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:text-[#16a34a] hover:bg-gray-50 transition rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bbf7d0]"
-    >
+function SettingRow({ item, needsSetup, onModalOpen }: { item: Item; needsSetup: boolean; onModalOpen?: () => void }) {
+  const className = "group flex items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:text-[#16a34a] hover:bg-gray-50 transition rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bbf7d0] w-full text-left";
+  const content = (
+    <>
       <span className="text-gray-400 group-hover:text-[#22c55e] transition shrink-0">{item.icon}</span>
       <span className="truncate flex-1 min-w-0">{item.label}</span>
       {needsSetup && (
@@ -296,6 +314,10 @@ function SettingRow({ item, needsSetup }: { item: Item; needsSetup: boolean }) {
         </span>
       )}
       <ChevronRight size={13} className="text-gray-300 group-hover:text-[#22c55e] opacity-0 group-hover:opacity-100 transition shrink-0" />
-    </Link>
+    </>
   );
+  if (onModalOpen) {
+    return <button type="button" onClick={onModalOpen} className={className}>{content}</button>;
+  }
+  return <Link href={item.href} className={className}>{content}</Link>;
 }
