@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { Prisma } from "@quikit/database";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { runWorkflow } from "@/lib/engine/runner";
 import type { EngineEvent } from "@/lib/engine/types";
@@ -52,6 +53,30 @@ describe("runWorkflow", () => {
     const result = await runWorkflow(workflow, event, "evt1:wf1", context);
     expect(result).toBeNull();
     expect(mockDb.wfRun.create).not.toHaveBeenCalled();
+  });
+
+  it("a TOCTOU race on WfRun.create (P2002 after a concurrent winner) returns null, not a thrown error", async () => {
+    // Both racers pass findUnique (neither has committed yet), then this
+    // caller loses the DB's unique(orgId, dedupeKey) race on create().
+    mockDb.wfRun.findUnique.mockResolvedValue(null);
+    mockDb.wfRun.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+
+    const result = await runWorkflow(workflow, event, "evt1:wf1", context);
+
+    expect(result).toBeNull();
+    expect(mockDb.wfStepLog.create).not.toHaveBeenCalled();
+  });
+
+  it("re-throws a WfRun.create failure that isn't the P2002 race", async () => {
+    mockDb.wfRun.findUnique.mockResolvedValue(null);
+    mockDb.wfRun.create.mockRejectedValue(new Error("connection lost"));
+
+    await expect(runWorkflow(workflow, event, "evt1:wf1", context)).rejects.toThrow("connection lost");
   });
 
   it("stops and skips the action when a condition is false", async () => {

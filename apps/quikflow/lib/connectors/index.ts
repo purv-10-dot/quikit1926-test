@@ -310,6 +310,11 @@ async function findCalendarConnection(
   return { conn, provider };
 }
 
+// Sentinel externalEventId for a WfCalendarLink row that has been claimed
+// (reserved ahead of the outbound Graph call) but not yet resolved to a real
+// event id. See createCalendarEventForOrg's `link` branch.
+const PENDING_EVENT_ID = "__pending__";
+
 /** Identifies the source-app record a calendar event represents, for idempotency. */
 export interface CalendarLinkKey {
   /** Source record type, e.g. "clientMaster". */
@@ -359,65 +364,82 @@ export async function createCalendarEventForOrg(
 
   if (link) {
     const kind = link.kind ?? "";
+    const where = { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } } as const;
     // Two independent callers (e.g. the auto-fired clientMaster.created
     // workflow AND the direct "Create Teams meetings" button) can target the
     // exact same (orgId, refType, refId, kind) concurrently. A plain
     // findUnique-then-create isn't atomic — both could see "no link yet" and
     // both call provider.createEvent(), producing two real Teams events even
-    // though the DB upsert below only ever keeps one row. A Postgres advisory
-    // lock scoped to this transaction serializes same-key callers so the
-    // second one sees the first's row and PATCHes instead of duplicating.
+    // though the DB write below only ever keeps one row.
+    //
+    // The outbound Graph call can't be part of a DB transaction (it's an
+    // external side effect, not something Postgres can roll back), so a
+    // single "lock, call Graph, write" transaction still leaves a gap: if
+    // Graph succeeds but the transaction fails to commit afterwards, the
+    // created event is real but untracked, and the next attempt (a retry or
+    // the second caller) sees no link and creates a genuine duplicate.
+    //
+    // Instead this claims a PENDING row in its own short, lock-serialized
+    // transaction BEFORE calling Graph — so the claim survives independently
+    // of whatever happens next. Only the caller that wins the claim calls
+    // Graph; everyone else PATCHes the existing real link or, for a
+    // still-pending claim, waits/bails rather than creating a second event.
+    // A claim that crashes before the finishing update is reaped as stale
+    // after CLAIM_STALE_MS so the record isn't permanently stuck.
     const lockKey = `wf-calendar-link:${orgId}:${link.refType}:${link.refId}:${kind}`;
-    return db.$transaction(
-      async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+    const CLAIM_STALE_MS = 2 * 60_000;
 
-        const existing = await tx.wfCalendarLink.findUnique({
-          where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
-          select: { id: true, externalEventId: true },
-        });
-        if (existing) {
-          const updated = await found.provider.updateEvent(accessToken, existing.externalEventId, payload);
-          await tx.wfCalendarLink.update({
-            where: { id: existing.id },
-            data: {
-              connectionId: found.conn.id,
-              provider: found.conn.provider as never,
-              webLink: updated.webLink ?? null,
-              joinUrl: updated.joinUrl ?? null,
-            },
-          });
-          return { ...updated, organizer: found.conn.label, updated: true };
-        }
-        const created = await found.provider.createEvent(accessToken, payload);
-        await tx.wfCalendarLink.upsert({
-          where: { orgId_refType_refId_kind: { orgId, refType: link.refType, refId: link.refId, kind } },
-          create: {
-            orgId,
-            provider: found.conn.provider as never,
-            connectionId: found.conn.id,
-            refType: link.refType,
-            refId: link.refId,
-            kind,
-            externalEventId: created.id,
-            webLink: created.webLink ?? null,
-            joinUrl: created.joinUrl ?? null,
-            createdBy: opts?.createdBy ?? "system",
-          },
-          update: {
-            connectionId: found.conn.id,
-            provider: found.conn.provider as never,
-            externalEventId: created.id,
-            webLink: created.webLink ?? null,
-            joinUrl: created.joinUrl ?? null,
-          },
-        });
-        return { ...created, organizer: found.conn.label, updated: false };
-      },
-      // The lock is held across the outbound Graph call, so give it more
-      // headroom than Prisma's 5s default (Graph create/update can be slow).
-      { timeout: 20_000 },
-    );
+    const claim = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const existing = await tx.wfCalendarLink.findUnique({ where });
+      if (existing && existing.externalEventId !== PENDING_EVENT_ID) {
+        return { mode: "existing" as const, row: existing };
+      }
+      if (existing && Date.now() - existing.updatedAt.getTime() < CLAIM_STALE_MS) {
+        return { mode: "in-flight" as const, row: existing };
+      }
+      const row = await tx.wfCalendarLink.upsert({
+        where,
+        create: {
+          orgId,
+          provider: found.conn.provider as never,
+          connectionId: found.conn.id,
+          refType: link.refType,
+          refId: link.refId,
+          kind,
+          externalEventId: PENDING_EVENT_ID,
+          createdBy: opts?.createdBy ?? "system",
+        },
+        update: { externalEventId: PENDING_EVENT_ID, connectionId: found.conn.id, provider: found.conn.provider as never },
+      });
+      return { mode: "claimed" as const, row };
+    });
+
+    if (claim.mode === "in-flight") {
+      throw new Error("Calendar event creation already in progress for this record — try again shortly.");
+    }
+
+    if (claim.mode === "existing") {
+      const updated = await found.provider.updateEvent(accessToken, claim.row.externalEventId, payload);
+      await db.wfCalendarLink.update({
+        where: { id: claim.row.id },
+        data: {
+          connectionId: found.conn.id,
+          provider: found.conn.provider as never,
+          webLink: updated.webLink ?? null,
+          joinUrl: updated.joinUrl ?? null,
+        },
+      });
+      return { ...updated, organizer: found.conn.label, updated: true };
+    }
+
+    // claim.mode === "claimed" — we alone own creating this event.
+    const created = await found.provider.createEvent(accessToken, payload);
+    await db.wfCalendarLink.update({
+      where: { id: claim.row.id },
+      data: { externalEventId: created.id, webLink: created.webLink ?? null, joinUrl: created.joinUrl ?? null },
+    });
+    return { ...created, organizer: found.conn.label, updated: false };
   }
 
   const created = await found.provider.createEvent(accessToken, payload);

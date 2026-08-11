@@ -164,10 +164,13 @@ export default function ClientsPage() {
   // Filter popover — Client name + Status.
   const [showFilter, setShowFilter] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
-  // Is a Microsoft Teams calendar connected for this org? When true, the Add/Edit
-  // form surfaces the Teams-meeting scheduling model + "Create Teams meetings"
-  // button; when false the form behaves exactly as today (degrades — never blocks).
-  const { calendarConnected } = useClientMeetingAutomation();
+  // calendarConnected: is a Microsoft Teams calendar connected for this org at all
+  // (drives the "Create Teams meetings" manual button, which works standalone).
+  // calendarAutomation: is the "Client Master → Teams meetings" QuikFlow workflow
+  // actually toggled ON. The Meeting recurrence editor + auto-scheduling preview
+  // must gate on BOTH — a connected calendar with the workflow off should show the
+  // form exactly as if nothing were connected.
+  const { calendarConnected, calendarAutomation } = useClientMeetingAutomation();
   // Direct "Create Teams meetings" call state (per open form).
   const [scheduling, setScheduling] = useState(false);
   const [scheduleMsg, setScheduleMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -583,14 +586,12 @@ export default function ClientsPage() {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed to save"); return; }
-      const savedId: string | undefined = editing.id ?? (json.data?.id as string | undefined);
       notify.saved("Client", editing.id ? "updated" : "created");
-      // On save, create/update the Teams meetings when a calendar is connected.
-      if (calendarConnected && savedId) {
-        const r = await scheduleMeetings(savedId);
-        if (r.ok) notify.success(r.text);
-        else notify.warning(r.text);
-      }
+      // Teams meeting creation is NOT triggered here. On create, the
+      // "Client Master → Teams meetings" QuikFlow workflow (clientMaster.created
+      // event) owns it when toggled on. Calling scheduleMeetings() here too used
+      // to double-fire calendar.event.create for the same client on every save —
+      // see the "Create Teams meetings" button below for the explicit manual path.
       setEditing(null);
       await refresh();
     } catch (err: unknown) {
@@ -602,7 +603,9 @@ export default function ClientsPage() {
   /**
    * Direct "Create Teams meetings" — create/update this client's Daily + Weekly
    * recurring Teams events via QuikFlow (no workflow needed). Idempotent, so it's
-   * safe to click again. Used on save and by the in-form button.
+   * safe to click again. Only called from the in-form button below — NOT from
+   * handleSubmit, since the workflow (when toggled on) already owns creation
+   * on save and calling both raced to create duplicate events.
    */
   async function scheduleMeetings(clientId: string): Promise<{ ok: boolean; text: string }> {
     setScheduling(true);
@@ -1074,10 +1077,12 @@ export default function ClientsPage() {
           </div>
 
           {/* Teams-meeting scheduling model — shown ONLY when a Microsoft Teams
-              calendar is connected. When absent, the form is unchanged (today's
-              behavior). The recurrence editor feeds the series; the preview shows
-              what will be scheduled; the button creates both meetings directly. */}
-          {calendarConnected && (
+              calendar is connected AND the "Client Master → Teams meetings"
+              QuikFlow workflow is toggled on. When either is missing, the form
+              is unchanged (today's behavior). The recurrence editor feeds the
+              series; the preview shows what will be scheduled; the button
+              creates both meetings directly. */}
+          {calendarConnected && calendarAutomation && (
             <>
               <div className="rounded-lg border border-gray-200 p-3 space-y-3">
                 <p className="text-xs font-semibold text-gray-700">Meeting recurrence</p>
@@ -1154,7 +1159,8 @@ export default function ClientsPage() {
               />
 
               {/* Direct create — makes both recurring Teams meetings now. Saving
-                  also creates them; this button is for re-creating on demand. */}
+                  no longer auto-creates them (that raced with the workflow and
+                  duplicated events); this button is the explicit way to (re-)create. */}
               <div className="space-y-2">
                 {scheduleMsg && (
                   <div className={`rounded-md px-3 py-2 text-xs ${scheduleMsg.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>

@@ -90,6 +90,13 @@ export async function runWorkflow(
 
   // Idempotency guard — unique (orgId, dedupeKey) on WfRun. A retried event
   // (same eventId → same dedupeKey) never double-creates a run or its actions.
+  // The find+create below isn't wrapped in a transaction (a transaction can't
+  // make it atomic anyway — Postgres still runs them as separate statements
+  // and both racers could pass the findUnique before either commits), so it's
+  // still a genuine TOCTOU race under concurrent delivery of the same event.
+  // The DB's unique constraint is the real backstop: the loser's create()
+  // throws P2002, which we catch below and treat as "someone else already
+  // owns this run" rather than letting it propagate as a job failure/retry.
   const existing = await db.wfRun.findUnique({
     where: { orgId_dedupeKey: { orgId: event.orgId, dedupeKey: runDedupeKey } },
     select: { id: true, status: true },
@@ -101,16 +108,22 @@ export async function runWorkflow(
   // payload didn't include it.
   const enrichedEvent: EngineEvent = { ...event, data: context.data };
 
-  const run = await db.wfRun.create({
-    data: {
-      orgId: event.orgId,
-      workflowId: workflow.id,
-      status: "running",
-      triggerData: context.data as Prisma.InputJsonValue,
-      dedupeKey: runDedupeKey,
-    },
-    select: { id: true },
-  });
+  let run: { id: string };
+  try {
+    run = await db.wfRun.create({
+      data: {
+        orgId: event.orgId,
+        workflowId: workflow.id,
+        status: "running",
+        triggerData: context.data as Prisma.InputJsonValue,
+        dedupeKey: runDedupeKey,
+      },
+      select: { id: true },
+    });
+  } catch (e: unknown) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return null;
+    throw e;
+  }
 
   const nodes = asNodes(workflow.graphNodes);
   const edges = asEdges(workflow.graphEdges);
