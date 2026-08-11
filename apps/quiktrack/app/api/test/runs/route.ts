@@ -3,7 +3,12 @@ import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { findOrCreateRunForBuild, TestRunError } from "@/lib/services/testRuns";
-import { badRequest, gateProject, serverError } from "@/lib/test/gate";
+import {
+  badRequest,
+  gateProject,
+  gateProjectResolved,
+  serverError,
+} from "@/lib/test/gate";
 import { createTestRunSchema, listRunsSchema } from "@/lib/validation/testRun";
 
 /**
@@ -22,12 +27,21 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
 
     if (!q.projectId) return badRequest("projectId is required");
 
-    const denied = await gateProject(orgId, userId, q.projectId, "TestRun", "view");
+    // q.projectId may be a cuid OR a projectKey (readable URLs). Filter rows on
+    // the RESOLVED cuid — querying by key matches nothing and would render an
+    // empty runs list, which reads as data loss.
+    const { denied, projectId } = await gateProjectResolved(
+      orgId,
+      userId,
+      q.projectId,
+      "TestRun",
+      "view",
+    );
     if (denied) return denied;
 
     const where = {
       orgId,
-      projectId: q.projectId,
+      projectId,
       isDeleted: false,
       ...(q.state ? { state: q.state } : {}),
       ...(q.source ? { source: q.source } : {}),

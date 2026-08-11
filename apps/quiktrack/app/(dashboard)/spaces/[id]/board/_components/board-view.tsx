@@ -5,10 +5,12 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   Search,
@@ -19,7 +21,7 @@ import {
 } from "lucide-react";
 import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
-import type { CardDragData } from "./board-dnd";
+import type { CardDragData, ColumnDropData } from "./board-dnd";
 import { AddColumnTile } from "./add-column-tile";
 import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
 import { FilterPanel, FilterRow } from "@/components/filters/filter-panel";
@@ -232,6 +234,15 @@ export function BoardView({ projectId }: { projectId: string }) {
     };
   }, []);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The card currently being dragged — drives the DragOverlay preview that
+  // follows the cursor (smooth, Jira-style) instead of the card just dimming
+  // in place.
+  const [activeCard, setActiveCard] = useState<CardDragData | null>(null);
+
+  function onCardDragStart(e: DragStartEvent) {
+    const data = e.active.data.current as CardDragData | undefined;
+    setActiveCard(data ?? null);
+  }
 
   const visibleStatuses = statuses.filter((s) => !s.isHidden);
   const statusesById = Object.fromEntries(statuses.map((s) => [s.id, s]));
@@ -308,10 +319,18 @@ export function BoardView({ projectId }: { projectId: string }) {
   // source statusId rides along in active.data (expectedStatusId); over.id =
   // the target column's primary statusId (the droppable body's id).
   function onCardDragEnd(e: DragEndEvent) {
+    setActiveCard(null);
+    if (!e.over) return; // dropped outside any column
     const issueId = String(e.active.id);
-    const targetId = e.over ? String(e.over.id) : null;
-    if (!targetId) return; // dropped outside any column
     const expectedStatusId = (e.active.data.current as CardDragData | undefined)?.statusId;
+    const col = e.over.data.current as ColumnDropData | undefined;
+    // Same-column no-op: if the card's current status is already one of the
+    // target column's statuses, it was dropped back onto its own column — do
+    // nothing (avoids a pointless PATCH that the workflow 409s). Fall back to
+    // the raw over.id when the column data isn't present (defensive).
+    const targetStatuses = col?.statusIds ?? [String(e.over.id)];
+    if (expectedStatusId && targetStatuses.includes(expectedStatusId)) return;
+    const targetId = col?.primaryStatusId ?? String(e.over.id);
     void runIssueMove(issueId, targetId, expectedStatusId);
   }
 
@@ -386,7 +405,12 @@ export function BoardView({ projectId }: { projectId: string }) {
           tall column. */}
       {/* Card drag is @dnd-kit; the DndContext wraps the whole columns strip so
           a card can be dragged from any column and dropped onto any other. */}
-      <DndContext sensors={sensors} onDragEnd={onCardDragEnd}>
+      <DndContext
+        sensors={sensors}
+        onDragStart={onCardDragStart}
+        onDragEnd={onCardDragEnd}
+        onDragCancel={() => setActiveCard(null)}
+      >
       <div className="flex gap-3 overflow-x-auto w-full qt-board-scroll pb-1 h-[calc(100vh-240px)]">
         {bootLoading &&
           Array.from({ length: 4 }).map((_, i) => (
@@ -416,7 +440,8 @@ export function BoardView({ projectId }: { projectId: string }) {
             const primary = statusesById[col.statusIds[0]] ?? null;
             return (
               <BoardColumn
-                key={`${col.id}-${refreshKey}`}
+                key={col.id}
+                refreshKey={refreshKey}
                 status={primary ?? undefined}
                 columnStatusIds={col.statusIds}
                 displayName={col.name}
@@ -451,7 +476,8 @@ export function BoardView({ projectId }: { projectId: string }) {
           (isFunctional || activeSprintId) &&
           visibleStatuses.map((s) => (
             <BoardColumn
-              key={`${s.id}-${refreshKey}`}
+              key={s.id}
+              refreshKey={refreshKey}
               status={s}
               allStatuses={visibleStatuses}
               projectId={projectId}
@@ -494,6 +520,20 @@ export function BoardView({ projectId }: { projectId: string }) {
           />
         )}
       </div>
+      {/* Card preview that follows the cursor while dragging — makes the drag
+          feel smooth (Jira-style) instead of the source card just dimming. */}
+      <DragOverlay dropAnimation={null}>
+        {activeCard ? (
+          <div className="w-[280px] rotate-2 cursor-grabbing rounded-md border border-gray-200 bg-white p-2.5 shadow-lg">
+            <div className="text-sm font-semibold text-gray-900 line-clamp-2">
+              {activeCard.title}
+            </div>
+            <div className="mt-1 text-[11px] font-medium tabular-nums text-gray-400">
+              {activeCard.key}
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
       </DndContext>
 
       <EditIssueModal

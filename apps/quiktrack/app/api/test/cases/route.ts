@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { createTestCase, TestCaseError } from "@/lib/services/testCases";
-import { badRequest, gateProject, serverError } from "@/lib/test/gate";
+import { badRequest, gateProjectResolved, serverError } from "@/lib/test/gate";
 import {
   createTestCaseSchema,
   listTestCasesSchema,
@@ -21,15 +21,22 @@ import {
 export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   try {
     const url = new URL(req.url);
-    const projectId = url.searchParams.get("projectId");
-    if (!projectId) {
+    // May be a cuid or a projectKey (readable URLs like /spaces/QUIKTR/test).
+    const idOrKey = url.searchParams.get("projectId");
+    if (!idOrKey) {
       return NextResponse.json(
         { success: false, error: "projectId is required" },
         { status: 400 },
       );
     }
 
-    const denied = await gateProject(orgId, userId, projectId, "TestCase", "view");
+    const { denied, projectId } = await gateProjectResolved(
+      orgId,
+      userId,
+      idOrKey,
+      "TestCase",
+      "view",
+    );
     if (denied) return denied;
 
     const parsed = listTestCasesSchema.safeParse(
@@ -97,18 +104,27 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
 export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   try {
     const body: unknown = await req.json();
-    const projectId =
+    const idOrKey =
       typeof body === "object" && body !== null && "projectId" in body
         ? String((body as { projectId: unknown }).projectId)
         : "";
-    if (!projectId) {
+    if (!idOrKey) {
       return NextResponse.json(
         { success: false, error: "projectId is required" },
         { status: 400 },
       );
     }
 
-    const denied = await gateProject(orgId, userId, projectId, "TestCase", "create");
+    // Resolve BEFORE creating: the case row stores projectId, and the
+    // automationId uniqueness index is scoped by it. A persisted key would
+    // silently escape that constraint.
+    const { denied, projectId } = await gateProjectResolved(
+      orgId,
+      userId,
+      idOrKey,
+      "TestCase",
+      "create",
+    );
     if (denied) return denied;
 
     const parsed = createTestCaseSchema.safeParse(body);

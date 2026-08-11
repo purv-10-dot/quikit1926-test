@@ -140,7 +140,7 @@ export function TaskCard({
 
   return (
     <div className="relative">
-      <DraggableCard id={task.id} statusId={task.statusId}>
+      <DraggableCard id={task.id} statusId={task.statusId} issueKey={task.key} title={task.title || "Untitled"}>
       <div
         onClick={() => onOpen?.(task.id)}
         className="qt-board-card bg-white border border-gray-200 rounded-md p-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"

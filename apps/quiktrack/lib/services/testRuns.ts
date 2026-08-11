@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { assertResolvedProjectId } from "@/lib/test/projectId";
 import type { CreateTestRunInput, RecordResultInput } from "@/lib/validation/testRun";
 
 /**
@@ -63,12 +64,19 @@ async function nextRefId(
  *
  * Each test PINS the case's `currentVersion`, which is what lets a historical
  * run keep showing the steps it actually executed after the case is edited.
+ *
+ * ⚠️ `input.projectId` MUST be a resolved cuid, never a `projectKey`. Routes take
+ * either from the URL/body and resolve via `gateProjectResolved` before calling
+ * in. Persisting a key here would write a row that no id-based query can find,
+ * and would escape the `(projectId, automationId)` uniqueness index. The guard
+ * below fails fast rather than letting that reach the database.
  */
 export async function createTestRun(
   orgId: string,
   userId: string,
   input: CreateTestRunInput,
 ) {
+  assertResolvedProjectId(input.projectId);
   // Resolve the case set first — outside the transaction, since it is read-only
   // and can be large.
   const caseWhere: Prisma.QtTestCaseWhereInput = {
@@ -187,6 +195,11 @@ export async function findOrCreateRunForBuild(
   userId: string,
   input: CreateTestRunInput,
 ) {
+  // Guarded here too: the find-by-build query below filters on projectId, so a
+  // key would silently match nothing and create a duplicate run instead of
+  // reusing the existing one — defeating CI idempotency.
+  assertResolvedProjectId(input.projectId);
+
   if (input.build && input.source !== "manual") {
     const existing = await db.qtTestRun.findFirst({
       where: {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
-import { badRequest, gateProject, serverError } from "@/lib/test/gate";
+import { badRequest, gateProjectResolved, serverError } from "@/lib/test/gate";
 
 /**
  * GET /api/test/automation-map?projectId=&ids=a,b,c
@@ -18,10 +18,17 @@ import { badRequest, gateProject, serverError } from "@/lib/test/gate";
 export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   try {
     const url = new URL(req.url);
-    const projectId = url.searchParams.get("projectId");
-    if (!projectId) return badRequest("projectId is required");
+    // May be a cuid or a projectKey. CI callers naturally use the readable key.
+    const idOrKey = url.searchParams.get("projectId");
+    if (!idOrKey) return badRequest("projectId is required");
 
-    const denied = await gateProject(orgId, userId, projectId, "TestCase", "view");
+    const { denied, projectId } = await gateProjectResolved(
+      orgId,
+      userId,
+      idOrKey,
+      "TestCase",
+      "view",
+    );
     if (denied) return denied;
 
     const idsParam = url.searchParams.get("ids");

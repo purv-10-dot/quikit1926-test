@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
-import { badRequest, gateProject, serverError } from "@/lib/test/gate";
+import { badRequest, gateProjectResolved, serverError } from "@/lib/test/gate";
 import { createSuiteSchema } from "@/lib/validation/testCase";
 
 /**
@@ -16,10 +16,17 @@ import { createSuiteSchema } from "@/lib/validation/testCase";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   try {
-    const projectId = new URL(req.url).searchParams.get("projectId");
-    if (!projectId) return badRequest("projectId is required");
+    // May be a cuid or a projectKey (readable URLs like /spaces/QUIKTR/test).
+    const idOrKey = new URL(req.url).searchParams.get("projectId");
+    if (!idOrKey) return badRequest("projectId is required");
 
-    const denied = await gateProject(orgId, userId, projectId, "TestCase", "view");
+    const { denied, projectId } = await gateProjectResolved(
+      orgId,
+      userId,
+      idOrKey,
+      "TestCase",
+      "view",
+    );
     if (denied) return denied;
 
     const suites = await db.qtTestSuite.findMany({
@@ -67,9 +74,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     if (!parsed.success) {
       return badRequest(parsed.error.issues[0]?.message ?? "Invalid body");
     }
-    const { projectId, name, description } = parsed.data;
+    const { projectId: idOrKey, name, description } = parsed.data;
 
-    const denied = await gateProject(orgId, userId, projectId, "TestSuite", "create");
+    // Resolve BEFORE writing: the suite stores projectId, so persisting a key
+    // would create a row nothing can ever find again.
+    const { denied, projectId } = await gateProjectResolved(
+      orgId,
+      userId,
+      idOrKey,
+      "TestSuite",
+      "create",
+    );
     if (denied) return denied;
 
     // A suite with no section has nowhere to put a case, so seed one root

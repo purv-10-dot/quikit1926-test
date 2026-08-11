@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { assertResolvedProjectId } from "@/lib/test/projectId";
 import type {
   CreateTestCaseInput,
   TestStepInput,
@@ -119,6 +120,12 @@ export async function createTestCase(
   userId: string,
   input: CreateTestCaseInput,
 ) {
+  // MUST be a resolved cuid, not a projectKey. The case row stores projectId and
+  // the automationId uniqueness index is scoped by it, so a stored key would
+  // both hide the case from id-based queries and let duplicate automation ids
+  // through. Routes resolve via gateProjectResolved before calling in.
+  assertResolvedProjectId(projectId);
+
   // Verify the section belongs to this project before writing anything —
   // otherwise a caller could plant a case in another project's tree.
   const section = await db.qtTestSection.findFirst({

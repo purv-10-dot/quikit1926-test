@@ -41,6 +41,7 @@ export function BoardColumn({
   allStatuses,
   projectId,
   sprintId,
+  refreshKey,
   epicsById,
   statusesById,
   filters,
@@ -64,6 +65,10 @@ export function BoardColumn({
   allStatuses: BoardStatus[];
   projectId: string;
   sprintId: string | null;
+  /** Bumped by the parent after a drag/drop or update. The column refetches its
+   *  first page IN PLACE (keeping current cards visible → no shimmer flash),
+   *  instead of the old remount-via-key that reset loaded=false and shimmered. */
+  refreshKey?: number;
   epicsById: Record<string, EpicLite>;
   statusesById: Record<string, BoardStatus>;
   filters?: { search: string; assigneeId: string; type: string; priority: string; customFilters: string };
@@ -169,6 +174,21 @@ export function BoardColumn({
     void loadMore(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sprintId, status?.id, columnKey, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
+
+  // Refetch in place when the parent bumps refreshKey (after a drag/drop or an
+  // issue update). We do NOT reset to `empty` first — `loadMore(true)` replaces
+  // the cards when the new page arrives, so the column never flashes its
+  // skeleton shimmer on a card move. Skips the initial mount (the load effect
+  // above already did the first fetch).
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    void loadMore(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   useEffect(() => {
     const el = sentinelRef.current;

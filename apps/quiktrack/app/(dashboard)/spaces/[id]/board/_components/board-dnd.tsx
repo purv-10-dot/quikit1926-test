@@ -12,9 +12,21 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
  * (a separate interaction on the header) and is untouched here.
  */
 
-/** Data carried on the drag so `onDragEnd` knows the card's source status. */
+/** Data carried on the drag so `onDragEnd` knows the card's source status,
+ *  and the DragOverlay can render a preview of the card being moved. */
 export interface CardDragData {
   statusId: string;
+  key: string;
+  title: string;
+}
+
+/** Data carried on each droppable column so `onDragEnd` can tell whether the
+ *  card was dropped back onto the column it already lives in (same-column
+ *  no-op) vs a real move. `statusIds` is the FULL set the column shows;
+ *  `primaryStatusId` is where a dropped card is moved to. */
+export interface ColumnDropData {
+  statusIds: string[];
+  primaryStatusId: string;
 }
 
 /**
@@ -27,15 +39,19 @@ export interface CardDragData {
 export function DraggableCard({
   id,
   statusId,
+  issueKey,
+  title,
   children,
 }: {
   id: string;
   statusId: string;
+  issueKey: string;
+  title: string;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
-    data: { statusId } satisfies CardDragData,
+    data: { statusId, key: issueKey, title } satisfies CardDragData,
   });
   return (
     <div
@@ -57,17 +73,20 @@ export function DraggableCard({
  */
 export function DroppableColumnBody({
   id,
+  statusIds,
   className = "",
   children,
 }: {
   /** Primary statusId of the column, or null when the column has no target. */
   id: string | null;
+  /** Every status this column shows (for the same-column no-op check). */
+  statusIds?: string[];
   className?: string;
   children: React.ReactNode;
 }) {
   if (!id) return <NonDroppableBody className={className}>{children}</NonDroppableBody>;
   return (
-    <DroppableBody id={id} className={className}>
+    <DroppableBody id={id} statusIds={statusIds ?? [id]} className={className}>
       {children}
     </DroppableBody>
   );
@@ -75,14 +94,19 @@ export function DroppableColumnBody({
 
 function DroppableBody({
   id,
+  statusIds,
   className,
   children,
 }: {
   id: string;
+  statusIds: string[];
   className: string;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+  const { setNodeRef, isOver } = useDroppable({
+    id,
+    data: { statusIds, primaryStatusId: id } satisfies ColumnDropData,
+  });
   return (
     <div
       ref={setNodeRef}
