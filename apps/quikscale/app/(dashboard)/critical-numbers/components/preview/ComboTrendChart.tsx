@@ -24,8 +24,17 @@ import type { CriticalNumberFrequency } from "@/lib/schemas/criticalNumberSchema
 
 const CHART_W = 560;
 const CHART_H = 240;
-// Left gets extra room for the y-axis labels; the rest mirrors TrendChart.
-const PAD_LEFT = 40;
+/**
+ * Minimum y-axis gutter. The ACTUAL gutter is computed per-render from the
+ * widest tick label (see `PAD_LEFT` below) — this fixed 40 used to be the whole
+ * story, which clipped the leading digit off any 7-figure value: a 1,000,000
+ * target rendered its axis as "000000".
+ */
+const PAD_LEFT_MIN = 40;
+/** Approx advance width of one digit at the labels' 9px tabular font. */
+const AXIS_DIGIT_W = 5.5;
+/** Breathing room between the label's right edge and the axis line. */
+const AXIS_LABEL_GAP = 10;
 const PAD_RIGHT = 12;
 const PAD_TOP = 14;
 const PAD_BOTTOM = 26;
@@ -93,6 +102,11 @@ export function ComboTrendChart({ record, compact = false }: Props) {
 
   const rawMax = Math.max(record.targetValue, ...points.map((p) => p.value));
   const { ticks, axisMax } = niceTicks(rawMax);
+
+  // Widen the gutter to whatever the longest tick label actually needs, so large
+  // values (lakhs/crores of rupees) aren't cut off at the left edge.
+  const widestTickChars = Math.max(...ticks.map((t) => String(t).length));
+  const PAD_LEFT = Math.max(PAD_LEFT_MIN, widestTickChars * AXIS_DIGIT_W + AXIS_LABEL_GAP);
 
   // Bars are centered on their tick position, so the plotted x-range has to
   // be inset by half a bar's width on each side — otherwise the first/last
