@@ -14,20 +14,27 @@
  * extra round-trip.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Gauge, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Gauge, History, Trash2, X } from "lucide-react";
 import { AddButton, EmptyState, FilterPicker, Segmented, useConfirm } from "@quikit/ui";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useDebouncedTableSearch } from "@/lib/store";
 import { notify } from "@/lib/utils/notify";
 import { getMultiplier } from "@/lib/utils/currency";
+import {
+  resolveTargetTier,
+  CRITICAL_TIER_LABELS,
+  type CriticalTier,
+} from "@/lib/utils/criticalNumberTiers";
 import {
   CRITICAL_NUMBER_FREQUENCIES,
   type CriticalNumberFrequency,
 } from "@/lib/schemas/criticalNumberSchema";
 import { TableSkeleton } from "@/components/ui/Skeleton";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import {
   useCriticalNumbers,
   useCreateCriticalNumber,
@@ -62,6 +69,10 @@ const FREQUENCY_LABELS: Record<CriticalNumberFrequency, string> = {
   quarterly: "Quarterly",
 };
 
+/** Descending health order, matching the gauge/table legend. `CRITICAL_TIER_LABELS`
+ *  is a Record (unordered), so the filter's row order is pinned here. */
+const TIER_ORDER: CriticalTier[] = ["great", "good", "concerned", "bad"];
+
 /** "" → null, otherwise a finite number (or null if unparseable). */
 function num(v: string): number | null {
   if (v.trim() === "") return null;
@@ -93,12 +104,39 @@ export default function CriticalNumbersPage() {
   /** Table scope toggle. "all" by default — same wording/behaviour as the
    *  Goals list's own Mine/All filter, matched on `ownerId`. */
   const [tableScope, setTableScope] = useState<"all" | "mine">("all");
-  // Table filters. "" means "no filter" in every case, matching FilterPicker's
-  // own empty-value convention (it renders `allLabel` for that).
-  const [filterTeam, setFilterTeam] = useState("");
-  const [filterCategory, setFilterCategory] = useState("");
-  const [filterSubCategory, setFilterSubCategory] = useState("");
-  const [filterFrequency, setFilterFrequency] = useState("");
+  /** Recent Updates activity feed, opened from the header button. */
+  const [recentOpen, setRecentOpen] = useState(false);
+  /**
+   * Collapsed department sections, by name. `null` means "user hasn't touched
+   * this yet" — the default (every department closed except the first) is then
+   * DERIVED from the current groups rather than seeded into state, so it still
+   * applies when `items` arrives asynchronously after first render.
+   */
+  const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(null);
+  // Search is debounced + persisted via the shared tables slice (lib/store),
+  // same as WWW/KPI/Priority. `searchInput` is the controlled input value;
+  // `search` is the debounced value the match logic below reads.
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("criticalNumbers");
+  // Table filters, all multi-select. An EMPTY array means "no filter" (matching
+  // FilterPicker's own convention, which renders `allLabel` for that) — not
+  // "match nothing", so the pickers deliberately omit `allMeansEvery`.
+  const [filterTeams, setFilterTeams] = useState<string[]>([]);
+  const [filterCategories, setFilterCategories] = useState<string[]>([]);
+  const [filterSubCategories, setFilterSubCategories] = useState<string[]>([]);
+  const [filterFrequencies, setFilterFrequencies] = useState<string[]>([]);
+  const [filterTiers, setFilterTiers] = useState<string[]>([]);
+  // Filter dropdown, same button+panel pattern as the WWW page.
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close the filter dropdown on outside click — mirrors WWW's own effect.
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
 
   // Adapter for the category chart / summary donut / table / Recent Updates
   // — same mapping pattern the real `CriticalNumberCard` usage below already
@@ -131,25 +169,64 @@ export default function CriticalNumbersPage() {
     [items],
   );
 
-  // Table filters, applied against `items` (which carries the ids/enums the
-  // dropdowns select on) and then intersected with `previewRecords` by id —
-  // rather than adding every id to `PreviewCriticalNumber` or duplicating the
-  // mapper above. The charts and Recent Updates deliberately stay org-wide;
-  // only the table responds to these.
+  // Search + table filters, applied against `items` (which carries the ids,
+  // enums, owner and raw values the controls select on — `PreviewCriticalNumber`
+  // has no owner or ids) and then intersected with `previewRecords` by id,
+  // rather than widening that shape or duplicating the mapper above. The charts
+  // and Recent Updates deliberately stay org-wide; only the table responds.
   //
-  // Split in two so each scope's count can reflect the OTHER filters: the
-  // dropdown matches are computed once, then scope is applied on top.
+  // Split in two so each scope's count can reflect the OTHER constraints: the
+  // search/filter matches are computed once, then scope is applied on top.
+  const searchLc = search.trim().toLowerCase();
+
   const dropdownMatchedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const i of items) {
-      if (filterTeam && i.teamId !== filterTeam) continue;
-      if (filterCategory && i.categoryId !== filterCategory) continue;
-      if (filterSubCategory && i.subCategoryId !== filterSubCategory) continue;
-      if (filterFrequency && i.frequency !== filterFrequency) continue;
+      // Every filter group ANDs with the others; within a group, the selected
+      // values OR together (an empty group is "no constraint", not "none").
+      if (filterTeams.length && !filterTeams.includes(i.teamId)) continue;
+      if (filterCategories.length && !filterCategories.includes(i.categoryId)) continue;
+      // A record with no sub-category can never satisfy a sub-category filter.
+      if (filterSubCategories.length && !(i.subCategoryId && filterSubCategories.includes(i.subCategoryId)))
+        continue;
+      if (filterFrequencies.length && !filterFrequencies.includes(i.frequency)) continue;
+      if (filterTiers.length) {
+        // Same resolver the gauge/table/chart use, so a row's Status column and
+        // this filter can never disagree. Records with no value or no target
+        // resolve to `null` and are excluded whenever a tier is being filtered.
+        const { tier } = resolveTargetTier({
+          currentValue: i.currentValue,
+          targetValue: i.targetValue,
+        });
+        if (!tier || !filterTiers.includes(tier)) continue;
+      }
+      if (searchLc) {
+        // Title, Category, Owner — plus Sub Category, because the table renders
+        // it inside the same "Category / Sub Category" cell, and a term visible
+        // on screen returning no rows reads as a bug.
+        const ownerName = i.owner ? `${i.owner.firstName} ${i.owner.lastName}`.trim() : "";
+        const haystack = [
+          i.title,
+          i.category?.name ?? "",
+          i.subCategory?.name ?? "",
+          ownerName,
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(searchLc)) continue;
+      }
       ids.add(i.id);
     }
     return ids;
-  }, [items, filterTeam, filterCategory, filterSubCategory, filterFrequency]);
+  }, [
+    items,
+    filterTeams,
+    filterCategories,
+    filterSubCategories,
+    filterFrequencies,
+    filterTiers,
+    searchLc,
+  ]);
 
   const myIdsWithinDropdowns = useMemo(
     () => new Set(items.filter((i) => i.ownerId === currentUserId && dropdownMatchedIds.has(i.id)).map((i) => i.id)),
@@ -161,19 +238,47 @@ export default function CriticalNumbersPage() {
     return previewRecords.filter((r) => allowed.has(r.id));
   }, [tableScope, previewRecords, dropdownMatchedIds, myIdsWithinDropdowns]);
 
-  // Sub-categories are scoped to their parent category — same rule the create
-  // form applies (`visibleSubs`). Nothing to narrow by until one is chosen.
-  const filterableSubCategories = useMemo(
-    () => (options?.subCategories ?? []).filter((s) => s.categoryId === filterCategory),
-    [options?.subCategories, filterCategory],
-  );
+  // Sub-categories narrow to the selected categories, same parent/child rule the
+  // create form applies (`visibleSubs`). With NO category selected the full list
+  // stays available, so the filter is usable on its own rather than being a dead
+  // control until a category is picked.
+  const filterableSubCategories = useMemo(() => {
+    const subs = options?.subCategories ?? [];
+    return filterCategories.length
+      ? subs.filter((s) => filterCategories.includes(s.categoryId))
+      : subs;
+  }, [options?.subCategories, filterCategories]);
 
-  const anyFilterActive = !!(filterTeam || filterCategory || filterSubCategory || filterFrequency);
+  /** Narrowing the categories can orphan already-picked sub-categories; drop
+   *  those rather than silently ANDing an unreachable pair down to zero rows. */
+  function applyCategoryFilter(next: string[]) {
+    setFilterCategories(next);
+    if (!next.length) return;
+    const allowed = new Set(
+      (options?.subCategories ?? []).filter((s) => next.includes(s.categoryId)).map((s) => s.id),
+    );
+    setFilterSubCategories((prev) => prev.filter((id) => allowed.has(id)));
+  }
+
+  const filterGroups = [
+    filterTeams,
+    filterCategories,
+    filterSubCategories,
+    filterFrequencies,
+    filterTiers,
+  ];
+  /** Count of ACTIVE filter groups — drives the "N filters" button label, the
+   *  same convention the WWW page uses. Search is shown separately. */
+  const activeFilterCount = filterGroups.filter((g) => g.length > 0).length;
+  /** Search counts here: it decides whether an empty table means "no matches"
+   *  vs. "nothing created yet". */
+  const anyFilterActive = activeFilterCount > 0 || searchLc !== "";
   function clearFilters() {
-    setFilterTeam("");
-    setFilterCategory("");
-    setFilterSubCategory("");
-    setFilterFrequency("");
+    setFilterTeams([]);
+    setFilterCategories([]);
+    setFilterSubCategories([]);
+    setFilterFrequencies([]);
+    setFilterTiers([]);
   }
 
   const pickerUsers = useMemo(
@@ -323,6 +428,83 @@ export default function CriticalNumbersPage() {
     }
   }
 
+  /**
+   * Worst-first ordering for the grouped view. A dashboard's job is "what needs
+   * attention", and the flat grid's createdAt-desc answers "what did we add
+   * last" — which is why a new record lands on top and pushes everything down.
+   * Records with no resolvable tier (no data / no target) sort last: they aren't
+   * off track, they're unmeasured.
+   */
+  const TIER_RANK: Record<string, number> = { bad: 0, concerned: 1, good: 2, great: 3 };
+  function attentionRank(row: CriticalNumberRow): number {
+    return TIER_RANK[resolveTargetTier(row).tier ?? ""] ?? 4;
+  }
+
+  const cardGroups = useMemo(() => {
+    const byDept = new Map<string, CriticalNumberRow[]>();
+    for (const row of items) {
+      const key = row.team?.name ?? "No department";
+      const bucket = byDept.get(key);
+      if (bucket) bucket.push(row);
+      else byDept.set(key, [row]);
+    }
+    return [...byDept.entries()]
+      .map(([name, rows]) => ({
+        name,
+        rows: [...rows].sort((a, b) => attentionRank(a) - attentionRank(b)),
+        // "On track" = met or beat target. Near/Below both read as needing
+        // attention, which is what the header count is for.
+        onTrack: rows.filter((r) => {
+          const t = resolveTargetTier(r).tier;
+          return t === "good" || t === "great";
+        }).length,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  /** Only the first department is open until the user says otherwise. */
+  const collapsedGroups =
+    collapsedOverride ?? new Set(cardGroups.slice(1).map((g) => g.name));
+
+  function toggleGroup(name: string) {
+    const next = new Set(collapsedGroups);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setCollapsedOverride(next);
+  }
+
+  /** One card + its hover delete affordance. Shared by the flat and grouped
+   *  layouts so the two can't drift apart. */
+  function renderCard(row: CriticalNumberRow) {
+    return (
+      <div key={row.id} className="relative group">
+        <CriticalNumberCard
+          record={{
+            ...row,
+            teamName: row.team?.name,
+            ownerName: row.owner ? `${row.owner.firstName} ${row.owner.lastName}`.trim() : undefined,
+            categoryName: row.category?.name ?? null,
+            subCategoryName: row.subCategory?.name ?? null,
+          }}
+          onAddUpdate={() => setUpdatingId(row.id)}
+          onOpenDetail={() => setDetailId(row.id)}
+        />
+        {canDelete && (
+          <button
+            type="button"
+            onClick={() => remove(row)}
+            title="Delete"
+            aria-label={`Delete ${row.title}`}
+            className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
   const updatingRow = items.find((i) => i.id === updatingId) ?? null;
   const detailRow = items.find((i) => i.id === detailId) ?? null;
 
@@ -338,7 +520,23 @@ export default function CriticalNumbersPage() {
             The handful of metrics that decide the quarter. Up to five per team.
           </p>
         </div>
-        {canCreate && <AddButton onClick={openPanel}>Add Critical Number</AddButton>}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Quick access to the activity feed. It used to sit as a full-width
+              card at the bottom of the page, which pushed the card grid further
+              down for something read occasionally rather than continuously.
+              Hidden with zero records — the popup would only say "no updates". */}
+          {items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setRecentOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-gray-800 transition-colors"
+            >
+              <History className="h-3.5 w-3.5" />
+              Recent Updates
+            </button>
+          )}
+          {canCreate && <AddButton onClick={openPanel}>Add Critical Number</AddButton>}
+        </div>
       </div>
 
       {/* Category chart, summary donut, table, and Recent Updates — real
@@ -358,8 +556,9 @@ export default function CriticalNumbersPage() {
             </div>
           </div>
 
-          {/* Scope toggle + filters, one row. Counts on the toggle reflect the
-              dropdown filters, so each label previews what clicking it shows. */}
+          {/* Scope toggle + search + filters, one row. Counts on the toggle
+              reflect the search and every filter, so each label previews
+              exactly what clicking it shows. */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <Segmented
               value={tableScope}
@@ -372,57 +571,148 @@ export default function CriticalNumbersPage() {
             />
 
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-44">
-                <FilterPicker
-                  value={filterTeam}
-                  onChange={setFilterTeam}
-                  options={teams.map((t) => ({ value: t.id, label: t.name }))}
-                  allLabel="All Departments"
+              {/* Search — same control and debounce the WWW page uses. Matches
+                  Title / Category / Sub Category / Owner (see `dropdownMatchedIds`). */}
+              <div className="relative">
+                <svg
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  aria-label="Search Critical Numbers"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
                 />
               </div>
-              <div className="w-44">
-                <FilterPicker
-                  value={filterCategory}
-                  // Changing category invalidates any sub-category beneath it —
-                  // same rule the create form enforces.
-                  onChange={(v) => {
-                    setFilterCategory(v);
-                    setFilterSubCategory("");
-                  }}
-                  options={(options?.categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
-                  allLabel="All Categories"
-                />
-              </div>
-              <div className="w-44">
-                <FilterPicker
-                  value={filterSubCategory}
-                  onChange={setFilterSubCategory}
-                  options={filterableSubCategories.map((s) => ({ value: s.id, label: s.name }))}
-                  // Sub-categories only exist under a category, so this stays a
-                  // deliberate no-op until one is picked.
-                  allLabel={filterCategory ? "All Sub Categories" : "Sub Category (pick a category)"}
-                />
-              </div>
-              <div className="w-36">
-                <FilterPicker
-                  value={filterFrequency}
-                  onChange={setFilterFrequency}
-                  options={CRITICAL_NUMBER_FREQUENCIES.map((f) => ({
-                    value: f,
-                    label: FREQUENCY_LABELS[f],
-                  }))}
-                  allLabel="All Frequencies"
-                />
-              </div>
-              {anyFilterActive && (
+
+              {/* Filter button + panel. Five multi-selects would overrun the row
+                  inline once their chips render, so they live in the same
+                  dropdown the WWW page uses, with the same "N filters" label. */}
+              <div className="relative" ref={filterRef}>
                 <button
                   type="button"
-                  onClick={clearFilters}
-                  className="px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                  onClick={() => setShowFilter((o) => !o)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${
+                    showFilter || activeFilterCount > 0
+                      ? "border-accent-300 bg-accent-50 text-accent-600"
+                      : "border-gray-200 text-gray-600"
+                  }`}
                 >
-                  Clear
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"
+                    />
+                  </svg>
+                  {activeFilterCount > 0
+                    ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}`
+                    : "Filter"}
                 </button>
-              )}
+
+                {/* No `overflow-*` on the panel, deliberately (same as WWW's):
+                    each FilterPicker's dropdown is absolutely positioned, and a
+                    scroll container would clip it. Panel height stays bounded
+                    because the chip rows scroll internally. */}
+                {showFilter && (
+                  <div className="absolute top-full right-0 mt-1.5 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                        Department
+                      </p>
+                      <FilterPicker
+                        multiple
+                        values={filterTeams}
+                        onChangeMultiple={setFilterTeams}
+                        options={teams.map((t) => ({ value: t.id, label: t.name }))}
+                        allLabel="All Departments"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                        Category
+                      </p>
+                      <FilterPicker
+                        multiple
+                        values={filterCategories}
+                        onChangeMultiple={applyCategoryFilter}
+                        options={(options?.categories ?? []).map((c) => ({
+                          value: c.id,
+                          label: c.name,
+                        }))}
+                        allLabel="All Categories"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                        Sub Category
+                      </p>
+                      <FilterPicker
+                        multiple
+                        values={filterSubCategories}
+                        onChangeMultiple={setFilterSubCategories}
+                        options={filterableSubCategories.map((s) => ({
+                          value: s.id,
+                          label: s.name,
+                        }))}
+                        allLabel="All Sub Categories"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                        Status
+                      </p>
+                      <FilterPicker
+                        multiple
+                        values={filterTiers}
+                        onChangeMultiple={setFilterTiers}
+                        options={TIER_ORDER.map((t) => ({
+                          value: t,
+                          label: CRITICAL_TIER_LABELS[t],
+                        }))}
+                        allLabel="All Statuses"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                        Frequency
+                      </p>
+                      <FilterPicker
+                        multiple
+                        values={filterFrequencies}
+                        onChangeMultiple={setFilterFrequencies}
+                        options={CRITICAL_NUMBER_FREQUENCIES.map((f) => ({
+                          value: f,
+                          label: FREQUENCY_LABELS[f],
+                        }))}
+                        allLabel="All Frequencies"
+                      />
+                    </div>
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -431,14 +721,14 @@ export default function CriticalNumbersPage() {
             onRowClick={(r) => setDetailId(r.id)}
             emptyMessage={
               anyFilterActive
-                ? "No Critical Numbers match these filters."
+                ? searchLc && activeFilterCount === 0
+                  ? `No Critical Numbers match "${search.trim()}".`
+                  : "No Critical Numbers match these filters."
                 : tableScope === "mine"
                   ? "You don't own any Critical Numbers yet."
                   : undefined
             }
           />
-
-          <RecentUpdatesCard records={previewRecords} />
         </>
       )}
 
@@ -460,34 +750,95 @@ export default function CriticalNumbersPage() {
             : {})}
         />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-5">
-          {items.map((row) => (
-            <div key={row.id} className="relative group">
-              <CriticalNumberCard
-                record={{
-                  ...row,
-                  teamName: row.team?.name,
-                  ownerName: row.owner
-                    ? `${row.owner.firstName} ${row.owner.lastName}`.trim()
-                    : undefined,
-                  categoryName: row.category?.name ?? null,
-                  subCategoryName: row.subCategory?.name ?? null,
-                }}
-                onAddUpdate={() => setUpdatingId(row.id)}
-              />
-              {canDelete && (
-                <button
-                  type="button"
-                  onClick={() => remove(row)}
-                  title="Delete"
-                  aria-label={`Delete ${row.title}`}
-                  className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          ))}
+        <div className="space-y-4">
+          {/* Names the section, so the cards below aren't mistaken for more of
+              the table above and the department headers have context. */}
+          <div className="pt-1">
+            <h2 className="text-base font-semibold text-gray-900">Department Breakdown</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Every Critical Number grouped by the department that owns it, most urgent first.
+            </p>
+          </div>
+
+          <div className="space-y-5">
+              {cardGroups.map((group) => {
+                const collapsed = collapsedGroups.has(group.name);
+                const needsAttention = group.rows.length - group.onTrack;
+                return (
+                  <section key={group.name}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.name)}
+                      aria-expanded={!collapsed}
+                      className="w-full flex items-center gap-2 py-2 border-b border-gray-200 text-left group/hdr"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 text-gray-400 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+                      />
+                      <span className="text-sm font-semibold text-gray-900">{group.name}</span>
+                      <span className="text-xs text-gray-400 tabular-nums">
+                        {group.rows.length}
+                      </span>
+                      <span className="ml-auto text-xs text-gray-500 tabular-nums">
+                        {needsAttention > 0 ? (
+                          <span className="text-gray-700">
+                            {needsAttention} need{needsAttention === 1 ? "s" : ""} attention
+                          </span>
+                        ) : (
+                          "All on track"
+                        )}
+                      </span>
+                    </button>
+                    {!collapsed && (
+                      // One horizontal row per department rather than a
+                      // wrapping grid: a department with 9 numbers used to grow
+                      // three rows tall and push every later department off
+                      // screen. Four are visible at a time; the rest are a drag
+                      // (or swipe) away on the scroller's own progress bar.
+                      // `w-full` on the flex row is load-bearing — it pins the
+                      // row to the viewport width so the children's percentage
+                      // widths resolve against what's VISIBLE, then overflow it.
+                      <HorizontalScroller className="mt-4" innerClassName="pb-1">
+                        <div className="flex gap-4 w-full">
+                          {group.rows.map((row) => (
+                            <div
+                              key={row.id}
+                              className="flex-none w-[85%] sm:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-2rem)/3)] xl:w-[calc((100%-3rem)/4)]"
+                            >
+                              {renderCard(row)}
+                            </div>
+                          ))}
+                        </div>
+                      </HorizontalScroller>
+                    )}
+                  </section>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Updates popup — same overlay construction as the create panel
+          below. `RecentUpdatesCard` brings its own card chrome and scrolls its
+          list internally, so it's dropped in as-is with a taller `height` than
+          the in-page default it used to get. */}
+      {recentOpen && (
+        <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setRecentOpen(false)}
+          />
+          <div className="relative w-full max-w-2xl my-8">
+            <button
+              type="button"
+              onClick={() => setRecentOpen(false)}
+              aria-label="Close recent updates"
+              className="absolute -top-2 -right-2 z-10 h-7 w-7 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 shadow-sm hover:text-gray-800 hover:bg-gray-50 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+            <RecentUpdatesCard records={previewRecords} height={560} />
+          </div>
         </div>
       )}
 

@@ -15,7 +15,8 @@
  * the "expected today" tick it needed are both gone.
  */
 
-import { Plus, TrendingUp } from "lucide-react";
+import type { KeyboardEvent } from "react";
+import { Maximize2, Plus, TrendingUp } from "lucide-react";
 import { resolveTargetTier, CRITICAL_TIER_LABELS } from "@/lib/utils/criticalNumberTiers";
 import type { CriticalNumberFrequency, MeasurementUnit } from "@/lib/schemas/criticalNumberSchema";
 // Same fixed list + scale math KPI's card/modal use — reused, not duplicated.
@@ -80,9 +81,27 @@ export interface CriticalNumberCardProps {
     updates?: { date: string; value: number }[];
   };
   onAddUpdate?: () => void;
+  /**
+   * Open the read-only detail view. When provided the whole card becomes a
+   * button — the in-card trend is deliberately small, so this is how you get to
+   * the full-size chart and the update history. Omit it to keep a static card
+   * (the create-form preview does).
+   */
+  onOpenDetail?: () => void;
+  /**
+   * Render the in-card trend section. Default true. The detail modal sets this
+   * false: it embeds this card for the gauge AND renders its own full-size
+   * `ComboTrendChart` right below, so leaving it on shows the same chart twice.
+   */
+  showTrend?: boolean;
 }
 
-export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardProps) {
+export function CriticalNumberCard({
+  record,
+  onAddUpdate,
+  onOpenDetail,
+  showTrend = true,
+}: CriticalNumberCardProps) {
   const result = resolveTargetTier(record);
   const tier = result.tier;
 
@@ -133,7 +152,28 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
   const dash = pct * CIRC;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <div
+      {...(onOpenDetail
+        ? {
+            role: "button" as const,
+            tabIndex: 0,
+            onClick: onOpenDetail,
+            // Keyboard parity — a div-as-button is only reachable if it also
+            // responds to Enter/Space.
+            onKeyDown: (e: KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpenDetail();
+              }
+            },
+          }
+        : {})}
+      className={`group/card bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden ${
+        onOpenDetail
+          ? "cursor-pointer transition-shadow hover:shadow-md hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
+          : ""
+      }`}
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-100">
         <div className="min-w-0">
@@ -219,7 +259,12 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
 
         <button
           type="button"
-          onClick={onAddUpdate}
+          // The card itself opens the detail view, so this must not bubble —
+          // otherwise "Add past update" would ALSO open the modal behind it.
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddUpdate?.();
+          }}
           className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-accent-700 bg-accent-50 border border-accent-200 rounded-lg hover:bg-accent-100 transition-colors"
         >
           <Plus className="h-3.5 w-3.5" /> Add past update
@@ -229,12 +274,22 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
       {/* Trend — the list endpoint's batched `updates` include (last 8,
           oldest-first). Falls back to a placeholder below 2 points, since
           that's not enough to plot a line against. */}
+      {showTrend && (
       <div className="border-t border-gray-100 px-4 py-3">
         <div className="flex items-center gap-1.5 mb-1.5">
           <TrendingUp className="h-3.5 w-3.5 text-gray-400" />
           <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
             Trend
           </span>
+          {/* Discoverability for the card-wide click: the chart is small on
+              purpose, so say where the readable one is. Hover/focus only, so it
+              doesn't add permanent chrome to an already-dense card. */}
+          {onOpenDetail && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-gray-400 opacity-0 group-hover/card:opacity-100 group-focus-visible/card:opacity-100 transition-opacity">
+              <Maximize2 className="h-3 w-3" />
+              Expand
+            </span>
+          )}
         </div>
         {hasTrend ? (
           <ComboTrendChart
@@ -254,6 +309,7 @@ export function CriticalNumberCard({ record, onAddUpdate }: CriticalNumberCardPr
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

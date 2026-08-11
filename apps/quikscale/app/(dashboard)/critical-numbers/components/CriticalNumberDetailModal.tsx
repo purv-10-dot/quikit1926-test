@@ -110,6 +110,9 @@ export function CriticalNumberDetailModal({
                   subCategoryName: record.subCategory?.name ?? null,
                 }}
                 onAddUpdate={onAddUpdate}
+                // The full-size chart renders directly below; without this the
+                // same trend would appear twice in one modal.
+                showTrend={false}
               />
             </div>
 
