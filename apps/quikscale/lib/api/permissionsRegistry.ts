@@ -80,6 +80,13 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [{ resource: "Priority", label: "Priority", actions: ACTIONS }],
   },
   {
+    key: "CriticalNumbers",
+    label: "Critical Numbers",
+    leaves: [
+      { resource: "CriticalNumber", label: "Critical Numbers", actions: ACTIONS },
+    ],
+  },
+  {
     key: "OrgSetup",
     label: "Org Setup",
     leaves: [
@@ -282,6 +289,7 @@ export const NAV_RESOURCE: Record<string, string> = {
   "kpi.individual": "KPI",
   "kpi.teams": "TeamKPI",
   priority: "Priority",
+  criticalNumbers: "CriticalNumber",
   "orgSetup.teams": "Team",
   "orgSetup.users": "User",
   "orgSetup.quarters": "Quarter",
@@ -388,6 +396,7 @@ export const TREE_MODULE_FLAG_KEY: Readonly<Record<string, string>> = {
   Dashboard: "dashboard",
   KPI: "kpi",
   Priority: "priority",
+  CriticalNumbers: "criticalNumbers",
   OrgSetup: "orgSetup",
   WWW: "www",
   ClientMeetings: "clientMeetings",

@@ -223,6 +223,9 @@ model Org {
   userTablePreferences     UserTablePreference[]
   qsUserViewPrefs          QsUserViewPref[]
   wwwItems                 WWWItem[]
+  criticalNumbers          CriticalNumber[]
+  subCategories            SubCategory[]
+  criticalNumberUpdates    CriticalNumberUpdate[]
   brands                   Brand[]
   AppRole                  QtAppRole[]
   QtProjectRole            QtProjectRole[]
@@ -359,6 +362,7 @@ model User {
   reviewsReceived         PerformanceReview[]              @relation("ReviewsReceived")
   reviewsGiven            PerformanceReview[]              @relation("ReviewsGiven")
   prioritiesOwned         Priority[]                       @relation("PriorityOwner")
+  criticalNumbersOwned    CriticalNumber[]                 @relation("CriticalNumberOwner")
   talentAssessor          TalentAssessment[]               @relation("TalentAssessor")
   talentAssessed          TalentAssessment[]               @relation("TalentAssessed")
   appRoles                UserAppRole[]
@@ -572,6 +576,7 @@ model QsTeam {
   accountabilityFunctions AccountabilityFunction[]
   kpis                    KPI[]
   priorities              Priority[]
+  criticalNumbers         CriticalNumber[]
   org                     Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parentTeam              QsTeam?                  @relation("QsTeamHierarchy", fields: [parentTeamId], references: [id])
   childTeams              QsTeam[]                 @relation("QsTeamHierarchy")
@@ -1004,6 +1009,9 @@ model CategoryMaster {
   position      Float?
   isDemoData    Boolean  @default(false)
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Virtual back-relations required by Prisma — no columns added to this table.
+  criticalNumbers CriticalNumber[]
+  subCategories   SubCategory[]
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
@@ -1164,6 +1172,143 @@ model QsUserViewPref {
 
   @@unique([userId, orgId, viewKey])
   @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
+/// A single tracked "Critical Number" — one headline metric owned by a person
+/// and scoped to a team. Rendered as a gauge plus a trend chart built from its
+/// append-only `updates` history.
+///
+/// Unprefixed on purpose: the `Qs` prefix on QsTeam/QsUserTeam/QsUserViewPref
+/// only exists to dodge Prisma model-name collisions with the platform schema
+/// (`public.Team`, `public.UserTeam`). "CriticalNumber" has no such collision,
+/// so it follows the unprefixed majority (KPI, Priority, WWWItem, …).
+///
+/// Two scoring modes, both resolving to the same four tiers:
+///   - "custom_targets" → the four `threshold*` columns are lower bounds
+///   - "time_based"     → `startDate`/`endDate`/`targetValue` define a linear
+///                        path; the tier comes from pace against the EXPECTED
+///                        value today, not against the final target
+/// Only the columns for the active mode are populated; the rest stay null.
+/// Mode is a plain String (Zod-validated at the API boundary) to match how
+/// KPI/Priority/WWWItem/HabitAssessment carry `status`.
+model CriticalNumber {
+  id              String   @id @default(cuid())
+  orgId           String
+  /// Doubles as "Department" in the UI. QuikScale has no Department model —
+  /// QsTeam fulfils that role, so the picker is relabelled rather than a
+  /// second concept being introduced.
+  teamId          String
+  title           String
+  ownerId         String
+
+  /// Classification, reused from Org Setup → Categories. Required.
+  categoryId      String
+  /// Optional one-level refinement under the chosen category.
+  subCategoryId   String?
+
+  /// "Number" | "Percentage" | "Currency" | "Ratio" — KPI's exact enum
+  /// (lib/schemas/kpiSchema.ts). Drives how the value is read, not stored.
+  measurementUnit String
+  /// Free-text label from Unit Master (e.g. "Leads", "kg"). Label only, no
+  /// calculation, and only meaningful when measurementUnit = "Number" — the
+  /// same rule KPI applies, where it is force-nulled for other unit types.
+  /// Stored as a plain string, not an FK, exactly as KPI.unit is.
+  unit            String?
+  /// ISO 4217 code ("USD", "INR", …), same shape and same fixed list
+  /// (lib/utils/currency.ts) as KPI.currency. Only meaningful when
+  /// measurementUnit = "Currency", force-nulled otherwise, mirroring the
+  /// `unit` rule above.
+  currency        String?
+  /// K/L/Cr/M-style display-scale label ("Crore", "Million", …) — same shape
+  /// and same currency-aware list as KPI.targetScale (lib/utils/currency.ts
+  /// getScales: INR gets Lakh/Crore, every other currency shares one
+  /// Thousand/Million/Billion/Trillion list). Unlike KPI, there is no
+  /// separate `scaledDisplay` toggle here — display-scaling is always applied
+  /// once a scale is chosen (see resolveTargetTier's caller / the card).
+  /// Force-nulled whenever measurementUnit isn't "Currency", same rule as
+  /// `currency` above. The STORED value (targetValue/currentValue) is always
+  /// raw/unscaled; this only affects display.
+  targetScale     String?
+  /// "weekly" | "monthly" | "quarterly". Intentionally NOT KPI's list
+  /// (daily/weekly/monthly/yearly) — different cadence needs, decided product-side.
+  frequency       String
+
+  /// The number being driven toward. Percentage bands are currentValue ÷ this.
+  targetValue     Float?
+  /// Latest recorded value. Denormalised cache of the newest `updates` row;
+  /// null means nothing has been recorded yet (distinct from a genuine 0, so
+  /// the gauge can show "no data" rather than a misleading zero).
+  currentValue    Float?
+
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  org             Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  team            QsTeam                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  owner           User                   @relation("CriticalNumberOwner", fields: [ownerId], references: [id])
+  /// Restrict, not Cascade: deleting a category must not silently delete the
+  /// metrics filed under it.
+  category        CategoryMaster         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subCategory     SubCategory?           @relation(fields: [subCategoryId], references: [id], onDelete: SetNull)
+  updates         CriticalNumberUpdate[]
+
+  @@index([orgId])
+  /// Backs the server-side "max 5 per team" cap check.
+  @@index([orgId, teamId])
+  @@index([ownerId])
+  @@index([categoryId])
+  @@index([subCategoryId])
+  @@schema("app_quikscale")
+}
+
+/// One level of refinement under a CategoryMaster. Deliberately flat — no
+/// self-nesting — mirroring CategoryMaster's shape one level down.
+model SubCategory {
+  id         String   @id @default(cuid())
+  orgId      String
+  categoryId String
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org        Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category   CategoryMaster @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  criticalNumbers CriticalNumber[]
+
+  /// Names are unique within a category, not org-wide — "Retention" can exist
+  /// under both Sales and Support.
+  @@unique([orgId, categoryId, name])
+  @@index([orgId])
+  @@index([categoryId])
+  @@schema("app_quikscale")
+}
+
+/// Append-only history for a CriticalNumber. Rows are never updated or
+/// overwritten — each recorded value is a new row, which is what the trend
+/// chart plots and what makes the history auditable without an audit module.
+///
+/// Carries its own `orgId` so list/chart queries can satisfy the
+/// filter-by-orgId rule directly, matching WWWNote and KPIWeeklyValue (the
+/// other child models that get queried in their own right).
+model CriticalNumberUpdate {
+  id               String   @id @default(cuid())
+  orgId            String
+  criticalNumberId String
+  /// The date the value is recorded FOR (may be backdated), not the insert time.
+  date             DateTime
+  value            Float
+  comment          String?
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  criticalNumber   CriticalNumber @relation(fields: [criticalNumberId], references: [id], onDelete: Cascade)
+  org              Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  /// Backs the trend chart: newest-first history for one metric.
+  @@index([criticalNumberId, date])
   @@schema("app_quikscale")
 }
 
