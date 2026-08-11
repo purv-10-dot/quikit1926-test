@@ -1,0 +1,145 @@
+-- ============================================================================
+-- QuikChat — enforce "exactly one default role per (orgId, appId)"
+-- ============================================================================
+-- Baseline : app_quikchat with the AppRole table present (all environments)
+-- Target   : a DB-level guarantee for an invariant that today lives only in
+--            application code
+-- Scope    : ONE partial unique index on app_quikchat."AppRole". No columns, no
+--            tables, no data rewrites, no drops.
+--
+-- ── PROVENANCE ─────────────────────────────────────────────────────────────
+-- Hand-written, NOT reconstructed from schema.prisma — Prisma cannot express a
+-- partial (filtered) unique index, so this index will exist in the database and
+-- NOT in schema.prisma. That divergence is deliberate; see "Prisma drift" below.
+-- Never diffed against UAT.
+--
+-- ── ORDERING: CONVERGENCE MUST LAND FIRST ──────────────────────────────────
+-- DO NOT APPLY THIS BEFORE the application fix that repairs `isDefault`
+-- (apps/quikchat/lib/authz/seed.ts — `convergeDefaultRole`) has shipped AND run
+-- at least one seed pass against this database.
+--
+-- This index REJECTS data that violates it. Unlike the other two QuikChat SQL
+-- files, "additive" here does not mean "cannot fail": if any (orgId, appId) has
+-- two or more rows with isDefault = true, CREATE INDEX errors and the
+-- transaction rolls back. That is the correct outcome — but it is a failed
+-- deploy step, so check first (Query B below) rather than discover it live.
+--
+-- Zero defaults does NOT block this index — a partial index only covers rows
+-- matching its WHERE clause, so an org with no default is simply unindexed. It
+-- is still the broken state (see WHY, below); the index cannot detect it and
+-- `convergeDefaultRole` is what repairs it. This index only prevents the
+-- MULTIPLE-defaults half of the invariant.
+--
+-- ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+-- The Admin Portal's invite modal picks a role with
+-- `roles.find(r => r.isDefault)?.name ?? roles[0]?.name`, and its API fills a
+-- missing default with `data[0]` ordered `isSystem DESC` — which is `admin`. So
+-- an org with the wrong number of defaults silently preselects **admin** for
+-- every newly invited user. The application now converges the flag on every
+-- seed pass, but three separate code paths write it
+-- (POST /api/org/roles, PATCH /api/org/roles/[id], convergeDefaultRole) and
+-- none of them is transactional, so two concurrent writers can still produce
+-- two defaults. This index makes that impossible rather than merely unlikely.
+--
+-- ── EXPECTED BEHAVIOUR CHANGE (read before applying) ────────────────────────
+-- After this lands, a concurrent double-set stops silently corrupting and
+-- starts failing loudly: the losing writer gets a unique violation (Prisma
+-- P2002). All three writers already demote BEFORE they promote, so the normal
+-- single-writer paths are index-safe and unaffected. The routes currently
+-- surface an unexpected error as a 500; mapping P2002 to a 409 there is a
+-- sensible follow-up, NOT a prerequisite — a 500 on a genuine concurrent
+-- collision is still better than two defaults.
+--
+-- ── PRISMA DRIFT (accept knowingly) ────────────────────────────────────────
+-- `prisma db pull` will not represent this index, and `prisma migrate diff`
+-- may propose dropping it. It must be preserved across any future Prisma-driven
+-- migration of app_quikchat. If Prisma ever gains partial-unique support, move
+-- it into schema.prisma and delete this file.
+--
+-- Idempotent: CREATE UNIQUE INDEX IF NOT EXISTS. Safe to re-run.
+--
+-- NOTE ON CONCURRENCY: this uses a plain CREATE INDEX inside a transaction,
+-- which takes a brief ACCESS EXCLUSIVE lock on AppRole. That table holds a
+-- handful of rows per org, so the lock is measured in milliseconds. Do NOT
+-- switch to CREATE INDEX CONCURRENTLY without also removing the transaction —
+-- Postgres forbids CONCURRENTLY inside BEGIN/COMMIT.
+-- ============================================================================
+
+
+-- ############################################################################
+-- ##   STOP — RUN BOTH QUERIES BEFORE THE TRANSACTION. QUERY B MUST BE 0.   ##
+-- ############################################################################
+--
+-- Query A — current default-role distribution per org. Orientation only.
+--   Healthy after convergence: exactly one row per (orgId, appId), n_defaults=1.
+--
+-- SELECT "orgId", "appId", COUNT(*) FILTER (WHERE "isDefault") AS n_defaults,
+--        COUNT(*) AS n_roles
+--   FROM "app_quikchat"."AppRole"
+--  GROUP BY "orgId", "appId"
+--  ORDER BY n_defaults DESC, "orgId";
+--
+-- Query B — THE GATE. Any (orgId, appId) with more than one default. This index
+--   CANNOT be created while this returns rows.
+--   Expect: 0 rows. If not, STOP — do not run the transaction. The application
+--   fix repairs this on its next seed pass; let it run, then re-check.
+--
+-- SELECT "orgId", "appId", COUNT(*) AS n_defaults,
+--        string_agg("name", ', ' ORDER BY "createdAt") AS role_names
+--   FROM "app_quikchat"."AppRole"
+--  WHERE "isDefault"
+--  GROUP BY "orgId", "appId"
+-- HAVING COUNT(*) > 1;
+--
+-- ############################################################################
+
+
+BEGIN;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- At most one default role per (orgId, appId).
+--
+-- PARTIAL (`WHERE "isDefault"`) rather than a plain unique on the pair: only
+-- rows that ARE the default participate, so an org can hold any number of
+-- non-default roles. A non-partial unique index on ("orgId","appId") would
+-- limit each org to a single role of any kind, which is obviously wrong.
+--
+-- Named to match Prisma's own convention so it reads like the sibling indexes
+-- on this table, while the `_default_` segment makes clear it is hand-written
+-- and not derived from an @@unique attribute.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE UNIQUE INDEX IF NOT EXISTS "AppRole_orgId_appId_default_key"
+  ON "app_quikchat"."AppRole" ("orgId", "appId")
+  WHERE "isDefault";
+
+COMMIT;
+
+-- ============================================================================
+-- Post-apply verification (read-only — run separately, outside the transaction)
+-- ============================================================================
+-- Expect exactly one row, and its indexdef must contain the WHERE clause — a
+-- definition without it would be the wrong (non-partial) index:
+--
+-- SELECT indexname, indexdef
+--   FROM pg_indexes
+--  WHERE schemaname = 'app_quikchat'
+--    AND tablename  = 'AppRole'
+--    AND indexname  = 'AppRole_orgId_appId_default_key';
+--
+-- Full index list for the table — expect the 3 Prisma-generated entries
+-- (AppRole_pkey, AppRole_orgId_appId_name_key, AppRole_orgId_appId_idx) plus
+-- this one, so 4 rows:
+--
+-- SELECT indexname, indexdef FROM pg_indexes
+--  WHERE schemaname = 'app_quikchat' AND tablename = 'AppRole'
+--  ORDER BY indexname;
+--
+-- Prove it actually bites (OPTIONAL, and only ever on a scratch database —
+-- never UAT). Should fail with a unique violation on the second statement:
+--
+-- -- BEGIN;
+-- -- UPDATE "app_quikchat"."AppRole" SET "isDefault" = true
+-- --  WHERE id = (SELECT id FROM "app_quikchat"."AppRole"
+-- --               WHERE "isDefault" = false LIMIT 1);
+-- -- ROLLBACK;
+-- ============================================================================
