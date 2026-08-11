@@ -203,7 +203,7 @@ export function BoardColumn({
 
   return (
     <div
-      className="group w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col max-h-[calc(100vh-180px)]"
+      className="group w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col max-h-full"
       onDragOver={dragHandlers?.onDragOver}
       onDrop={dragHandlers?.onDrop}
     >

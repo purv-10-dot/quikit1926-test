@@ -352,19 +352,19 @@ export function BoardView({ projectId }: { projectId: string }) {
         }}
       />
 
-      {/* qt-board-scroll (globals.css) — slim rounded always-visible
-          horizontal scrollbar styled specifically for the board pane.
-          The strip fills the remaining vertical space so the bar sits
-          at the bottom of the viewport, matching Jira's pattern. */}
-      <div
-        className="flex gap-3 overflow-x-scroll w-full qt-board-scroll pb-2"
-        style={{ minHeight: "calc(100vh - 220px)" }}
-      >
+      {/* qt-board-scroll (globals.css) — always-visible horizontal scrollbar.
+          The strip is CAPPED to the same height as the columns
+          (max-h-[calc(100vh-180px)]); each column scrolls its own cards
+          vertically inside that cap (see board-column.tsx). So the board pane
+          never grows past the viewport, and the horizontal scrollbar stays
+          pinned at the bottom of the pane — always visible, Jira-style —
+          instead of being pushed off-screen by a tall column. */}
+      <div className="flex gap-3 overflow-x-auto w-full qt-board-scroll pb-1 h-[calc(100vh-240px)]">
         {bootLoading &&
           Array.from({ length: 4 }).map((_, i) => (
             <div
               key={`sk-${i}`}
-              className="w-[300px] shrink-0 bg-gray-50 rounded p-2 min-h-[480px] space-y-2"
+              className="w-[300px] shrink-0 bg-gray-50 rounded p-2 h-full space-y-2 overflow-y-auto"
             >
               <div className="h-3 w-20 rounded bg-gray-200 animate-pulse" />
               {Array.from({ length: 3 }).map((_, j) => (
@@ -696,7 +696,7 @@ function EmptyColumn({
   projectId: string;
 }) {
   return (
-    <div className="w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col min-h-[480px]">
+    <div className="w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col h-full">
       <div className="px-1 mb-2 text-[11px] font-semibold tracking-wider uppercase text-gray-700">
         {name}
       </div>
