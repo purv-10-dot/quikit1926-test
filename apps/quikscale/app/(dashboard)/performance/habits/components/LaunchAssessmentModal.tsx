@@ -10,6 +10,7 @@ import { useTeams } from "@/lib/hooks/useTeams";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
+import { toDateInputValue } from "@/lib/utils/dateUtils";
 import { getFiscalQuarter, getFiscalYear } from "@/lib/utils/fiscal";
 import {
   getQuarterPeriodStatus,
@@ -48,7 +49,14 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
   const create = useCreateHabitCampaign();
   const { years: fiscalYears } = useFiscalYears();
   const { quarters: configuredQuarters, isLoading: quartersLoading } = useQuarterStartDates();
-  const { canAddPastQuarterHabit } = usePastWeekFlags();
+  const { canAddPastQuarterHabit, canAddPastWeek, loaded: pastWeekFlagsLoaded } = usePastWeekFlags();
+
+  // Mirrors DeadlineEditor in AggregateView: when "Add Past Week Data" is
+  // disabled, the deadline picker's `min` is today so a past deadline can't
+  // be chosen. Only clamp once flags have resolved, else the default `false`
+  // would briefly lock the picker for orgs that DO allow past dates.
+  const deadlineMinDate =
+    pastWeekFlagsLoaded && !canAddPastWeek ? toDateInputValue(new Date().toISOString()) : undefined;
 
   const fallbackYear = getFiscalYear();
 
@@ -317,6 +325,7 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
               <input
                 type="date"
                 value={deadline}
+                min={deadlineMinDate}
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
               />

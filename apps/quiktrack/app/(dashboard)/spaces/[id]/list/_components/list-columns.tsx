@@ -205,8 +205,10 @@ export const COLUMN_DEFS: ColumnDef[] = [
     label: "Status",
     sortKey: "statusId",
     defaultWidth: 130,
-    render: (issue, { statuses, onPatchIssue }) => (
+    render: (issue, { statuses, onPatchIssue, projectId }) => (
       <StatusEditor
+        issueId={issue.id}
+        projectId={projectId}
         value={issue.status}
         statuses={statuses}
         onChange={(statusId) => onPatchIssue(issue.id, { statusId })}

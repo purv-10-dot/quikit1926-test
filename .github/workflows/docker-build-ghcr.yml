@@ -54,6 +54,8 @@ jobs:
 
             quiktrack:
               - 'apps/quiktrack/**'
+            quikinsight:
+              - 'apps/quikinsight/**'
 
             quikinfra:
               - 'apps/quikinfra/**'
@@ -74,15 +76,16 @@ jobs:
           APPS=()
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms" "quiksupport" "quikasset")
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinsight" "quikinfra" "quikcrm" "quikhrms" "quiksupport" "quikasset")
           elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms" "quiksupport" "quikasset")
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinsight" "quikinfra" "quikcrm" "quikhrms" "quiksupport" "quikasset")
           else
             [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
             [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
             [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
             [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
             [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
+            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
             [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
             [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")

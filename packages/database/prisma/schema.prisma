@@ -8,7 +8,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikinsight", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -235,6 +235,10 @@ model Org {
   qtCustomFields           QtCustomField[]
   qtIssueFieldValues       QtIssueFieldValue[]
   qtCustomFieldAudits      QtCustomFieldAudit[]
+  qtWorkflows              QtWorkflow[]
+  qtResolutions            QtResolution[]
+  qtWorkflowSchemes        QtWorkflowScheme[]
+  qtScreens                QtScreen[]
   QtTimesheetEntry         QtTimesheetEntry[]
   QtUserActivity           QtUserActivity[]
   QtUserViewPref           QtUserViewPref[]
@@ -6363,6 +6367,10 @@ model QtProject {
   ideas            QtIdea[]
   ideaStatuses     QtIdeaStatus[]
   ideaViews        QtIdeaView[]
+  workflows        QtWorkflow[]
+  workflowScheme   QtWorkflowScheme?
+  boardColumns     QtBoardColumn[]
+  personalAccessTokens QtPersonalAccessToken[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -6388,6 +6396,30 @@ model QtProjectMember {
   @@unique([projectId, userId])
   @@index([projectId, role])
   @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+/// Long-lived, opaque, project-scoped credential for the QuikTrack MCP Server
+/// (V0, docs/adr/0001, docs/adr/0002). tokenHash is the only stored form of
+/// the token — the raw value is shown once at creation and never persisted.
+/// expiresAt is mandatory (max 1 year from issuance); there is no
+/// non-expiring option.
+model QtPersonalAccessToken {
+  id          String    @id @default(cuid())
+  orgId       String
+  projectId   String
+  createdById String
+  /// User-supplied label (e.g. "Claude Code — laptop") — never the token itself.
+  name        String    @default("Unnamed token")
+  tokenHash   String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash])
+  @@index([orgId, projectId])
   @@schema("app_quiktrack")
 }
 
@@ -6733,9 +6765,43 @@ model QtIssueStatus {
   updatedAt  DateTime  @updatedAt
   issues     QtIssue[]
   project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflowStatuses    QtWorkflowStatus[]
+  transitionTargets   QtWorkflowTransition[]     @relation("TransitionToStatus")
+  transitionSources   QtWorkflowTransitionFrom[]
+  boardColumnStatuses QtBoardColumnStatus[]
 
   @@unique([projectId, name])
   @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+// Board Settings — Jira-style "map statuses to columns". A board column is a
+// named container that can hold one or more statuses; a status not mapped to any
+// column is hidden from the board (the "Unmapped" bucket). Opt-in: a project
+// with no QtBoardColumn rows falls back to one-column-per-status.
+model QtBoardColumn {
+  id         String                @id @default(cuid())
+  projectId  String
+  name       String
+  orderIndex Int                   @default(0)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  project    QtProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  statuses   QtBoardColumnStatus[]
+
+  @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+model QtBoardColumnStatus {
+  // A status belongs to at most one column, so statusId IS the primary key.
+  statusId   String        @id
+  columnId   String
+  orderIndex Int           @default(0)
+  column     QtBoardColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  status     QtIssueStatus @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@index([columnId, orderIndex])
   @@schema("app_quiktrack")
 }
 
@@ -6750,6 +6816,7 @@ model QtIssueType {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  schemeItems QtWorkflowSchemeItem[]
 
   @@unique([projectId, name])
   @@schema("app_quiktrack")
@@ -6764,6 +6831,10 @@ model QtIssue {
   description      String?
   type             String              @default("TASK")
   statusId         String
+  /// Workflow resolution. NULL = issue is still open (this is the source of
+  /// truth for "open", NOT the status name). Set by a Done-category transition's
+  /// post-function; cleared on Reopen. See lib/services/workflow.
+  resolutionId     String?
   priority         String              @default("MEDIUM")
   parentId         String?
   epicId           String?
@@ -6794,9 +6865,11 @@ model QtIssue {
   project          QtProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sprint           QtSprint?           @relation(fields: [sprintId], references: [id])
   status           QtIssueStatus       @relation(fields: [statusId], references: [id])
+  resolution       QtResolution?       @relation(fields: [resolutionId], references: [id])
   group            QtTaskGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
   comments         QtIssueComment[]
   history          QtIssueHistory[]
+  transitionLogs   QtIssueTransitionLog[]
   outgoingLinks    QtIssueLink[]       @relation("IssueLinkSource")
   incomingLinks    QtIssueLink[]       @relation("IssueLinkTarget")
   timesheetEntries QtTimesheetEntry[]
@@ -6805,11 +6878,13 @@ model QtIssue {
   devBranches      QtDevBranch[]
   devCommits       QtDevCommit[]
   devPullRequests  QtDevPullRequest[]
+  remoteLinks      QtRemoteLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
   @@index([projectId, statusId])
   @@index([projectId, type])
+  @@index([resolutionId])
   @@index([assigneeId])
   @@index([epicId])
   @@index([parentId])
@@ -6863,6 +6938,8 @@ model QtIssueComment {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   editedAt  DateTime?
+  /// "user" | "agent" — was this authored by a person or an MCP-authenticated tool.
+  actorType String    @default("user")
   issue     QtIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -6895,6 +6972,25 @@ model QtIssueAttachment {
   @@schema("app_quiktrack")
 }
 
+/// External URL attached to an issue (e.g. a PR link) — distinct from
+/// QtIssueLink, which only links two QtIssue rows to each other.
+model QtRemoteLink {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  issueId   String
+  url       String
+  title     String
+  type      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  issue     QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, projectId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
 model QtIssueHistory {
   id        String   @id @default(cuid())
   orgId     String
@@ -6905,7 +7001,271 @@ model QtIssueHistory {
   oldValue  String?
   newValue  String?
   createdAt DateTime @default(now())
+  /// "user" | "agent" — was this change made by a person or an MCP-authenticated tool.
+  actorType String   @default("user")
   issue     QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configurable Workflows (Phase 1 — see apps/quiktrack/WORKFLOW_INTEGRATION_PLAN.md)
+// A workflow is a directed graph over a project's existing QtIssueStatus rows
+// (nodes) + transitions (edges). A workflow scheme maps issue types → workflows
+// per project. Status writes (move / bulk-status / PATCH) are gated against the
+// active workflow; projects with no PUBLISHED scheme keep today's any→any behaviour.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A named directed graph. projectId NULL = org-shared template (e.g. the seeded
+/// "classic default workflow"); set = owned by one project. isActive=false is a
+/// draft; publish (graph-validate) flips it true and sets initialTransitionId.
+model QtWorkflow {
+  id                  String                 @id @default(cuid())
+  orgId               String
+  projectId           String?
+  name                String
+  description         String?
+  isActive            Boolean                @default(false)
+  /// The single INITIAL transition (set on publish). No DB-level FK to avoid a
+  /// cycle with QtWorkflowTransition.workflowId; integrity enforced in app code.
+  initialTransitionId String?
+  isDeleted           Boolean                @default(false)
+  /// For reusable org-level templates (projectId = null): a self-contained,
+  /// name-based snapshot of the graph — { statuses:[{name,category,isInitial}],
+  /// transitions:[{name,type,from:[names],to:name,rules}] }. Independent of any
+  /// project's status rows, so the template survives if the source project (or
+  /// its statuses) change or are deleted. Materialized BY NAME on import.
+  templateJson        Json?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  createdBy           String?
+  updatedBy           String?
+  org                 Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project             QtProject?             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflowStatuses    QtWorkflowStatus[]
+  transitions         QtWorkflowTransition[]
+  schemeItems         QtWorkflowSchemeItem[]
+
+  @@unique([orgId, projectId, name])
+  @@index([orgId])
+  @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
+/// Which project statuses (nodes) a workflow uses. `properties` holds arbitrary
+/// Jira-style status key/values; x/y persist the diagram layout.
+model QtWorkflowStatus {
+  id         String        @id @default(cuid())
+  workflowId String
+  statusId   String
+  isInitial  Boolean       @default(false)
+  x          Float?
+  y          Float?
+  properties Json?
+  workflow   QtWorkflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status     QtIssueStatus @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, statusId])
+  @@index([statusId])
+  @@schema("app_quiktrack")
+}
+
+/// A directed edge to `toStatus`. type=NORMAL uses transition_from sources;
+/// GLOBAL is available from ANY status; INITIAL runs on issue creation.
+model QtWorkflowTransition {
+  id          String                    @id @default(cuid())
+  workflowId  String
+  name        String
+  type        String                    @default("NORMAL")
+  toStatusId  String
+  orderIndex  Int                       @default(0)
+  isDeleted   Boolean                   @default(false)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  workflow    QtWorkflow                @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  toStatus    QtIssueStatus             @relation("TransitionToStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
+  fromStatuses QtWorkflowTransitionFrom[]
+  rules       QtWorkflowRule[]
+  triggers    QtWorkflowTrigger[]
+
+  @@unique([workflowId, name])
+  @@index([workflowId])
+  @@index([toStatusId])
+  @@schema("app_quiktrack")
+}
+
+/// Source statuses for a NORMAL transition (multi-select "From statuses").
+/// Empty for GLOBAL / INITIAL.
+model QtWorkflowTransitionFrom {
+  transitionId String
+  statusId     String
+  transition   QtWorkflowTransition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+  status       QtIssueStatus        @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@id([transitionId, statusId])
+  @@index([statusId])
+  @@schema("app_quiktrack")
+}
+
+/// A rule attached to a transition. kind discriminates the three families:
+///   CONDITION    — gates availability (silent). groupNo: same group = OR,
+///                  across groups = AND.
+///   VALIDATOR    — gates execution (loud, 422). orderNo = run order.
+///   POSTFUNCTION — side effect inside the commit TX. orderNo = run order.
+/// `type` is a registry key (e.g. is_assignee / field_required / set_field);
+/// `config` is the per-type JSON payload.
+model QtWorkflowRule {
+  id           String               @id @default(cuid())
+  transitionId String
+  kind         String
+  type         String
+  config       Json?
+  errorMessage String?
+  groupNo      Int                  @default(0)
+  orderNo      Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  transition   QtWorkflowTransition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@index([transitionId, kind, orderNo])
+  @@schema("app_quiktrack")
+}
+
+/// Why an issue is closed. Org-scoped catalog. QtIssue.resolutionId NULL = open.
+model QtResolution {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  orderIndex Int       @default(0)
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  issues     QtIssue[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// One scheme per project. draftJson holds the unpublished editor state while
+/// hasDraft is true (the DRAFT badge / Publish-Discard banner).
+model QtWorkflowScheme {
+  id        String                 @id @default(cuid())
+  orgId     String
+  projectId String                 @unique
+  name      String
+  hasDraft  Boolean                @default(false)
+  draftJson Json?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  org       Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project   QtProject              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items     QtWorkflowSchemeItem[]
+
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A dev trigger on a transition: when a GitHub event (`event`) fires on an
+/// issue linked to a connected repo, and the issue is currently in one of the
+/// transition's source statuses, the transition auto-executes. `event` is one
+/// of: pr_created | pr_merged | pr_declined | pr_reopened | branch_created |
+/// commit_created.
+model QtWorkflowTrigger {
+  id           String               @id @default(cuid())
+  transitionId String
+  event        String
+  transition   QtWorkflowTransition  @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  @@unique([transitionId, event])
+  @@index([transitionId])
+  @@schema("app_quiktrack")
+}
+
+/// issue-type → workflow map. issueTypeId NULL + isDefault = the fallback used
+/// for any unmapped type.
+model QtWorkflowSchemeItem {
+  id          String           @id @default(cuid())
+  schemeId    String
+  issueTypeId String?
+  workflowId  String
+  isDefault   Boolean          @default(false)
+  scheme      QtWorkflowScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  issueType   QtIssueType?     @relation(fields: [issueTypeId], references: [id], onDelete: Cascade)
+  workflow    QtWorkflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([schemeId, issueTypeId])
+  @@index([workflowId])
+  @@schema("app_quiktrack")
+}
+
+/// A Screen — an org-level, ordered arrangement of fields shown when a work
+/// item is transitioned (the workflow "Show a screen" rule references one). A
+/// screen owns one or more tabs; each tab owns ordered field rows. `isDefault`
+/// marks the seeded "Default Screen".
+model QtScreen {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  isDefault   Boolean        @default(false)
+  isDeleted   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  org         Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tabs        QtScreenTab[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A tab within a screen (Jira "Field Tab"). Ordered by `orderNo`.
+model QtScreenTab {
+  id       String          @id @default(cuid())
+  screenId String
+  name     String
+  orderNo  Int             @default(0)
+  screen   QtScreen        @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  fields   QtScreenField[]
+
+  @@index([screenId])
+  @@schema("app_quiktrack")
+}
+
+/// One field row on a screen tab. `fieldKey` is a key from the app's screen
+/// field registry (Summary / Priority / Assignee / …). Ordered by `orderNo`.
+model QtScreenField {
+  id       String      @id @default(cuid())
+  tabId    String
+  fieldKey String
+  orderNo  Int         @default(0)
+  tab      QtScreenTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@unique([tabId, fieldKey])
+  @@index([tabId])
+  @@schema("app_quiktrack")
+}
+
+/// Append-only audit of status moves (complements QtIssueHistory field diffs).
+/// transitionId NULL for system / migration moves; reason e.g. "migration".
+model QtIssueTransitionLog {
+  id           String   @id @default(cuid())
+  orgId        String
+  issueId      String
+  transitionId String?
+  fromStatusId String?
+  toStatusId   String
+  actorId      String?
+  /// "user" | "agent" — was this transition triggered by a person or an MCP-authenticated tool.
+  actorType    String   @default("user")
+  reason       String?
+  createdAt    DateTime @default(now())
+  issue        QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([issueId, createdAt])
@@ -23143,4 +23503,203 @@ model QcCallParticipant {
 
   @@unique([callId, userId])
   @@schema("app_quikchat")
+}
+
+// --- QuikInsight schema -------------------------------------------------------
+
+model QiWorkspace {
+  id          String   @id @default(cuid())
+  userId      String
+  orgId       String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  connections QiPlatformConnection[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiPlatformConnection {
+  id             String    @id @default(cuid())
+  userId         String
+  orgId          String
+  workspaceId    String
+  platform       String
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  scopes         String[]  @default([])
+  metadata       Json      @default("{}")
+  status         String    @default("CONNECTED")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  workspace QiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncs     QiDataSync[]
+
+  @@unique([workspaceId, platform])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiDataSync {
+  id            String    @id @default(cuid())
+  userId        String
+  connectionId  String
+  platform      String
+  syncType      String    @default("incremental")
+  status        String
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  recordCount   Int?
+  errorMessage  String?
+
+  connection QiPlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, connectionId])
+  @@index([connectionId, startedAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiConnectedAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  teamId      String
+  provider    String
+  accountName String
+  credentials Json?
+  createdAt   DateTime @default(now())
+
+  @@index([teamId])
+  @@index([userId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboard {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String   @default("Dashboard")
+  config    Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  snapshots QiDashboardSnapshot[]
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiDashboardSnapshot {
+  id          String   @id @default(cuid())
+  dashboardId String
+  data        Json
+  snapshotAt  DateTime @default(now())
+
+  dashboard QiDashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId, snapshotAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiEmailReportSettings {
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  enabled    Boolean   @default(false)
+  recipients String[]  @default([])
+  frequency  String    @default("WEEKLY")
+  lastSentAt DateTime?
+
+  @@schema("app_quikinsight")
+}
+
+model QiAiInsightCache {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  data        Json
+  source      String   @default("rules")
+  generatedAt DateTime @default(now())
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiUserRole {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  role      String
+  teamId    String?
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@schema("app_quikinsight")
+}
+
+model QiInvitation {
+  id         String    @id @default(cuid())
+  email      String
+  orgId      String
+  role       String    @default("MEMBER")
+  teamId     String?
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+  @@index([email])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenBalance {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  orgId       String
+  totalTokens Int      @default(100000)
+  usedTokens  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([orgId])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenUsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  orgId        String
+  feature      String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  status       String   @default("success")
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
+}
+
+model QiTokenTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  orgId         String
+  type          String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  reason        String
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@schema("app_quikinsight")
 }
