@@ -169,6 +169,38 @@ async function emitSystemMessage(ctx: OrgContext, channelId: string, text: strin
   });
 }
 
+/**
+ * Tell a channel's remaining members that its ROSTER changed (someone left, was
+ * removed, or had their role changed).
+ *
+ * Deliberately reuses `channel_updated` rather than minting a roster-specific
+ * event. The gateway already relays `channel_updated` to the channel room, and
+ * `applyChannelUpdated` guards every field with `!== undefined`, so a payload of
+ * just `{ channelId }` is a no-op on the cached channel row and carries only the
+ * "re-read this channel" signal. A new event type would mean editing BOTH copies
+ * of the fan-out contract (`lib/shared/publish.ts` and the gateway's
+ * byte-for-byte duplicate `fanout-contract.ts`), the dispatcher, and the client
+ * — for an identical result.
+ *
+ * The client side of this is load-bearing: `onChannelUpdated` in ChatWorkspace
+ * must invalidate `["members", channelId]` and `["channels"]`, not just
+ * `["channel-detail"]`. Without that, this publish changes nothing on screen —
+ * the roster lives in a different query from the channel row.
+ *
+ * Why it matters: `leave()` posts a "left the chat" system message, which IS
+ * fanned out, so remaining members watched someone announce their departure
+ * while the member list kept showing them. The two visibly disagreed until a
+ * refetch.
+ */
+async function publishRosterChanged(orgId: string, channelId: string): Promise<void> {
+  await publishFanout({
+    orgId,
+    channelId,
+    event: "channel_updated",
+    payload: { channelId },
+  });
+}
+
 // ============================================================================
 // Create / discover / join
 // ============================================================================
@@ -832,6 +864,7 @@ export async function removeMember(
     displayNameOf(targetUserId),
   ]);
   await emitSystemMessage(ctx, channelId, `${actor} removed ${removed} from the chat`);
+  await publishRosterChanged(ctx.orgId, channelId);
   return { removed: true };
 }
 
@@ -856,6 +889,7 @@ export async function updateMemberRole(
     if (adminCount <= 1) throw new HttpError(400, "Cannot demote the last admin");
   }
   await prisma.qcChannelMember.update({ where: { id: target.id }, data: { role } });
+  await publishRosterChanged(ctx.orgId, channelId);
   return { role };
 }
 
@@ -1004,5 +1038,6 @@ export async function leave(ctx: OrgContext, channelId: string): Promise<{ delet
   if (channel?.type === "group") {
     await emitSystemMessage(ctx, channelId, `${await displayNameOf(ctx.userId)} left the chat`);
   }
+  await publishRosterChanged(ctx.orgId, channelId);
   return { deleted: false };
 }

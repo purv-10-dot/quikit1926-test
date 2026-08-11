@@ -6387,8 +6387,13 @@ body {
   padding-left: 10px;
 }
 
-/* Hidden chrome: the "Reconnecting…" float and the "Markdown supported" hint. */
-.qc-reconnect-float,
+/* Hidden chrome: the "Markdown supported" hint.
+ *
+ * `.qc-reconnect-float` used to be hidden here too. It is back: with the polling
+ * fallback removed there is no degraded mode left, so a dead socket and a live
+ * one look identical and the app just goes quiet. ChatWorkspace only renders it
+ * while disconnected, and only after a short grace period, so a healthy session
+ * still shows nothing. */
 .qc-format-bar__hint {
   display: none;
 }

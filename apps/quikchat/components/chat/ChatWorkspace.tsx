@@ -100,6 +100,16 @@ function lastMessageOf(dto: MessageDto) {
   };
 }
 
+/**
+ * How long the socket must stay down before we say so on screen.
+ *
+ * socket.io recovers from an ordinary blip in well under a second, and a badge
+ * that flickers on every one of those teaches people to ignore it — which
+ * defeats the point of having it for the outage that matters. Long enough to
+ * skip the noise, short enough that a genuinely dead socket is not a silent one.
+ */
+const RECONNECT_NOTICE_DELAY_MS = 2_000;
+
 export function ChatWorkspace({
   currentUserId,
   currentUserName,
@@ -331,6 +341,17 @@ export function ChatWorkspace({
         old ? applyChannelUpdated(old, p) : old,
       );
       void qc.invalidateQueries({ queryKey: ["channel-detail", p.channelId] });
+      // The ROSTER is a separate query from the channel row, and `channel_updated`
+      // now also carries membership changes (leave / remove / role change — see
+      // `publishRosterChanged`). Invalidating only `["channel-detail"]` refreshed
+      // the channel and left the member list stale, which is the disagreement
+      // this fixes: the "left the chat" system message arrived live while the
+      // list still showed them.
+      void qc.invalidateQueries({ queryKey: ["members", p.channelId] });
+      // `channel.members` off the list feeds the header member count and mention
+      // autocomplete, so it goes stale for the same reason. A rename-only event
+      // refetches this too — cheap, and it keeps one event honest for both.
+      void qc.invalidateQueries({ queryKey: ["channels"] });
     },
     [qc],
   );
@@ -510,6 +531,20 @@ export function ChatWorkspace({
       client.disconnect();
     };
   }, [realtimeUrl, invalidateLastSeenFor]);
+
+  // Surface a dead socket, but only once it has stayed dead. There is no polling
+  // fallback any more, so an unannounced disconnect is indistinguishable from a
+  // quiet room — this is the only signal the user gets. Healthy sessions render
+  // nothing at all; the useful state is "disconnected", not "connected".
+  const [showDisconnected, setShowDisconnected] = useState(false);
+  useEffect(() => {
+    if (connected) {
+      setShowDisconnected(false);
+      return;
+    }
+    const t = setTimeout(() => setShowDisconnected(true), RECONNECT_NOTICE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [connected]);
 
   // Expire stale typing indicators (no explicit "stop" is ever sent).
   useEffect(() => {
@@ -1058,8 +1093,8 @@ export function ChatWorkspace({
             />
           </section>
         )}
-        {!connected ? (
-          <div className="qc-reconnect qc-reconnect-float" role="status">
+        {showDisconnected ? (
+          <div className="qc-reconnect qc-reconnect-float" role="status" aria-live="polite">
             <WifiOff size={13} /> Reconnecting…
           </div>
         ) : null}
