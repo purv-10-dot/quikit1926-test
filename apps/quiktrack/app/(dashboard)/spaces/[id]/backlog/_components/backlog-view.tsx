@@ -1830,6 +1830,15 @@ function FilterRow({
   );
 }
 
+/** Read the dragged issue ids from a drop event — the bulk list if present,
+ *  else the single legacy id, else empty. Shared by section header + body. */
+function draggedIssueIds(e: React.DragEvent): string[] {
+  const many = e.dataTransfer.getData("text/issue-ids");
+  if (many) return many.split(",").filter(Boolean);
+  const one = e.dataTransfer.getData("text/issue-id");
+  return one ? [one] : [];
+}
+
 function SectionHeader({
   collapsed,
   onToggle,
@@ -1841,6 +1850,7 @@ function SectionHeader({
   allChecked = false,
   someChecked = false,
   onToggleAll,
+  onDropIds,
 }: {
   collapsed: boolean;
   onToggle: () => void;
@@ -1852,9 +1862,37 @@ function SectionHeader({
   allChecked?: boolean;
   someChecked?: boolean;
   onToggleAll?: (next: boolean) => void;
+  /** Drop dragged issue ids onto this section. Makes a COLLAPSED section (whose
+   *  body renders nothing) still a valid drop target — via its header. */
+  onDropIds?: (ids: string[]) => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   return (
-    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-t-md">
+    <div
+      onDragOver={
+        onDropIds
+          ? (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setDragOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={onDropIds ? () => setDragOver(false) : undefined}
+      onDrop={
+        onDropIds
+          ? (e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const ids = draggedIssueIds(e);
+              if (ids.length) onDropIds(ids);
+            }
+          : undefined
+      }
+      className={`flex items-center justify-between px-3 py-2 border rounded-t-md ${
+        dragOver ? "bg-blue-50 border-blue-300" : "bg-gray-50 border-gray-200"
+      }`}
+    >
       <div className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -1968,7 +2006,7 @@ function SectionBody({
   defaultStatusId,
   onCreated,
   onDragStart,
-  onDropIssue,
+  onDropIds,
   onOpenIssue,
   selectedIds,
   onToggleSelect,
@@ -1987,7 +2025,7 @@ function SectionBody({
   defaultStatusId?: string;
   onCreated: () => void;
   onDragStart?: (e: React.DragEvent, issueId: string) => void;
-  onDropIssue?: (issueId: string) => void;
+  onDropIds?: (ids: string[]) => void;
   onOpenIssue: (issueId: string) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string, next: boolean) => void;
@@ -2118,13 +2156,13 @@ function SectionBody({
     <div
       className="bg-white"
       onDragOver={(e) => {
-        if (onDropIssue) e.preventDefault();
+        if (onDropIds) e.preventDefault();
       }}
       onDrop={(e) => {
-        if (!onDropIssue) return;
+        if (!onDropIds) return;
         e.preventDefault();
-        const id = e.dataTransfer.getData("text/issue-id");
-        if (id) onDropIssue(id);
+        const ids = draggedIssueIds(e);
+        if (ids.length) onDropIds(ids);
       }}
     >
       {/* Scrollable rows. The InlineCreator below is intentionally OUTSIDE this
@@ -2326,10 +2364,22 @@ export function BacklogView({ projectId }: { projectId: string }) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [viewSettingsOpen]);
 
-  const onDragStart = useCallback((e: React.DragEvent, issueId: string) => {
-    e.dataTransfer.setData("text/issue-id", issueId);
-    e.dataTransfer.effectAllowed = "move";
-  }, []);
+  const onDragStart = useCallback(
+    (e: React.DragEvent, issueId: string) => {
+      // Bulk drag: if the grabbed row is part of the current checkbox selection,
+      // carry EVERY selected id so a drop moves them all. Otherwise just the one.
+      // (A comma-joined list rides under a dedicated MIME; the legacy single-id
+      // key stays for any older drop handler.)
+      const ids =
+        selectedIds.has(issueId) && selectedIds.size > 1
+          ? Array.from(selectedIds)
+          : [issueId];
+      e.dataTransfer.setData("text/issue-ids", ids.join(","));
+      e.dataTransfer.setData("text/issue-id", issueId);
+      e.dataTransfer.effectAllowed = "move";
+    },
+    [selectedIds],
+  );
 
   // Stable filters object passed down to every SectionBody — re-allocates only
   // when one of the underlying values actually changes.
@@ -2619,6 +2669,16 @@ export function BacklogView({ projectId }: { projectId: string }) {
       }
     },
     [statuses],
+  );
+
+  // Bulk drop: move every dragged id into the destination section. Reuses the
+  // single-issue mover so the optimistic cache updates + count badges + PATCH
+  // all happen per issue. A single-item drag is just a one-element list.
+  const onDropIdsIntoSection = useCallback(
+    async (ids: string[], destSprintId: string | null) => {
+      await Promise.all(ids.map((id) => onDropIntoSection(id, destSprintId)));
+    },
+    [onDropIntoSection],
   );
 
   const updateSection = useCallback(
@@ -3569,6 +3629,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               allChecked={sel.all}
               someChecked={sel.some}
               onToggleAll={(next) => void selectAllInSection(sprint.id, next)}
+              onDropIds={(ids) => void onDropIdsIntoSection(ids, sprint.id)}
               afterTitle={
                 sprint.startDate || sprint.endDate ? (
                   <button
@@ -3679,7 +3740,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               defaultStatusId={defaultTodoStatusId}
               onCreated={() => refreshSection(key, sprint.id)}
               onDragStart={onDragStart}
-              onDropIssue={(id) => onDropIntoSection(id, sprint.id)}
+              onDropIds={(ids) => void onDropIdsIntoSection(ids, sprint.id)}
               onOpenIssue={setEditingIssueId}
               selectedIds={selectedIds}
               onToggleSelect={(id, next) =>
@@ -3764,6 +3825,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           allChecked={backlogSel.all}
           someChecked={backlogSel.some}
           onToggleAll={(next) => void selectAllInSection(null, next)}
+          onDropIds={(ids) => void onDropIdsIntoSection(ids, null)}
           trailing={
             // Functional spaces have no sprints — no "Create sprint" affordance.
             !isFunctional && canCreateSprint ? (
@@ -3789,7 +3851,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           defaultStatusId={defaultTodoStatusId}
           onCreated={() => refreshSection("backlog", null)}
           onDragStart={onDragStart}
-          onDropIssue={(id) => onDropIntoSection(id, null)}
+          onDropIds={(ids) => void onDropIdsIntoSection(ids, null)}
           onOpenIssue={setEditingIssueId}
           selectedIds={selectedIds}
           onToggleSelect={(id, next) =>
