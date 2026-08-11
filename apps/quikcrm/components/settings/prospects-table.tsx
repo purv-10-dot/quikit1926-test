@@ -3,11 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UserPlus, X } from "lucide-react";
+import { FileText, Search, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
+import { Drawer } from "@/components/ui/drawer";
+import { ProspectPosts } from "@/components/settings/prospect-posts";
+import { ProspectCompany } from "@/components/settings/prospect-company";
+import { ProspectExperience } from "@/components/settings/prospect-experience";
+import type { LinkedInCompany } from "@/lib/services/prospects/linkedin-company";
+import type { LinkedInExperience } from "@/lib/services/prospects/linkedin-experience";
+import {
+  summarizeLinkedInPosts,
+  type LinkedInPost,
+} from "@/lib/services/prospects/linkedin-posts";
 import { LeadForm } from "@/components/leads/lead-form";
 import { RelativeTime } from "@/components/shared/relative-time";
 import { Pagination } from "@/components/shared/pagination";
@@ -28,10 +38,27 @@ export interface ProspectRow {
   status: string;
   convertedLeadId: string | null;
   createdAt: string; // ISO
+  /**
+   * Recent LinkedIn activity scraped by the extension, already normalized by
+   * parseLinkedInPosts on the server. Empty when nothing was captured.
+   */
+  posts: LinkedInPost[];
   /** ICP chosen in the extension. Null for prospects saved before ICP existed. */
   icpId: string | null;
   /** Joined for display only — the prospect stores just `icpId`. */
   icp: { id: string; name: string; isActive: boolean } | null;
+  /**
+   * Company details captured by the extension's company scraper, already
+   * normalized by parseLinkedInCompany on the server. Null when the prospect
+   * was saved without visiting the company page.
+   */
+  companyDetails: LinkedInCompany | null;
+  /**
+   * Work history captured by the extension's profile scraper, already
+   * normalized by parseLinkedInExperiences on the server. Empty when the
+   * profile had no Experience section or was saved by an older build.
+   */
+  experiences: LinkedInExperience[];
 }
 
 export function ProspectsTable({
@@ -47,6 +74,13 @@ export function ProspectsTable({
   const toast = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [convertOpen, setConvertOpen] = useState(false);
+  // Prospect whose LinkedIn posts are open in the drawer. Independent of
+  // `selectedId` (the convert radio) so viewing posts never changes what is
+  // queued for conversion.
+  const [postsForId, setPostsForId] = useState<string | null>(null);
+  // Prospect whose COMPANY details are open. Independent of `selectedId` and
+  // `postsForId`, so opening it never changes what is queued for conversion.
+  const [companyForId, setCompanyForId] = useState<string | null>(null);
 
   // Filters. The server page ships the whole in-scope set (capped at 500), so
   // filtering and paging both happen here — no refetch, results are instant.
@@ -68,6 +102,20 @@ export function ProspectsTable({
     [prospects, selectedId],
   );
   const isConverted = (p: ProspectRow) => p.status === "Converted";
+
+  const postsProspect = useMemo(
+    () => prospects.find((p) => p.id === postsForId) ?? null,
+    [prospects, postsForId],
+  );
+
+  const companyProspect = useMemo(
+    () => prospects.find((p) => p.id === companyForId) ?? null,
+    [prospects, companyForId],
+  );
+  const postsSummary = useMemo(
+    () => (postsProspect ? summarizeLinkedInPosts(postsProspect.posts) : null),
+    [postsProspect],
+  );
 
   // Dropdown options come from the rows actually on screen, so a user never
   // picks a filter that can return nothing. "__none__" targets prospects saved
@@ -282,6 +330,7 @@ export function ProspectsTable({
                 <TH hideBelow="md">ICP</TH>
                 <TH hideBelow="md">Email</TH>
                 <TH>Status</TH>
+                <TH hideBelow="md">Posts</TH>
                 <TH>LinkedIn</TH>
                 <TH hideBelow="lg">Saved By</TH>
                 <TH>Saved</TH>
@@ -290,7 +339,7 @@ export function ProspectsTable({
             <TBody>
               {pageRows.length === 0 ? (
                 <TR>
-                  <TD colSpan={10} className="py-10 text-center text-crm-muted">
+                  <TD colSpan={11} className="py-10 text-center text-crm-muted">
                     {prospects.length === 0
                       ? "No prospects yet. Save a LinkedIn profile from the extension to see it here."
                       : "No prospects match these filters."}
@@ -324,7 +373,28 @@ export function ProspectsTable({
                         )}
                       </TD>
                       <TD hideBelow="md">{p.title || "—"}</TD>
-                      <TD hideBelow="lg">{p.company || "—"}</TD>
+                      {/* Company — clickable when the extension captured full
+                          company details, opening them in a drawer. Falls back
+                          to plain text so prospects saved without a company
+                          visit render exactly as before. */}
+                      <TD hideBelow="lg">
+                        {p.companyDetails || p.experiences.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setCompanyForId(p.id)}
+                            className="text-left font-medium text-accent-600 hover:underline"
+                            title={
+                              p.companyDetails
+                                ? "View company details and work experience"
+                                : "View work experience"
+                            }
+                          >
+                            {p.company || p.companyDetails?.name || "View details"}
+                          </button>
+                        ) : (
+                          p.company || "—"
+                        )}
+                      </TD>
                       <TD hideBelow="md">
                         {p.icp ? (
                           <span
@@ -364,6 +434,21 @@ export function ProspectsTable({
                           <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                             New
                           </span>
+                        )}
+                      </TD>
+                      <TD hideBelow="md">
+                        {p.posts.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setPostsForId(p.id)}
+                            className="inline-flex items-center gap-1 text-crm-blue hover:underline"
+                            aria-label={`View ${p.posts.length} LinkedIn posts for ${p.name}`}
+                          >
+                            <FileText size={13} aria-hidden />
+                            {p.posts.length}
+                          </button>
+                        ) : (
+                          <span className="text-crm-muted">—</span>
                         )}
                       </TD>
                       <TD>
@@ -412,6 +497,58 @@ export function ProspectsTable({
           />
         )}
       </div>
+
+      <Drawer
+        open={Boolean(postsProspect)}
+        onClose={() => setPostsForId(null)}
+        title={postsProspect ? `${postsProspect.name} — LinkedIn posts` : "LinkedIn posts"}
+        description={
+          postsSummary
+            ? `${postsSummary.count} post${postsSummary.count === 1 ? "" : "s"} · ` +
+              `${postsSummary.totalReactions.toLocaleString()} reactions · ` +
+              `${postsSummary.totalComments.toLocaleString()} comments`
+            : undefined
+        }
+        width="md:max-w-2xl"
+      >
+        {postsProspect && <ProspectPosts posts={postsProspect.posts} />}
+      </Drawer>
+
+      {/* Company + experience. Opens when EITHER was captured, so a prospect
+          with work history but no company visit still has a viewable record. */}
+      <Drawer
+        open={Boolean(
+          companyProspect &&
+            (companyProspect.companyDetails || companyProspect.experiences.length > 0),
+        )}
+        onClose={() => setCompanyForId(null)}
+        title={
+          companyProspect?.companyDetails
+            ? `${companyProspect.companyDetails.name || companyProspect.company || "Company"} — company details`
+            : companyProspect
+              ? `${companyProspect.name} — experience`
+              : "Prospect details"
+        }
+        description={
+          companyProspect
+            ? `Captured from LinkedIn when ${companyProspect.name} was saved.`
+            : undefined
+        }
+        width="md:max-w-2xl"
+      >
+        {companyProspect && (
+          <div className="space-y-6">
+            {companyProspect.companyDetails && (
+              <ProspectCompany company={companyProspect.companyDetails} />
+            )}
+            {/* Divider only when both sections are present. */}
+            {companyProspect.companyDetails && companyProspect.experiences.length > 0 && (
+              <hr className="border-[var(--color-border)]" />
+            )}
+            <ProspectExperience experiences={companyProspect.experiences} />
+          </div>
+        )}
+      </Drawer>
 
       <Modal
         open={convertOpen}

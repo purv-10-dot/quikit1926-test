@@ -58,6 +58,72 @@ function clean(v: string | undefined): string | undefined {
   return t ? t : undefined;
 }
 
+/**
+ * The subset of the extension's company blob that we promote to real columns.
+ * Everything the scraper produces stays in `companyData`; this is the queryable
+ * projection of it.
+ */
+type PromotedCompanyFields = {
+  companyIndustry?: string | null;
+  companyWebsite?: string | null;
+  companyHeadquarters?: string | null;
+  companySize?: string | null;
+  companyEmployeeCount?: number | null;
+  companyLinkedinUrl?: string | null;
+};
+
+/**
+ * Derive the promoted company columns from the `companyData` blob.
+ *
+ * Derived SERVER-SIDE rather than sent as separate wire fields, so the blob
+ * stays the single source of truth and the extension needs no change. A field
+ * absent from the blob is simply omitted (not written as null), which keeps a
+ * partial re-save from clearing data captured by an earlier, richer scrape —
+ * the same rule the JSON blobs already follow.
+ */
+function promoteCompanyFields(companyData: unknown): PromotedCompanyFields {
+  if (!companyData || typeof companyData !== 'object' || Array.isArray(companyData)) {
+    return {};
+  }
+  const c = companyData as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => {
+    if (typeof v !== 'string') return undefined;
+    const t = v.trim();
+    return t ? t : undefined;
+  };
+
+  const out: PromotedCompanyFields = {};
+
+  const industry = str(c.industry);
+  if (industry) out.companyIndustry = industry;
+
+  const website = str(c.website);
+  if (website) out.companyWebsite = website;
+
+  // `headquarters` is canonical; `location` is the scraper's legacy alias.
+  const hq = str(c.headquarters) ?? str(c.location);
+  if (hq) out.companyHeadquarters = hq;
+
+  const size = str(c.companySize);
+  if (size) out.companySize = size;
+
+  const companyUrl = str(c.companyUrl);
+  if (companyUrl) out.companyLinkedinUrl = companyUrl;
+
+  // Headcount: the scraper stores it as a string ("32"), and LinkedIn also
+  // renders banded values ("10K+ employees") that carry no exact figure. Parse
+  // only a clean integer; anything else stays represented by companySize alone.
+  const rawEmployees = c.employees;
+  const employeeText =
+    typeof rawEmployees === 'number' ? String(rawEmployees) : str(rawEmployees);
+  if (employeeText && /^\d[\d,]*$/.test(employeeText)) {
+    const n = Number.parseInt(employeeText.replace(/,/g, ''), 10);
+    if (Number.isFinite(n) && n >= 0) out.companyEmployeeCount = n;
+  }
+
+  return out;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const nextAuthSecret = process.env.NEXTAUTH_SECRET;
@@ -151,6 +217,12 @@ export async function POST(request: NextRequest) {
       ...(data.companyData !== undefined ? { companyData: data.companyData as Prisma.InputJsonValue } : {}),
       ...(data.experiences !== undefined ? { experiences: data.experiences as Prisma.InputJsonValue } : {}),
     };
+
+    // Queryable projection of the company blob. Spread with the JSON fields so
+    // it follows the same "only write what was sent" rule: re-saving from a
+    // profile page (no companyData) leaves previously captured company columns
+    // untouched rather than nulling them.
+    const companyFields = promoteCompanyFields(data.companyData);
     const scalarFields = {
       name,
       email: clean(data.email) ?? null,
@@ -174,12 +246,12 @@ export async function POST(request: NextRequest) {
     if (linkedinUrl) {
       prospect = await db.crmProspect.upsert({
         where: { prospect_org_linkedin_uk: { orgId, linkedinUrl } },
-        create: { orgId, linkedinUrl, ...scalarFields, ...jsonFields, ...icpFields },
-        update: { ...scalarFields, ...jsonFields, ...icpFields },
+        create: { orgId, linkedinUrl, ...scalarFields, ...jsonFields, ...companyFields, ...icpFields },
+        update: { ...scalarFields, ...jsonFields, ...companyFields, ...icpFields },
       });
     } else {
       prospect = await db.crmProspect.create({
-        data: { orgId, ...scalarFields, ...jsonFields, ...icpFields },
+        data: { orgId, ...scalarFields, ...jsonFields, ...companyFields, ...icpFields },
       });
     }
 

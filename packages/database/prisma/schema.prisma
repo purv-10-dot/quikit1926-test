@@ -8386,9 +8386,34 @@ model CrmProspect {
   profilePicture String?
   // Raw extracted blobs (posts, company data, experiences) kept verbatim for
   // later enrichment — shape is owned by the extension, so stored as Json.
+  // `companyData` remains the complete record: the promoted columns below are a
+  // queryable PROJECTION of it, never a replacement.
   posts          Json?
   companyData    Json?
   experiences    Json?
+
+  /// ── Promoted company fields ────────────────────────────────────────────
+  /// Extracted by the LinkedIn extension's company scraper and denormalised out
+  /// of `companyData` so they can be filtered, grouped and indexed in SQL —
+  /// "all prospects at 1,000+ employee software companies in Washington" is a
+  /// query, not a JSON scan.
+  ///
+  /// Only the FILTERABLE fields are promoted. Long-form and binary-ish content
+  /// (about, tagline, specialties, logo, banner, posts) stays in `companyData`,
+  /// because widening the table for text nobody filters on buys nothing.
+  ///
+  /// All nullable: a prospect saved without visiting the company page is valid,
+  /// and existing rows must stay valid without a backfill.
+  companyIndustry      String?
+  companyWebsite       String?
+  companyHeadquarters  String?
+  /// Human-readable band as LinkedIn presents it, e.g. "11-50 employees".
+  companySize          String?
+  /// Numeric headcount when LinkedIn exposes one. Int (not String) so range
+  /// queries work; null when only the band above is available.
+  companyEmployeeCount Int?
+  /// Canonical /company/<slug>/ URL, for de-duplicating prospects by employer.
+  companyLinkedinUrl   String?
   savedById      String?
   savedByName    String?
   /// Ideal Customer Profile chosen in the extension before saving. Reference
@@ -8411,6 +8436,10 @@ model CrmProspect {
   @@index([orgId, createdAt])
   @@index([orgId, status])
   @@index([orgId, icpId])
+  // Org-scoped, matching every other index here: these support "prospects in
+  // this industry / at this employer" filters, which are always tenant-scoped.
+  @@index([orgId, companyIndustry])
+  @@index([orgId, companyLinkedinUrl])
   @@schema("app_quikcrm")
 }
 

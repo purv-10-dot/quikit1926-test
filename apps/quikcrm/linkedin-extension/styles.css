@@ -527,28 +527,20 @@ body:not(.mode-individual) #individualView {
   color: #374151;
 }
 
-/* Active organization badge on the extractor screen */
-.org-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+/* Active-organization switcher on the extractor screen. Reuses .form-input for
+   the control itself so it matches every other field; only the wrapper spacing
+   is defined here (same 16px gap the badge it replaced used). */
+.org-switcher {
   margin-bottom: 16px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
 }
-.org-badge.hidden {
+.org-switcher.hidden {
   display: none;
 }
-.org-badge-icon {
+.org-switcher-select {
   font-size: 14px;
-  line-height: 1;
-}
-.org-badge-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
+  /* Native select needs an explicit background — .form-input assumes an input. */
+  background-color: #ffffff;
+  cursor: pointer;
 }
 
 /* ── ICP picker (searchable single-select on the prospect form) ──────────────

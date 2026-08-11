@@ -65,9 +65,14 @@
           <button type="button" id="logoutBtnIndividual" class="btn-logout" title="Logout">Logout</button>
         </div>
 
-        <div id="orgBadge" class="org-badge hidden">
-          <span class="org-badge-icon">🏢</span>
-          <span id="orgBadgeName" class="org-badge-name"></span>
+        <!-- Active organization. A select rather than a static badge so the org
+             can be switched without returning to the full-screen picker; the
+             options are the same list /api/extension-auth/organizations returns.
+             Hidden entirely while only one org is available, so single-org users
+             see exactly what they saw before. -->
+        <div id="orgSwitcher" class="org-switcher hidden">
+          <label class="form-label" for="orgSelect">Organization</label>
+          <select id="orgSelect" class="form-input org-switcher-select"></select>
         </div>
 
         <div class="sliding-warning">
@@ -92,7 +97,36 @@
               <!-- PROSPECT PROFILE CARD -->
               <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
                 <h3 style="margin: 0 0 16px 0; color: #1a1a1a; font-size: 16px; font-weight: 700;">Prospect Profile</h3>
-                
+
+                <!-- ICP (Ideal Customer Profile) — searchable single-select.
+                     Options are the org's ACTIVE ICPs, loaded from
+                     /api/extension-auth/icp. REQUIRED: the save handler blocks
+                     submission until one is chosen. -->
+                <div style="margin-bottom: 20px;">
+                  <label class="form-label" for="icpSearch">ICP *</label>
+                  <div id="icpPicker" class="icp-picker">
+                    <input
+                      type="text"
+                      id="icpSearch"
+                      class="form-input"
+                      style="font-size: 14px;"
+                      placeholder="Search ICPs…"
+                      autocomplete="off"
+                      role="combobox"
+                      aria-expanded="false"
+                      aria-controls="icpOptions"
+                      aria-autocomplete="list"
+                    >
+                    <input type="hidden" id="icpId" value="">
+                    <div id="icpOptions" class="icp-options hidden" role="listbox"></div>
+                  </div>
+                  <div id="icpSelected" class="icp-selected hidden">
+                    <span id="icpSelectedName"></span>
+                    <button type="button" id="icpClear" class="icp-clear" aria-label="Clear selected ICP">×</button>
+                  </div>
+                  <div id="icpHint" class="icp-hint"></div>
+                </div>
+
                 <div style="display: grid; grid-template-columns: auto 1fr; gap: 16px; margin-bottom: 20px;">
                   <!-- Profile Picture -->
                   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
@@ -145,35 +179,6 @@
                   </div>
                 </div>
 
-                <!-- ICP (Ideal Customer Profile) — searchable single-select.
-                     Options are the org's ACTIVE ICPs, loaded from
-                     /api/extension-auth/icp. Optional: saving without one is
-                     valid and leaves the prospect untagged. -->
-                <div style="margin-top: 12px;">
-                  <label class="form-label" for="icpSearch">ICP</label>
-                  <div id="icpPicker" class="icp-picker">
-                    <input
-                      type="text"
-                      id="icpSearch"
-                      class="form-input"
-                      style="font-size: 14px;"
-                      placeholder="Search ICPs…"
-                      autocomplete="off"
-                      role="combobox"
-                      aria-expanded="false"
-                      aria-controls="icpOptions"
-                      aria-autocomplete="list"
-                    >
-                    <input type="hidden" id="icpId" value="">
-                    <div id="icpOptions" class="icp-options hidden" role="listbox"></div>
-                  </div>
-                  <div id="icpSelected" class="icp-selected hidden">
-                    <span id="icpSelectedName"></span>
-                    <button type="button" id="icpClear" class="icp-clear" aria-label="Clear selected ICP">×</button>
-                  </div>
-                  <div id="icpHint" class="icp-hint"></div>
-                </div>
-
                 <!-- Short Summary -->
                 <div style="margin-top: 12px;">
                   <label class="form-label">Short Summary *</label>
@@ -197,6 +202,19 @@
                   </button>
                   <div id="postsSection" style="display: none; margin-top: 8px;">
                     <div id="postsCount" class="form-display" style="padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #6b7280;">No posts extracted yet</div>
+                  </div>
+                </div>
+
+                <!-- Experience (Collapsible) — sits directly below Recent Posts -->
+                <div style="margin-top: 12px;">
+                  <button type="button" id="toggleExperience" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #4f46e5; font-weight: 500; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    <span id="experienceToggleIcon">▶</span> Experience
+                    <span id="experienceCount" style="font-weight: 400; color: #6b7280; font-size: 13px;"></span>
+                  </button>
+                  <div id="experienceSection" style="display: none; margin-top: 8px;">
+                    <div id="experienceList" style="display: flex; flex-direction: column; gap: 8px;">
+                      <div style="padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #6b7280;">No experience extracted yet</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -243,30 +261,30 @@
                     </div>
                   </div>
 
-                  <!-- Collapsible: Revenue Sources -->
+                  <!-- Collapsible: Company Overview (tagline, founded, followers, employees, specialties) -->
                   <div style="margin-bottom: 12px;">
                     <button type="button" class="company-collapsible-btn" data-target="revenueSources" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #374151; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; width: 100%;">
-                      <span class="company-collapsible-icon">▶</span> Revenue Sources
+                      <span class="company-collapsible-icon">▶</span> Company Overview
                     </button>
                     <div id="companyChallengesContainer_revenueSources" style="display: none; margin-top: 8px;">
                       <div id="companyRevenueSources" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 13px; line-height: 1.5; color: #374151; max-height: 120px; overflow-y: auto;">–</div>
                     </div>
                   </div>
 
-                  <!-- Collapsible: Challenges & Pain Points -->
+                  <!-- Collapsible: About -->
                   <div style="margin-bottom: 12px;">
                     <button type="button" class="company-collapsible-btn" data-target="challenges" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #374151; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; width: 100%;">
-                      <span class="company-collapsible-icon">▶</span> Challenges & Pain Points
+                      <span class="company-collapsible-icon">▶</span> About
                     </button>
                     <div id="companyChallengesContainer_challenges" style="display: none; margin-top: 8px;">
                       <div id="companyChallenges" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 13px; line-height: 1.6; color: #374151; max-height: 150px; overflow-y: auto;">–</div>
                     </div>
                   </div>
 
-                  <!-- Collapsible: Competitive Landscape -->
+                  <!-- Collapsible: Recent Company Posts -->
                   <div>
                     <button type="button" class="company-collapsible-btn" data-target="competitive" style="background: none; border: none; padding: 8px 0; cursor: pointer; color: #374151; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; width: 100%;">
-                      <span class="company-collapsible-icon">▶</span> Competitive Landscape
+                      <span class="company-collapsible-icon">▶</span> Recent Company Posts
                     </button>
                     <div id="companyChallengesContainer_competitive" style="display: none; margin-top: 8px;">
                       <div id="companyCompetitiveLandscape" style="padding: 10px; background: #f9fafb; border-radius: 6px; font-size: 13px; line-height: 1.5; color: #374151; max-height: 120px; overflow-y: auto;">–</div>
@@ -298,6 +316,8 @@
 </div>
 
 <script src="api.js"></script>
+<!-- Shared profile extractor. Must load BEFORE linkedIn.js, which injects it. -->
+<script src="linkedin-profile-scraper.js"></script>
 <script src="linkedIn.js"></script>
 </body>
 </html>

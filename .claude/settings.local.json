@@ -12,10 +12,37 @@
       "Bash(node --check linkedIn.js)",
       "Bash(echo \"=== lint exit: $? ===\")",
       "Bash(awk '/^model CrmLead \\\\{/,/^\\\\}/' packages/database/prisma/schema.prisma)",
-      "Bash(DATABASE_URL=\"postgresql://u:p@localhost:5432/d\" DATABASE_URL_DIRECT=\"postgresql://u:p@localhost:5432/d\" npx prisma validate)"
+      "Bash(DATABASE_URL=\"postgresql://u:p@localhost:5432/d\" DATABASE_URL_DIRECT=\"postgresql://u:p@localhost:5432/d\" npx prisma validate)",
+      "Bash(node harness_authored.js)",
+      "Bash(cd \"c:/Users/Adarsh.Jain/Desktop/Quikcrm_clone_16-07/apps/quikcrm/linkedin-extension\" && cp linkedIn.js \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/45c68d5c-596c-4629-8d0a-99ec5d9ceae3/scratchpad/linkedIn.js.bak3\" && grep -n \"^async function scrapeRecentActivityPosts\\\\|^// Probe injected into the background tab\" linkedIn.js)",
+      "Bash(timeout 200 node harness_pipeline.js)",
+      "Bash(timeout 300 node harness_batch.js)",
+      "Bash(grep -E \"passed$|FAIL\")",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/verify-scoping.js\")",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/verify-sdui.js\")",
+      "Bash(node -e ' *)",
+      "Bash(python -c ' *)",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/verify-lock.js\")",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/verify-company-e2e.js\")",
+      "Bash(python -)",
+      "Bash(DATABASE_URL=\"postgresql://u:p@localhost:5432/d\" DATABASE_URL_DIRECT=\"postgresql://u:p@localhost:5432/d\" npx prisma validate --schema packages/database/prisma/schema.prisma)",
+      "PowerShell(Get-Process -Name node -ErrorAction SilentlyContinue | Select-Object Id,StartTime,@{n='CPU';e={[math]::Round\\($_.CPU,1\\)}} | Format-Table -AutoSize; Write-Output \"---count---\"; \\(Get-Process -Name node -ErrorAction SilentlyContinue | Measure-Object\\).Count)",
+      "Bash(node --check connect-button.js)",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/debug-spa-scroll.js\")",
+      "Bash(cp apps/quikcrm/linkedin-extension/connect-button.js /tmp/cb-backup.js)",
+      "Bash(cp apps/quikcrm/linkedin-extension/connect-button.js \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/cb-backup.js\")",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/verify-layouts.js\")",
+      "Bash(node --check apps/quikcrm/linkedin-extension/linkedin-profile-scraper.js)",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/verify-experience.js\")",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npx tsc --noEmit -p tsconfig.json)",
+      "Bash(grep -c \"nextElementSibling\\\\|headingWord + '\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\b'\" linkedin-profile-scraper.js)",
+      "Bash(node \"C:/Users/ADARSH~1.JAI/AppData/Local/Temp/claude/c--Users-Adarsh-Jain-Desktop-Quikcrm-clone-16-07/c93d88f7-f857-44e8-8da9-c3e04f93f07b/scratchpad/trace-14.js\")",
+      "Bash(node --check linkedin-profile-scraper.js)",
+      "Bash(node --check prospect-sync.js)"
     ],
     "additionalDirectories": [
-      "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
+      "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me",
+      "c:\\Users\\Adarsh.Jain\\Desktop\\Quikcrm_clone_16-07\\apps\\quikcrm\\linkedin-extension"
     ]
   }
 }

@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db/prisma";
 import { PageHeader } from "@/components/shared/page-header";
 import { ProspectsTable, type ProspectRow } from "@/components/settings/prospects-table";
 import { prospectScopeWhere } from "@/lib/auth/prospect-acl";
+import { parseLinkedInPosts } from "@/lib/services/prospects/linkedin-posts";
+import { parseLinkedInCompany } from "@/lib/services/prospects/linkedin-company";
+import { parseLinkedInExperiences } from "@/lib/services/prospects/linkedin-experience";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +40,17 @@ export default async function ProspectsPage() {
       company: true,
       linkedinUrl: true,
       shortSummary: true,
+      // Recent LinkedIn activity captured by the extension. Raw scraped JSON —
+      // normalized via parseLinkedInPosts below before it reaches the client.
+      posts: true,
+      // Full company record captured by the extension's company scraper. Raw
+      // scraped JSON — normalized via parseLinkedInCompany below so the client
+      // only receives a typed, render-safe object.
+      companyData: true,
+      // Work history captured by the profile scraper. Raw scraped JSON —
+      // normalized via parseLinkedInExperiences below so the client only
+      // receives a typed, render-safe list.
+      experiences: true,
       savedByName: true,
       status: true,
       convertedLeadId: true,
@@ -51,9 +65,14 @@ export default async function ProspectsPage() {
     take: 500,
   });
 
-  const prospects: ProspectRow[] = rows.map((p) => ({
+  // Normalize the untrusted `posts` blob server-side so the client only ever
+  // receives a typed, render-safe list (and malformed scrapes can't break the UI).
+  const prospects: ProspectRow[] = rows.map(({ posts, companyData, experiences, ...p }) => ({
     ...p,
     createdAt: p.createdAt.toISOString(),
+    posts: parseLinkedInPosts(posts),
+    companyDetails: parseLinkedInCompany(companyData),
+    experiences: parseLinkedInExperiences(experiences),
   }));
 
   return (
