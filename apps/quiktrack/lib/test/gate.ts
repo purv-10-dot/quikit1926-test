@@ -19,6 +19,9 @@ export async function gateProject(
   resource: string,
   action: Action,
 ): Promise<NextResponse | null> {
+  // `projectId` may be a cuid OR a project KEY (readable URLs). loadProjectAccess
+  // resolves either and returns the real cuid in access.projectId — use THAT for
+  // the permission check, not the raw (possibly-key) argument.
   const access = await loadProjectAccess(orgId, userId, projectId);
   if (!access) {
     return NextResponse.json(
@@ -28,7 +31,7 @@ export async function gateProject(
   }
   if (
     !access.isTenantAdmin &&
-    !(await userCanInProject(userId, orgId, projectId, resource, action))
+    !(await userCanInProject(userId, orgId, access.projectId, resource, action))
   ) {
     return NextResponse.json(
       { success: false, error: "You don't have access to this." },

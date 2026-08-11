@@ -108,16 +108,24 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       return badRequest(parsed.error.issues[0]?.message ?? "Invalid body");
     }
 
-    const denied = await gateProject(
-      orgId,
-      userId,
-      parsed.data.projectId,
-      "TestRun",
-      "create",
-    );
+    // Body projectId may be a cuid OR a project KEY (readable URLs). Resolve to
+    // the real id before gating AND before creating the run (the run stores this
+    // projectId, so a key must never be persisted).
+    const project = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: parsed.data.projectId }, { projectKey: parsed.data.projectId }],
+      },
+      select: { id: true },
+    });
+    if (!project) return badRequest("Project not found");
+    const runInput = { ...parsed.data, projectId: project.id };
+
+    const denied = await gateProject(orgId, userId, project.id, "TestRun", "create");
     if (denied) return denied;
 
-    const run = await findOrCreateRunForBuild(orgId, userId, parsed.data);
+    const run = await findOrCreateRunForBuild(orgId, userId, runInput);
     // A reused run is not a creation, so it answers 200 rather than 201 — CI can
     // tell whether it started the run or joined one.
     return NextResponse.json(
