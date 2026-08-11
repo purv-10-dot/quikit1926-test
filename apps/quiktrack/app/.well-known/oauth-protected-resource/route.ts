@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+
 /**
  * RFC 9728 OAuth 2.0 Protected Resource Metadata for the QuikTrack MCP
  * endpoint. Unauthenticated by design (RFC 9728 requires this document be

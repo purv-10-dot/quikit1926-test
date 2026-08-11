@@ -6,6 +6,7 @@ export function OPTIONS(): Response {
   return oauthCorsPreflight();
 }
 
+
 /**
  * GET /.well-known/oauth-authorization-server
  *
