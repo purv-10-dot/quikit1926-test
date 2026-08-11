@@ -47,7 +47,11 @@
         "SENTRY_DSN",
         "NEXT_PUBLIC_SENTRY_DSN",
         "QUIKVC_DEV_BYPASS",
-        "QUIKVC_DEV_ROLE"
+        "QUIKVC_DEV_ROLE",
+        "LOG_LEVEL",
+        "FEATURE_AI_INSIGHTS",
+        "FEATURE_POWER_OF_ONE",
+        "FEATURE_SLACK_INTEGRATION"
       ]
     },
     "dev": {
