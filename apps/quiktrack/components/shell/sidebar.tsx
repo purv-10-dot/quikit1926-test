@@ -291,8 +291,11 @@ export function Sidebar() {
                       const isCurrent = s.id === activeSpaceId;
                       const isDiscovery =
                         s.templateKey === "discovery" || s.projectType === "discovery";
+                      // Prefer the readable project key in the URL; fall back
+                      // to the id (server resolves both).
+                      const seg = s.projectKey ?? s.id;
                       // Discovery spaces land on Ideas, not Backlog.
-                      const spaceHref = `/spaces/${s.id}/${isDiscovery ? "ideas" : "backlog"}`;
+                      const spaceHref = `/spaces/${seg}/${isDiscovery ? "ideas" : "backlog"}`;
                       const rowClass = `qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
                           ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                           : "text-gray-700 hover:bg-gray-100"
@@ -310,7 +313,7 @@ export function Sidebar() {
 
                       // Discovery spaces expand to reveal a nested "All ideas" row.
                       const open = openSpaceIds.has(s.id);
-                      const ideasHref = `/spaces/${s.id}/ideas`;
+                      const ideasHref = `/spaces/${seg}/ideas`;
                       const ideasActive = pathname === ideasHref;
                       // The child "All ideas" row owns the highlight while you're on
                       // the ideas view; the parent only highlights for the space's

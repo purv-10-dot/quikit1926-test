@@ -17,17 +17,22 @@ import { allPermissionPairs, SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissions
 // Shape mirrors /api/me/permissions: `permissions: string[]` of "resource:action".
 export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get("projectId");
-  if (!projectId) {
+  const idOrKey = url.searchParams.get("projectId");
+  if (!idOrKey) {
     return NextResponse.json(
       { success: false, error: "projectId required" },
       { status: 400 },
     );
   }
 
-  // Tenant guard — project must belong to caller's org.
+  // Tenant guard — project must belong to caller's org. Accept key-or-id: the
+  // `projectId` param may be a cuid (backwards compat) or a per-org project key.
   const project = await db.qtProject.findFirst({
-    where: { id: projectId, orgId, isDeleted: false },
+    where: {
+      orgId,
+      isDeleted: false,
+      OR: [{ id: idOrKey }, { projectKey: idOrKey }],
+    },
     select: { id: true },
   });
   if (!project) {
@@ -36,6 +41,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       { status: 404 },
     );
   }
+  const projectId = project.id; // resolved cuid — use downstream
 
   // The project role assigned to this user here (≤1 — unique on [projectId, userId]).
   const assignment = await db.qtProjectUserRole.findUnique({

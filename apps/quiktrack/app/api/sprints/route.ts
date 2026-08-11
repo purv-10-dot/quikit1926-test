@@ -6,21 +6,23 @@ import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissio
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get("projectId");
-  if (!projectId) {
+  const idOrKey = url.searchParams.get("projectId");
+  if (!idOrKey) {
     return NextResponse.json(
       { success: false, error: "projectId is required" },
       { status: 400 },
     );
   }
 
+  // projectId query param may be a cuid or a project KEY (keys are per-org).
   const project = await db.qtProject.findFirst({
-    where: { id: projectId, orgId: orgId, isDeleted: false },
+    where: { orgId, isDeleted: false, OR: [{ id: idOrKey }, { projectKey: idOrKey }] },
     select: { id: true },
   });
   if (!project) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
+  const projectId = project.id;
   const member = await db.qtProjectMember.findFirst({
     where: { projectId, userId, isDeleted: false },
     select: { id: true },
