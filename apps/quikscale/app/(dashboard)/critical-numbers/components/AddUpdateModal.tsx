@@ -127,7 +127,17 @@ export function AddUpdateModal({
             <label className={LABEL}>
               Date <span className="text-red-500">*</span>
             </label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={INPUT} />
+            {/* Readings are historical by definition — a future date would take
+                over the gauge until real time caught up. The API refuses them
+                too (createCriticalNumberUpdateSchema); this just stops the
+                picker offering something that can only fail. */}
+            <input
+              type="date"
+              value={date}
+              max={todayInputValue()}
+              onChange={(e) => setDate(e.target.value)}
+              className={INPUT}
+            />
             <p className="text-[11px] text-gray-400 mt-1">
               Backdating is fine — it won&apos;t overwrite a newer reading.
             </p>

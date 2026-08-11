@@ -117,7 +117,28 @@ export type UpdateCriticalNumberInput = z.infer<typeof updateCriticalNumberSchem
  * FOR (may be backdated), distinct from the row's insert time.
  */
 export const createCriticalNumberUpdateSchema = z.object({
-  date: z.string().datetime(),
+  date: z
+    .string()
+    .datetime()
+    /**
+     * No future readings. `currentValue` is recomputed as the LATEST row by
+     * date, so a future-dated entry took over the gauge immediately and held it
+     * until real time caught up — a mistyped year silently froze the metric.
+     *
+     * The bound is the end of the current UTC day, not `now`: the client posts
+     * UTC midnight for the chosen calendar day, so "today" must stay valid.
+     * A user far enough ahead of UTC can have their local "today" already be
+     * tomorrow in UTC and see this rejection; the message says which date was
+     * refused so that's diagnosable rather than mysterious.
+     */
+    .refine(
+      (iso) => {
+        const endOfTodayUtc = new Date();
+        endOfTodayUtc.setUTCHours(23, 59, 59, 999);
+        return new Date(iso).getTime() <= endOfTodayUtc.getTime();
+      },
+      { message: "That date is in the future — record a reading for today or earlier." },
+    ),
   value: z.number().finite(),
   comment: z.string().trim().max(1000, "Comment is too long").nullable().optional(),
 });
