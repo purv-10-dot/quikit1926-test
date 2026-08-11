@@ -64,6 +64,8 @@ jobs:
               - 'apps/quiklms/**'
             quikinsight:
               - 'apps/quikinsight/**'
+            quikcredflow:
+              - 'apps/quikcredflow/**'
             realtime:
               - 'services/realtime/**'
 
@@ -72,6 +74,11 @@ jobs:
         shell: bash
         run: |
           APPS=()
+          # NOTE: quikcredflow is intentionally NOT in this list yet. The
+          # update-gitops step below maps each app to a deployment file in the
+          # external GitOps repo and `exit 1`s on an unknown app. Add
+          # "quikcredflow" here only together with its case branch in that
+          # step, once the GitOps deployment filename is confirmed.
           ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
@@ -174,6 +181,7 @@ jobs:
             NEXT_PUBLIC_WEBSITE_URL=https://uat.quikit.ai
             NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
+            NEXT_PUBLIC_QUIKCREDFLOW_URL=https://uatcrmexpress.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
             NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
             NEXT_PUBLIC_APP_URL=https://uatsupport.quikit.ai

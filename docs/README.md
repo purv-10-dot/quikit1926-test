@@ -2,6 +2,8 @@
 
 Reference + onboarding for the QuikIT monorepo. Read in the order below if you're new; jump to specific docs as questions come up.
 
+> **Looking for end-user documentation?** The QuikCRM (CredFlow) product manual has moved into the app it documents: [`apps/credflow/docs/Product Documents/`](../apps/credflow/docs/Product%20Documents/README.md) — written for people using the product, not building it. The docs below are for developers.
+
 ## Reading order
 
 ### Day 1 — get running
