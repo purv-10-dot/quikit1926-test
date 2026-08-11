@@ -60,6 +60,9 @@ const SETTINGS_MENU = [
         icon: Users,
         label: "Users",
         description: "Manage access, roles, and credentials",
+        // Super Admin / Org Admin / CRM Administrator only. Hidden from
+        // SalesManager, SalesUser, MarketingUser and FinanceUser.
+        adminOnly: true,
       },
       {
         href: "/settings/teams",

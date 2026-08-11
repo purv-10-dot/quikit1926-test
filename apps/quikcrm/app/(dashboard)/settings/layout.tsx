@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { isCrmAdmin } from "@/lib/auth/is-crm-admin";
 
 // Each tab group maps to a multi-page settings section.
 // Single-page sections (Company, Profile, Call Dispositions) need no tabs.
@@ -11,7 +13,8 @@ import { ArrowLeft, ChevronRight } from "lucide-react";
 const TAB_GROUPS = [
   {
     tabs: [
-      { href: "/settings/users", label: "Users" },
+      // Users is admin-only — see adminOnly filtering in SettingsLayout below.
+      { href: "/settings/users", label: "Users", adminOnly: true },
       { href: "/settings/teams", label: "Teams" },
       { href: "/settings/sales-groups", label: "Sales Groups" },
       { href: "/settings/permissions", label: "Permission Templates" },
@@ -79,17 +82,25 @@ function isActive(pathname: string, href: string): boolean {
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const isAdmin = isCrmAdmin(user?.role);
 
   const activeItem = useMemo(
     () => ALL_NAV_ITEMS.find((item) => isActive(pathname, item.href)),
     [pathname],
   );
 
-  // Find which tab group (if any) the current page belongs to.
-  const activeTabGroup = useMemo(
-    () => TAB_GROUPS.find((g) => g.tabs.some((t) => isActive(pathname, t.href))),
-    [pathname],
-  );
+  // Find which tab group (if any) the current page belongs to. Matched against
+  // the UNFILTERED tabs so a non-admin sitting on Teams still gets the group's
+  // tab bar — only the admin-only tabs are dropped from what renders.
+  const activeTabGroup = useMemo(() => {
+    const group = TAB_GROUPS.find((g) => g.tabs.some((t) => isActive(pathname, t.href)));
+    if (!group) return undefined;
+    const tabs = group.tabs.filter(
+      (t) => !("adminOnly" in t && t.adminOnly) || isAdmin,
+    );
+    return tabs.length > 0 ? { ...group, tabs } : undefined;
+  }, [pathname, isAdmin]);
 
   return (
     <div className="min-w-0 bg-slate-50/70 px-2 pb-6 pt-2 sm:px-4 sm:pb-8 lg:px-6">

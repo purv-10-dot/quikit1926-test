@@ -68,6 +68,44 @@ describe("PATCH /api/settings/digest-recipients (admin-gated)", () => {
     expect(setDigestRecipient).not.toHaveBeenCalled();
   });
 
+  // Spec 2026-08-11: EXACTLY org_admin / Administrator / admin may change the
+  // toggle. This is NOT covered by the settings:edit gate above — a role granted
+  // settings:edit passes assertModule (mocked resolved here, exactly as it would
+  // in that case) and must still be refused.
+  //
+  // app_admin / super_admin / owner are DELIBERATELY refused: they are admitted
+  // by the broader isCrmAdminUser helper, so these cases lock in that the route
+  // does NOT use it. If someone swaps the check back to isCrmAdminUser, the
+  // last three rows here fail.
+  it.each([
+    "SalesManager",
+    "SalesUser",
+    "MarketingUser",
+    "FinanceUser",
+    "TeamManager",
+    "app_admin",
+    "super_admin",
+    "owner",
+  ])("403 for %s even WITH settings:edit (exact-3 allow-list)", async (role) => {
+    setSession({ userId: "u3", orgId: "t1", role, email: "n@x.co", name: "N" });
+    vi.mocked(assertModule).mockResolvedValue(undefined); // settings:edit granted
+    const { PATCH } = await import(ROUTE);
+    const res = await PATCH(patchReq({ userId: "target", enabled: true }));
+    expect(res.status).toBe(403);
+    expect(setDigestRecipient).not.toHaveBeenCalled();
+  });
+
+  it.each(["Administrator", "org_admin", "admin", "administrator"])(
+    "%s CAN toggle",
+    async (role) => {
+      setSession({ userId: "u1", orgId: "t1", role, email: "a@x.co", name: "A" });
+      const { PATCH } = await import(ROUTE);
+      const res = await PATCH(patchReq({ userId: "target", enabled: true }));
+      expect(res.status).toBe(200);
+      expect(setDigestRecipient).toHaveBeenCalledWith("t1", "target", true);
+    },
+  );
+
   it("400 when toggling ON an INELIGIBLE user (cannot scope them)", async () => {
     setSession({ userId: "u1", orgId: "t1", role: "Administrator", email: "a@x.co", name: "A" });
     vi.mocked(isDigestEligible).mockResolvedValue({ eligible: false, reason: "not-eligible-role" } as never);
