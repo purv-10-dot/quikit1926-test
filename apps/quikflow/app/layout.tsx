@@ -15,6 +15,7 @@ export const metadata: Metadata = {
   description: "No-code workflow automation across every QuikIT app",
 };
 
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={jakarta.variable}>
