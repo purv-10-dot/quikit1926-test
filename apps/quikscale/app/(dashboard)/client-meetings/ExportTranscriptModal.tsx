@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { MeetingReportPanel } from "./MeetingReportPanel";
+import { UploadTranscriptModal } from "./UploadTranscriptModal";
 
 interface ClientOpt { id: string; name: string }
 
@@ -61,6 +62,11 @@ function attendeeText(rows: TranscriptRow["attendees"]): string {
   return rows.map((a) => a?.name || a?.email).filter(Boolean).join(", ");
 }
 
+/** Collapse runs of 3+ blank lines (common after docx/paragraph extraction) down to one, and trim the ends — display only, doesn't touch the stored rawText. */
+function trimBlankLines(text: string): string {
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function ExportTranscriptModal({
   clients,
   initialClientId,
@@ -87,6 +93,7 @@ export function ExportTranscriptModal({
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [viewerTab, setViewerTab] = useState<"transcript" | "report">("transcript");
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const { data: sessionData } = useSession();
   const currentUserId = (sessionData?.user as { id?: string } | undefined)?.id ?? "";
@@ -138,6 +145,13 @@ export function ExportTranscriptModal({
     void load();
   }, [load]);
 
+  const handleUploaded = useCallback((row: TranscriptRow) => {
+    setUploadOpen(false);
+    setRows((prev) => [row, ...prev]);
+    setSelected(row);
+    setViewerTab("transcript");
+  }, []);
+
   const downloadTxt = (t: TranscriptRow) => {
     const parts = [
       t.title || "Meeting transcript",
@@ -183,7 +197,8 @@ export function ExportTranscriptModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onClick={onClose}>
+    <>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" role="presentation" onClick={onClose}>
       <div
         className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
         role="dialog"
@@ -193,9 +208,17 @@ export function ExportTranscriptModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h2 className="text-base font-semibold text-gray-800">Export Transcript</h2>
-          <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setUploadOpen(true)}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            >
+              Upload Transcript
+            </button>
+            <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Controls */}
@@ -262,7 +285,15 @@ export function ExportTranscriptModal({
             {loading ? (
               <p className="p-4 text-xs text-gray-400">Loading…</p>
             ) : rows.length === 0 ? (
-              <p className="p-4 text-xs text-gray-400">No transcripts for this selection.</p>
+              <div className="p-4">
+                <p className="text-xs text-gray-400">No transcripts for this selection.</p>
+                <button
+                  onClick={() => setUploadOpen(true)}
+                  className="mt-2 text-xs font-medium text-accent-600 hover:underline"
+                >
+                  Upload a transcript instead
+                </button>
+              </div>
             ) : (
               <ul>
                 {rows.map((r) => (
@@ -364,7 +395,7 @@ export function ExportTranscriptModal({
                     <section>
                       <h4 className="mb-1 text-sm font-semibold text-gray-800">Transcript</h4>
                       <pre className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 font-sans text-sm text-gray-700">
-                        {selected.rawText || "No transcript text saved."}
+                        {selected.rawText ? trimBlankLines(selected.rawText) : "No transcript text saved."}
                       </pre>
                     </section>
                   </>
@@ -375,6 +406,16 @@ export function ExportTranscriptModal({
         </div>
       </div>
     </div>
+
+    {uploadOpen ? (
+      <UploadTranscriptModal
+        clients={clients}
+        initialClientId={clientId}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={handleUploaded}
+      />
+    ) : null}
+    </>
   );
 }
 

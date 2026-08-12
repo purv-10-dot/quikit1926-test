@@ -237,13 +237,29 @@
       "Bash(cat /tmp/quikscale-e2e-server.log 2>&1 | tail -40)",
       "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" --max-time 2 http://localhost:3025/)",
       "Bash(xargs grep -l \"connectors\\\\|calendar\")",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(powershell -Command \"Test-Path 'C:\\\\Program Files \\(x86\\)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe'; Test-Path 'C:\\\\Program Files\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe'\")",
+      "Bash(mkdir -p \"/c/Users/user/AppData/Local/Temp/claude/c--workStation-3-quikit1926/feca6ca3-1c14-483b-9f09-c5c99905eee6/scratchpad/prd\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless --disable-gpu --no-pdf-header-footer --print-to-pdf=\"Meeting-Rhythm-Automation-Suite-PRD.pdf\" --print-to-pdf-no-header \"file:///$\\(pwd\\)/prd.html\")",
+      "Bash(cp \"/c/Users/user/AppData/Local/Temp/claude/c--workStation-3-quikit1926/feca6ca3-1c14-483b-9f09-c5c99905eee6/scratchpad/prd/Meeting-Rhythm-Automation-Suite-PRD.pdf\" \"/c/Users/user/Downloads/Meeting-Rhythm-Automation-Suite-PRD.pdf\")",
+      "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path\")",
+      "Bash(git stash *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3003/api/client-meetings/transcripts)",
+      "Bash(break)",
+      "Bash(curl -s -o /dev/null -w \"upload GET\\(no body\\): %{http_code}\\\\n\" -X POST http://localhost:3003/api/client-meetings/transcripts/upload)",
+      "Bash(curl -s -w \"\\\\nclient-meetings page: %{http_code}\\\\n\" -o /dev/null http://localhost:3003/client-meetings)",
+      "Bash(node --env-file=.env.local \"C:/Users/user/AppData/Local/Temp/claude/c--workStation-3-quikit1926/1090cd45-74bd-488f-b211-1ad19d9a6750/scratchpad/check_org.mjs\")",
+      "Bash(node --env-file=.env.local __scratch_check_org.mjs)",
+      "Bash(node --env-file=.env.local __scratch_test_gemini.mjs)",
+      "Bash(node --env-file=.env.local __scratch_list_models.mjs)",
+      "Bash(node --env-file=.env.local __scratch_test_models.mjs)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",
       "C:\\Users\\user\\.claude\\plans",
       "C:\\Users\\user\\Downloads\\migration_prod",
-      "c:\\workStation_3\\quikit1926\\apps\\quikflow"
+      "c:\\workStation_3\\quikit1926\\apps\\quikflow",
+      "C:\\Users\\user\\AppData\\Local\\Temp\\claude\\c--workStation-3-quikit1926\\feca6ca3-1c14-483b-9f09-c5c99905eee6\\scratchpad"
     ]
   },
   "hooks": {
@@ -260,4 +276,3 @@
     ]
   }
 }
-
