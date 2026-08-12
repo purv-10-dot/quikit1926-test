@@ -26,7 +26,13 @@ Admin (isSystem, all grants), Moderator, Member (isDefault), Guest. Channel role
 - Channel.Public: create        (DECISION 2 — matrix cell org_admin ticks)
 - Channel.DM: create
 - Channel.Moderate: update/delete (DECISION 4 — matrix cell)
-- Channel.InviteExternal: create
+- Channel.InviteExternal: create — **PLANNED, NOT IN THE REGISTRY.** Removed from
+  `permissionsRegistry.ts` because nothing ever called
+  `userCan(…, "Channel.InviteExternal", …)`: it rendered as a tickable cell in the
+  admin matrix that read like a security control and gated nothing. Blocked on
+  external/guest identity, which QuikChat does not have — invites are strictly
+  intra-org (`acceptInvite` 404s a cross-org code) and cannot onboard a
+  non-member. Re-add to the registry only together with a real gate.
 - Call: create ; Call.Group: create
 - Assistant: view/create
 - Assistant.IngestPrivate: create

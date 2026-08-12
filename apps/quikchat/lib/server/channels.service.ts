@@ -516,7 +516,26 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
 export async function acceptInvite(ctx: OrgContext, code: string): Promise<ChannelListItem> {
   const result = await prisma.$transaction(async (tx) => {
     const invite = await tx.qcInvite.findUnique({ where: { code } });
-    if (!invite || invite.orgId !== ctx.orgId) throw new HttpError(404, "Invite not found");
+    if (!invite) throw new HttpError(404, "Invite not found");
+    // Cross-org: a DISTINCT error, not a 404.
+    //
+    // This used to collapse into "Invite not found" to avoid leaking the
+    // invite's existence to another tenant. That rationale does not survive
+    // contact with the neighbouring endpoint: `GET /api/invites/[code]`
+    // (previewInvite) has no org check at all and returns the channel's name,
+    // description, visibility, member count, expiry and remaining uses to
+    // anyone holding the code. The caller here has already loaded that preview
+    // — it is what the landing page renders before they click Accept. Saying
+    // "different organisation" therefore discloses strictly less than the page
+    // in front of them, while a 404 tells a legitimate person their link is
+    // broken when it is not.
+    //
+    // Whether the PREVIEW should be that open is a real question and a separate
+    // decision — filed in QUIKCHAT_BACKLOG.md. Until it is answered, honesty
+    // here costs nothing that is not already given away.
+    if (invite.orgId !== ctx.orgId) {
+      throw new HttpError(403, "This invite belongs to a different organisation");
+    }
     assertInviteUsable(invite);
 
     const channel = await tx.qcChannel.findFirst({

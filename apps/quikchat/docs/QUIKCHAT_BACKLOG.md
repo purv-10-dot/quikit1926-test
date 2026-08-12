@@ -386,6 +386,40 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   `<video>` elements that can't attach a header.
 - **Scroll-to-divider on open** — Teams/WhatsApp scroll to the unread line; a
   divider above a large unread block is currently off-screen.
+- **PRODUCT DECISION NEEDED: `GET /api/invites/[code]` is world-readable, and
+  that contradicts the accept path's stated threat model.** The preview endpoint
+  has no org check and no session requirement — anyone holding a code gets the
+  channel's name, description, visibility, member count, expiry and remaining
+  uses, cross-org. Meanwhile `acceptInvite` used to collapse "wrong org" into a
+  404 specifically *"to not leak the invite's existence to another tenant"*.
+  Both cannot be right: either the preview is too open, or the 404 was theatre.
+  This session chose honesty at accept (403 "different organisation") on the
+  grounds that it discloses strictly less than the preview the user just loaded
+  — but the underlying question belongs to whoever owns the invite product, not
+  to a session note. **Decide:** (i) keep the preview public — the code IS the
+  secret, as its docblock says — and accept stays honest; or (ii) gate the
+  preview to same-org callers, which changes the landing page for cross-org
+  visitors from "here's the channel" to "not available" and needs UX sign-off.
+- **Onboarding outsiders through QuikChat invites (option (b))** — a QuikChat
+  channel invite cannot bring in someone who is not already an org member with
+  app access: `acceptInvite` writes only `QcChannelMember`, never `OrgMember` or
+  `UserAppAccess`. Supporting it means routing through the platform's invite
+  model (`OrgMember.status="invited"` + `inviteAppIds` + `invitationToken`,
+  auto-accepted in `signIn`/`jwt`), which already exists in `@quikit/auth` and
+  already grants `UserAppAccess`. So the real question is not "build onboarding
+  in QuikChat" but **"which URL do you hand someone — the platform invite or the
+  channel link?"** — a product decision with a cross-package implementation, not
+  a QuikChat bug. Note it does NOT remove the need for the error distinctions
+  shipped this session: expired / revoked / limit-reached still need to be told
+  apart afterwards.
+- **`lib/server/rate-limit-gate.test.ts` is dead AND wrong** — it is the only
+  test of `withOrgAuth`, it is in `vitest.config.ts`'s exclude list so it never
+  runs, and it mocks `getRawSession`, which the wrapper stopped using when it
+  moved to `withAuth`. So it asserts against a shape that no longer exists. That
+  combination is why the API-surface app-access gap survived review: the wrapper
+  every route depends on had no executable coverage at all. `lib/orgAuth.appaccess.test.ts`
+  now covers the entitlement gate specifically; the rate-limit and request-id
+  assertions still need re-homing into a runnable, mock-backed file.
 - **`ensureUserRole` deliberately mixes org-level and per-user seeding** —
   Phase 3 restructuring hazard, recorded so the coupling reads as intentional.
   The function does two things: `ensureSeeded` (org-level — creates roles, tops

@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { mockDb, resetMockDb } from "../../__tests__/helpers/mockDb";
 import { Prisma } from "@quikit/database";
 import { allPermissionPairs } from "./permissionsRegistry";
+import { __resetAppIdCacheForTest } from "./permissions";
 import { seedAllDefaultRoles, ensureSeeded, ensureUserRole, collapseToLatestRole } from "./seed";
 
 const ORG = "org-1";
@@ -34,10 +35,13 @@ function freshOrgMocks() {
 
 beforeEach(() => {
   resetMockDb();
+  // getQuikChatAppId caches BOTH ways — a resolved id sticks forever, and since
+  // negative caching landed a miss sticks for 30s. Either direction makes this
+  // file order-dependent (it used to carry a "MUST run first" comment for the
+  // first half). Reset per test instead of relying on declaration order.
+  __resetAppIdCacheForTest();
 });
 
-// MUST run first: getQuikChatAppId caches on a hit, so once any later test
-// resolves the App, this null path can no longer be exercised in-file.
 describe("seedAllDefaultRoles — unregistered app", () => {
   it("returns null (no-op) when the QuikChat App is not registered", async () => {
     mockDb.app.findUnique.mockResolvedValue(null as never);
@@ -65,12 +69,15 @@ describe("seedAllDefaultRoles", () => {
     expect(byName.get("Member")?.isDefault).toBe(true);
     expect(byName.get("Member")?.isSystem).toBe(false);
 
-    // Grant-set sizes: admin=17 (all pairs), Moderator=10, Member=8, Guest=1.
+    // Grant-set sizes: admin=16 (all pairs), Moderator=10, Member=8, Guest=1.
+    // admin was 17 until Channel.InviteExternal was removed from the registry
+    // (it gated nothing) — this number tracks allPermissionPairs(), so a drop
+    // here means the tree shrank, not that a grant went missing.
     const grantSizes = mockDb.qcRolePermission.createMany.mock.calls
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((c: any) => c[0].data.length)
       .sort((a: number, b: number) => a - b);
-    expect(grantSizes).toEqual([1, 8, 10, 17]);
+    expect(grantSizes).toEqual([1, 8, 10, 16]);
   });
 
   it("Member (isDefault) grants exclude Channel.Public / Moderate / IngestOrg / config", async () => {

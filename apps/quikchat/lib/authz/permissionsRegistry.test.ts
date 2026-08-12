@@ -24,7 +24,6 @@ describe("permissionsRegistry", () => {
       "Channel.Public",
       "Channel.DM",
       "Channel.Moderate",
-      "Channel.InviteExternal",
       "Call",
       "Call.Group",
       "Assistant",
@@ -44,10 +43,12 @@ describe("permissionsRegistry", () => {
     }
   });
 
-  it("allPermissionPairs enumerates exactly the leaf action pairs (17)", () => {
+  it("allPermissionPairs enumerates exactly the leaf action pairs (16)", () => {
     const pairs = allPermissionPairs();
-    // 4 (Channel) +1+1+2+1 +1+1 +2+1+1+1 +1 = 17
-    expect(pairs).toHaveLength(17);
+    // 4 (Channel) +1+1+2 +1+1 +2+1+1+1 +1 = 16
+    // Was 17 until Channel.InviteExternal (+1) left the registry — it gated
+    // nothing. A change here means the tree moved, not that a grant vanished.
+    expect(pairs).toHaveLength(16);
     // No duplicates.
     const keys = new Set(pairs.map((p) => `${p.resource}:${p.action}`));
     expect(keys.size).toBe(pairs.length);
