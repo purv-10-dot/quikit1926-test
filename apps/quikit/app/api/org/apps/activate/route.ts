@@ -4,12 +4,7 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import {
-  ADMIN_TIER_ROLES,
-  TRIAL_DURATION_DAYS,
-  MEMBERSHIP_ROLES,
-  SUPER_ADMIN_GRANT_ONLY_SLUGS,
-} from "@quikit/shared";
+import { ADMIN_TIER_ROLES, TRIAL_DURATION_DAYS, MEMBERSHIP_ROLES } from "@quikit/shared";
 import { provisionAppRoles } from "@/lib/provisionAppRoles";
 import { seedDefaultDisabledModuleFlags } from "@/lib/seedDefaultModuleFlags";
 import { invalidateDisabledModules } from "@quikit/auth/feature-gate";
@@ -52,15 +47,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid input" }, { status: 400 });
   }
   const { appSlug, upgrade } = parsed.data;
-
-  // Super-admin-grant-only apps (e.g. QuikFlow) are never self-serve
-  // activatable — only a super-admin can grant them via the org page.
-  if ((SUPER_ADMIN_GRANT_ONLY_SLUGS as readonly string[]).includes(appSlug)) {
-    return NextResponse.json(
-      { success: false, error: "This app is enabled by QuikIT — contact your administrator." },
-      { status: 403 },
-    );
-  }
 
   // Org-admin gate.
   if (!isSuperAdmin) {

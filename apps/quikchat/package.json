@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "_comment_dev_disabled": "dev script disabled 2026-08-07 — port 3011 conflicts with quikflow; use 'dev:manual' to run quikchat standalone",
-    "dev:manual": "next dev -p 3011",
+    "dev": "next dev -p 3011",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
     "start": "next start -p 3011",
