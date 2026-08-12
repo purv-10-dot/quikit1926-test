@@ -1,0 +1,44 @@
+/**
+ * Attachment uploads for support requests raised from QuikCRMExpress.
+ *
+ * The validation, key layout and GCS calls live in
+ * `@quikit/shared/supportAttachments` and are identical in every app; this
+ * file only supplies QuikCRMExpress's auth guard.
+ *
+ * Not permission-gated, matching the ticket route: a user locked out of a
+ * module must still be able to show us the screen that locked them out.
+ * Uploads land under the caller's own org prefix, which is what the viewer
+ * route checks before it will sign anything.
+ */
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { handleSupportUpload } from "@quikit/shared/supportAttachments";
+import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await requireApiUser();
+    if (isResponse(user)) return user;
+
+    let form: FormData;
+    try {
+      form = await req.formData();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Expected multipart/form-data body" },
+        { status: 400 },
+      );
+    }
+
+    const result = await handleSupportUpload({ orgId: user.orgId, form });
+    if (!result.ok) {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: result.status },
+      );
+    }
+    return NextResponse.json({ success: true, data: result.data }, { status: 201 });
+  } catch (error: unknown) {
+    return errorResponse(error);
+  }
+}

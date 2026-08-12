@@ -1,0 +1,379 @@
+/*
+ * Marketing-only styles for the public landing page at `/`.
+ *
+ * Scoped under `.marketing-shell` (set by (marketing)/layout.tsx) so nothing
+ * here can leak into the dashboard, which loads the same root globals.css but
+ * never this file. Loaded after globals.css, so these rules win inside the
+ * shell without needing !important.
+ */
+
+.marketing-shell {
+  --ink: #0b1220;
+  --ink-soft: #475569;
+  --ink-faint: #94a3b8;
+  --surface: #ffffff;
+  --surface-alt: #f8fafc;
+  --line: #e2e8f0;
+  --brand: #2563eb;
+  --brand-dark: #1d4ed8;
+  --brand-tint: #eff6ff;
+
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+.marketing-shell *,
+.marketing-shell *::before,
+.marketing-shell *::after {
+  box-sizing: border-box;
+}
+
+.marketing-shell .stage {
+  display: block;
+  overflow-x: hidden;
+}
+
+/* ---------- shared primitives ---------- */
+
+.marketing-shell .wrap {
+  width: min(1120px, calc(100% - 2.5rem));
+  margin-inline: auto;
+}
+
+.marketing-shell .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.25rem;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.marketing-shell .btn-dark {
+  background: var(--brand);
+  color: #fff;
+}
+.marketing-shell .btn-dark:hover {
+  background: var(--brand-dark);
+}
+
+.marketing-shell .btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+.marketing-shell .btn-ghost:hover {
+  border-color: var(--ink-faint);
+}
+
+.marketing-shell .btn-lg {
+  padding: 0.9rem 1.6rem;
+  font-size: 1rem;
+}
+
+.marketing-shell .btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.marketing-shell .eyebrow {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand);
+  background: var(--brand-tint);
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+}
+
+.marketing-shell .section {
+  padding: clamp(3.5rem, 7vw, 6rem) 0;
+}
+.marketing-shell .section-alt {
+  background: var(--surface-alt);
+  border-block: 1px solid var(--line);
+}
+
+.marketing-shell .section-header {
+  max-width: 46rem;
+  margin-bottom: 2.5rem;
+}
+
+.marketing-shell .section-header h2 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.75rem, 3.4vw, 2.6rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0.9rem 0 0.75rem;
+  font-weight: 500;
+}
+
+.marketing-shell .section-header p {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+/* ---------- nav ---------- */
+
+.marketing-shell .site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(1120px, calc(100% - 2.5rem));
+  margin-inline: auto;
+  padding: 1rem 0;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.marketing-shell .logo-link {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.marketing-shell .logo-link span {
+  color: var(--brand);
+}
+
+.marketing-shell .nav-spacer {
+  flex: 1;
+}
+
+/* ---------- hero ---------- */
+
+.marketing-shell .hero {
+  padding: clamp(3rem, 8vw, 6.5rem) 0 clamp(2.5rem, 5vw, 4rem);
+}
+
+.marketing-shell .hero h1 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(2.25rem, 5.4vw, 4rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  font-weight: 500;
+  margin: 1.1rem 0 1rem;
+  max-width: 20ch;
+}
+
+.marketing-shell .hero p.lede {
+  font-size: clamp(1.0625rem, 1.6vw, 1.25rem);
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 54ch;
+  margin: 0 0 2rem;
+}
+
+.marketing-shell .hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.marketing-shell .hero-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+  margin-top: 3.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+}
+
+.marketing-shell .hero-stat strong {
+  display: block;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.marketing-shell .hero-stat span {
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+}
+
+/* ---------- feature grid ---------- */
+
+.marketing-shell .feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.marketing-shell .feature-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.5rem;
+}
+
+.marketing-shell .section-alt .feature-card {
+  background: var(--surface);
+}
+
+.marketing-shell .feature-card h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin: 0.9rem 0 0.5rem;
+}
+
+.marketing-shell .feature-card p {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.marketing-shell .feature-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+/* ---------- faq ---------- */
+
+.marketing-shell .faq-list {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 52rem;
+}
+
+.marketing-shell .faq-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 0;
+}
+
+.marketing-shell .faq-item summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 1.1rem 1.35rem;
+  font-weight: 600;
+  font-size: 1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.marketing-shell .faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.marketing-shell .faq-item summary::after {
+  content: "+";
+  color: var(--brand);
+  font-weight: 500;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.marketing-shell .faq-item[open] summary::after {
+  content: "\2212";
+}
+
+.marketing-shell .faq-item p {
+  margin: 0;
+  padding: 0 1.35rem 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+
+/* ---------- footer CTA ---------- */
+
+.marketing-shell .footer-cta {
+  background: var(--ink);
+  color: #fff;
+  padding: clamp(3rem, 6vw, 5rem) 0;
+}
+
+.marketing-shell .footer-cta h2 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.75rem, 3.4vw, 2.5rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.85rem;
+  max-width: 22ch;
+}
+
+.marketing-shell .footer-cta p {
+  color: #cbd5e1;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  max-width: 52ch;
+  margin: 0 0 1.75rem;
+}
+
+.marketing-shell .footer-cta .btn-dark {
+  background: #fff;
+  color: var(--ink);
+}
+.marketing-shell .footer-cta .btn-dark:hover {
+  background: #e2e8f0;
+}
+
+.marketing-shell .footer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: center;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+
+.marketing-shell .footer-meta a {
+  color: #cbd5e1;
+  text-decoration: none;
+}
+.marketing-shell .footer-meta a:hover {
+  color: #fff;
+}
+
+/* ---------- scroll reveal ---------- */
+
+.marketing-shell [data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.marketing-shell [data-reveal].is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Motion is decoration here — never gate content on it. */
+@media (prefers-reduced-motion: reduce) {
+  .marketing-shell [data-reveal],
+  .marketing-shell [data-reveal].is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .marketing-shell .btn {
+    transition: none;
+  }
+}

@@ -61,7 +61,7 @@ const envBaseUrls: Record<string, string | undefined> = {
   quikinfra: process.env.QUIKINFRA_URL,
   quiksocial: process.env.QUIKSOCIAL_URL,
   quikcrm: process.env.QUIKCRM_URL,
-  quikcredflow: process.env.QUIKCREDFLOW_URL,
+  quikcrmexpress: process.env.QUIKCRMEXPRESS_URL,
   quikhrms: process.env.QUIKHRMS_URL,
 };
 const devLocalhostFallbacks: Record<string, string> = {
@@ -75,7 +75,7 @@ const devLocalhostFallbacks: Record<string, string> = {
   quikinfra: "http://localhost:3006",
   quiksocial: "http://localhost:3007",
   quikcrm: "http://localhost:3008",
-  quikcredflow: "http://localhost:3076",
+  quikcrmexpress: "http://localhost:3017",
   quikhrms: "http://localhost:3009",
 };
 function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {

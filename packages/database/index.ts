@@ -12,14 +12,14 @@ declare global {
  *
  * Models with soft-delete:
  *   QuikScale — KPI, Team, Priority, WWWItem, Meeting.
- *   CredFlow  — QcfLead, QcfAccount, QcfOpportunity, QcfProduct, QcfPriceList,
- *               QcfPriceListItem, QcfQuote, QcfOrder, QcfDocumentFolder,
- *               QcfDocumentLink.
+ *   CrmExpress  — QceLead, QceAccount, QceOpportunity, QceProduct, QcePriceList,
+ *               QcePriceListItem, QceQuote, QceOrder, QceDocumentFolder,
+ *               QceDocumentLink.
  *
  * Entries MUST be the Prisma `model` name character-for-character — the
  * extension matches on the `model` string, so a stale or mis-cased name fails
- * silently (no error, just no `deletedAt` filter). CredFlow's models carry the
- * `Qcf` prefix from the de-vendor; they were named `Crm*` in the standalone
+ * silently (no error, just no `deletedAt` filter). CrmExpress's models carry the
+ * `Qce` prefix from the de-vendor; they were named `Crm*` in the standalone
  * app and the rename must be reflected here too.
  *
  * Override: pass `{ where: { deletedAt: { not: null } } }` explicitly
@@ -32,17 +32,17 @@ const SOFT_DELETE_MODELS = new Set([
   "Priority",
   "WWWItem",
   "Meeting",
-  // CredFlow (app_quikcredflow)
-  "QcfLead",
-  "QcfAccount",
-  "QcfOpportunity",
-  "QcfProduct",
-  "QcfPriceList",
-  "QcfPriceListItem",
-  "QcfQuote",
-  "QcfOrder",
-  "QcfDocumentFolder",
-  "QcfDocumentLink",
+  // CrmExpress (app_quikcrmexpress)
+  "QceLead",
+  "QceAccount",
+  "QceOpportunity",
+  "QceProduct",
+  "QcePriceList",
+  "QcePriceListItem",
+  "QceQuote",
+  "QceOrder",
+  "QceDocumentFolder",
+  "QceDocumentLink",
 ]);
 
 function applySoftDeleteMiddleware(client: PrismaClient): PrismaClient {
