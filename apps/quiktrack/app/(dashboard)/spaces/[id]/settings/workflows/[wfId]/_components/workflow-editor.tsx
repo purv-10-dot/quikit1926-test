@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
@@ -146,6 +146,14 @@ function EditorBody({
   // Holds the rail bucket the Add-rule catalog should open on, or null (closed).
   const [addRuleBucket, setAddRuleBucket] = useState<BucketId | null>(null);
   const [triggersOpen, setTriggersOpen] = useState(false);
+  // Auto-dismissing "Workflow updated" toast on a successful publish.
+  const [publishToast, setPublishToast] = useState(false);
+  useEffect(() => {
+    if (!ed.publish.isSuccess) return;
+    setPublishToast(true);
+    const t = setTimeout(() => setPublishToast(false), 4000);
+    return () => clearTimeout(t);
+  }, [ed.publish.isSuccess]);
   // The rule being configured — either a fresh pick (add) or an existing index (edit).
   const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -259,62 +267,60 @@ function EditorBody({
 
         <div className="flex items-center gap-2">
           {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
-          {ed.published ? (
-            // Published, no unpublished changes → a single Close button.
+          {/* "Update workflow" is always shown — disabled when there are no
+              unpublished changes (just published / fresh), enabled the moment
+              you edit again (no refresh needed). Split with ▾ "Save as new". */}
+          <div className="relative inline-flex">
+            <button
+              type="button"
+              onClick={() => ed.publish.mutate(undefined)}
+              disabled={ed.published || ed.publish.isPending}
+              className="rounded-l bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {ed.publish.isPending ? "Publishing…" : "Update workflow"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setUpdateMenuOpen((v) => !v)}
+              aria-label="More update options"
+              className="rounded-r border-l border-accent-700/40 bg-accent-600 px-1.5 py-1.5 text-white hover:bg-accent-700"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {updateMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setUpdateMenuOpen(false)} />
+                <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUpdateMenuOpen(false);
+                      setSaveAsNewOpen(true);
+                    }}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Save as new workflow
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          {!ed.published && (
             <button
               type="button"
               onClick={onClose}
-              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700"
+              className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
             >
-              Close
+              Discard changes
             </button>
-          ) : (
-            <>
-              {/* Split button: "Update workflow" + ▾ "Save as new workflow". */}
-              <div className="relative inline-flex">
-                <button
-                  type="button"
-                  onClick={() => ed.publish.mutate(undefined)}
-                  disabled={ed.publish.isPending}
-                  className="rounded-l bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
-                >
-                  {ed.publish.isPending ? "Publishing…" : "Update workflow"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUpdateMenuOpen((v) => !v)}
-                  aria-label="More update options"
-                  className="rounded-r border-l border-accent-700/40 bg-accent-600 px-1.5 py-1.5 text-white hover:bg-accent-700"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </button>
-                {updateMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setUpdateMenuOpen(false)} />
-                    <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUpdateMenuOpen(false);
-                          setSaveAsNewOpen(true);
-                        }}
-                        className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                      >
-                        Save as new workflow
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-              >
-                Discard changes
-              </button>
-            </>
           )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            Close
+          </button>
           <button
             type="button"
             disabled
@@ -370,12 +376,21 @@ function EditorBody({
 
       {helpOpen && <DiagramHelpDialog onClose={() => setHelpOpen(false)} />}
 
-      {/* Banners */}
-      {ed.publish.isSuccess && (
-        <div className="border-b border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
-          Workflow published.
+      {/* Publish success → a small auto-dismissing toast (bottom-left). */}
+      {publishToast && (
+        <div className="fixed bottom-6 left-6 z-[100] flex max-w-sm items-start gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-lg">
+          <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-900">Workflow updated</div>
+            <div className="text-xs text-gray-500">It may take some time to update the work items affected by your recent changes.</div>
+          </div>
+          <button type="button" onClick={() => setPublishToast(false)} className="ml-1 text-gray-400 hover:text-gray-600">
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
+
+      {/* Banners */}
       {ed.publishErrors.length > 0 && (
         <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           <div className="font-medium">Can&apos;t publish — fix these:</div>
