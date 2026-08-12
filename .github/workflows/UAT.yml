@@ -64,8 +64,6 @@ jobs:
               - 'apps/quiklms/**'
             quikinsight:
               - 'apps/quikinsight/**'
-            quikcrmexpress:
-              - 'apps/quikcrmexpress/**'
             realtime:
               - 'services/realtime/**'
             quikcrmexpress:
