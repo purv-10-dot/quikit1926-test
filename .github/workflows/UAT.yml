@@ -97,7 +97,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
             [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
             [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
-            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikcrmexpress")
+            [ "${{ steps.filter.outputs.quikcrmexpress }}" = "true" ] && APPS+=("quikcrmexpress")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
