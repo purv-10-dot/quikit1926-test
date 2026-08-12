@@ -68,7 +68,7 @@ describe("withPatAuth", () => {
       createdAt: new Date(),
     } as never);
 
-    const seen: { userId?: string; orgId?: string; projectId?: string } = {};
+    const seen: { userId?: string; orgId?: string; projectId?: string | null } = {};
     const handler = withPatAuth(async (ctx) => {
       seen.userId = ctx.userId;
       seen.orgId = ctx.orgId;
@@ -79,6 +79,64 @@ describe("withPatAuth", () => {
 
     expect(res.status).toBe(200);
     expect(seen).toEqual({ userId: CREATED_BY, orgId: ORG, projectId: PROJECT });
+  });
+
+  it("resolves a user-scoped PAT (null projectId) via an active-org-membership recheck, not loadProjectAccess", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: null,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: null,
+      createdAt: new Date(),
+    } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+
+    const seen: { userId?: string; orgId?: string; projectId?: string | null } = {};
+    const handler = withPatAuth(async (ctx) => {
+      seen.userId = ctx.userId;
+      seen.orgId = ctx.orgId;
+      seen.projectId = ctx.projectId;
+      return NextResponse.json({ success: true, data: "ok" });
+    });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`), { params: {} });
+
+    expect(res.status).toBe(200);
+    expect(seen).toEqual({ userId: CREATED_BY, orgId: ORG, projectId: null });
+    // The project-level recheck must never run for a token with no bound project.
+    expect(mockDb.qtProject.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("auto-revokes a user-scoped PAT after 3 consecutive failures when the creator is no longer an active org member", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: null,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      createdAt: new Date(),
+      failedAccessChecks: 2,
+    } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
+
+    const handler = withPatAuth(async () =>
+      NextResponse.json({ success: true, data: "never" }),
+    );
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`), { params: {} });
+
+    expect(res.status).toBe(401);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pat_1" },
+        data: expect.objectContaining({ revokedAt: expect.any(Date), failedAccessChecks: 3 }),
+      }),
+    );
   });
 
   it("returns 401 when the PAT is expired", async () => {
@@ -121,7 +179,7 @@ describe("withPatAuth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 401 and auto-revokes the PAT when its creator no longer has project access", async () => {
+  it("auto-revokes the PAT after 3 consecutive failed access-rechecks", async () => {
     mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
       id: "pat_1",
       orgId: ORG,
@@ -132,6 +190,7 @@ describe("withPatAuth", () => {
       revokedAt: null,
       lastUsedAt: new Date(),
       createdAt: new Date(),
+      failedAccessChecks: 2,
     } as never);
     // Creator is no longer an org/app admin and no longer a project member.
     mockDb.qtProjectMember.findFirst.mockResolvedValue(null);
@@ -145,9 +204,63 @@ describe("withPatAuth", () => {
     expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "pat_1" },
-        data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+        data: expect.objectContaining({ revokedAt: expect.any(Date), failedAccessChecks: 3 }),
       }),
     );
+  });
+
+  it("does not revoke on the first or second consecutive failed access-recheck, only records the count", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: PROJECT,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      createdAt: new Date(),
+      failedAccessChecks: 0,
+    } as never);
+    mockDb.qtProjectMember.findFirst.mockResolvedValue(null);
+
+    const handler = withPatAuth(async () =>
+      NextResponse.json({ success: true, data: "never" }),
+    );
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`), { params: {} });
+
+    expect(res.status).toBe(401);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pat_1" },
+        data: { failedAccessChecks: 1 },
+      }),
+    );
+  });
+
+  it("resets failedAccessChecks to 0 on a successful access-recheck", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: PROJECT,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      createdAt: new Date(),
+      failedAccessChecks: 2,
+    } as never);
+    // Default beforeEach mocks already make this recheck succeed.
+
+    const handler = withPatAuth(async () => NextResponse.json({ success: true, data: "ok" }));
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`), { params: {} });
+
+    expect(res.status).toBe(200);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith({
+      where: { id: "pat_1" },
+      data: { failedAccessChecks: 0 },
+    });
   });
 
   it("returns 401 when no PAT matches the token hash", async () => {

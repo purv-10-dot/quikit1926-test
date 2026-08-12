@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     "Channels, DMs, calls, and meetings for your team — part of the QuikIT suite. Sign in with your QuikIT account.",
 };
 
+
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return <div className="qc-marketing-shell">{children}</div>;
 }
