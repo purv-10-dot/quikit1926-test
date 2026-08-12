@@ -79,7 +79,7 @@ jobs:
           # external GitOps repo and `exit 1`s on an unknown app. Add
           # "quikcrmexpress" here only together with its case branch in that
           # step, once the GitOps deployment filename is confirmed.
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime)
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime quikcrmexpress)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -274,7 +274,7 @@ jobs:
                 FILE="lms-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quiklms-runtime:${TAG}"
                 ;;
-              quikcredflow)
+              quikcrmexpress)
                 FILE="crmexpress-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikcrmexpress-runtime:${TAG}"
                 ;;
