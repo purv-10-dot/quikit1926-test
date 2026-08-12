@@ -1,6 +1,6 @@
 "use client";
 
-import { useEditor, EditorContent, Editor } from "@tiptap/react";
+import { useEditor, EditorContent, Editor, ReactNodeViewRenderer } from "@tiptap/react";
 import { showToast } from "@/lib/ui/toast";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -62,6 +62,7 @@ import {
 } from "lucide-react";
 import { useEffect, useCallback, useState, useRef } from "react";
 import { FileAttachment } from "@/components/editor/file-attachment";
+import { ImageWithDeleteView } from "@/components/editor/image-with-delete-view";
 
 export interface RichTextEditorProps {
   value: string;
@@ -148,7 +149,11 @@ export function RichTextEditor({
           rel: "noopener noreferrer",
         },
       }),
-      ImageExt.configure({
+      ImageExt.extend({
+        addNodeView() {
+          return ReactNodeViewRenderer(ImageWithDeleteView);
+        },
+      }).configure({
         HTMLAttributes: {
           class: "max-w-full h-auto rounded-md cursor-pointer image-element",
         },

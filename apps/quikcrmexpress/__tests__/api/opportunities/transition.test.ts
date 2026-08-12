@@ -1,0 +1,85 @@
+import { describe, expect, it, beforeEach } from "vitest";
+import { mockDb, setSession } from "../../helpers/mockDb";
+
+const db = mockDb();
+
+async function callTransition(id: string, body: object) {
+  const { POST } = await import("@/app/api/opportunities/[id]/transition/route");
+  const req = new Request(`http://test/api/opportunities/${id}/transition`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return POST(req as unknown as import("next/server").NextRequest, {
+    params: Promise.resolve({ id }),
+  });
+}
+
+describe("POST /api/opportunities/[id]/transition", () => {
+  beforeEach(() => {
+    db.qceOpportunity.findFirst.mockReset();
+    db.qceOpportunity.update.mockReset();
+    db.qceOpportunityStageTransition.create.mockReset();
+    db.qceActivity.create.mockReset();
+    db.qceUserPermissionTemplate.findMany.mockReset();
+    db.$transaction.mockReset();
+    setSession(null);
+  });
+
+  it("returns 401 unauthenticated", async () => {
+    const res = await callTransition("opp1", { toStage: "Qualification" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 cross-tenant (opp not found in user's tenant)", async () => {
+    setSession({ userId: "u1", orgId: "t-A", role: "admin", email: "a@b.co", name: "A" });
+    db.qceUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qceOpportunity.findFirst.mockResolvedValue(null);
+    const res = await callTransition("opp-from-t-B", { toStage: "Qualification" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects closing without a closeReasonCategory (still enforced after full-relax)", async () => {
+    setSession({ userId: "u1", orgId: "t1", role: "user", email: "a@b.co", name: "A" });
+    db.qceUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qceOpportunity.findFirst.mockResolvedValue({
+      id: "opp1",
+      accountId: "acc1",
+      stage: "Negotiation",
+      name: "Deal",
+    } as never);
+    const res = await callTransition("opp1", { toStage: "ClosedWon" });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toMatch(/closeReasonCategory is required/i);
+  });
+
+  it("happy path: Negotiation → ClosedWon writes audit + activity rows", async () => {
+    setSession({ userId: "u1", orgId: "t1", role: "admin", email: "a@b.co", name: "Alice" });
+    db.qceUserPermissionTemplate.findMany.mockResolvedValue([]);
+    db.qceOpportunity.findFirst.mockResolvedValue({
+      id: "opp1",
+      accountId: "acc1",
+      stage: "Negotiation",
+      name: "Deal",
+    } as never);
+    db.$transaction.mockImplementation(async (fn) => fn(db));
+    db.qceOpportunity.update.mockResolvedValue({
+      id: "opp1",
+      stage: "ClosedWon",
+      orgId: "t1",
+    } as never);
+
+    const res = await callTransition("opp1", {
+      toStage: "ClosedWon",
+      closeReasonCategory: "Price",
+      closeReason: "Beat the competitor",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(db.qceOpportunityStageTransition.create).toHaveBeenCalledTimes(1);
+    expect(db.qceActivity.create).toHaveBeenCalledTimes(1);
+  });
+});
