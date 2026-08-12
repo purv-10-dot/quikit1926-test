@@ -362,6 +362,53 @@ describe("ensureSeeded", () => {
   });
 });
 
+/**
+ * THE CASE THE OTHER 30 TESTS MISSED.
+ *
+ * Every convergence test above reaches `convergeDefaultRole` through a path
+ * that was always going to reach it — a direct `seedAllDefaultRoles` call, or
+ * an `ensureUserRole` on a user with no binding. The LIVE org is neither: all
+ * of its users are already bound, so `ensureUserRole` takes its fast-path
+ * return and the org-level repair is never invoked. The branch logic was
+ * correct and the caller never called it.
+ *
+ * This asserts the property that actually matters — a WARM org converges —
+ * rather than that the rule computes the right answer once reached.
+ */
+describe("warm org — every user already bound", () => {
+  it("still converges a lost default (repair must not depend on an unbound user)", async () => {
+    freshOrgMocks();
+    // Unique org id: `seededUntil` is module state and ORG is cached by the
+    // suites above, which would short-circuit the pass and mask the bug.
+    const org = "org-warm-all-bound";
+
+    // Roles already exist — nothing to create. Keyed by name so the assertion
+    // below reads as "the Member role", not an opaque id.
+    mockDb.qcAppRole.findUnique.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args: any) =>
+        Promise.resolve({ id: `role-${args.where.orgId_appId_name.name}` }) as never,
+    );
+    // Zero defaults — exactly the live state this is meant to repair.
+    mockDb.qcAppRole.findMany.mockResolvedValue([] as never);
+    // The fast path HITS: this user, like every user in the org, is bound.
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue({ id: "uar-existing" } as never);
+
+    await ensureUserRole("u-warm", org);
+
+    // Premise check — we really are simulating the warm path, not sneaking
+    // down the bind path where convergence was already known to run.
+    expect(mockDb.qcAppRole.create).not.toHaveBeenCalled();
+    expect(mockDb.qcUserAppRole.create).not.toHaveBeenCalled();
+
+    // The repair itself.
+    expect(mockDb.qcAppRole.update).toHaveBeenCalledWith({
+      where: { id: "role-Member" },
+      data: { isDefault: true },
+    });
+  });
+});
+
 describe("ensureUserRole (per-user seed-before-check)", () => {
   // ORG was cached in seededOrgs by earlier seedAllDefaultRoles(ORG) calls, so
   // the internal ensureSeeded short-circuits (no org re-seed here).

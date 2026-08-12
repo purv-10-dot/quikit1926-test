@@ -486,16 +486,27 @@ export async function ensureSeeded(orgId: string): Promise<void> {
 }
 
 /**
- * Per-user seed-before-check (Phase 2). Guarantees the caller holds a role
- * BEFORE any userCan/requireAdmin gate runs, so fail-closed enforcement can
- * never lock out a not-yet-seeded user (the rollout-lockout the RBAC_PLAN
- * invariant warns about). The org-level `ensureSeeded` cache does NOT cover a
- * freshly-invited user inside the TTL window — this does, keyed on the user.
+ * Seed-before-check (Phase 2). Does TWO things on every authenticated request,
+ * and the order between them is load-bearing:
  *
- * Steady state is a single indexed existence check (`[userId, orgId]`); the
- * bind path only runs once per user (first request after they gain access).
- * The binding rule MIRRORS the Phase-1 backfill: org_admin / super_admin (or a
- * platform super-admin) → admin, everyone else → the default Member role.
+ *   1. ORG-level (`ensureSeeded`) — the org's roles exist, grants are topped up,
+ *      and the one-default invariant is converged. Behind a per-org TTL cache.
+ *   2. USER-level — the caller holds a role BEFORE any userCan/requireAdmin gate
+ *      runs, so fail-closed enforcement can never lock out a not-yet-seeded user
+ *      (the rollout-lockout the RBAC_PLAN invariant warns about). The org cache
+ *      does NOT cover a freshly-invited user inside the TTL window; this does,
+ *      keyed on the user.
+ *
+ * (1) MUST run before (2)'s early return — see the comment on the call itself.
+ * The two concerns are deliberately tangled in one function: separating them
+ * would mean touching `withOrgAuth` AND `(dashboard)/page.tsx` and duplicating
+ * the call, for no behavioural gain. Noted in QUIKCHAT_BACKLOG.md §9 as a
+ * Phase 3 restructuring hazard rather than left to look accidental.
+ *
+ * Steady state is one in-memory cache lookup plus one indexed existence check
+ * (`[userId, orgId]`); the bind path runs once per user (first request after
+ * they gain access). The binding rule MIRRORS the Phase-1 backfill:
+ * ADMIN_TIER_ROLES (or a platform super-admin) → admin, everyone else → Member.
  * Idempotent and best-effort — a concurrent bind or transient error is
  * swallowed (the unique constraint + next-request retry keep it correct).
  *
@@ -507,6 +518,25 @@ export async function ensureUserRole(userId: string, orgId: string): Promise<voi
     const appId = await getQuikChatAppId();
     if (!appId) return;
 
+    // ⚠️ THIS CALL MUST STAY ABOVE THE FAST-PATH RETURN BELOW. DO NOT MOVE IT
+    // DOWN INTO THE BIND PATH — it looks like a wasted round-trip there and is
+    // not.
+    //
+    // `ensureSeeded` is ORG-level: it creates the org's roles, tops up grants
+    // on registry growth, and — the part that bites — runs
+    // `convergeDefaultRole`, which repairs a lost/duplicated `isDefault` flag.
+    // It used to sit below the `if (existing) return` and was therefore only
+    // reachable when the CALLER had no role binding yet. That made the org-level
+    // repair unreachable for any org where every user is already bound, which is
+    // every mature org: the repair only ran on orgs that did not need it. The
+    // live symptom was four roles stuck at isDefault = false while the Admin
+    // Portal silently preselected `admin` for every new invitee, with no error
+    // in the log because nothing was failing — nothing was running.
+    //
+    // Cost of keeping it here: one in-memory Map lookup per request. The DB work
+    // is behind `ensureSeeded`'s per-org TTL cache, so a warm org pays nothing.
+    await ensureSeeded(orgId);
+
     // Fast path: user already holds a role. Indexed existence check.
     const existing = await db.qcUserAppRole.findFirst({
       where: { userId, orgId, role: { appId } },
@@ -514,8 +544,8 @@ export async function ensureUserRole(userId: string, orgId: string): Promise<voi
     });
     if (existing) return;
 
-    // Bind path (rare): make sure the org's roles exist, then classify + assign.
-    await ensureSeeded(orgId);
+    // Bind path (rare): classify + assign. The org's roles are guaranteed to
+    // exist by the `ensureSeeded` above.
 
     const [member, user] = await Promise.all([
       db.orgMember.findFirst({ where: { orgId, userId }, select: { role: true } }),

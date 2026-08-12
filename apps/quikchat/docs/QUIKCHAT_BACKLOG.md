@@ -386,6 +386,22 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   `<video>` elements that can't attach a header.
 - **Scroll-to-divider on open** — Teams/WhatsApp scroll to the unread line; a
   divider above a large unread block is currently off-screen.
+- **`ensureUserRole` deliberately mixes org-level and per-user seeding** —
+  Phase 3 restructuring hazard, recorded so the coupling reads as intentional.
+  The function does two things: `ensureSeeded` (org-level — creates roles, tops
+  up grants, converges `isDefault`) and the per-user role bind. **The org call
+  must stay ABOVE the `if (existing) return` fast path.** It originally sat
+  below it, which made the org-level repair reachable only when the *caller* had
+  no binding — so it never ran on any org where every user was already bound,
+  i.e. every mature org. That shipped: four roles sat at `isDefault = false`
+  while the Admin Portal preselected `admin` for every new invitee, with nothing
+  in the log because nothing was failing, only nothing running.
+  Splitting the two concerns (e.g. calling `ensureSeeded` from `withOrgAuth`) is
+  cleaner in principle but costs more than it buys today: it means editing
+  `withOrgAuth` **and** `(dashboard)/page.tsx`, duplicating the call at both, and
+  `ensureUserRole`'s bind path still needs it regardless. Revisit only if a third
+  caller appears. Whoever does it must keep a regression test for the warm-org
+  case — `seed.test.ts` › "warm org — every user already bound".
 - **`PATCH /api/org/roles/[id]` can clear the LAST default role** — sending
   `isDefault: false` for the only default is accepted, leaving the org with zero
   defaults. That is not a cosmetic gap: zero defaults is precisely the state that
