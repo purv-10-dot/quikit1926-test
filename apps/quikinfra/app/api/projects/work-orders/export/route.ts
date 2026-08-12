@@ -83,11 +83,14 @@ export async function GET(req: NextRequest) {
 
   // ── Batch id → label resolution (BOQ no + uom) across every line ──
   const boqIds = new Set<string>();
-  const uomIds = new Set<string>();
+  // `uomCode` holds the UOM code, but legacy rows may carry a stray CnUOM id
+  // (the old write path accepted either), so match on code OR id and index
+  // both. Without this, an id-bearing row leaves the UOM cell blank.
+  const uomRefs = new Set<string>();
   for (const r of rows) {
     for (const l of r.lines) {
       if (l.boqItemId) boqIds.add(l.boqItemId);
-      if (l.uomId) uomIds.add(l.uomId);
+      if (l.uomCode) uomRefs.add(l.uomCode);
     }
   }
   const [boqRows, uomRows] = await Promise.all([
@@ -97,15 +100,19 @@ export async function GET(req: NextRequest) {
           select: { id: true, boqNo: true },
         })
       : Promise.resolve([]),
-    uomIds.size
+    uomRefs.size
       ? db.cnUOM.findMany({
-          where: { id: { in: [...uomIds] } },
+          where: { OR: [{ id: { in: [...uomRefs] } }, { code: { in: [...uomRefs] } }] },
           select: { id: true, code: true },
         })
       : Promise.resolve([]),
   ]);
   const boqNoById = new Map(boqRows.map((b) => [b.id, b.boqNo]));
-  const uomById = new Map(uomRows.map((u) => [u.id, u.code]));
+  const uomByRef = new Map<string, string>();
+  for (const u of uomRows) {
+    uomByRef.set(u.id, u.code);
+    uomByRef.set(u.code, u.code);
+  }
 
   // ── Build the sheets ──
   const summaryAoa: Array<Array<string | number>> = [
@@ -136,7 +143,9 @@ export async function GET(req: NextRequest) {
         (l.boqItemId ? boqNoById.get(l.boqItemId) : "") || "",
         l.activityName ?? "",
         l.description ?? "",
-        uomById.get(l.uomId ?? "") ?? "",
+        // Fall back to the stored value itself — for legacy rows it already *is*
+        // the code, and a deleted UOM master shouldn't blank the column.
+        uomByRef.get(l.uomCode ?? "") ?? (l.uomCode ?? ""),
         num(l.quantity),
         num(l.negotiatedRate),
         num(l.amount),

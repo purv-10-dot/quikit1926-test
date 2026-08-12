@@ -17,9 +17,15 @@ const SNIFFABLE = new Set([
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
-const MAX_IMAGE_BYTES = 5 * MB;
+// Vercel's serverless functions hard-reject any request body over ~4.5MB
+// BEFORE this route runs — the platform returns its own HTML error page
+// (not JSON), which the client then fails to parse. Image/doc limits stay
+// under that ceiling (with headroom for multipart overhead) so an oversized
+// file is always caught by OUR OWN check first, with a clear message,
+// instead of silently hitting the platform's hard limit.
+const MAX_IMAGE_BYTES = 4 * MB;
 const MAX_VIDEO_BYTES = 100 * MB;
-const MAX_DOC_BYTES = 10 * MB;
+const MAX_DOC_BYTES = 4 * MB;
 
 const ALLOWED_IMAGE = new Set([
   "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif",

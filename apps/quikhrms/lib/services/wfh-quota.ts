@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 
-export interface WfhGroupRules {
+interface WfhGroupRules {
   id: string;
   name: string;
   yearlyQuota: number;

@@ -85,6 +85,9 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
       projectId,
       name: String(body.name).trim(),
       entityType: String(body.entityType).trim(),
+      masterApproverUserId: body.masterApproverUserId
+        ? String(body.masterApproverUserId)
+        : null,
       isActive,
       steps,
       createdBy: authCtx.userId,

@@ -51,13 +51,19 @@ export async function runBulkEmployeeImport(args: BulkImportArgs): Promise<void>
   const success = result.success;
   const failed = allErrors.length;
 
+  // Warnings (e.g. an unresolvable reporting manager) don't block the row —
+  // it still imports and counts toward `success` — but are shown alongside
+  // the real errors so nothing gets silently dropped with zero trace.
+  const processingWarnings = result.warnings.map((w) => ({ row: originalRowNums[w.row - 1] ?? w.row, error: `⚠ ${w.warning}` }));
+  const allNotices = [...allErrors, ...processingWarnings].sort((a, b) => a.row - b.row);
+
   await prisma.dataImport.update({
     where: { id: importId },
     data: {
       processedRows: success + failed,
       successRows: success,
       failedRows: failed,
-      errors: allErrors.length > 0 ? JSON.parse(JSON.stringify(allErrors)) : undefined,
+      errors: allNotices.length > 0 ? JSON.parse(JSON.stringify(allNotices)) : undefined,
       status:
         failed === 0
           ? "ImportCompleted"

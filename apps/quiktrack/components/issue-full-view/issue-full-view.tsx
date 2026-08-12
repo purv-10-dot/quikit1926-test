@@ -182,19 +182,6 @@ export function IssueFullView({
             defect. Sits between Linked work items and Development, matching the
             TestRail-for-Jira panel placement. */}
         <QuikTestResultsPanel issueKey={issue.key} projectId={projectId} />
-        <IssueDevelopment
-          issueId={issue.id}
-          issueKey={issue.key}
-          onDevChanged={() => {
-            // A dev action (e.g. create branch) can auto-transition the item via
-            // a workflow trigger — refresh the item so its status pill updates,
-            // and notify the board/backlog/etc.
-            void refetchIssue();
-            window.dispatchEvent(
-              new CustomEvent("quiktrack:issue-updated", { detail: { projectId, issueId } }),
-            );
-          }}
-        />
         {/* Separate "Attachments" section — mirrors the files embedded in the
             description as cards (same as shown inside Description), plus the
             migration-imported attachments below. */}
@@ -207,6 +194,13 @@ export function IssueFullView({
           visible while the long left column scrolls. */}
       <div className="sticky top-0 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pt-6">
         <IssueDetailsPanel issue={issue} members={members} onPatch={patch} />
+        {/* Development sits directly under Details (branches/commits/PRs +
+            action links), the same place the issue drawer puts it — it belongs
+            with the work item's metadata, not stranded mid-page in the content
+            column between Linked work items and Attachments. */}
+        <div className="mt-6">
+          <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
+        </div>
       </div>
     </div>
   );

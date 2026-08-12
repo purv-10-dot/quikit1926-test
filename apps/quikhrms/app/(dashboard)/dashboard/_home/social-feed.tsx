@@ -13,7 +13,7 @@ import {
   MoreHorizontal, MessageSquare, Smile, Globe, Trophy, ThumbsUp, X, Pin,
   Megaphone, PartyPopper, Cake, UserPlus, Vote, CalendarDays, Send, Heart, Sparkles,
   Pencil, Trash2, Share2, ClipboardList, Lock, ChevronRight, CheckCircle2,
-  ChevronLeft,
+  ChevronLeft, Clock, XCircle,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -126,6 +126,8 @@ interface Post {
   createdAt: string;
   visibility: string;
   isPinned: boolean;
+  approvalStatus: "Pending" | "Approved" | "Rejected";
+  rejectionReason: string | null;
   likes: string[] | null;
   attachments: PostAttachment[] | null;
   pollData: PollData | null;
@@ -392,11 +394,26 @@ function PostCard({ post }: { post: Post }) {
                     <TypeIcon size={10} className={theme.iconColor} /> {theme.label}
                   </span>
                 )}
+                {post.approvalStatus === "Pending" && (
+                  <span title="Only you (and moderators) can see this until it's approved"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 bg-amber-50 text-amber-700 ring-amber-200">
+                    <Clock size={10} /> Pending approval
+                  </span>
+                )}
+                {post.approvalStatus === "Rejected" && (
+                  <span title={post.rejectionReason ?? undefined}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 bg-red-50 text-red-700 ring-red-200">
+                    <XCircle size={10} /> Rejected
+                  </span>
+                )}
               </div>
               {emp?.jobTitle && <p className="text-[11px] text-gray-500 truncate">{emp.jobTitle}</p>}
               <p className="text-[11px] text-gray-400 flex items-center gap-1.5 mt-0.5">
                 {timeAgo(post.createdAt)} <span>·</span> <Globe size={10} />
               </p>
+              {post.approvalStatus === "Rejected" && post.rejectionReason && (
+                <p className="text-[11px] text-red-600 mt-0.5">Reason: {post.rejectionReason}</p>
+              )}
             </div>
           </div>
           <div ref={menuRef} className="relative shrink-0">

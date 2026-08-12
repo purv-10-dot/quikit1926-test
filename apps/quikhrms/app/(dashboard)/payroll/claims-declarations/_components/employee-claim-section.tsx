@@ -769,7 +769,7 @@ function Field({
 // → returns proxy URL → stored on the claim as `fileUrl`.
 // ─────────────────────────────────────────────────────────────────
 
-export interface UploadedMeta {
+interface UploadedMeta {
   url: string;
   name: string;
   size: number;

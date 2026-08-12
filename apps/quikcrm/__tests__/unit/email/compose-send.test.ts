@@ -4,7 +4,12 @@
  * engine (POST /api/email/send) with the right payload, incl. standalone (None).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sendComposedEmail, parseAddresses, emptyCompose } from "@/components/email/email-compose-fields";
+import {
+  sendComposedEmail,
+  parseAddresses,
+  emptyCompose,
+  dedupeAddresses,
+} from "@/components/email/email-compose-fields";
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -21,6 +26,34 @@ function value(over: Record<string, unknown> = {}) {
 describe("parseAddresses", () => {
   it("splits, trims, lowercases, drops empties", () => {
     expect(parseAddresses("A@x.com, b@Y.com ; ")).toEqual(["a@x.com", "b@y.com"]);
+  });
+
+  it("drops repeated recipients typed into the field", () => {
+    expect(parseAddresses("a@x.com, A@X.com, b@y.com")).toEqual(["a@x.com", "b@y.com"]);
+  });
+});
+
+describe("dedupeAddresses", () => {
+  it("keeps first spelling + order, drops blanks/nullish and case-insensitive dupes", () => {
+    expect(dedupeAddresses(["Bob@x.com", null, " ", "bob@X.COM", undefined, "eve@y.com"])).toEqual([
+      "Bob@x.com",
+      "eve@y.com",
+    ]);
+  });
+});
+
+describe("emptyCompose prefill", () => {
+  // Regression: a Lead whose email and secondaryEmail are the same address used
+  // to prefill the To field twice ("a@x.com, a@x.com").
+  it("prefills a repeated record address only once", () => {
+    expect(emptyCompose({ to: ["a@x.com", "a@x.com"] }).to).toBe("a@x.com");
+    expect(emptyCompose({ to: ["a@x.com", "A@X.com", "b@y.com"] }).to).toBe("a@x.com, b@y.com");
+  });
+
+  it("dedupes cc and bcc too", () => {
+    const v = emptyCompose({ cc: ["c@x.com", "C@x.com"], bcc: ["d@x.com", "d@x.com"] });
+    expect(v.cc).toBe("c@x.com");
+    expect(v.bcc).toBe("d@x.com");
   });
 });
 

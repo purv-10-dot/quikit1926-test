@@ -2,17 +2,25 @@ import { render, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CallWindow } from "./CallWindow";
 
+// Mute/camera are controlled props (LiveKit owns the source of truth) — every
+// render passes them explicitly rather than relying on internal state.
+function baseProps() {
+  return {
+    callId: "test-call",
+    remoteName: "Alice",
+    remoteUserId: "alice-id",
+    onEndCall: vi.fn(),
+    isMuted: false,
+    onToggleMute: vi.fn(),
+    isCameraOff: false,
+    onToggleCamera: vi.fn(),
+  };
+}
+
 describe("CallWindow", () => {
   it("renders connecting state when no streams", () => {
     const { getByText } = render(
-      <CallWindow
-        callId="test-call"
-        localStream={null}
-        remoteStream={null}
-        remoteName="Alice"
-        remoteUserId="alice-id"
-        onEndCall={vi.fn()}
-      />,
+      <CallWindow {...baseProps()} localStream={null} remoteStream={null} />,
     );
 
     expect(getByText("Connecting...")).toBeTruthy();
@@ -22,13 +30,10 @@ describe("CallWindow", () => {
     const fakeStream = new MediaStream();
     const { getAllByTestId } = render(
       <CallWindow
-        callId="test-call"
+        {...baseProps()}
         localStream={fakeStream}
         remoteStream={fakeStream}
-        remoteName="Alice"
-        remoteUserId="alice-id"
         isRemoteSpeaking={true}
-        onEndCall={vi.fn()}
       />,
     );
 
@@ -42,54 +47,62 @@ describe("CallWindow", () => {
   it("renders remote name on tile", () => {
     const fakeStream = new MediaStream();
     const { getByText } = render(
-      <CallWindow
-        callId="test-call"
-        localStream={fakeStream}
-        remoteStream={fakeStream}
-        remoteName="Alice"
-        remoteUserId="alice-id"
-        onEndCall={vi.fn()}
-      />,
+      <CallWindow {...baseProps()} localStream={fakeStream} remoteStream={fakeStream} />,
     );
 
     expect(getByText("Alice")).toBeTruthy();
   });
 
-  it("renders controls", () => {
+  it("renders controls reflecting the controlled mute state", () => {
     const fakeStream = new MediaStream();
-    const { getByLabelText } = render(
-      <CallWindow
-        callId="test-call"
-        localStream={fakeStream}
-        remoteStream={fakeStream}
-        remoteName="Alice"
-        remoteUserId="alice-id"
-        onEndCall={vi.fn()}
-      />,
+    const { getByLabelText, rerender } = render(
+      <CallWindow {...baseProps()} localStream={fakeStream} remoteStream={fakeStream} />,
     );
 
     expect(getByLabelText("Mute microphone")).toBeTruthy();
     expect(getByLabelText("End call")).toBeTruthy();
-  });
 
-  it("Space key toggles mute", () => {
-    const fakeStream = new MediaStream();
-    const { getByLabelText } = render(
+    rerender(
       <CallWindow
-        callId="test-call"
+        {...baseProps()}
         localStream={fakeStream}
         remoteStream={fakeStream}
-        remoteName="Alice"
-        remoteUserId="alice-id"
-        onEndCall={vi.fn()}
+        isMuted={true}
+      />,
+    );
+    expect(getByLabelText("Unmute microphone")).toBeTruthy();
+  });
+
+  it("Space key calls onToggleMute", () => {
+    const onToggleMute = vi.fn();
+    const fakeStream = new MediaStream();
+    render(
+      <CallWindow
+        {...baseProps()}
+        localStream={fakeStream}
+        remoteStream={fakeStream}
+        onToggleMute={onToggleMute}
       />,
     );
 
     fireEvent.keyDown(window, { key: " " });
-    expect(getByLabelText("Unmute microphone")).toBeTruthy();
+    expect(onToggleMute).toHaveBeenCalledOnce();
+  });
 
-    fireEvent.keyDown(window, { key: " " });
-    expect(getByLabelText("Mute microphone")).toBeTruthy();
+  it("V key calls onToggleCamera", () => {
+    const onToggleCamera = vi.fn();
+    const fakeStream = new MediaStream();
+    render(
+      <CallWindow
+        {...baseProps()}
+        localStream={fakeStream}
+        remoteStream={fakeStream}
+        onToggleCamera={onToggleCamera}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "v" });
+    expect(onToggleCamera).toHaveBeenCalledOnce();
   });
 
   it("H key ends call", () => {
@@ -97,11 +110,9 @@ describe("CallWindow", () => {
     const fakeStream = new MediaStream();
     render(
       <CallWindow
-        callId="test-call"
+        {...baseProps()}
         localStream={fakeStream}
         remoteStream={fakeStream}
-        remoteName="Alice"
-        remoteUserId="alice-id"
         onEndCall={onEndCall}
       />,
     );

@@ -72,7 +72,3 @@ export const createAttendancePolicySchema = z.object({
 });
 
 export const updateAttendancePolicySchema = createAttendancePolicySchema.partial();
-
-export type CheckInInput = z.infer<typeof checkInSchema>;
-export type CheckOutInput = z.infer<typeof checkOutSchema>;
-export type CreateAttendancePolicyInput = z.infer<typeof createAttendancePolicySchema>;

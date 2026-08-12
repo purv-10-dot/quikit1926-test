@@ -203,7 +203,7 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar"
-      className="qt-sidebar w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
+      className="qt-sidebar w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto overscroll-contain"
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">

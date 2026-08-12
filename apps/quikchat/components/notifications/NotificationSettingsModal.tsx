@@ -167,6 +167,17 @@ export function NotificationSettingsPanel() {
       </div>
       <div className="qc-nset__row">
         <div>
+          <div className="qc-nset__k">Call sounds</div>
+          <div className="qc-nset__d">Ringtone, ringback and call tones</div>
+        </div>
+        <Switch
+          label="Call sounds"
+          checked={settings.callSoundsEnabled}
+          onChange={(v) => void patch({ callSoundsEnabled: v })}
+        />
+      </div>
+      <div className="qc-nset__row">
+        <div>
           <div className="qc-nset__k">Desktop (OS) notifications</div>
           <div className="qc-nset__d">Pop a system alert when unfocused</div>
           {settings.desktopEnabled && osPermission === "denied" ? (

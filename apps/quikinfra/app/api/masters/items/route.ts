@@ -5,7 +5,7 @@ import {
   createItem,
 } from "@/lib/masters/items-repository";
 import { cachedJson } from "@/lib/http/cache";
-import { paginateDb, parseSort } from "@/lib/http/pagination";
+import { paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { withListRoute, withMutationRoute, DomainError } from "@/lib/http";
 
 /**
@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
         // `currentStock` is computed, so those stay client-unsortable.
         ["code", "name", "itemType", "hsnCode", "standardRate", "gstRate", "minStockLevel", "status", "createdAt"],
         { field: "createdAt", order: "desc" },
+        NEWEST_FIRST_TIEBREAK,
       );
       const result = await paginateDb(
         pagination,

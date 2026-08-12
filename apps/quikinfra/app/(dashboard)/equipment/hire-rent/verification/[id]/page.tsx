@@ -27,6 +27,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useHireInVerification } from "@/hooks/use-equipment";
 import { useUsers } from "@/hooks/use-users";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import type {
@@ -206,19 +208,28 @@ export default function HireInVerificationDetailPage() {
                 );
               }
               return (
-                <ApprovalActionBar
-                  entityType="hire-in-verification"
-                  entityId={id}
-                  currentStatus={v.status}
-                  requiredPermission="construction.equipment_hire_rent.approve"
-                  actionEndpoint={`/api/equipment/hire-in-verifications/${id}/approve`}
-                  invalidateKeys={[
-                    ["hire-in-verifications"],
-                    ["hire-in-verification", id],
-                    ["hire-rent-summary"],
-                  ]}
-                  hidden={!canAct}
-                />
+                <>
+                  <ApprovalActionBar
+                    entityType="hire-in-verification"
+                    entityId={id}
+                    currentStatus={v.status}
+                    requiredPermission="construction.equipment_hire_rent.approve"
+                    actionEndpoint={`/api/equipment/hire-in-verifications/${id}/approve`}
+                    invalidateKeys={[
+                      ["hire-in-verifications"],
+                      ["hire-in-verification", id],
+                      ["hire-rent-summary"],
+                    ]}
+                    hidden={!canAct}
+                  />
+                  <MasterApprovalAction
+                    approval={v?.approval}
+                    me={me}
+                    entityLabel="verification"
+                    actionEndpoint={`/api/equipment/hire-in-verifications/${id}/approve`}
+                    invalidateKeys={[["hire-in-verifications"], ["hire-in-verification", id]]}
+                  />
+                </>
               );
             })()}
           </div>
@@ -226,6 +237,14 @@ export default function HireInVerificationDetailPage() {
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={v?.approval?.repair}
+          entityLabel="verification"
+          actionEndpoint={`/api/equipment/hire-in-verifications/${id}/approve`}
+          invalidateKeys={[["hire-in-verifications"], ["hire-in-verification", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <Card title="Verification Details">

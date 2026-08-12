@@ -6,6 +6,7 @@ import { approveClaimSchema } from "@/lib/validations/expenses";
 import {
   nextStatusAfterApproval,
   isEligibleExpenseApprover,
+  resolveExpenseLevelApproverIds,
   EXPENSE_APPROVER_LABEL,
   type ExpenseChainLevel,
 } from "@/lib/services/expenses";
@@ -13,6 +14,7 @@ import { getCallerEmployeeId } from "@/lib/rbac/scope";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { getActiveChainLevels, callerCanActionLevel, getCallerRoleIds } from "@/lib/services/approval-chain";
+import { notifyExpenseApprovers, notifyExpenseDecision } from "@/lib/services/expense-notify";
 
 export const POST = withAuth(async (req: NextRequest, ctx, params) => {
   try {
@@ -145,6 +147,11 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
       metadata: { level: currentLevel, nextStatus },
     });
 
+    const claimBrief = {
+      id, employeeId: claim.employeeId, title: claim.title, category: claim.category,
+      totalAmount: Number(claim.totalAmount), currency: claim.currency,
+    };
+
     if (nextStatus === "Approved" || nextStatus === "Rejected") {
       void fireWorkflow({
         orgId,
@@ -156,6 +163,17 @@ export const POST = withAuth(async (req: NextRequest, ctx, params) => {
           totalAmount: Number(claim.totalAmount),
         },
       });
+      void notifyExpenseDecision(orgId, claimBrief, nextStatus as "Approved" | "Rejected", userId, parsed.data.comments);
+    } else if (parsed.data.action === "ExpApproved") {
+      // Advanced to the next level (ManagerApproved/FinanceApproved, not yet
+      // terminal) — alert whoever holds that level so it doesn't sit unseen.
+      void (async () => {
+        const nextLevel = currentLevel + 1;
+        const approverIds = await resolveExpenseLevelApproverIds(
+          orgId, nextLevel, chain, centralLevels, claimApprovers, claim.employeeId,
+        );
+        await notifyExpenseApprovers(orgId, claimBrief, nextLevel, approverIds);
+      })();
     }
 
     return successResponse({ approval, claimStatus: nextStatus }, undefined, 201);

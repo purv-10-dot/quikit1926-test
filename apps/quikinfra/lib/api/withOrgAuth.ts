@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession, type Session } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
+import { getOrgId } from "@/lib/api/getOrgId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { logApiCall } from "@quikit/shared/apiLogging";
@@ -61,7 +61,7 @@ export function withOrgAuth<Params = Record<string, never>>(
         response = NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
       } else {
         userIdForLog = session.user.id;
-        const orgId = await getTenantId(session.user.id);
+        const orgId = await getOrgId(session.user.id);
         if (!orgId) {
           response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
         } else {

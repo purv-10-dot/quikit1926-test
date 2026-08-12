@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn to Email Marketing CRM ",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "description": "Send LinkedIn prospects directly to your email marketing automation system.",
   "permissions": ["scripting", "activeTab", "sidePanel", "tabs", "storage", "identity"],
   "host_permissions": [
     "https://www.linkedin.com/*",
+    "https://crm.quikit.ai/*",
     "https://uatcrm.quikit.ai/*",
     "http://localhost:3008/*",
     "https://localhost:3008/*"

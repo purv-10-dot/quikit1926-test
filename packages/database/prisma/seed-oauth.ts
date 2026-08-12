@@ -57,7 +57,7 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 //   quikit → 3000   auth → 3001   admin → 3002   quikscale → 3003
 //   quiktrack → 3004   quikvc → 3005   quikinfra → 3006   quiksocial → 3007
 //   quikcrm → 3008   quikhrms → 3009   quiksupport → 3010  quikasset → 3012
-//   quikfinance → 3013   quiklms → 3014
+//   quikfinance → 3013   quiklms → 3014   quikcrmexpress → 3017
 // quiklms was folded in from the standalone quikskill_lms app; it now binds
 // 3014 to sit next to the contiguous block. `apps/quiklms/package.json`
 // (`next dev -p 3014`) is the source of truth and its .env.local agrees.
@@ -70,6 +70,7 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKCRMEXPRESS_BASE = resolveAppUrl("QUIKCRMEXPRESS_URL", "http://localhost:3017"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -115,6 +116,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKCRM_OAUTH_CLIENT_SECRET", "quikcrm-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKCRM_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikcrmexpress",
+    name: "QuikCRMExpress",
+    description: "QuikCRMExpress CRM — leads, pipeline, telephony, disposition, automation.",
+    baseUrl: QUIKCRMEXPRESS_BASE,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikcrm.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikcrmexpress",
+      clientSecretPlain: resolveClientSecret("QUIKCRMEXPRESS_OAUTH_CLIENT_SECRET", "crmexpress-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKCRMEXPRESS_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

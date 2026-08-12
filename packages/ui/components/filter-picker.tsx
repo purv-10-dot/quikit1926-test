@@ -34,8 +34,40 @@ export interface FilterOption {
 }
 
 interface FilterPickerProps {
-  value: string;
-  onChange: (val: string) => void;
+  /**
+   * Selected value in SINGLE-select mode. Optional only so `multiple` callers
+   * needn't pass a meaningless placeholder — single-select callers must still
+   * pass it (and every existing one does; behaviour is unchanged).
+   */
+  value?: string;
+  /** Single-select change handler. Required in practice for single mode. */
+  onChange?: (val: string) => void;
+  /**
+   * Opt-in MULTI-select mode. When true the picker reads `values` /
+   * `onChangeMultiple` instead of `value` / `onChange`, keeps the dropdown open
+   * while toggling, and renders the current selection as removable chips under
+   * the trigger. Omitting it leaves every existing caller on the original
+   * single-select path.
+   */
+  multiple?: boolean;
+  /** Selected values in multi mode. */
+  values?: string[];
+  /** Multi mode change handler — receives the full next selection. */
+  onChangeMultiple?: (vals: string[]) => void;
+  /**
+   * Multi-mode counterpart to `selectedOption`: fallback options used to label
+   * chips whose value isn't in the loaded `options` slice (server-paginated
+   * lists, or a selection restored from persisted state).
+   */
+  selectedOptions?: FilterOption[];
+  /**
+   * Multi mode only. By default the "All" row CLEARS the selection (`[]`), which
+   * suits filters where an empty set means "no filter applied". Set this when
+   * the selection is an explicit set and `[]` means "match nothing" — then the
+   * "All" row selects every option instead, and is highlighted when all are
+   * already selected.
+   */
+  allMeansEvery?: boolean;
   options: FilterOption[];
   allLabel?: string;
   placeholder?: string;
@@ -77,8 +109,13 @@ interface FilterPickerProps {
 }
 
 export function FilterPicker({
-  value,
+  value = "",
   onChange,
+  multiple = false,
+  values,
+  onChangeMultiple,
+  selectedOptions,
+  allMeansEvery = false,
   options,
   allLabel = "All",
   placeholder = "Search...",
@@ -136,9 +173,47 @@ export function FilterPicker({
         )
       : options;
 
+  // ── Multi-select helpers ──────────────────────────────────────────────────
+  const selectedValues = multiple ? (values ?? []) : [];
+  const selectedSet = new Set(selectedValues);
+  /**
+   * Resolve a value to a renderable option for the chip row. Looks in the
+   * loaded slice first, then the caller-supplied `selectedOptions` fallback, so
+   * a chip still shows a name when its user sits beyond the loaded page.
+   */
+  function optionFor(val: string): FilterOption {
+    return (
+      options.find(o => o.value === val) ??
+      selectedOptions?.find(o => o.value === val) ?? { value: val, label: val }
+    );
+  }
+
+  // Is the "All" row the current state? With `allMeansEvery` that's "everything
+  // selected"; otherwise it's "nothing selected".
+  const everySelected =
+    options.length > 0 && options.every(o => selectedSet.has(o.value));
+  const allRowActive = multiple
+    ? (allMeansEvery ? everySelected : selectedValues.length === 0)
+    : !value;
+
+  function toggle(val: string) {
+    const next = selectedSet.has(val)
+      ? selectedValues.filter(v => v !== val)
+      : [...selectedValues, val];
+    onChangeMultiple?.(next);
+    // Deliberately stays open — picking several in a row is the whole point.
+  }
+
   function select(val: string) {
+    if (multiple) {
+      // The "All" row either clears the selection or selects every option
+      // (see `allMeansEvery`); every other row toggles.
+      if (!val) onChangeMultiple?.(allMeansEvery ? options.map(o => o.value) : []);
+      else toggle(val);
+      return;
+    }
     setLastSelected(val ? (options.find(o => o.value === val) ?? null) : null);
-    onChange(val);
+    onChange?.(val);
     setOpen(false);
     setSearch("");
   }
@@ -169,14 +244,23 @@ export function FilterPicker({
         }`}
       >
         <span className="flex items-center gap-2 min-w-0">
-          {selected?.avatarInitials && (
+          {!multiple && selected?.avatarInitials && (
             <span className={`h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 ${selected.avatarColor ?? "bg-gray-400"}`}>
               {selected.avatarInitials}
             </span>
           )}
-          <span className={`truncate ${selected ? "text-gray-700" : "text-gray-400"}`}>
-            {selected ? selected.label : allLabel}
-          </span>
+          {multiple ? (
+            <span className={`truncate ${selectedValues.length && !everySelected ? "text-gray-700" : "text-gray-400"}`}>
+              {/* "All" reads better than "5 selected" when nothing is excluded. */}
+              {selectedValues.length === 0 || (allMeansEvery && everySelected)
+                ? allLabel
+                : `${selectedValues.length} selected`}
+            </span>
+          ) : (
+            <span className={`truncate ${selected ? "text-gray-700" : "text-gray-400"}`}>
+              {selected ? selected.label : allLabel}
+            </span>
+          )}
         </span>
         <svg
           className={`h-3 w-3 text-gray-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
@@ -185,6 +269,38 @@ export function FilterPicker({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
+
+      {/* Selected chips (multi mode). Rendered under the trigger so the user
+          can read the whole selection without reopening the dropdown, and
+          remove entries one at a time. */}
+      {multiple && selectedValues.length > 0 && !(allMeansEvery && everySelected) && (
+        <div className="flex flex-wrap gap-1 mt-1.5 max-h-[72px] overflow-y-auto pr-0.5">
+          {selectedValues.map(val => {
+            const opt = optionFor(val);
+            return (
+              <span
+                key={val}
+                className="inline-flex items-center gap-1 max-w-full pl-1.5 pr-1 py-0.5 rounded-md bg-accent-50 border border-accent-200 text-[10px] text-accent-700"
+              >
+                {opt.avatarInitials && (
+                  <span className={`h-3.5 w-3.5 rounded-full flex items-center justify-center text-white text-[7px] font-bold flex-shrink-0 ${opt.avatarColor ?? "bg-gray-400"}`}>
+                    {opt.avatarInitials}
+                  </span>
+                )}
+                <span className="truncate">{opt.label}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${opt.label}`}
+                  onClick={() => onChangeMultiple?.(selectedValues.filter(v => v !== val))}
+                  className="flex-shrink-0 text-accent-500 hover:text-accent-800 leading-none px-0.5"
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Dropdown */}
       {open && (
@@ -217,10 +333,10 @@ export function FilterPicker({
               <button
                 onClick={() => select("")}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-                  !value ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-50"
+                  allRowActive ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                <span className={`w-3.5 h-3.5 flex-shrink-0 ${!value ? "opacity-100" : "opacity-0"}`}>
+                <span className={`w-3.5 h-3.5 flex-shrink-0 ${allRowActive ? "opacity-100" : "opacity-0"}`}>
                   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
@@ -230,7 +346,7 @@ export function FilterPicker({
             )}
 
             {filtered.map(opt => {
-              const isSelected = opt.value === value;
+              const isSelected = multiple ? selectedSet.has(opt.value) : opt.value === value;
               return (
                 <button
                   key={opt.value}

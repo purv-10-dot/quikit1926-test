@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, internalError } from "@/lib/api-response";
-import { addDays } from "@/lib/services/boarding";
+import { addDays, normalizeStepConfig } from "@/lib/services/boarding";
 
 type TaskTpl = {
   title: string; description?: string; assigneeRole: string;
@@ -69,6 +69,14 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
         WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND "isActive" = true AND kind = 'Onboarding'
         ORDER BY "createdAt" DESC LIMIT 1`;
       const tmplId = tmplRows[0]?.id;
+      // The instance still points at the PRE-onboarding template it was built
+      // from. Re-point it at the Day-1 template (or clear it) so the tracker's
+      // "Re-apply template" rebuilds the onboarding checklist — not the
+      // pre-onboarding one.
+      await prisma.onboardingInstance.update({
+        where: { id: instance.id },
+        data: { templateId: tmplId ?? null, updatedBy: userId },
+      });
       if (tmplId) {
         const tmpl = await prisma.onboardingTemplate.findFirst({ where: { id: tmplId, orgId } });
         const tasks = ((tmpl?.tasks as unknown as TaskTpl[]) ?? []);
@@ -87,7 +95,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
               isMandatory: t.isMandatory ?? true,
               sortOrder: t.sortOrder ?? idx,
               stepType: t.stepType ?? null,
-              config: (t.config ?? undefined) as never,
+              config: normalizeStepConfig(t.stepType, t.config) as never,
             })),
           });
         }

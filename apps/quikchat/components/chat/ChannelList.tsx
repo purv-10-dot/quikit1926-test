@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 import { formatChannelTime } from "@/lib/format";
 import { messagePreview } from "@/lib/preview";
+import type { EffectiveStatus } from "@/lib/presence-store";
 
 /** Conversation-list filters surfaced by the email-style nav row. */
 export type ListFilter = "all" | "unread" | "dm" | "group" | "pinned";
@@ -25,11 +26,13 @@ function ChannelRow({
   item,
   active,
   online,
+  status,
   onPick,
 }: {
   item: ChannelListItem;
   active: boolean;
   online?: boolean;
+  status?: EffectiveStatus;
   onPick: (id: string) => void;
 }) {
   const preview = messagePreview(item.lastMessage);
@@ -49,6 +52,7 @@ function ChannelRow({
         group={item.type === "group"}
         size={36}
         online={online}
+        status={status}
       />
       <span className="qc-chan-main">
         <span className="qc-chan-toprow">
@@ -79,6 +83,8 @@ export interface ChannelListProps {
   currentUserId?: string;
   /** User ids currently online (shared-channel presence). */
   onlineUserIds?: ReadonlySet<string>;
+  /** Effective presence status accessor (rich status dot). Falls back to online-only. */
+  statusOf?: (userId: string) => EffectiveStatus;
   /** Controlled filter from the email-style nav row. Uncontrolled all/unread segment when omitted. */
   filter?: ListFilter;
   /** Hide the legacy header + all/unread segment (controls moved to the card nav row). */
@@ -111,6 +117,7 @@ export function ChannelList({
   activeChannelId,
   currentUserId,
   onlineUserIds,
+  statusOf,
   filter,
   chromeless,
   onPick,
@@ -124,11 +131,17 @@ export function ChannelList({
   const [internalFilter, setInternalFilter] = useState<ListFilter>("all");
   const effectiveFilter: ListFilter = filter ?? internalFilter;
 
-  // DM rows get a presence dot when the other participant is online. Group rows
-  // show a channel glyph, not a person, so they never carry a dot.
+  // DM rows get a presence dot for the other participant. Group rows show a
+  // channel glyph, not a person, so they never carry a dot.
   const dmOnline = (item: ChannelListItem): boolean | undefined => {
     if (!onlineUserIds || item.type === "group") return undefined;
     return item.members.some((m) => m.id !== currentUserId && onlineUserIds.has(m.id));
+  };
+  // Rich status for the DM's other member (wins over the boolean when available).
+  const dmStatus = (item: ChannelListItem): EffectiveStatus | undefined => {
+    if (!statusOf || item.type === "group") return undefined;
+    const other = item.members.find((m) => m.id !== currentUserId);
+    return other ? statusOf(other.id) : undefined;
   };
 
   const filtered = (items: ChannelListItem[]) =>
@@ -155,6 +168,7 @@ export function ChannelList({
       item={item}
       active={item.channelId === activeChannelId}
       online={dmOnline(item)}
+      status={dmStatus(item)}
       onPick={onPick}
     />
   );
@@ -180,6 +194,9 @@ export function ChannelList({
             </IconButton>
             <IconButton label="AI Chat" onClick={onOpenAiChat} disabled={!onOpenAiChat}>
               <Sparkles size={16} />
+            </IconButton>
+            <IconButton label="Discover channels" onClick={onDiscover} disabled={!onDiscover}>
+              <Hash size={16} />
             </IconButton>
             <IconButton label="New group" onClick={onNewGroup} disabled={!onNewGroup}>
               <Users size={16} />

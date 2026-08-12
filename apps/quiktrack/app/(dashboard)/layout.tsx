@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { requireAppAccess } from "@quikit/auth/app-access";
 import { authOptions } from "@/lib/auth";
+import { SupportLauncher } from "@quikit/ui/support";
 import { DashboardShell } from "@/components/shell/dashboard-shell";
 
 // Reads the session per request and gates on app access — never prerender.
@@ -32,5 +33,12 @@ export default async function DashboardLayout({
     homeUrl: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
   });
 
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <>
+      <DashboardShell>{children}</DashboardShell>
+      {/* Floating support launcher — a sibling of the shell so it stays pinned
+          to the viewport rather than to one of the shell's scroll containers. */}
+      <SupportLauncher appSlug="quiktrack" />
+    </>
+  );
 }

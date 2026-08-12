@@ -14,7 +14,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { findPOById } from "@/lib/purchase/po-repository";
 import { listGRNs, countGRNs, grnStatusCounts, createGRN } from "@/lib/purchase/grn-repository";
 import { db } from "@/lib/db";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * GRN API — Postgres-backed.
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["grnNumber", "grnDate", "status", "supplierInvoiceNo", "createdAt"],
     { field: "grnDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     p,

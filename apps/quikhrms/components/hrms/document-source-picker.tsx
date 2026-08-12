@@ -5,7 +5,7 @@ import { Upload, Link2, Cloud } from "lucide-react";
 import { clsx } from "clsx";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 
-export interface SourceMeta {
+interface SourceMeta {
   fileUrl: string;
   fileType: string;
   fileSize: number;
@@ -121,9 +121,6 @@ export function DocumentSourcePicker({
             onChange={(e) => setLink(e.target.value.trim(), "drive")}
             className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
-          <p className="text-[11px] text-gray-500 mt-1">
-            Paste shareable Google Drive / Docs link. Set sharing to <strong>Anyone with link</strong> for HR access.
-          </p>
         </div>
       )}
     </div>

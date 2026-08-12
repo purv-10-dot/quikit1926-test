@@ -37,7 +37,7 @@ export default function AuditLogPage() {
   return (
     <div className="p-6 max-w-6xl">
       <h1 className="text-lg font-semibold text-gray-900 mb-1">Audit Log</h1>
-      <p className="text-sm text-gray-500 mb-4">Recent state-changing actions. Currently wired on: RAB approve, Bill approve, Payroll finalize, Credit/Debit note create &amp; delete. Other write endpoints can opt-in via <code className="bg-gray-100 px-1 rounded text-xs">logAudit()</code>.</p>
+      <p className="text-sm text-gray-500 mb-4">Recent state-changing actions. Currently wired on: RAB approve, Bill approve, Payroll finalize, Credit/Debit note create &amp; delete. Other write endpoints can opt-in via <code className="bg-gray-100 px-1 rounded text-xs">recordAudit()</code>.</p>
       {loading ? <div className="text-sm text-gray-500">Loading…</div> : logs.length === 0 ? (
         <EmptyState icon={FileClock} title="No audit events" message="Perform an approve/finalize action elsewhere to populate this log." />
       ) : (

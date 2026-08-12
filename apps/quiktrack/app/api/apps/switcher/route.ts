@@ -99,6 +99,7 @@ export async function GET() {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikcrmexpress: process.env.QUIKCRMEXPRESS_URL,
     quiksupport: process.env.QUIKSUPPORT_URL,
     quikhrms: process.env.QUIKHRMS_URL,
   };
@@ -114,6 +115,7 @@ export async function GET() {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
+    quikcrmexpress: "http://localhost:3017",
     quiksupport: "http://localhost:3010",
     quikhrms: "http://localhost:3009",
   };

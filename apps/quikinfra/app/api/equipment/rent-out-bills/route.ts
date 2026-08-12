@@ -2,7 +2,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { requireEquipmentAction } from "@/lib/auth/requireEquipmentAction";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { parsePagination, parseSort } from "@/lib/http/pagination";
+import { parsePagination, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import {
   createRentOutBill,
   listRentOutBills,
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const sort = parseSort(req, RENT_OUT_SORT_COLUMNS, {
     field: "periodFrom",
     order: "desc",
-  });
+  }, NEWEST_FIRST_TIEBREAK);
   const result = await listRentOutBills({
     orgId: ctxOrResp.orgId,
     search: search || undefined,

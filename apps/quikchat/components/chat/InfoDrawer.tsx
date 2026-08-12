@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ChannelListItem, ChannelMemberDto, MessageDto, PublicUser } from "@/lib/shared";
+import { uploadFile } from "@/lib/upload";
 import {
   Avatar,
   Button,
@@ -11,11 +12,14 @@ import {
   MenuItem,
   MoreHorizontal,
   Phone,
+  Pin,
+  PinOff,
   Popover,
   Video,
 } from "@/components/ui";
 import { messagePreview } from "@/lib/preview";
 import { useProfile } from "@/components/profile/ProfileProvider";
+import type { EffectiveStatus } from "@/lib/presence-store";
 import { ChannelNotificationPref } from "./ChannelNotificationPref";
 import { InviteManager } from "./InviteManager";
 import { UserPicker } from "./UserPicker";
@@ -26,10 +30,22 @@ export interface InfoDrawerProps {
   pinned: MessageDto[];
   currentUserId: string;
   onlineIds?: ReadonlySet<string>;
+  /** Effective presence status accessor (rich status dot). Falls back to online-only. */
+  statusOf?: (userId: string) => EffectiveStatus;
   onAddMembers?: (userIds: string[]) => void;
   onRemoveMember?: (userId: string) => void;
   onSetRole?: (userId: string, role: "admin" | "member") => void;
   roleError?: string | null;
+  /** Edit group details (name / description / avatar). Admin-only (group). */
+  onUpdateDetails?: (patch: { name?: string; description?: string; avatarUrl?: string }) => void;
+  /** Delete the whole group for everyone. Admin-only (group). */
+  onDeleteGroup?: () => void;
+  /**
+   * Pin / unpin this conversation for the viewer (QC_010). Per-user state, so it
+   * sits with the other per-user channel prefs (notifications) rather than in
+   * the admin-gated group controls.
+   */
+  onTogglePin?: () => void;
   /** Start a call in this conversation (wired to the workspace call handler). */
   onCall?: () => void;
   /** Close the drawer (back arrow). */
@@ -42,10 +58,14 @@ export function InfoDrawer({
   pinned,
   currentUserId,
   onlineIds,
+  statusOf,
   onAddMembers,
   onRemoveMember,
   onSetRole,
   roleError,
+  onUpdateDetails,
+  onDeleteGroup,
+  onTogglePin,
   onCall,
   onBack,
 }: InfoDrawerProps) {
@@ -57,6 +77,52 @@ export function InfoDrawer({
   const isGroup = channel.type === "group";
   const isAdmin = members.find((m) => m.id === currentUserId)?.role === "admin";
   const canManage = isGroup && isAdmin && !!onAddMembers;
+  const canEdit = isGroup && isAdmin && !!onUpdateDetails;
+  const canDelete = isGroup && isAdmin && !!onDeleteGroup;
+
+  // Edit-details state (name/description inline + avatar upload).
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(channel.name ?? "");
+  const [descDraft, setDescDraft] = useState(channel.description ?? "");
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Delete confirm — explicit typed confirmation ("DELETE").
+  const [confirming, setConfirming] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  const startEdit = () => {
+    setNameDraft(channel.name ?? "");
+    setDescDraft(channel.description ?? "");
+    setEditError(null);
+    setEditing(true);
+  };
+
+  const saveDetails = () => {
+    const patch: { name?: string; description?: string } = {};
+    const name = nameDraft.trim();
+    if (name && name !== (channel.name ?? "")) patch.name = name;
+    if (descDraft.trim() !== (channel.description ?? "")) patch.description = descDraft.trim();
+    if (Object.keys(patch).length) onUpdateDetails?.(patch);
+    setEditing(false);
+  };
+
+  const onPickAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarBusy(true);
+    setEditError(null);
+    try {
+      const meta = await uploadFile(file, channel.channelId);
+      onUpdateDetails?.({ avatarUrl: meta.objectPath });
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Avatar upload failed");
+    } finally {
+      setAvatarBusy(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
 
   return (
     <aside className="qc-drawer" aria-label="Conversation details" data-testid="info-drawer">
@@ -75,6 +141,26 @@ export function InfoDrawer({
           group={isGroup}
           size={84}
         />
+        {canEdit ? (
+          <>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              data-testid="avatar-input"
+              onChange={onPickAvatar}
+            />
+            <button
+              type="button"
+              className="qc-hero-photo-btn"
+              disabled={avatarBusy}
+              onClick={() => avatarInputRef.current?.click()}
+            >
+              {avatarBusy ? "Uploading…" : "Change photo"}
+            </button>
+          </>
+        ) : null}
         <div className="qc-drawer-hero__name">{channel.name ?? "Direct message"}</div>
         <div className="qc-drawer-hero__sub">
           {isGroup ? `${members.length} members` : "Direct message"}
@@ -92,23 +178,77 @@ export function InfoDrawer({
       </section>
 
       <section className="qc-drawer-section">
-        <div className="qc-label">Details</div>
-        <div className="qc-detail-row">
-          <span>Name</span>
-          <span>{channel.name ?? "Direct message"}</span>
+        <div className="qc-drawer-section__head">
+          <div className="qc-label">Details</div>
+          {canEdit && !editing ? (
+            <Button variant="ghost" onClick={startEdit} data-testid="edit-details">
+              Edit
+            </Button>
+          ) : null}
         </div>
-        <div className="qc-detail-row">
-          <span>Type</span>
-          <span>{isGroup ? "Group" : "Direct message"}</span>
-        </div>
-        <div className="qc-detail-row">
-          <span>Visibility</span>
-          <span>{channel.visibility}</span>
-        </div>
-        <div className="qc-detail-row">
-          <span>Members</span>
-          <span>{members.length}</span>
-        </div>
+        {editError ? (
+          <div className="qc-detail-row" role="alert" data-testid="edit-error">
+            <span>{editError}</span>
+          </div>
+        ) : null}
+        {canEdit && editing ? (
+          <div className="qc-detail-edit">
+            <label className="qc-field">
+              <span>Name</span>
+              <input
+                className="qc-input"
+                value={nameDraft}
+                maxLength={100}
+                onChange={(e) => setNameDraft(e.target.value)}
+                aria-label="Group name"
+              />
+            </label>
+            <label className="qc-field">
+              <span>Description</span>
+              <textarea
+                className="qc-input"
+                value={descDraft}
+                maxLength={500}
+                rows={3}
+                onChange={(e) => setDescDraft(e.target.value)}
+                aria-label="Group description"
+              />
+            </label>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <Button variant="ghost" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" disabled={!nameDraft.trim()} onClick={saveDetails}>
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="qc-detail-row">
+              <span>Name</span>
+              <span>{channel.name ?? "Direct message"}</span>
+            </div>
+            {isGroup && channel.description ? (
+              <div className="qc-detail-row">
+                <span>Description</span>
+                <span>{channel.description}</span>
+              </div>
+            ) : null}
+            <div className="qc-detail-row">
+              <span>Type</span>
+              <span>{isGroup ? "Group" : "Direct message"}</span>
+            </div>
+            <div className="qc-detail-row">
+              <span>Visibility</span>
+              <span>{channel.visibility}</span>
+            </div>
+            <div className="qc-detail-row">
+              <span>Members</span>
+              <span>{members.length}</span>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="qc-drawer-section">
@@ -134,6 +274,7 @@ export function InfoDrawer({
                 avatarUrl={m.avatarUrl}
                 size={28}
                 online={onlineIds?.has(m.id)}
+                status={statusOf?.(m.id)}
               />
             </button>
             <span style={{ flex: 1 }}>{m.displayName}</span>
@@ -210,6 +351,28 @@ export function InfoDrawer({
 
       {isGroup ? <InviteManager channelId={channel.channelId} /> : null}
 
+      {onTogglePin ? (
+        <section className="qc-drawer-section" data-testid="channel-pin-pref">
+          <div className="qc-label">Conversation</div>
+          <div className="qc-nset__row">
+            <div>
+              <div className="qc-nset__k">Pinned</div>
+              <div className="qc-nset__d">
+                Keeps this chat at the top of your list — just for you.
+              </div>
+            </div>
+            <Button variant="ghost" onClick={onTogglePin} data-testid="toggle-pin">
+              {channel.isPriority ? (
+                <PinOff size={14} aria-hidden />
+              ) : (
+                <Pin size={14} aria-hidden />
+              )}
+              {channel.isPriority ? "Unpin" : "Pin"}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       <ChannelNotificationPref channelId={channel.channelId} />
 
       <section className="qc-drawer-section">
@@ -236,6 +399,56 @@ export function InfoDrawer({
           ))
         )}
       </section>
+
+      {canDelete ? (
+        <section className="qc-drawer-section qc-danger-zone" data-testid="danger-zone">
+          <div className="qc-label">Danger zone</div>
+          {confirming ? (
+            <div className="qc-danger-confirm">
+              <p className="qc-danger-text">
+                This permanently deletes the group and all its messages for{" "}
+                <strong>everyone</strong>. This cannot be undone. Type{" "}
+                <strong>DELETE</strong> to confirm.
+              </p>
+              <input
+                className="qc-input"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="DELETE"
+                aria-label="Type DELETE to confirm"
+                data-testid="delete-confirm-input"
+              />
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setConfirming(false);
+                    setConfirmText("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={confirmText.trim().toUpperCase() !== "DELETE"}
+                  onClick={() => onDeleteGroup?.()}
+                  data-testid="delete-confirm"
+                >
+                  Delete group
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="danger"
+              onClick={() => setConfirming(true)}
+              data-testid="delete-group"
+            >
+              Delete group
+            </Button>
+          )}
+        </section>
+      ) : null}
     </aside>
   );
 }

@@ -194,6 +194,18 @@ export function ApprovalActionBar(props: Props) {
         setError(message);
         toast.error(message);
         setSubmitting(false);
+        // A 409/403 means the page is showing stale state — most often the
+        // request was already settled by someone else (a pool peer, or the
+        // workflow's master approver) while this page sat open. Refetch so the
+        // status, timeline and action buttons reflect what actually happened
+        // instead of leaving a live Approve button on a closed request.
+        if (res.status === 409 || res.status === 403) {
+          for (const key of invalidateKeys) {
+            qc.invalidateQueries({ queryKey: key });
+          }
+          setPendingAction(null);
+          setComments("");
+        }
         return;
       }
 

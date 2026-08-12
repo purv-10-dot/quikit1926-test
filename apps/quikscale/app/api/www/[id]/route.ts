@@ -24,6 +24,7 @@ const WWW_AUDIT_SELECT = {
   who: true,
   what: true,
   when: true,
+  dueDateTBD: true,
   status: true,
   notes: true,
   category: true,
@@ -52,6 +53,7 @@ interface RawWWWForShape {
   whoIds: string[];
   what: string;
   when: Date;
+  dueDateTBD: boolean;
   originalDueDate: Date | null;
   status: string;
   notes: string | null;
@@ -75,6 +77,7 @@ interface ShapedWWWItem {
   whoIds: string[];
   what: string;
   when: string;
+  dueDateTBD: boolean;
   originalDueDate: string | null;
   status: string;
   notes: string | null;
@@ -105,6 +108,7 @@ function shapeWWWResponse(item: RawWWWForShape, opts: ShapeWWWOptions): ShapedWW
     whoIds: item.whoIds,
     what: item.what,
     when: item.when.toISOString(),
+    dueDateTBD: item.dueDateTBD,
     originalDueDate: item.originalDueDate ? item.originalDueDate.toISOString() : null,
     status: item.status,
     notes: item.notes,
@@ -213,6 +217,7 @@ export const PUT = auth.update<{ id: string }>(
       whoIds,
       what,
       when,
+      dueDateTBD,
       status,
       notes,
       category,
@@ -251,9 +256,13 @@ export const PUT = auth.update<{ id: string }>(
     // date-only value.
     const whoChanged = nextWho !== undefined && nextWho !== existing.who;
     const toDayUTC = (d: Date) => d.toISOString().slice(0, 10);
+    // Toggling To-Be-Decided IS a due-date change, so it falls under the same
+    // creator-gate as editing the date itself. A TBD save omits `when`
+    // entirely, so `whenChanged` alone would miss it.
+    const tbdChanged = dueDateTBD !== undefined && dueDateTBD !== existing.dueDateTBD;
     const whenChanged =
-      when !== undefined && toDayUTC(new Date(when)) !== toDayUTC(existing.when);
-    if (whoChanged || whenChanged) {
+      !dueDateTBD && when !== undefined && toDayUTC(new Date(when)) !== toDayUTC(existing.when);
+    if (whoChanged || whenChanged || tbdChanged) {
       const canChangeAssignment = await canEditWWWAssignment(userId, orgId, {
         createdBy: existing.createdBy,
       });
@@ -290,7 +299,11 @@ export const PUT = auth.update<{ id: string }>(
       data: {
         who: nextWho ?? undefined,
         what: what ?? undefined,
-        when: when ? new Date(when) : undefined,
+        // A TBD save leaves `when` untouched — the stored date stays as the
+        // placeholder that keeps the column NOT NULL. Clearing TBD requires the
+        // client to send a real date (enforced in the panel).
+        when: !dueDateTBD && when ? new Date(when) : undefined,
+        dueDateTBD: dueDateTBD !== undefined ? dueDateTBD : undefined,
         status: status ?? undefined,
         notes: notes !== undefined ? notes : undefined,
         category: category !== undefined ? category : undefined,
@@ -354,8 +367,11 @@ export const PUT = auth.update<{ id: string }>(
     // Reassignment notification: union of (old ∪ new) assignees gets emailed
     // when the assignee list actually changes. notifyWWWReassignment is a
     // no-op when both lists are identical.
+    // Awaited for the same reason as the create path — a fire-and-forget send
+    // can be dropped when the runtime freezes after the response is flushed.
+    // The `.catch` keeps a mail failure from failing the update.
     const previousIds = existing.who ? [existing.who] : [];
-    notifyWWWReassignment({
+    await notifyWWWReassignment({
       orgId,
       itemId: updated.id,
       what: updated.what,

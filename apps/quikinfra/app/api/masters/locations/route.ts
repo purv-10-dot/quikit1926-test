@@ -9,7 +9,7 @@ import {
   createLocation,
 } from "@/lib/masters/locations-repository";
 import { cachedJson } from "@/lib/http/cache";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * Locations list.
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "type", "city", "state", "inCharge", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

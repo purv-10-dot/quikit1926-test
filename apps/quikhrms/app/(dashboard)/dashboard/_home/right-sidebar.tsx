@@ -11,73 +11,13 @@ import {
   Clock, Square, Pin,
   Calendar as CalendarIcon, FileText as FileIcon,
   Wallet, UserCircle, Network, ShieldCheck,
-  ClipboardList, Lock, ChevronRight, CheckCircle2,
   Megaphone, Users as UsersIcon, Sparkles, PartyPopper, Cake, Award,
   Home, Palmtree, Receipt,
 } from "lucide-react";
 
-interface Me {
-  id: string;
-  firstName: string;
-  lastName: string;
-  displayName: string | null;
-  profilePhoto: string | null;
-  jobTitle: string | null;
-  designation: { title: string } | null;
-}
-
 interface AttendanceToday {
   checkedIn: boolean;
   elapsedSeconds: number;
-}
-
-export function RightSidebar() {
-  return (
-    <div className="space-y-4">
-      <ProfileCardWidget />
-      <AttendanceWidget />
-      <EssentialsWidget />
-      <SurveysWidget />
-      <AnnouncementsWidget />
-    </div>
-  );
-}
-
-export function ProfileCardWidget() {
-  const api = useApiClient();
-  const { data } = useQuery({
-    queryKey: ["employees", "me"],
-    queryFn: () => api.get<Me>("/api/v1/hrms/employees/me"),
-    staleTime: 5 * 60_000,
-  });
-  const me = data?.data;
-  const initials = me ? `${me.firstName[0] ?? ""}${me.lastName[0] ?? ""}`.toUpperCase() : "?";
-
-  return (
-    <div className="surface-card p-4 text-center">
-      <div className="flex items-center gap-3">
-        {me?.profilePhoto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={me.profilePhoto} alt="" className="w-14 h-14 rounded-full ring-2 ring-gray-100 object-cover" />
-        ) : (
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#22c55e] to-[#16a34a] flex items-center justify-center text-white font-bold">
-            {initials}
-          </div>
-        )}
-        <div className="flex-1 min-w-0 text-left">
-          <p className="text-[13px] font-semibold text-gray-900 truncate">
-            {me ? (me.displayName ?? `${me.firstName} ${me.lastName}`) : "—"}
-          </p>
-          <Link href={me ? `/employees/${me.id}` : "#"} className="text-xs text-gray-500 hover:text-[#22c55e]">
-            Go to my profile
-          </Link>
-        </div>
-      </div>
-      <Link href="/leaves/my-leaves" className="w-full mt-4 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-xs font-medium transition">
-        Apply for Leave
-      </Link>
-    </div>
-  );
 }
 
 export function AttendanceWidget() {
@@ -142,15 +82,20 @@ export function AttendanceWidget() {
   );
 }
 
+const QUICK_ACTIONS = [
+  { label: "Mark attendance", icon: <Clock size={18} />, href: "/attendance", bg: "bg-amber-50", color: "text-amber-600" },
+  { label: "Apply leave", icon: <Palmtree size={18} />, href: "/leaves", bg: "bg-green-50", color: "text-green-600" },
+  { label: "Apply WFH", icon: <Home size={18} />, href: "/wfh/my-requests", bg: "bg-violet-50", color: "text-violet-600" },
+  { label: "View payslip", icon: <FileIcon size={18} />, href: "/payroll/my-payslips", bg: "bg-sky-50", color: "text-sky-600" },
+  { label: "Expense claim", icon: <Receipt size={18} />, href: "/expenses", bg: "bg-teal-50", color: "text-teal-600" },
+  { label: "Company directory", icon: <UsersIcon size={18} />, href: "/org-chart", bg: "bg-indigo-50", color: "text-indigo-600" },
+];
+
 export function EssentialsWidget() {
-  const items = [
-    { label: "Mark attendance", icon: <Clock size={18} />, href: "/attendance", bg: "bg-amber-50", color: "text-amber-600" },
-    { label: "Apply leave", icon: <Palmtree size={18} />, href: "/leaves", bg: "bg-green-50", color: "text-green-600" },
-    { label: "Apply WFH", icon: <Home size={18} />, href: "/wfh/my-requests", bg: "bg-violet-50", color: "text-violet-600" },
-    { label: "View payslip", icon: <FileIcon size={18} />, href: "/payroll/my-payslips", bg: "bg-sky-50", color: "text-sky-600" },
-    { label: "Expense claim", icon: <Receipt size={18} />, href: "/expenses", bg: "bg-teal-50", color: "text-teal-600" },
-    { label: "Company directory", icon: <UsersIcon size={18} />, href: "/org-chart", bg: "bg-indigo-50", color: "text-indigo-600" },
-  ];
+  // All six shortcuts always show, same as before — a role without access to
+  // one just lands on the "Access restricted" page (RouteGuard) on click,
+  // instead of the tile silently vanishing.
+  const items = QUICK_ACTIONS;
 
   return (
     <div className="surface-card p-4">
@@ -286,104 +231,5 @@ function pickAnnouncementTile(title: string): {
   if (/award|kudos|winner/.test(t))       return { Icon: Award,        bg: "bg-emerald-50", color: "text-emerald-600" };
   if (/new|launch|release/.test(t))       return { Icon: Sparkles,     bg: "bg-green-50",  color: "text-green-600" };
   return { Icon: Megaphone, bg: "bg-violet-50", color: "text-violet-600" };
-}
-
-interface MySurvey {
-  id: string;
-  title: string;
-  type: string;
-  isAnonymous: boolean;
-  endDate: string;
-  questionCount: number;
-  hasResponded: boolean;
-}
-
-export function SurveysWidget() {
-  const api = useApiClient();
-  const { data } = useQuery({
-    queryKey: ["home", "surveys-sidebar"],
-    queryFn: () => api.get<MySurvey[]>("/api/v1/hrms/engage/surveys/my"),
-    staleTime: 60_000,
-  });
-  const surveys = data?.data ?? [];
-  const pending = surveys.filter((s) => !s.hasResponded);
-  const top = pending.slice(0, 3);
-
-  return (
-    <div className="surface-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[13px] font-semibold text-gray-900 flex items-center gap-2">
-          <ClipboardList size={14} className="text-green-600" /> Surveys
-        </h3>
-        <div className="flex items-center gap-2">
-          {pending.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[11px] font-medium ring-1 ring-green-200">
-              {pending.length} pending
-            </span>
-          )}
-          <Link href="/engage/surveys/my" className="text-[11px] font-medium text-green-600 hover:text-green-700 inline-flex items-center gap-0.5">
-            View all <ChevronRight size={11} />
-          </Link>
-        </div>
-      </div>
-
-      {pending.length === 0 ? (
-        <div className="py-5 text-center">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center mx-auto mb-2">
-            <CheckCircle2 size={16} className="text-emerald-600" />
-          </div>
-          <p className="text-xs font-semibold text-gray-700">All caught up</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">No surveys waiting on you.</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {top.map((s) => {
-            const left = Math.max(0, Math.ceil((new Date(s.endDate).getTime() - Date.now()) / 86400000));
-            const closingSoon = left <= 3;
-            return (
-              <Link
-                key={s.id}
-                href={`/engage/surveys/${s.id}/take`}
-                className={`block p-2.5 rounded-lg border transition group ${
-                  closingSoon ? "border-amber-200 bg-amber-50/40 hover:bg-amber-50" : "border-gray-100 hover:bg-gray-50"
-                }`}
-              >
-                <div className="flex items-start gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center shrink-0 group-hover:bg-green-100 transition">
-                    <ClipboardList size={14} className="text-green-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-gray-900 truncate">{s.title}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className="text-[10px] text-gray-500">
-                        {s.questionCount} {s.questionCount === 1 ? "Q" : "Qs"}
-                      </span>
-                      {s.isAnonymous && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400">
-                          <Lock size={9} /> anon
-                        </span>
-                      )}
-                      <span className={`text-[10px] font-semibold ${closingSoon ? "text-amber-600" : "text-gray-400"}`}>
-                        · {left === 0 ? "closes today" : `${left}d left`}
-                      </span>
-                    </div>
-                  </div>
-                  <ChevronRight size={14} className="text-gray-300 shrink-0 group-hover:text-gray-500 transition" />
-                </div>
-              </Link>
-            );
-          })}
-          {pending.length > 3 && (
-            <Link
-              href="/engage/surveys/my"
-              className="block text-center text-[11px] font-medium text-green-600 hover:text-green-700 pt-1"
-            >
-              +{pending.length - 3} more
-            </Link>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 

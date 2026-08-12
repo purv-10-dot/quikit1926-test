@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
+import { prospectScopeWhere } from "@/lib/auth/prospect-acl";
 
 export const runtime = "nodejs";
 
@@ -39,9 +40,11 @@ export async function POST(
     }
     const { leadId } = parsed.data;
 
-    // The prospect must belong to the caller's org.
+    // The prospect must be in the caller's visible scope — their org, and for
+    // non-admins also saved by them. Someone else's prospect is a 404, not a
+    // 403: a user who cannot see the row must not learn that it exists.
     const prospect = await prisma.crmProspect.findFirst({
-      where: { id, orgId: user.orgId },
+      where: { id, ...prospectScopeWhere(user) },
       select: { id: true, status: true, convertedLeadId: true },
     });
     if (!prospect) {

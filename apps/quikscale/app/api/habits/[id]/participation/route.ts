@@ -18,15 +18,25 @@ export const GET = withOrgAuth<{ id: string }>(
     if (!(await isOrgAdmin(userId, orgId))) return forbidden();
     const campaign = await db.habitAssessment.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, isLegacy: true },
+      select: { id: true, isLegacy: true, participantUserIds: true },
     });
     if (!campaign || campaign.isLegacy) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
 
+    // Scope to the campaign's chosen participants. An EMPTY list means the
+    // campaign was created org-wide (every campaign predating the column, and
+    // any created without picking owners), so it falls back to all active
+    // members — preserving the original behaviour for those rows.
+    const participantIds = campaign.participantUserIds ?? [];
+    const memberWhere =
+      participantIds.length > 0
+        ? { orgId, status: "active", userId: { in: participantIds } }
+        : { orgId, status: "active" };
+
     const [members, responses] = await Promise.all([
       db.orgMember.findMany({
-        where: { orgId, status: "active" },
+        where: memberWhere,
         select: {
           role: true,
           user: { select: { id: true, firstName: true, lastName: true, email: true } },

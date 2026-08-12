@@ -35,6 +35,7 @@ interface SettingsRow {
   defaultChannelLevel: string;
   dmsLevel: string;
   soundEnabled: boolean;
+  callSoundsEnabled: boolean;
   desktopEnabled: boolean;
   emailEnabled: boolean;
   dndEnabled: boolean;
@@ -64,6 +65,13 @@ interface DeliveryCandidate {
 interface DeliveryDecision {
   persistRow: boolean;
   desktop: boolean;
+  /**
+   * Should the client play a notification sound? Shares every upstream
+   * suppression with `desktop` (mute / snooze / DND / level) but is gated on its
+   * OWN setting at the end — `soundEnabled` and `desktopEnabled` are independent
+   * toggles, so sound-on + desktop-off must still be audible.
+   */
+  sound: boolean;
   /** Persist the row but pre-mark it read (muted channels) so the badge stays clean. */
   persistAsRead: boolean;
 }
@@ -91,6 +99,7 @@ function toSettingsDto(row: SettingsRow): NotificationSettingsDto {
     defaultChannelLevel: row.defaultChannelLevel as NotificationLevel,
     dmsLevel: row.dmsLevel as NotificationLevel,
     soundEnabled: row.soundEnabled,
+    callSoundsEnabled: row.callSoundsEnabled,
     desktopEnabled: row.desktopEnabled,
     emailEnabled: row.emailEnabled,
     dndEnabled: row.dndEnabled,
@@ -125,6 +134,7 @@ const SETTINGS_FIELDS = [
   "defaultChannelLevel",
   "dmsLevel",
   "soundEnabled",
+  "callSoundsEnabled",
   "desktopEnabled",
   "emailEnabled",
   "dndEnabled",
@@ -138,6 +148,7 @@ export interface SettingsPatch {
   defaultChannelLevel?: NotificationLevel;
   dmsLevel?: NotificationLevel;
   soundEnabled?: boolean;
+  callSoundsEnabled?: boolean;
   desktopEnabled?: boolean;
   emailEnabled?: boolean;
   dndEnabled?: boolean;
@@ -453,7 +464,7 @@ export async function deliverForMessage(
           },
         },
       });
-      await emitNotification(orgId, cand.userId, row, allow.desktop);
+      await emitNotification(orgId, cand.userId, row, allow.desktop, allow.sound);
     }
   } catch (e) {
     await captureError(e, { scope: "deliverForMessage", orgId, channelId });
@@ -495,34 +506,35 @@ export async function deliverForReaction(
         },
       },
     });
-    await emitNotification(orgId, recipientId, row, allow.desktop);
+    await emitNotification(orgId, recipientId, row, allow.desktop, allow.sound);
   } catch (e) {
     await captureError(e, { scope: "deliverForReaction", orgId, channelId });
     logger.error({ orgId, channelId, scope: "deliverForReaction" }, "reaction notify failed");
   }
 }
 
-/** Publish the per-user `notification` event (row + transient desktop flag). */
+/** Publish the per-user `notification` event (row + transient alert flags). */
 async function emitNotification(
   orgId: string,
   userId: string,
   row: NotificationRow,
   desktop: boolean,
+  sound: boolean,
 ): Promise<void> {
   await publishFanout({
     orgId,
     userId,
     channelId: row.channelId ?? "",
     event: "notification",
-    payload: { ...serialize(row), desktop },
+    payload: { ...serialize(row), desktop, sound },
   });
 }
 
 /**
  * Resolve whether a notification should be persisted and whether the client
- * should fire an OS-level alert. Persistence still happens for muted channels
- * (the activity feed should stay complete); the OS alert is what gets
- * suppressed. `now` is injectable for deterministic tests.
+ * should fire an OS-level alert and/or play a sound. Persistence still happens
+ * for muted channels (the activity feed should stay complete); the alerts are
+ * what get suppressed. `now` is injectable for deterministic tests.
  */
 export async function shouldDeliver(
   orgId: string,
@@ -548,35 +560,40 @@ export async function shouldDeliver(
   if (reason === "reaction") {
     // Reactions only notify when the channel level is 'all'.
     if (channelLevel !== "all") {
-      return { persistRow: false, desktop: false, persistAsRead: false };
+      return { persistRow: false, desktop: false, sound: false, persistAsRead: false };
     }
   } else if (channelLevel === "none") {
-    // Muted channel: persist (feed stays complete) but pre-mark read + no popup.
-    return { persistRow: true, desktop: false, persistAsRead: true };
+    // Muted channel: persist (feed stays complete) but pre-mark read + silent.
+    return { persistRow: true, desktop: false, sound: false, persistAsRead: true };
   }
 
   const priorityReason =
     reason === "mention" || reason === "everyone" || reason === "dm" || reason === "keyword";
 
-  // Global snooze: suppress everything OS-side; row stays unread so the user
-  // sees what they missed on un-snooze.
+  // Global snooze: suppress every alert (popup AND sound); row stays unread so
+  // the user sees what they missed on un-snooze.
   if (settings.snoozedUntil && settings.snoozedUntil > now) {
-    return { persistRow: true, desktop: false, persistAsRead: false };
+    return { persistRow: true, desktop: false, sound: false, persistAsRead: false };
   }
 
   // DND quiet hours: priority events bypass if priorityDuringDnd is on.
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   if (settings.dndEnabled && isInDndWindow(settings.dndStart, settings.dndEnd, nowMinutes)) {
     if (!(priorityReason && settings.priorityDuringDnd)) {
-      return { persistRow: true, desktop: false, persistAsRead: false };
+      return { persistRow: true, desktop: false, sound: false, persistAsRead: false };
     }
   }
 
-  if (!settings.desktopEnabled) {
-    return { persistRow: true, desktop: false, persistAsRead: false };
-  }
-
-  return { persistRow: true, desktop: true, persistAsRead: false };
+  // Nothing upstream suppressed this one, so each channel is now down to its own
+  // user setting. Deliberately NOT an early return on `desktopEnabled`: the two
+  // toggles are independent, and short-circuiting on one would silently zero the
+  // other (desktop off would mean sound off).
+  return {
+    persistRow: true,
+    desktop: settings.desktopEnabled,
+    sound: settings.soundEnabled,
+    persistAsRead: false,
+  };
 }
 
 // ============================================================================
@@ -610,6 +627,11 @@ export function matchKeyword(content: string, keywords: string[]): string | null
 /**
  * Is `nowMinutes` (minutes-since-local-midnight) inside the [start, end) DND
  * window? Handles the overnight wrap (e.g. 22:00→07:00). start===end ⇒ never.
+ *
+ * ⚠️ KEEP IN SYNC WITH `dndActiveNow` in `lib/notif-settings.ts`. This is the
+ * authoritative copy; that one is a client-safe duplicate (this module imports
+ * Prisma, so it can't be bundled for the browser) used to mute the incoming-call
+ * ringtone. Change the semantics here and you must change it there too.
  */
 export function isInDndWindow(
   start: string | null,
