@@ -80,6 +80,13 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [{ resource: "Priority", label: "Priority", actions: ACTIONS }],
   },
   {
+    key: "CriticalNumbers",
+    label: "Critical Numbers",
+    leaves: [
+      { resource: "CriticalNumber", label: "Critical Numbers", actions: ACTIONS },
+    ],
+  },
+  {
     key: "OrgSetup",
     label: "Org Setup",
     leaves: [
@@ -137,6 +144,9 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "ClientMember", label: "Client Members", actions: ACTIONS },
       { resource: "DailyHuddle", label: "Daily Huddle", actions: ACTIONS },
       { resource: "WeeklyMeeting", label: "Weekly Meeting", actions: ACTIONS },
+      // AI meeting report: `view` = generate/view a report from a transcript;
+      // `update` = the "Edit Report" gate (edit fields and Save).
+      { resource: "ClientMeetings.Report", label: "Meeting Report", actions: ["view", "update"] },
     ],
   },
   {
@@ -279,6 +289,7 @@ export const NAV_RESOURCE: Record<string, string> = {
   "kpi.individual": "KPI",
   "kpi.teams": "TeamKPI",
   priority: "Priority",
+  criticalNumbers: "CriticalNumber",
   "orgSetup.teams": "Team",
   "orgSetup.users": "User",
   "orgSetup.quarters": "Quarter",
@@ -385,6 +396,7 @@ export const TREE_MODULE_FLAG_KEY: Readonly<Record<string, string>> = {
   Dashboard: "dashboard",
   KPI: "kpi",
   Priority: "priority",
+  CriticalNumbers: "criticalNumbers",
   OrgSetup: "orgSetup",
   WWW: "www",
   ClientMeetings: "clientMeetings",

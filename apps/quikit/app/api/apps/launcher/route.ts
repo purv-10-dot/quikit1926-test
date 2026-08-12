@@ -179,6 +179,7 @@ export async function GET(req: NextRequest) {
     quiklms: process.env.QUIKLMS_URL,
     quikasset: process.env.QUIKASSET_URL,
     quiksupport: process.env.QUIKSUPPORT_URL,
+    quikflow: process.env.QUIKFLOW_URL,
   };
 
   // Dev-only safety net. If the env var isn't set AND the DB's baseUrl is
@@ -200,9 +201,10 @@ export async function GET(req: NextRequest) {
     quikcrmexpress: "http://localhost:3017",
     quikfinance: "http://localhost:3013",
     quikhrms: "http://localhost:3009",
-    quiklms: "http://localhost:3014",
+    quiklms: "http://localhost:3016",
     quikasset: "http://localhost:3012",
     quiksupport: "http://localhost:3010",
+    quikflow: "http://localhost:3014",
   };
 
   /**

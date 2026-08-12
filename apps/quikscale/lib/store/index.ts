@@ -24,6 +24,7 @@ export const TABLE_MODULES = [
   "clientMembers",
   "dailyHuddle",
   "weeklyMeeting",
+  "criticalNumbers",
 ] as const;
 export type TableModule = (typeof TABLE_MODULES)[number];
 
@@ -50,6 +51,9 @@ const TABLE_DEFAULTS: Record<TableModule, TableState> = {
   clientMembers: { sortBy: "", sortOrder: "asc", search: "" },
   dailyHuddle: { sortBy: "", sortOrder: "desc", search: "" },
   weeklyMeeting: { sortBy: "", sortOrder: "desc", search: "" },
+  // Critical Numbers filters/sorts client-side off one `useCriticalNumbers()`
+  // fetch, so only `search` is read here — the table has no column sort.
+  criticalNumbers: { sortBy: "", sortOrder: "desc", search: "" },
 };
 
 interface TablesState {

@@ -7,7 +7,8 @@
     "worker"
   ],
   "scripts": {
-    "dev": "next dev -p 3014",
+    "_comment_dev_disabled": "dev script disabled 2026-08-07 — port 3014 conflicts with quikflow; use 'dev:manual' to run quiklms standalone",
+    "dev:manual": "next dev -p 3014",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
     "start": "next start -p 3014",

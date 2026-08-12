@@ -35,6 +35,7 @@
     "html2pdf.js": "^0.14.0",
     "jose": "^5.10.0",
     "jspdf": "^4.2.1",
+    "mammoth": "^1.12.1",
     "next": "14.0.4",
     "next-auth": "^4.24.0",
     "next-themes": "^0.2.1",

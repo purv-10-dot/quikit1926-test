@@ -15,6 +15,7 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "dev:quikscale": "turbo dev --filter=quikscale",
+    "dev:quikflow": "turbo dev --filter=quikflow",
     "dev:auth": "turbo dev --filter=auth",
     "dev:quikit": "turbo dev --filter=quikit",
     "dev:admin": "turbo dev --filter=admin",
@@ -28,10 +29,13 @@
     "db:sync:quikinfra": "npx prisma db push --schema=packages/database/prisma/schema.prisma --skip-generate",
     "db:seed:e2e": "cd packages/database && npm run db:seed:e2e",
     "db:seed:quikvc": "cd packages/database && npm run db:seed:quikvc",
+    "db:seed:quikflow": "cd packages/database && npx tsx prisma/seed-quikflow.ts",
     "e2e": "cd apps/quikscale && npx playwright test",
     "e2e:quikit": "cd apps/quikit && npx playwright test",
-    "e2e:all": "npm run e2e && npm run e2e:quikit",
+    "e2e:quikflow": "cd apps/quikflow && npx playwright test",
+    "e2e:all": "npm run e2e && npm run e2e:quikit && npm run e2e:quikflow",
     "e2e:install": "cd apps/quikscale && npx playwright install --with-deps chromium",
+    "e2e:install:quikflow": "cd apps/quikflow && npx playwright install --with-deps chromium",
     "postinstall": "prisma generate --schema=packages/database/prisma/schema.prisma"
   },
   "devDependencies": {

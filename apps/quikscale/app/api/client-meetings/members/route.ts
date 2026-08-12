@@ -5,6 +5,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createClientMemberSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
+import { emitClientMemberCreated } from "@/lib/services/workflowEvents";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
@@ -152,6 +153,8 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
     snapshot: { name: created.name, email: created.email },
     ...requestContext(request),
   });
+
+  emitClientMemberCreated({ orgId, memberId: created.id, name: created.name, email: created.email });
 
   return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });
 });

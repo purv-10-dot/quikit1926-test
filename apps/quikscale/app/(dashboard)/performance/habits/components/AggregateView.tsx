@@ -22,6 +22,7 @@ import {
 import { toDateInputValue } from "@/lib/utils/dateUtils";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { notify } from "@/lib/utils/notify";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { MyResponseModal } from "./MyResponseModal";
 import { useConfirm } from "@quikit/ui";
 import type { CampaignAggregate, HabitAggregate } from "@/lib/schemas/habitSchema";
@@ -453,6 +454,9 @@ function ScoreContext({
   );
 }
 
+const PAST_DEADLINE_LOCKED_MESSAGE =
+  'Deadline can\'t be moved to a past date — "Add Past Week Data" is disabled. Enable it in Settings → Configurations.';
+
 /**
  * Inline "Due <date>" with an edit affordance.
  *
@@ -495,6 +499,12 @@ export function DeadlineEditor({
   }
 
   async function save() {
+    // `min` on the input already blocks this via the picker, but a browser
+    // that doesn't enforce `min` on typed/pasted input needs a real guard.
+    if (pastDatesLocked && value && value < todayStr) {
+      notify.error(new Error(PAST_DEADLINE_LOCKED_MESSAGE));
+      return;
+    }
     try {
       await update.mutateAsync({
         deadline: value ? new Date(value).toISOString() : null,
@@ -540,6 +550,8 @@ export function DeadlineEditor({
           if (e.key === "Escape") setEditing(false);
         }}
         disabled={update.isPending}
+        min={pastDatesLocked ? todayStr : undefined}
+        title={pastDatesLocked ? PAST_DEADLINE_LOCKED_MESSAGE : undefined}
         aria-label="Deadline"
         className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
       />
