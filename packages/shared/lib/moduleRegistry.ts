@@ -73,6 +73,8 @@ export const MODULE_REGISTRY: AppModuleConfig[] = [
       { key: "kpi.individual", label: "Individual KPI", icon: "User", href: "/kpi", parentKey: "kpi" },
       { key: "kpi.teams", label: "Teams KPI", icon: "Users", href: "/kpi/teams", parentKey: "kpi" },
 
+      { key: "criticalNumbers", label: "Critical Numbers", icon: "Gauge", href: "/critical-numbers", section: "Execution" },
+
       { key: "priority", label: "Priority", icon: "CheckSquare", href: "/priority", section: "Execution" },
 
       { key: "www", label: "WWW", icon: "Activity", href: "/www", section: "Execution" },
