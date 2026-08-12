@@ -73,18 +73,45 @@ export const POST = withProjectAccess<{ id: string }>(
       }
     }
 
-    const newWorkflowId = await db.$transaction((tx) =>
-      materializeTemplateIntoProject(tx, {
-        template,
-        projectId,
-        orgId,
-        workflowName: name?.trim() || templateName,
-        createdBy: userId,
-        issueTypeIds: typeIds,
-      }),
-    );
+    const workflowName = name?.trim() || templateName;
 
-    return NextResponse.json({ success: true, data: { workflowId: newWorkflowId } }, { status: 201 });
+    // A project can't have two workflows with the same name (unique
+    // [orgId, projectId, name]). Guard up front so the admin gets a clear
+    // message instead of a raw Prisma unique-constraint error.
+    const existing = await db.qtWorkflow.findFirst({
+      where: { orgId, projectId, name: workflowName, isDeleted: false },
+      select: { id: true },
+    });
+    if (existing) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `A workflow named "${workflowName}" already exists in this space. Rename or remove it first, or import under a different name.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    try {
+      const newWorkflowId = await db.$transaction((tx) =>
+        materializeTemplateIntoProject(tx, {
+          template,
+          projectId,
+          orgId,
+          workflowName,
+          createdBy: userId,
+          issueTypeIds: typeIds,
+        }),
+      );
+      return NextResponse.json({ success: true, data: { workflowId: newWorkflowId } }, { status: 201 });
+    } catch (error: unknown) {
+      // Fallback for a race on the unique name (guard above already handles the
+      // common case) — never surface the raw Prisma error.
+      const message = error instanceof Error && error.message.includes("Unique constraint")
+        ? `A workflow named "${workflowName}" already exists in this space.`
+        : error instanceof Error ? error.message : "Failed to add the workflow.";
+      return NextResponse.json({ success: false, error: message }, { status: 409 });
+    }
   },
   { paramKey: "id", requirePermission: { resource: "Project", action: "update" } },
 );

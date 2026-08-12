@@ -97,6 +97,9 @@ export function StatusPanel({
   onAddOutgoing: () => void;
   onRemove: () => void;
 }) {
+  // The initial status (the "Create" transition's target — shown as START) can't
+  // be removed; a workflow must always have exactly one starting status.
+  const isInitial = draft.statuses.some((s) => s.statusId === statusId && s.isInitial);
   const incoming = draft.transitions.filter(
     (t) => t.toStatusId === statusId && t.type !== "GLOBAL",
   );
@@ -199,7 +202,9 @@ export function StatusPanel({
         <button
           type="button"
           onClick={onRemove}
-          className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600"
+          disabled={isInitial}
+          title={isInitial ? "The initial status can't be removed" : undefined}
+          className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-700"
         >
           <Trash2 className="h-3.5 w-3.5" /> Remove
         </button>

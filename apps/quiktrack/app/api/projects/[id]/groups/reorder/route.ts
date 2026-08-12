@@ -20,6 +20,8 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 403 },
       );
     }
+    // params.id may be a projectKey; loadProjectAccess resolved it to the cuid.
+    const projectId = access.projectId;
     const parsed = reorderGroupsSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -33,7 +35,7 @@ export const POST = withOrgAuth<{ id: string }>(
     const { orderedIds } = parsed.data;
 
     const existing = await db.qtTaskGroup.findMany({
-      where: { projectId: params.id, isDeleted: false, id: { in: orderedIds } },
+      where: { projectId, isDeleted: false, id: { in: orderedIds } },
       select: { id: true },
     });
     if (existing.length !== orderedIds.length) {
@@ -42,7 +44,7 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
-    await reorderGroups(params.id, orderedIds);
+    await reorderGroups(projectId, orderedIds);
     return NextResponse.json({ success: true, data: { orderedIds } });
   },
 );

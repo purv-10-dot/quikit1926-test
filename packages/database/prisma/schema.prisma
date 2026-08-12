@@ -6451,6 +6451,12 @@ model QtProject {
   workflowScheme   QtWorkflowScheme?
   boardColumns     QtBoardColumn[]
   personalAccessTokens QtPersonalAccessToken[]
+  // QuikTest (test management) — see the QuikTest block near the end of this file.
+  testSuites       QtTestSuite[]
+  testMilestones   QtTestMilestone[]
+  testPlans        QtTestPlan[]
+  testRuns         QtTestRun[]
+  testSchedules    QtTestSchedule[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -11087,7 +11093,656 @@ model QtIdeaLink {
 }
 
 // ============================================================================
-// QuikHRMS (app_quikhrms schema) â€” merged from apps/quikhrms. Models that
+// QuikTest — test management (TestRail-parity) inside QuikTrack.
+// See apps/quiktrack/QUIKTEST_MODULE_PLAN.md for the full design.
+//
+// Shape notes that apply to every model below:
+//   • `orgId` on every table + @@index([orgId]) — the scoping column.
+//   • `refId Int` on case/run/test carries the HUMAN-facing sequential id
+//     (TC-1042, R13, T106) that cuid() can't express. Allocated per project.
+//   • Issue references (coverage, defects) are id-only with NO FK and no
+//     back-relation on QtIssue, following the QtIdeaLink precedent above, so
+//     this whole block stays additive — no existing model is modified.
+//   • QtTestResult is APPEND-ONLY. Enforced by a Postgres trigger that lives
+//     in a hand-written migration (Prisma cannot express triggers) — see
+//     packages/database/prisma/migrations/quiktest_append_only.sql. That file
+//     is the ONLY guard against a future `db push` silently dropping it.
+// ============================================================================
+
+/// Container of test cases for a project. A project may run single- or
+/// multi-suite; `isBaseline` marks a frozen snapshot suite.
+model QtTestSuite {
+  id          String            @id @default(cuid())
+  orgId       String
+  projectId   String
+  name        String
+  description String?
+  isBaseline  Boolean           @default(false)
+  archivedAt  DateTime?
+  isDeleted   Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  createdBy   String?
+  project     QtProject         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sections    QtTestSection[]
+  baselines   QtTestBaseline[]
+  runs        QtTestRun[]
+
+  @@index([orgId])
+  @@index([projectId, isDeleted])
+  @@schema("app_quiktrack")
+}
+
+/// Folder tree inside a suite. Self-referencing, unlimited depth.
+/// Reparenting must be cycle-checked in the service layer (a DB constraint
+/// cannot express "no cycles" on an adjacency list).
+model QtTestSection {
+  id        String          @id @default(cuid())
+  orgId     String
+  suiteId   String
+  parentId  String?
+  name      String
+  orderNo   Int             @default(0)
+  isDeleted Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  suite     QtTestSuite     @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  parent    QtTestSection?  @relation("TestSectionTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  QtTestSection[] @relation("TestSectionTree")
+  cases     QtTestCase[]
+
+  @@index([orgId])
+  @@index([suiteId, parentId, orderNo])
+  @@schema("app_quiktrack")
+}
+
+/// A reusable test case definition. NOT an issue.
+///
+/// `projectId` is denormalised off the section→suite chain so the partial
+/// unique index on `automationId` can be scoped per project (a CI id must be
+/// unique within a project, not globally).
+model QtTestCase {
+  id               String                  @id @default(cuid())
+  orgId            String
+  projectId        String
+  sectionId        String
+  /// Human-facing sequential id within the project → rendered "TC-1042".
+  refId            Int
+  title            String
+  description      String?
+  preconditions    String?
+  priority         String                  @default("MEDIUM")
+  /// Functional / Regression / UAT / Security / Performance / Smoke / Compatibility.
+  type             String                  @default("FUNCTIONAL")
+  /// MANUAL | AUTOMATED — the intent, independent of whether a run was automated.
+  automationStatus String                  @default("MANUAL")
+  /// Stable external id CI maps to, e.g. "checkout.spec.ts::guest_can_pay".
+  /// Unique per project where NOT NULL (partial index, in the SQL migration).
+  automationId     String?
+  ownerId          String?
+  estimateMs       Int?
+  templateId       String?
+  /// DRAFT | IN_REVIEW | APPROVED | DEPRECATED. Draft cases are excluded from
+  /// run creation by default.
+  approvalState    String                  @default("DRAFT")
+  /// Points at the newest QtTestCaseVersion.versionNo.
+  currentVersion   Int                     @default(1)
+  isDeleted        Boolean                 @default(false)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  section          QtTestSection           @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  template         QtTestTemplate?         @relation(fields: [templateId], references: [id])
+  steps            QtTestCaseStep[]
+  versions         QtTestCaseVersion[]
+  approvals        QtTestCaseApproval[]
+  params           QtTestCaseParam[]
+  tags             QtTestCaseTag[]
+  issueLinks       QtTestCaseIssueLink[]
+  tests            QtTest[]
+  dependsOn        QtTestCaseDependency[]  @relation("TestCaseDependent")
+  dependedOnBy     QtTestCaseDependency[]  @relation("TestCasePrerequisite")
+
+  @@unique([projectId, refId])
+  @@index([orgId])
+  @@index([sectionId, isDeleted])
+  @@index([projectId, automationId])
+  @@schema("app_quiktrack")
+}
+
+/// One ordered step of a case. A real table (not JSON on the case) because
+/// per-step results FK to it — see QtTestStepResult.
+model QtTestCaseStep {
+  id          String              @id @default(cuid())
+  orgId       String
+  caseId      String
+  orderNo     Int
+  action      String
+  expected    String?
+  case        QtTestCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  stepResults QtTestStepResult[]
+
+  @@unique([caseId, orderNo])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Immutable snapshot of a case at one version. Written on every edit; runs
+/// pin the version they executed so historical runs show the steps as they
+/// were. Never updated.
+model QtTestCaseVersion {
+  id        String     @id @default(cuid())
+  orgId     String
+  caseId    String
+  versionNo Int
+  /// { title, description, preconditions, steps:[{orderNo,action,expected}] }
+  snapshot  Json
+  editedBy  String?
+  editedAt  DateTime   @default(now())
+  case      QtTestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, versionNo])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Reviewer sign-off log for the Draft → In Review → Approved → Deprecated
+/// workflow. Append-only by convention: each row IS an audit entry.
+model QtTestCaseApproval {
+  id         String     @id @default(cuid())
+  orgId      String
+  caseId     String
+  /// The state entered by this action.
+  state      String
+  reviewerId String?
+  note       String?
+  createdAt  DateTime   @default(now())
+  case       QtTestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([caseId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+/// Parameter set for a data-driven case. Execution iterates `values` rows and
+/// rolls the outcomes up into one case-level result.
+model QtTestCaseParam {
+  id     String     @id @default(cuid())
+  orgId  String
+  caseId String
+  name   String
+  /// Array of row objects, e.g. [{ "user": "a@x.com", "expect": "ok" }].
+  values Json
+  case   QtTestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Prerequisite relationship between two cases. Cycle-checked in the service
+/// layer, same as the section tree.
+model QtTestCaseDependency {
+  id                String     @id @default(cuid())
+  orgId             String
+  caseId            String
+  dependsOnCaseId   String
+  createdAt         DateTime   @default(now())
+  case              QtTestCase @relation("TestCaseDependent", fields: [caseId], references: [id], onDelete: Cascade)
+  dependsOnCase     QtTestCase @relation("TestCasePrerequisite", fields: [dependsOnCaseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, dependsOnCaseId])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Case template, built from the custom-field library rather than hardcoded —
+/// covers Functional/API/UI/Regression/Security plus BDD-Gherkin and
+/// Exploratory. `projectId` null = available org-wide.
+model QtTestTemplate {
+  id        String       @id @default(cuid())
+  orgId     String
+  projectId String?
+  name      String
+  /// Ordered QtCustomField ids composing the template.
+  fieldIds  Json?
+  isDeleted Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  cases     QtTestCase[]
+
+  @@index([orgId])
+  @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
+/// Governed tag vocabulary — a central list per project/org so tags can be
+/// merged and renamed instead of drifting into near-duplicates.
+model QtTestTag {
+  id        String          @id @default(cuid())
+  orgId     String
+  projectId String?
+  name      String
+  color     String?
+  createdAt DateTime        @default(now())
+  cases     QtTestCaseTag[]
+
+  @@unique([orgId, projectId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtTestCaseTag {
+  orgId  String
+  caseId String
+  tagId  String
+  case   QtTestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  tag    QtTestTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([caseId, tagId])
+  @@index([orgId])
+  @@index([tagId])
+  @@schema("app_quiktrack")
+}
+
+/// Frozen snapshot of a suite's contents, so a historical run stays accurate
+/// even after the live suite is edited.
+model QtTestBaseline {
+  id        String      @id @default(cuid())
+  orgId     String
+  suiteId   String
+  name      String
+  /// Full suite tree + case versions at capture time.
+  snapshot  Json
+  createdAt DateTime    @default(now())
+  createdBy String?
+  suite     QtTestSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  runs      QtTestRun[]
+
+  @@index([orgId])
+  @@index([suiteId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+/// Coverage link: a case covers/verifies a requirement issue.
+/// `issueId` intentionally carries no FK (QtIdeaLink precedent) so this block
+/// requires no change to QtIssue.
+model QtTestCaseIssueLink {
+  id        String     @id @default(cuid())
+  orgId     String
+  caseId    String
+  issueId   String
+  /// covers | verifies
+  type      String     @default("covers")
+  createdAt DateTime   @default(now())
+  createdBy String?
+  case      QtTestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, issueId, type])
+  @@index([orgId])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+/// Release marker. `parentId` gives sub-milestones for phased rollouts.
+model QtTestMilestone {
+  id        String            @id @default(cuid())
+  orgId     String
+  projectId String
+  parentId  String?
+  name      String
+  dueDate   DateTime?
+  /// open | closed
+  state     String            @default("open")
+  isDeleted Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  project   QtProject         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    QtTestMilestone?  @relation("TestMilestoneTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  QtTestMilestone[] @relation("TestMilestoneTree")
+  plans     QtTestPlan[]
+  runs      QtTestRun[]
+
+  @@index([orgId])
+  @@index([projectId, state])
+  @@schema("app_quiktrack")
+}
+
+/// Groups several runs under one testing effort.
+model QtTestPlan {
+  id          String           @id @default(cuid())
+  orgId       String
+  projectId   String
+  milestoneId String?
+  name        String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  isDeleted   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  createdBy   String?
+  project     QtProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestone   QtTestMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  runs        QtTestRun[]
+
+  @@index([orgId])
+  @@index([projectId, isDeleted])
+  @@schema("app_quiktrack")
+}
+
+/// A configuration dimension, e.g. group "Browser" with values Chrome/Firefox.
+model QtTestConfigGroup {
+  id        String           @id @default(cuid())
+  orgId     String
+  projectId String
+  name      String
+  configs   QtTestConfig[]
+
+  @@unique([projectId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtTestConfig {
+  id       String             @id @default(cuid())
+  orgId    String
+  groupId  String
+  name     String
+  group    QtTestConfigGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  runLinks QtTestRunConfig[]
+  tests    QtTest[]
+
+  @@unique([groupId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// An execution instance. Materialises one QtTest per selected case
+/// (× configuration).
+///
+/// `build` powers CI idempotency: find-or-create by (projectId, build) means a
+/// re-run of the same build attaches to the existing run instead of duplicating
+/// it. Enforced by a partial unique index in the SQL migration (Prisma can't
+/// express "unique WHERE build IS NOT NULL").
+model QtTestRun {
+  id          String                        @id @default(cuid())
+  orgId       String
+  projectId   String
+  planId      String?
+  suiteId     String?
+  baselineId  String?
+  milestoneId String?
+  /// Human-facing sequential id within the project → rendered "R13".
+  refId       Int
+  name        String
+  description String?
+  /// manual | automated | mixed
+  source      String                        @default("manual")
+  /// open | closed
+  state       String                        @default("open")
+  build       String?
+  environment String?
+  assigneeId  String?
+  isDeleted   Boolean                       @default(false)
+  createdAt   DateTime                      @default(now())
+  updatedAt   DateTime                      @updatedAt
+  createdBy   String?
+  closedAt    DateTime?
+  closedBy    String?
+  project     QtProject                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plan        QtTestPlan?                   @relation(fields: [planId], references: [id], onDelete: SetNull)
+  suite       QtTestSuite?                  @relation(fields: [suiteId], references: [id], onDelete: SetNull)
+  baseline    QtTestBaseline?               @relation(fields: [baselineId], references: [id], onDelete: SetNull)
+  milestone   QtTestMilestone?              @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  configs     QtTestRunConfig[]
+  tests       QtTest[]
+  results     QtTestResult[]
+  unmatched   QtTestUnmatchedAutomationId[]
+
+  @@unique([projectId, refId])
+  @@index([orgId])
+  @@index([projectId, state])
+  @@index([milestoneId])
+  @@schema("app_quiktrack")
+}
+
+model QtTestRunConfig {
+  orgId    String
+  runId    String
+  configId String
+  run      QtTestRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  config   QtTestConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@id([runId, configId])
+  @@index([orgId])
+  @@index([configId])
+  @@schema("app_quiktrack")
+}
+
+/// The status catalogue every result references. Org-scoped (not global) so one
+/// tenant's custom statuses never leak into another's.
+/// Seeded with 9: Untested (default), Passed, Failed, Blocked, Retest, Skipped,
+/// Automation Passed, Automation Failed, Automation Error.
+model QtTestStatus {
+  id           String         @id @default(cuid())
+  orgId        String
+  /// Stable key, e.g. "automation_failed". Matches lib/test/statuses.ts.
+  key          String
+  label        String
+  color        String         @default("#94a3b8")
+  /// Terminal outcome — excludes it from "still to execute".
+  isFinal      Boolean        @default(true)
+  /// Exactly one per org is the default (Untested); enforced by a partial
+  /// unique index in the SQL migration.
+  isDefault    Boolean        @default(false)
+  /// Produced by CI rather than a human — drives the manual/automation split.
+  isAutomation Boolean        @default(false)
+  orderNo      Int            @default(0)
+  isDeleted    Boolean        @default(false)
+  tests        QtTest[]
+  results      QtTestResult[]
+  stepResults  QtTestStepResult[]
+
+  @@unique([orgId, key])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// The per-run instance of a case. Accumulates results.
+///
+/// `caseVersion` pins the case as it was when the run was created, so editing
+/// the case later does not rewrite history. `currentStatusId` is a CACHE of the
+/// newest result — never the source of truth.
+model QtTest {
+  id              String         @id @default(cuid())
+  orgId           String
+  runId           String
+  caseId          String
+  configId        String?
+  /// Human-facing sequential id within the run → rendered "T106".
+  refId           Int
+  /// Pinned QtTestCaseVersion.versionNo.
+  caseVersion     Int
+  assigneeId      String?
+  currentStatusId String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  run             QtTestRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  case            QtTestCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  config          QtTestConfig?  @relation(fields: [configId], references: [id], onDelete: SetNull)
+  currentStatus   QtTestStatus   @relation(fields: [currentStatusId], references: [id])
+  results         QtTestResult[]
+
+  @@unique([runId, caseId, configId])
+  @@unique([runId, refId])
+  @@index([orgId])
+  @@index([runId, currentStatusId])
+  @@index([caseId])
+  @@index([assigneeId])
+  @@schema("app_quiktrack")
+}
+
+/// ─────────────────────────────────────────────────────────────────────────
+/// THE TRAIL. APPEND-ONLY — no UPDATE, no DELETE, ever.
+///
+/// Both write paths (manual runner, CI automation) INSERT here; `source` is the
+/// only thing that distinguishes them. A correction is a NEW row, never an edit.
+/// Immutability is enforced by a Postgres trigger in
+/// prisma/migrations/quiktest_append_only.sql — Prisma cannot express it, so a
+/// future `prisma db push` would silently drop it. Keep that file.
+///
+/// `runId` is denormalised (derivable via testId) so run-level and flakiness
+/// queries are a join-free index scan. Safe because the row never changes.
+/// ─────────────────────────────────────────────────────────────────────────
+model QtTestResult {
+  id             String                    @id @default(cuid())
+  orgId          String
+  testId         String
+  runId          String
+  statusId       String
+  /// manual | automated
+  source         String
+  /// User id, or the per-org CI bot user for automated results.
+  executedBy     String?
+  executedAt     DateTime                  @default(now())
+  elapsedMs      Int?
+  comment        String?
+  failureMessage String?
+  stackTrace     String?
+  build          String?
+  ciUrl          String?
+  /// Which parameter row produced this result, for data-driven cases.
+  paramRow       Json?
+  createdAt      DateTime                  @default(now())
+  test           QtTest                    @relation(fields: [testId], references: [id], onDelete: Cascade)
+  run            QtTestRun                 @relation(fields: [runId], references: [id], onDelete: Cascade)
+  status         QtTestStatus              @relation(fields: [statusId], references: [id])
+  stepResults    QtTestStepResult[]
+  attachments    QtTestResultAttachment[]
+  defectLinks    QtTestDefectLink[]
+
+  @@index([orgId])
+  @@index([testId, createdAt])
+  @@index([runId, source])
+  @@index([executedBy, createdAt])
+  @@schema("app_quiktrack")
+}
+
+/// Per-step outcome within one result. Also append-only (same trigger).
+model QtTestStepResult {
+  id       String         @id @default(cuid())
+  orgId    String
+  resultId String
+  stepId   String
+  statusId String
+  comment  String?
+  result   QtTestResult   @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  step     QtTestCaseStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  status   QtTestStatus   @relation(fields: [statusId], references: [id])
+
+  @@unique([resultId, stepId])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Artifact on a result (screenshot / video / trace). Mirrors
+/// QtIssueAttachment: an S3 key, never a blob.
+model QtTestResultAttachment {
+  id         String       @id @default(cuid())
+  orgId      String
+  resultId   String
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  s3Key      String
+  uploadedBy String?
+  createdAt  DateTime     @default(now())
+  result     QtTestResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([resultId])
+  @@schema("app_quiktrack")
+}
+
+/// Defect link: a failing result points at a Bug issue. `issueId` carries no FK
+/// (QtIdeaLink precedent) — closing or deleting the Bug must never rewrite the
+/// historical result.
+model QtTestDefectLink {
+  id        String       @id @default(cuid())
+  orgId     String
+  resultId  String
+  issueId   String
+  createdAt DateTime     @default(now())
+  createdBy String?
+  result    QtTestResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  @@unique([resultId, issueId])
+  @@index([orgId])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+/// Automation ids reported by CI that matched no case in this project. Persisted
+/// with a count and surfaced in the run summary — never silently dropped.
+model QtTestUnmatchedAutomationId {
+  id           String    @id @default(cuid())
+  orgId        String
+  runId        String
+  automationId String
+  count        Int       @default(1)
+  firstSeenAt  DateTime  @default(now())
+  lastSeenAt   DateTime  @updatedAt
+  run          QtTestRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, automationId])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Recurring run schedule (e.g. nightly regression). The cron runner
+/// materialises a fresh run from the referenced suite or plan.
+model QtTestSchedule {
+  id         String    @id @default(cuid())
+  orgId      String
+  projectId  String
+  suiteId    String?
+  planId     String?
+  name       String
+  /// Standard 5-field cron expression.
+  cron       String
+  isEnabled  Boolean   @default(true)
+  nextRunAt  DateTime?
+  lastRunAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([isEnabled, nextRunAt])
+  @@schema("app_quiktrack")
+}
+
+/// Per-project counters backing the human-facing ids (TC-1042, R13). Kept in
+/// its own table so allocation is a single atomic UPDATE ... RETURNING rather
+/// than a MAX(refId)+1 scan, which races under concurrent CI writes.
+/// Test refIds (T106) are per-run and allocated from QtTestRun instead.
+model QtTestRefCounter {
+  orgId     String
+  projectId String
+  /// "case" | "run"
+  kind      String
+  nextValue Int    @default(1)
+
+  @@id([projectId, kind])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// ============================================================================
+// QuikHRMS (app_quikhrms schema) — merged from apps/quikhrms. Models that
 // collided with existing names are prefixed Hrms* (Team->HrmsTeam, etc.).
 // ============================================================================
 // â”€â”€â”€ ENUMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

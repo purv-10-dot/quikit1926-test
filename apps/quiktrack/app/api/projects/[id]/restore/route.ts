@@ -21,16 +21,20 @@ export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
     if (!(await hasAdminAccess(userId, orgId))) return forbidden();
 
-    const projectId = params?.id;
-    if (!projectId) {
+    const idOrKey = params?.id;
+    if (!idOrKey) {
       return NextResponse.json(
         { success: false, error: "Project id missing" },
         { status: 400 },
       );
     }
 
+    // The route param may be the project's cuid OR its per-org projectKey.
+    // Resolve to the real id (org-scoped) before restoring. Note: this route
+    // targets TRASHED projects, so we match isDeleted: true (not the usual
+    // isDeleted: false) — but the key-or-id resolution is otherwise the same.
     const project = await db.qtProject.findFirst({
-      where: { id: projectId, orgId, isDeleted: true },
+      where: { orgId, isDeleted: true, OR: [{ id: idOrKey }, { projectKey: idOrKey }] },
       select: { id: true },
     });
     if (!project) {
@@ -40,6 +44,7 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 404 },
       );
     }
+    const projectId = project.id;
 
     await db.qtProject.update({
       where: { id: projectId },

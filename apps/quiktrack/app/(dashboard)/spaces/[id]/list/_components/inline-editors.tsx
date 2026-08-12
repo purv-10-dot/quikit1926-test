@@ -125,7 +125,9 @@ export function PriorityEditor({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const meta = value ? PRIORITY_META[value] : null;
+  // `?? null` normalises an unmapped priority (the column is unconstrained) so
+  // the optional-chained reads below stay safe.
+  const meta = value ? (PRIORITY_META[value] ?? null) : null;
 
   return (
     <div className="relative">

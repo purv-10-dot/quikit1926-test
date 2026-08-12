@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardIssue, BoardStatus, EpicLite } from "./board-meta";
 import { STATUS_ICON, STATUS_ICON_CLASS } from "./board-meta";
 import { TaskCard } from "./task-card";
+import { DroppableColumnBody } from "./board-dnd";
 import { ColumnMenu } from "./column-menu";
 import type { ColumnInlineCreateMember } from "./column-inline-create";
 
@@ -40,6 +41,7 @@ export function BoardColumn({
   allStatuses,
   projectId,
   sprintId,
+  refreshKey,
   epicsById,
   statusesById,
   filters,
@@ -63,6 +65,10 @@ export function BoardColumn({
   allStatuses: BoardStatus[];
   projectId: string;
   sprintId: string | null;
+  /** Bumped by the parent after a drag/drop or update. The column refetches its
+   *  first page IN PLACE (keeping current cards visible → no shimmer flash),
+   *  instead of the old remount-via-key that reset loaded=false and shimmered. */
+  refreshKey?: number;
   epicsById: Record<string, EpicLite>;
   statusesById: Record<string, BoardStatus>;
   filters?: { search: string; assigneeId: string; type: string; priority: string; customFilters: string };
@@ -169,6 +175,21 @@ export function BoardColumn({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sprintId, status?.id, columnKey, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
 
+  // Refetch in place when the parent bumps refreshKey (after a drag/drop or an
+  // issue update). We do NOT reset to `empty` first — `loadMore(true)` replaces
+  // the cards when the new page arrives, so the column never flashes its
+  // skeleton shimmer on a card move. Skips the initial mount (the load effect
+  // above already did the first fetch).
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    void loadMore(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -200,10 +221,18 @@ export function BoardColumn({
   }, [members]);
   const Icon = STATUS_ICON(status?.category ?? "BACKLOG");
   const total = state.total || state.issues.length;
+  // @dnd-kit drop target for CARD moves: the column's primary statusId (the
+  // same id board-view feeds onColDrop). An unmapped board column (no status
+  // set) has no target → null, so cards can't be dropped onto it.
+  const dropStatusId =
+    (columnStatusIds && columnStatusIds.length > 0 ? columnStatusIds[0] : status?.id) ?? null;
 
   return (
+    // Native onDragOver/onDrop remain ONLY for the HTML5 column-header reorder
+    // (dataTransfer 'application/quiktrack-column'); CARD moves now go through
+    // the @dnd-kit droppable body below.
     <div
-      className="group w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col max-h-[calc(100vh-180px)]"
+      className="group w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col max-h-full"
       onDragOver={dragHandlers?.onDragOver}
       onDrop={dragHandlers?.onDrop}
     >
@@ -233,7 +262,7 @@ export function BoardColumn({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+      <DroppableColumnBody id={dropStatusId} className="flex-1 overflow-y-auto space-y-2 pr-1">
         {!state.loaded && (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, j) => (
@@ -268,7 +297,7 @@ export function BoardColumn({
             )}
           </div>
         )}
-      </div>
+      </DroppableColumnBody>
     </div>
   );
 }
