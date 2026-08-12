@@ -19,7 +19,6 @@ const fraunces = Fraunces({
   display: "swap",
 });
 
-
 const inter = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600"],

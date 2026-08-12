@@ -4,3 +4,4 @@ import { getModuleConfig } from "@/lib/modules";
 export default function BankAccountsPage() {
   return <ModulePage config={getModuleConfig("bank-accounts")} />;
 }
+
