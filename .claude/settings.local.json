@@ -10,7 +10,8 @@
       "Bash(DATABASE_URL='postgresql://postgres:sa%40123@localhost:5432/quikit_dev' npx tsx prisma/seed-moreyeahs.ts)",
       "WebFetch(domain:unpkg.com)",
       "Bash(node --check linkedIn.js)",
-      "Bash(grep -rn \"api/notifications\\\\`\\\\|api/notifications?\\\\|api/notifications'\" --include=\"*.tsx\" --include=\"*.ts\" components hooks app contexts lib)"
+      "Bash(grep -rn \"api/notifications\\\\`\\\\|api/notifications?\\\\|api/notifications'\" --include=\"*.tsx\" --include=\"*.ts\" components hooks app contexts lib)",
+      "Bash(sort -t: -k2)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
