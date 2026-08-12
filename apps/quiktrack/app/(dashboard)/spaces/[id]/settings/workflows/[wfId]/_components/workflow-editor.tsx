@@ -281,9 +281,10 @@ function EditorBody({
             </button>
             <button
               type="button"
-              onClick={() => setUpdateMenuOpen((v) => !v)}
+              onClick={() => { if (!ed.published) setUpdateMenuOpen((v) => !v); }}
+              disabled={ed.published || ed.publish.isPending}
               aria-label="More update options"
-              className="rounded-r border-l border-accent-700/40 bg-accent-600 px-1.5 py-1.5 text-white hover:bg-accent-700"
+              className="rounded-r border-l border-accent-700/40 bg-accent-600 px-1.5 py-1.5 text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ChevronDown className="h-4 w-4" />
             </button>

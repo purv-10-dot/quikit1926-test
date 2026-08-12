@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { Loader2, Plus, Trash2, ArrowLeft, ArrowRight, Info } from "lucide-react";
+import { Loader2, Plus, Trash2, ArrowLeft, ArrowRight, Info, Check } from "lucide-react";
 import { StatusChip, DropZone } from "./status-chip";
 import {
   UNMAPPED,
@@ -116,6 +116,17 @@ function Editor({
     onSuccess: onSaved,
   });
 
+  // Auto-save: persist column/status changes automatically (debounced), so the
+  // admin never has to click a Save button. Skip the very first render.
+  const firstRender = useRef(true);
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    const t = setTimeout(() => saveRef.current.mutate(), 600);
+    return () => clearTimeout(t);
+  }, [columns, unmapped]);
+
   const chip = (statusId: string) => {
     const s = statusById.get(statusId) as BoardStatus | undefined;
     if (!s) return null;
@@ -124,7 +135,7 @@ function Editor({
   };
 
   return (
-    <div className="px-8 py-8">
+    <div className="min-w-0 px-8 py-8">
       <h1 className="text-xl font-semibold text-gray-900">Board settings</h1>
       <p className="mb-1 mt-1 text-sm text-gray-500">Columns and statuses</p>
       <p className="mb-6 max-w-3xl text-sm text-gray-500">
@@ -141,22 +152,27 @@ function Editor({
         >
           <Plus className="h-4 w-4" /> Add column
         </button>
-        <div className="ml-auto flex items-center gap-2">
-          {save.error && <span className="text-sm text-red-600">{(save.error as Error).message}</span>}
-          {save.isSuccess && <span className="text-sm text-green-600">Saved.</span>}
-          <button
-            type="button"
-            onClick={() => save.mutate()}
-            disabled={save.isPending}
-            className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-60"
-          >
-            {save.isPending ? "Saving…" : "Save columns"}
-          </button>
+        <div className="ml-auto flex items-center gap-2 text-sm">
+          {save.error ? (
+            <span className="text-red-600">{(save.error as Error).message}</span>
+          ) : save.isPending ? (
+            <span className="inline-flex items-center gap-1.5 text-gray-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
+            </span>
+          ) : save.isSuccess ? (
+            <span className="inline-flex items-center gap-1.5 text-green-600">
+              <Check className="h-3.5 w-3.5" /> Changes saved
+            </span>
+          ) : null}
         </div>
       </div>
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        {/* Scroll wrapper: bounded to the page width; the inner w-max row sizes
+            to its columns, so this wrapper shows a horizontal scrollbar when the
+            columns exceed the available width. */}
+        <div className="w-full overflow-x-auto pb-4">
+        <div className="flex w-max gap-4">
           {/* Unmapped bucket */}
           <DropZone id={UNMAPPED} className="w-56 shrink-0 rounded-md border border-dashed border-gray-300 bg-gray-50 p-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Unmapped statuses</div>
@@ -193,6 +209,7 @@ function Editor({
               </DropZone>
             </div>
           ))}
+        </div>
         </div>
       </DndContext>
     </div>

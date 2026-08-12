@@ -57,7 +57,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           )}
           <div className="flex flex-1 overflow-hidden">
             {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
-            <main className="flex-1 overflow-y-auto bg-white">{children}</main>
+            {/* min-w-0 lets this flex child shrink below its content width so
+                pages with wide horizontal strips scroll internally instead of
+                pushing the whole shell wide. */}
+            <main className="min-w-0 flex-1 overflow-y-auto bg-white">{children}</main>
           </div>
           <IssueCreatedToast />
           <ToastHost />

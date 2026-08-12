@@ -86,7 +86,7 @@ export function SettingsShell({
       : pathname.startsWith(href);
 
   return (
-    <div className="flex h-full bg-white">
+    <div className="flex h-full min-w-0 bg-white">
       {/* Inner sidebar */}
       <aside className="w-[240px] shrink-0 border-r border-gray-200 px-3 py-4 overflow-y-auto">
         <button
@@ -157,7 +157,10 @@ export function SettingsShell({
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto bg-white">{children}</main>
+      {/* min-w-0 lets this flex child shrink below its content width, so pages
+          with wide horizontal strips (e.g. Board columns) scroll instead of
+          overflowing the whole shell. */}
+      <main className="min-w-0 flex-1 overflow-y-auto bg-white">{children}</main>
     </div>
   );
 }
