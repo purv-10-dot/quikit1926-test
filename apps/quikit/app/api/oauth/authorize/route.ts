@@ -5,6 +5,7 @@ import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateAuthCode, redirectUriMatches, resolveAppOrigin } from "@/lib/oauth";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 
 // Reads runtime session + env-backed OAuth keys — never prerender.
 export const dynamic = "force-dynamic";
@@ -77,9 +78,9 @@ export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     // Redirect to login, then back here after login
-    const currentUrl = request.nextUrl.toString();
+    const currentUrl = `${publicBaseUrl(request)}${request.nextUrl.pathname}${request.nextUrl.search}`;
     return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`, request.nextUrl.origin),
+      new URL(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`, publicBaseUrl(request)),
     );
   }
 
@@ -106,9 +107,9 @@ export async function GET(request: NextRequest) {
       memberRole = membership.role;
     } else {
       // No membership at all → redirect to app launcher
-      const currentUrl = request.nextUrl.toString();
+      const currentUrl = `${publicBaseUrl(request)}${request.nextUrl.pathname}${request.nextUrl.search}`;
       return NextResponse.redirect(
-        new URL(`/apps?callbackUrl=${encodeURIComponent(currentUrl)}`, request.nextUrl.origin),
+        new URL(`/apps?callbackUrl=${encodeURIComponent(currentUrl)}`, publicBaseUrl(request)),
       );
     }
   }
@@ -149,12 +150,12 @@ export async function GET(request: NextRequest) {
       const appBaseUrl = resolveAppOrigin(app);
       const target = appBaseUrl
         ? new URL("/", appBaseUrl)
-        : new URL("/apps", request.nextUrl.origin);
+        : new URL("/apps", publicBaseUrl(request));
       target.searchParams.set("reason", "no_app_access");
       target.searchParams.set("others", String(otherAppsCount));
       // The launcher (this IdP) origin — lets the popup's "Go to my apps" link
       // resolve without relying on NEXT_PUBLIC_QUIKIT_URL being set client-side.
-      target.searchParams.set("home", process.env.QUIKIT_URL || request.nextUrl.origin);
+      target.searchParams.set("home", process.env.QUIKIT_URL || publicBaseUrl(request));
       return NextResponse.redirect(target.toString());
     }
   }
