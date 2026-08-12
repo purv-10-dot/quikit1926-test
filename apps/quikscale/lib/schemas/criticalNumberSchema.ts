@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_VALUE_DECIMALS, hasMaxDecimalPlaces } from "@/lib/utils/decimalPrecision";
 
 /**
  * Validation for Critical Numbers (v2).
@@ -29,6 +30,17 @@ export type CriticalNumberFrequency = (typeof CRITICAL_NUMBER_FREQUENCIES)[numbe
 
 /** Max Critical Numbers per team ("Department" in the UI). Enforced server-side. */
 export const MAX_CRITICAL_NUMBERS_PER_TEAM = 5;
+
+/**
+ * Shared by the Target Value and by each recorded reading: at most 2 decimals.
+ *
+ * The inputs already refuse a 3rd decimal digit as it's typed, but this is not
+ * a mirror of that — it's the independent enforcement point, so a direct API
+ * call (script, integration, curl) is held to the same rule as the form.
+ */
+const MAX_DECIMALS_ISSUE = {
+  message: `Use at most ${MAX_VALUE_DECIMALS} decimal places`,
+};
 
 const baseFields = {
   title: z.string().trim().min(1, "Title is required").max(200, "Title is too long"),
@@ -61,7 +73,10 @@ const baseFields = {
   targetScale: z.string().optional().nullable(),
   frequency: z.enum(CRITICAL_NUMBER_FREQUENCIES),
   /** Required: the percentage bands are meaningless without a denominator. */
-  targetValue: z.number().finite("Target must be a number"),
+  targetValue: z
+    .number()
+    .finite("Target must be a number")
+    .refine((v) => hasMaxDecimalPlaces(v), MAX_DECIMALS_ISSUE),
 };
 
 /**
@@ -107,7 +122,9 @@ export const updateCriticalNumberSchema = z
     currency: baseFields.currency,
     targetScale: baseFields.targetScale,
     frequency: z.enum(CRITICAL_NUMBER_FREQUENCIES).optional(),
-    targetValue: z.number().finite().optional(),
+    // Reuses the create field rather than redeclaring it, so the decimal rule
+    // cannot drift between POST and PATCH.
+    targetValue: baseFields.targetValue.optional(),
   })
   .refine((d) => !(d.measurementUnit === "Currency" && d.currency === null), CURRENCY_REQUIRED_ISSUE);
 export type UpdateCriticalNumberInput = z.infer<typeof updateCriticalNumberSchema>;
@@ -139,7 +156,9 @@ export const createCriticalNumberUpdateSchema = z.object({
       },
       { message: "That date is in the future — record a reading for today or earlier." },
     ),
-  value: z.number().finite(),
+  // Same 2-decimal rule as the Target Value it gets scored against — a reading
+  // is entered in the same terms as its target, so it obeys the same precision.
+  value: z.number().finite().refine((v) => hasMaxDecimalPlaces(v), MAX_DECIMALS_ISSUE),
   comment: z.string().trim().max(1000, "Comment is too long").nullable().optional(),
 });
 export type CreateCriticalNumberUpdateInput = z.infer<typeof createCriticalNumberUpdateSchema>;

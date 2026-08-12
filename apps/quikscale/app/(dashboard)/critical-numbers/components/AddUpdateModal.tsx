@@ -23,6 +23,9 @@ import { X } from "lucide-react";
 import { notify } from "@/lib/utils/notify";
 import { useAddCriticalNumberUpdate } from "@/lib/hooks/useCriticalNumbers";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+// Readings cap at 2 decimals, refused as the 3rd digit is typed — see the note in
+// CriticalNumberForm for why `type="number"` can't enforce this.
+import { clampDecimalInput, roundToDecimals } from "@/lib/utils/decimalPrecision";
 import type { MeasurementUnit } from "@/lib/schemas/criticalNumberSchema";
 
 const INPUT =
@@ -98,7 +101,12 @@ export function AddUpdateModal({
         // Scale up to the RAW value the API stores — the field above accepts
         // the scale unit (e.g. "5" meaning 5 Lakh). Multiplier is 1 for every
         // non-currency/no-scale case, so this is a passthrough there.
-        value: num * scaleMultiplier,
+        //
+        // Rounded because the multiply introduces binary-float noise that the
+        // schema's 2-decimal rule would otherwise reject: entering "0.07" with
+        // Lakh selected yields 7000.000000000001. Scaling can only reduce the
+        // decimal count, so this is lossless for input the field allows.
+        value: roundToDecimals(num * scaleMultiplier),
         comment: comment.trim() || null,
       });
       notify.success("Update recorded");
@@ -156,10 +164,10 @@ export function AddUpdateModal({
                   </span>
                 )}
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => setValue(clampDecimalInput(e.target.value))}
                   placeholder="0"
                   className="flex-1 px-3 py-2.5 text-sm focus:outline-none min-w-0"
                   autoFocus
@@ -177,10 +185,10 @@ export function AddUpdateModal({
             ) : suffix ? (
               <div className="flex rounded-lg border border-gray-300 overflow-hidden focus-within:ring-2 focus-within:ring-accent-500">
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => setValue(clampDecimalInput(e.target.value))}
                   placeholder="0"
                   className="flex-1 px-3 py-2.5 text-sm focus:outline-none min-w-0"
                   autoFocus
@@ -191,10 +199,10 @@ export function AddUpdateModal({
               </div>
             ) : (
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(e) => setValue(clampDecimalInput(e.target.value))}
                 placeholder="0"
                 className={INPUT}
                 autoFocus

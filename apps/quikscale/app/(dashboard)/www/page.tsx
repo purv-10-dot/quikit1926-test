@@ -23,6 +23,9 @@ import { runExport } from "@/lib/export/xlsx";
 import { notify } from "@/lib/utils/notify";
 import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
 import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
+import { DueDateRangeNav } from "@/components/filters/DueDateRangeNav";
+import { getPeriodRange, type PeriodView } from "@/lib/utils/periodRange";
+import { toDateInputValue } from "@/lib/utils/dateUtils";
 
 export default function WWWPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("WWW");
@@ -107,6 +110,14 @@ export default function WWWPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Due-date range nav (Day / Week / Month / All) — defaults to "All" so the
+  // list behaves exactly as before until the user narrows it. The range is
+  // computed server-side: `from`/`to` are sent to the API and applied to the
+  // `when` column in the Prisma query, not filtered client-side.
+  const [dateView, setDateView] = useState<PeriodView>("all");
+  const [anchorDate, setAnchorDate] = useState<string>(() => toDateInputValue(new Date().toISOString()));
+  const { from: dateFrom, to: dateTo } = useMemo(() => getPeriodRange(dateView, anchorDate), [dateView, anchorDate]);
+
   // DB-level list: pagination + search + who/team/status filters all run in
   // the route now. `search` is the debounced value from the shared store.
   const listFilters: WWWFilters = {
@@ -119,6 +130,8 @@ export default function WWWPage() {
     search: search.trim() || undefined,
     who: filterWho.length ? filterWho.join(",") : undefined,
     teamId: filterTeam || undefined,
+    from: dateFrom,
+    to: dateTo,
   };
   const { data: pageData, isLoading, error, refetch } = useWWWItemsPaginated(listFilters);
   const items = useMemo(() => pageData?.data ?? [], [pageData]);
@@ -163,7 +176,7 @@ export default function WWWPage() {
   }
 
   // Reset to page 1 whenever a filter/search/sort changes the result set.
-  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize, wwwSort]);
+  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize, wwwSort, dateFrom, dateTo]);
 
   // Status counts as "active" only when it actually narrows the list — with the
   // full set selected nothing is filtered out.
@@ -303,6 +316,13 @@ export default function WWWPage() {
               </svg>
             </button>
           )}
+
+          <DueDateRangeNav
+            view={dateView}
+            onViewChange={setDateView}
+            anchorDate={anchorDate}
+            onAnchorDateChange={setAnchorDate}
+          />
 
           {/* Search */}
           <div className="relative">

@@ -49,6 +49,12 @@ import {
 // not duplicated, so the two currency dropdowns and the scale math can never
 // drift apart.
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+// Target Value caps at 2 decimals, refused as the 3rd digit is typed. `type="number"`
+// can't do this: `step` only flags validity (and nothing here submits a <form>), and
+// once the content is invalid the browser reports `value === ""`, so an onChange guard
+// can neither see what was typed nor restore what was there. Hence text +
+// inputMode="decimal" + sanitiser, the same shape as OPSP's ProjectedInput.
+import { clampDecimalInput } from "@/lib/utils/decimalPrecision";
 
 export interface CriticalNumberFormValues {
   title: string;
@@ -274,20 +280,8 @@ export function CriticalNumberForm({
           {err("title")}
         </div>
 
-        {/* Owner + Department (the Team picker, relabelled) */}
+        {/* Department + Owner (the Team picker, relabelled, comes FIRST) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={LABEL}>
-              Owner <span className="text-red-500">*</span>
-            </label>
-            <UserPicker
-              value={values.ownerId}
-              onChange={(v: string) => onChange({ ownerId: v })}
-              users={users}
-              placeholder="Select owner…"
-            />
-            {err("ownerId")}
-          </div>
           <div>
             <label className={LABEL}>
               Department <span className="text-red-500">*</span>
@@ -303,6 +297,30 @@ export function CriticalNumberForm({
                 Backed by Teams. Max 5 Critical Numbers per department.
               </p>
             )}
+          </div>
+          {/* Owner second because its list is scoped to the Department above —
+              the parent fetches that team's candidates (join rows ∪ head) and
+              clears an owner who isn't among them. Disabled until a Department
+              is chosen: with nothing selected the list is empty, and an empty
+              picker reads as "no one available" rather than "pick a department
+              first". */}
+          <div>
+            <label className={LABEL}>
+              Owner <span className="text-red-500">*</span>
+            </label>
+            <UserPicker
+              value={values.ownerId}
+              onChange={(v: string) => onChange({ ownerId: v })}
+              users={users}
+              placeholder={values.teamId ? "Select owner…" : "Select a department first…"}
+              disabled={!values.teamId}
+            />
+            {err("ownerId") ??
+              (values.teamId && users.length === 0 ? (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  This department has no members yet — add one under Teams.
+                </p>
+              ) : null)}
           </div>
         </div>
 
@@ -433,10 +451,10 @@ export function CriticalNumberForm({
                   </span>
                 )}
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   value={values.targetValue}
-                  onChange={(e) => onChange({ targetValue: e.target.value })}
+                  onChange={(e) => onChange({ targetValue: clampDecimalInput(e.target.value) })}
                   placeholder="e.g. 100"
                   className="flex-1 px-3 py-2.5 text-sm focus:outline-none min-w-0"
                 />
@@ -452,10 +470,10 @@ export function CriticalNumberForm({
               </div>
             ) : (
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 value={values.targetValue}
-                onChange={(e) => onChange({ targetValue: e.target.value })}
+                onChange={(e) => onChange({ targetValue: clampDecimalInput(e.target.value) })}
                 placeholder="e.g. 100"
                 className={`${INPUT} ${ring("targetValue")}`}
               />

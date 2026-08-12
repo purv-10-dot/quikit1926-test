@@ -252,14 +252,40 @@
       "Bash(node --env-file=.env.local __scratch_check_org.mjs)",
       "Bash(node --env-file=.env.local __scratch_test_gemini.mjs)",
       "Bash(node --env-file=.env.local __scratch_list_models.mjs)",
-      "Bash(node --env-file=.env.local __scratch_test_models.mjs)"
+      "Bash(node --env-file=.env.local __scratch_test_models.mjs)",
+      "Bash(git apply *)",
+      "Bash(cd \"/c/Users/user/Downloads\" && ls -la | grep -i \"Release Note\")",
+      "Bash(mkdir -p /tmp_extract)",
+      "Bash(rm -rf /tmp_extract/*)",
+      "Bash(unzip -o \"QuikScale Release Note GoLive 22July2026 \\(1\\).docx\" -d /tmp_extract)",
+      "Read(//tmp_extract/**)",
+      "Bash(mkdir -p \"C:/Users/user/Downloads/migration_prod/quikflow_live_20260812\")",
+      "Read(//tmp_extract/word/**)",
+      "Bash(grep -o 'w:color w:val=\"[0-9A-Fa-f]*\"' /tmp_extract/word/document.xml | sort -u | head -20; echo ---; grep -o '<w:rFonts[^/]*/>' /tmp_extract/word/document.xml | sort -u | head -10)",
+      "Bash(rm -f \"c:/workStation_3/quikit1926/apps/quikscale/tsc_out.txt\")",
+      "Bash(grep -o '<w:rFonts[^>]*>' /tmp_extract/word/styles.xml | sort -u | head -10; echo ---sz---; grep -o '<w:sz w:val=\"[0-9]*\"/>' /tmp_extract/word/document.xml | sort -u)",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--workStation-3-quikit1926\\\\c80943eb-5982-43bc-baff-cd0d6256d151\\\\scratchpad\\\\gen-release-note.js\" \"C:\\\\Users\\\\user\\\\Downloads\\\\QuikScale Release Note 07Aug2026.docx\")",
+      "Bash(cp \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--workStation-3-quikit1926\\\\c80943eb-5982-43bc-baff-cd0d6256d151\\\\scratchpad\\\\gen-release-note.js\" \"c:/workStation_3/quikit1926/apps/quikscale/gen-release-note.tmp.js\")",
+      "Bash(node \"gen-release-note.tmp.js\" \"C:\\\\Users\\\\user\\\\Downloads\\\\QuikScale Release Note 07Aug2026.docx\")",
+      "Bash(rm \"gen-release-note.tmp.js\")",
+      "Read(//c/Users/user/Downloads//**)",
+      "Bash(ls -la \"/c/Users/user/Downloads/migration_prod\" | tail -60)",
+      "Read(//c/Users/user/Downloads/migration_prod/quikflow_live_20260812/**)",
+      "Bash(awk '/model WfWorkflow|model WfVersion|model WfRun|model WfStepLog|model WfJoinState|model WfSchedule|model WfConnection|model WfApproval|model WfAutomationPrincipal|model WfTemplate|enum WfStatus|enum WfRunStatus|enum WfStepStatus|enum WfScope|enum WfProvider|enum WfApprovalStatus/{print NR\": \"$0}' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^model App /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^model OrgAppAccess/,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^model UserAppAccess/,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^model Org /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^model OrgMember /,/^}/' packages/database/prisma/schema.prisma)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",
       "C:\\Users\\user\\.claude\\plans",
       "C:\\Users\\user\\Downloads\\migration_prod",
       "c:\\workStation_3\\quikit1926\\apps\\quikflow",
-      "C:\\Users\\user\\AppData\\Local\\Temp\\claude\\c--workStation-3-quikit1926\\feca6ca3-1c14-483b-9f09-c5c99905eee6\\scratchpad"
+      "C:\\Users\\user\\AppData\\Local\\Temp\\claude\\c--workStation-3-quikit1926\\feca6ca3-1c14-483b-9f09-c5c99905eee6\\scratchpad",
+      "c:\\workStation_3\\quikit1926\\apps\\quikscale",
+      "C:\\Users\\user\\Downloads\\migration_prod\\quikflow_live_20260812"
     ]
   },
   "hooks": {

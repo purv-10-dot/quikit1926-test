@@ -34,11 +34,53 @@ export async function validateTeamInOrg(
 }
 
 /**
+ * Every user eligible to OWN a Critical Number on this team: the `QsUserTeam`
+ * join rows UNION the team's head.
+ *
+ * Exported because `GET /api/critical-numbers/team-members` serves the Owner
+ * dropdown from this exact function — so the picker offers precisely what
+ * `validateOwnerInTeam` below accepts. Same "can't offer what POST rejects"
+ * rule the options route documents; here it's guaranteed by sharing the query
+ * rather than by two lists being kept in step by hand.
+ *
+ * The head needs its own union arm because heads are not given a join row —
+ * measured against live data, the head was absent from `QsUserTeam` on 6 of 12
+ * teams.
+ *
+ * `OrgMember.teamId` is deliberately NOT used: it is a single "primary team"
+ * pointer (see the POST in api/org/teams/[id]/members), so filtering on it
+ * misses the head on 10 of 12 teams and any member whose primary team is
+ * elsewhere. Only 135 of 446 active memberships have it set at all.
+ */
+export async function getTeamOwnerCandidateIds(
+  orgId: string,
+  teamId: string,
+): Promise<string[]> {
+  // Resolve the team FIRST and bail if it's trashed or in another org: a
+  // soft-deleted team confers no eligibility on anyone. Filtering only the head
+  // lookup wasn't enough — the team's stale `QsUserTeam` rows still produced
+  // candidates, and because a head often has a join row too, the head came back
+  // anyway via that arm (observed on a trashed "Delivery Team").
+  const team = await db.qsTeam.findFirst({
+    where: { id: teamId, orgId, deletedAt: null },
+    select: { headId: true },
+  });
+  if (!team) return [];
+
+  const joinRows = await db.qsUserTeam.findMany({
+    where: { orgId, teamId },
+    select: { userId: true },
+  });
+  const ids = new Set(joinRows.map((r) => r.userId));
+  if (team.headId) ids.add(team.headId);
+  return [...ids];
+}
+
+/**
  * The owner is a member of the selected team.
  *
- * Membership is the union of two sources, matching `getMyTeamIds`:
- *   - a row in `QsUserTeam` (the many-to-many join), or
- *   - being the team's `headId` (heads aren't given a join row)
+ * Membership is the union described by `getTeamOwnerCandidateIds` above, which
+ * this delegates to so the rule has exactly one definition.
  *
  * KPI deliberately does NOT check this today — it validates only that the team
  * exists — which lets a KPI be filed against a team its owner has nothing to do
@@ -54,18 +96,8 @@ export async function validateOwnerInTeam(
     return NextResponse.json({ success: false, error: "Owner not found" }, { status: 404 });
   }
 
-  const [membership, headed] = await Promise.all([
-    db.qsUserTeam.findFirst({
-      where: { orgId, teamId, userId: ownerId },
-      select: { id: true },
-    }),
-    db.qsTeam.findFirst({
-      where: { id: teamId, orgId, headId: ownerId },
-      select: { id: true },
-    }),
-  ]);
-
-  if (!membership && !headed) {
+  const candidateIds = await getTeamOwnerCandidateIds(orgId, teamId);
+  if (!candidateIds.includes(ownerId)) {
     return NextResponse.json(
       { success: false, error: "Owner must be a member of the selected team" },
       { status: 400 },

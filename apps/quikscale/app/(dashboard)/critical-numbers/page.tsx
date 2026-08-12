@@ -33,6 +33,7 @@ import {
   CRITICAL_NUMBER_FREQUENCIES,
   type CriticalNumberFrequency,
 } from "@/lib/schemas/criticalNumberSchema";
+import { roundToDecimals } from "@/lib/utils/decimalPrecision";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import {
@@ -42,6 +43,7 @@ import {
   useCriticalNumberOptions,
   useCreateSubCategory,
   useCreateCategoryFromCriticalNumber,
+  useCriticalNumberTeamMembers,
   type CriticalNumberRow,
 } from "@/lib/hooks/useCriticalNumbers";
 import {
@@ -301,6 +303,42 @@ export default function CriticalNumbersPage() {
     [users],
   );
 
+  /**
+   * Owner candidates for the Department currently chosen in the create form.
+   *
+   * Separate from `pickerUsers` above, which stays the full org list because the
+   * detail modal uses it to RESOLVE an existing owner's name — narrowing that
+   * one would blank the owner on any record whose team membership has since
+   * changed.
+   */
+  const { data: teamMembers = [], isSuccess: teamMembersLoaded } =
+    useCriticalNumberTeamMembers(form.teamId || undefined);
+
+  const ownerPickerUsers = useMemo(
+    () =>
+      teamMembers.map((u) => ({
+        id: u.id,
+        firstName: u.firstName ?? "",
+        lastName: u.lastName ?? "",
+        email: u.email ?? "",
+      })),
+    [teamMembers],
+  );
+
+  /**
+   * Drop an owner who isn't eligible for the newly chosen Department, rather
+   * than leaving a stale name in the field for the API to reject with
+   * "Owner must be a member of the selected team".
+   *
+   * Gated on `isSuccess` specifically — not on `!isLoading` — so a failed or
+   * still-in-flight fetch can't be mistaken for "the list is empty, clear it".
+   */
+  useEffect(() => {
+    if (!teamMembersLoaded || !form.ownerId) return;
+    if (teamMembers.some((u) => u.id === form.ownerId)) return;
+    setForm((f) => ({ ...f, ownerId: "" }));
+  }, [teamMembersLoaded, teamMembers, form.ownerId]);
+
   function patch(p: Partial<CriticalNumberFormValues>) {
     setForm((f) => ({ ...f, ...p }));
     setErrors((e) => {
@@ -325,7 +363,11 @@ export default function CriticalNumbersPage() {
   function scaledTargetValue(): number {
     const entered = num(form.targetValue) as number;
     if (form.measurementUnit !== "Currency" || !form.currency || !form.targetScale) return entered;
-    return entered * getMultiplier(form.currency, form.targetScale);
+    // Rounded because the multiply introduces binary-float noise that the
+    // schema's 2-decimal rule would otherwise reject: "0.07" + Lakh yields
+    // 7000.000000000001. Scaling can only reduce the decimal count, so this is
+    // lossless for the ≤2-decimal input the field now allows.
+    return roundToDecimals(entered * getMultiplier(form.currency, form.targetScale));
   }
 
   /** Client-side mirror of the server rules — the API re-validates regardless. */
@@ -846,7 +888,9 @@ export default function CriticalNumbersPage() {
               values={form}
               onChange={patch}
               errors={errors}
-              users={pickerUsers}
+              // Owner list is scoped to the chosen Department; the detail modal
+              // below still gets the full org list for name resolution.
+              users={ownerPickerUsers}
               teams={teams.map((t) => ({ id: t.id, name: t.name }))}
               categories={options?.categories ?? []}
               subCategories={options?.subCategories ?? []}

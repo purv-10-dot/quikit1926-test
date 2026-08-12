@@ -36,6 +36,9 @@ export const criticalNumberKeys = {
   // reference the object it's being defined in.
   /** Categories + sub-categories + units for the create form. */
   options: ["critical-numbers", "options"] as const,
+  /** Owner candidates for one team (join rows ∪ head). */
+  teamMembers: (teamId: string) =>
+    ["critical-numbers", "team-members", teamId] as const,
 };
 
 export interface CriticalNumberRow {
@@ -147,6 +150,26 @@ export function useCriticalNumberOptions() {
   return useQuery<CriticalNumberOptions>({
     queryKey: criticalNumberKeys.options,
     queryFn: () => fetchData(`${BASE}/options`),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Owner candidates for the selected Department.
+ *
+ * Backed by `/api/critical-numbers/team-members`, which resolves the same
+ * `QsUserTeam ∪ headId` union the API validates against — deliberately NOT
+ * `useUsers(teamId)`, whose `OrgMember.teamId` filter is a narrower "primary
+ * team" notion that hides the head and any member whose primary team differs.
+ *
+ * Disabled until a team is chosen, so opening the form doesn't fire a request
+ * for a value nobody has picked yet.
+ */
+export function useCriticalNumberTeamMembers(teamId: string | undefined) {
+  return useQuery<Array<{ id: string; firstName: string | null; lastName: string | null; email: string | null }>>({
+    queryKey: criticalNumberKeys.teamMembers(teamId ?? ""),
+    queryFn: () => fetchData(`${BASE}/team-members?teamId=${encodeURIComponent(teamId!)}`),
+    enabled: !!teamId,
     staleTime: 60_000,
   });
 }
