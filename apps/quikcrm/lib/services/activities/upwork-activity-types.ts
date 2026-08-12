@@ -40,6 +40,18 @@ export const UPWORK_ACTIVITY_TYPES = {
     describe: (jobTitle) => `Added the Upwork job "${jobTitle}" to CRM.`,
     oncePerJob: true,
   },
+  /**
+   * Logged when an Upwork job is converted to a prospect. Once per job, for the
+   * same reason the conversion itself is: @@unique([orgId, upworkJobId]) allows
+   * exactly one prospect per job, so a second timeline row could never be
+   * legitimate.
+   */
+  UPWORK_CONVERTED_TO_PROSPECT: {
+    subject: (jobTitle) => `Upwork job converted to Prospect: ${jobTitle}`,
+    describe: (jobTitle) =>
+      `Converted the Upwork job "${jobTitle}" to a prospect.`,
+    oncePerJob: true,
+  },
 } as const satisfies Record<string, UpworkActivityDescriptor>;
 
 export type UpworkActivityType = keyof typeof UPWORK_ACTIVITY_TYPES;
@@ -86,4 +98,31 @@ export function buildUpworkActivityExternalId(
  */
 export function upworkActivityExternalIdPrefix(jobId: string): string {
   return `${jobId}:`;
+}
+
+/**
+ * externalId for a user-logged activity against an Upwork job (Log Activity →
+ * Link to → Upwork), as opposed to the system events in
+ * UPWORK_ACTIVITY_TYPES above.
+ *
+ * Shares the `<jobId>:` prefix so these rows appear on the job's timeline
+ * through the SAME query the system events use — that prefix is the read key,
+ * so a user-logged activity must carry it or it would be invisible on the job.
+ *
+ * The `MANUAL:` segment plus the activity row id keeps the key unique and
+ * namespaced away from every registry type, so:
+ *   - it can never collide with an `oncePerJob` key and silently upsert over a
+ *     system event, and
+ *   - logging the same activity type against the same job twice is allowed
+ *     (unlike capture, a user may legitimately log two calls about one job).
+ *
+ * Taking the activity id (not a timestamp) as the discriminator means the key is
+ * derived from the row itself, so two activities logged in the same millisecond
+ * still get distinct keys.
+ */
+export function buildManualUpworkActivityExternalId(
+  jobId: string,
+  activityId: string,
+): string {
+  return `${jobId}:MANUAL:${activityId}`;
 }

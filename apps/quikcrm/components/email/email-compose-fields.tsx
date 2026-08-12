@@ -72,7 +72,17 @@ export function parseAddresses(raw: string): string[] {
 
 /** One send path for the whole app. Returns { ok, error }. */
 export async function sendComposedEmail(args: {
-  relatedKind: "Lead" | "Contact" | "Account" | "Opportunity" | "None";
+  // Mirrors ACTIVITY_KINDS (the enum /api/email/send validates against).
+  // Spelled out rather than imported because that registry module is
+  // server-only (it imports the Prisma client at module scope).
+  relatedKind:
+    | "Lead"
+    | "Contact"
+    | "Account"
+    | "Opportunity"
+    | "Prospect"
+    | "Upwork"
+    | "None";
   relatedObjectId?: string;
   value: ComposeValue;
   inReplyToMessageId?: string;

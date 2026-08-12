@@ -45,6 +45,11 @@ export interface UpworkRow {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The prospect this job was converted to, from the real DB relation. At most
+   * one (enforced by @@unique([orgId, upworkJobId])); empty when not converted.
+   */
+  convertedProspects?: Array<{ id: string; name: string }>;
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
@@ -180,7 +185,8 @@ export function UpworkListClient({
     : [{ key: "all", label: "All" }];
 
   const showActionsCol = canEdit || canDelete;
-  const colCount = 7 + (showActionsCol ? 1 : 0);
+  // Job Title, Type, Price, Duration, Location, Proposals, Status, Added.
+  const colCount = 8 + (showActionsCol ? 1 : 0);
 
   return (
     <div className="space-y-3">
@@ -250,7 +256,7 @@ export function UpworkListClient({
       )}
 
       <div className="rounded-lg border border-crm-border bg-white">
-        <TableScroll minWidth={900}>
+        <TableScroll minWidth={1000}>
           <Table>
             <THead>
               <TR>
@@ -260,6 +266,7 @@ export function UpworkListClient({
                 <TH hideBelow="lg">Duration</TH>
                 <TH hideBelow="lg">Location</TH>
                 <TH hideBelow="md">Proposals</TH>
+                <TH>Status</TH>
                 <TH hideBelow="sm">Added</TH>
                 {showActionsCol && <TH>Actions</TH>}
               </TR>
@@ -305,7 +312,31 @@ export function UpworkListClient({
                     <TD hideBelow="md">{row.projectPrice || "—"}</TD>
                     <TD hideBelow="lg">{row.projectTime || "—"}</TD>
                     <TD hideBelow="lg">{row.clientLocation || "—"}</TD>
+                    {/* Proposals. Must stay here and carry the SAME hideBelow as
+                        its <TH>: a body cell that is missing, or that hides at a
+                        different breakpoint than its header, shifts every column
+                        after it out of alignment. */}
                     <TD hideBelow="md">{row.proposals || "—"}</TD>
+                    {/* Conversion status, from the real Upwork → Prospect
+                        relation loaded with the row. Converted links to the
+                        prospect; Not Converted is a plain badge. */}
+                    <TD>
+                      {row.convertedProspects?.[0] ? (
+                        <Link
+                          href={`/settings/prospects?prospectId=${encodeURIComponent(
+                            row.convertedProspects[0].id,
+                          )}`}
+                          title={`Converted to ${row.convertedProspects[0].name}`}
+                          className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-200"
+                        >
+                          Converted
+                        </Link>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                          Not Converted
+                        </span>
+                      )}
+                    </TD>
                     <TD hideBelow="sm">{formatDate(row.createdAt)}</TD>
                     {showActionsCol && (
                       <TD>

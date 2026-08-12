@@ -1,46 +1,558 @@
-/* Extracted from QuikFetch popup.css + styles.css — only the rules the Upwork
-   panel UI actually uses. Rules for LinkedIn's injected #right-side-container
-   were intentionally left out. */
+/* Upwork extension styling.
+ *
+ * Clean white surface with Upwork-green accents. Replaces the previous
+ * purple/blue gradient shell entirely.
+ *
+ * Design tokens live in :root so the accent can be retuned in one place.
+ *
+ * The class names the JS toggles at runtime — .hidden, .block, .flex, .visible
+ * and the toast colour classes — are preserved verbatim. Nothing here changes
+ * behaviour; every id and JS hook is untouched.
+ */
 
-/* --- from popup.css --- */
-.border-light {
-  border-bottom: 0.033rem solid #54545699;
+:root {
+  /* Upwork green */
+  --up-green: #14a800;
+  --up-green-dark: #108a00;
+  --up-green-soft: #e7f6e5;
+
+  --up-text: #0f1724;
+  --up-muted: #6b7280;
+  --up-label: #5b6474;
+
+  --up-border: #e5e7eb;
+  --up-border-strong: #d7dbe0;
+  --up-field-bg: #ffffff;
+  --up-surface: #ffffff;
+  /* Outer/background area behind the inner card. A soft medium-light tint of
+     --up-green: clearly visible against the white inner card, but kept
+     low-saturation so it never competes with the green buttons and icons.
+     Drives both <body> and the outer .qf-card; the inner card stays
+     --up-surface white. */
+  --up-page: #dcefd8;
+
+  --up-radius: 10px;
+  --up-radius-lg: 12px;
 }
 
-.bg-dark {
-  background-color: #151515;
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+* {
+  box-sizing: border-box;
 }
 
-.border-black {
-  border: 1px solid black;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--up-page);
+  color: var(--up-text);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
-.popup-container {
-  width: 34rem;
-  height: 45rem;
+/* The panel is a fixed-width sidebar: never scroll sideways, always allow
+   normal vertical scrolling when the fields overflow. */
+#popupContainer {
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
-/* used by #groupList in upwork.html */
-.width-searchlist{
-  width:20rem;
+/* OUTER container. Subtle border, soft corners, no heavy shadow.
+   Its background is the soft green page tone rather than pure white so the
+   inner card reads as a distinct white surface sitting inside it. */
+.qf-card {
+  background: var(--up-page);
+  border: 1px solid var(--up-border);
+  border-radius: var(--up-radius-lg);
+  margin: 10px;
+  padding: 10px;
 }
+
+/* INNER "Upwork CRM" card — the nested container.
+   Same border radius vocabulary as the outer shell, one step tighter, on a
+   white surface so the two levels are unmistakably separate. Only applies once
+   the panel is loaded inside the outer card; the login/org screens are
+   untouched. */
+#htmlContainer > #upworkdata,
+#htmlContainer > #AI.visible {
+  background: var(--up-surface);
+  border: 1px solid var(--up-border-strong);
+  border-radius: var(--up-radius);
+  padding: 14px;
+}
+
+/* ── Panel header ───────────────────────────────────────────────────────── */
+
+.qf-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.qf-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--up-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.qf-subtitle {
+  font-size: 13px;
+  color: var(--up-muted);
+  margin: 4px 0 0 0;
+}
+
+/* ── Login view ─────────────────────────────────────────────────────────── */
+
+.login-container {
+  background: var(--up-surface);
+  border: 1px solid var(--up-border);
+  border-radius: var(--up-radius-lg);
+  margin: 10px;
+  padding: 22px;
+}
+
+.login-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.login-logo img {
+  width: 116px;
+  height: auto;
+}
+
+.login-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--up-text);
+  margin: 0 0 6px 0;
+  text-align: center;
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: var(--up-muted);
+  margin: 0 0 18px 0;
+  text-align: center;
+}
+
+.login-hint {
+  font-size: 12px;
+  color: var(--up-muted);
+  margin: 14px 0 0 0;
+  text-align: center;
+}
+
+.login-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  padding: 9px 12px;
+  border-radius: var(--up-radius);
+  font-size: 13px;
+  margin-bottom: 14px;
+  display: none;
+}
+
+.login-error.show {
+  display: block;
+}
+
+/* OAuth buttons */
+.oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-oauth {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 11px 16px;
+  background: #ffffff;
+  border: 1px solid var(--up-border-strong);
+  color: var(--up-text);
+  border-radius: var(--up-radius);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+
+.btn-oauth:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: var(--up-green);
+}
+
+.btn-oauth:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.oauth-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* ── Organization picker ────────────────────────────────────────────────── */
+
+.org-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+
+/* Primary: solid Upwork green. Used for Extract Job Data. */
+.btn-primary,
+#fetchData {
+  width: 100%;
+  display: block;
+  padding: 13px 20px;
+  background: var(--up-green);
+  border: 1px solid var(--up-green);
+  color: #ffffff;
+  border-radius: var(--up-radius);
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.btn-primary:hover:not(:disabled),
+#fetchData:hover:not(:disabled) {
+  background: var(--up-green-dark);
+  border-color: var(--up-green-dark);
+}
+
+.btn-primary:disabled,
+#fetchData:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#fetchDatatext {
+  color: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Secondary: outlined green. Used for Add to CRM. */
+.save-button {
+  width: 100%;
+  display: block;
+  padding: 13px 20px;
+  background: #ffffff;
+  border: 1px solid var(--up-green);
+  color: var(--up-green);
+  border-radius: var(--up-radius);
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.save-button:hover:not(:disabled) {
+  background: var(--up-green-soft);
+}
+
+.save-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Pre-panel home for the Logout button (login / org-picker screens). Once the
+   panel loads, loadHTML() moves the button into the header slot and this
+   wrapper is left empty — :empty collapses it so no gap remains. */
+.qf-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 10px 10px 10px;
+}
+
+.qf-footer:empty {
+  display: none;
+}
+
+/* Logout — small outlined green pill in the header. */
+.btn-logout {
+  flex-shrink: 0;
+  padding: 9px 18px;
+  background: #ffffff;
+  border: 1px solid var(--up-green);
+  color: var(--up-green);
+  border-radius: var(--up-radius);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s;
+}
+
+.btn-logout:hover {
+  background: var(--up-green-soft);
+}
+
+/* ── Fields: single vertical column, one field per row ──────────────────── */
+
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-group {
+  min-width: 0;
+}
+
+.form-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--up-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+/* Field shell holds the leading icon + the control, so the icon sits inside
+   the bordered box exactly as in the reference. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  background: var(--up-field-bg);
+  border: 1px solid var(--up-border);
+  border-radius: var(--up-radius);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field:focus-within {
+  border-color: var(--up-green);
+  box-shadow: 0 0 0 3px rgba(20, 168, 0, 0.12);
+}
+
+.field-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--up-green);
+}
+
+.field-icon svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+/* The control itself is borderless — the .field wrapper draws the box. */
+.form-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--up-text);
+  padding: 12px 0;
+  line-height: 1.4;
+}
+
+.form-input::placeholder {
+  color: #9aa1ac;
+}
+
+/* Description: taller multiline container, icon pinned to the first line. */
+.field-textarea {
+  align-items: flex-start;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.field-textarea .field-icon {
+  margin-top: 4px;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 110px;
+  padding: 0;
+}
+
+/* A native <select> needs its own background/appearance inside .field. */
+select.form-input {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 4px;
+}
+
+/* ── Section rhythm ─────────────────────────────────────────────────────── */
+
+.fetch-section {
+  margin-bottom: 18px;
+}
+
+/* Spacing above the Add to CRM button at the end of the form. */
+.form-actions {
+  margin-top: 18px;
+}
+
+/* Hint bar shown on the landing screen before extraction. */
+.sliding-warning {
+  background: var(--up-green-soft);
+  color: #14620a;
+  border: 1px solid #cbead0;
+  padding: 9px 12px;
+  border-radius: var(--up-radius);
+  text-align: center;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* ── Unsupported-site view ──────────────────────────────────────────────── */
+
+.qf-empty {
+  text-align: center;
+}
+
+.qf-empty p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4b5563;
+  margin: 0 0 14px 0;
+}
+
+.qf-empty a {
+  color: var(--up-green);
+  font-weight: 600;
+}
+
+.qf-empty svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Toasts ─────────────────────────────────────────────────────────────── */
+
+#sucesstoaster,
+#errortoaster {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: var(--up-radius);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 1000;
+  box-shadow: 0 6px 16px rgba(15, 23, 36, 0.16);
+  max-width: calc(100% - 32px);
+  text-align: center;
+}
+
+#sucesstoaster {
+  background: var(--up-green);
+}
+
+#errortoaster {
+  background: #dc2626;
+}
+
+/* ── Utilities the JS relies on ─────────────────────────────────────────── */
+
+.hidden {
+  display: none !important;
+}
+
+/* upwork.js switches #upworkdata between .hidden and .block. */
+.block {
+  display: block;
+}
+
+/* popup.js adds .flex when revealing #orgContainer and the toasts. */
+.flex {
+  display: flex;
+}
+
+/* showToast() adds one of these alongside .flex. */
+.bg-green-500 {
+  background: var(--up-green);
+}
+
+.bg-red-500 {
+  background: #dc2626;
+}
+
+/* AI results panel. showAiPanel() adds .visible and removes .hidden.
+   `.visible` must beat `.hidden`'s !important, hence the matching !important. */
+#AI {
+  display: none;
+}
+
+#AI.visible {
+  display: block !important;
+}
+
+/* AI panel content is injected as raw HTML by upwork.js; keep it inside the
+   panel width and on the light surface. */
+#alo {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#alo textarea {
+  width: 100%;
+  font-family: inherit;
+  border: 1px solid var(--up-border);
+  border-radius: var(--up-radius);
+  padding: 10px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: black;
+  background-color: #cbd2da;
   border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #b3bcc7;
 }
 
 ::-webkit-scrollbar-track {
   background-color: transparent;
-}
-
-/* --- from styles.css: the only Upwork-relevant rule --- */
-#fetchDatatext {
-  margin-top: 50px;
-  color: #333;
-  font-size: 16px;
 }

@@ -5,61 +5,64 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>QuikFetch</title>
+  <title>QuikCRM Upwork</title>
+  <!-- Tailwind CDN removed: the panel now uses the LinkedIn extension's own
+       stylesheet vocabulary (popup.css), which also defines the handful of
+       utility classes popup.js toggles at runtime (.hidden/.block/.flex and the
+       toast colours). One local stylesheet, no external request. -->
   <link rel="stylesheet" type="text/css" href="popup.css" />
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.0.0/dist/tailwind.min.css" rel="stylesheet" />
 </head>
 
-<body id="popupContainer" class="font-sans mx-auto my-auto bg-black border-black">
+<body id="popupContainer">
 
-  <div class="bg-black text-white">
+  <div>
+    <!-- Login view -->
     <div id="log">
-      <!-- Quikitlogo -->
-      <div class="flex items-center justify-center p-1 mb-4">
-        <span><img src="./assets/Quikitlogo.png" class="cursor-pointer w-32 p-1" alt="Quikitlogo" /></span>
-      </div>
-      <!-- QuikCRM login — same flow the LinkedIn extension uses:
-           chrome.identity.launchWebAuthFlow → /api/extension-auth/start.
-           There is no email/password path; only existing QuikCRM users. -->
-      <div class="flex flex-col items-center justify-center px-6 pb-2">
-        <p class="text-base font-bold">Sign in to QuikCRM</p>
-        <p class="text-xs text-gray-400 mt-1 text-center">Extract Upwork jobs and save them to your CRM</p>
-      </div>
+      <div class="login-container">
+        <div class="login-logo">
+          <img src="./assets/Quikitlogo.png" alt="QuikCRM" />
+        </div>
+        <!-- QuikCRM login — same flow the LinkedIn extension uses:
+             chrome.identity.launchWebAuthFlow → /api/extension-auth/start.
+             There is no email/password path; only existing QuikCRM users. -->
+        <h2 class="login-title">Upwork CRM</h2>
+        <p class="login-subtitle">Sign in to extract and save Upwork jobs</p>
 
-      <div id="loginErrorMessage" class="hidden mx-6 my-2 p-2 text-xs text-center text-red-400 border border-red-500 rounded"></div>
+        <div id="loginErrorMessage" class="login-error"></div>
 
-      <div id="hidemsgoogle" class="flex flex-col items-center justify-center px-6 py-4">
-        <button type="button" id="googleSignInButton"
-          class="flex items-center justify-center gap-2 bg-white text-black font-bold py-2 px-4 w-full max-w-sm rounded mb-3 disabled:opacity-50">
-          <img src="./assets/google.png" class="w-6" alt="" />
-          <span>Continue with Google</span>
-        </button>
-        <button type="button" id="microsoftLogin"
-          class="flex items-center justify-center gap-2 bg-white text-black font-bold py-2 px-4 w-full max-w-sm rounded disabled:opacity-50">
-          <img src="./assets/microsoft.png" class="w-6" alt="" />
-          <span>Continue with Microsoft</span>
-        </button>
-        <p class="text-xs text-gray-400 mt-4 text-center">Only existing QuikCRM users can sign in.</p>
+        <div id="hidemsgoogle" class="oauth-buttons">
+          <button type="button" id="googleSignInButton" class="btn-oauth">
+            <img src="./assets/google.png" alt="" class="oauth-icon" />
+            <span>Continue with Google</span>
+          </button>
+          <button type="button" id="microsoftLogin" class="btn-oauth">
+            <img src="./assets/microsoft.png" alt="" class="oauth-icon" />
+            <span>Continue with Microsoft</span>
+          </button>
+        </div>
+        <p class="login-hint">Only existing Upwork CRM users can sign in.</p>
       </div>
     </div>
 
     <!-- Organization picker — shown after login when the user has more than one
          org. Mirrors the LinkedIn panel's picker; the choice is persisted to
          chrome.storage.local.selectedOrganization. -->
-    <div id="orgContainer" class="hidden flex-col items-center justify-center p-6">
-      <p class="text-base font-bold mb-1">Select Organization</p>
-      <p class="text-xs text-gray-400 mb-4 text-center">Choose which organization to work in</p>
-      <div id="orgError" class="hidden mb-2 p-2 text-xs text-center text-red-400 border border-red-500 rounded w-full max-w-sm"></div>
-      <select id="orgSelect" class="bg-gray-700 text-white p-2 rounded w-full max-w-sm mb-4">
-        <option value="">Select Organization</option>
-      </select>
-      <button type="button" id="orgContinueBtn"
-        class="bg-white text-black font-bold py-2 px-4 w-full max-w-sm rounded disabled:opacity-50" disabled>
-        Continue
-      </button>
+    <div id="orgContainer" class="hidden">
+      <div class="login-container">
+        <h2 class="login-title">Select Organization</h2>
+        <p class="login-subtitle">Choose which organization to work in</p>
+        <div id="orgError" class="login-error"></div>
+        <div class="org-select-wrap">
+          <select id="orgSelect" class="form-input">
+            <option value="">Select Organization</option>
+          </select>
+          <button type="button" id="orgContinueBtn" class="btn-primary" disabled>Continue</button>
+        </div>
+      </div>
     </div>
-    <div class="flex flex-col justify-center hidden" id="errorImage">
-      <div class="flex justify-center">
+
+    <div class="hidden" id="errorImage">
+      <div class="qf-card qf-empty">
         <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 805.94744 735.26758"
           xmlns:xlink="http://www.w3.org/1999/xlink" role="img" artist="Katerina Limpitsouni"
           source="https://undraw.co/">
@@ -127,45 +130,34 @@
           <path d="M787.47372,817.63379h-381a1,1,0,0,1,0-2h381a1,1,0,0,1,0,2Z"
             transform="translate(-197.02628 -82.36621)" fill="#ccc" />
         </svg>
-      </div>
 
-      <div class="flex justify-center">
-        <p class="font-bold text-center p-6 text-base">
-          <strong>Uh-oh! </strong> QuikFetch doesn't support this site (yet).
+        <p>
+          <strong>Uh-oh!</strong> QuikUpwork doesn't support this site (yet).
           But don't worry—you can still use it on
-          <a href="https://www.upwork.com/nx/find-work/best-matches" target="_blank"><strong>Upwork</strong></a>.
+          <a href="https://www.upwork.com/nx/find-work/best-matches" target="_blank">Upwork</a>.
           Give it a try!
         </p>
-      </div>
 
-      <div class="flex justify-center py-">
-        <div class="mt-2">
-          <button id="backButton"
-            class="px-16 py-2 bg-white text-black border border-gray-300 rounded-md hover:bg-gray-100 text-lg font-bold">
-            Back
-          </button>
-        </div>
+        <button id="backButton" class="btn-primary">Back</button>
       </div>
     </div>
-    <!-- <div id="htmlContainer" class="p-4 py-4 relative hidden"> -->
-    <!-- changfe dur add close button on linkedln -->
-    <div id="htmlContainer" class="p-4 py-6 relative hidden">
+
+    <!-- Upwork panel is injected here after login (upwork.html). -->
+    <div id="htmlContainer" class="qf-card hidden">
       <!-- Dynamic HTML content will be injected here after login -->
     </div>
-    <!-- Toast Notifications -->
-    <!-- Success Toast -->
-    <div id="sucesstoaster"
-      class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 text-white text-sm font-medium py-2 px-4 rounded shadow-md">
-    </div>
 
-    <!-- Error Toast -->
-    <div id="errortoaster"
-      class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 text-white text-sm font-medium py-2 px-4 rounded shadow-md">
-    </div>
+    <!-- Toast Notifications. popup.js toggles .hidden/.flex and adds a
+         bg-*-500 class; both toast ids are styled in popup.css. -->
+    <div id="sucesstoaster" class="hidden"></div>
+    <div id="errortoaster" class="hidden"></div>
   </div>
-  <!-- Logout Section -->
-  <div class="flex items-center justify-end fixed bottom-0 left-0 w-full bg-dark">
-    <span id="logOut" class="cursor-pointer underline text-white text-base mr-4 mb-1">Logout</span>
+
+  <!-- Logout control. Lives here so it exists before the panel loads (popup.js
+       binds its handler on DOMContentLoaded); loadHTML() then MOVES this exact
+       node into the panel header's #logoutSlot. Same node, same listener. -->
+  <div class="qf-footer">
+    <button type="button" id="logOut" class="btn-logout">Logout</button>
   </div>
 
   <!-- Shared QuikCRM API helper (API_BASE_URL + apiFetch). Must load before

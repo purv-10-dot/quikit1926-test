@@ -60,6 +60,10 @@ export default async function ProspectsPage() {
       // a copy on the prospect. `isActive` lets the table flag a prospect tagged
       // with an ICP that has since been deactivated.
       icp: { select: { id: true, name: true, isActive: true } },
+      // Origin Upwork job, when this prospect came from "Convert to Prospect".
+      // Reference only: the id drives a link back to the Upwork record, and the
+      // job keeps all of its own fields. Null for every other prospect.
+      upworkJobId: true,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 500,

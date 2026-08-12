@@ -34,6 +34,13 @@ export type LogUpworkActivityInput = {
   jobUrl?: string | null;
   clientLocation?: string | null;
   occurredAt?: Date;
+  /**
+   * Prospect this job was converted to. Set only by
+   * UPWORK_CONVERTED_TO_PROSPECT; recorded in the activity metadata so the
+   * timeline entry says what it converted to, without duplicating prospect data
+   * anywhere.
+   */
+  prospect?: { id: string; name: string } | null;
 };
 
 /**
@@ -78,6 +85,9 @@ export async function logUpworkActivity(input: LogUpworkActivityInput) {
       clientLocation: input.clientLocation ?? null,
       source: UPWORK_SOURCE_SYSTEM,
       sourceLabel: UPWORK_SOURCE_LABEL,
+      ...(input.prospect
+        ? { prospectId: input.prospect.id, prospectName: input.prospect.name }
+        : {}),
     },
   });
 }

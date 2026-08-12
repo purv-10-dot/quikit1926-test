@@ -8786,12 +8786,29 @@ model CrmProspect {
   status         String    @default("New")
   convertedLeadId String?
   convertedAt    DateTime?
+
+  /// Origin Upwork job, when this prospect was created via "Convert to
+  /// Prospect" on an Upwork record. A REFERENCE ONLY — the Upwork job keeps all
+  /// of its own fields and is never copied into or deleted by the conversion.
+  /// Null for every prospect from any other source (LinkedIn, manual).
+  ///
+  /// SetNull rather than Cascade: deleting an Upwork job must never delete a
+  /// prospect the user has since worked on.
+  upworkJobId    String?
+  upworkJob      CrmUpworkJob? @relation(fields: [upworkJobId], references: [id], onDelete: SetNull)
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   // One prospect per LinkedIn profile per org — re-saving the same profile
   // updates the existing row instead of creating duplicates.
   @@unique([orgId, linkedinUrl], name: "prospect_org_linkedin_uk")
+  // One prospect per Upwork job per org. THIS is the duplicate-conversion
+  // guard: the API pre-checks for a friendly message, but this constraint is
+  // what holds under two concurrent "Convert to Prospect" clicks. Postgres
+  // treats NULLs as distinct, so the many prospects with no Upwork origin are
+  // unaffected.
+  @@unique([orgId, upworkJobId], name: "prospect_org_upwork_uk")
   @@index([orgId])
   @@index([orgId, createdAt])
   @@index([orgId, status])
@@ -10941,6 +10958,14 @@ model CrmUpworkJob {
   /// AI-suggested one inside aiAnalysis so the two are never confused.
   clientMessage String?
   aiAnalyzedAt  DateTime?
+
+  /// Prospects created from this job via "Convert to Prospect".
+  ///
+  /// A back-relation only — the job never stores prospect data. Modelled as a
+  /// list because Prisma requires one for the inverse side; the single-
+  /// conversion rule is enforced by @@unique([orgId, upworkJobId]) on
+  /// CrmProspect, not here.
+  convertedProspects CrmProspect[]
 
   /// Owner = the user who clicked "Add to CRM". Non-admins only see their own
   /// rows (see buildUpworkWhere); admins see the whole org.

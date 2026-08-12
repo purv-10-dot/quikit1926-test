@@ -431,6 +431,13 @@ document.addEventListener("DOMContentLoaded", function () {
         if (htmlContainer) {
           htmlContainer.innerHTML = htmlContent;
           htmlContainer.classList.remove("hidden");
+          // UI only: the panel's header has a slot for the Logout control, so
+          // MOVE the existing #logOut node into it rather than rendering a
+          // second one. Moving preserves both the `logOutButton` reference
+          // captured at DOMContentLoaded and its already-bound click handler —
+          // logout behaviour is untouched.
+          const slot = document.getElementById("logoutSlot");
+          if (slot && logOutButton) slot.appendChild(logOutButton);
         }
       })
       .catch((error) => console.error("Error loading HTML:", error));

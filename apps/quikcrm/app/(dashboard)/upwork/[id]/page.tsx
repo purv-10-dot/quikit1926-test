@@ -5,8 +5,10 @@ import { requireUser } from "@/lib/auth/require";
 import { hasPermission } from "@/lib/auth/require-permission";
 import { PageHeader } from "@/components/shared/page-header";
 import { PageContainer } from "@/components/ui/container";
+import { db } from "@/lib/db";
 import { getUpworkJob } from "@/lib/services/upwork/upwork-service";
 import { upworkOwnerScope } from "@/lib/services/upwork/resolve-upwork-user";
+import { ConvertToProspectButton } from "@/components/upwork/convert-to-prospect-button";
 import { UpworkActivityTimeline } from "@/components/upwork/upwork-activity-timeline";
 import {
   UPWORK_SOURCE_SYSTEM,
@@ -53,6 +55,14 @@ export default async function UpworkJobDetailPage({
   const job = await getUpworkJob(user.orgId, id, upworkOwnerScope(user));
   if (!job) notFound();
 
+  // Has this job already been converted? Looked up ORG-WIDE (not owner-scoped):
+  // a colleague's conversion still counts, and offering a second one would only
+  // fail against the unique constraint.
+  const convertedProspect = await db.crmProspect.findFirst({
+    where: { orgId: user.orgId, upworkJobId: job.id },
+    select: { id: true, name: true },
+  });
+
   return (
     <PageContainer size="wide">
       <div className="mb-3">
@@ -73,17 +83,28 @@ export default async function UpworkJobDetailPage({
             : "Captured from Upwork by the QuikCRM browser extension."
         }
         actions={
-          job.jobUrl ? (
-            <a
-              href={job.jobUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Open on Upwork
-            </a>
-          ) : undefined
+          <>
+            <ConvertToProspectButton
+              job={{
+                id: job.id,
+                jobTitle: job.jobTitle,
+                clientLocation: job.clientLocation,
+                jobDescription: job.jobDescription,
+              }}
+              convertedProspect={convertedProspect}
+            />
+            {job.jobUrl ? (
+              <a
+                href={job.jobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open on Upwork
+              </a>
+            ) : null}
+          </>
         }
       />
 

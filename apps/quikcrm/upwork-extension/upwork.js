@@ -374,6 +374,19 @@ if (fetchData) {
               scrapedData[0].JobActivity;
             document.getElementById("ConnectsValue").value =
               scrapedData[0].receivedConnects;
+
+            // Extraction succeeded — swap the landing screen for the form. The
+            // panel now opens on the landing screen instead of scraping on load,
+            // so this reveal is what puts the data on screen. Field mapping
+            // above is unchanged.
+            const initialData = document.getElementById("intialdata");
+            if (initialData) initialData.style.display = "block";
+
+            const fetchSectionEl = document.getElementById("fetchsection");
+            if (fetchSectionEl) fetchSectionEl.style.display = "none";
+
+            const hintEl = document.querySelector("#upworkdata .sliding-warning");
+            if (hintEl) hintEl.style.display = "none";
           } else {
             setTimeout(() => {
               chrome.runtime.sendMessage("closeSidePanel");
@@ -462,26 +475,44 @@ Please go to valid project page and restart extension.
   document.body.appendChild(imageContainer); // Add the container to the body (or any other specific element)
 }
 
-// Check if the element with the class 'job-details-loader' exists
-const jobDetailsLoader = document.querySelectorAll(".job-details-content");
-
-
-// If the element is found, trigger the click event programmatically on the fetchData button
-if (jobDetailsLoader) {
-
-  if (fetchData) {
-    fetchData.click(); // Trigger click event on fetchData button
-    fetchGroups();
-    enableGroupSearch();
-    handleSaveClick();
-    getSearchPageData();
-    getgroupSearchPageData();
-    getFreelancerPageIds();
-  } else {
-    console.log("fetchData element not found at the time of click.");
-  }
+// Panel bootstrap.
+//
+// The auto-click on #fetchData that used to live here has been REMOVED: the
+// panel now opens on a landing screen ("Extract Job Data") and scrapes only when
+// the user asks, matching the LinkedIn extension. Everything else below is the
+// same setup that always ran on load — the group typeahead, the save handler and
+// the CRM page-id lookups all still initialise immediately, so the extraction
+// itself is unchanged when it does run.
+if (fetchData) {
+  fetchGroups();
+  enableGroupSearch();
+  handleSaveClick();
+  getSearchPageData();
+  getgroupSearchPageData();
+  getFreelancerPageIds();
 } else {
-  console.log("job-details-content not found");
+  console.log("fetchData element not found at the time of setup.");
+}
+
+/**
+ * Swap the scraped-data form out for the AI results panel.
+ *
+ * Called only when there is something to show in #AI. Previously this ran on
+ * the Add-to-CRM click, which required a placeholder loader to occupy the empty
+ * panel; the loader is gone, so the swap is deferred to render time instead.
+ */
+function showAiPanel() {
+  const upworkData = document.getElementById("upworkdata");
+  if (upworkData) {
+    upworkData.classList.add("hidden");
+    upworkData.classList.remove("block");
+  }
+
+  const aiElement = document.getElementById("AI");
+  if (aiElement) {
+    aiElement.classList.add("visible");
+    aiElement.classList.remove("hidden");
+  }
 }
 
 function handleSaveClick() {
@@ -493,15 +524,15 @@ function handleSaveClick() {
   }
 
   saveButton.addEventListener("click", async () => {
-    // for new page add
-    document.getElementById("upworkdata").classList.add("hidden");
-    document.getElementById("upworkdata").classList.remove("block");
-
-    const aiElement = document.getElementById("AI");
-    if (aiElement) {
-      aiElement.classList.add("visible"); // Shows the element
-      aiElement.classList.remove("hidden"); // Removes hidden class if present
-    }
+    // The scraped-data form and the #AI panel are NOT switched here any more.
+    //
+    // They used to be: the form was hidden and the (still empty) #AI panel was
+    // revealed the instant the button was clicked, which is why a full-screen
+    // "Wait for AI response..." loader had to be injected to fill it. With that
+    // loader gone, switching early would leave the user staring at a blank
+    // panel. The swap now happens only once the AI results are ready to render
+    // (see showAiPanel), so the user stays on the normal UI until then and just
+    // gets the "Added to CRM successfully." toast.
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       chrome.scripting.executeScript(
@@ -579,94 +610,11 @@ function handleSaveClick() {
             const apiUrl3 = "https://salesmy.moreyeahs.in/api/generate_message";
 
             try {
-              const ele = document.getElementById("alo");
-              ele.innerHTML = "";
-
-              const div = document.createElement("div");
-              // Assuming each item has 'title' and 'description' properties
-              div.innerHTML = `
-  <style>
-    /* Centering the loader */
-    .loader-container {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      width: 100%;
-      height: 100%;
-      z-index: 1000;
-    }
-    @keyframes spin {
-      0% { transform: rotateY(0deg) translateZ(0); }
-      100% { transform: rotateY(360deg) translateZ(0); }
-    }
-    .meteor {
-      width: 150px;
-      height: 150px;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(0, 0, 0, 0.6) 100%);
-      border-radius: 50%;
-      position: relative;
-      animation: spin 3s linear infinite;
-      box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
-      transform-style: preserve-3d;
-    }
-    .meteor::before,
-    .meteor::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      border-radius: 50%;
-      background: inherit;
-    }
-    .meteor::before { transform: translateZ(-15px); }
-    .meteor::after { transform: translateZ(15px); }
-    .loading-text {
-      font-size: 18px;
-      color: white;
-      margin-top: 20px;
-      font-weight: bold;
-      text-align: center;
-    }
-    .skip-btn {
-      margin-top: 30px;
-      padding: 10px 40px;
-      background: #f87171;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      font-size: 1em;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .skip-btn:hover {
-      background: #dc2626;
-    }
-  </style>
-  <div class="loader-container">
-    <div class="meteor"></div>
-    <div class="loading-text">Wait for AI response...</div>
-    <button class="skip-btn" id="skipLoaderBtn">Skip</button>
-  </div>
-`;
-
-              ele.appendChild(div);
-              // Add skip button event
-              setTimeout(() => {
-                const skipBtn = document.getElementById('skipLoaderBtn');
-                if (skipBtn) {
-                  skipBtn.addEventListener('click', () => {
-                    chrome.runtime.sendMessage('closeSidePanel');
-                  });
-                }
-              }, 0);
+              // NOTE: the full-screen "Wait for AI response..." loader (and its
+              // Skip button) used to be injected here. Removed — the save is
+              // fast and the success toast is the only feedback needed, so the
+              // user now stays on the normal panel UI throughout. The AI chain
+              // below still runs; it simply no longer blocks the view.
 
               const response = await fetch(apiUrl, {
                 method: "POST",
@@ -695,6 +643,19 @@ function handleSaveClick() {
               const savedJob = body.data && body.data.job;
               const isDuplicate = !!(body.data && body.data.duplicate);
               const data = savedJob;
+
+              // Confirm the save AS SOON AS the CRM write returns, not after the
+              // AI chain below. The loader used to cover that gap; without it,
+              // waiting for two more network calls would leave the click with no
+              // feedback at all. The AI step is optional and its failures are
+              // swallowed, so it must never gate the success message.
+              if (data) {
+                sucessmsg(
+                  isDuplicate
+                    ? "Already in CRM — opening the existing record."
+                    : "Added to CRM successfully."
+                );
+              }
 
               try {
                 const response2 = await fetch(apiUrl2, {
@@ -972,6 +933,10 @@ function handleSaveClick() {
                     </style>
                 `;
                   ele.appendChild(div);
+                  // Results are in the DOM — now it is worth swapping the form
+                  // out for the AI panel (previously done on click, which is
+                  // what the removed loader was covering for).
+                  showAiPanel();
 
                   document
                     .getElementById("handleSave")
@@ -986,12 +951,7 @@ function handleSaveClick() {
 
               }
               if (data) {
-                sucessmsg(
-                  isDuplicate
-                    ? "Already in CRM — opening the existing record."
-                    : "Added to CRM successfully."
-                );
-
+                // Success toast already fired right after the CRM write above.
                 // Reset form fields
                 [
                   "jobTitle",

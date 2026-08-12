@@ -13,6 +13,7 @@ import { ActivitiesLine } from "./activities-line";
 import { LeadsByStageBar } from "./leads-by-stage-bar";
 import { OppsByStageBar } from "./opps-by-stage-bar";
 import { FunnelChart } from "./funnel-chart";
+import { ProspectFunnelChart } from "./prospect-funnel-chart";
 import { AtRiskWidget } from "./at-risk-widget";
 import { TeamPerformanceBlock } from "./team-performance-block";
 import { ActivityBreakdownWidget } from "./activity-breakdown-widget";
@@ -23,14 +24,8 @@ import {
   type RangePreset,
   type RangeValue,
 } from "./date-range-picker";
+import { REFRESH_MS } from "./refresh-interval";
 import type { DashboardSummaryDto } from "@/lib/dashboard/types";
-
-const REFRESH_MS = (() => {
-  const raw = process.env.NEXT_PUBLIC_DASHBOARD_REFRESH_MS;
-  if (!raw) return 60_000;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? n : 60_000;
-})();
 
 function clientTz(): string {
   if (typeof Intl === "undefined") return "UTC";
@@ -113,6 +108,10 @@ export function DashboardClient({ userRole }: { userRole: string }) {
   const fromQ = searchParams.get("from");
   const toQ = searchParams.get("to");
   const ownerIdQ = searchParams.get("ownerId") ?? "";
+  // Prospect-funnel user filter. Kept separate from `ownerId` on purpose: the
+  // dashboard-wide Owner filter targets CrmLead/CrmOpportunity `ownerId`, while
+  // prospects are scoped by `savedById` (who captured the profile).
+  const prospectUserQ = searchParams.get("prospectUser") ?? "";
 
   const range: RangeValue = useMemo(() => {
     if (fromQ && toQ) return { fromIso: fromQ, toIso: toQ };
@@ -122,7 +121,7 @@ export function DashboardClient({ userRole }: { userRole: string }) {
   const preset: RangePreset = useMemo(() => detectPreset(range), [range]);
 
   const updateUrl = useCallback(
-    (next: { range?: RangeValue; ownerId?: string }) => {
+    (next: { range?: RangeValue; ownerId?: string; prospectUser?: string }) => {
       const sp = new URLSearchParams(searchParams.toString());
       const r = next.range ?? range;
       sp.set("from", r.fromIso);
@@ -130,9 +129,13 @@ export function DashboardClient({ userRole }: { userRole: string }) {
       const nextOwner = next.ownerId !== undefined ? next.ownerId : ownerIdQ;
       if (nextOwner) sp.set("ownerId", nextOwner);
       else sp.delete("ownerId");
+      const nextProspectUser =
+        next.prospectUser !== undefined ? next.prospectUser : prospectUserQ;
+      if (nextProspectUser) sp.set("prospectUser", nextProspectUser);
+      else sp.delete("prospectUser");
       router.replace(`/dashboard?${sp.toString()}`);
     },
-    [searchParams, range, ownerIdQ, router],
+    [searchParams, range, ownerIdQ, prospectUserQ, router],
   );
 
   useEffect(() => {
@@ -265,6 +268,16 @@ export function DashboardClient({ userRole }: { userRole: string }) {
           )}
         </div>
       ) : null}
+
+      {/* Prospect funnel — live CrmProspect counts by status, scoped by the
+          prospect ACL. Owns its own user filter (admins only); it is not gated
+          on showLeadCharts because prospects are a separate module from leads. */}
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <ProspectFunnelChart
+          ownerId={prospectUserQ}
+          onOwnerIdChange={(v) => updateUrl({ prospectUser: v })}
+        />
+      </div>
 
       {showActivityCharts ? (
         <div className="mb-6 grid gap-4 lg:grid-cols-2">

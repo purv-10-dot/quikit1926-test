@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, Search, UserPlus, X } from "lucide-react";
+import { FileText, Pencil, Search, StickyNote, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -19,6 +19,8 @@ import {
   type LinkedInPost,
 } from "@/lib/services/prospects/linkedin-posts";
 import { LeadForm } from "@/components/leads/lead-form";
+import { ProspectForm } from "@/components/prospects/prospect-form";
+import { AddProspectNoteModal } from "@/components/prospects/add-prospect-note-modal";
 import { RelativeTime } from "@/components/shared/relative-time";
 import { Pagination } from "@/components/shared/pagination";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +45,12 @@ export interface ProspectRow {
    * parseLinkedInPosts on the server. Empty when nothing was captured.
    */
   posts: LinkedInPost[];
+  /**
+   * Origin Upwork job, when this prospect was created via "Convert to
+   * Prospect" on an Upwork record. Drives the Upwork link column; null for
+   * prospects from any other source, whose Upwork cell stays empty.
+   */
+  upworkJobId: string | null;
   /** ICP chosen in the extension. Null for prospects saved before ICP existed. */
   icpId: string | null;
   /** Joined for display only — the prospect stores just `icpId`. */
@@ -81,6 +89,12 @@ export function ProspectsTable({
   // Prospect whose COMPANY details are open. Independent of `selectedId` and
   // `postsForId`, so opening it never changes what is queued for conversion.
   const [companyForId, setCompanyForId] = useState<string | null>(null);
+  // Prospect open in the edit modal. Also independent of `selectedId` — editing
+  // a row must not silently re-queue it for conversion.
+  const [editForId, setEditForId] = useState<string | null>(null);
+  // Prospect whose "Add Note" modal is open. Independent of `selectedId` (the
+  // convert radio) so adding a note never changes what would be converted.
+  const [noteForId, setNoteForId] = useState<string | null>(null);
 
   // Filters. The server page ships the whole in-scope set (capped at 500), so
   // filtering and paging both happen here — no refetch, results are instant.
@@ -97,6 +111,33 @@ export function ProspectsTable({
     return () => clearTimeout(t);
   }, [search]);
 
+  // Deep link: /settings/prospects?prospectId=<id> selects and scrolls to that
+  // row. Used by the Upwork job detail page's "Converted to Prospect: <name>"
+  // link — this module is a single list with drawers, so there is no
+  // /prospects/[id] page to navigate to instead.
+  //
+  // Runs once on mount: after that the user owns the selection, and re-applying
+  // it on every render would fight their clicks.
+  useEffect(() => {
+    const target = new URLSearchParams(window.location.search).get("prospectId");
+    if (!target) return;
+    const idx = prospects.findIndex((p) => p.id === target);
+    if (idx === -1) return;
+
+    setSelectedId(target);
+    // Jump to the page the row is actually on, or it would be selected but not
+    // visible. Uses the initial pageSize, which is what the list renders with.
+    setPage(Math.floor(idx / pageSize) + 1);
+
+    // Scroll after paint so the row exists in the DOM.
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`prospect-row-${target}`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const selected = useMemo(
     () => prospects.find((p) => p.id === selectedId) ?? null,
     [prospects, selectedId],
@@ -111,6 +152,14 @@ export function ProspectsTable({
   const companyProspect = useMemo(
     () => prospects.find((p) => p.id === companyForId) ?? null,
     [prospects, companyForId],
+  );
+  const editProspect = useMemo(
+    () => prospects.find((p) => p.id === editForId) ?? null,
+    [prospects, editForId],
+  );
+  const noteProspect = useMemo(
+    () => prospects.find((p) => p.id === noteForId) ?? null,
+    [prospects, noteForId],
   );
   const postsSummary = useMemo(
     () => (postsProspect ? summarizeLinkedInPosts(postsProspect.posts) : null),
@@ -319,7 +368,7 @@ export function ProspectsTable({
       </div>
 
       <div className="crm-card overflow-hidden">
-        <TableScroll minWidth={1100}>
+        <TableScroll minWidth={1200}>
           <Table>
             <THead>
               <TR>
@@ -331,15 +380,16 @@ export function ProspectsTable({
                 <TH hideBelow="md">Email</TH>
                 <TH>Status</TH>
                 <TH hideBelow="md">Posts</TH>
-                <TH>LinkedIn</TH>
+                <TH>Source</TH>
                 <TH hideBelow="lg">Saved By</TH>
                 <TH>Saved</TH>
+                <TH className="w-16 text-right">Actions</TH>
               </TR>
             </THead>
             <TBody>
               {pageRows.length === 0 ? (
                 <TR>
-                  <TD colSpan={11} className="py-10 text-center text-crm-muted">
+                  <TD colSpan={12} className="py-10 text-center text-crm-muted">
                     {prospects.length === 0
                       ? "No prospects yet. Save a LinkedIn profile from the extension to see it here."
                       : "No prospects match these filters."}
@@ -351,6 +401,7 @@ export function ProspectsTable({
                   return (
                     <TR
                       key={p.id}
+                      id={`prospect-row-${p.id}`}
                       className={selectedId === p.id ? "bg-crm-blue-soft/40" : undefined}
                     >
                       <TD className="text-center">
@@ -364,14 +415,11 @@ export function ProspectsTable({
                           aria-label={`Select ${p.name}`}
                         />
                       </TD>
-                      <TD className="font-medium text-crm-text">
-                        <span className="block">{p.name}</span>
-                        {p.shortSummary && (
-                          <span className="mt-0.5 block max-w-[22rem] truncate text-xs text-crm-muted">
-                            {p.shortSummary}
-                          </span>
-                        )}
-                      </TD>
+                      {/* Name only. `shortSummary` is still captured, still
+                          part of the search haystack, and still shown in the
+                          edit form — it is just no longer rendered as a
+                          secondary line here, to keep the row compact. */}
+                      <TD className="font-medium text-crm-text">{p.name}</TD>
                       <TD hideBelow="md">{p.title || "—"}</TD>
                       {/* Company — clickable when the extension captured full
                           company details, opening them in a drawer. Falls back
@@ -395,10 +443,15 @@ export function ProspectsTable({
                           p.company || "—"
                         )}
                       </TD>
-                      <TD hideBelow="md">
+                      {/* ICP — a compact bordered label rather than a pill. A
+                          `rounded-full` badge around a long ICP name wraps into
+                          a tall multi-line blob, so this uses a small radius,
+                          tight padding and a capped width: the text still wraps
+                          when it must, but the row stays short. */}
+                      <TD hideBelow="md" className="max-w-[12rem]">
                         {p.icp ? (
                           <span
-                            className="inline-flex items-center rounded-full bg-accent-100 px-2 py-0.5 text-xs font-medium text-accent-700"
+                            className="inline-block rounded border border-accent-200 bg-accent-50 px-1.5 py-px text-xs leading-snug text-accent-700"
                             title={
                               p.icp.isActive
                                 ? p.icp.name
@@ -451,16 +504,34 @@ export function ProspectsTable({
                           <span className="text-crm-muted">—</span>
                         )}
                       </TD>
+                      {/* Where this prospect came from, as a link to the origin
+                          record. LinkedIn is an external profile URL, so it
+                          opens in a new tab; the Upwork job lives in this CRM,
+                          so it navigates in place. A prospect can carry both
+                          references, in which case both are listed. Falls back
+                          to an em dash when neither source is present. */}
                       <TD>
-                        {p.linkedinUrl ? (
-                          <a
-                            href={p.linkedinUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-crm-blue hover:underline"
-                          >
-                            View
-                          </a>
+                        {p.linkedinUrl || p.upworkJobId ? (
+                          <div className="flex flex-col gap-0.5">
+                            {p.linkedinUrl ? (
+                              <a
+                                href={p.linkedinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-crm-blue hover:underline"
+                              >
+                                LinkedIn
+                              </a>
+                            ) : null}
+                            {p.upworkJobId ? (
+                              <Link
+                                href={`/upwork/${p.upworkJobId}`}
+                                className="text-crm-blue hover:underline"
+                              >
+                                Upwork
+                              </Link>
+                            ) : null}
+                          </div>
                         ) : (
                           "—"
                         )}
@@ -476,6 +547,36 @@ export function ProspectsTable({
                       </TD>
                       <TD className="whitespace-nowrap text-crm-muted">
                         <RelativeTime iso={p.createdAt} />
+                      </TD>
+                      {/* Edit stays available for converted prospects too: the
+                          lead owns the pipeline from here, but correcting a typo
+                          or a wrong ICP on the original capture is still valid. */}
+                      <TD className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Shortcut to log a Note against this prospect —
+                              available on converted prospects too, since the
+                              original capture can still be annotated. */}
+                          <button
+                            type="button"
+                            onClick={() => setNoteForId(p.id)}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-crm-blue transition hover:bg-crm-panel hover:underline"
+                            aria-label={`Add note for ${p.name}`}
+                            title={`Add note for ${p.name}`}
+                          >
+                            <StickyNote size={13} aria-hidden />
+                            Add Note
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditForId(p.id)}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-crm-blue transition hover:bg-crm-panel hover:underline"
+                            aria-label={`Edit ${p.name}`}
+                            title={`Edit ${p.name}`}
+                          >
+                            <Pencil size={13} aria-hidden />
+                            Edit
+                          </button>
+                        </div>
                       </TD>
                     </TR>
                   );
@@ -551,6 +652,39 @@ export function ProspectsTable({
       </Drawer>
 
       <Modal
+        open={Boolean(editProspect)}
+        onClose={() => setEditForId(null)}
+        title={editProspect ? `Edit ${editProspect.name}` : "Edit prospect"}
+        width="max-w-3xl"
+      >
+        {editProspect && (
+          <ProspectForm
+            // Remount on a different row so the form's local state re-seeds from
+            // `initial` instead of keeping the previously edited prospect's values.
+            key={editProspect.id}
+            prospectId={editProspect.id}
+            initial={{
+              name: editProspect.name,
+              email: editProspect.email,
+              phone: editProspect.phone,
+              title: editProspect.title,
+              company: editProspect.company,
+              shortSummary: editProspect.shortSummary,
+              linkedinUrl: editProspect.linkedinUrl,
+              icpId: editProspect.icpId,
+            }}
+            submitLabel="Save changes"
+            onSaved={() => {
+              setEditForId(null);
+              toast.success("Prospect updated");
+              router.refresh();
+            }}
+            onCancel={() => setEditForId(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
         open={convertOpen}
         onClose={() => setConvertOpen(false)}
         title={selected ? `Convert ${selected.name} to Lead` : "Convert to Lead"}
@@ -582,6 +716,12 @@ export function ProspectsTable({
           </>
         )}
       </Modal>
+
+      <AddProspectNoteModal
+        prospect={noteProspect}
+        onClose={() => setNoteForId(null)}
+        onSaved={() => setNoteForId(null)}
+      />
     </>
   );
 }
