@@ -62,6 +62,8 @@ import { CategoryTierChart } from "./components/preview/CategoryTierChart";
 import { PerformanceSummaryCard } from "./components/preview/PerformanceSummaryCard";
 import { CriticalNumbersTable } from "./components/preview/CriticalNumbersTable";
 import { RecentUpdatesCard } from "./components/preview/RecentUpdatesCard";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
 
 const FREQUENCY_LABELS: Record<CriticalNumberFrequency, string> = {
   weekly: "Weekly",
@@ -270,6 +272,13 @@ export default function CriticalNumbersPage() {
   /** Count of ACTIVE filter groups — drives the "N filters" button label, the
    *  same convention the WWW page uses. Search is shown separately. */
   const activeFilterCount = filterGroups.filter((g) => g.length > 0).length;
+  const activeFilterLabel = useMemo(() => buildFilterSummaryLabel([
+    { label: "Department", values: filterTeams.map(id => teams.find(t => t.id === id)?.name).filter((n): n is string => Boolean(n)) },
+    { label: "Category", values: filterCategories.map(id => options?.categories?.find(c => c.id === id)?.name).filter((n): n is string => Boolean(n)) },
+    { label: "Sub Category", values: filterSubCategories.map(id => options?.subCategories?.find(s => s.id === id)?.name).filter((n): n is string => Boolean(n)) },
+    { label: "Status", values: filterTiers.map(t => CRITICAL_TIER_LABELS[t as CriticalTier]).filter((n): n is string => Boolean(n)) },
+    { label: "Frequency", values: filterFrequencies.map(f => FREQUENCY_LABELS[f as CriticalNumberFrequency]).filter((n): n is string => Boolean(n)) },
+  ]), [filterTeams, teams, filterCategories, options?.categories, filterSubCategories, options?.subCategories, filterTiers, filterFrequencies]);
   /** Search counts here: it decides whether an empty table means "no matches"
    *  vs. "nothing created yet". */
   const anyFilterActive = activeFilterCount > 0 || searchLc !== "";
@@ -601,27 +610,13 @@ export default function CriticalNumbersPage() {
                   inline once their chips render, so they live in the same
                   dropdown the WWW page uses, with the same "N filters" label. */}
               <div className="relative" ref={filterRef}>
-                <button
-                  type="button"
+                <FilterSummaryButton
+                  label={activeFilterLabel}
+                  active={activeFilterCount > 0}
+                  open={showFilter}
                   onClick={() => setShowFilter((o) => !o)}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${
-                    showFilter || activeFilterCount > 0
-                      ? "border-accent-300 bg-accent-50 text-accent-600"
-                      : "border-gray-200 text-gray-600"
-                  }`}
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"
-                    />
-                  </svg>
-                  {activeFilterCount > 0
-                    ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}`
-                    : "Filter"}
-                </button>
+                  maxWidthClass="max-w-[260px]"
+                />
 
                 {/* No `overflow-*` on the panel, deliberately (same as WWW's):
                     each FilterPicker's dropdown is absolutely positioned, and a

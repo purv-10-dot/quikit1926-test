@@ -48,6 +48,8 @@ import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
 import { ALL_STATIC_COLS, COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useTableColumns";
 import { ALL_WEEKS as FISCAL_ALL_WEEKS } from "@/lib/utils/fiscal";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
 import { DashboardMoreActions, type DashboardSectionKey } from "./DashboardMoreActions";
 
 // Debounce a fast-changing value (e.g. a search input) so it only drives a
@@ -1500,21 +1502,18 @@ export default function DashboardPage() {
   // prefer the loaded `ownerOptions` page, else fall back to whatever name we
   // could resolve from currently-loaded rows.
   const activeFilterLabel = useMemo(() => {
-    const parts: string[] = [];
-    if (teamTabTeamId) {
-      const team = teams.find((t) => t.id === teamTabTeamId);
-      if (team) parts.push(`Team: ${team.name}`);
-    }
-    if (teamTabOwnerIds.length > 0) {
-      const ownerNames = teamTabOwnerIds.map((id) => {
+    const teamName = teamTabTeamId ? teams.find((t) => t.id === teamTabTeamId)?.name : undefined;
+    const ownerNames = teamTabOwnerIds
+      .map((id) => {
         const owner = ownerOptions.find((u) => u.id === id);
         if (owner) return `${owner.firstName} ${owner.lastName}`;
         return selectedOwnerOptions.find((o) => o.value === id)?.label;
-      });
-      const resolved = ownerNames.filter((n): n is string => Boolean(n));
-      if (resolved.length) parts.push(`Owner: ${resolved.join(", ")}`);
-    }
-    return parts.join(" · ");
+      })
+      .filter((n): n is string => Boolean(n));
+    return buildFilterSummaryLabel([
+      { label: "Team", values: teamName ? [teamName] : [] },
+      { label: "Owner", values: ownerNames },
+    ]);
   }, [teamTabTeamId, teamTabOwnerIds, teams, ownerOptions, selectedOwnerOptions]);
 
   // Sort handlers — the tables call these with the backend sort key + dir.
@@ -1655,19 +1654,12 @@ export default function DashboardPage() {
           {/* Filter button — only on Team tab. My Dashboard is locked to current user. */}
           {activeTab === "team" && (
             <div className="relative" ref={filterRef}>
-              <button
+              <FilterSummaryButton
+                label={activeFilterLabel}
+                active={teamFilterCount > 0}
+                open={showFilter}
                 onClick={() => setShowFilter(o => !o)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || teamFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-              >
-                <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                </svg>
-                {teamFilterCount > 0 ? (
-                  <span className="max-w-[220px] truncate" title={activeFilterLabel}>{activeFilterLabel}</span>
-                ) : (
-                  "Filter"
-                )}
-              </button>
+              />
 
               {showFilter && (
                 <div
