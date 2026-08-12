@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Lock, ListChecks, ArrowRight, Zap, FolderInput } from "lucide-react";
+import { X, Search, Lock, ListChecks, ArrowLeft, ArrowRight, Zap, FolderInput, ChevronDown } from "lucide-react";
 import type { EditorRule, RuleKind } from "../editor-types";
 import {
   RULE_BUCKETS,
@@ -51,12 +51,15 @@ function BucketIcon({ kind }: { kind: BucketId }) {
 function ModalShell({
   title,
   onClose,
+  onBack,
   wide,
   children,
   footer,
 }: {
   title: string;
   onClose: () => void;
+  /** When set, a back arrow appears left of the title (returns to the catalog). */
+  onBack?: () => void;
   wide?: boolean;
   children: React.ReactNode;
   footer: React.ReactNode;
@@ -65,7 +68,19 @@ function ModalShell({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className={`flex max-h-[85vh] w-full ${wide ? "max-w-3xl" : "max-w-2xl"} flex-col rounded-lg bg-white shadow-xl`}>
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                title="Back to rule list"
+                className="-ml-1 text-gray-400 hover:text-gray-600"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          </div>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
@@ -131,9 +146,9 @@ export function AddRuleDialog({
         </>
       }
     >
-      <div className="flex min-h-[24rem]">
+      <div className="flex h-[60vh] min-h-[24rem]">
         {/* Rule-type rail */}
-        <div className="w-56 shrink-0 border-r border-gray-200 px-3 py-4">
+        <div className="w-56 shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-4">
           <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Rule types</div>
           {RULE_BUCKETS.map((b) => (
             <button
@@ -161,7 +176,7 @@ export function AddRuleDialog({
             />
           </div>
           {activeBucket && <p className="mb-3 text-xs text-gray-500">{activeBucket.blurb}</p>}
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-1 py-1">
             {list.map((m) => (
               <button
                 key={m.type}
@@ -192,25 +207,33 @@ export function AddRuleDialog({
  * "Edit Rule" — configure a rule's fields (used for both add-after-Select and
  * editing an existing rule). Header shows the rule + the transition path.
  */
+export interface RuleTransitionOption {
+  id: string;
+  name: string;
+  fromNames: string[];
+  toName: string;
+}
+
 export function EditRuleDialog({
   meta,
   initialConfig,
-  transitionName,
-  fromNames,
-  toName,
+  transitions,
+  initialTransitionId,
   resolutions,
   statuses,
   members,
   screens,
   onSubmit,
   onDelete,
+  onBack,
   onClose,
 }: {
   meta: RuleTypeMeta;
   initialConfig?: Record<string, unknown>;
-  transitionName: string;
-  fromNames: string[];
-  toName: string;
+  /** All transitions in the workflow — the Transition field is a dropdown. */
+  transitions: RuleTransitionOption[];
+  /** The transition the rule was opened from (preselected). */
+  initialTransitionId: string;
   resolutions: { id: string; name: string }[];
   /** Project statuses (for status-based rule config, e.g. subtask status). */
   statuses: { id: string; name: string; category: string }[];
@@ -218,10 +241,14 @@ export function EditRuleDialog({
   members: { userId: string; name: string }[];
   /** Org screens (for the "Show a screen" request-input rule). */
   screens: { id: string; name: string }[];
-  onSubmit: (rule: EditorRule) => void;
+  /** Submit the rule onto the chosen target transition. */
+  onSubmit: (rule: EditorRule, targetTransitionId: string) => void;
   onDelete?: () => void;
+  /** When set (add flow), a back arrow returns to the rule catalog. */
+  onBack?: () => void;
   onClose: () => void;
 }) {
+  const [targetTransitionId, setTargetTransitionId] = useState(initialTransitionId);
   const [config, setConfig] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const f of meta.fields) {
@@ -258,20 +285,21 @@ export function EditRuleDialog({
 
   const submit = () => {
     if (meta.customForm) {
-      onSubmit({ kind: meta.kind, type: meta.type, config: structured });
+      onSubmit({ kind: meta.kind, type: meta.type, config: structured }, targetTransitionId);
       onClose();
       return;
     }
     const cleaned: Record<string, unknown> = {};
     for (const f of meta.fields) cleaned[f.key] = (config[f.key] ?? "").trim();
-    onSubmit({ kind: meta.kind, type: meta.type, config: cleaned });
+    onSubmit({ kind: meta.kind, type: meta.type, config: cleaned }, targetTransitionId);
     onClose();
   };
 
   return (
     <ModalShell
-      title="Edit Rule"
+      title={onBack ? "Add Rule" : "Edit Rule"}
       onClose={onClose}
+      onBack={onBack}
       footer={
         <>
           {onDelete && (
@@ -307,14 +335,11 @@ export function EditRuleDialog({
           </div>
           <div>
             <div className="mb-1 text-xs font-medium text-gray-700">Transition</div>
-            <div className="flex flex-wrap items-center gap-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-              <span className="font-medium">{transitionName}</span>
-              {fromNames.map((n) => (
-                <span key={n} className="rounded bg-gray-100 px-1.5 py-0.5">{n}</span>
-              ))}
-              <ArrowRight className="h-3 w-3 text-gray-400" />
-              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800">{toName}</span>
-            </div>
+            <TransitionPicker
+              transitions={transitions}
+              value={targetTransitionId}
+              onChange={setTargetTransitionId}
+            />
           </div>
         </div>
 
@@ -393,5 +418,99 @@ export function EditRuleDialog({
         )}
       </div>
     </ModalShell>
+  );
+}
+
+/**
+ * Transition field for the Edit-rule modal — a dropdown of ALL workflow
+ * transitions (each shown as name + from→to pills), preselected to the one the
+ * rule was opened from. Choosing a different one moves the rule there on submit.
+ */
+function TransitionPicker({
+  transitions,
+  value,
+  onChange,
+}: {
+  transitions: RuleTransitionOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const measure = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ left: r.left, top: r.bottom + 4, width: r.width });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    measure();
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const reposition = () => measure();
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open]);
+
+  const current = transitions.find((t) => t.id === value);
+  const Row = ({ t }: { t: RuleTransitionOption }) => (
+    <span className="flex flex-wrap items-center gap-1 text-xs text-gray-700">
+      <span className="font-medium">{t.name}</span>
+      {t.fromNames.map((n) => (
+        <span key={n} className="rounded bg-gray-100 px-1.5 py-0.5">{n}</span>
+      ))}
+      <ArrowRight className="h-3 w-3 text-gray-400" />
+      <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800">{t.toName}</span>
+    </span>
+  );
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-[38px] w-full items-center gap-2 rounded border border-gray-300 px-3 py-2 text-left focus:border-accent-500 focus:outline-none"
+      >
+        <span className="min-w-0 flex-1">
+          {current ? <Row t={current} /> : <span className="text-sm text-gray-400">Select a transition</span>}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+      </button>
+      {open && rect &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", left: rect.left, top: rect.top, width: rect.width, zIndex: 60 }}
+            className="max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+          >
+            {transitions.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => { onChange(t.id); setOpen(false); }}
+                className={`block w-full px-3 py-1.5 text-left hover:bg-gray-50 ${t.id === value ? "bg-blue-50/60" : ""}`}
+              >
+                <Row t={t} />
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

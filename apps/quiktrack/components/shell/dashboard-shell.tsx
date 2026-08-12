@@ -57,13 +57,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           )}
           <div className="flex flex-1 overflow-hidden">
             {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
-            {/* `overscroll-contain`: the shell is the last scroll container —
-                a page that runs long scrolls here and stops, instead of
-                chaining the leftover wheel delta to the document and dragging
-                the sticky header / sidebar out of view. */}
-            <main className="flex-1 overflow-y-auto overscroll-contain bg-white">
-              {children}
-            </main>
+            {/* min-w-0 lets this flex child shrink below its content width so
+                pages with wide horizontal strips scroll internally instead of
+                pushing the whole shell wide. */}
+            <main className="min-w-0 flex-1 overflow-y-auto bg-white">{children}</main>
           </div>
           <IssueCreatedToast />
           <ToastHost />

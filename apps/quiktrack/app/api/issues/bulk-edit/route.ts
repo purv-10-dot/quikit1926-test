@@ -28,15 +28,22 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         { status: 400 },
       );
     }
-    const { projectId, ids, assigneeId, dueDate, priority } = parsed.data;
+    const { projectId: projectIdOrKey, ids, assigneeId, dueDate, priority } = parsed.data;
 
+    // Body projectId may be a cuid OR a project KEY (readable URLs). Resolve to
+    // the real id, org-scoped, and use it for the permission check + updateMany.
     const project = await db.qtProject.findFirst({
-      where: { id: projectId, orgId, isDeleted: false },
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
       select: { id: true },
     });
     if (!project) {
       return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
     }
+    const projectId = project.id;
 
     const canEdit =
       (await hasAdminAccess(userId, orgId)) ||

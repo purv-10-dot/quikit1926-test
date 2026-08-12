@@ -385,7 +385,7 @@ export function SpacesGrid() {
                     </span>
                   ) : (
                     <Link
-                      href={`/spaces/${s.id}/backlog`}
+                      href={`/spaces/${s.projectKey ?? s.id}/backlog`}
                       className="inline-flex items-center gap-2 text-blue-700 hover:underline"
                     >
                       <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={24} radius={6} />
@@ -406,6 +406,7 @@ export function SpacesGrid() {
                 <td className="px-4 py-3">
                   <SpaceRowMenu
                     spaceId={s.id}
+                    spaceKey={s.projectKey}
                     view={view}
                     isAdmin={isAdmin}
                     canArchive={s.canArchive ?? false}

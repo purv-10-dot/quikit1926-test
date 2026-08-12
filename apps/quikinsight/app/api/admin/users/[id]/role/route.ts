@@ -3,9 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/withAuth";
 import { isOrgAdmin, type Role } from "@/lib/rbac";
 
-const ROLES: Role[] = ["SUPER_ADMIN", "MANAGEMENT", "TEAM_LEAD", "MEMBER", "VIEWER"];
-// Org-wide roles carry no team; the rest must be scoped to one.
-const ORG_WIDE: Role[] = ["SUPER_ADMIN", "MANAGEMENT"];
+// QuikInsight offers exactly two assignable roles. The legacy names stay
+// readable in lib/rbac.ts (existing rows carry them) but cannot be assigned.
+const ROLES: Role[] = ["ADMIN", "VIEWER"];
+// Both are org-wide and carry no team, so no team is ever required here.
+const ORG_WIDE: Role[] = ["ADMIN", "VIEWER"];
 
 // PATCH /api/admin/users/[id]/role — set a user's single role assignment.
 // Body: { role: Role; teamId: string | null }
@@ -41,7 +43,7 @@ export const PATCH = withAuth(async (req, ctx) => {
   }
 
   // Guard against an admin locking themselves out of the admin surface.
-  if (userId === req.session.user.id && role !== "SUPER_ADMIN") {
+  if (userId === req.session.user.id && role !== "ADMIN") {
     return NextResponse.json({ error: "You can't change your own admin role" }, { status: 400 });
   }
 

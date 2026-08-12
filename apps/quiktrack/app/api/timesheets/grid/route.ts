@@ -19,7 +19,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
-  const projectId = url.searchParams.get("projectId");
+  const projectIdOrKey = url.searchParams.get("projectId");
   const groupBy = (url.searchParams.get("groupBy") as GroupBy | null) ?? "user";
 
   const parseIdList = (raw: string | null): string[] =>
@@ -37,6 +37,24 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const toDate = new Date(to);
   if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
     return NextResponse.json({ success: false, error: "Invalid date range" }, { status: 400 });
+  }
+
+  // projectId query param may be a cuid or a project KEY (keys are per-org).
+  // Resolve to a cuid so all downstream access checks + filters use the real id.
+  let projectId: string | null = null;
+  if (projectIdOrKey) {
+    const project = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
+      select: { id: true },
+    });
+    if (!project) {
+      return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
+    }
+    projectId = project.id;
   }
 
   const isAdmin = await hasAdminAccess(userId, orgId);

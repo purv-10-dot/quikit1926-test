@@ -8,6 +8,7 @@ import { SpaceIcon } from "@/components/space-icon";
 interface SpaceItem {
   id: string;
   name: string;
+  projectKey?: string;
   icon?: string | null;
   color?: string | null;
   updatedAt?: string;
@@ -120,7 +121,7 @@ export function MoreSpacesPopover({
             {recent.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/backlog`}
+                href={`/spaces/${s.projectKey ?? s.id}/backlog`}
                 onClick={onClose}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-800 hover:bg-gray-50"
               >
@@ -138,7 +139,7 @@ export function MoreSpacesPopover({
             {other.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/backlog`}
+                href={`/spaces/${s.projectKey ?? s.id}/backlog`}
                 onClick={onClose}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-800 hover:bg-gray-50"
               >

@@ -22,7 +22,7 @@ function escapeCsv(s: string): string {
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   try {
     const url = new URL(req.url);
-    const projectId = url.searchParams.get("projectId");
+    const projectIdOrKey = url.searchParams.get("projectId");
     const statusId = url.searchParams.get("statusId");
     const statusName = url.searchParams.get("statusName");
     const assigneeId = url.searchParams.get("assigneeId");
@@ -42,6 +42,26 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     // endpoint: global admins see ALL; non-admins see ONLY their Space Admin
     // projects (none → empty export).
     const isAdmin = await hasAdminAccess(userId, orgId);
+
+    // projectId query param may be a cuid or a project KEY (keys are per-org).
+    // Resolve to a cuid so scoping checks + the qtIssue filter use the real id.
+    // An unresolvable projectId means "no such accessible project" → empty CSV.
+    let projectId: string | null = null;
+    if (projectIdOrKey) {
+      const proj = await db.qtProject.findFirst({
+        where: {
+          orgId,
+          isDeleted: false,
+          OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+        },
+        select: { id: true },
+      });
+      if (!proj) {
+        return csvResponse(["S.No,Key,Task,Project,Assignee,Create Date,Status,Est (h),Actual (h)"], month);
+      }
+      projectId = proj.id;
+    }
+
     let projectIds: string[] | null = null;
     if (!isAdmin) {
       projectIds = await spaceAdminProjectIds(userId, orgId);

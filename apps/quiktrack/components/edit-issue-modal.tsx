@@ -6,6 +6,11 @@ import { useSession } from "next-auth/react";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { sanitizeRichText } from "@/lib/sanitize";
+import {
+  readDescriptionDraft,
+  writeDescriptionDraft,
+  clearDescriptionDraft,
+} from "@/lib/utils/description-draft";
 import type { FieldValue } from "@/lib/customFields/registry";
 import {
   X,
@@ -615,7 +620,14 @@ export function EditIssueModal({
           const d = i.data as IssueFull;
           setIssue(d);
           setTitle(d.title);
-          setDescription(d.description ?? "");
+          const savedDescription = d.description ?? "";
+          const draft = readDescriptionDraft(d.id);
+          if (draft !== null && draft !== savedDescription) {
+            setDescription(draft);
+            setDescEditing(true);
+          } else {
+            setDescription(savedDescription);
+          }
           setStatusId(d.statusId);
           setPriority((d.priority as Priority) ?? "MEDIUM");
           setAssigneeId(d.assigneeId ?? "");
@@ -1098,7 +1110,10 @@ export function EditIssueModal({
                   <div>
                     <RichTextEditor
                       value={description}
-                      onChange={setDescription}
+                      onChange={(value) => {
+                        setDescription(value);
+                        writeDescriptionDraft(issue.id, value);
+                      }}
                       mentions={memberMentions}
                       uploadImage={(file) => uploadProjectImage(projectId, file)}
                       uploadFile={(file) => uploadProjectFile(projectId, file)}
@@ -1109,6 +1124,7 @@ export function EditIssueModal({
                         onClick={() => {
                           setDescEditing(false);
                           void patch({ description: description ?? "" });
+                          clearDescriptionDraft(issue.id);
                         }}
                         className="h-8 px-3 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
                       >
@@ -1119,6 +1135,7 @@ export function EditIssueModal({
                         onClick={() => {
                           setDescription(issue.description ?? "");
                           setDescEditing(false);
+                          clearDescriptionDraft(issue.id);
                         }}
                         className="h-8 px-3 text-xs text-gray-700 hover:bg-gray-100 rounded"
                       >
@@ -1293,6 +1310,7 @@ export function EditIssueModal({
                                   <SubtaskGridRow
                                     key={s.id}
                                     subtask={s}
+                                    projectId={projectId}
                                     statuses={statuses}
                                     members={members}
                                     selected={selectedSubtaskIds.has(s.id)}
@@ -1808,6 +1826,7 @@ interface InlineSubtask {
 
 function SubtaskGridRow({
   subtask,
+  projectId,
   statuses,
   members,
   selected,
@@ -1816,6 +1835,7 @@ function SubtaskGridRow({
   onPatched,
 }: {
   subtask: InlineSubtask;
+  projectId: string;
   statuses: Status[];
   members: Member[];
   selected: boolean;
@@ -1861,7 +1881,8 @@ function SubtaskGridRow({
 
   const st = statuses.find((x) => x.id === subtask.statusId);
   const ass = members.find((m) => m.userId === subtask.assigneeId);
-  const P = PRIORITY_META[(subtask.priority as Priority) ?? "MEDIUM"];
+  const P =
+    PRIORITY_META[(subtask.priority as Priority) ?? "MEDIUM"] ?? PRIORITY_META.MEDIUM;
 
   async function patch(body: Record<string, unknown>) {
     try {
@@ -2095,45 +2116,20 @@ function SubtaskGridRow({
         )}
       </div>
 
-      {/* Status */}
+      {/* Status — subtasks are work items, so gate by the workflow (only legal
+          transitions + the "Show a screen" modal). Falls back to a free picker
+          when the project has no published workflow. */}
       <div className="px-3 py-2">
-        <button
-          type="button"
-          onClick={(e) => setSPos(sPos ? null : anchor(e))}
-          className={`inline-flex items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded whitespace-nowrap max-w-full ${statusPillCls(
-            st?.category,
-          )}`}
-        >
-          {st?.name ?? "—"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        {sPos && (
-          <div
-            data-fixed-popover
-            style={{ position: "fixed", top: sPos.top, left: sPos.left }}
-            className="min-w-[180px] bg-white border border-gray-200 rounded shadow-lg z-[80] py-1"
-          >
-            {statuses
-              .filter((x) => x.id !== subtask.statusId)
-              .map((x) => (
-                <button
-                  key={x.id}
-                  type="button"
-                  onClick={() => {
-                    setSPos(null);
-                    void patch({ statusId: x.id });
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
-                >
-                  <span
-                    className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(x.category)}`}
-                  >
-                    {x.name}
-                  </span>
-                </button>
-              ))}
-          </div>
-        )}
+        <WorkflowStatusControl
+          issueId={subtask.id}
+          projectId={projectId}
+          currentStatusId={subtask.statusId}
+          currentStatusName={st?.name ?? "—"}
+          currentStatusCategory={st?.category}
+          statuses={statuses.map((x) => ({ id: x.id, name: x.name, category: x.category }))}
+          onChange={(statusId) => patch({ statusId })}
+          size="sm"
+        />
       </div>
 
       {/* ETA — inline-editable */}
@@ -2342,7 +2338,10 @@ function RowPriorityPicker({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false));
-  const Sel = PRIORITY_META[value];
+  // `priority` is a free-text column with no DB constraint, so a bad value from
+  // an API caller or an import lands here as an unmapped key. Falling back keeps
+  // the whole issue viewable instead of crashing the modal on one bad field.
+  const Sel = PRIORITY_META[value] ?? PRIORITY_META.MEDIUM;
   return (
     <div className="relative" ref={ref}>
       <button
