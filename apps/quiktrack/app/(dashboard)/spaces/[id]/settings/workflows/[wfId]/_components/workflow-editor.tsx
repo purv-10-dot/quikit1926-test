@@ -636,6 +636,17 @@ function EditorBody({
               ? () => ed.removeRule(selectedTransition.id, rulePick.index as number)
               : undefined
           }
+          onBack={
+            // Only in the add flow: step back to the rule catalog, reopening it
+            // on the same rail the chosen rule lives in. (When editing an
+            // existing rule there's no catalog to return to.)
+            rulePick.index == null
+              ? () => {
+                  setAddRuleBucket(rulePick.meta.bucket ?? rulePick.meta.kind);
+                  setRulePick(null);
+                }
+              : undefined
+          }
           onClose={() => setRulePick(null)}
         />
       )}

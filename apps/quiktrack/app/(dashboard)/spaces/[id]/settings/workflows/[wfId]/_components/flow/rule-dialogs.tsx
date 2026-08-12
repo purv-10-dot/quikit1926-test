@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Lock, ListChecks, ArrowRight, Zap, FolderInput, ChevronDown } from "lucide-react";
+import { X, Search, Lock, ListChecks, ArrowLeft, ArrowRight, Zap, FolderInput, ChevronDown } from "lucide-react";
 import type { EditorRule, RuleKind } from "../editor-types";
 import {
   RULE_BUCKETS,
@@ -51,12 +51,15 @@ function BucketIcon({ kind }: { kind: BucketId }) {
 function ModalShell({
   title,
   onClose,
+  onBack,
   wide,
   children,
   footer,
 }: {
   title: string;
   onClose: () => void;
+  /** When set, a back arrow appears left of the title (returns to the catalog). */
+  onBack?: () => void;
   wide?: boolean;
   children: React.ReactNode;
   footer: React.ReactNode;
@@ -65,7 +68,19 @@ function ModalShell({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className={`flex max-h-[85vh] w-full ${wide ? "max-w-3xl" : "max-w-2xl"} flex-col rounded-lg bg-white shadow-xl`}>
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                title="Back to rule list"
+                className="-ml-1 text-gray-400 hover:text-gray-600"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          </div>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
@@ -210,6 +225,7 @@ export function EditRuleDialog({
   screens,
   onSubmit,
   onDelete,
+  onBack,
   onClose,
 }: {
   meta: RuleTypeMeta;
@@ -228,6 +244,8 @@ export function EditRuleDialog({
   /** Submit the rule onto the chosen target transition. */
   onSubmit: (rule: EditorRule, targetTransitionId: string) => void;
   onDelete?: () => void;
+  /** When set (add flow), a back arrow returns to the rule catalog. */
+  onBack?: () => void;
   onClose: () => void;
 }) {
   const [targetTransitionId, setTargetTransitionId] = useState(initialTransitionId);
@@ -279,8 +297,9 @@ export function EditRuleDialog({
 
   return (
     <ModalShell
-      title="Edit Rule"
+      title={onBack ? "Add Rule" : "Edit Rule"}
       onClose={onClose}
+      onBack={onBack}
       footer={
         <>
           {onDelete && (
