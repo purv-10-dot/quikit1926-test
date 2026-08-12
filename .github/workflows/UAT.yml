@@ -64,12 +64,10 @@ jobs:
               - 'apps/quiklms/**'
             quikinsight:
               - 'apps/quikinsight/**'
-            quikcrmexpress:
-              - 'apps/quikcrmexpress/**'
             realtime:
               - 'services/realtime/**'
-            quikcredflow:
-              - 'apps/quikcredflow/**'
+            quikcrmexpress:
+              - 'apps/quikcrmexpress/**'
 
       - name: Generate matrix
         id: set-matrix
@@ -99,7 +97,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
             [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
             [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
-            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikcredflow")
+            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikcrmexpress")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
@@ -278,7 +276,7 @@ jobs:
                 ;;
               quikcredflow)
                 FILE="crmexpress-deployment.yaml"
-                IMAGE="ghcr.io/akhileshgandhi/quikcredflow-runtime:${TAG}"
+                IMAGE="ghcr.io/akhileshgandhi/quikcrmexpress-runtime:${TAG}"
                 ;;
               realtime)
                 FILE="socket-deployment.yaml"
