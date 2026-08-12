@@ -59,6 +59,27 @@ export const DELETE = withProjectAccess<{ id: string; statusId: string }>(
       return NextResponse.json({ success: false, error: "Status not found" }, { status: 404 });
     }
 
+    // Block deletion when the status is part of any workflow (node, transition
+    // target, or transition source). Those FKs cascade, so without this guard a
+    // workflow-referenced status would be silently removed (WF-2.2).
+    const [asNode, asTarget, asSource] = await Promise.all([
+      db.qtWorkflowStatus.count({ where: { statusId: params.statusId } }),
+      db.qtWorkflowTransition.count({ where: { toStatusId: params.statusId, isDeleted: false } }),
+      db.qtWorkflowTransitionFrom.count({ where: { statusId: params.statusId } }),
+    ]);
+    const workflowRefs = asNode + asTarget + asSource;
+    if (workflowRefs > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `This status is used by ${workflowRefs} workflow reference(s). Remove it from the workflow before deleting.`,
+          code: "STATUS_IN_USE_BY_WORKFLOW",
+          references: workflowRefs,
+        },
+        { status: 409 },
+      );
+    }
+
     // Don't let the user delete the last visible column.
     const remaining = await db.qtIssueStatus.count({
       where: { projectId, isDeleted: false, id: { not: params.statusId } },

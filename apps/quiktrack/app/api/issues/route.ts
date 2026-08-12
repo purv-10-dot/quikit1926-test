@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
-import { getDefaultStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
+import { getInitialStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
@@ -27,20 +27,22 @@ async function userIsProjectMember(
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get("projectId");
-  if (!projectId) {
+  const idOrKey = url.searchParams.get("projectId");
+  if (!idOrKey) {
     return NextResponse.json(
       { success: false, error: "projectId is required" },
       { status: 400 },
     );
   }
+  // projectId query param may be a cuid or a project KEY (keys are per-org).
   const project = await db.qtProject.findFirst({
-    where: { id: projectId, orgId: orgId, isDeleted: false },
+    where: { orgId, isDeleted: false, OR: [{ id: idOrKey }, { projectKey: idOrKey }] },
     select: { id: true },
   });
   if (!project) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
+  const projectId = project.id;
   if (!(await userIsProjectMember(userId, orgId, projectId))) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
@@ -48,6 +50,17 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterType = url.searchParams.get("type");
   const excludeType = url.searchParams.get("excludeType");
   const filterStatusId = url.searchParams.get("statusId");
+  // Board columns can map several statuses to one column: `statusIds` is a
+  // comma-separated IN-list. Takes precedence over the single `statusId`.
+  const filterStatusIds = (url.searchParams.get("statusIds") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // When set (backlog/board), restrict to statuses that are mapped to a board
+  // column. Items on unmapped statuses are hidden from the board+backlog (they
+  // still show in List/Task Table, which don't pass this). No-op if the project
+  // has no configured board columns (then nothing is "unmapped").
+  const boardMappedOnly = url.searchParams.get("boardMappedOnly") === "1";
   const filterStatusCategoryRaw = url.searchParams.get("statusCategory");
   const filterStatusCategory =
     filterStatusCategoryRaw === "BACKLOG" ||
@@ -133,12 +146,36 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
         : { type: { not: excludeType } }
       : {};
 
+  // Board-mapped restriction: the set of status ids that are mapped to a board
+  // column. Only applied when the project actually has configured columns —
+  // otherwise every status is effectively "on the board".
+  let mappedStatusIds: string[] | null = null;
+  if (boardMappedOnly) {
+    const hasColumns = await db.qtBoardColumn.findFirst({
+      where: { projectId },
+      select: { id: true },
+    });
+    if (hasColumns) {
+      const mapped = await db.qtBoardColumnStatus.findMany({
+        where: { column: { projectId } },
+        select: { statusId: true },
+      });
+      mappedStatusIds = mapped.map((m) => m.statusId);
+    }
+  }
+
   const where = {
     orgId: orgId,
     projectId,
     isDeleted: false,
     ...typeWhere,
-    ...(filterStatusId ? { statusId: filterStatusId } : {}),
+    ...(filterStatusIds.length > 0
+      ? { statusId: { in: filterStatusIds } }
+      : filterStatusId
+        ? { statusId: filterStatusId }
+        : mappedStatusIds
+          ? { statusId: { in: mappedStatusIds } }
+          : {}),
     ...(filterStatusCategory ? { status: { category: filterStatusCategory } } : {}),
     // sprintId supports three shapes:
     //   "null"           → unscoped issues (backlog)
@@ -411,8 +448,14 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       { status: 400 },
     );
   }
+  // Body projectId may be a cuid OR a project KEY (readable URLs). Resolve
+  // either to the real id, org-scoped; project.id is used downstream.
   const project = await db.qtProject.findFirst({
-    where: { id: parsed.data.projectId, orgId: orgId, isDeleted: false },
+    where: {
+      orgId,
+      isDeleted: false,
+      OR: [{ id: parsed.data.projectId }, { projectKey: parsed.data.projectId }],
+    },
     select: { id: true, projectKey: true, name: true },
   });
   if (!project) {
@@ -442,8 +485,11 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const issue = await db.$transaction(async (tx) => {
+    // New issues start on the workflow's INITIAL status (e.g. classic "Open")
+    // when a published workflow governs the project; otherwise the first status
+    // by order. A client-supplied status still wins.
     const statusId =
-      parsed.data.statusId ?? (await getDefaultStatusId(tx, project.id));
+      parsed.data.statusId ?? (await getInitialStatusId(tx, project.id));
     if (!statusId) throw new Error("Project has no statuses");
 
     // Derive the key from the MAX existing suffix, not count()+1 — the latter

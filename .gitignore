@@ -47,6 +47,10 @@ packages/database/.env.tmp
 /_internal/
 graphify-out/
 
+# Claude Code personal overrides — machine-specific, never committed.
+.claude/settings.local.json
+**/.claude/settings.local.json
+
 # Markdown files — local-only docs, analyses, scratch notes; never committed.
 *.md
 

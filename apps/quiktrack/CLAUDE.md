@@ -59,13 +59,13 @@ You're using local Postgres + a local NextAuth dev session. The integration owne
 
 ## AI Runtime Integration (Quikverse AI Team)
 
-> Added by Suyash (AI team lead). QuikPMS is not yet integrated with the AI Runtime. This section tells Kanishka what to expect and what rules apply when AI integration work begins. No immediate action required — discuss with Suyash in `#ai-integration` before starting any AI work.
+> Added by Suyash (AI team lead). QuikTrack is not yet integrated with the AI Runtime. This section tells whoever picks up AI integration work what to expect and what rules apply once it begins. A compatibility doc already exists (`Quiktrack-ai-compatibility-doc.md`, Jaishree Rathore, 2026-05-28) with Suyash's reply the same day — read both before starting, since some details below (e.g. the service-JWT format) are summarized loosely here but stated precisely there. No immediate action required — discuss with Suyash in `#ai-integration` before starting any AI work.
 
 ### Must do — AI
 
 8. **Use `@quikit/ai-sdk` for every AI call** — `npm install @quikit/ai-sdk`. Never call Gemini, OpenAI, Anthropic, or Mistral SDKs directly. Never use raw `fetch()` to the AI Runtime URL. This is the same class of rule as "use `@quikit/ui` for components" — the SDK is the only sanctioned path.
 
-9. **Implement `withFallback()` on every AI-powered screen** — QuikPMS must function when AI is down. No exceptions.
+9. **Implement `withFallback()` on every AI-powered screen** — QuikTrack must function when AI is down. No exceptions.
 
 10. **Pass `useCase` on every `execute()` call** — required for cost tracking, audit, and routing. A call without a `useCase` will be rejected.
 
@@ -73,9 +73,9 @@ You're using local Postgres + a local NextAuth dev session. The integration owne
 
 ### Must not — AI
 
-11. **Do not call any LLM provider SDK directly** from QuikPMS. No `import { GoogleGenerativeAI } from '@google/generative-ai'`, no `import OpenAI from 'openai'`, no `import Anthropic from '@anthropic-ai/sdk'`.
+11. **Do not call any LLM provider SDK directly** from QuikTrack. No `import { GoogleGenerativeAI } from '@google/generative-ai'`, no `import OpenAI from 'openai'`, no `import Anthropic from '@anthropic-ai/sdk'`.
 
-12. **Do not store raw LLM response text in the QuikPMS database** — structured outputs only. If AI produces a text summary, store it in the appropriate structured field, not a raw blob.
+12. **Do not store raw LLM response text in the QuikTrack database** — structured outputs only. If AI produces a text summary, store it in the appropriate structured field, not a raw blob.
 
 13. **Do not log prompt text** in app logs — prompts may contain user data.
 
@@ -104,15 +104,14 @@ if (response.gracefulFallback) return;
 // response.normalizedText / response.structuredJson / response.proposedActions
 ```
 
-### What QuikPMS must expose before AI agents can call in
+### What QuikTrack must expose before AI agents can call in
 
-These are gated the same way as any structural change — integration owner approval required before building:
+These are gated the same way as any structural change — integration owner approval required before building. None of these are built yet (confirmed against the current codebase, not just this doc):
 
-1. `GET /api/internal/manifest` — returns app capabilities. Auth: `INTERNAL_AI_RUNTIME_SECRET` header.
-2. Populated `manifest.permissions[]` — all enforced permission strings.
-3. Summary endpoints for primary entities (projects, milestones, tasks) — compact shapes for AI context assembly.
-4. `withOrgAuth` updated to accept `actingAs: "ai_agent"` service JWT alongside normal session. Pravin mints the JWT — QuikPMS validates it.
-5. New env vars (get values from Suyash): `INTERNAL_AI_RUNTIME_SECRET`, `INTERNAL_AI_RUNTIME_URL`.
+1. `GET /api/internal/manifest` — returns app capabilities, sourced from `lib/api/permissionsRegistry.ts` (the real, enforced permission tree), not hand-maintained separately. Auth: `INTERNAL_AI_RUNTIME_SECRET` header. Note: `manifest.ts`'s existing `permissions[]` array is a *different*, launcher-only manifest (read by `apps/quikit` at build time) — don't conflate the two, and don't add AI-facing fields to it (it's gated by this file's own rule #9, integration-owner sign-off required).
+2. Summary endpoints for primary entities (projects, issues, sprints) — compact shapes for AI context assembly. Only `GET /api/projects/[id]/summary` exists today.
+3. `withOrgAuth` updated to accept `actingAs: "ai_agent"` service JWT alongside normal session. Pravin's auth platform mints the JWT (JWE-encrypted, signed with `NEXTAUTH_SECRET`, claims include `actingAs`/`actingAgentId`) — QuikTrack only validates it. Not to be confused with the project-scoped Personal Access Token system QuikTrack already ships (`lib/api/withPatAuth.ts`) — that's a separate, narrower mechanism for external coding-agent tools (see `documents/Live-Demo-Guide-QuikTrack-MCP-V0.md`), not this official platform path.
+4. New env vars (get values from Suyash): `INTERNAL_AI_RUNTIME_SECRET`, `INTERNAL_AI_RUNTIME_URL`.
 
 ### Suggested use cases (to be agreed with AI team)
 
@@ -125,9 +124,9 @@ These are gated the same way as any structural change — integration owner appr
 
 Contact Suyash in `#ai-integration` before building UI for any of these — the use case strings must be registered in the AI Runtime before they work.
 
-### Compatibility doc needed from Kanishka
+### Compatibility doc
 
-Before the AI team can wire a QuikPMS module, Kanishka needs to produce a compatibility doc covering all Prisma models, API routes, permission strings, and primary entity shapes. See the QuikCRM and QuikScale compatibility docs as examples. Raise in `#ai-integration` when ready.
+Already exists: `Quiktrack-ai-compatibility-doc.md` (Jaishree Rathore, 2026-05-28) — covers all Prisma models, API routes, permission strings, and primary entity shapes, plus Suyash's same-day reply answering the open questions. Find both in the Runtime docs. Its own "Universal blockers" section (§11.5) lists what's still unbuilt on QuikTrack's side: no service-JWT support in `withOrgAuth`, no `GET /api/internal/manifest`, no `actingAgentId` propagation into QuikTrack's audit trail. That doc is also already stale in one respect — its permission-string count is behind the current `permissionsRegistry.ts` — so treat the registry, not the doc's numbers, as authoritative if the two disagree.
 
 ### Contact
 

@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Self-contained Node server under .next/standalone — required by
+  // apps/quikinsight/Dockerfile's runner stage (COPY .../.next/standalone)
+  output: "standalone",
   // Required for Vercel: transpile workspace packages (source TypeScript/ESM)
   transpilePackages: [
     "@quikit/ui",

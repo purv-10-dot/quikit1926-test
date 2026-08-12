@@ -82,7 +82,22 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       { status: 400 },
     );
   }
-  const projectId = parsed.data.projectId ?? null;
+  // The client may pass a project KEY (readable URLs) or a cuid. Resolve to the
+  // real id, org-scoped, so the projectId filter matches stored entries. Null =
+  // "all projects" (no filter), left as-is.
+  const projectIdOrKey = parsed.data.projectId ?? null;
+  let projectId: string | null = null;
+  if (projectIdOrKey) {
+    const project = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
+      select: { id: true },
+    });
+    projectId = project?.id ?? projectIdOrKey; // fall back to raw if unresolved
+  }
   const weekStart = new Date(parsed.data.weekStart);
   const weekEnd = new Date(parsed.data.weekEnd);
 
