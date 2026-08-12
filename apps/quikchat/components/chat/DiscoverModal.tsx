@@ -64,7 +64,7 @@ export function DiscoverModal({ open, onClose, onJoined }: DiscoverModalProps) {
         ) : (
           results.map((c) => (
             <div key={c.channelId} className="qc-discover-row">
-              <Avatar name={c.name ?? "Channel"} id={c.channelId} group size={32} />
+              <Avatar name={c.name ?? "Channel"} id={c.channelId} variant="channel" size={32} />
               <div className="qc-discover-row__main">
                 <div className="qc-discover-row__name">{c.name ?? "Channel"}</div>
                 <div className="qc-discover-row__desc">

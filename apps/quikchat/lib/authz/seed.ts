@@ -8,8 +8,11 @@
  *                              `extraAdminCheck` bridge, and every
  *                              assignAppRoles call.
  *   - Moderator             — Member grants + Channel.Moderate (DECISION 4).
- *   - Member     (isDefault) — curated day-to-day set (DECISION 2: no public
- *                              channels by default).
+ *   - Member     (isDefault) — curated day-to-day set. Includes
+ *                              Channel.Public:create for NEW orgs only —
+ *                              existing orgs opt in via Settings → Roles. See
+ *                              the two-list block below for why that split
+ *                              exists and what each list does.
  *   - Guest                 — Channel:view only (participate-only floor).
  *
  * Also backfills EXISTING orgs (DECISION 1): every current QuikChat user with
@@ -43,7 +46,7 @@ import { Prisma } from "@quikit/database";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { db } from "@/lib/db";
 import { errorFields, logger } from "@/lib/shared";
-import { allPermissionPairs, type Action } from "./permissionsRegistry";
+import { allPermissionPairs, isValidPermissionPair, type Action } from "./permissionsRegistry";
 import { getQuikChatAppId } from "./permissions";
 
 /** Prisma's unique-constraint violation — the concurrent-seed loser's error. */
@@ -55,8 +58,32 @@ type Grant = { resource: string; action: Action };
 
 /* ───────────────────────── Default grant sets (§4) ───────────────────────── */
 
-/** Member (isDefault) — curated. NO Channel.Public / Moderate / IngestOrg / config. */
-const MEMBER_GRANTS: Grant[] = [
+/* ───────────────────────────────────────────────────────────────────────────
+ * TWO LISTS PER ROLE, AND THE DIFFERENCE IS NOT COSMETIC.
+ *
+ * `seedAllDefaultRoles` uses each role's *_NEW_ORG list when it CREATES the
+ * role, and its *_BACKFILL list in `backfillRoleGrants`, which re-applies on
+ * EVERY pass. That second call is why the two must be separate:
+ *
+ *   - a pair in the BACKFILL list is re-added to every org, every pass, so an
+ *     admin who un-ticks it in Settings → Roles watches it come back within the
+ *     5-minute cache window. It is effectively permanent.
+ *   - a pair only in the NEW_ORG list is granted once, at role creation, and an
+ *     admin's decision to remove it STICKS.
+ *
+ * Pick the list by what you want to happen to orgs that already exist. The
+ * names carry the safety here, so read them before adding a pair.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Member grants RETRO-ADDED to every existing org on the next seed pass.
+ *
+ * ⚠️ ADDING A PAIR HERE grants it to EVERY EXISTING DEPLOYMENT within ~5
+ * minutes, with no admin action — and makes it un-un-tickable, because this
+ * list is re-applied on every pass. Only add here for something that must be
+ * universal and is not a policy choice. When in doubt, use the NEW_ORG list.
+ */
+const MEMBER_GRANTS_BACKFILL: Grant[] = [
   { resource: "Channel", action: "view" },
   { resource: "Channel", action: "create" },
   { resource: "Channel.DM", action: "create" },
@@ -67,9 +94,30 @@ const MEMBER_GRANTS: Grant[] = [
   { resource: "Assistant.IngestPrivate", action: "create" },
 ];
 
+/**
+ * Member (isDefault) grants for orgs seeded FROM NOW ON.
+ *
+ * ⚠️ ADDING A PAIR HERE affects only NEW orgs. Existing orgs are untouched —
+ * their admin grants it per-org in Settings → Roles, and that decision sticks.
+ *
+ * `Channel.Public:create` lives here and NOT in the backfill list on purpose:
+ * "who may create a public channel" is a policy choice per organisation, so it
+ * ships on by default for new orgs while remaining genuinely revocable.
+ */
+const MEMBER_GRANTS_NEW_ORG: Grant[] = [
+  ...MEMBER_GRANTS_BACKFILL,
+  { resource: "Channel.Public", action: "create" },
+];
+
 /** Moderator — Member + moderation (DECISION 4 default: Moderator + Admin). */
-const MODERATOR_GRANTS: Grant[] = [
-  ...MEMBER_GRANTS,
+const MODERATOR_GRANTS_BACKFILL: Grant[] = [
+  ...MEMBER_GRANTS_BACKFILL,
+  { resource: "Channel.Moderate", action: "update" },
+  { resource: "Channel.Moderate", action: "delete" },
+];
+
+const MODERATOR_GRANTS_NEW_ORG: Grant[] = [
+  ...MEMBER_GRANTS_NEW_ORG,
   { resource: "Channel.Moderate", action: "update" },
   { resource: "Channel.Moderate", action: "delete" },
 ];
@@ -88,8 +136,16 @@ interface RoleSpec {
 
 /**
  * Find-or-create one QcAppRole and seed its grants once. Only fills grants
- * when the role has ZERO rows, so deliberate admin un-checks (Phase 3) are
- * never overwritten. Returns the role id.
+ * when the role has ZERO rows. Returns the role id.
+ *
+ * ⚠️ THIS DOES NOT PROTECT ADMIN UN-CHECKS, despite what this comment used to
+ * claim ("deliberate admin un-checks are never overwritten"). `seedRole` alone
+ * never rewrites a role that already has grants — but `seedAllDefaultRoles`
+ * calls `backfillRoleGrants` immediately afterwards, and THAT re-adds every
+ * pair in the role's *_BACKFILL list on every pass. An un-ticked pair survives
+ * only if it is absent from that list. The old wording asserted a safety
+ * property the pass as a whole does not have, which is the kind of note that
+ * makes a real bug look impossible. See the two-list block near the top.
  *
  * DOES NOT TOUCH `isDefault` ON AN EXISTING ROW — and deliberately no longer
  * demotes anything. The old shape ran `updateMany(isDefault:true → false)`
@@ -240,6 +296,36 @@ async function backfillRoleGrants(roleId: string, grants: Grant[]): Promise<void
     data: missing.map((g) => ({ roleId, resource: g.resource, action: g.action })),
     skipDuplicates: true,
   });
+}
+
+/**
+ * Delete grant rows whose (resource, action) no longer exists in the permission
+ * registry.
+ *
+ * These rows are already INERT — `userCan` runs `isResource`/`isAction` before
+ * it queries, so an unknown pair can never grant anything. But they linger after
+ * a resource is retired and quietly inflate every count: removing
+ * `Channel.InviteExternal` from the registry left the admin role reporting 17
+ * grants against a 16-pair tree, which is exactly the discrepancy that makes a
+ * future count assertion look broken.
+ *
+ * Safe because it only ever removes pairs the registry does not recognise — it
+ * cannot touch a deliberate admin grant, since the matrix can only ever tick a
+ * pair the registry defines. Scoped to this org's roles.
+ */
+async function pruneUnknownGrants(orgId: string, appId: string): Promise<void> {
+  const rows = await db.qcRolePermission.findMany({
+    where: { role: { orgId, appId } },
+    select: { id: true, resource: true, action: true },
+  });
+  const stale = rows.filter((r) => !isValidPermissionPair(r.resource, r.action));
+  if (stale.length === 0) return;
+
+  await db.qcRolePermission.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } });
+  logger.info(
+    { orgId, removed: stale.length, pairs: stale.map((r) => `${r.resource}:${r.action}`) },
+    "RBAC: pruned grant rows for resources no longer in the permission registry",
+  );
 }
 
 /* ───────────────────────── user → role assignment ───────────────────────── */
@@ -395,7 +481,7 @@ export async function seedAllDefaultRoles(orgId: string): Promise<SeededRoleIds 
       isSystem: false,
       isDefault: false,
     },
-    MODERATOR_GRANTS,
+    MODERATOR_GRANTS_NEW_ORG,
   );
   const memberRoleId = await seedRole(
     orgId,
@@ -406,7 +492,7 @@ export async function seedAllDefaultRoles(orgId: string): Promise<SeededRoleIds 
       isSystem: false,
       isDefault: true,
     },
-    MEMBER_GRANTS,
+    MEMBER_GRANTS_NEW_ORG,
   );
   const guestRoleId = await seedRole(
     orgId,
@@ -422,9 +508,11 @@ export async function seedAllDefaultRoles(orgId: string): Promise<SeededRoleIds 
 
   // Top up grants on tree growth (admin gets every pair; others their default set).
   await backfillRoleGrants(adminRoleId, allPermissionPairs());
-  await backfillRoleGrants(moderatorRoleId, MODERATOR_GRANTS);
-  await backfillRoleGrants(memberRoleId, MEMBER_GRANTS);
+  await backfillRoleGrants(moderatorRoleId, MODERATOR_GRANTS_BACKFILL);
+  await backfillRoleGrants(memberRoleId, MEMBER_GRANTS_BACKFILL);
   await backfillRoleGrants(guestRoleId, GUEST_GRANTS);
+
+  await pruneUnknownGrants(orgId, appId);
 
   // Runs on EVERY pass, including the fully-idempotent one where all four roles
   // already exist — that is what repairs an org whose flag was lost before this

@@ -309,10 +309,22 @@ body {
   border-radius: 20%;
   overflow: hidden;
 }
-.qc-avatar--group .qc-avatar__inner {
+/* A public CHANNEL is a place, not people: neutral tile with a full-size hash,
+   sized to carry the same visual weight as the initials/photo it replaces.
+   Private groups deliberately do NOT get this — they render like a person,
+   because a group is its members. */
+.qc-avatar--channel .qc-avatar__inner {
   border-radius: var(--qc-r-md);
   background: #d9d9d9 !important;
   color: var(--qc-text-2);
+}
+.qc-avatar__hash {
+  /* 0.4 * size is the initials' font-size (set inline); the hash needs to run
+     larger to read as a glyph rather than a character. Line-height 1 keeps it
+     optically centred at every avatar size. */
+  font-size: 1.5em;
+  line-height: 1;
+  font-weight: 500;
 }
 .qc-avatar img {
   width: 100%;
@@ -590,6 +602,63 @@ body {
 }
 .qc-list-section {
   padding: 10px 12px 4px;
+}
+/* Collapsible section header: title + count on the left, its own `+` on the
+   right. The `+` is rendered conditionally by ChannelList — for Channels it
+   appears only with the Channel.Public:create grant — so this styles the row,
+   never the permission. */
+.qc-list-section--head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-right: 6px;
+}
+.qc-list-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.qc-list-section__chev {
+  display: inline-block;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--qc-text-3);
+  /* Points down when expanded, right when collapsed. */
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+.qc-list-section__chev[data-collapsed="true"] {
+  transform: rotate(0deg);
+}
+.qc-list-section__count {
+  font-size: 11px;
+  color: var(--qc-text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Per-section empty copy. Deliberately quiet — an empty section is a normal
+   state, not a problem to solve. */
+.qc-list-empty {
+  padding: 2px 12px 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qc-text-3);
+}
+/* Plain-copy replacement for the removed visibility dropdown in NewGroupModal. */
+.qc-modal-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qc-text-3);
 }
 .qc-chan-row {
   display: flex;

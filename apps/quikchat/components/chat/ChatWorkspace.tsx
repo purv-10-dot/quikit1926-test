@@ -130,7 +130,9 @@ export function ChatWorkspace({
   const [openedUnreadCount, setOpenedUnreadCount] = useState(0);
   const [connected, setConnected] = useState(true);
   const [newChatOpen, setNewChatOpen] = useState(false);
-  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  // null = closed. "group" (private) and "channel" (public) are two entry
+  // points into one modal — the vocabulary split, not two components.
+  const [createMode, setCreateMode] = useState<"group" | "channel" | null>(null);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [presence, setPresence] = useState<PresenceState>(emptyPresence);
   const [typing, setTyping] = useState<TypingState>(emptyTyping);
@@ -1041,7 +1043,9 @@ export function ChatWorkspace({
           statusOf={statusOfUser}
           onPick={pickChannel}
           onNewChat={() => setNewChatOpen(true)}
-          onNewGroup={() => setNewGroupOpen(true)}
+          onNewGroup={() => setCreateMode("group")}
+          onNewChannel={() => setCreateMode("channel")}
+          canCreateChannel={perms.has("Channel.Public", "create")}
           onDiscover={() => setDiscoverOpen(true)}
           onOpenAiChat={handleOpenAiChat}
         />
@@ -1108,12 +1112,17 @@ export function ChatWorkspace({
           }}
         />
         <NewGroupModal
-          open={newGroupOpen}
-          onClose={() => setNewGroupOpen(false)}
-          canCreatePublic={perms.has("Channel.Public", "create")}
+          open={createMode !== null}
+          mode={createMode ?? "group"}
+          onClose={() => setCreateMode(null)}
           onCreated={(ch) => {
             onChannelReady(ch);
-            toast.success({ title: `Created ${ch.name ? `#${ch.name}` : "the group"}` });
+            toast.success({
+              title:
+                ch.visibility === "public"
+                  ? `Created #${ch.name ?? "channel"}`
+                  : `Created ${ch.name ?? "the group"}`,
+            });
           }}
         />
         <DiscoverModal

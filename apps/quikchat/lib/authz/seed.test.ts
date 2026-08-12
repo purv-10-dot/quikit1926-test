@@ -69,29 +69,31 @@ describe("seedAllDefaultRoles", () => {
     expect(byName.get("Member")?.isDefault).toBe(true);
     expect(byName.get("Member")?.isSystem).toBe(false);
 
-    // Grant-set sizes: admin=16 (all pairs), Moderator=10, Member=8, Guest=1.
-    // admin was 17 until Channel.InviteExternal was removed from the registry
-    // (it gated nothing) — this number tracks allPermissionPairs(), so a drop
-    // here means the tree shrank, not that a grant went missing.
+    // Grant-set sizes on the NEW-ORG path: admin=16 (all pairs), Moderator=11,
+    // Member=9, Guest=1. Member/Moderator each gained Channel.Public:create
+    // (8→9, 10→11) when public-channel creation became a Member default for new
+    // orgs. admin tracks allPermissionPairs(), so a change THERE means the tree
+    // moved, not that a grant went missing.
     const grantSizes = mockDb.qcRolePermission.createMany.mock.calls
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((c: any) => c[0].data.length)
       .sort((a: number, b: number) => a - b);
-    expect(grantSizes).toEqual([1, 8, 10, 16]);
+    expect(grantSizes).toEqual([1, 9, 11, 16]);
   });
 
-  it("Member (isDefault) grants exclude Channel.Public / Moderate / IngestOrg / config", async () => {
+  it("a NEW org's Member gets Channel.Public but still no Moderate / IngestOrg / config", async () => {
     freshOrgMocks();
     await seedAllDefaultRoles(ORG);
 
-    // The 8-row createMany is the Member seed.
+    // The 9-row createMany is the Member seed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const calls = mockDb.qcRolePermission.createMany.mock.calls as any[];
-    const memberCall = calls.find((c) => c[0].data.length === 8);
+    const memberCall = calls.find((c) => c[0].data.length === 9);
     expect(memberCall).toBeTruthy();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resources = new Set((memberCall[0].data as any[]).map((g: any) => g.resource));
-    expect(resources.has("Channel.Public")).toBe(false);
+    // Creating public channels is now a Member default — for NEW orgs only.
+    expect(resources.has("Channel.Public")).toBe(true);
     expect(resources.has("Channel.Moderate")).toBe(false);
     expect(resources.has("Assistant.IngestOrg")).toBe(false);
     expect(resources.has("Assistant.Configure")).toBe(false);
@@ -127,6 +129,121 @@ describe("seedAllDefaultRoles", () => {
       (c: any) => c[0]?.where?.isDefault === true,
     );
     expect(demotes).toHaveLength(0);
+  });
+});
+
+/**
+ * The NEW_ORG / BACKFILL split, which is the whole point of having two lists.
+ *
+ * `backfillRoleGrants` re-applies its list on EVERY seed pass, so any pair in it
+ * is effectively permanent: an admin un-ticks it in Settings → Roles and it
+ * returns within the 5-minute cache window. A pair only in the NEW_ORG list is
+ * granted once at role creation and the admin's removal STICKS.
+ *
+ * `Channel.Public:create` is deliberately NEW_ORG-only, so "who may create a
+ * public channel" is a per-org policy choice rather than a property of the
+ * seeder. If it ever leaks into the backfill list, the roles page silently stops
+ * being able to revoke it — the failure these tests exist to catch.
+ */
+describe("NEW_ORG vs BACKFILL grant lists", () => {
+  /**
+   * Pairs written for ONE role. Scoped by roleId on purpose: the admin role's
+   * backfill list is `allPermissionPairs()`, so it legitimately contains
+   * Channel.Public — asserting over every createMany call would fail on admin's
+   * correct behaviour and say nothing about Member's.
+   */
+  function pairsFor(roleId: string): string[] {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (mockDb.qcRolePermission.createMany.mock.calls as any[])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .flatMap((c) => c[0].data as any[])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((g: any) => g.roleId === roleId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((g: any) => `${g.resource}:${g.action}`);
+  }
+
+  /** An org that already has all four roles and NO grants — backfill only. */
+  function existingOrgMocks() {
+    freshOrgMocks();
+    mockDb.qcAppRole.findUnique.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args: any) =>
+        Promise.resolve({ id: `role-${args.where.orgId_appId_name.name}` }) as never,
+    );
+    // Roles exist with grants, so seedRole's create-time fill is skipped …
+    mockDb.qcRolePermission.count.mockResolvedValue(5 as never);
+    // … and the role currently holds nothing, so backfill tops up its whole list.
+    mockDb.qcRolePermission.findMany.mockResolvedValue([] as never);
+  }
+
+  it("does NOT retro-add Channel.Public to an existing org", async () => {
+    existingOrgMocks();
+    await seedAllDefaultRoles("org-existing-1");
+
+    const member = pairsFor("role-Member");
+    expect(member.length).toBeGreaterThan(0); // the backfill really ran
+    expect(member).not.toContain("Channel.Public:create");
+    // …and the admin role still gets it, because its list is every pair.
+    expect(pairsFor("role-admin")).toContain("Channel.Public:create");
+  });
+
+  it("still retro-adds the universal Member grants to an existing org", async () => {
+    existingOrgMocks();
+    await seedAllDefaultRoles("org-existing-2");
+
+    const member = pairsFor("role-Member");
+    expect(member).toContain("Channel:create");
+    expect(member).toContain("Channel.DM:create");
+  });
+
+  // Guards the seam directly: if someone adds Channel.Public to the backfill
+  // list, an admin's un-tick stops sticking and this fails.
+  it("grants Channel.Public on the NEW-org path but never on the backfill path", async () => {
+    freshOrgMocks();
+    await seedAllDefaultRoles("org-brand-new");
+    expect(pairsFor("role-Member")).toContain("Channel.Public:create");
+
+    resetMockDb();
+    __resetAppIdCacheForTest();
+    existingOrgMocks();
+    await seedAllDefaultRoles("org-existing-3");
+    expect(pairsFor("role-Member")).not.toContain("Channel.Public:create");
+  });
+});
+
+/**
+ * Registry-retirement hygiene. Removing a resource leaves its grant rows behind;
+ * they are inert (userCan validates the registry first) but they inflate counts —
+ * retiring Channel.InviteExternal left admin reporting 17 grants against a
+ * 16-pair tree.
+ */
+describe("pruneUnknownGrants", () => {
+  it("deletes grant rows whose resource is no longer in the registry", async () => {
+    freshOrgMocks();
+    mockDb.qcRolePermission.findMany.mockResolvedValue([
+      { id: "g1", resource: "Channel", action: "create" },
+      { id: "g2", resource: "Channel.InviteExternal", action: "create" },
+      { id: "g3", resource: "Totally.Gone", action: "view" },
+    ] as never);
+
+    await seedAllDefaultRoles("org-prune");
+
+    expect(mockDb.qcRolePermission.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["g2", "g3"] } },
+    });
+  });
+
+  it("does not delete anything when every grant is still valid", async () => {
+    freshOrgMocks();
+    mockDb.qcRolePermission.findMany.mockResolvedValue([
+      { id: "g1", resource: "Channel", action: "create" },
+      { id: "g2", resource: "Channel.Public", action: "create" },
+    ] as never);
+
+    await seedAllDefaultRoles("org-prune-clean");
+
+    expect(mockDb.qcRolePermission.deleteMany).not.toHaveBeenCalled();
   });
 });
 

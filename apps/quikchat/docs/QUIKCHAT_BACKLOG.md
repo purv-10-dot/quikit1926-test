@@ -386,6 +386,28 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   `<video>` elements that can't attach a header.
 - **Scroll-to-divider on open** — Teams/WhatsApp scroll to the unread line; a
   divider above a large unread block is currently off-screen.
+- **Group ↔ Channel conversion** — deliberately excluded from the vocabulary
+  change. Flipping a private Group to a public Channel makes **the entire
+  message history visible to everyone in the org, retroactively** — there is no
+  "from here on" boundary in the model. That makes the confirmation copy the
+  actual deliverable, not the mutation: it has to state plainly what becomes
+  visible and to whom, and it cannot be a generic "Are you sure?". Gated on the
+  same `Channel.Public:create` grant as creation. The reverse direction
+  (Channel → Group) is less dangerous but not free either — people who joined a
+  public channel would silently lose access, so it needs its own copy about who
+  gets removed. Needs UX sign-off on both strings before any code.
+- **The un-tick of a backfilled grant is still transient** — a real limitation of
+  the roles UI as shipped, not an edge case. `backfillRoleGrants` re-applies each
+  role's `*_BACKFILL` list on every seed pass, so un-ticking any pair on that
+  list in Settings → Roles brings it back within the 5-minute cache window. As of
+  now that is **7 of Member's 9 grants** (everything except `Channel.Public`,
+  which this session moved to the NEW_ORG-only list, and which is therefore the
+  only one an admin can actually revoke). The admin sees the checkbox clear,
+  reloads later, and finds it ticked again — with nothing explaining why.
+  A real fix needs to distinguish "never granted" from "deliberately revoked",
+  i.e. a tombstone table or a per-role seeded-version marker → schema change →
+  Pravin. Until then, treat every BACKFILL-list pair as mandatory, and put new
+  policy-shaped grants in the NEW_ORG list only.
 - **PRODUCT DECISION NEEDED: `GET /api/invites/[code]` is world-readable, and
   that contradicts the accept path's stated threat model.** The preview endpoint
   has no org check and no session requirement — anyone holding a code gets the

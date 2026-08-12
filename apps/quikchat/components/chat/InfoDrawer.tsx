@@ -23,6 +23,7 @@ import type { EffectiveStatus } from "@/lib/presence-store";
 import { ChannelNotificationPref } from "./ChannelNotificationPref";
 import { InviteManager } from "./InviteManager";
 import { UserPicker } from "./UserPicker";
+import { avatarVariantFor } from "./ChannelList";
 
 export interface InfoDrawerProps {
   channel: ChannelListItem;
@@ -152,7 +153,7 @@ export function InfoDrawer({
           name={channel.name ?? "Direct message"}
           id={channel.channelId}
           avatarUrl={channel.avatarUrl}
-          group={isGroup}
+          variant={avatarVariantFor(channel)}
           size={84}
         />
         {canEdit ? (
