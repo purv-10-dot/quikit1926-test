@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 
+
 /**
  * GET /api/apps/switcher
  *

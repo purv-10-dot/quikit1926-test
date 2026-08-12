@@ -35,7 +35,7 @@ export const GET = withSuperAdminAuth(async (auth, request: NextRequest) => {
           baseUrl: true,
           status: true,
           createdAt: true,
-          oauthClient: { select: { clientId: true } },
+          oauthClients: { where: { purpose: "first_party" }, select: { clientId: true }, take: 1 },
         },
         orderBy: { name: "asc" },
         ...paginationToSkipTake(pagination),
@@ -51,7 +51,7 @@ export const GET = withSuperAdminAuth(async (auth, request: NextRequest) => {
       baseUrl: a.baseUrl,
       status: a.status,
       createdAt: a.createdAt.toISOString(),
-      hasOAuthClient: !!a.oauthClient,
+      hasOAuthClient: a.oauthClients.length > 0,
     }));
 
     return NextResponse.json({ success: true, ...buildPaginationResponse(data, total, pagination) });

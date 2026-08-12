@@ -65,14 +65,16 @@ describe("GET /api/super/apps/[id]", () => {
       slug: "quikscale",
       baseUrl: "https://quikscale.example.com",
       status: "active",
-      oauthClient: {
-        id: "oc-1",
-        clientId: "client-1",
-        redirectUris: ["https://quikscale.example.com/callback"],
-        scopes: ["openid", "profile"],
-        grantTypes: ["authorization_code"],
-        createdAt: new Date(),
-      },
+      oauthClients: [
+        {
+          id: "oc-1",
+          clientId: "client-1",
+          redirectUris: ["https://quikscale.example.com/callback"],
+          scopes: ["openid", "profile"],
+          grantTypes: ["authorization_code"],
+          createdAt: new Date(),
+        },
+      ],
       _count: { userAccess: 10 },
     };
     mockDb.app.findUnique.mockResolvedValue(mockApp as never);
@@ -82,7 +84,32 @@ describe("GET /api/super/apps/[id]", () => {
     const body = await bodyOf(res);
     expect(body.success).toBe(true);
     expect(body.data.id).toBe("app-1");
-    expect(body.data.oauthClient).toBeDefined();
+    // Reshaped from the array (first_party-filtered) back to a singular
+    // field. Compare against a JSON-round-tripped copy — body came through
+    // res.json(), which serializes Date fields to ISO strings.
+    expect(body.data.oauthClient).toEqual({
+      ...mockApp.oauthClients[0],
+      createdAt: mockApp.oauthClients[0].createdAt.toISOString(),
+    });
+    expect(body.data.oauthClients).toBeUndefined();
+  });
+
+  it("returns oauthClient: null when the app has no first-party client", async () => {
+    setSession(SUPER_ADMIN);
+    const mockApp = {
+      id: "app-2",
+      name: "NoOAuth",
+      slug: "no-oauth",
+      baseUrl: "https://no-oauth.example.com",
+      status: "active",
+      oauthClients: [],
+      _count: { userAccess: 0 },
+    };
+    mockDb.app.findUnique.mockResolvedValue(mockApp as never);
+
+    const res = await GET(makeRequest("http://localhost:3006/api/super/apps/app-2"), PARAMS);
+    const body = await bodyOf(res);
+    expect(body.data.oauthClient).toBeNull();
   });
 });
 

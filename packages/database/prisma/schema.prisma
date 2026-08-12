@@ -32,7 +32,7 @@ model App {
   qcAppRoles       QcAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
-  oauthClient      OAuthClient?
+  oauthClients     OAuthClient[]
   tenantAccess     OrgAppAccess[]
   userAccess       UserAppAccess[]
 
@@ -43,9 +43,22 @@ model App {
 
 model OAuthClient {
   id           String   @id @default(cuid())
-  appId        String   @unique
+  appId        String
+  /// "first_party" = the app's own SSO client, human-managed via the Super
+  /// Admin OAuth panel (at most one per app, enforced in application code —
+  /// see apps/quikit/app/api/super/apps/[id]/oauth/route.ts).
+  /// "dynamic" = self-registered via POST /api/oauth/register (RFC 7591),
+  /// e.g. one per MCP tool (Claude Desktop, Cursor, ...). Many per app.
+  purpose      String   @default("first_party")
+  /// Human-readable label for dynamically-registered clients (the RFC 7591
+  /// `client_name` the registering tool sent). Null for first-party clients
+  /// (their identity is the App itself).
+  clientName   String?
   clientId     String   @unique
-  clientSecret String
+  /// Null = public client (no shared secret — e.g. a desktop/CLI MCP client).
+  /// Token exchange for a public client relies on PKCE instead of a secret;
+  /// see apps/quikit/app/api/oauth/token/route.ts.
+  clientSecret String?
   redirectUris String[]
   scopes       String[] @default(["openid", "profile", "email", "tenant"])
   grantTypes   String[] @default(["authorization_code", "refresh_token"])
@@ -54,6 +67,7 @@ model OAuthClient {
   app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+  @@index([appId])
   @@schema("quikit")
 }
 
@@ -6493,7 +6507,11 @@ model QtProjectMember {
 model QtPersonalAccessToken {
   id          String    @id @default(cuid())
   orgId       String
-  projectId   String
+  /// Null = user-scoped (resolves to {userId, orgId}; per-call project access
+  /// is checked at MCP-tool-call time). Non-null = a legacy project-scoped
+  /// token from before user-scoped tokens existed — kept working unmigrated,
+  /// but no longer creatable.
+  projectId   String?
   createdById String
   /// User-supplied label (e.g. "Claude Code â€” laptop") â€” never the token itself.
   name        String    @default("Unnamed token")
@@ -6502,7 +6520,11 @@ model QtPersonalAccessToken {
   revokedAt   DateTime?
   lastUsedAt  DateTime?
   createdAt   DateTime  @default(now())
-  project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Consecutive failed live access-rechecks (withPatAuth.ts). Reset to 0 on
+  /// any successful recheck; revokedAt is only set once this crosses the
+  /// threshold, so a single transient read doesn't permanently kill the token.
+  failedAccessChecks Int @default(0)
+  project     QtProject? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([tokenHash])
   @@index([orgId, projectId])

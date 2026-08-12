@@ -25,6 +25,13 @@ const launcherPublicRoutes = [
   "/api/oauth/userinfo",
   "/api/oauth/jwks",
   "/.well-known/openid-configuration",
+  // RFC 8414 sibling of the OIDC discovery doc above. MCP clients (Claude
+  // Code, Claude Desktop) try this well-known path FIRST per the MCP
+  // Authorization spec, before falling back to /.well-known/openid-configuration.
+  // Without this exemption it 307-redirects to the login page instead of
+  // returning JSON, which breaks MCP OAuth discovery before it ever reaches
+  // the (already-working) OIDC endpoint.
+  "/.well-known/oauth-authorization-server",
   // Native-invite acceptance — the "Set Up My Account" link in onboarding
   // emails now targets the launcher (:3001) so the Set-Password page is
   // served from here instead of bouncing to the auth app on :3000.

@@ -197,6 +197,50 @@ export async function loadProjectAccess(
 }
 
 /**
+ * True if the user is still an active member of the org. This is the
+ * live-access recheck for a user-scoped PAT (withPatAuth.ts) — unlike a
+ * legacy project-scoped PAT, it isn't bound to any one project to recheck
+ * membership against, so the closest equivalent signal is org membership.
+ */
+export async function isActiveOrgMember(orgId: string, userId: string): Promise<boolean> {
+  const member = await db.orgMember.findFirst({
+    where: { userId, orgId, status: "active" },
+    select: { role: true },
+  });
+  return Boolean(member);
+}
+
+export interface AccessibleProject {
+  id: string;
+  projectKey: string;
+  name: string;
+}
+
+/**
+ * Every project a user can act on in this org — same admin-bypass-else-
+ * membership branching as `loadProjectAccess`/`app/api/projects/route.ts`'s
+ * space list. Backs the `list_projects` MCP tool, which a user-scoped PAT
+ * needs to discover valid project ids (a legacy project-scoped PAT has no
+ * use for this beyond its own single project).
+ */
+export async function loadAccessibleProjects(
+  orgId: string,
+  userId: string,
+): Promise<AccessibleProject[]> {
+  const fullAccess =
+    (await isTenantAdmin(userId, orgId)) || (await isQuikTrackAppAdmin(userId, orgId));
+
+  return db.qtProject.findMany({
+    where: {
+      orgId,
+      isDeleted: false,
+      ...(fullAccess ? {} : { members: { some: { userId, isDeleted: false } } }),
+    },
+    select: { id: true, projectKey: true, name: true },
+  });
+}
+
+/**
  * Write gate for task-group operations (create/rename/recolor/delete/reorder/
  * move-task). Reorganizing the board's grouping is a project write, so it's
  * gated on `Issue:update` — the same grant that lets a role move/edit work.
