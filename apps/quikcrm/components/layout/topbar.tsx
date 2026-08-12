@@ -22,6 +22,7 @@ import {
   User,
   UserPlus,
   Users,
+  Wallet,
   Workflow,
   X,
   LifeBuoy,
@@ -123,6 +124,17 @@ const SETTINGS_MENU = [
         label: "Activity Targets",
         description: "Set daily activity targets for salespeople",
         // Super Admin / Org Admin / CRM Administrator only.
+        adminOnly: true,
+      },
+      {
+        href: "/settings/sales-cost",
+        icon: Wallet,
+        label: "Sales Cost",
+        description: "Salaries, tools and cost per lead, prospect and won deal",
+        // Super Admin / Org Admin / CRM Administrator only — this surfaces
+        // salaries and per-rep spend, so it is hidden from SalesManager,
+        // SalesUser, MarketingUser and FinanceUser. The page and every API
+        // route re-check independently.
         adminOnly: true,
       },
     ],

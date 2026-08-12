@@ -40,7 +40,12 @@
       "Bash(node --check linkedin-profile-scraper.js)",
       "Bash(node --check prospect-sync.js)",
       "PowerShell(cd 'c:\\\\Users\\\\Adarsh.Jain\\\\Desktop\\\\Quikcrm_clone_16-07\\\\apps\\\\quikcrm'; git stash push -- components/settings/users-page.tsx 2>&1 | Out-Host; $out = npx tsc --noEmit -p tsconfig.json 2>&1; Write-Output \"=== baseline error count \\(my change stashed\\) ===\"; \\($out | Select-String -Pattern 'error TS'\\).Count; git stash pop 2>&1 | Out-Host)",
-      "PowerShell(cd 'c:\\\\Users\\\\Adarsh.Jain\\\\Desktop\\\\Quikcrm_clone_16-07\\\\apps\\\\quikcrm'; Write-Output \"=== working tree file intact? ===\"; Get-Item -LiteralPath 'components\\\\settings\\\\users-page.tsx' | Select-Object Length; Select-String -LiteralPath 'components\\\\settings\\\\users-page.tsx' -Pattern 'Pagination|PAGE_SIZE_OPTIONS|safePage' | Select-Object -First 8 | ForEach-Object { $_.LineNumber.ToString\\(\\) + ': ' + $_.Line.Trim\\(\\) }; Write-Output \"=== conflict markers? ===\"; \\(Select-String -LiteralPath 'components\\\\settings\\\\users-page.tsx' -Pattern '^<<<<<<<|^>>>>>>>'\\).Count; Write-Output \"=== stash list ===\"; git stash list)"
+      "PowerShell(cd 'c:\\\\Users\\\\Adarsh.Jain\\\\Desktop\\\\Quikcrm_clone_16-07\\\\apps\\\\quikcrm'; Write-Output \"=== working tree file intact? ===\"; Get-Item -LiteralPath 'components\\\\settings\\\\users-page.tsx' | Select-Object Length; Select-String -LiteralPath 'components\\\\settings\\\\users-page.tsx' -Pattern 'Pagination|PAGE_SIZE_OPTIONS|safePage' | Select-Object -First 8 | ForEach-Object { $_.LineNumber.ToString\\(\\) + ': ' + $_.Line.Trim\\(\\) }; Write-Output \"=== conflict markers? ===\"; \\(Select-String -LiteralPath 'components\\\\settings\\\\users-page.tsx' -Pattern '^<<<<<<<|^>>>>>>>'\\).Count; Write-Output \"=== stash list ===\"; git stash list)",
+      "Bash(node --check popup.js)",
+      "Bash(node --check api.js)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('manifest.json','utf8'\\)\\); console.log\\('manifest ok'\\)\")",
+      "Bash(node --check upwork.js)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:3008/settings/users' -MaximumRedirection 0 -ErrorAction Stop -TimeoutSec 45; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output \"LENGTH: $\\($r.Content.Length\\)\" } catch { $resp = $_.Exception.Response; if \\($resp\\) { Write-Output \"STATUS: $\\([int]$resp.StatusCode\\) $\\($resp.StatusCode\\)\"; Write-Output \"LOCATION: $\\($resp.Headers.Location\\)\" } else { Write-Output \"ERROR: $\\($_.Exception.Message\\)\" } })"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me",

@@ -44,6 +44,15 @@ export async function GET(req: NextRequest) {
     const leadId = searchParams.get("leadId");
     const relatedKind = searchParams.get("relatedKind");
     const relatedObjectId = searchParams.get("relatedObjectId");
+    // Timeline for a record that stores its activities as STANDALONE rows
+    // (relatedKind "None") keyed by externalId — currently the Upwork module.
+    // Such rows cannot be found by relatedObjectId (it is the "standalone"
+    // sentinel), so they are addressed by their source system plus the
+    // per-record externalId prefix the writer guarantees. Both params are
+    // required together; either one alone is ignored, so this cannot widen an
+    // existing query.
+    const sourceSystem = searchParams.get("sourceSystem");
+    const externalIdPrefix = searchParams.get("externalIdPrefix");
     const pageSize = Math.min(
       Math.max(parseInt(searchParams.get("pageSize") ?? searchParams.get("limit") ?? "100", 10) || 100, 1),
       500,
@@ -79,6 +88,8 @@ export async function GET(req: NextRequest) {
           { relatedKind: "Lead", relatedObjectId: leadId },
         ],
       });
+    } else if (sourceSystem && externalIdPrefix) {
+      baseAnd.push({ sourceSystem, externalId: { startsWith: externalIdPrefix } });
     }
     const acl = await buildActivityAclWhere(user);
     if (acl) baseAnd.push(acl);

@@ -1,0 +1,46 @@
+/* Extracted from QuikFetch popup.css + styles.css — only the rules the Upwork
+   panel UI actually uses. Rules for LinkedIn's injected #right-side-container
+   were intentionally left out. */
+
+/* --- from popup.css --- */
+.border-light {
+  border-bottom: 0.033rem solid #54545699;
+}
+
+.bg-dark {
+  background-color: #151515;
+}
+
+.border-black {
+  border: 1px solid black;
+}
+
+.popup-container {
+  width: 34rem;
+  height: 45rem;
+}
+
+/* used by #groupList in upwork.html */
+.width-searchlist{
+  width:20rem;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: black;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* --- from styles.css: the only Upwork-relevant rule --- */
+#fetchDatatext {
+  margin-top: 50px;
+  color: #333;
+  font-size: 16px;
+}

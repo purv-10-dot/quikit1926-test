@@ -28,6 +28,7 @@ const STANDARD_MODULES = [
   "telephony",
   "users",
   "icp",
+  "upwork",
 ];
 
 interface Props {

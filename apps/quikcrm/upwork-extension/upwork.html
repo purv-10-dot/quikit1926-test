@@ -1,0 +1,160 @@
+<div class="flex justify-center hidden" id="upworkdata">
+  <!-- Main Wrapper -->
+  <div class="w-full max-w-full rounded-lg shadow-md">
+    <div class="w-full max-w-full mx-auto">
+      <div class="relative flex items-center w-full h-12 rounded-lg focus-within:shadow-lg bg-white overflow-hidden">
+        <div class="grid place-items-center h-full w-12 text-gray-300">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+
+        <input class="peer h-full w-full outline-none text-sm text-gray-700 pr-2" type="text" id="groupSearch"
+          placeholder=" SELECT GROUP" />
+      </div>
+
+      <!-- Search Results List Below Input -->
+      <ul id="groupList"
+        class="absolute mt-1 width-searchlist max-h-40 overflow-y-auto bg-gray-800 text-gray-300 rounded-md shadow-lg z-10">
+        <!-- List items go here -->
+      </ul>
+    </div>
+
+    <!-- Button to Fetch Data -->
+    <div id="fetchsection" class="text-center">
+      <button id="fetchData" class="btnn py-2 px-6 bg-gray-600 hover:bg-gray-700 rounded text-white hidden">
+        <span id="fetchDatatext">Fetch Data</span>
+      </button>
+    </div>
+
+    <!-- Initial Data Section -->
+    <div id="intialdata" class="bg-black-100 p-2 rounded-lg shadow-md">
+      <form id="output">
+        <button type="button" class="bg-white text-black font-bold w-full py-2 px-4 border w-64 rounded mb-1" id="save">
+          Add to CRM
+        </button>
+        <!-- Job Title -->
+        <div class="mb-4 font-normal text-base">
+          <label for="jobTitle" class="block text-white mb-1">Job Title</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4  rounded "
+            id="jobTitle" placeholder="Job Title" />
+        </div>
+
+        <!-- Project Type -->
+        <div class="mb-4 font-normal text-base">
+          <label for="projectType" class="block text-white mb-1 ">Project Type</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="projectType" placeholder="Project Type" />
+        </div>
+
+        <!-- Skills -->
+        <div class="mb-4 font-normal text-base">
+          <label for="SkillsandExpertise" class="block text-white mb-1 ">Skills</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="SkillsandExpertise" placeholder="Skills" />
+        </div>
+
+        <!-- Client Location -->
+        <div class="mb-4 font-normal text-base">
+          <label for="clientLocation" class="block text-white mb-1 ">Location</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="clientLocation" placeholder="Location" />
+        </div>
+
+        <!-- Proposals -->
+        <div class="mb-4 font-normal text-base">
+          <label for="proposals" class="block text-white mb-1 ">Proposals</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="proposals" placeholder="Proposals" />
+        </div>
+
+        <!-- Reviews -->
+        <div class="mb-4 font-normal text-base">
+          <label for="reviews" class="block text-white mb-1  ">Reviews</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="reviews" placeholder="Reviews" />
+        </div>
+
+        <!-- Project Price -->
+        <div class="mb-4 font-normal text-base">
+          <label for="projectprice" class="block text-white mb-1 ">Project Price</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="projectprice" placeholder="Project Price" />
+        </div>
+
+        <!-- Project Time -->
+        <div class="mb-4 font-normal text-base">
+          <label for="projectTime" class="block text-white mb-1 ">Project Time</label>
+          <input type="text"
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="projectTime" placeholder="Project Time" />
+        </div>
+
+        <!-- Required Connects -->
+        <div class="mb-4 font-normal text-base">
+          <label for="ConnectsValue" class="block text-white mb-1 ">Required Connects</label>
+          <input
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="ConnectsValue" placeholder="Connects" />
+        </div>
+
+        <!-- Job Description -->
+        <div class="mb-4 font-normal text-base">
+          <label for="jobDescription" class="block text-white mb-1 ">Description</label>
+          <textarea
+            class="appearance-none bg-transparent border border-gray-800 w-full text-white py-2 px-4 leading-tight rounded"
+            id="jobDescription" rows="8" placeholder="Description"></textarea>
+        </div>
+
+
+      </form>
+    </div>
+
+    <!-- Loader overlay -->
+    <div class="absolute inset-0 bg-gray-600 opacity-50 flex justify-center items-center z-10 hidden"
+      id="fetchDataloader">
+      <img src="./assets/loader0.gif" class="w-16 h-16" alt="Loading..." />
+    </div>
+  </div>
+</div>
+</div>
+
+
+
+<div class="flex justify-center hidden" id="AI">
+  <!DOCTYPE html>
+  <html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matched Percentages</title>
+    <style>
+      #AI {
+        display: none;
+        /* Initially hidden */
+      }
+
+      #AI.visible {
+        display: block;
+        /* Make it visible when the class 'visible' is added */
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="alo">
+
+    </div>
+  </body>
+
+  </html>
+</div

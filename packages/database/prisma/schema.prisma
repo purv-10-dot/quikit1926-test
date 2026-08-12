@@ -10875,6 +10875,316 @@ model CrmUserPermissionExtra {
   @@schema("app_quikcrm")
 }
 
+/// Upwork job captured by the QuikCRM Upwork browser extension.
+///
+/// DELIBERATELY STANDALONE. An Upwork job is a *market signal*, not yet a party
+/// we have a relationship with, so it is NOT a CrmLead / CrmProspect /
+/// CrmAccount / CrmContact / CrmOpportunity and carries no FK to any of them.
+/// Nothing in this module auto-converts a row into those entities. A future
+/// "convert to lead" workflow would add an explicit nullable `convertedLeadId`
+/// here; until then the separation is absolute and intentional.
+///
+/// Every scraped field is stored as free text exactly as Upwork rendered it
+/// ("$25.00 Hourly", "20 to 50", "Less than 30 hrs/week"). Upwork has no stable
+/// public schema for these and the strings are what a human needs to read when
+/// triaging. Parsing them into numerics would silently lose information the
+/// moment Upwork changes a label, so normalisation is left to a later pass.
+model CrmUpworkJob {
+  id    String @id @default(cuid())
+  orgId String
+
+  /// Canonical Upwork job URL (query string and fragment stripped before
+  /// storage — see normalizeJobUrl). Nullable because the scraper cannot always
+  /// resolve a URL; dedupe then falls back to the title+description hash.
+  jobUrl String?
+
+  /// Upwork's own job ticket id ("~021234…") when it can be parsed out of the
+  /// URL. Informational — dedupe keys on `dedupeKey`, not this.
+  upworkJobId String?
+
+  /// Stable per-org dedupe key: the normalised jobUrl when present, otherwise
+  /// a sha256 of (title + description). @@unique([orgId, dedupeKey]) is what
+  /// actually enforces "the same job is never added twice" — the service does a
+  /// pre-check for a friendly message, but this constraint is the guarantee
+  /// under a race between two concurrent "Add to CRM" clicks.
+  dedupeKey String
+
+  jobTitle       String
+  jobDescription String?
+  projectType    String?
+  /// Free-text skills exactly as scraped; the extension joins Upwork's list
+  /// with ", ". A String[] would imply a normalised vocabulary we do not have.
+  skills           String?
+  clientLocation   String?
+  proposals        String?
+  reviews          String?
+  projectPrice     String?
+  projectTime      String?
+  requiredConnects String?
+
+  /// Everything the scraper produced, verbatim. Kept so a scraper change or a
+  /// field we did not model can still be recovered from an existing row.
+  rawData Json?
+
+  /// Output of the existing Upwork AI chain (match percentages, fit score,
+  /// confidence, suggested client message, feedback), written by a follow-up
+  /// PATCH after the job row exists. Nullable throughout: the AI step is
+  /// optional and skippable from the panel, so a row with no AI data is normal.
+  ///
+  /// Stored as one Json blob rather than columns because the shape is owned by
+  /// an external service we do not version — promoting fields to columns would
+  /// mean a migration every time that service changes its response.
+  aiAnalysis    Json?
+  aiScore       Int?
+  aiConfidence  String?
+  /// The message the user actually wrote to the client, kept alongside the
+  /// AI-suggested one inside aiAnalysis so the two are never confused.
+  clientMessage String?
+  aiAnalyzedAt  DateTime?
+
+  /// Owner = the user who clicked "Add to CRM". Non-admins only see their own
+  /// rows (see buildUpworkWhere); admins see the whole org.
+  createdByUserId String?
+  updatedByUserId String?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  /// One row per job per org — the duplicate guard.
+  @@unique([orgId, dedupeKey])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, createdByUserId])
+  @@index([orgId, createdAt])
+  @@schema("app_quikcrm")
+}
+
+// ============================================================================
+// Sales Cost Management — Settings → Sales Cost. Admin-only (isCrmAdminUser).
+//
+// Computes the real acquisition cost per sales rep:
+//   salary + allocated tool costs + other costs = total monthly cost
+//   -> cost per lead / prospect / opportunity / won deal
+//
+// HISTORICAL CORRECTNESS is the central design constraint. Nothing here is ever
+// edited in place: every cost is an EFFECTIVE-DATED row (effectiveFrom /
+// effectiveTo). "Raise Rahul's salary" closes the current row at the end of the
+// prior month and opens a new one, so re-running August 2026 next year yields
+// the same number it did in August 2026. There is no snapshot table and no
+// month-close step — a period's cost is always re-derivable from these rows.
+//
+// Lead / prospect / opportunity / won-deal COUNTS are NOT stored here. They are
+// read live from CrmLead.ownerId, CrmProspect.savedById and
+// CrmOpportunity.ownerId. This module deliberately introduces no second
+// ownership system; see lib/services/sales-cost/counts.ts.
+//
+// `userId` is a bare String matching the convention across app_quikcrm (User
+// lives in schema `auth`), with a denormalised `userName` snapshot so a
+// historical report still renders a name after a user is removed.
+// ============================================================================
+
+/// One effective-dated salary row for a sales rep. Amounts are monthly.
+///
+/// Non-overlap per (orgId, userId) is enforced by the service layer
+/// (assertNoSalaryOverlap), not by a DB constraint — Postgres cannot express
+/// "no overlapping [effectiveFrom, effectiveTo) ranges" without an exclusion
+/// constraint over a range type, which Prisma cannot model. The unique index on
+/// (orgId, userId, effectiveFrom) stops the exact-duplicate case.
+model CrmSalesRepSalary {
+  id     String @id @default(cuid())
+  orgId  String
+  userId String
+  /// Denormalised at write time so historical rows still render a name after
+  /// the user leaves the org. Never used for lookups.
+  userName String?
+
+  /// Gross monthly salary in `currency`. Decimal(18,2) matches
+  /// CrmOpportunity.amount so money never round-trips through a JS float.
+  monthlyAmount Decimal @db.Decimal(18, 2)
+  currency      String  @default("INR")
+
+  /// Inclusive start. Normalised to the first day of the month at UTC midnight
+  /// by the service, so period math is a plain date comparison.
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = still current. A row effective for August only is
+  /// [2026-08-01, 2026-09-01).
+  effectiveTo DateTime?
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([orgId, userId, effectiveFrom])
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([orgId, userId, effectiveFrom])
+  @@index([orgId, effectiveFrom, effectiveTo])
+  @@schema("app_quikcrm")
+}
+
+/// A paid sales tool (LinkedIn Sales Navigator, a dialer, an email tool, …).
+///
+/// The tool row is stable IDENTITY only — name, vendor, availability window,
+/// on/off switch. Its PRICE lives in CrmSalesToolPrice, effective-dated exactly
+/// like CrmSalesRepSalary, so raising a seat from ₹8,000 to ₹10,000 in September
+/// leaves August's report reading ₹8,000 forever. There is deliberately no
+/// `cost` column here: a single mutable price field is precisely what would let
+/// an edit rewrite history.
+///
+/// Who pays is expressed entirely by CrmSalesToolAllocation. That split is what
+/// prevents a shared tool from being double-counted: a ₹16,000 seat allocated
+/// 50/50 charges ₹8,000 to each rep, and the allocation percentages for any
+/// overlapping period are validated to sum to ≤ 100.
+model CrmSalesTool {
+  id    String @id @default(cuid())
+  orgId String
+
+  name     String
+  vendor   String?
+  category String?
+
+  /// Tool-level availability window. An allocation is only billed for a period
+  /// when the tool's window, the allocation's window AND a price version all
+  /// cover that period.
+  startDate DateTime
+  endDate   DateTime?
+  /// Hard off switch, independent of the dates — an admin pausing a tool should
+  /// not have to rewrite its window.
+  active Boolean @default(true)
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  prices      CrmSalesToolPrice[]
+  allocations CrmSalesToolAllocation[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, active])
+  @@index([orgId, startDate, endDate])
+  @@schema("app_quikcrm")
+}
+
+/// One effective-dated price version for a tool.
+///
+/// Mirrors CrmSalesRepSalary's contract: `effectiveFrom` INCLUSIVE,
+/// `effectiveTo` EXCLUSIVE and nullable (= current), both snapped to UTC month
+/// boundaries. Changing a tool's price closes the open version at the new start
+/// month and inserts a new row, so a report for any earlier month keeps
+/// resolving to the price that was actually in force then.
+///
+/// `billingFrequency` and `currency` live here rather than on the tool because
+/// they are properties of a PRICE — switching a seat from monthly to annual
+/// billing is a price change, and the old months must keep their old basis.
+model CrmSalesToolPrice {
+  id     String @id @default(cuid())
+  orgId  String
+  toolId String
+
+  /// Cost for one `billingFrequency` interval, NOT normalised to a month.
+  /// monthlyCostOf() in lib/services/sales-cost/period.ts converts to a monthly
+  /// figure (annual/12, quarterly/3) at read time; storing the raw amount keeps
+  /// the number the finance team actually sees on the invoice.
+  cost Decimal @db.Decimal(18, 2)
+  /// "monthly" | "quarterly" | "annual" | "one_time" — see BILLING_FREQUENCIES.
+  billingFrequency String @default("monthly")
+  currency         String @default("INR")
+
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = current price. A price effective for August only is
+  /// [2026-08-01, 2026-09-01).
+  effectiveTo DateTime?
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tool CrmSalesTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  /// One price version per tool per starting month. Full range non-overlap is
+  /// enforced in the service, for the same reason as CrmSalesRepSalary.
+  @@unique([orgId, toolId, effectiveFrom])
+  @@index([orgId])
+  @@index([orgId, toolId])
+  @@index([orgId, toolId, effectiveFrom, effectiveTo])
+  @@schema("app_quikcrm")
+}
+
+/// How much of one tool's cost a given sales rep carries, over a date range.
+///
+/// `percentage` is the allocation share (100 = the rep pays for the whole
+/// tool). Effective-dated for the same reason salaries are: changing a 50/50
+/// split to 70/30 must not rewrite last month's numbers.
+model CrmSalesToolAllocation {
+  id     String @id @default(cuid())
+  orgId  String
+  toolId String
+  userId String
+  /// Denormalised name snapshot — same rationale as CrmSalesRepSalary.userName.
+  userName String?
+
+  /// 0.01–100. Decimal(6,3) so a three-way split (33.333) is exact rather than
+  /// a float that fails a "sums to 100" check.
+  percentage Decimal @db.Decimal(6, 3)
+
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = ongoing.
+  effectiveTo DateTime?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tool CrmSalesTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, toolId, userId, effectiveFrom])
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([orgId, toolId])
+  @@index([orgId, userId, effectiveFrom, effectiveTo])
+  @@schema("app_quikcrm")
+}
+
+/// Any recurring sales cost that is neither salary nor a tool — travel budget,
+/// lead-list purchases, incentive pool. Same effective-dating contract.
+model CrmSalesOtherCost {
+  id     String @id @default(cuid())
+  orgId  String
+  userId String
+  userName String?
+
+  label String
+  /// Monthly amount. Unlike CrmSalesTool there is no billingFrequency here —
+  /// these are entered as a monthly figure by design.
+  monthlyAmount Decimal @db.Decimal(18, 2)
+  currency      String  @default("INR")
+
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = ongoing.
+  effectiveTo DateTime?
+  active      Boolean   @default(true)
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([orgId, userId, effectiveFrom, effectiveTo])
+  @@index([orgId, active])
+  @@schema("app_quikcrm")
+}
+
 // ============================================================================
 // Custom Fields (a.k.a. Customer Fields) — see FRD "Customer Fields" v2.
 // Two-tier scope: scope="global" (org-wide, projectId NULL) or scope="space"

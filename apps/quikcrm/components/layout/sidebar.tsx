@@ -32,6 +32,7 @@ import {
   PenSquare,
   Target,
   Crosshair,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -119,6 +120,15 @@ const NAV_TOP: NavItem[] = [
  * explicit and a role without it would only reach a 403 page.
  */
 const ICP_ITEM: NavItem = { href: "/icp", label: "ICP", icon: Crosshair };
+
+/**
+ * Upwork — jobs captured from upwork.com by the browser extension. A separate
+ * top-level entity, NOT a lead/prospect source that feeds those modules, so it
+ * gets its own entry rather than living under one of them. Gated on
+ * `upwork.view` for the same reason as ICP: the module shipped after RBAC, so
+ * every role's grant is explicit and an ungranted role would only reach a 403.
+ */
+const UPWORK_ITEM: NavItem = { href: "/upwork", label: "Upwork", icon: Globe };
 
 const NAV_BOTTOM: NavItem[] = [
   { href: "/marketing/campaigns", label: "Campaigns", icon: Megaphone },
@@ -533,6 +543,7 @@ function SidebarNav({
   const { isAdmin, can } = usePermissions();
   const hasActivityTarget = useHasActivityTarget();
   const canViewIcp = can("icp", "view");
+  const canViewUpwork = can("upwork", "view");
 
   // Append "My Activity Target" to the Activities group only when assigned.
   const activitiesGroup: NavGroupConfig = hasActivityTarget
@@ -573,6 +584,9 @@ function SidebarNav({
       />
       {canViewIcp ? (
         <NavLink item={ICP_ITEM} pathname={pathname} collapsed={collapsed} />
+      ) : null}
+      {canViewUpwork ? (
+        <NavLink item={UPWORK_ITEM} pathname={pathname} collapsed={collapsed} />
       ) : null}
       {NAV_BOTTOM.map((item) => (
         <NavLink

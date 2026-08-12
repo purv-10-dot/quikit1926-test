@@ -39,6 +39,8 @@ const TAB_GROUPS = [
     tabs: [
       { href: "/settings/activity-types", label: "Activity Types" },
       { href: "/settings/activity-targets", label: "Activity Targets" },
+      // Sales Cost is admin-only — see adminOnly filtering in SettingsLayout below.
+      { href: "/settings/sales-cost", label: "Sales Cost", adminOnly: true },
     ],
   },
   {
@@ -69,6 +71,7 @@ const ALL_NAV_ITEMS = [
   { href: "/settings/quote-templates", label: "Quote Templates" },
   { href: "/settings/activity-types", label: "Activity Types" },
   { href: "/settings/activity-targets", label: "Activity Targets" },
+  { href: "/settings/sales-cost", label: "Sales Cost" },
   { href: "/settings/email", label: "Email Accounts" },
   { href: "/settings/api-keys", label: "API Keys" },
   { href: "/settings/audit", label: "Audit Log" },

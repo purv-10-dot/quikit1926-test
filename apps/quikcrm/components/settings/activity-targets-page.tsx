@@ -8,11 +8,15 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Table, TableScroll, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Pagination } from "@/components/shared/pagination";
 import { useToast } from "@/hooks/use-toast";
 
 const CONFIG_API = "/api/settings/activity-targets";
 const USERS_API = "/api/users/picker";
 const TYPE_TARGETS_API = "/api/settings/activity-type-targets";
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 10;
 
 interface UserAssignment {
   enabled: boolean;
@@ -73,6 +77,13 @@ export function ActivityTargetsPageClient() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Pagination is a view concern too: both the Assign Targets table and the
+  // Activity Type Targets grid render the SAME page slice, so the two sections
+  // always show the same salespeople. Edits live in `rows`/`typeGrid` keyed by
+  // userId, so paging away never discards an unsaved change.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
 
   const applyConfigToRows = useCallback((cfg: TargetConfig) => {
     const next: Record<string, RowState> = {};
@@ -172,12 +183,22 @@ export function ActivityTargetsPageClient() {
     });
   }, [users, rows, search, roleFilter, statusFilter]);
 
+  // Clamp during render rather than in an effect, so tightening a filter can
+  // never leave both tables blank for a frame on a now-out-of-range page.
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedUsers = useMemo(
+    () => filteredUsers.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredUsers, safePage, pageSize],
+  );
+
   const filtersActive = search.trim() !== "" || roleFilter !== "all" || statusFilter !== "all";
 
   function clearFilters() {
     setSearch("");
     setRoleFilter("all");
     setStatusFilter("all");
+    setPage(1);
   }
 
   function rowFor(userId: string): RowState {
@@ -393,14 +414,20 @@ export function ActivityTargetsPageClient() {
                 placeholder="Search by name, email, role or status…"
                 aria-label="Search salespeople"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
               />
             </div>
             <Select
               className="w-auto"
               aria-label="Filter by role"
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(1);
+              }}
             >
               <option value="all">All roles</option>
               {roleOptions.map((role) => (
@@ -413,7 +440,10 @@ export function ActivityTargetsPageClient() {
               className="w-auto"
               aria-label="Filter by target status"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
             >
               <option value="all">All statuses</option>
               <option value="assigned">Assigned</option>
@@ -445,7 +475,7 @@ export function ActivityTargetsPageClient() {
                 </TR>
               </THead>
               <TBody>
-                {filteredUsers.map((u) => {
+                {pagedUsers.map((u) => {
                   const r = rowFor(u.id);
                   return (
                     <TR key={u.id}>
@@ -493,6 +523,21 @@ export function ActivityTargetsPageClient() {
               </TBody>
             </Table>
           </div>
+
+          {filteredUsers.length > 0 && (
+            <Pagination
+              page={safePage}
+              pageSize={pageSize}
+              total={filteredUsers.length}
+              onPage={setPage}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setPage(1);
+              }}
+              showPageNumbers
+            />
+          )}
         </CardBody>
       </Card>
 
@@ -510,6 +555,15 @@ export function ActivityTargetsPageClient() {
               blank for 0. These targets are separate from the overall daily target above; a
               salesperson can have either, both, or neither.
             </p>
+            {filteredUsers.length > 0 && (
+              <p className="mt-1 text-xs text-crm-muted">
+                Showing the same salespeople as{" "}
+                <span className="font-medium text-crm-text">Assign Targets</span> above — page{" "}
+                <span className="font-medium text-crm-text">{safePage}</span> of{" "}
+                <span className="font-medium text-crm-text">{totalPages}</span>. Unsaved edits are
+                kept when you change page.
+              </p>
+            )}
           </div>
 
           {types.length === 0 ? (
@@ -537,7 +591,7 @@ export function ActivityTargetsPageClient() {
                   </TR>
                 </THead>
                 <TBody>
-                  {filteredUsers.map((u) => (
+                  {pagedUsers.map((u) => (
                     // Row carries an explicit background (and the hover tint) so
                     // the sticky first cell below can inherit it and stay opaque.
                     <TR key={u.id} className="bg-white hover:bg-crm-blue-soft">
