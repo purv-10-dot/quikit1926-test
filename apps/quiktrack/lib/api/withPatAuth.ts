@@ -11,6 +11,8 @@ export interface PatAuthContext {
   projectId: string;
   /** Every PAT-authenticated caller is an automated tool, never a human at a keyboard. */
   actorType: "agent";
+  /** The PAT's own user-supplied name (e.g. "Claude Code — laptop") — identifies which tool/token acted, for the same rows that carry actorType. */
+  actingAgentId: string;
 }
 
 export type PatAuthResult =
@@ -49,6 +51,57 @@ function touchLastUsedAt(id: string, lastUsedAt: Date | null, now: Date): void {
     .catch(() => undefined);
 }
 
+const ACCESS_RECHECK_ATTEMPTS = 2;
+const ACCESS_RECHECK_BACKOFF_MS = 100;
+
+/**
+ * A distinct outcome from the negative case (`ok: true, hasAccess: false`) —
+ * every attempt at the live-access recheck THREW (DB timeout, connection
+ * blip, transient upstream error) rather than returning an answer. Callers
+ * must not treat this as "no access": a wrongly-revoked PAT is a developer
+ * silently losing automation with no obvious cause and no way to undo it,
+ * while honouring a PAT through a brief DB blip costs almost nothing — every
+ * request still re-checks access on its own. Same reasoning as the runtime's
+ * kill-switch lookup: a lookup error there fails OPEN, because turning a
+ * database blip into an outage is worse than the thing the check guards
+ * against.
+ */
+type AccessRecheckResult =
+  | { ok: true; hasAccess: true }
+  | { ok: true; hasAccess: false }
+  | { ok: false };
+
+/**
+ * Retries `loadProjectAccess` up to `ACCESS_RECHECK_ATTEMPTS` times with a
+ * short backoff. Only a call that actually RETURNS (null or a real access
+ * object) counts as an answer — a thrown error is a failed check, not a
+ * negative one, and is retried. If every attempt throws, the caller gets
+ * `{ ok: false }` and must NOT revoke on it.
+ */
+async function recheckProjectAccess(
+  orgId: string,
+  createdById: string,
+  projectId: string,
+): Promise<AccessRecheckResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= ACCESS_RECHECK_ATTEMPTS; attempt++) {
+    try {
+      const access = await loadProjectAccess(orgId, createdById, projectId);
+      return { ok: true, hasAccess: access !== null };
+    } catch (error: unknown) {
+      lastError = error;
+      if (attempt < ACCESS_RECHECK_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, ACCESS_RECHECK_BACKOFF_MS));
+      }
+    }
+  }
+  console.warn(
+    "[withPatAuth] live-access recheck failed after retries — leaving the PAT untouched, not revoking",
+    lastError,
+  );
+  return { ok: false };
+}
+
 /**
  * Resolves a PAT from a request's Authorization header to {userId, orgId,
  * projectId}, or a 401/429 outcome if missing/malformed/not-found/expired/
@@ -85,6 +138,7 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
       expiresAt: true,
       revokedAt: true,
       lastUsedAt: true,
+      name: true,
     },
   });
   const now = new Date();
@@ -95,8 +149,17 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
   // on every call, mirroring withOrgAuth's Bearer-token recheck. A token
   // whose creator no longer qualifies is auto-revoked so it also stops
   // appearing as active in the PAT settings UI, not just at the API layer.
-  const access = await loadProjectAccess(pat.orgId, pat.createdById, pat.projectId);
-  if (!access) {
+  //
+  // Retried, and NOT the same thing as a genuine "no access" answer — see
+  // recheckProjectAccess's doc comment. Only `hasAccess: false` (the check
+  // actually ran and came back negative) revokes. A recheck that errors on
+  // every attempt (`ok: false`) fails this one request but leaves the PAT's
+  // revokedAt untouched, so a DB blip can never permanently burn a token.
+  const recheck = await recheckProjectAccess(pat.orgId, pat.createdById, pat.projectId);
+  if (!recheck.ok) {
+    return { ok: false, status: 401 };
+  }
+  if (!recheck.hasAccess) {
     await db.qtPersonalAccessToken
       .update({ where: { id: pat.id }, data: { revokedAt: now } })
       .catch(() => undefined);
@@ -112,6 +175,7 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
       orgId: pat.orgId,
       projectId: pat.projectId,
       actorType: "agent",
+      actingAgentId: pat.name,
     },
   };
 }

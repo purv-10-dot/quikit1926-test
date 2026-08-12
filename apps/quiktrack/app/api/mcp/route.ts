@@ -17,7 +17,13 @@ export const POST = withOrgAuth(
       token: "pat",
       clientId: ctx.userId,
       scopes: [],
-      extra: { orgId: ctx.orgId, projectId: ctx.projectId, userId: ctx.userId, actorType: ctx.actorType },
+      extra: {
+        orgId: ctx.orgId,
+        projectId: ctx.projectId,
+        userId: ctx.userId,
+        actorType: ctx.actorType,
+        actingAgentId: ctx.actingAgentId ?? "",
+      },
     };
     return mcpHandler.fetch(req, { authInfo });
   },

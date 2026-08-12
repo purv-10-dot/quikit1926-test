@@ -18,6 +18,7 @@ const RAW_TOKEN = "test-raw-token-value";
 const ORG = "org_1";
 const PROJECT = "proj_1";
 const CREATED_BY = "user_1";
+const PAT_NAME = "Claude Code — laptop";
 const AGENT_NEXTAUTH_SECRET = "test-nextauth-secret-for-agent-jwt";
 
 async function mintAgentJwt(
@@ -51,6 +52,7 @@ function mockValidPat() {
     revokedAt: null,
     lastUsedAt: new Date(),
     createdAt: new Date(),
+    name: PAT_NAME,
   } as never);
 }
 
@@ -67,20 +69,21 @@ beforeEach(() => {
 });
 
 describe("withOrgAuth({ allowPat: true })", () => {
-  it("resolves a valid PAT to projectId + actorType 'agent'", async () => {
+  it("resolves a valid PAT to projectId + actorType 'agent' + actingAgentId (the PAT's own name)", async () => {
     mockValidPat();
-    const seen: { projectId?: string; actorType?: string } = {};
+    const seen: { projectId?: string; actorType?: string; actingAgentId?: string } = {};
     const handler = withOrgAuth(
       async (ctx) => {
         seen.projectId = ctx.projectId;
         seen.actorType = ctx.actorType;
+        seen.actingAgentId = ctx.actingAgentId;
         return NextResponse.json({ success: true });
       },
       { allowPat: true },
     );
     const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
     expect(res.status).toBe(200);
-    expect(seen).toEqual({ projectId: PROJECT, actorType: "agent" });
+    expect(seen).toEqual({ projectId: PROJECT, actorType: "agent", actingAgentId: PAT_NAME });
   });
 
   it("returns the MCP-style 401 (not the app's generic shape) when the PAT is invalid", async () => {
@@ -128,6 +131,45 @@ describe("withOrgAuth({ allowPat: true })", () => {
         where: { id: "pat_1" },
         data: expect.objectContaining({ revokedAt: expect.any(Date) }),
       }),
+    );
+  });
+
+  // PAT auto-revoke regression: a transient failure of the live-access
+  // recheck (DB timeout/blip) must NOT be treated as "creator lost access."
+  // Only an actual negative answer from the check revokes.
+  it("rejects the request but does NOT revoke the PAT when the access recheck throws on every attempt", async () => {
+    mockValidPat();
+    // The recheck's own project lookup throws every time — a stand-in for a
+    // transient DB error, not a real "project not found" answer.
+    mockDb.qtProject.findFirst.mockRejectedValue(new Error("connection reset"));
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+    // The load-bearing assertion: revokedAt is never written on a failed
+    // check, only on a genuine negative one.
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
+    );
+  });
+
+  it("retries the access recheck and succeeds if a later attempt returns cleanly", async () => {
+    mockValidPat();
+    mockDb.qtProject.findFirst
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce({ id: PROJECT } as never);
+    const seen: { actorType?: string } = {};
+    const handler = withOrgAuth(
+      async (ctx) => {
+        seen.actorType = ctx.actorType;
+        return NextResponse.json({ success: true });
+      },
+      { allowPat: true },
+    );
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(200);
+    expect(seen.actorType).toBe("agent");
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
     );
   });
 });

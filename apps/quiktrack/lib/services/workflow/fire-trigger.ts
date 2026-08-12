@@ -86,6 +86,7 @@ async function fireTriggerForIssue(orgId: string, issueId: string, event: Trigge
           orgId, issueId: issue.id, transitionId: res.transitionId,
           fromStatusId: issue.statusId, toStatusId: target.toStatusId,
           actorId: SYSTEM_ACTOR, reason: `trigger:${event}`,
+          actorType: "agent", actingAgentId: SYSTEM_ACTOR,
         },
       });
     });

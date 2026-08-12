@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { userCan } from "@/lib/api/permissions";
 
 const createSchema = z.object({
   name: z.string().min(1).max(120),
@@ -21,7 +21,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  if (!(await hasAdminAccess(userId, orgId))) {
+  if (!(await userCan(userId, orgId, "Team", "create"))) {
     return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
   const parsed = createSchema.safeParse(await req.json());

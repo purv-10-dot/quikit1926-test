@@ -94,6 +94,7 @@ async function resolvePatIdentity(req: NextRequest): Promise<ResolvedIdentity | 
         orgId: patResult.context.orgId,
         projectId: patResult.context.projectId,
         actorType: patResult.context.actorType,
+        actingAgentId: patResult.context.actingAgentId,
         session,
       };
     }

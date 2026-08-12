@@ -57,10 +57,12 @@ export interface McpAuthExtra {
   userId: string;
   /** Always "agent" — every MCP caller is a PAT-authenticated tool, never a human session. */
   actorType: "user" | "agent";
+  /** The PAT's own name — identifies which tool/token acted. */
+  actingAgentId: string;
 }
 
 export const mcpHandler = createMcpHandler(({ authInfo }) => {
-  const { orgId, projectId, userId, actorType } = authInfo?.extra as unknown as McpAuthExtra;
+  const { orgId, projectId, userId, actorType, actingAgentId } = authInfo?.extra as unknown as McpAuthExtra;
   const server = new McpServer({ name: "quiktrack", version: "1.0.0" });
 
   server.registerTool(
@@ -486,6 +488,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               toStatusId: parsed.data.statusId as string,
               actorId: userId,
               actorType,
+              actingAgentId,
             },
           });
         }
@@ -498,6 +501,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               userId,
               body,
               actorType,
+              actingAgentId,
             })),
           });
         }
@@ -511,6 +515,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         before: issue,
         after: updated,
         actorType,
+        actingAgentId,
       });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
@@ -614,8 +619,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       }
 
       const created = await db.qtIssueComment.create({
-        data: { orgId, projectId, issueId: issue.id, userId, body: parsed.data.body, actorType },
-        select: { id: true, userId: true, body: true, createdAt: true, editedAt: true, actorType: true },
+        data: { orgId, projectId, issueId: issue.id, userId, body: parsed.data.body, actorType, actingAgentId },
+        select: {
+          id: true,
+          userId: true,
+          body: true,
+          createdAt: true,
+          editedAt: true,
+          actorType: true,
+          actingAgentId: true,
+        },
       });
       const author = await db.user.findUnique({
         where: { id: userId },
@@ -942,6 +955,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               toStatusId: allowedFields.statusId as string,
               actorId: userId,
               actorType,
+              actingAgentId,
             },
           });
         }
@@ -954,12 +968,22 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               userId,
               body,
               actorType,
+              actingAgentId,
             })),
           });
         }
         return issueAfter;
       });
-      void recordIssueChanges({ orgId, projectId, issueId: issue.id, userId, before: issue, after: updated, actorType });
+      void recordIssueChanges({
+        orgId,
+        projectId,
+        issueId: issue.id,
+        userId,
+        before: issue,
+        after: updated,
+        actorType,
+        actingAgentId,
+      });
 
       if (customFields) {
         const res = await writeIssueValues({
@@ -980,6 +1004,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               oldValue: renderCfValue(c.oldValue),
               newValue: renderCfValue(c.newValue),
               actorType,
+              actingAgentId,
             });
           }
         }

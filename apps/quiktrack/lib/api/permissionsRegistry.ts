@@ -208,6 +208,17 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "Report", label: "Reports", actions: ["view"] },
     ],
   },
+  {
+    key: "Teams",
+    label: "Teams",
+    leaves: [
+      // Create only, mirroring Sprint/Issue: GET /api/teams has no permission
+      // check today (any org member can list), and there's no update/delete
+      // grant enforced anywhere — only create replaces the inline
+      // hasAdminAccess check in POST /api/teams.
+      { resource: "Team", label: "Team", actions: ["create"] },
+    ],
+  },
   // Page-level sidebar destinations with no CRUD of their own. Modelled as
   // view-only rows (like Reports) so a single `view` grant both gates the page
   // and surfaces its sidebar row via ENTITY_TO_NAV — no separate Navigation tab.
@@ -241,6 +252,7 @@ export const APP_WIDE_ONLY_RESOURCES: ReadonlySet<string> = new Set([
   "Home",
   "Dashboard",
   "Report",
+  "Team",
 ]);
 
 export function isAppWideOnly(resource: string): boolean {
