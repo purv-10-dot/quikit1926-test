@@ -285,6 +285,15 @@ function EditorBody({
 
         <div className="flex items-center gap-2">
           {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
+          {/* Unpublished-changes signal. Rule/status edits save to the DRAFT and
+              do NOT gate work items until published — without this cue a user
+              edits rules, sees no gating change, and thinks rules are broken. */}
+          {!ed.published && !ed.saving && (
+            <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Unpublished changes — click Update workflow to apply
+            </span>
+          )}
           {/* "Update workflow" is always shown — disabled when there are no
               unpublished changes (just published / fresh), enabled the moment
               you edit again (no refresh needed). Split with ▾ "Save as new". */}
