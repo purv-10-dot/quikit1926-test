@@ -672,7 +672,18 @@ export function EditIssueModal({
         body: JSON.stringify(body),
       }).then((r) => r.json());
       if (res?.success) {
-        setIssue((cur) => (cur ? { ...cur, ...body } : cur));
+        // Merge the SERVER's returned row, not just the fields we sent — a
+        // status change can run workflow post-functions (e.g. "Assign to
+        // current user") that mutate other columns (assigneeId / resolution)
+        // server-side. Trusting only `body` would leave those stale until a
+        // manual refresh. Fall back to the local merge if no data came back.
+        const serverData = (res.data ?? null) as Partial<IssueFull> | null;
+        setIssue((cur) => (cur ? { ...cur, ...body, ...(serverData ?? {}) } : cur));
+        // Reflect a post-function assignee change in the panel's own assignee
+        // state (it's tracked separately from `issue`).
+        if (serverData && "assigneeId" in serverData) {
+          setAssigneeId((serverData.assigneeId as string | null) ?? "");
+        }
         // Carry the issue's resulting sprint so listeners (the backlog) can also
         // refresh the DESTINATION section on a sprint move — not just the source
         // the issue was found in. Falls back to the current sprint for non-move
