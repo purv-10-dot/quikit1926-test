@@ -16,15 +16,26 @@ interface KeyRow {
   id: string;
   label: string;
   keyPrefix: string;
+  scope: string;
   isActive: boolean;
   createdAt: string;
   revokedAt: string | null;
   lastUsedAt: string | null;
 }
 
+const SCOPE_OPTIONS = [
+  { value: "departments", label: "Departments" },
+  { value: "employees", label: "Employees" },
+] as const;
+
 function fmt(d: string | null): string {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function scopeLabel(scope: string): string {
+  if (scope === "all") return "All";
+  return scope.split(",").map((s) => SCOPE_OPTIONS.find((o) => o.value === s)?.label ?? s).join(", ");
 }
 
 export default function DepartmentApiKeysPage() {
@@ -35,6 +46,7 @@ export default function DepartmentApiKeysPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSlug, setSelectedSlug] = useState("");
   const [customLabel, setCustomLabel] = useState("");
+  const [selectedScope, setSelectedScope] = useState<string[]>([]);
   const [newKey, setNewKey] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -55,13 +67,14 @@ export default function DepartmentApiKeysPage() {
   const resolvedLabel = selectedSlug === "__other__" ? customLabel.trim() : (apps.find((a) => a.slug === selectedSlug)?.name ?? "");
 
   const createMut = useMutation({
-    mutationFn: (body: { label: string }) =>
+    mutationFn: (body: { label: string; scope: string[] }) =>
       api.post<{ apiKey: string }>("/api/v1/hrms/settings/integrations/department-api-keys", body),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["settings", "department-api-keys"] });
       setNewKey(res.data.apiKey);
       setSelectedSlug("");
       setCustomLabel("");
+      setSelectedScope([]);
     },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Could not generate key"),
   });
@@ -85,7 +98,11 @@ export default function DepartmentApiKeysPage() {
     if (okConfirm) revokeMut.mutate(k.id);
   };
 
-  const closeCreate = () => { setShowCreate(false); setNewKey(null); setSelectedSlug(""); setCustomLabel(""); };
+  const closeCreate = () => { setShowCreate(false); setNewKey(null); setSelectedSlug(""); setCustomLabel(""); setSelectedScope([]); };
+
+  const toggleScope = (value: string) => {
+    setSelectedScope((prev) => (prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value]));
+  };
 
   return (
     <div className="p-4 space-y-4">
@@ -120,6 +137,7 @@ export default function DepartmentApiKeysPage() {
               <tr className="bg-accent-50 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-2.5">Label</th>
                 <th className="px-4 py-2.5">Key</th>
+                <th className="px-4 py-2.5">Access</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5">Created</th>
                 <th className="px-4 py-2.5">Last Used</th>
@@ -131,6 +149,7 @@ export default function DepartmentApiKeysPage() {
                 <tr key={k.id} className="border-t border-gray-100">
                   <td className="px-4 py-2.5 font-medium text-gray-900">{k.label}</td>
                   <td className="px-4 py-2.5 font-mono text-gray-500">{k.keyPrefix}…</td>
+                  <td className="px-4 py-2.5 text-gray-600">{scopeLabel(k.scope)}</td>
                   <td className="px-4 py-2.5">
                     <span className={k.isActive ? "inline-flex items-center gap-1 text-green-700" : "inline-flex items-center gap-1 text-gray-400"}>
                       {k.isActive ? <ShieldCheck size={12} /> : <Ban size={12} />} {k.isActive ? "Active" : "Revoked"}
@@ -205,10 +224,27 @@ export default function DepartmentApiKeysPage() {
                 />
               </div>
             )}
+            <div>
+              <label className="text-xs font-medium text-gray-700">What can this key read?</label>
+              <div className="mt-1.5 space-y-1.5">
+                {SCOPE_OPTIONS.map((o) => (
+                  <label key={o.value} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedScope.includes(o.value)}
+                      onChange={() => toggleScope(o.value)}
+                      className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                    />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">Pick only what this app actually needs — this key will fail on anything else.</p>
+            </div>
             <button
               type="button"
-              disabled={!resolvedLabel || createMut.isPending}
-              onClick={() => createMut.mutate({ label: resolvedLabel })}
+              disabled={!resolvedLabel || selectedScope.length === 0 || createMut.isPending}
+              onClick={() => createMut.mutate({ label: resolvedLabel, scope: selectedScope })}
               className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
             >
               {createMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Generate

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   if (rl) return rl;
 
   try {
-    const orgId = await verifyExternalApiKey(apiKey);
+    const orgId = await verifyExternalApiKey(apiKey, "departments");
     if (!orgId) return err("Invalid or missing API key", 401);
 
     const departments = await prisma.department.findMany({
