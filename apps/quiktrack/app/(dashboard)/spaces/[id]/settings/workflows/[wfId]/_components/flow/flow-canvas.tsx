@@ -84,8 +84,10 @@ export function FlowCanvas({
   const structureKey = useMemo(
     () =>
       JSON.stringify(
-        // Positions are auto-computed (classic row), so they don't affect the
-        // structural signature — only which statuses exist and the initial one.
+        // Positions are intentionally EXCLUDED from the structural signature: a
+        // drag persists x/y via onNodeDragStop, and re-syncing draftToNodes here
+        // on every position change would yank the node back mid-drag. React Flow
+        // owns live positions; we only re-sync when statuses/transitions change.
         draft.statuses.map((s) => [s.statusId, s.isInitial]),
       ) +
       "|" +
@@ -123,11 +125,19 @@ export function FlowCanvas({
     [edges, selectedTransitionId],
   );
 
-  // Classic layout is auto-arranged, so drags are visual-only (React Flow's own
-  // store) — we don't persist positions back to the draft. onMoveNode is kept in
-  // the props for callers but intentionally unused here.
-  void onMoveNode;
   const onNodesChange = onNodesChangeInternal;
+
+  // Persist a node's new position to the draft when the user finishes dragging
+  // it. This is what makes the layout stick (draftToNodes reads saved x/y) AND
+  // marks the workflow dirty, so "Update workflow" enables to save/publish it.
+  // Fires once on release (not every frame). START is synthetic — nothing to save.
+  const handleNodeDragStop = useCallback(
+    (_: unknown, node: Node) => {
+      if (node.id === START_NODE_ID) return;
+      onMoveNode(node.id, Math.round(node.position.x), Math.round(node.position.y));
+    },
+    [onMoveNode],
+  );
 
   const onConnect = useCallback(
     (conn: Connection) => {
@@ -194,6 +204,7 @@ export function FlowCanvas({
       nodeTypes={flowNodeTypes}
       edgeTypes={flowEdgeTypes}
       onNodesChange={onNodesChange}
+      onNodeDragStop={handleNodeDragStop}
       onConnect={onConnect}
       onNodeClick={handleNodeClick}
       onEdgeClick={handleEdgeClick}
