@@ -269,11 +269,13 @@ function EditorBody({
             onClick={() => {
               // Open the Add-rule catalog directly. Needs a target transition —
               // reuse the selected one, else default to the first transition.
-              const target =
-                selectedTransition?.id ?? ed.draft.transitions[0]?.id ?? null;
-              if (target) {
-                setSelection({ kind: "transition", transitionId: target });
-                setAddRuleBucket("CONDITION");
+              const targetTr =
+                selectedTransition ?? ed.draft.transitions[0] ?? null;
+              if (targetTr) {
+                setSelection({ kind: "transition", transitionId: targetTr.id });
+                // The Create (INITIAL) transition only allows Validate details /
+                // Perform actions, so open the catalog on a bucket it permits.
+                setAddRuleBucket(targetTr.type === "INITIAL" ? "VALIDATOR" : "CONDITION");
               }
             }}
             disabled={ed.draft.transitions.length < 1}
@@ -646,6 +648,12 @@ function EditorBody({
       {addRuleBucket && selectedTransition && (
         <AddRuleDialog
           initialBucket={addRuleBucket}
+          // The Create (INITIAL) transition only supports Validate details and
+          // Perform actions — hide the other rails so the catalog matches the
+          // panel.
+          allowedBuckets={
+            selectedTransition.type === "INITIAL" ? ["VALIDATOR", "POSTFUNCTION"] : undefined
+          }
           onPick={(meta) => { setAddRuleBucket(null); setRulePick({ meta, index: null }); }}
           onClose={() => setAddRuleBucket(null)}
         />
