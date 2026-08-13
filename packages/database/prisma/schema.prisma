@@ -8751,6 +8751,22 @@ model CrmProspect {
   posts          Json?
   companyData    Json?
   experiences    Json?
+  /// Complete LinkedIn message thread captured by the extension's conversation
+  /// extractor, stored verbatim as an ordered array. Same Json pattern as
+  /// `posts` / `experiences` above: the shape is owned by the extension.
+  ///
+  /// Element shape:
+  ///   { messageId, senderName, senderProfileUrl, text, timestamp, date, time,
+  ///     direction, messageOrder, source: "LINKEDIN", attachments: [] }
+  ///
+  /// `messageOrder` is the authoritative chronological key. Messages are NEVER
+  /// deduplicated: a thread legitimately repeats the same text from different
+  /// senders ("Well", "No problem"), so identical entries are distinct messages
+  /// distinguished only by `messageOrder`.
+  ///
+  /// Nothing is promoted to a column — unlike `companyData`, no field here is
+  /// filterable, so widening the table would buy nothing.
+  linkedinConversation Json?
 
   /// ── Promoted company fields ────────────────────────────────────────────
   /// Extracted by the LinkedIn extension's company scraper and denormalised out

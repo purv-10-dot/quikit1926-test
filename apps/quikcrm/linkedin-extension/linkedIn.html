@@ -75,11 +75,28 @@
           <select id="orgSelect" class="form-input org-switcher-select"></select>
         </div>
 
+        <!-- ═══════════════════════════════════════════════════════════════
+             PROSPECT SELECTOR
+             Defaults to "New Prospect", which leaves the original extract →
+             save flow below completely untouched. Choosing an existing
+             prospect reveals the existing-prospect panel instead.
+             Source: /api/extension-auth/prospects (Bearer-authed, same as the
+             org and ICP feeds).
+             ══════════════════════════════════════════════════════════════ -->
+        <div id="prospectSelector" class="org-switcher">
+          <label class="form-label" for="prospectSelect">Prospect</label>
+          <select id="prospectSelect" class="form-input org-switcher-select">
+            <option value="">— New Prospect —</option>
+          </select>
+          <div id="prospectSelectHint" class="icp-hint"></div>
+        </div>
+
         <div class="sliding-warning">
           <span>Click "Extract Data" to scrape LinkedIn profile information</span>
         </div>
 
-        <!-- INITIAL STATE: Extract button only -->
+        <!-- INITIAL STATE: Extract button only.
+             Shown for a NEW prospect — the original flow, unchanged. -->
         <div id="fetchsection" class="fetch-section">
           <button id="fetchData" type="button">
             <span id="fetchDatatext">Extract Profile Data</span>
@@ -87,6 +104,79 @@
           <div id="fetchDataloader" class="loading-container">
             <div class="loading-spinner"></div>
             <div class="loading-text">Extracting data...</div>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             EXISTING-PROSPECT PANEL
+             Only rendered when a prospect is selected in the dropdown above.
+             Never shown for a new prospect, so the default screen is exactly
+             what it was before this feature.
+             ══════════════════════════════════════════════════════════════ -->
+        <div id="existingProspectPanel" style="display: none; padding: 0 16px 24px;">
+          <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+            <h3 style="margin: 0 0 12px 0; color: #1a1a1a; font-size: 16px; font-weight: 700;">Selected Prospect</h3>
+            <div id="selectedProspectBody" style="font-size: 13px; color: #374151; line-height: 1.7;">
+              <div style="color:#6b7280;">No prospect loaded yet.</div>
+            </div>
+            <button type="button" id="fetchProspectDataBtn" class="save-button"
+                    style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); width: 100%; margin-top: 14px;">
+              🔄 Fetch Prospect Data
+            </button>
+            <div id="prospectFetchStatus" style="font-size: 12px; color: #6b7280; text-align: center; margin-top: 8px;"></div>
+          </div>
+
+          <!-- Profile-vs-prospect mismatch guard. Shown when the LinkedIn page
+               currently open is a different person from the selected prospect.
+               While visible, Save to CRM is blocked. -->
+          <div id="prospectMismatchWarning"
+               style="display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <h4 style="margin: 0 0 8px 0; color: #b91c1c; font-size: 14px; font-weight: 700;">
+              ⚠️ This LinkedIn profile does not match the selected Prospect.
+            </h4>
+            <div style="font-size: 12px; color: #7f1d1d; line-height: 1.7;">
+              <div><strong>Current LinkedIn Profile:</strong> <span id="mismatchCurrentUrl">—</span></div>
+              <div><strong>Selected Prospect:</strong> <span id="mismatchProspect">—</span></div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+              <button type="button" id="mismatchSelectCorrect" class="save-button"
+                      style="flex: 1; background: #6366f1; font-size: 12px; padding: 8px;">
+                Select Correct Prospect
+              </button>
+              <button type="button" id="mismatchUseNew" class="save-button"
+                      style="flex: 1; background: #10b981; font-size: 12px; padding: 8px;">
+                Use New Prospect
+              </button>
+            </div>
+          </div>
+
+          <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+            <h3 style="margin: 0 0 4px 0; color: #1a1a1a; font-size: 16px; font-weight: 700;">Conversation</h3>
+            <div id="savedConversationInfo" style="font-size: 12px; color: #6b7280; margin-bottom: 12px;"></div>
+            <button type="button" id="fetchConversationBtn" class="save-button"
+                    style="background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); width: 100%; margin-bottom: 8px;">
+              💬 Fetch Conversation
+            </button>
+            <button type="button" id="openConversationBtn" class="save-button"
+                    style="background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%); width: 100%;">
+              ✉️ Open Conversation
+            </button>
+            <div id="existingConversationStatus" style="font-size: 12px; color: #6b7280; text-align: center; margin-top: 8px;"></div>
+
+            <!-- Incremental save. Shown only when the extracted thread contains
+                 messages beyond what is already stored; the backend appends
+                 just the new tail (see merge-linkedin-conversation.ts), so this
+                 never re-saves the whole conversation. -->
+            <div id="conversationDeltaRow" style="display: none; margin-top: 10px;">
+              <div id="conversationDeltaInfo"
+                   style="font-size: 12px; font-weight: 600; color: #059669; text-align: center; margin-bottom: 8px;"></div>
+              <button type="button" id="saveNewMessagesBtn" class="save-button"
+                      style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); width: 100%;">
+                💾 Save New Messages to CRM
+              </button>
+            </div>
+            <div id="existingConversationMessages"
+                 style="display: none; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; margin-top: 12px;"></div>
           </div>
         </div>
 
@@ -292,6 +382,29 @@
                   </div>
                 </div>
               </div>
+
+              <!-- CONVERSATION EXTRACTION SECTION -->
+              <!-- Sits below company details. Never runs during profile
+                   scraping — only on an explicit click, so a messaging DOM
+                   change can never break profile/company extraction. -->
+              <div id="conversationSection" style="display: none; margin-top: 20px;">
+                <div style="background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #e5e7eb;">
+                  <div style="text-align: center; margin-bottom: 16px;">
+                    <h4 style="margin: 0 0 8px 0; color: #374151; font-size: 16px; font-weight: 600;">Extract Conversation</h4>
+                    <p style="margin: 0; color: #6b7280; font-size: 13px;">Loads the full message history for the open chat</p>
+                  </div>
+                  <button type="button" id="extractConversationBtn" class="save-button" style="background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); width: 100%; margin-bottom: 8px;">
+                    💬 Extract Conversation
+                  </button>
+                  <div id="conversationExtractionStatus" style="font-size: 12px; color: #6b7280; text-align: center;"></div>
+                </div>
+
+                <div id="conversationDataDisplay" style="display: none; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                  <h3 style="margin: 0 0 4px 0; color: #1a1a1a; font-size: 16px; font-weight: 700;">Conversation</h3>
+                  <div id="conversationMeta" style="font-size: 12px; color: #6b7280; margin-bottom: 12px;"></div>
+                  <div id="conversationMessages" style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto;"></div>
+                </div>
+              </div>
             </div>
           </form>
         </div>
@@ -318,6 +431,9 @@
 <script src="api.js"></script>
 <!-- Shared profile extractor. Must load BEFORE linkedIn.js, which injects it. -->
 <script src="linkedin-profile-scraper.js"></script>
+<!-- Conversation extractor. Separate file + separate injection from the
+     profile scraper, so messaging DOM churn cannot affect profile extraction. -->
+<script src="linkedin-conversation-scraper.js"></script>
 <script src="linkedIn.js"></script>
 </body>
 </html>

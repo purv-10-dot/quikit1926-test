@@ -17,10 +17,16 @@
  *   Calls    : CrmActivity type="Call" → linkedCallLogId → CrmCallLog
  *              (durationSec, dispositionName, notes). Contact/Company from the
  *              related Lead (relatedKind="Lead").
- *   Emails   : CrmEmailMessage direction="outbound". Delivery status is NOT
- *              tracked in the model → we honestly report "Sent" (recorded), never
- *              a fabricated "Delivered". Reply status is DERIVED: an inbound
- *              message in the same thread after the outbound sentAt.
+ *   Emails   : CrmEmailMessage direction="outbound", sentAt in window. Delivery
+ *              status is NOT tracked in the model → we honestly report "Sent"
+ *              (recorded), never a fabricated "Delivered".
+ *   Replies  : CrmEmailMessage direction="inbound", RECEIVEDAT in window, on a
+ *              thread a scoped rep has ever sent into (thread ownership is
+ *              derived from unbounded outbound history, NOT from this window —
+ *              a reply is usually a day or more after the send it answers).
+ *              replyStatus on the Emails table reads the same window-bounded
+ *              set, so the two surfaces cannot disagree and a later reply never
+ *              back-dates an earlier digest.
  *   Meetings : CrmOpportunityClientMeeting (meetingType, outcome, notes). No
  *              status column exists → Status shows the meeting outcome. Client =
  *              the opportunity's account name.
@@ -441,16 +447,65 @@ export async function assembleUserActivityDetail(
       })
     : [];
 
-  // Reply derivation: a thread has a reply if it holds any inbound message after
-  // the outbound sentAt. Batch: for the threads we touched, find inbound rows.
+  // ── Thread ownership (NOT window-bounded) ───────────────────────────────────
+  // A reply is almost never same-day: the rep sends Monday, the customer answers
+  // Tuesday. Deriving the candidate threads from THIS window's outbound mail
+  // therefore misses the normal case entirely — Tuesday's digest never sees the
+  // Monday thread, so its reply count reads 0 forever.
   //
-  // The same rows feed the 📩 Email Replies section, so we select the display
-  // columns (fromAddress/subject) too — one query serves both the replyStatus
-  // flag and the detailed reply table.
-  const threadIds = [...new Set(emailMessages.map((m) => m.threadId))];
-  const inboundRows = threadIds.length
+  // So thread ownership is established from the rep's FULL outbound history:
+  // this query answers only "did a scoped rep ever send into this thread?", and
+  // carries no date filter. The digest window is applied to the INBOUND side
+  // (below) instead, which is the side whose timestamp the digest is about.
+  const ownedOutbound = mailboxIds.length
     ? await prisma.crmEmailMessage.findMany({
-        where: { orgId, threadId: { in: threadIds }, direction: "inbound" },
+        where: {
+          orgId,
+          mailboxConnectionId: { in: mailboxIds },
+          direction: "outbound",
+          sentAt: { lt: range.to }, // a send after the window can't be replied to inside it
+        },
+        select: {
+          mailboxConnectionId: true,
+          threadId: true,
+          sentAt: true,
+          subject: true,
+        },
+        orderBy: { sentAt: "asc" },
+      })
+    : [];
+
+  // Thread → the rep's outbound messages, so a reply can name the mail it
+  // answers and be attributed to the right user. A thread can hold outbound
+  // mail from more than one scoped rep; each reply is credited to the rep whose
+  // send most recently preceded it.
+  const outboundByThread = new Map<string, { sentAt: Date; subject: string; userId: string }[]>();
+  for (const m of ownedOutbound) {
+    const uid = mailboxUserById.get(m.mailboxConnectionId);
+    if (!uid || !m.sentAt) continue;
+    const arr = outboundByThread.get(m.threadId) ?? [];
+    arr.push({ sentAt: m.sentAt, subject: m.subject || "(no subject)", userId: uid });
+    outboundByThread.set(m.threadId, arr);
+  }
+
+  // ── Replies (inbound, window-bounded) ───────────────────────────────────────
+  // Scoped to threads a scoped rep has sent into, and to replies that ARRIVED in
+  // this window. Cold inbound mail on a thread with no preceding rep send is
+  // excluded here (unknown thread) and again by the `preceding` guard below.
+  //
+  // The same rows feed BOTH the 📩 Email Replies section and the replyStatus
+  // flag on the Emails Sent table, so the two can never disagree — and a reply
+  // that lands after the window cannot retroactively mark an earlier digest's
+  // email as "Customer Replied".
+  const ownedThreadIds = [...outboundByThread.keys()];
+  const inboundRows = ownedThreadIds.length
+    ? await prisma.crmEmailMessage.findMany({
+        where: {
+          orgId,
+          threadId: { in: ownedThreadIds },
+          direction: "inbound",
+          receivedAt: { gte: range.from, lt: range.to },
+        },
         select: {
           threadId: true,
           receivedAt: true,
@@ -468,19 +523,6 @@ export async function assembleUserActivityDetail(
     const arr = inboundByThread.get(r.threadId) ?? [];
     arr.push(r.receivedAt);
     inboundByThread.set(r.threadId, arr);
-  }
-
-  // Thread → the rep's outbound messages, so a reply can name the mail it
-  // answers and be attributed to the right user. A thread can hold outbound
-  // mail from more than one scoped rep; each reply is credited to the rep whose
-  // send most recently preceded it.
-  const outboundByThread = new Map<string, { sentAt: Date; subject: string; userId: string }[]>();
-  for (const m of emailMessages) {
-    const uid = mailboxUserById.get(m.mailboxConnectionId);
-    if (!uid || !m.sentAt) continue;
-    const arr = outboundByThread.get(m.threadId) ?? [];
-    arr.push({ sentAt: m.sentAt, subject: m.subject || "(no subject)", userId: uid });
-    outboundByThread.set(m.threadId, arr);
   }
 
   // ── Meetings ─────────────────────────────────────────────────────────────────

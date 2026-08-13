@@ -1,0 +1,28 @@
+-- LinkedIn conversation capture on CrmProspect.
+--
+-- Idempotent (IF NOT EXISTS) so it is safe to apply to the shared DB by hand;
+-- the build pipeline does not run `migrate deploy`.
+--
+-- A single additive, nullable JSONB column. No backfill is needed: every
+-- existing prospect stays valid with linkedinConversation = NULL, which the UI
+-- renders as "no conversation" rather than a misleading zero count.
+--
+-- Stores the complete message thread captured by the extension's conversation
+-- extractor, in the same opaque-JSON pattern already used by `posts`,
+-- `companyData` and `experiences` on this table. Shape:
+--
+--   { participant: { name, profileUrl }, threadId, capturedAt, messageCount,
+--     messages: [ { messageId, senderName, senderProfileUrl, receiverName,
+--                   text, timestamp, date, time, direction, messageOrder,
+--                   source, attachments[] } ] }
+--
+-- `messageOrder` is the authoritative chronological key. Messages are NEVER
+-- deduplicated: a thread legitimately repeats identical text from different
+-- senders ("Well", "No problem"), so identical entries are distinct messages
+-- separated only by their order.
+--
+-- No columns are promoted out of this blob and no index is added: unlike
+-- `companyData`, nothing in a chat thread is filtered on, so widening the table
+-- or indexing the JSON would buy nothing.
+ALTER TABLE app_quikcrm."CrmProspect"
+  ADD COLUMN IF NOT EXISTS "linkedinConversation" jsonb;

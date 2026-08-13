@@ -449,6 +449,10 @@
         // reload for the org just chosen.
         resetIcpPicker();
         void loadIcpOptions();
+        // Prospects are org-scoped too: drop the cached list and any selection
+        // so the dropdown cannot keep offering another org's prospects.
+        resetProspectSelector();
+        void loadProspectOptions();
       });
     });
   }
@@ -462,6 +466,12 @@
       initializeFetchButton();
       enableSaveLinkedInData();
       initializeCollapsibles();
+      // Prospect dropdown for the existing-prospect flow. Wired and populated
+      // at panel load so the selector is usable before any extraction.
+      // Fire-and-forget: a failed prospect load must never block the original
+      // New-Prospect flow, which is what the default selection uses.
+      wireProspectSelector();
+      void loadProspectOptions();
       console.log("Extension initialized successfully");
     } catch (error) {
       console.error("Error during initialization:", error);
@@ -702,7 +712,18 @@ function enableSaveLinkedInData() {
       await extractCompanyDataFromPage();
     });
   }
-  
+
+  // Conversation extraction is user-initiated ONLY — it is deliberately not
+  // called from extractLinkedInData(), so profile/company scraping never pays
+  // the scroll cost and never fails because of a messaging DOM change.
+  const extractConversationBtn = document.getElementById('extractConversationBtn');
+  if (extractConversationBtn) {
+    extractConversationBtn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await extractConversationFromPage();
+    });
+  }
+
   if (saveButton) {
     saveButton.addEventListener('click', async (event) => {
       event.preventDefault();
@@ -786,6 +807,34 @@ function enableSaveLinkedInData() {
           searchEmailEnabled
         };
         if (orgId) payload.orgId = orgId;
+
+        // EXISTING-PROSPECT SAVE. Sending the real prospect id switches the
+        // backend from upsert-by-URL to update-by-id, so the selected prospect
+        // is updated and never duplicated.
+        //
+        // Blocked entirely when the open LinkedIn profile is a different person
+        // — writing profile B's data onto prospect A is the data-integrity
+        // hazard the mismatch guard exists to prevent.
+        if (selectedProspect && selectedProspect.id) {
+          const matches = await refreshProspectMismatchState();
+          if (!matches) {
+            showToast('This LinkedIn profile does not match the selected Prospect.', 'error');
+            return;
+          }
+          payload.prospectId = selectedProspect.id;
+        }
+        // Full chat thread, only when the user ran "Extract Conversation" first.
+        // Omitted entirely otherwise, so the backend's "only write what was
+        // sent" rule leaves any previously saved conversation untouched and the
+        // existing save flow is byte-for-byte unchanged.
+        // Read-only use of the extractor's output — no scraping logic here.
+        if (extractedConversationData &&
+            Array.isArray(extractedConversationData.messages) &&
+            extractedConversationData.messages.length) {
+          payload.linkedinConversation = extractedConversationData;
+          console.log('[CONVO] attaching', extractedConversationData.messages.length,
+            'message(s) to the Save to CRM payload');
+        }
         // Validated as required above, so this is always a non-empty id by the
         // time we get here. Payload shape is unchanged — the backend still
         // receives `icpId` only when set, and never an empty string.
@@ -798,7 +847,27 @@ function enableSaveLinkedInData() {
         // The backend returns { success, prospectId } (or a legacy { leadId }).
         // Treat an explicit success:false as a failure even on a 2xx.
         if (response.ok && result.success !== false) {
-          showToast('Prospect saved to CRM!', 'success');
+          // Report the INCREMENTAL merge outcome rather than the fetched count:
+          // the server appends only messages after the last already-saved one,
+          // so "5 new messages saved" is what actually happened.
+          const conv = result.conversation;
+          const sentConversation = Boolean(payload.linkedinConversation);
+          if (sentConversation && conv && typeof conv.appended === 'number') {
+            showToast(
+              conv.appended === 0
+                ? 'Prospect saved — no new messages to save'
+                : `Prospect saved — ${conv.appended} new message` +
+                  `${conv.appended === 1 ? '' : 's'} saved (${conv.total} total)`,
+              'success',
+            );
+            // Keep the panel's saved-count in step with what the server stored.
+            if (selectedProspect) {
+              selectedProspect.__savedMessageCount = conv.total;
+              renderSelectedProspect();
+            }
+          } else {
+            showToast('Prospect saved to CRM!', 'success');
+          }
         } else {
           throw new Error(result.error || 'Failed to save prospect');
         }
@@ -1173,6 +1242,13 @@ function populateForm(data) {
   const companyEnrichmentSection = document.getElementById('companyEnrichmentSection');
   if (companyEnrichmentSection) {
     companyEnrichmentSection.style.display = 'block';
+  }
+
+  // Reveal the conversation action below company details. Only the BUTTON is
+  // shown here — nothing is scraped until the user clicks it.
+  const conversationSection = document.getElementById('conversationSection');
+  if (conversationSection) {
+    conversationSection.style.display = 'block';
   }
 }
 
@@ -4012,6 +4088,865 @@ function displayCompanyData(companyData) {
     about: companyData.about ? `${companyData.about.length} chars` : '(none)',
     posts: Array.isArray(companyData.posts) ? companyData.posts.length : 0,
   });
+}
+
+// ===========================================================================
+// PROSPECT SELECTOR (existing-prospect flow)
+//
+// Default state is "New Prospect", which leaves the original extract → save
+// flow byte-for-byte unchanged. Selecting an existing prospect switches the
+// panel into an existing-prospect mode that fetches by CRM id and blocks a
+// save when the open LinkedIn profile is a different person.
+//
+// Nothing here touches the conversation extractor: `scrapeLinkedInConversation`
+// is invoked exactly as the New-Prospect flow invokes it.
+// ===========================================================================
+
+/** Cached prospect list, per org (prospects are org-scoped, like ICPs). */
+let prospectOptionsCache = [];
+let prospectsLoadedForOrgId = null;
+/** Full record of the currently selected prospect; null in New-Prospect mode. */
+let selectedProspect = null;
+
+/** Normalise a LinkedIn profile URL for comparison: host + /in/<slug>. */
+function normalizeLinkedInProfileUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url, 'https://www.linkedin.com');
+    const m = u.pathname.match(/\/in\/([^/]+)/i);
+    // Trailing slashes, query strings, locale subdomains and case all vary
+    // between what the extension scrapes and what was saved, so compare only
+    // the stable public-identifier segment.
+    return m ? decodeURIComponent(m[1]).toLowerCase().replace(/\/+$/, '') : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/** Drop the cached list + selection when the active org changes. */
+function resetProspectSelector() {
+  prospectOptionsCache = [];
+  prospectsLoadedForOrgId = null;
+  selectedProspect = null;
+  const sel = document.getElementById('prospectSelect');
+  if (sel) sel.value = '';
+  applyProspectMode();
+}
+
+/**
+ * Show either the New-Prospect UI (the original screen) or the
+ * existing-prospect panel. Called on every selection change.
+ */
+function applyProspectMode() {
+  const panel = document.getElementById('existingProspectPanel');
+  const fetchSection = document.getElementById('fetchsection');
+  const slidingWarning = document.querySelector('.sliding-warning');
+  const isExisting = Boolean(selectedProspect);
+
+  if (panel) panel.style.display = isExisting ? 'block' : 'none';
+  // The original extract button and its hint belong to the New-Prospect flow.
+  if (fetchSection) fetchSection.style.display = isExisting ? 'none' : '';
+  if (slidingWarning) slidingWarning.style.display = isExisting ? 'none' : '';
+
+  if (isExisting) {
+    void refreshProspectMismatchState();
+  } else {
+    const warn = document.getElementById('prospectMismatchWarning');
+    if (warn) warn.style.display = 'none';
+  }
+}
+
+/** Load the org's prospects once per org and populate the dropdown. */
+async function loadProspectOptions() {
+  const sel = document.getElementById('prospectSelect');
+  const hint = document.getElementById('prospectSelectHint');
+  if (!sel) return;
+
+  const selectedOrg = await getSelectedOrganization();
+  const orgId = selectedOrg && selectedOrg.id ? selectedOrg.id : '';
+  if (prospectsLoadedForOrgId === (orgId || '__default__') && prospectOptionsCache.length > 0) return;
+
+  try {
+    if (hint) hint.textContent = 'Loading prospects…';
+    sel.disabled = true;
+    const endpoint = orgId
+      ? `/api/extension-auth/prospects?orgId=${encodeURIComponent(orgId)}`
+      : '/api/extension-auth/prospects';
+    const res = await window.apiFetch(endpoint);
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error((result && result.error) || 'Failed to load prospects');
+    }
+
+    prospectOptionsCache = Array.isArray(result.data && result.data.prospects)
+      ? result.data.prospects
+      : [];
+    prospectsLoadedForOrgId = orgId || '__default__';
+
+    // Rebuild options, always keeping "New Prospect" first so the default
+    // (and therefore the original flow) is what a user lands on.
+    sel.innerHTML = '';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '— New Prospect —';
+    sel.appendChild(blank);
+    prospectOptionsCache.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      const bits = [p.name || '(unnamed)'];
+      if (p.company) bits.push(p.company);
+      opt.textContent = bits.join(' · ');
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
+
+    if (hint) {
+      hint.textContent = prospectOptionsCache.length === 0
+        ? 'No prospects saved yet — continue with New Prospect.'
+        : `${prospectOptionsCache.length} prospect(s) available.`;
+    }
+  } catch (err) {
+    // Never leave a broken/empty dropdown: keep New Prospect usable and say why.
+    console.error('[PROSPECT] load failed:', err && err.message);
+    prospectOptionsCache = [];
+    prospectsLoadedForOrgId = null;
+    sel.disabled = false;
+    if (hint) {
+      hint.textContent = `Could not load prospects (${(err && err.message) || 'error'}). New Prospect still works.`;
+    }
+  }
+}
+
+/** Fetch one prospect by CRM id and render it. */
+async function fetchSelectedProspect(prospectId) {
+  const statusEl = document.getElementById('prospectFetchStatus');
+  const bodyEl = document.getElementById('selectedProspectBody');
+  if (statusEl) statusEl.textContent = 'Loading prospect…';
+
+  try {
+    const selectedOrg = await getSelectedOrganization();
+    const orgId = selectedOrg && selectedOrg.id ? selectedOrg.id : '';
+    const endpoint = `/api/extension-auth/prospects/${encodeURIComponent(prospectId)}` +
+      (orgId ? `?orgId=${encodeURIComponent(orgId)}` : '');
+    const res = await window.apiFetch(endpoint);
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error((result && result.error) || 'Failed to load prospect');
+    }
+
+    selectedProspect = result.data.prospect;
+    selectedProspect.__savedMessageCount = result.data.savedMessageCount || 0;
+    renderSelectedProspect();
+    if (statusEl) statusEl.innerHTML = '<span style="color:#10b981;">✓ Prospect loaded</span>';
+    await refreshProspectMismatchState();
+    return selectedProspect;
+  } catch (err) {
+    const msg = (err && err.message) || 'Failed to load prospect';
+    console.error('[PROSPECT] fetch failed:', msg);
+    if (statusEl) statusEl.innerHTML = `<span style="color:#ef4444;">✗ ${msg}</span>`;
+    if (bodyEl) bodyEl.innerHTML = '<div style="color:#ef4444;">Could not load this prospect.</div>';
+    return null;
+  }
+}
+
+/** Render the selected prospect's fields. textContent only — CRM data is text. */
+function renderSelectedProspect() {
+  const bodyEl = document.getElementById('selectedProspectBody');
+  if (!bodyEl || !selectedProspect) return;
+  bodyEl.textContent = '';
+
+  const row = (label, value, isLink) => {
+    if (!value) return;
+    const d = document.createElement('div');
+    const b = document.createElement('strong');
+    b.textContent = `${label}: `;
+    d.appendChild(b);
+    if (isLink) {
+      const a = document.createElement('a');
+      a.href = value;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = value;
+      a.style.color = '#2563eb';
+      a.style.wordBreak = 'break-all';
+      d.appendChild(a);
+    } else {
+      d.appendChild(document.createTextNode(value));
+    }
+    bodyEl.appendChild(d);
+  };
+
+  row('Name', selectedProspect.name);
+  row('Title', selectedProspect.title);
+  row('Company', selectedProspect.company);
+  row('Email', selectedProspect.email);
+  row('LinkedIn', selectedProspect.linkedinUrl, true);
+  row('Status', selectedProspect.status);
+
+  // Saved/extracted/delta line and the incremental Save button are owned by
+  // updateConversationSaveState so the two can never disagree.
+  updateConversationSaveState();
+}
+
+/**
+ * Compare the LinkedIn profile currently open in the tab against the selected
+ * prospect. On mismatch the warning is shown and Save to CRM is blocked.
+ */
+async function refreshProspectMismatchState() {
+  const warn = document.getElementById('prospectMismatchWarning');
+  if (!warn || !selectedProspect) return true;
+
+  let currentUrl = '';
+  try {
+    const tab = await getActiveLinkedInTab();
+    currentUrl = (tab && tab.url) || '';
+  } catch (e) { /* tab unavailable */ }
+
+  const currentSlug = normalizeLinkedInProfileUrl(currentUrl);
+  const prospectSlug = normalizeLinkedInProfileUrl(selectedProspect.linkedinUrl);
+
+  // Unknown on either side is NOT treated as a match: without both slugs we
+  // cannot prove they are the same person, and silently saving would be the
+  // exact data-integrity hazard this guard exists to prevent.
+  const matches = Boolean(currentSlug) && Boolean(prospectSlug) && currentSlug === prospectSlug;
+
+  if (matches) {
+    warn.style.display = 'none';
+  } else {
+    const curEl = document.getElementById('mismatchCurrentUrl');
+    const proEl = document.getElementById('mismatchProspect');
+    if (curEl) curEl.textContent = currentUrl || '(no LinkedIn profile open)';
+    if (proEl) {
+      proEl.textContent = `${selectedProspect.name || '(unnamed)'} — ` +
+        `${selectedProspect.linkedinUrl || '(no LinkedIn URL saved)'}`;
+    }
+    warn.style.display = 'block';
+  }
+  return matches;
+}
+
+/**
+ * "Open Conversation" — navigate to the prospect's profile when the tab is
+ * showing someone else, then run the EXISTING extractor unchanged.
+ */
+async function openConversationForSelectedProspect() {
+  const statusEl = document.getElementById('existingConversationStatus');
+  if (!selectedProspect) return;
+
+  const target = selectedProspect.linkedinUrl;
+  if (!target) {
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:#ef4444;">✗ This prospect has no LinkedIn URL saved.</span>';
+    }
+    return;
+  }
+
+  try {
+    const tab = await getActiveLinkedInTab();
+    const currentSlug = normalizeLinkedInProfileUrl(tab && tab.url);
+    const wantSlug = normalizeLinkedInProfileUrl(target);
+
+    if (!tab || !tab.id) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444;">✗ No active browser tab.</span>';
+      return;
+    }
+
+    // Navigate only when we are on a different profile; re-navigating the page
+    // the user is already on would needlessly reload it.
+    if (currentSlug !== wantSlug) {
+      if (statusEl) statusEl.textContent = 'Opening the prospect’s LinkedIn profile…';
+      await chrome.tabs.update(tab.id, { url: target });
+      // Wait for the SPA to finish loading before the extractor runs.
+      const started = Date.now();
+      while (Date.now() - started < 20000) {
+        await new Promise((r) => setTimeout(r, 500));
+        const t = await chrome.tabs.get(tab.id).catch(() => null);
+        if (t && t.status === 'complete') break;
+      }
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+
+    // Hand off to the existing extractor. It opens the messaging panel itself
+    // (openMessagingPanel) and reports "No open LinkedIn conversation found."
+    // when it cannot — which is the fallback behaviour required here.
+    await extractConversationFromPage({ intoExistingPanel: true });
+  } catch (err) {
+    const msg = (err && err.message) || 'Could not open the conversation';
+    console.error('[PROSPECT] open conversation failed:', msg);
+    if (statusEl) statusEl.innerHTML = `<span style="color:#ef4444;">✗ ${msg}</span>`;
+  }
+}
+
+/**
+ * Single owner of the saved / extracted / delta display in the existing-prospect
+ * panel, including whether the incremental Save button is shown.
+ *
+ * Rules:
+ *   extracted > saved  → "+N new message(s)" + [Save New Messages to CRM]
+ *   extracted === saved → "✓ N message(s) already saved in CRM.", no button
+ *   nothing extracted   → saved count only, no button
+ *
+ * The comparison is deliberately count-based rather than content-based: the
+ * server performs the authoritative sequence alignment when the save runs, so
+ * this only decides whether it is worth offering the action.
+ */
+function updateConversationSaveState() {
+  const info = document.getElementById('savedConversationInfo');
+  const row = document.getElementById('conversationDeltaRow');
+  const deltaInfo = document.getElementById('conversationDeltaInfo');
+  if (!info || !row) return;
+
+  const saved = (selectedProspect && selectedProspect.__savedMessageCount) || 0;
+  const extracted =
+    extractedConversationData && Array.isArray(extractedConversationData.messages)
+      ? extractedConversationData.messages.length
+      : 0;
+
+  const lines = [];
+  if (saved > 0) lines.push(`${saved} message(s) already saved in CRM.`);
+  else lines.push('No conversation saved in CRM for this prospect yet.');
+  if (extracted > 0) lines.push(`${extracted} message(s) extracted`);
+
+  const newCount = extracted - saved;
+
+  if (extracted > 0 && newCount > 0) {
+    info.textContent = lines.join(' ');
+    if (deltaInfo) deltaInfo.textContent = `+ ${newCount} new message(s)`;
+    row.style.display = 'block';
+  } else if (extracted > 0 && newCount <= 0) {
+    // Extracted and saved agree (or the extractor returned FEWER, which happens
+    // when LinkedIn virtualises older history out of the DOM — there is nothing
+    // new to append either way, so the action is hidden rather than offering a
+    // save that would append nothing).
+    info.textContent = `✓ ${saved} message(s) already saved in CRM.`;
+    row.style.display = 'none';
+  } else {
+    info.textContent = lines.join(' ');
+    row.style.display = 'none';
+  }
+}
+
+/**
+ * Save ONLY the new messages for the selected prospect.
+ *
+ * Posts the full extracted thread to the existing endpoint; the server's
+ * incremental merge appends just the tail after the last already-saved message
+ * (51 → 55, never 51 → 106). Nothing about extraction is touched here.
+ */
+async function saveNewMessagesToCrm() {
+  const btn = document.getElementById('saveNewMessagesBtn');
+  const statusEl = document.getElementById('existingConversationStatus');
+  if (!btn || !selectedProspect || !selectedProspect.id) return;
+  // Guard against double submission: the button is disabled for the whole
+  // request and restored in `finally`.
+  if (btn.disabled) return;
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+  if (statusEl) statusEl.textContent = 'Saving new messages…';
+
+  try {
+    if (!extractedConversationData ||
+        !Array.isArray(extractedConversationData.messages) ||
+        !extractedConversationData.messages.length) {
+      throw new Error('No extracted conversation to save. Run Fetch Conversation first.');
+    }
+
+    const selectedOrg = await getSelectedOrganization();
+    const orgId = selectedOrg && selectedOrg.id ? selectedOrg.id : '';
+
+    // Minimal payload: the prospect id targets the existing record (no
+    // duplicate) and the conversation is merged server-side. Profile scalars
+    // are deliberately omitted so this action cannot overwrite CRM fields with
+    // whatever page happens to be open.
+    const payload = {
+      prospectId: selectedProspect.id,
+      name: selectedProspect.name || undefined,
+      linkedinConversation: extractedConversationData,
+    };
+    if (orgId) payload.orgId = orgId;
+
+    const response = await window.apiFetch('/api/leads/from-linkedin', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success === false) {
+      throw new Error((result && result.error) || 'Save failed');
+    }
+
+    const conv = result.conversation || {};
+    const appended = typeof conv.appended === 'number' ? conv.appended : 0;
+    const total = typeof conv.total === 'number' ? conv.total : selectedProspect.__savedMessageCount;
+
+    // Refresh the saved count immediately from the server's own figure.
+    selectedProspect.__savedMessageCount = total;
+    updateConversationSaveState();
+
+    if (statusEl) {
+      statusEl.innerHTML = appended === 0
+        ? '<span style="color:#6b7280;">No new messages to save.</span>'
+        : `<span style="color:#10b981;">✓ ${appended} new message(s) saved (${total} total)</span>`;
+    }
+    showToast(
+      appended === 0
+        ? 'No new messages to save'
+        : `${appended} new message(s) saved to CRM`,
+      'success',
+    );
+  } catch (err) {
+    const msg = (err && err.message) || 'Could not save messages';
+    console.error('[CONVO] incremental save failed:', msg);
+    if (statusEl) statusEl.innerHTML = `<span style="color:#ef4444;">✗ ${msg}</span>`;
+    showToast(msg, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+/** Render extracted/saved messages inside the existing-prospect panel. */
+function renderExistingPanelConversation(messages) {
+  const listEl = document.getElementById('existingConversationMessages');
+  if (!listEl) return;
+  listEl.textContent = '';
+  if (!messages || !messages.length) {
+    listEl.style.display = 'none';
+    updateConversationSaveState();
+    return;
+  }
+  listEl.style.display = 'flex';
+
+  messages.forEach((m) => {
+    const sent = m.direction === 'sent';
+    const row = document.createElement('div');
+    row.style.cssText =
+      'padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.45; max-width: 90%;' +
+      (sent
+        ? ' background: #eff6ff; color: #1e3a8a; align-self: flex-end;'
+        : ' background: #f9fafb; color: #374151; align-self: flex-start;');
+
+    const head = document.createElement('div');
+    head.style.cssText = 'font-size: 11px; color: #6b7280; margin-bottom: 2px;';
+    head.textContent = [m.senderName || 'Unknown', m.time || null].filter(Boolean).join(' · ');
+    row.appendChild(head);
+
+    // textContent, never innerHTML — message bodies are attacker-controlled.
+    const body = document.createElement('div');
+    body.textContent = m.text || '(no text)';
+    row.appendChild(body);
+
+    listEl.appendChild(row);
+  });
+
+  // Recompute now that extractedConversationData holds a fresh thread — this is
+  // what reveals the Save button when the extraction found new messages.
+  updateConversationSaveState();
+}
+
+/** Wire the selector + existing-prospect actions. Called once at init. */
+function wireProspectSelector() {
+  const sel = document.getElementById('prospectSelect');
+  if (sel && sel.dataset.wired !== '1') {
+    sel.dataset.wired = '1';
+    sel.addEventListener('change', async () => {
+      const id = sel.value;
+      if (!id) {
+        // Back to the original New-Prospect flow.
+        selectedProspect = null;
+        applyProspectMode();
+        return;
+      }
+      selectedProspect = { id };          // provisional, so the panel opens
+      applyProspectMode();
+      await fetchSelectedProspect(id);
+    });
+  }
+
+  const fetchBtn = document.getElementById('fetchProspectDataBtn');
+  if (fetchBtn && fetchBtn.dataset.wired !== '1') {
+    fetchBtn.dataset.wired = '1';
+    fetchBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (selectedProspect && selectedProspect.id) {
+        await fetchSelectedProspect(selectedProspect.id);
+      }
+    });
+  }
+
+  const convoBtn = document.getElementById('fetchConversationBtn');
+  if (convoBtn && convoBtn.dataset.wired !== '1') {
+    convoBtn.dataset.wired = '1';
+    convoBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      // Straight to the existing extractor — no scraping logic duplicated here.
+      await extractConversationFromPage({ intoExistingPanel: true });
+    });
+  }
+
+  const saveNewBtn = document.getElementById('saveNewMessagesBtn');
+  if (saveNewBtn && saveNewBtn.dataset.wired !== '1') {
+    saveNewBtn.dataset.wired = '1';
+    saveNewBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await saveNewMessagesToCrm();
+    });
+  }
+
+  const openBtn = document.getElementById('openConversationBtn');
+  if (openBtn && openBtn.dataset.wired !== '1') {
+    openBtn.dataset.wired = '1';
+    openBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await openConversationForSelectedProspect();
+    });
+  }
+
+  const selectCorrect = document.getElementById('mismatchSelectCorrect');
+  if (selectCorrect && selectCorrect.dataset.wired !== '1') {
+    selectCorrect.dataset.wired = '1';
+    selectCorrect.addEventListener('click', (e) => {
+      e.preventDefault();
+      const s = document.getElementById('prospectSelect');
+      if (s) { s.focus(); s.size = Math.min(8, s.options.length); }
+    });
+  }
+
+  const useNew = document.getElementById('mismatchUseNew');
+  if (useNew && useNew.dataset.wired !== '1') {
+    useNew.dataset.wired = '1';
+    useNew.addEventListener('click', (e) => {
+      e.preventDefault();
+      const s = document.getElementById('prospectSelect');
+      if (s) s.value = '';
+      selectedProspect = null;
+      applyProspectMode();
+      showToast('Switched to New Prospect', 'success');
+    });
+  }
+}
+
+// ===========================================================================
+// CONVERSATION EXTRACTION (user-initiated only)
+//
+// Kept entirely separate from extractLinkedInData(): different button,
+// different injected function, different global. Nothing here runs during
+// profile or company scraping.
+// ===========================================================================
+
+// Last successful conversation scrape, merged into the save payload alongside
+// `extractedCompanyData`. Null until the user clicks Extract Conversation.
+let extractedConversationData = null;
+
+/**
+ * @param {{intoExistingPanel?: boolean}} [opts] When called from the
+ *   existing-prospect panel, status and results are rendered there instead of
+ *   in the New-Prospect conversation card. This is UI ROUTING ONLY — the
+ *   extraction itself (injection, shadow DOM, scrolling, grouping, body
+ *   extraction, sender/timestamp detection, dedupe) is completely unchanged.
+ */
+async function extractConversationFromPage(opts) {
+  const intoExisting = Boolean(opts && opts.intoExistingPanel);
+  const btn = intoExisting
+    ? document.getElementById('fetchConversationBtn')
+    : document.getElementById('extractConversationBtn');
+  const statusEl = intoExisting
+    ? document.getElementById('existingConversationStatus')
+    : document.getElementById('conversationExtractionStatus');
+  if (!btn) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ Loading full history...';
+  if (statusEl) statusEl.textContent = 'Opening the conversation and loading older messages...';
+
+  const startedAt = Date.now();
+  try {
+    const tab = await getActiveLinkedInTab();
+    if (!tab || !tab.id) {
+      const err = new Error('Could not find the active LinkedIn tab. Click the page, then try again.');
+      err.code = 'NO_TAB';
+      throw err;
+    }
+    if (!isLinkedInUrl(tab.url)) {
+      const err = new Error('Open a LinkedIn page with the message thread visible, then try again.');
+      err.code = 'INVALID_PAGE';
+      throw err;
+    }
+
+    console.log('[CONVO] Extraction started on tab:', tab.url);
+
+    // ── LOCATION PROBE (read-only, runs before extraction) ────────────────
+    // Answers "where does the visible conversation actually live?" — top frame
+    // vs iframe vs shadow DOM. Printed panel-side because the injected
+    // function's own console.log goes to the PAGE console, not this one.
+    try {
+      const probeRes = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        function: probeLinkedInConversationLocation,
+      });
+      console.log('[CONVO][PROBE] ===== conversation location report =====');
+      (probeRes || []).forEach((entry, i) => {
+        const p = entry && entry.result;
+        if (!p) {
+          console.log(`[CONVO][PROBE][frame ${i}] frameId=${entry && entry.frameId} result=null`);
+          return;
+        }
+        console.log(
+          `[CONVO][PROBE][frame ${i}] frameId=${entry.frameId} top=${p.isTopFrame}` +
+          ` lightDomEls=${p.totalElementsLightDom} roots=${p.rootsFound}` +
+          ` shadowRoots=${p.shadowRoots.length} iframes=${p.iframes.length}` +
+          ` frames=${p.framesLength}`
+        );
+        console.log(`[CONVO][PROBE][frame ${i}] text presence:`, p.textPresence);
+        if (p.shadowRoots.length) {
+          console.log(`[CONVO][PROBE][frame ${i}] shadow roots:`, p.shadowRoots);
+        }
+        if (p.composerElements.length) {
+          console.log(`[CONVO][PROBE][frame ${i}] COMPOSER found in:`, p.composerElements);
+        }
+        if (p.messageElements.length) {
+          console.log(`[CONVO][PROBE][frame ${i}] MESSAGES found in:`, p.messageElements);
+        }
+        if (p.iframes.length) {
+          console.log(`[CONVO][PROBE][frame ${i}] iframes:`, p.iframes);
+        }
+      });
+      console.log('[CONVO][PROBE] ========================================');
+    } catch (e) {
+      console.warn('[CONVO][PROBE] probe failed:', e && e.message);
+    }
+
+    // The messaging overlay is rendered by LinkedIn's own SPA in the TOP frame.
+    // The other frames on a profile page are ad/tracking iframes (about:blank,
+    // /tscp-serving/dtag) that can never hold a conversation — injecting into
+    // them only produced noise and buried the real frame's diagnostics. Start
+    // with the top frame; fall back to all frames only if it finds nothing.
+    const runIn = async (target, label) => {
+      const res = await chrome.scripting.executeScript({
+        target,
+        function: scrapeLinkedInConversation,
+      });
+      console.log(`[CONVO] injected into ${label}: ${(res || []).length} frame result(s)`);
+      return res || [];
+    };
+
+    let results = await runIn({ tabId: tab.id }, 'top frame');
+
+    const pick = (list) => {
+      let b = null;
+      let bCount = -1;
+      (list || []).forEach((entry) => {
+        const r = entry && entry.result;
+        const count = r && r.conversation && Array.isArray(r.conversation.messages)
+          ? r.conversation.messages.length
+          : -1;
+        if (count > bCount) { bCount = count; b = r; }
+      });
+      return b;
+    };
+
+    let best = pick(results);
+
+    if (!best || !best.conversation) {
+      console.log('[CONVO] top frame found no conversation — retrying across all frames');
+      const allResults = await runIn({ tabId: tab.id, allFrames: true }, 'all frames');
+      results = results.concat(allResults);
+      best = pick(allResults) || best;
+    }
+
+    // Surface EVERY frame's diagnostics in the panel console. The scraper's own
+    // console.log calls land in the PAGE's console (and each iframe's), not
+    // here — so on failure this was previously a silent black box.
+    (results || []).forEach((entry, i) => {
+      const r = entry && entry.result;
+      if (!r) {
+        console.log(`[CONVO][frame ${i}] frameId=${entry && entry.frameId} result=null`);
+        return;
+      }
+      const fd = r.diagnostics || {};
+      console.log(
+        `[CONVO][frame ${i}] frameId=${entry.frameId} build=${fd.build || '(none)'}` +
+        ` url=${fd.pageUrl || '?'} messages=${fd.messagesLoaded || 0}` +
+        ` candidates=${fd.candidatesFound || 0} openedVia=${fd.openedVia || '-'}` +
+        ` reason=${fd.reason || '-'}`
+      );
+      if (fd.liveDom) {
+        console.log(`[CONVO][frame ${i}] LIVE-DOM report:`, fd.liveDom);
+      }
+      // Group-structure diagnostic. The scraper's own console.log calls land in
+      // the PAGE console, so the report is returned and printed here too.
+      if (fd.liveGroupReport) {
+        const r = fd.liveGroupReport;
+        console.log(`[CONVO][LIVE-DIAGNOSTIC] selected panel: ${r.panel} | groups: ${r.groupCount} | inspected: ${r.groups.length}`);
+        // Time range + one-line text of every mounted group. If these are all
+        // from the tail of the thread, the older history is not in the DOM and
+        // the bottleneck is scrolling/virtualisation, not parsing.
+        if (r.groupTimeRange) {
+          console.log('[CONVO][LIVE-DIAGNOSTIC] timestamps of ALL mounted groups:', r.groupTimeRange);
+        }
+        if (r.groupTexts) {
+          console.log('[CONVO][LIVE-DIAGNOSTIC] text of ALL mounted groups:', r.groupTexts);
+        }
+        r.groups.forEach((g, gi) => {
+          console.log(`[CONVO][LIVE-GROUP ${gi}] sender=${g.sender} timestamp=${g.timestamp} tag=${g.tag} children=${g.childElementCount}`);
+          console.log(`[CONVO][LIVE-GROUP ${gi}] class="${g.cls}"`);
+          console.log(`[CONVO][LIVE-GROUP ${gi}] text="${g.text}"`);
+          console.log(`[CONVO][LIVE-GROUP ${gi}] own-text descendants (${g.ownTextDescendants.length}):`, g.ownTextDescendants);
+        });
+        if (r.multiBodyProbe) {
+          console.log('[CONVO][MULTI-BODY-PROBE] group text:', r.multiBodyProbe.text);
+          console.log('[CONVO][MULTI-BODY-PROBE] selector counts:', r.multiBodyProbe.selectorCounts);
+          console.log('[CONVO][MULTI-BODY-PROBE] own-text descendants:', r.multiBodyProbe.ownTextDescendants);
+        } else {
+          console.log('[CONVO][MULTI-BODY-PROBE] no multi-message group identified');
+        }
+        console.log('[CONVO][LIVE-DIAGNOSTIC] END');
+      }
+      // Scroll diagnostic: whether the element being scrolled can actually
+      // scroll, and what happened on each round.
+      if (fd.scrollDiag) {
+        console.log('[CONVO][SCROLL-DIAG] ===== scroller census =====');
+        console.log('[CONVO][SCROLL-DIAG] chosen scroller:', fd.scrollDiag.chosen);
+        console.log('[CONVO][SCROLL-DIAG] scrollable candidates INSIDE panel:', fd.scrollDiag.scrollablesInPanel);
+        console.log('[CONVO][SCROLL-DIAG] scrollable ANCESTORS of panel:', fd.scrollDiag.scrollableAncestors);
+        console.log('[CONVO][SCROLL-DIAG] sentinel/loader elements:', fd.scrollDiag.sentinels);
+        console.log('[CONVO][SCROLL-DIAG] load-more controls:', fd.scrollDiag.loadMoreControls);
+        console.log('[CONVO][SCROLL-DIAG] initial mounted groups:', fd.scrollDiag.initialGroupCount);
+        console.log('[CONVO][SCROLL-DIAG] initial mounted timestamps (ALL):', fd.scrollDiag.initialTimestamps);
+      }
+      if (fd.scrollLog) {
+        console.log('[CONVO][SCROLL-DIAG] per-round log:', fd.scrollLog);
+      }
+      if (fd.scrollBidirectional) {
+        console.log('[CONVO][SCROLL-DIAG] bidirectional probe (all scrollable candidates):', fd.scrollBidirectional);
+      }
+      if (fd.scrollVerdict) {
+        const v = fd.scrollVerdict;
+        console.log('[CONVO][SCROLL-DIAG][VERDICT]');
+        console.log('  scrollerMoves             =', v.scrollerMoves);
+        console.log('  mountedGroupsChange       =', v.mountedGroupsChange);
+        console.log('  timestampsSpanFullHistory =', v.timestampsSpanFullHistory);
+        console.log('  olderHistoryLoaded        =', v.olderHistoryLoaded);
+        console.log('  uniqueTimestamps          =', v.uniqueTimestamps);
+        console.log('  likelyCause               =', v.likelyCause);
+      }
+    });
+
+    if (!best || !best.conversation) {
+      const err = new Error((best && best.error) || 'No open LinkedIn conversation found.');
+      err.code = 'NO_CONVERSATION';
+      throw err;
+    }
+
+    const d = best.diagnostics || {};
+    console.log('[CONVO] thread id            :', d.threadId || '(none)');
+    console.log('[CONVO] opened via           :', d.openedVia || '(already open)');
+    console.log('[CONVO] panel source         :', d.panelSource || '(none)');
+    console.log('[CONVO] scroll rounds        :', d.scrollRounds);
+    console.log('[CONVO] raw event DOM nodes (overlapping)      :', d.rawEventNodes || 0);
+    console.log('[CONVO] message group DOM nodes (deduped)      :', d.logicalGroups != null ? d.logicalGroups : d.messagesFound);
+    console.log('[CONVO] candidate body nodes                   :', d.candidateBodyNodes || 0);
+    console.log('[CONVO] canonical message bodies               :', d.canonicalBodies || 0);
+    console.log('[CONVO] accessibility/visual duplicates collapsed:', d.duplicateBodiesCollapsed || 0);
+    console.log('[CONVO] UI controls excluded                   :', d.uiControlsExcluded || 0);
+    console.log('[CONVO] messages returned                      :', d.messagesLoaded);
+    console.log('[CONVO] duplicates removed (safety layer)      :', d.duplicatesRemoved);
+    console.log('[CONVO] attachments found    :', d.attachmentsFound);
+    console.log('[CONVO] completed            :', d.completed);
+
+    extractedConversationData = best.conversation;
+    if (intoExisting) {
+      renderExistingPanelConversation(best.conversation.messages);
+    } else {
+      displayConversationData(best.conversation, d);
+    }
+
+    const n = best.conversation.messages.length;
+    console.log(`[CONVO] Extraction completed | ${n} message(s) | ${Date.now() - startedAt}ms`);
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color: #10b981;">✓ ${n} message(s) extracted</span>`;
+    }
+    showToast(`Extracted ${n} message(s)`, 'success');
+    return { success: true, data: best.conversation };
+  } catch (error) {
+    const code = error && error.code ? error.code : 'SCRAPER_FAILED';
+    const message = (error && error.message) || 'Unable to extract the conversation.';
+    console.error(`[CONVO] Extraction failed [${code}] after ${Date.now() - startedAt}ms:`, message);
+    if (statusEl) statusEl.innerHTML = `<span style="color: #ef4444;">✗ ${message}</span>`;
+    showToast(message, 'error');
+    return { success: false, code, message };
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+function displayConversationData(conversation, diagnostics) {
+  const displayEl = document.getElementById('conversationDataDisplay');
+  const metaEl = document.getElementById('conversationMeta');
+  const listEl = document.getElementById('conversationMessages');
+  if (!displayEl || !listEl) return;
+
+  const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+
+  if (metaEl) {
+    const parts = [
+      conversation.participant && conversation.participant.name
+        ? `With ${conversation.participant.name}`
+        : null,
+      `${messages.length} message(s)`,
+      conversation.threadId ? `thread ${conversation.threadId}` : null,
+      diagnostics && diagnostics.duplicatesRemoved
+        ? `${diagnostics.duplicatesRemoved} duplicate(s) removed`
+        : null,
+    ].filter(Boolean);
+    metaEl.textContent = parts.join(' · ');
+  }
+
+  // Rebuild from scratch so a re-extract never appends to the previous run.
+  listEl.textContent = '';
+  let lastDate = null;
+  messages.forEach((m) => {
+    if (m.date && m.date !== lastDate) {
+      lastDate = m.date;
+      const sep = document.createElement('div');
+      sep.textContent = m.date;
+      sep.style.cssText =
+        'text-align: center; font-size: 11px; color: #9ca3af; text-transform: uppercase; margin: 6px 0 2px;';
+      listEl.appendChild(sep);
+    }
+
+    const sent = m.direction === 'sent';
+    const row = document.createElement('div');
+    row.style.cssText =
+      'padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.45; max-width: 90%;' +
+      (sent
+        ? ' background: #eff6ff; color: #1e3a8a; align-self: flex-end;'
+        : ' background: #f9fafb; color: #374151; align-self: flex-start;');
+
+    const head = document.createElement('div');
+    head.style.cssText = 'font-size: 11px; color: #6b7280; margin-bottom: 2px;';
+    head.textContent = [m.senderName || 'Unknown', m.time || null].filter(Boolean).join(' · ');
+    row.appendChild(head);
+
+    // textContent, never innerHTML — message bodies are attacker-controlled.
+    const body = document.createElement('div');
+    body.textContent = m.text || '(no text)';
+    row.appendChild(body);
+
+    if (Array.isArray(m.attachments) && m.attachments.length) {
+      const att = document.createElement('div');
+      att.style.cssText = 'font-size: 11px; color: #6b7280; margin-top: 4px;';
+      att.textContent = `📎 ${m.attachments.length} attachment(s)`;
+      row.appendChild(att);
+    }
+
+    listEl.appendChild(row);
+  });
+
+  displayEl.style.display = 'block';
 }
 
 // Scrape company data from LinkedIn company profile

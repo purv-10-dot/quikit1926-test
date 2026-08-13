@@ -8,6 +8,7 @@ import { prospectScopeWhere } from "@/lib/auth/prospect-acl";
 import { parseLinkedInPosts } from "@/lib/services/prospects/linkedin-posts";
 import { parseLinkedInCompany } from "@/lib/services/prospects/linkedin-company";
 import { parseLinkedInExperiences } from "@/lib/services/prospects/linkedin-experience";
+import { parseLinkedInConversation } from "@/lib/services/prospects/linkedin-conversation";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,10 @@ export default async function ProspectsPage() {
       // normalized via parseLinkedInExperiences below so the client only
       // receives a typed, render-safe list.
       experiences: true,
+      // Full LinkedIn chat thread captured by the extension's conversation
+      // extractor. Raw scraped JSON — normalized via parseLinkedInConversation
+      // below so the client only receives a typed, render-safe thread.
+      linkedinConversation: true,
       savedByName: true,
       status: true,
       convertedLeadId: true,
@@ -71,13 +76,16 @@ export default async function ProspectsPage() {
 
   // Normalize the untrusted `posts` blob server-side so the client only ever
   // receives a typed, render-safe list (and malformed scrapes can't break the UI).
-  const prospects: ProspectRow[] = rows.map(({ posts, companyData, experiences, ...p }) => ({
-    ...p,
-    createdAt: p.createdAt.toISOString(),
-    posts: parseLinkedInPosts(posts),
-    companyDetails: parseLinkedInCompany(companyData),
-    experiences: parseLinkedInExperiences(experiences),
-  }));
+  const prospects: ProspectRow[] = rows.map(
+    ({ posts, companyData, experiences, linkedinConversation, ...p }) => ({
+      ...p,
+      createdAt: p.createdAt.toISOString(),
+      posts: parseLinkedInPosts(posts),
+      companyDetails: parseLinkedInCompany(companyData),
+      experiences: parseLinkedInExperiences(experiences),
+      conversation: parseLinkedInConversation(linkedinConversation),
+    }),
+  );
 
   return (
     <div className="space-y-5">

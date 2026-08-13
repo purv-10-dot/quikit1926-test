@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, Pencil, Search, StickyNote, UserPlus, X } from "lucide-react";
+import { FileText, MessageSquare, Pencil, Search, StickyNote, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Drawer } from "@/components/ui/drawer";
 import { ProspectPosts } from "@/components/settings/prospect-posts";
+import { ProspectConversation } from "@/components/settings/prospect-conversation";
+import type { LinkedInConversation } from "@/lib/services/prospects/linkedin-conversation";
 import { ProspectCompany } from "@/components/settings/prospect-company";
 import { ProspectExperience } from "@/components/settings/prospect-experience";
 import type { LinkedInCompany } from "@/lib/services/prospects/linkedin-company";
@@ -67,6 +69,13 @@ export interface ProspectRow {
    * profile had no Experience section or was saved by an older build.
    */
   experiences: LinkedInExperience[];
+  /**
+   * LinkedIn chat thread captured by the extension's conversation extractor,
+   * already normalized by parseLinkedInConversation on the server. Null when no
+   * conversation was extracted before saving — the Conversation cell then shows
+   * an em dash rather than a misleading zero.
+   */
+  conversation: LinkedInConversation | null;
 }
 
 export function ProspectsTable({
@@ -86,6 +95,10 @@ export function ProspectsTable({
   // `selectedId` (the convert radio) so viewing posts never changes what is
   // queued for conversion.
   const [postsForId, setPostsForId] = useState<string | null>(null);
+  // Prospect whose LinkedIn chat is open. Independent of `selectedId` and
+  // `postsForId`, so viewing a conversation never changes what is queued for
+  // conversion or which posts drawer is open.
+  const [conversationForId, setConversationForId] = useState<string | null>(null);
   // Prospect whose COMPANY details are open. Independent of `selectedId` and
   // `postsForId`, so opening it never changes what is queued for conversion.
   const [companyForId, setCompanyForId] = useState<string | null>(null);
@@ -147,6 +160,11 @@ export function ProspectsTable({
   const postsProspect = useMemo(
     () => prospects.find((p) => p.id === postsForId) ?? null,
     [prospects, postsForId],
+  );
+
+  const conversationProspect = useMemo(
+    () => prospects.find((p) => p.id === conversationForId) ?? null,
+    [prospects, conversationForId],
   );
 
   const companyProspect = useMemo(
@@ -369,7 +387,9 @@ export function ProspectsTable({
 
       <div className="crm-card overflow-hidden">
         <TableScroll minWidth={1200}>
-          <Table>
+          {/* `crm-table-col-dividers` adds the faint vertical column rules
+              (globals.css). Opt-in per table — no other table is affected. */}
+          <Table className="crm-table-col-dividers">
             <THead>
               <TR>
                 <TH className="w-10" aria-label="Select" />
@@ -380,6 +400,7 @@ export function ProspectsTable({
                 <TH hideBelow="md">Email</TH>
                 <TH>Status</TH>
                 <TH hideBelow="md">Posts</TH>
+                <TH hideBelow="md">Conversation</TH>
                 <TH>Source</TH>
                 <TH hideBelow="lg">Saved By</TH>
                 <TH>Saved</TH>
@@ -504,6 +525,26 @@ export function ProspectsTable({
                           <span className="text-crm-muted">—</span>
                         )}
                       </TD>
+                      {/* LinkedIn chat thread. The count is always
+                          conversation.messages.length — never a fixed number —
+                          so it matches exactly what the extractor saved. A
+                          prospect with no captured conversation shows an em
+                          dash rather than a misleading "0". */}
+                      <TD hideBelow="md">
+                        {p.conversation && p.conversation.messages.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setConversationForId(p.id)}
+                            className="inline-flex items-center gap-1 text-crm-blue hover:underline"
+                            aria-label={`View LinkedIn chat with ${p.name} — ${p.conversation.messages.length} messages`}
+                          >
+                            <MessageSquare size={13} aria-hidden />
+                            View Chat ({p.conversation.messages.length})
+                          </button>
+                        ) : (
+                          <span className="text-crm-muted">—</span>
+                        )}
+                      </TD>
                       {/* Where this prospect came from, as a link to the origin
                           record. LinkedIn is an external profile URL, so it
                           opens in a new tab; the Upwork job lives in this CRM,
@@ -614,6 +655,33 @@ export function ProspectsTable({
       >
         {postsProspect && <ProspectPosts posts={postsProspect.posts} />}
       </Drawer>
+
+      {/* LinkedIn chat. A modal rather than the posts drawer because a chat
+          reads better in a centred, wider column. The body scrolls internally
+          (see ProspectConversation) so a long thread never pushes the modal
+          past the viewport, and no message is truncated. */}
+      <Modal
+        open={Boolean(conversationProspect?.conversation)}
+        onClose={() => setConversationForId(null)}
+        title={
+          conversationProspect
+            ? `${conversationProspect.name} — LinkedIn conversation`
+            : "LinkedIn conversation"
+        }
+      >
+        {conversationProspect?.conversation && (
+          <>
+            <p className="mb-3 text-xs text-crm-muted">
+              {conversationProspect.conversation.messages.length} message
+              {conversationProspect.conversation.messages.length === 1 ? "" : "s"}
+              {conversationProspect.conversation.participantName
+                ? ` · with ${conversationProspect.conversation.participantName}`
+                : ""}
+            </p>
+            <ProspectConversation messages={conversationProspect.conversation.messages} />
+          </>
+        )}
+      </Modal>
 
       {/* Company + experience. Opens when EITHER was captured, so a prospect
           with work history but no company visit still has a viewable record. */}
