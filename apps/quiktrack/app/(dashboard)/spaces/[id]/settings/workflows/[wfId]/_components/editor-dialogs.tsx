@@ -168,6 +168,93 @@ export function SaveAsNewWorkflowDialog({
   );
 }
 
+/**
+ * "Edit workflow name and description" — PATCHes the workflow row's metadata
+ * (applies immediately; not part of the publishable graph draft).
+ */
+export function EditWorkflowMetaDialog({
+  workflowId,
+  initialName,
+  initialDescription,
+  onSaved,
+  onClose,
+}: {
+  workflowId: string;
+  initialName: string;
+  initialDescription: string | null;
+  onSaved: (updated: { name: string; description: string | null }) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [description, setDescription] = useState(initialDescription ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    name.trim() !== initialName || description.trim() !== (initialDescription ?? "");
+
+  const save = async () => {
+    if (!name.trim()) return setError("Workflow name is required.");
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/workflows/${workflowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to save");
+      onSaved({ name: j.data.name as string, description: (j.data.description ?? null) as string | null });
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Shell title="Edit workflow name and description" onClose={onClose} wide>
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">
+            Workflow name <span className="text-red-500">*</span>
+          </label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Workflow description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            className="w-full resize-none rounded border border-gray-300 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end gap-3 pt-1">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-gray-600 hover:text-gray-800">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || !name.trim() || !dirty}
+            className="rounded bg-accent-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
 const CATEGORY_OPTIONS = [
   { value: "BACKLOG", label: "To do" },
   { value: "IN_PROGRESS", label: "In progress" },

@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Check, X, Pencil, History, Info } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
-import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog, EditStatusDialog, ReplaceStatusDialog } from "./editor-dialogs";
+import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog, EditStatusDialog, ReplaceStatusDialog, EditWorkflowMetaDialog } from "./editor-dialogs";
 import { FlowCanvas } from "./flow/flow-canvas";
 import { StatusPanel } from "./flow/status-panel";
 import { TransitionPanel } from "./flow/transition-panel";
@@ -137,6 +137,10 @@ function EditorBody({
   // "Update workflow ▾" split-button menu + the "Save as new workflow" dialog.
   const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
   const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
+  // The "⋯" overflow menu (Edit name/description · Restore version) + its dialog.
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [editMetaOpen, setEditMetaOpen] = useState(false);
   // The right detail panel is collapsible (Jira parity).
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // Edit-status / Replace-status modals (opened from the Status panel pencils).
@@ -154,6 +158,18 @@ function EditorBody({
     const t = setTimeout(() => setPublishToast(false), 4000);
     return () => clearTimeout(t);
   }, [ed.publish.isSuccess]);
+  // Close the "⋯" overflow menu on any outside click.
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [moreMenuOpen]);
+
   // The rule being configured — either a fresh pick (add) or an existing index (edit).
   const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -322,14 +338,49 @@ function EditorBody({
           >
             Close
           </button>
-          <button
-            type="button"
-            disabled
-            className="rounded border border-gray-300 p-1.5 text-gray-400"
-            title="More (coming soon)"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              className={`rounded border p-1.5 ${moreMenuOpen ? "border-accent-400 bg-accent-50 text-accent-700" : "border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700"}`}
+              title="More"
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-50 mt-1 w-72 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMoreMenuOpen(false); setEditMetaOpen(true); }}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <Pencil className="h-4 w-4 text-gray-400" />
+                  Edit workflow name and description
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled
+                  title="Version history is coming soon"
+                  className="flex w-full cursor-not-allowed items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-400"
+                >
+                  <History className="h-4 w-4 text-gray-300" />
+                  Restore workflow to an earlier version
+                </button>
+                <div className="mx-3 my-1 border-t border-gray-100" />
+                <div className="flex items-start gap-2 px-4 py-2 text-xs text-gray-500">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-500" />
+                  <span>You&apos;re using the latest workflow editor.</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -672,6 +723,15 @@ function EditorBody({
             void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-templates"] });
           }}
           onClose={() => setSaveAsNewOpen(false)}
+        />
+      )}
+      {editMetaOpen && (
+        <EditWorkflowMetaDialog
+          workflowId={wfId}
+          initialName={ed.draft.name}
+          initialDescription={ed.draft.description}
+          onSaved={(u) => ed.setMeta(u)}
+          onClose={() => setEditMetaOpen(false)}
         />
       )}
     </div>

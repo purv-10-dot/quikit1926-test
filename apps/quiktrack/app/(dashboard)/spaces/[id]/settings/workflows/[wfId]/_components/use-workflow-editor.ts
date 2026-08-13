@@ -252,6 +252,22 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     [mutate],
   );
 
+  // Name/description are workflow METADATA, saved straight to the live row via
+  // PATCH (not part of the publishable graph draft). So this reflects the change
+  // in local state (header + editor) without marking unpublished changes, then
+  // refreshes the workflow list so its name updates there too.
+  const setMeta = useCallback(
+    (patch: { name?: string; description?: string | null }) => {
+      setDraft((prev) => ({
+        ...prev,
+        name: patch.name ?? prev.name,
+        description: patch.description !== undefined ? patch.description : prev.description,
+      }));
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-scheme"] });
+    },
+    [qc],
+  );
+
   return {
     draft,
     saving: save.isPending,
@@ -273,5 +289,6 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     removeRule,
     updateRule,
     setTriggers,
+    setMeta,
   };
 }
