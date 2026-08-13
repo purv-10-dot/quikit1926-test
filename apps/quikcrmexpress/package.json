@@ -19,7 +19,8 @@
     "seed:demo": "tsx scripts/seed-demo-user.ts",
     "seed:lead-statuses": "tsx scripts/seed-lead-status-mapping.ts",
     "seed:stage-status": "tsx scripts/seed-stage-status-mapping.ts",
-    "reset:passwords": "tsx scripts/reset-dev-passwords.ts"
+    "reset:passwords": "tsx scripts/reset-dev-passwords.ts",
+    "backfill:app-roles": "tsx scripts/backfill-crm-app-roles.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1055.0",
