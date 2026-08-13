@@ -679,10 +679,15 @@ export function EditIssueModal({
         // manual refresh. Fall back to the local merge if no data came back.
         const serverData = (res.data ?? null) as Partial<IssueFull> | null;
         setIssue((cur) => (cur ? { ...cur, ...body, ...(serverData ?? {}) } : cur));
-        // Reflect a post-function assignee change in the panel's own assignee
-        // state (it's tracked separately from `issue`).
+        // Reflect post-function changes in the panel's own field states (they're
+        // tracked separately from `issue`): assignee, and description (e.g. a
+        // "Copy Summary → Description" rule). Don't stomp a description the user
+        // is actively editing.
         if (serverData && "assigneeId" in serverData) {
           setAssigneeId((serverData.assigneeId as string | null) ?? "");
+        }
+        if (serverData && "description" in serverData && !descEditing) {
+          setDescription((serverData.description as string | null) ?? "");
         }
         // Carry the issue's resulting sprint so listeners (the backlog) can also
         // refresh the DESTINATION section on a sprint move — not just the source
