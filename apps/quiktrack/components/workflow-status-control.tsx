@@ -204,12 +204,12 @@ export function WorkflowStatusControl({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1.5 rounded font-semibold uppercase tracking-wider ${pad} ${statusPillClass(
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded font-semibold uppercase tracking-wider ${pad} ${statusPillClass(
           currentStatusCategory,
         )} disabled:opacity-60`}
       >
-        {currentStatusName}
-        <ChevronDown className="h-3 w-3" />
+        <span className="truncate">{currentStatusName}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
 
       {open && pos && typeof document !== "undefined" && createPortal(
