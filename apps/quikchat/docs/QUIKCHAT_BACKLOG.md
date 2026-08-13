@@ -1,7 +1,7 @@
 # QuikChat — Backlog
 
 Reconciled against the 47-row **Production Go-Live Checklist**, the **reachability
-sweep**, and items found during implementation. Updated 10 Aug 2026.
+sweep**, and items found during implementation. Updated 13 Aug 2026.
 
 Supersedes the pending sections of `QUIKCHAT_PROGRAM_PLAN.md`; external-service
 detail (Search contract, AI Runtime interface) still lives there.
@@ -28,6 +28,14 @@ A third emerged during this cycle, from the gitignore/alias/exclusion findings:
 **green tests have repeatedly been green about a smaller set than anyone
 believed.** Worth treating as a standing risk, not three coincidences.
 
+A fourth, from the meeting-fields work: **a test can be green because of the
+environment it runs in.** The all-day timezone test passed with its
+`timeZone: "UTC"` pin removed, because this machine is IST — any positive offset
+hides the bug, and so does UTC. Only a negative-offset viewer exposes it.
+Output-only assertions were worthless; the test had to assert the mechanism
+(`toLocaleDateString` receives `timeZone: "UTC"`). **Assert the mechanism when
+the environment can mask the output.**
+
 ---
 
 ## ✅ Shipped this cycle
@@ -48,8 +56,9 @@ Committed unless noted.
   `errStatus` only, never the raw error — verified by a planted-secret
   regression test). Missing config now throws instead of silently no-opping.
 - GCS write failures logged with the same discipline.
-- Upload token moved from the URL path to an `X-Upload-Token` header. **Written
-  and tested; commit status unconfirmed as of the last `git status`.**
+- Upload token moved from the URL path to an `X-Upload-Token` header
+  (`77e36728`) — the 451-char token exceeded IIS's 260-char path-segment limit,
+  which is what broke uploads on-prem.
 
 **Features**
 - Unread messages divider (resolved against complete, not stale-cached data;
@@ -63,8 +72,8 @@ Committed unless noted.
 - Calendar event edit + delete.
 - Voice typing (Web Speech API).
 - Last seen with mutual privacy.
-- Notification/badge suppression for the open channel + square avatars.
-  **Done; commit status unconfirmed.**
+- Notification/badge suppression for the open channel + square avatars
+  (`0a6575dc`) — you were being notified about the conversation you were reading.
 
 **Infrastructure / correctness**
 - Gateway fan-out delivered `.local` per replica — fixed N-fold duplicate
@@ -84,10 +93,85 @@ Committed unless noted.
   `app/api/uploads/**` from every build. Root cause of the multi-day UAT upload
   outage; the pattern never matched its intended target (`.uploads`) either.
 
+**RBAC / access**
+- App access asserted on the **API surface** (`28d37ccf`) — `withAuth` verifies a
+  JWT and an orgId and nothing else, and middleware skips `/api/*`, so the only
+  gate was the dashboard layout, which route handlers never run. Any same-org
+  user without QuikChat could drive every QuikChat API while the UI refused to
+  load for them. Cached 30s; `session/validate` stays uncached so a revoked user
+  can still learn they were revoked.
+- **`App`-row boot assertion** (`28d37ccf`, edge-bundle fix `51dbcd84`) — with no
+  `App` row for slug `quikchat`, `userCan()` is false for everything and the app
+  still serves chat, silently shedding every permission-gated feature. Throws in
+  production only when the row is *definitively* absent; a failed query logs and
+  continues, because a DB blip must not become a crash loop.
+- **`isDefault` convergence** (`e77317c7`) + the **`ensureSeeded` ordering fix**
+  (`db659ee3`) — the seeder's demote-before-create cleared the flag under
+  concurrency, leaving zero defaults, which made the Admin Portal preselect
+  **admin** for every new invitee. The repair then shipped unreachable: it sat
+  below `ensureUserRole`'s fast-path return, so it only ran on orgs that did not
+  need it. Same lesson as the presence race — fixed at one layer, still broken at
+  the other.
+- **Zero-defaults paths closed** (`28d37ccf`) — PATCH clearing the last default
+  and DELETE removing the default role both 409 now; POST demote+create is
+  transactional so a failed create cannot leave zero.
+- **Invite error distinction** (`28d37ccf`) — one sentence ("may have expired,
+  been revoked, or reached its limit") was shown for *every* failure, including
+  wrong-org and no-app-access, where it is simply false. The server already sent
+  four accurate messages; the page was discarding them.
+- Roster fanout on **leave / remove / role-change** (`85775886`) — the "left the
+  chat" system message fanned out while the member list did not, so the two
+  visibly disagreed until a refetch.
+
+**Realtime**
+- **Gateway presence race** (`fb43984c`) — a socket that died *during* the
+  connect handler was added to the presence set and never removed, because the
+  `disconnect` listener was registered after four DB round-trips. The orphan
+  never aged out either: every later socket's `pexpire` refreshed the TTL under
+  it. Net effect, the user's real last tab closed and no `presence:lastseen:`
+  write and no `offline` broadcast ever happened.
+- **`refresh()` was `pexpire` alone** (`fb43984c`) — a no-op on an already-expired
+  key, so a client whose heartbeat lapsed stayed connected but permanently
+  invisible to `onlineUserIds`, with nothing able to put it back.
+- Reconnect indicator **unhidden** (`85775886`) — it was fully built and then
+  killed by a `display: none` in a "hidden chrome" CSS rule. With polling
+  fallback gone there is no degraded mode left, so silence was the worst option.
+
+**Features**
+- **`/api-docs`** with app-access gating (`8fc56f96`) — the spec describes
+  unvalidated request bodies; it is a reconnaissance document, not a marketing
+  page, so the route checks entitlement explicitly rather than inheriting it.
+- **Scroll-back pagination** (`f3a869e4`) — `prependOlder` and the `before`
+  cursor existed and were never called, so history was unreadable. Ships with a
+  compound `(createdAt, id)` cursor (a createdAt-only cursor silently skips one
+  of two messages sharing a timestamp at a page boundary), divider landing, and
+  an `overflow-anchor` fix for a double-count.
+- **Channels/Groups vocabulary** (`def52036`) — see §2.
+- **Meeting location / all-day / optional attendees** (`d707af1c`,
+  schema `63735b13`) — all-day is stored midnight-UTC with an exclusive end and
+  rendered from UTC parts; storing it correctly is only half the fix, since
+  `toLocaleDateString` still shows the 13th to a UTC−5 viewer.
+
+**Tooling**
+- `LIVEKIT_URL` / `QUIKIT_URL` passed as build-args into the CSP bake
+  (`3ac500eb`) — they were baked as placeholders, silently omitting LiveKit from
+  `connect-src`.
+- **Dead-controls sweep** (`1b311ed3`) — every control that did nothing was wired
+  or removed.
+- **`errorFields` consolidated** (`85775886`) — one implementation, four call
+  sites, with a planted-secret test; raw `{ error: e }` logging can serialise
+  whatever the throw site attached.
+- **eslint config fixed** (`674a1955`) — it set `argsIgnorePattern` but never
+  `varsIgnorePattern`, so the `_`-prefix convention the code follows was flagged
+  as errors for function variables. Four of the five "pre-existing lint errors"
+  were correct code.
+
 **Documentation**
 - `docs/openapi.yaml` — OpenAPI 3.0.3, MVP surface, passes `redocly lint` clean.
 - `docs/MOBILE_INTEGRATION_GUIDE.md` — auth model, realtime contract, upload flow.
-- **Commit status unconfirmed.**
+- This app's `docs/` are now tracked (`d106469e`) — the root `*.md` ignore rule
+  had been silently excluding them, so every doc here was untracked.
+- Both committed in `8fc56f96`.
 
 ---
 
@@ -118,19 +202,12 @@ accurately but a developer reading it still cannot log in.
 
 | # | Item | Note |
 |---|---|---|
-| 1 | **Swagger UI at `/api-docs`** | Prompt written, not yet built. Interactive "Try it out" works in-browser via the session cookie. **Must carry a banner** stating mobile/native auth is unresolved — otherwise a working "Try it out" implies auth is solved when it isn't. |
-| 2 | **Scroll-back pagination** | `prependOlder` + the `before` cursor exist and work; `fetchMessages` is never called with a cursor. Opening a conversation only ever loads the newest page — **history is unreadable**. Largest remaining functional gap. |
-| 3 | **Channels/Groups vocabulary + sidebar grouping** | See §2. Prompt written, not sent. Absorbs several smaller items. |
-| 4 | **Seven fake Settings toggles** | Read receipts, typing indicators, auto-start, open-in-background, keep-running-on-close, register-as-workspace-app, confirm-on-leaving-meeting. All local `useState`, no effect. Wire them or relabel honestly. Highest trust damage per line. |
-| 5 | **Four inert `CallsModule` buttons** | Chat / Org chart / Video call / Call have no `onClick`. `channelId`/`otherUserId` already in scope. |
-| 6 | **Mount `RemovedFromCallToast`** | A kicked participant's window just closes with no explanation. The toast exists and is tested. |
-| 7 | **Realtime connection-status indicator** | A dead socket and a live one are indistinguishable. `connected` already exists in `ChatWorkspace`. More consequential now that polling fallback is removed. |
-| 8 | **Link Preview** | De-risked — `quiklms/lib/ssrf.ts` is a production-grade SSRF guard (validates resolved IP; blocks RFC1918/loopback/link-local/CGNAT). Copy in, add OpenGraph fetcher + card. |
-| 9 | **Audit Logs** | Confirmed absent. Platform `AuditLog` exists. Needs scope: which actions are auditable? |
-| 10 | **Hover toolbar overflow** | Reply/pin/more toolbar clips outside the pane for single-character messages. |
-| 11 | **Multi-calendar switching** | `fetchCalendars`/`patchCalendar` exist with routes and no callers. (Edit/delete now shipped.) |
-| 12 | **Make silent env fallbacks loud** | `SFU_MODE`, `RUNTIME_MODE` warn only when *misconfigured*, not when absent. (Calendar's is now handled.) |
-| 13 | **SSO silent fallback** | Partially-set `QUIKIT_URL`/`CLIENT_ID`/`CLIENT_SECRET` silently swaps to local credentials login; the code comment admits this causes a login loop in prod. Reported during the secrets work, deliberately not fixed — it's shared-auth territory. |
+| 1 | **Link Preview** | De-risked — `quiklms/lib/ssrf.ts` is a production-grade SSRF guard (validates resolved IP; blocks RFC1918/loopback/link-local/CGNAT). Copy in, add OpenGraph fetcher + card. |
+| 2 | **Audit Logs** | Confirmed absent. Platform `AuditLog` exists. Needs scope: which actions are auditable? |
+| 3 | **Hover toolbar overflow** | Reply/pin/more toolbar clips outside the pane for single-character messages. |
+| 4 | **Multi-calendar switching** | `fetchCalendars`/`patchCalendar` exist with routes and no callers. (Edit/delete now shipped.) |
+| 5 | **Make silent env fallbacks loud** | `SFU_MODE`, `RUNTIME_MODE` warn only when *misconfigured*, not when absent. (Calendar's is now handled.) |
+| 6 | **SSO silent fallback** | Partially-set `QUIKIT_URL`/`CLIENT_ID`/`CLIENT_SECRET` silently swaps to local credentials login; the code comment admits this causes a login loop in prod. Reported during the secrets work, deliberately not fixed — it's shared-auth territory. |
 
 ---
 
@@ -175,16 +252,19 @@ and were removed with their headers.
 
 | Field | `QcMeeting` | `QcCalendarEvent` | Graph (`microsoft.ts`) | Verdict |
 |---|---|---|---|---|
-| **agenda** | ✅ `description` | ✅ `description` | ✅ sent as `body.content` | **Free — already persisted.** Was labelled three ways in one control; settled to "Agenda" (Nov 2025). |
-| **location** | ❌ | ✅ `location` | ❌ not sent | **Migration** on `QcMeeting` + send `location` |
-| **allDay** | ❌ | ✅ `allDay` | ❌ not sent | **Migration** on `QcMeeting` + send `isAllDay` |
-| **recurrence** | ❌ | ❌ | ❌ not sent | **Migration** on both. Largest — Graph `recurrence` is a nested pattern/range object, not a scalar. |
-| **attendee required/optional** | ❌ | n/a | ⚠️ hardcoded `type: "required"` | **Migration** for a column, then **one line** in `microsoft.ts` |
+| **agenda** | ✅ `description` | ✅ `description` | ✅ sent as `body.content` | **Free — already persisted.** Was labelled three ways in one control; settled to "Agenda" (Aug 2026). |
+| **location** | ✅ | ✅ `location` | ✅ `location.displayName` | **Done in code** (`d707af1c`) — SQL pending on UAT |
+| **allDay** | ✅ | ✅ `allDay` | ✅ `isAllDay` | **Done in code** — stored midnight-UTC, exclusive end, rendered from UTC parts |
+| **recurrence** | ❌ | ❌ | ❌ not sent | **Still a program.** Graph `recurrence` is a nested pattern/range object, not a scalar, and exceptions need their own storage. |
+| **attendee required/optional** | ✅ | n/a | ✅ `type: "optional"` | **Done in code** — the `microsoft.ts` hardcode is gone |
 
-> ⚠️ **`location` and `allDay` already exist — on `QcCalendarEvent`, not on
-> `QcMeeting`.** Someone will grep the schema, find them, and price these as
-> free. They are not. For the meeting flow both need a migration
-> (`packages/database`, → Pravin), and `microsoft.ts` sends neither today.
+> ⚠️ **The two-model trap is now sharper, not gone.** Both models carry
+> `location` and `allDay`, so a schema grep finds them twice and neither hit
+> tells you which flow a ticket means. `CalendarModule`'s "New meeting" still
+> creates a `QcCalendarEvent` — no attendees, no Graph event, no chat card.
+>
+> **This table and §11's are the same facts.** §11 is the QA-facing copy; update
+> both or neither. They had already drifted apart once.
 
 **Greenfield — separate programs, no scaffolding exists** (grepped for
 poll/recurrence/rrule/best-time): scheduling **poll**, **recurrence**, and
@@ -234,7 +314,7 @@ a solver.
   already does debounced search against a `q` endpoint) changes *who can be
   invited*, which is an RBAC Phase 3 product decision — deliberately not taken.
 
-### Regression we caused, and fixed (Nov 2025)
+### Regression we caused, and fixed (Aug 2026)
 
 Setting `CALENDAR_MODE=microsoft` made `microsoft.ts` throw for any organizer
 without a `QcCalendarConnection`; `calendar.service` relays that as a 502 and
@@ -248,36 +328,20 @@ submit.
 
 ---
 
-## 2. Channels vs Groups — vocabulary + grouping (queue item 3)
+## 2. Channels vs Groups — the derived-label rule
 
-**Decided.** No schema change. Label derived from existing columns:
+**Shipped** (`def52036`). No schema change; the label is derived from two columns
+that already existed. Kept here because this table is the current rule and every
+future surface needs it — `type` alone cannot tell a Channel from a Group.
 
 | `type` | `visibility` | UI says |
 |---|---|---|
 | `group` | `private` | **Group** |
 | `group` | `public` | **Channel** |
 
-Scope:
-- Sidebar grouped into **Channels / Groups / Direct Messages**, collapsible, each
-  with its own `+`. (Section-level `+` also avoids a sixth header icon — the row
-  is already at ~168px of 312px usable.)
-- **Create channel** → `NewGroupModal` in channel mode: visibility locked public,
-  name required, dropdown replaced with plain copy.
-- **Create group** → private, dropdown removed.
-- **Row glyph**, per the corrected spec: **Channel** → full-size `#` at the same
-  visual weight as a person's avatar (not the current small grey-background
-  glyph); **Group** → initials/photo, same treatment as a DM. This is a
-  three-way change to `Avatar`'s current two-way `group` boolean.
-- **Conversion via the info drawer**, both directions. **Must show a confirmation
-  stating plainly that the entire message history becomes visible to everyone in
-  the org.** Permission-gated on the creation grant. The confirmation copy is
-  part of the deliverable.
-- Discover's empty state gains an action: *"No channels yet — create one."*
-- The `"dm"` `ListFilter` branch (implemented, unreachable) finally gets a caller.
-
-**Verify before building:** what `perms.has("Channel.Public", "create")` resolves
-to for a **non-admin**. If regular members lack it, the Channels section is
-read-only for most of the org.
+Implemented as `kindOf()` in `ChannelList.tsx`; `Avatar` takes a three-way
+`variant` (`person` / `group` / `channel`) rather than the old `group` boolean.
+Conversion between the two is deliberately **not** built — see §9.
 
 ---
 
@@ -311,20 +375,25 @@ Hinglish is the real test case for Translate — 30 team-written samples to send
   around in-app via the header change, but worth raising as defence in depth.
   **QuikTrack uploads work on identical infra because its upload URL is short** —
   that was the control that proved the diagnosis.
-- **`QUIKIT_URL` still baked as `dummy-quikit.local`** in the deployed image's
-  CSP — the build-arg was never passed. **`LIVEKIT_URL` has the identical
-  build-time-baked problem** and would silently omit LiveKit from `connect-src`,
-  breaking calls in prod the same way.
+- **OPS ACTION: pass `QUIKIT_URL` and `LIVEKIT_URL` as build-args to the docker
+  build.** The code side is **fixed** (`3ac500eb`) — both are now wired through
+  the CSP bake. But a Dockerfile `ARG` with a default is only as good as the
+  build that supplies it: omit either and the placeholder is baked silently,
+  which is how `QUIKIT_URL` shipped as `dummy-quikit.local` and how `LIVEKIT_URL`
+  would have omitted LiveKit from `connect-src` and broken calls in prod. See the
+  wider ARG-default row in §9 — ten more entries have the same shape.
 - **Socket sticky sessions** — being addressed by the websocket-only change;
   confirm the churn stops once deployed.
 - **Audio / Video / Screen Share (3 rows)** — code done and merged. Rows move on
   `SFU_MODE=live` + credentials + commercial approval. Not engineering.
-- **Calendar going live** — Microsoft per-user OAuth is fully built (encrypted
-  refresh tokens, rotation, HMAC-signed state). All six env vars from the old
-  standalone app are supported, including `MICROSOFT_TENANT` and
-  `MICROSOFT_CALENDAR_REDIRECT_URL`. Needs: the six values copied over, the new
-  redirect URI added to the **existing** Azure app registration, and
-  `CALENDAR_MODE=microsoft`. No new registration required.
+- **Calendar is live** — `CALENDAR_MODE=microsoft` is set; the per-user OAuth
+  path (encrypted refresh tokens, rotation, HMAC-signed state) is in use.
+  **The caveat that remains is per-user connection:** this is per-user OAuth, not
+  domain-wide delegation, so **each attendee must connect their own calendar**
+  before their availability is real. An unconnected attendee renders as
+  "unknown", which is honest but is not the same as free — and organizers
+  without a connection get a "Connect your Microsoft calendar" prompt rather than
+  a 502 (see the Aug 2026 regression above).
 - **Crash Reporting** — correct Sentry seam; depends on `SENTRY_DSN`.
 
 ---
@@ -355,13 +424,11 @@ is API surface — spec and guide now written; **auth remains the blocker (§0).
 |---|---|
 | `statusMessageOf` | Custom status message: write side works, nothing displays it. |
 | Camera picker | `cameraConstraint`/`MEDIA_DEVICE_KIND` unused; `CallControls` still enumerates inline. File comment names this pending "Session B". |
-| `"new-chat"` deep link | `DesktopBridge` no-op with a TODO. |
-| Non-chromeless `ChannelList` branches | Dead — every caller passes `chromeless`. Delete or keep as a variant. |
 
-**Cleanup:** `mediaKind` in `lib/upload.ts`; `ColorThemePicker.tsx` (constants
-only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
-**`--qc-r-sm` is referenced at 3 call sites in `theme.css` but never defined in
-`:root`** — pre-existing dead token.
+*(The `new-chat` deep link, the non-chromeless `ChannelList` branches,
+`mediaKind`, `ColorThemePicker` and the undefined `--qc-r-sm` token were all
+cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
+`GET /api/org/roles/[id]/permissions` was not reproducible.)*
 
 ---
 
@@ -371,10 +438,6 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   nobody able to add members, change roles, or delete. Options: auto-promote
   (WhatsApp) or require-assign-owner-first (Teams). A hard block alone is wrong —
   it traps the last admin. Currently warns in the confirm copy, doesn't prevent.
-- **Roster staleness on leave** — `leave()` publishes no fanout, so remaining
-  members see the "left the chat" system message live while the member list stays
-  stale until refetch. The two visibly disagree.
-- **Presence self-healing** — online-set seeded once at connect, no re-sync on drift.
 - **Voice-note input-level indicator** — the app records, uploads and sends a
   completely silent voice note when the wrong mic is selected. No warning. Cost
   real debugging time this cycle.
@@ -384,8 +447,6 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   URLs. Would bite any environment running the local driver behind a proxy.
   Harder to fix than uploads: those URLs are consumed by native `<img>`/`<a>`/
   `<video>` elements that can't attach a header.
-- **Scroll-to-divider on open** — Teams/WhatsApp scroll to the unread line; a
-  divider above a large unread block is currently off-screen.
 - **⚠️ DEPLOY ORDER: meeting fields need their SQL on UAT before the code ships**
   — `QcMeeting.location`, `QcMeeting.allDay` and `QcMeetingAttendee.optional`
   exist **locally only** (applied by hand with `psql`, not by Pravin). Prisma
@@ -484,19 +545,67 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   on a background repair. Fix is a guard in the PATCH handler (409 when the
   target is the last default and `isDefault: false`). The queued partial unique
   index does NOT cover this: it prevents two defaults, not zero.
-- **Committed DDL for QuikChat has never existed** — `create_app_quikasset.sql`
-  and `create_app_quikfinance.sql` are in `packages/database/sql/`; there is no
-  `create_app_quikchat.sql`. The gap was never "recent migrations went missing" —
-  a fresh database has never been reproducible from this repo. The three queued
-  SQL files (last-seen privacy, RBAC substrate, one-default index) cover 4 of the
-  22 tables; the remaining 18 are the artifact that actually closes it.
+- **SQL lives in Teams, not the repo — and QuikChat has never had committed
+  DDL.** Three SQL files were committed (`fca9ea2b`, `b24db519`) and then
+  **removed** (`40d31ca2`, 603 deletions): Pravin's rule is no SQL in the repo at
+  all, Teams only. Recording that here so nobody re-adds them thinking it was an
+  oversight. Note this also means a fresh database has never been reproducible
+  from this repo — `create_app_quikasset.sql` and `create_app_quikfinance.sql`
+  exist under `packages/database/sql/`; there is no `create_app_quikchat.sql`,
+  and none of the 22 `app_quikchat` tables has committed DDL.
+  **Four scripts are now pending with Pravin, and the order matters:**
+  1. **last-seen privacy** — one additive column, independent.
+  2. **RBAC substrate** — must be a **no-op** on UAT. If it creates anything,
+     UAT has diverged from `schema.prisma` and that is the finding; stop.
+  3. **one-default index** — only **after** `convergeDefaultRole` has run a pass,
+     because the partial unique index rejects an org that already holds two
+     defaults.
+  4. **meeting fields** — must land **before** the code deploys, not after; see
+     the DEPLOY ORDER row above.
+- **`pruneUnknownGrants` makes the registry the sole authority for grants.**
+  Every seed pass deletes any `QcRolePermission` row whose `(resource, action)`
+  the registry no longer recognises. That is intentional and safe — such rows are
+  already inert, because `userCan` validates against the registry before it
+  queries — but it means **removing a resource from `permissionsRegistry.ts`
+  destroys its grant rows**, org-wide, on the next request. Retiring a resource
+  is therefore a data operation, not just a code edit. Reinstating one restores
+  the leaf but not the grants.
+- **`REALTIME_TOKEN_SECRET` is not in `assertProductionSecrets`.** It *is* in
+  `.env.example`, so this is narrowly about the boot assertion: the required list
+  is `UPLOAD_TOKEN_SECRET` and `AGENT_JWT_SECRET` only. If it is unset in
+  production the gateway cannot verify handshake tokens and **nothing fails the
+  boot** — the same silent-degradation shape the assertion was written to prevent
+  for the other two.
+- **Deep-link `?channel=` races the channels query.** The effect fires
+  `selectChannel(initialChannelId)` on mount (the `didDeepLink` ref in
+  `ChatWorkspace`, cited by name — the line reference in an earlier revision of
+  this doc had already rotted). `captureOpenedUnread` reads
+  `qc.getQueryData(["channels"])`, which on a cold mount is `undefined`, so the
+  unread snapshot the divider is built from is zero and the divider does not
+  render. A comment in that file claims the case is covered; it is not.
+- **`NotificationsModule`'s Activity pane cannot reach history.** It renders
+  `ConversationView` against the same `["messages", channelId]` cache as the main
+  workspace, but **without the pagination props** — those were deliberately left
+  optional and wired only in `ChatWorkspace`. So scroll-back works in the chat
+  pane and silently does nothing in Activity. *(Unverified: the surface was
+  described from memory; confirm which pane before sizing.)*
+- **`SettingsModule.test.tsx` does not cover the Settings controls.** Its 12
+  tests cover notifications, privacy and roles — the panes Settings *hosts* —
+  not the module's own controls. Worth knowing before trusting the count: this is
+  the file that was silently unrunnable until the subpath-export resolver fix, so
+  it reads as freshly-validated coverage and is narrower than it looks.
+- **`prisma db push` is blocked platform-wide, which is why there are zero
+  migration rows.** `public._prisma_migrations` is empty — verified. The reported
+  cause is drift on `public.SupportTicket_ticketNo_seq` producing **P1014**.
+  *(Unverified: nothing in the repo records the failure, and confirming it means
+  running `db push`, which was not done. The empty migrations table is the
+  confirmed part.)*
+- **Collation probe was run against local dev, not Neon.** The reported result
+  (`English_India.1252`) is a Windows collation and cannot be Neon's, so whatever
+  it proved was about the developer's machine. *(Unverified: no trace of the
+  probe survives in the repo — re-run it against Neon before relying on it.)*
 - **`postCallSummary` silent branches** — "call not found" / "no channel to post
   to" return with no log line.
-- **`timeout-sweep.ts` uses `console.error`** — bypasses pino.
-- **`/api/livekit/webhook` logs `{ error: e }` raw** — same anti-pattern as the
-  GCS leak, lower risk today.
-- **`services/realtime/src/calling.ts`** — logs `socketId` but not `callId`,
-  already in scope in every catch. Cheapest diagnostic win available.
 - **`PATCH /api/calls/:id` has no test file** — accept/reject/end/timeout/heartbeat.
 
 ---
@@ -508,6 +617,30 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   one non-excluded test; the 30 remain. Blocked on a decision: re-home to
   Playwright, or add a test database. **CI has no Postgres service**, so
   un-excluding them would pass locally and fail there.
+- **CI never builds QuikChat — only quikscale.** `ci.yml` runs lint, typecheck
+  and test across all apps via turbo, then builds **one** app
+  (`cd apps/quikscale && npm run build`, line 109). `next build` for QuikChat runs
+  only in `UAT.yml`'s docker image build, i.e. at deploy time. So a QuikChat build
+  break survives a **fully green** CI and surfaces only when UAT deploys — which
+  is exactly what happened: the branch was un-buildable on origin for several
+  commits with lint, typecheck and 1261 tests all passing, and it was found by
+  accident. One line to fix; `.github/` is out of scope, so hand it to whoever
+  owns CI.
+- **No global line-ending normalisation.** `.gitattributes` exists but pins only
+  `*.sh`, `Dockerfile` and `*.Dockerfile` to LF. There is no `* text=auto`, so
+  every other file is unnormalised — hence the "LF will be replaced by CRLF"
+  warning on nearly every file touched this cycle. Cheap to fix, and it removes a
+  permanent source of spurious diffs.
+- **`.env.production` does not exist — the silent-default risk is in the
+  Dockerfile.** Roughly twelve `ARG`s carry placeholder defaults
+  (`NEXTAUTH_URL`, `NEXT_PUBLIC_AUTH_URL`, `NEXT_PUBLIC_QUIKIT_URL`,
+  `NEXT_PUBLIC_QUIKCHAT_URL`, `NEXT_PUBLIC_REALTIME_WS_URL` →
+  `https://placeholder.com`; `QUIKIT_CLIENT_ID` → `dummy-client-id`;
+  `QUIKIT_CLIENT_SECRET` → `dummy-client-secret`; …). Omit a build-arg and the
+  placeholder is **baked into the image with no error**. `LIVEKIT_URL` and
+  `QUIKIT_URL` were exactly this bug and are now closed (`3ac500eb`); the rest
+  are not. A build-time assertion that rejects placeholder values in a
+  production build would close the class.
 - **CI never fires on working branches.** `ci.yml` triggers on `dev`/`uat`/`main`;
   the team uses `common_setup*`/`UAT`/`Prod`. Filters are case-sensitive — `UAT`
   never matches `uat`, and `dev` doesn't exist. No lint, typecheck, test or
@@ -518,7 +651,6 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   testing missed. Gaps jsdom structurally cannot cover: drag & drop (mocked
   `DataTransfer`), the unread divider (no layout engine), draft persistence
   (real localStorage).
-- **7 pre-existing `no-unused-vars` lint errors**; `npm run lint` is red.
 - **No test catches an unreachable feature.** Every test mounts its subject
   directly, so an unmounted component or uncalled prop passes cleanly. Worth a
   lint rule or a periodic repeat of the sweep.
@@ -535,13 +667,16 @@ Two models, and conflating them is the trap:
 | Field | QcMeeting | QcCalendarEvent | Graph | Verdict for the meeting flow |
 |---|---|---|---|---|
 | agenda | `description` | `description` | sent | **Done** — was one field under three names |
-| location | ❌ | `location` | not sent | **Migration** (Pravin) |
-| allDay | ❌ | `allDay` | not sent | **Migration** (Pravin) |
-| recurrence | ❌ | ❌ | not sent | **Migration + program** — Graph wants a nested pattern/range object |
-| attendee required/optional | ❌ | n/a | hardcoded `"required"` | **Migration**, then one line in `microsoft.ts` |
+| location | ✅ | `location` | ✅ `location.displayName` | **Done in code** — SQL pending on UAT |
+| allDay | ✅ | `allDay` | ✅ `isAllDay` | **Done in code** — SQL pending on UAT |
+| recurrence | ❌ | ❌ | not sent | **Still a program** — Graph wants a nested pattern/range object; exceptions need their own storage |
+| attendee required/optional | ✅ | n/a | ✅ `type: "optional"` | **Done in code** — SQL pending on UAT |
 
-⚠️ `location` and `allDay` exist — **on `QcCalendarEvent`, not `QcMeeting`.**
-A schema grep will say "we already have location." For the meeting flow we do not.
+⚠️ **The two-model trap still applies.** `QcMeeting` now has `location`/`allDay`
+too, so a schema grep finds them on *both* models — which is more confusing, not
+less. `CalendarModule`'s "New meeting" still creates a `QcCalendarEvent` with no
+attendees, no Graph event and no chat card; the chat flow is `QcMeeting`. Check
+which model a ticket means before estimating it.
 
 **Status against QA's list**
 - #2 agenda — done (settled on one label across both editors).
@@ -554,7 +689,10 @@ A schema grep will say "we already have location." For the meeting flow we do no
 - #1 meeting icon — no dead control; all three entry points have handlers.
   QA's report predates the mode flip, so it was almost certainly CalendarModule,
   which creates a personal event with no attendees and no chat card.
-- #3, #8, #9 — blocked on migrations. Send to Pravin via Teams.
+- #3 location, #8 all-day, #9 attendee required/optional — **done in code**
+  (`d707af1c`), pending only the UAT SQL. See the DEPLOY ORDER row in §9: the
+  columns exist locally only, and the code must not reach an environment before
+  the SQL does.
 - #5 poll, #6 find-best-time, #7 availability scheduler, #10 recurrence —
   greenfield programs, no scaffolding exists. Size separately; not bug fixes.
 
