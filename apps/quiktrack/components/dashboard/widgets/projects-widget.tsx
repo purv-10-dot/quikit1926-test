@@ -90,7 +90,7 @@ function ProjectRow({ project: p, striped }: { project: Project; striped: boolea
     >
       <div className="min-w-0">
         <Link
-          href={`/spaces/${p.id}/backlog`}
+          href={`/spaces/${p.projectKey ?? p.id}/backlog`}
           className="inline-flex items-center gap-2"
         >
           <SpaceIcon icon={p.icon} name={p.name} color={p.color} size={24} radius={6} />
@@ -130,7 +130,7 @@ function ProjectRow({ project: p, striped }: { project: Project; striped: boolea
                   type="button"
                   onClick={() => {
                     setChartOpen(false);
-                    router.push(`/spaces/${p.id}/list`);
+                    router.push(`/spaces/${p.projectKey ?? p.id}/list`);
                   }}
                   className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50"
                 >
@@ -160,7 +160,7 @@ function ProjectRow({ project: p, striped }: { project: Project; striped: boolea
                   type="button"
                   onClick={() => {
                     setFilterOpen(false);
-                    router.push(`/spaces/${p.id}/list${f.query}`);
+                    router.push(`/spaces/${p.projectKey ?? p.id}/list${f.query}`);
                   }}
                   className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50"
                 >

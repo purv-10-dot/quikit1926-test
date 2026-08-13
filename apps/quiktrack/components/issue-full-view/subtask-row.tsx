@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ChevronDown,
   Check,
   ListTree,
   ChevronsUp,
@@ -14,6 +13,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import type { Priority } from "./types";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 
 interface Subtask {
   id: string;
@@ -48,12 +48,6 @@ function userInitials(u: Member["user"]) {
   const l = (u.lastName ?? "").trim();
   return ((f[0] ?? "") + (l[0] ?? "")).toUpperCase() || (u.email[0] ?? "?").toUpperCase();
 }
-function statusPillClass(category?: string) {
-  if (category === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-700";
-  if (category === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-700";
-  return "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-100 text-gray-700";
-}
-
 function useOutsideClose<T extends HTMLElement>(open: boolean, onClose: () => void) {
   const ref = useRef<T | null>(null);
   useEffect(() => {
@@ -87,12 +81,12 @@ export function SubtaskRow({
 }) {
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [statusOpen, setStatusOpen] = useState(false);
   const priorityRef = useOutsideClose<HTMLDivElement>(priorityOpen, () => setPriorityOpen(false));
   const assigneeRef = useOutsideClose<HTMLDivElement>(assigneeOpen, () => setAssigneeOpen(false));
-  const statusRef = useOutsideClose<HTMLDivElement>(statusOpen, () => setStatusOpen(false));
 
-  const P = s.priority ? PRIORITY_META[s.priority] : null;
+  // `?? null` matters: an unmapped priority (the column has no DB constraint)
+  // yields `undefined`, which a `P && ...` guard would pass through to `P.Icon`.
+  const P = s.priority ? (PRIORITY_META[s.priority] ?? null) : null;
   const member = members.find((m) => m.userId === s.assigneeId);
   const cat = s.status?.category;
 
@@ -214,36 +208,20 @@ export function SubtaskRow({
         )}
       </div>
 
-      <div className="px-3 py-2 relative" ref={statusRef}>
-        <button
-          type="button"
-          onClick={() => setStatusOpen((v) => !v)}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${statusPillClass(cat)}`}
-        >
-          {s.status?.name ?? "TO DO"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        {statusOpen && (
-          <div className="absolute left-2 top-full mt-1 w-44 bg-white border border-gray-200 rounded shadow-lg z-30 py-1">
-            {statuses.map((st) => (
-              <button
-                key={st.id}
-                type="button"
-                onClick={() => {
-                  void onPatch({ statusId: st.id });
-                  setStatusOpen(false);
-                }}
-                className="w-full px-2.5 py-1.5 text-left hover:bg-gray-50"
-              >
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${statusPillClass(st.category)}`}
-                >
-                  {st.name}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="px-3 py-2">
+        {/* Subtasks are work items too — gate their status by the workflow (only
+            legal transitions; shows the "Show a screen" modal when configured).
+            Falls back to a free picker when the project has no published workflow. */}
+        <WorkflowStatusControl
+          issueId={s.id}
+          projectId={projectId}
+          currentStatusId={s.statusId ?? s.status?.id ?? ""}
+          currentStatusName={s.status?.name ?? "TO DO"}
+          currentStatusCategory={cat}
+          statuses={statuses}
+          onChange={(statusId) => onPatch({ statusId })}
+          size="sm"
+        />
       </div>
 
       <div className="px-3 py-2 text-right text-xs text-gray-400">—</div>

@@ -10,6 +10,7 @@ import {
   type PanelAnchor,
 } from "@/lib/hooks/useAnchoredPanel";
 import { categoryColor, type TimelineStatus } from "./timeline-view-settings";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 
 /**
  * Inline Status / Assignee editors for the timeline's frozen left column.
@@ -46,77 +47,34 @@ function useDismiss(open: boolean, onClose: () => void) {
 }
 
 export function StatusEditor({
+  issueId,
+  projectId,
   value,
   statuses,
   disabled,
   onSelect,
 }: {
+  issueId: string;
+  projectId: string;
   value: string;
   statuses: TimelineStatus[];
   disabled?: boolean;
   onSelect: (statusId: string) => void;
 }) {
-  const [pos, setPos] = useState<PanelAnchor | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuStyle = useAnchoredPanel(menuRef, pos, { width: 176 });
-  useDismiss(pos !== null, () => setPos(null));
-
   const current = statuses.find((s) => s.id === value);
-  const hex = current?.color || categoryColor(current?.category);
-
   return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        disabled={disabled}
-        data-timeline-menu
-        onClick={() => setPos(pos ? null : anchorBelow(btnRef.current!))}
-        className="inline-flex max-w-full items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium hover:brightness-95 disabled:opacity-60"
-        style={{
-          backgroundColor: current ? `${hex}1f` : "transparent",
-          color: current ? hex : "#9ca3af",
-        }}
-      >
-        {current && (
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: hex }} />
-        )}
-        <span className="truncate">{current?.name ?? "—"}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-      </button>
-      {pos &&
-        createPortal(
-          <div
-            ref={menuRef}
-            data-timeline-menu
-            style={{ ...menuStyle, zIndex: 100 }}
-            className="max-h-60 w-44 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
-          >
-            {statuses.map((s) => {
-              const shex = s.color || categoryColor(s.category);
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setPos(null);
-                    if (s.id !== value) onSelect(s.id);
-                  }}
-                  className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-gray-50 ${
-                    s.id === value ? "bg-blue-50" : ""
-                  }`}
-                >
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: shex }} />
-                  <span className="flex-1 truncate text-gray-700">{s.name}</span>
-                  {s.id === value && <Check className="h-3 w-3 shrink-0 text-blue-600" />}
-                </button>
-              );
-            })}
-          </div>,
-          document.body,
-        )}
-    </>
+    <WorkflowStatusControl
+      issueId={issueId}
+      projectId={projectId}
+      currentStatusId={value}
+      currentStatusName={current?.name ?? "—"}
+      currentStatusCategory={current?.category}
+      statuses={statuses.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+      onChange={onSelect}
+      onViewWorkflow={() => window.open(`/spaces/${projectId}/settings/workflows`, "_blank")}
+      size="sm"
+      disabled={disabled}
+    />
   );
 }
 

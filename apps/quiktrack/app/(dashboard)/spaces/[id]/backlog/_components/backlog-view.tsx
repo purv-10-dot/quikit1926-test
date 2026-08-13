@@ -5,6 +5,7 @@ import Link from "next/link";
 import { showToast } from "@/lib/ui/toast";
 import { confirmDialog } from "@/lib/ui/confirm";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
@@ -197,13 +198,14 @@ function InlineCreator(props: {
 
 function InlineCreatorInner({
   projectId,
-  defaultStatusId,
   sprintId,
   members,
   currentUserId,
   onCreated,
 }: {
   projectId: string;
+  /** Accepted for API compatibility but no longer used — the server picks the
+   *  correct initial status (workflow INITIAL, else first-by-order). */
   defaultStatusId?: string;
   sprintId: string | null;
   members: Member[];
@@ -263,7 +265,10 @@ function InlineCreatorInner({
           projectId,
           title: t,
           type,
-          statusId: defaultStatusId,
+          // Don't force a status here — let the server pick the correct initial
+          // status: the workflow's INITIAL (e.g. classic "Open") when a workflow
+          // governs the project, else the first status by order. Forcing the
+          // client's "To Do" here overrode that (item wrongly landed on To Do).
           sprintId: sprintId ?? undefined,
           assigneeId: assigneeId ?? undefined,
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
@@ -1160,6 +1165,7 @@ function DeleteSprintModal({
 
 function IssueRow({
   issue,
+  projectId,
   statuses,
   epics,
   members,
@@ -1175,6 +1181,7 @@ function IssueRow({
   canDelete,
 }: {
   issue: Issue;
+  projectId: string;
   statuses: Status[];
   epics: EpicLite[];
   members: Member[];
@@ -1200,7 +1207,6 @@ function IssueRow({
   // clientWidth). Recomputed on each hover so it tracks resize/zoom.
   const [showTitleTip, setShowTitleTip] = useState(false);
   const titleRef = useRef<HTMLSpanElement>(null);
-  const [statusOpen, setStatusOpen] = useState(false);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
   const epicRef = useRef<HTMLButtonElement>(null);
@@ -1266,7 +1272,6 @@ function IssueRow({
       setDeleting(false);
     }
   }
-  const statusRef = useRef<HTMLButtonElement>(null);
 
   // Click-outside + Escape for the status and epic dropdowns are handled by
   // PopoverPanel, which also portals the menu to document.body so the backlog's
@@ -1536,52 +1541,19 @@ function IssueRow({
         )
       )}
 
-      {/* Status pill (clickable popover) */}
+      {/* Status pill — workflow-aware (gated → legal transitions; else free). */}
       {fields.status && (
-      <>
-        <button
-          ref={statusRef}
-          type="button"
-          onClick={() => setStatusOpen((v) => !v)}
-          className={`inline-flex shrink-0 items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-            issue.status?.category,
-          )}`}
-        >
-          {issue.status?.name ?? "—"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        <PopoverPanel
-          anchorRef={statusRef}
-          open={statusOpen}
-          onClose={() => setStatusOpen(false)}
-          align="right"
-          width={200}
-          placement="auto"
-          estimatedHeight={220}
-        >
-          {statuses
-            .filter((s) => s.id !== issue.statusId)
-            .map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  setStatusOpen(false);
-                  void patch({ statusId: s.id });
-                }}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
-              >
-                <span
-                  className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-                    s.category,
-                  )}`}
-                >
-                  {s.name}
-                </span>
-              </button>
-            ))}
-        </PopoverPanel>
-      </>
+        <WorkflowStatusControl
+          issueId={issue.id}
+          projectId={projectId}
+          currentStatusId={issue.statusId}
+          currentStatusName={issue.status?.name ?? "—"}
+          currentStatusCategory={issue.status?.category}
+          statuses={statuses.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+          onChange={(statusId) => void patch({ statusId })}
+          onViewWorkflow={() => window.open(`/spaces/${projectId}/settings/workflows`, "_blank")}
+          size="sm"
+        />
       )}
 
       {/* Overdue badge — shows the due date with a warning when it's past. */}
@@ -1858,6 +1830,15 @@ function FilterRow({
   );
 }
 
+/** Read the dragged issue ids from a drop event — the bulk list if present,
+ *  else the single legacy id, else empty. Shared by section header + body. */
+function draggedIssueIds(e: React.DragEvent): string[] {
+  const many = e.dataTransfer.getData("text/issue-ids");
+  if (many) return many.split(",").filter(Boolean);
+  const one = e.dataTransfer.getData("text/issue-id");
+  return one ? [one] : [];
+}
+
 function SectionHeader({
   collapsed,
   onToggle,
@@ -1869,6 +1850,7 @@ function SectionHeader({
   allChecked = false,
   someChecked = false,
   onToggleAll,
+  onDropIds,
 }: {
   collapsed: boolean;
   onToggle: () => void;
@@ -1880,9 +1862,37 @@ function SectionHeader({
   allChecked?: boolean;
   someChecked?: boolean;
   onToggleAll?: (next: boolean) => void;
+  /** Drop dragged issue ids onto this section. Makes a COLLAPSED section (whose
+   *  body renders nothing) still a valid drop target — via its header. */
+  onDropIds?: (ids: string[]) => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   return (
-    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-t-md">
+    <div
+      onDragOver={
+        onDropIds
+          ? (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setDragOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={onDropIds ? () => setDragOver(false) : undefined}
+      onDrop={
+        onDropIds
+          ? (e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const ids = draggedIssueIds(e);
+              if (ids.length) onDropIds(ids);
+            }
+          : undefined
+      }
+      className={`flex items-center justify-between px-3 py-2 border rounded-t-md ${
+        dragOver ? "bg-blue-50 border-blue-300" : "bg-gray-50 border-gray-200"
+      }`}
+    >
       <div className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -1996,7 +2006,7 @@ function SectionBody({
   defaultStatusId,
   onCreated,
   onDragStart,
-  onDropIssue,
+  onDropIds,
   onOpenIssue,
   selectedIds,
   onToggleSelect,
@@ -2015,7 +2025,7 @@ function SectionBody({
   defaultStatusId?: string;
   onCreated: () => void;
   onDragStart?: (e: React.DragEvent, issueId: string) => void;
-  onDropIssue?: (issueId: string) => void;
+  onDropIds?: (ids: string[]) => void;
   onOpenIssue: (issueId: string) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string, next: boolean) => void;
@@ -2058,6 +2068,10 @@ function SectionBody({
         sprintId: sprintId ?? "null",
         excludeType: "EPIC,SUBTASK",
         limit: String(ISSUE_PAGE),
+        // Like Jira: the backlog only shows items whose status is mapped to a
+        // board column. Unmapped-status items are hidden here (but visible in
+        // List/Task Table). No-op when the project has no configured columns.
+        boardMappedOnly: "1",
       });
       if (filters.search) params.set("search", filters.search);
       if (filters.statusId) params.set("statusId", filters.statusId);
@@ -2142,13 +2156,13 @@ function SectionBody({
     <div
       className="bg-white"
       onDragOver={(e) => {
-        if (onDropIssue) e.preventDefault();
+        if (onDropIds) e.preventDefault();
       }}
       onDrop={(e) => {
-        if (!onDropIssue) return;
+        if (!onDropIds) return;
         e.preventDefault();
-        const id = e.dataTransfer.getData("text/issue-id");
-        if (id) onDropIssue(id);
+        const ids = draggedIssueIds(e);
+        if (ids.length) onDropIds(ids);
       }}
     >
       {/* Scrollable rows. The InlineCreator below is intentionally OUTSIDE this
@@ -2170,6 +2184,7 @@ function SectionBody({
       {state.issues.map((i) => (
         <IssueRow
           key={i.id}
+          projectId={projectId}
           issue={{ ...i, status: statusesById.get(i.statusId) }}
           statuses={Array.from(statusesById.values())}
           epics={epics}
@@ -2349,10 +2364,22 @@ export function BacklogView({ projectId }: { projectId: string }) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [viewSettingsOpen]);
 
-  const onDragStart = useCallback((e: React.DragEvent, issueId: string) => {
-    e.dataTransfer.setData("text/issue-id", issueId);
-    e.dataTransfer.effectAllowed = "move";
-  }, []);
+  const onDragStart = useCallback(
+    (e: React.DragEvent, issueId: string) => {
+      // Bulk drag: if the grabbed row is part of the current checkbox selection,
+      // carry EVERY selected id so a drop moves them all. Otherwise just the one.
+      // (A comma-joined list rides under a dedicated MIME; the legacy single-id
+      // key stays for any older drop handler.)
+      const ids =
+        selectedIds.has(issueId) && selectedIds.size > 1
+          ? Array.from(selectedIds)
+          : [issueId];
+      e.dataTransfer.setData("text/issue-ids", ids.join(","));
+      e.dataTransfer.setData("text/issue-id", issueId);
+      e.dataTransfer.effectAllowed = "move";
+    },
+    [selectedIds],
+  );
 
   // Stable filters object passed down to every SectionBody — re-allocates only
   // when one of the underlying values actually changes.
@@ -2437,6 +2464,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
       sprintId: sprintId ?? "null",
       excludeType: "EPIC,SUBTASK",
       idsOnly: "1",
+      // Match what the backlog actually shows (board-mapped statuses only).
+      boardMappedOnly: "1",
     });
     if (sectionFilters.search) params.set("search", sectionFilters.search);
     if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);
@@ -2640,6 +2669,16 @@ export function BacklogView({ projectId }: { projectId: string }) {
       }
     },
     [statuses],
+  );
+
+  // Bulk drop: move every dragged id into the destination section. Reuses the
+  // single-issue mover so the optimistic cache updates + count badges + PATCH
+  // all happen per issue. A single-item drag is just a one-element list.
+  const onDropIdsIntoSection = useCallback(
+    async (ids: string[], destSprintId: string | null) => {
+      await Promise.all(ids.map((id) => onDropIntoSection(id, destSprintId)));
+    },
+    [onDropIntoSection],
   );
 
   const updateSection = useCallback(
@@ -3590,6 +3629,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               allChecked={sel.all}
               someChecked={sel.some}
               onToggleAll={(next) => void selectAllInSection(sprint.id, next)}
+              onDropIds={(ids) => void onDropIdsIntoSection(ids, sprint.id)}
               afterTitle={
                 sprint.startDate || sprint.endDate ? (
                   <button
@@ -3700,7 +3740,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               defaultStatusId={defaultTodoStatusId}
               onCreated={() => refreshSection(key, sprint.id)}
               onDragStart={onDragStart}
-              onDropIssue={(id) => onDropIntoSection(id, sprint.id)}
+              onDropIds={(ids) => void onDropIdsIntoSection(ids, sprint.id)}
               onOpenIssue={setEditingIssueId}
               selectedIds={selectedIds}
               onToggleSelect={(id, next) =>
@@ -3785,6 +3825,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           allChecked={backlogSel.all}
           someChecked={backlogSel.some}
           onToggleAll={(next) => void selectAllInSection(null, next)}
+          onDropIds={(ids) => void onDropIdsIntoSection(ids, null)}
           trailing={
             // Functional spaces have no sprints — no "Create sprint" affordance.
             !isFunctional && canCreateSprint ? (
@@ -3810,7 +3851,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           defaultStatusId={defaultTodoStatusId}
           onCreated={() => refreshSection("backlog", null)}
           onDragStart={onDragStart}
-          onDropIssue={(id) => onDropIntoSection(id, null)}
+          onDropIds={(ids) => void onDropIdsIntoSection(ids, null)}
           onOpenIssue={setEditingIssueId}
           selectedIds={selectedIds}
           onToggleSelect={(id, next) =>

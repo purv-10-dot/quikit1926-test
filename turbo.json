@@ -30,6 +30,8 @@
         "QUIKLMS_OAUTH_CLIENT_SECRET",
         "QUIKASSET_URL",
         "QUIKASSET_OAUTH_CLIENT_SECRET",
+        "QUIKCRMEXPRESS_URL",
+        "QUIKCRMEXPRESS_OAUTH_CLIENT_SECRET",
         "ADMIN_URL",
         "NEXT_PUBLIC_AUTH_URL",
         "NEXT_PUBLIC_LAUNCHER_URL",
@@ -47,7 +49,9 @@
         "SENTRY_DSN",
         "NEXT_PUBLIC_SENTRY_DSN",
         "QUIKVC_DEV_BYPASS",
-        "QUIKVC_DEV_ROLE"
+        "QUIKVC_DEV_ROLE",
+        "WF_CONNECTION_ENC_KEY",
+        "QUIKFLOW_DEFAULT_TIMEZONE"
       ]
     },
     "dev": {

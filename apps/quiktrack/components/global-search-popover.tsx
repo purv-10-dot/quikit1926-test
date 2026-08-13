@@ -434,7 +434,7 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
                       {projects.map((p) => (
                         <li key={p.id}>
                           <Link
-                            href={`/spaces/${p.id}/backlog`}
+                            href={`/spaces/${p.projectKey ?? p.id}/backlog`}
                             onClick={() => setOpen(false)}
                             className="flex items-center gap-3 px-4 py-1.5 text-[13px] hover:bg-blue-50/40"
                           >
@@ -464,10 +464,17 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
                       router.push("/spaces");
                       return;
                     }
+                    // Prefer the readable project key in the URL. The target may
+                    // come from an issue's projectId (no key in scope), so resolve
+                    // the key from the projects catalog when we can; fall back to
+                    // the id, which the server also accepts.
+                    const targetSeg =
+                      allProjects.find((p) => p.id === targetProjectId)?.projectKey ??
+                      targetProjectId;
                     const qs = buildParams().toString();
                     setOpen(false);
                     router.push(
-                      `/spaces/${targetProjectId}/list${qs ? `?${qs}` : ""}`,
+                      `/spaces/${targetSeg}/list${qs ? `?${qs}` : ""}`,
                     );
                   }}
                   className="text-blue-600 font-medium hover:underline"

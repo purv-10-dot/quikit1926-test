@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { oauthCorsPreflight, OAUTH_CORS_HEADERS } from "@/lib/oauth";
 
+export function OPTIONS(): Response {
+  return oauthCorsPreflight();
+}
 
 /**
  * GET /.well-known/openid-configuration
@@ -28,6 +32,7 @@ export async function GET(request: NextRequest) {
       token_endpoint: `${issuer}/api/oauth/token`,
       userinfo_endpoint: `${issuer}/api/oauth/userinfo`,
       jwks_uri: `${issuer}/api/oauth/jwks`,
+      registration_endpoint: `${issuer}/api/oauth/register`,
       response_types_supported: ["code"],
       subject_types_supported: ["public"],
       id_token_signing_alg_values_supported: ["RS256"],
@@ -35,6 +40,7 @@ export async function GET(request: NextRequest) {
       token_endpoint_auth_methods_supported: [
         "client_secret_basic",
         "client_secret_post",
+        "none",
       ],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
@@ -53,6 +59,7 @@ export async function GET(request: NextRequest) {
     {
       headers: {
         "Cache-Control": "public, max-age=3600",
+        ...OAUTH_CORS_HEADERS,
       },
     },
   );

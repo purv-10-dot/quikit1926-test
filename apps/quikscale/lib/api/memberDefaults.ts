@@ -31,4 +31,7 @@ export const MEMBER_DEFAULT_GRANTS: Array<{ resource: string; action: string }> 
   { resource: "OPSP.Review.Critical", action: "view" },
   { resource: "OPSP.Review.Critical", action: "update" },
   { resource: "OPSP.Categories", action: "view" },
+  // Meeting report: members may generate + view a report from a transcript.
+  // Editing + saving (the "Edit Report" gate) is `update`, left admin-only.
+  { resource: "ClientMeetings.Report", action: "view" },
 ];

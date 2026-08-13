@@ -6,6 +6,7 @@ import { LoginPageClient } from "./LoginPageClient";
  * With central auth (`NEXT_PUBLIC_AUTH_URL`), credentials login runs only on that host (e.g. :3004).
  * This route stays as a fallback redirect + legacy entrypoint for `?reason=` query forwarding.
  */
+
 export default function LoginPage({
   searchParams,
 }: {

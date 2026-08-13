@@ -822,6 +822,7 @@ platform owner.
 | admin | `admin-runtime` | `admin-deployment.yaml` | `uatorgadmin.quikit.ai` | `orgadmin.quikit.ai` |
 | quikscale | `quikscale-runtime` | `quikitscale-deployment.yaml` | `uatscale.quikit.ai` | `scale.quikit.ai` |
 | quiktrack | `quiktrack-runtime` | `quikittrack-deployment.yaml` | — | — |
+| quikinsight | `quikinsight-runtime` | `quikinsight-deployment.yaml` | `uatinsights.quikit.ai` | `insights.quikit.ai` |
 | quikinfra | `quikinfra-runtime` | `quikitinfra-deployment.yaml` | `uatinfra.quikit.ai` | `infra.quikit.ai` |
 | quikcrm | `quikcrm-runtime` | `crm-deployment.yaml` | `uatcrm.quikit.ai` | `crm.quikit.ai` |
 | quikhrms | `quikhrms-runtime` | `hrms-deployment.yaml` | `uatpeople.quikit.ai` | `people.quikit.ai` |

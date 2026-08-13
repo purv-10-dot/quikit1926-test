@@ -1,0 +1,75 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { prisma } from "@/lib/db/prisma";
+import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
+import { assertModule } from "@/lib/auth/permissions";
+import { assertAccountAccess } from "@/lib/auth/account-acl";
+import { assertLeadOwnership } from "@/lib/auth/owner-scope";
+import { transitionLeadSchema } from "@/lib/validators/lead";
+import {
+  LeadTransitionError,
+  transitionLead,
+} from "@/lib/services/leads/transition-service";
+import { notifyLeadStageChanged } from "@/lib/notifications/lead-triggers";
+import { evaluateRulesForEvent } from "@/lib/notifications/rules/engine";
+
+export const runtime = "nodejs";
+
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const user = await requireApiUser();
+    if (isResponse(user)) return user;
+    await assertModule(user, "leads", "edit");
+    const lead = await prisma.qceLead.findUnique({ where: { id } });
+    if (!lead || lead.orgId !== user.orgId) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    if (lead.deletedAt) {
+      return NextResponse.json({ success: false, error: "Lead is in trash. Restore it before changing stage." },
+        { status: 410 },
+      );
+    }
+    await assertAccountAccess(user, lead.accountId);
+    await assertLeadOwnership(user, lead.ownerId);
+
+    const parsed = transitionLeadSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: "Validation failed", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
+    }
+    const updated = await transitionLead({ user, leadId: id, input: parsed.data });
+
+    // Notify lead owner when stage changes — non-blocking.
+    notifyLeadStageChanged({
+      orgId: user.orgId,
+      actorUserId: user.userId,
+      actorName: user.name || user.email,
+      leadId: id,
+      leadName: lead.name,
+      ownerId: updated.ownerId,
+      fromStage: lead.stage,
+      toStage: updated.stage,
+    }).catch((err) =>
+      console.error("[notifications] notifyLeadStageChanged failed", err),
+    );
+
+    // ── Rules engine (after existing stage-change notification) ──
+    evaluateRulesForEvent({
+      event: "stage_changed",
+      entityType: "lead",
+      entityId: id,
+      orgId: user.orgId,
+      actorUserId: user.userId,
+      actorName: user.name || user.email,
+      before: lead as unknown as Record<string, unknown>,
+      after: updated as unknown as Record<string, unknown>,
+      changedFields: ["stage"],
+    }).catch((err) => console.error("[rules-engine] lead transition failed", err));
+
+    return NextResponse.json({ success: true, data: updated });
+  } catch (e) {
+    if (e instanceof LeadTransitionError) {
+      return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    }
+    return errorResponse(e);
+  }
+}

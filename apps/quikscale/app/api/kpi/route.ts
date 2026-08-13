@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/kpiCreateValidation";
 import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
+import { emitKpiCreated } from "@/lib/services/workflowEvents";
 import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { audit, requestContext } from "@/lib/audit";
@@ -623,6 +624,18 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/kpi] notifyKPIAssignment failed:", err);
     });
   }
+
+  // Fire the QuikFlow `kpi.created` automation event (flag-gated, fire-and-forget).
+  emitKpiCreated({
+    orgId,
+    kpiId: kpi.id,
+    name: kpi.name,
+    ownerId: kpi.owner ?? null,
+    ownerIds: validated.ownerIds ?? [],
+    teamId: kpi.teamId ?? null,
+    quarter: kpi.quarter,
+    year: kpi.year,
+  });
 
   return NextResponse.json({ success: true, data: kpi, message: "KPI created successfully" }, { status: 201 });
 });

@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "../../packages/database",
+      "../../packages/auth",
+      "../../packages/shared",
+      "../../packages/ui",
+      "../../docs"
+    ],
+    "deny": [
+      "Read(../quikhrms/**)",
+      "Read(../quikcrm/**)",
+      "Read(../quikinfra/**)",
+      "Read(../quikscale/**)",
+      "Read(../quikvc/**)",
+      "Read(../quiksocial/**)",
+      "Read(../admin/**)",
+      "Read(../auth/**)",
+      "Read(../quikit/**)",
+      "Edit(../../packages/**)",
+      "Bash(psql*)",
+      "Bash(pg_restore*)",
+      "Bash(pg_dump*)",
+      "Bash(*prisma migrate*)",
+      "Bash(*prisma db push*)",
+      "Bash(*prisma studio*)",
+      "Bash(npm run db:*)",
+      "Bash(git push*)"
+    ]
+  }
+}

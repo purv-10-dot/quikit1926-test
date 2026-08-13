@@ -8,6 +8,9 @@ import {
   generateAccessToken,
   generateRefreshToken,
   verifyPKCE,
+  ipSlash24,
+  oauthCorsPreflight,
+  withOAuthCors,
 } from "@/lib/oauth";
 
 /**
@@ -21,7 +24,7 @@ import {
  * guessed client_ids could pollute the cache. The rate limiter below stops
  * that attack regardless.
  */
-const CLIENT_CACHE = new LRUCache<string, { clientSecret: string; scopes: string[] }>({
+const CLIENT_CACHE = new LRUCache<string, { clientSecret: string | null; scopes: string[] }>({
   max: 100,
   ttl: 60_000,
 });
@@ -35,19 +38,6 @@ async function getOAuthClient(clientId: string) {
   });
   if (row) CLIENT_CACHE.set(clientId, row);
   return row;
-}
-
-/**
- * Bucket IPs to /24. One attacker can't trivially spray source IPs within
- * their own /24 to dodge the limit; a shared-office /24 still shares one
- * bucket of reasonable size.
- */
-function ipSlash24(raw: string): string {
-  if (!raw || raw === "anonymous") return "anon";
-  const v4 = raw.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
-  if (v4) return v4[1]!;
-  const v6 = raw.split(":").slice(0, 3).join(":");
-  return v6 || raw;
 }
 
 const FAIL_CLOSED = process.env.NODE_ENV === "production";
@@ -65,7 +55,15 @@ const RATE_LIMIT_ENABLED =
  * Supports grant_type: "authorization_code" and "refresh_token".
  * Authenticates the client via client_id + client_secret (Basic or body).
  */
-export async function POST(request: NextRequest) {
+export function OPTIONS(): Response {
+  return oauthCorsPreflight();
+}
+
+export async function POST(request: NextRequest): Promise<Response> {
+  return withOAuthCors(await handleToken(request));
+}
+
+async function handleToken(request: NextRequest): Promise<Response> {
   const body = await request.formData().catch(() => null);
   const params = body
     ? Object.fromEntries(body.entries())
@@ -121,16 +119,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const secretValid = await bcrypt.compare(clientSecret, client.clientSecret);
-  if (!secretValid) {
-    return NextResponse.json(
-      { error: "invalid_client", error_description: "Bad client_secret" },
-      { status: 401 },
-    );
+  // A public client (no registered secret) authenticates via PKCE instead —
+  // enforced below in handleAuthCodeExchange, the actual security boundary.
+  // A confidential client must present the correct secret as always.
+  if (client.clientSecret !== null) {
+    const secretValid = await bcrypt.compare(clientSecret, client.clientSecret);
+    if (!secretValid) {
+      return NextResponse.json(
+        { error: "invalid_client", error_description: "Bad client_secret" },
+        { status: 401 },
+      );
+    }
   }
 
   if (grantType === "authorization_code") {
-    return handleAuthCodeExchange(params, clientId);
+    return handleAuthCodeExchange(params, clientId, client.clientSecret === null);
   }
 
   if (grantType === "refresh_token") {
@@ -146,6 +149,7 @@ export async function POST(request: NextRequest) {
 async function handleAuthCodeExchange(
   params: Record<string, unknown>,
   clientId: string,
+  isPublicClient: boolean,
 ) {
   const code = String(params.code ?? "");
   const redirectUri = String(params.redirect_uri ?? "");
@@ -170,6 +174,17 @@ async function handleAuthCodeExchange(
   if (authCode.redirectUri !== redirectUri) {
     return NextResponse.json(
       { error: "invalid_grant", error_description: "redirect_uri mismatch" },
+      { status: 400 },
+    );
+  }
+
+  // A public client has no secret, so PKCE is the only thing standing
+  // between an intercepted code and a stolen token — /authorize should
+  // already refuse to mint a public client's code without a challenge, but
+  // this is the actual security boundary and must not rely solely on that.
+  if (isPublicClient && !authCode.codeChallenge) {
+    return NextResponse.json(
+      { error: "invalid_grant", error_description: "PKCE required for public clients" },
       { status: 400 },
     );
   }

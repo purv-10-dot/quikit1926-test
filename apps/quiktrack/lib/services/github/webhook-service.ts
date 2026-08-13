@@ -11,6 +11,8 @@
 
 import { db } from "@/lib/db";
 import { parseIssueKeys } from "@/lib/services/github/issue-key";
+import { fireTriggerForIssues } from "@/lib/services/workflow/fire-trigger";
+import type { TriggerEvent } from "@/lib/services/workflow/triggers";
 
 /** Resolve candidate keys to QtIssue ids for this org. Unknown keys dropped. */
 async function resolveIssueIds(
@@ -64,6 +66,7 @@ export async function handleBranchEvent(
       update: { repoFullName: repo.repoFullName },
     });
   }
+  await fireTriggerForIssues(orgId, issueIds, "branch_created");
   return issueIds.length;
 }
 
@@ -82,9 +85,11 @@ export async function handlePushEvent(
   commits: CommitPayload[],
 ): Promise<number> {
   let linked = 0;
+  const touched = new Set<string>();
   for (const c of commits) {
     const issueIds = await resolveIssueIds(orgId, parseIssueKeys(c.message));
     for (const issueId of issueIds) {
+      touched.add(issueId);
       await db.qtDevCommit.upsert({
         where: { repoId_sha: { repoId: repo.repoId, sha: c.id } },
         create: {
@@ -103,6 +108,7 @@ export async function handlePushEvent(
       linked++;
     }
   }
+  await fireTriggerForIssues(orgId, Array.from(touched), "commit_created");
   return linked;
 }
 
@@ -128,11 +134,20 @@ function prState(pr: PullRequestPayload): string {
   return "OPEN";
 }
 
+/** Map a GitHub pull_request action/state to a QuikTrack trigger event. */
+function prTriggerEvent(action: string, pr: PullRequestPayload): TriggerEvent | null {
+  if (action === "opened") return "pr_created";
+  if (action === "reopened") return "pr_reopened";
+  if (action === "closed") return pr.merged ? "pr_merged" : "pr_declined";
+  return null; // synchronize / edited / labeled / … don't drive transitions
+}
+
 /** `pull_request` event — link a PR whose title/body carries a known key. */
 export async function handlePullRequestEvent(
   orgId: string,
   repo: RepoRef,
   pr: PullRequestPayload,
+  action = "",
 ): Promise<number> {
   // Parse the title, body AND the head branch ref — the branch often carries
   // the key (e.g. "QUIKTR-104-work") even when the PR title doesn't.
@@ -161,5 +176,7 @@ export async function handlePullRequestEvent(
       },
     });
   }
+  const event = prTriggerEvent(action, pr);
+  if (event) await fireTriggerForIssues(orgId, issueIds, event);
   return issueIds.length;
 }

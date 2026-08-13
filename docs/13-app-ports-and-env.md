@@ -17,6 +17,7 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **admin** | `3002` | `3005` | [apps/admin/package.json](../apps/admin/package.json) | Org admin portal (members, teams, apps, roles, audit log, settings). |
 | **quikscale** | `3003` | `3002` | [apps/quikscale/package.json](../apps/quikscale/package.json) | QuikScale — OKR / KPI / OPSP / Priority / WWW tooling. |
 | **quiktrack** | `3004` | `3004` | [apps/quiktrack/package.json](../apps/quiktrack/package.json) | QuikTrack — project / task / docs tracker (Tiptap rich-text docs). |
+| **quikinsight** | `3015` | `3015` | [apps/quikinsight/package.json](../apps/quikinsight/package.json) | QuikInsight — analytics and insights portal. |
 | **quikvc** | `3005` | `3008` | [apps/quikvc/package.json](../apps/quikvc/package.json) | QuikVC — venture-capital deal flow (founder / investor / VC-admin portals). |
 | **quikinfra** | `3006` | `3006` | [apps/quikinfra/package.json](../apps/quikinfra/package.json) | QuikInfra — construction ERP (BOQ, DPR/RAB, stock, procurement, finance). Own `Cn*` RBAC. |
 | **quiksocial** | `3007` | `3007` | [apps/quiksocial/package.json](../apps/quiksocial/package.json) | QuikSocial — AI social media management. Talks to a Python AI service on Railway. |
@@ -24,6 +25,11 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **quikhrms** | `3009` | `3009` | [apps/quikhrms/package.json](../apps/quikhrms/package.json) | QuikHRMS (package name `quikit-hrms`) — HR management (employees, payroll, attendance, leave). Requires Node ≥ 20.14. |
 | **quiksupport** | `3010` | `3010` | [apps/quiksupport/package.json](../apps/quiksupport/package.json) | QuikSupport — helpdesk / ticketing (tickets, SLA, categories, agent queues). Ported from `helpdesk-mgt`; own `Hd*`/`Qsp*` RBAC. Public domain `support.quikit.ai` / `uatsupport.quikit.ai`. |
 | **_template** | `3010` | `3010` | [apps/_template/package.json](../apps/_template/package.json) | Reference scaffold for new apps. Shares port `3010` with quiksupport — don't run both (or a real app) on `3010` at once. |
+| **quikchat** | `3011` | `3011` | [apps/quikchat/package.json](../apps/quikchat/package.json) | QuikChat — team messaging (channels, DMs, calls, notifications, calendar). |
+| **quikasset** | `3012` | `3012` | [apps/quikasset/package.json](../apps/quikasset/package.json) | QuikAsset — asset/inventory management. |
+| **quikfinance** | `3013` | `3013` | [apps/quikfinance/package.json](../apps/quikfinance/package.json) | QuikFinance — finance module. |
+| **quiklms** | `3014` | `3014` | [apps/quiklms/package.json](../apps/quiklms/package.json) | QuikLMS — learning management (folded in from standalone quikskill_lms). **`dev` script disabled locally (2026-08-07)** — shares port `3014` with quikflow; run `npm run dev:manual` instead of `turbo dev` to start it standalone. |
+| **quikflow** | `3014` | `3014` | [apps/quikflow/package.json](../apps/quikflow/package.json) | QuikFlow — no-code workflow automation (Zapier/n8n analog). Has a separate BullMQ `worker` process (`npm run worker`). Moved from `3011` (2026-08-07) to resolve a collision with quikchat; now shares `3014` with quiklms instead — see quiklms row. |
 
 ### Startup flow
 
