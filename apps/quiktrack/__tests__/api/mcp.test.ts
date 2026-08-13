@@ -3661,6 +3661,329 @@ describe("POST /api/mcp", () => {
       });
     });
   });
+
+  describe("QUIKTR-119 — access decision audit log", () => {
+    it("logs an allow decision when a project member reads an issue", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      mockDb.qtIssue.findFirst.mockResolvedValue({
+        id: "issue_1",
+        key: "PRJ-1",
+        title: "Fix the bug",
+        description: null,
+        type: "TASK",
+        priority: "MEDIUM",
+        statusId: "status_1",
+        assigneeId: null,
+      } as never);
+      mockDb.qtIssueLink.findMany.mockResolvedValue([] as never);
+
+      await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_issue", arguments: { issueId: "issue_1" } } },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(mockDb.qtMcpAccessLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orgId: ORG,
+            userId: CREATED_BY,
+            projectId: PROJECT,
+            tool: "get_issue",
+            decision: "allow",
+          }),
+        }),
+      );
+    });
+
+    it("logs a deny decision when the caller isn't a project member", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: null,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+        failedAccessChecks: 0,
+      } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.qtProjectMember.findFirst.mockResolvedValue(null);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "get_issue", arguments: { issueId: "issue_1", projectId: PROJECT } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtMcpAccessLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tool: "get_issue",
+            decision: "deny",
+            reason: "not a project member",
+          }),
+        }),
+      );
+    });
+
+    it("logs a deny decision with the resource/action for a write permission failure", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProjectMember.findFirst.mockResolvedValue({ role: "MEMBER" } as never);
+      mockDb.qtProjectUserRole.findUnique.mockResolvedValue({
+        projectRoleId: "viewer_role",
+        projectRole: { name: "Viewer" },
+      } as never);
+      mockDb.qtProjectRolePermission.findFirst.mockResolvedValue(null);
+      mockDb.qtUserPermissionExtra.findFirst.mockResolvedValue(null);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "create_issue", arguments: { title: "New issue" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtMcpAccessLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tool: "create_issue",
+            resource: "Issue",
+            action: "create",
+            decision: "deny",
+            reason: "lacks Issue:create",
+          }),
+        }),
+      );
+    });
+
+    it("allows create_issue for a project role that HAS the Issue:create grant (not just an org-admin bypass)", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT, projectKey: "PRJ" } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProjectMember.findFirst.mockResolvedValue({ role: "MEMBER" } as never);
+      mockDb.qtProjectUserRole.findUnique.mockResolvedValue({
+        projectRoleId: "contrib_role",
+        projectRole: { name: "Contributor" },
+      } as never);
+      mockDb.qtProjectRolePermission.findFirst.mockResolvedValue({ id: "grant_1" } as never);
+      mockDb.qtIssue.count.mockResolvedValue(0 as never);
+      mockDb.$transaction.mockImplementation((cb: unknown) => (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb));
+      mockDb.qtIssue.create.mockResolvedValue({
+        id: "issue_new",
+        key: "PRJ-1",
+        title: "New issue",
+        description: undefined,
+        type: "TASK",
+        priority: "MEDIUM",
+        statusId: "status_1",
+        assigneeId: null,
+      } as never);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "create_issue", arguments: { title: "New issue", statusId: "status_1" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+      expect(mockDb.qtMcpAccessLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tool: "create_issue", resource: "Issue", action: "create", decision: "allow" }),
+        }),
+      );
+    });
+  });
+
+  describe("QUIKTR-119 — cross-project leakage fixes", () => {
+    it("rejects link_issues when the caller can't access the inward issue's own project", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      // Two "is a member" answers: the PAT's own live-recheck (loadProjectAccess
+      // against the token's bound project, before the tool even runs) consumes
+      // the first; the tool's own outward-project membership check consumes the
+      // second. The third call (the inward issue's own project) falls through
+      // to an unconfigured mock (undefined), correctly denying it.
+      mockDb.qtProjectMember.findFirst
+        .mockResolvedValueOnce({ role: "MEMBER" } as never)
+        .mockResolvedValueOnce({ role: "MEMBER" } as never);
+      mockDb.qtProjectUserRole.findUnique.mockResolvedValue({
+        projectRoleId: "contrib_role",
+        projectRole: { name: "Contributor" },
+      } as never);
+      mockDb.qtProjectRolePermission.findFirst.mockResolvedValue({ id: "grant_1" } as never);
+      mockDb.qtIssue.findFirst
+        .mockResolvedValueOnce({ id: "issue_outward", projectId: PROJECT } as never)
+        .mockResolvedValueOnce({ id: "issue_inward", projectId: "other_project" } as never);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: {
+              name: "link_issues",
+              arguments: { outwardIssueId: "issue_outward", inwardIssueId: "issue_inward", linkType: "RELATES_TO" },
+            },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(body.result.content[0].text).toBe("Not found");
+      expect(mockDb.qtIssueLink.create).not.toHaveBeenCalled();
+    });
+
+    it("filters a linked issue out of get_issue's response when its own project isn't accessible", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      // Two "is a member" answers: the PAT's own live-recheck consumes the
+      // first, get_issue's own membership check on PROJECT consumes the
+      // second. The third call (the linked issue's own project) falls
+      // through to an unconfigured mock (undefined), correctly denying it.
+      mockDb.qtProjectMember.findFirst
+        .mockResolvedValueOnce({ role: "MEMBER" } as never)
+        .mockResolvedValueOnce({ role: "MEMBER" } as never);
+      mockDb.qtIssue.findFirst.mockResolvedValue({
+        id: "issue_1",
+        key: "PRJ-1",
+        title: "Fix the bug",
+        description: null,
+        type: "TASK",
+        priority: "MEDIUM",
+        statusId: "status_1",
+        assigneeId: null,
+      } as never);
+      mockDb.qtIssueLink.findMany
+        .mockResolvedValueOnce([
+          {
+            id: "link_1",
+            type: "RELATES_TO",
+            targetIssue: {
+              id: "issue_2",
+              key: "OTH-1",
+              title: "Other project's issue",
+              statusId: "status_2",
+              status: null,
+              projectId: "other_project",
+            },
+          },
+        ] as never)
+        .mockResolvedValueOnce([] as never);
+
+      const res = await POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_issue", arguments: { issueId: "issue_1" } } },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      const data = JSON.parse(body.result.content[0].text);
+      expect(data.links.outward).toEqual([]);
+      expect(data.links.inward).toEqual([]);
+    });
+  });
 });
 
 describe("CORS on /api/mcp", () => {

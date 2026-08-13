@@ -5,8 +5,10 @@ import type { Prisma } from "@prisma/client";
 // database. See docs/mcp-security.md.
 import { mcpDb as db } from "@/lib/mcp/guardedDb";
 import { buildQqlOrderBy, buildQqlWhere, parseQql, QqlParseError } from "@/lib/services/qql";
-import { loadAccessibleProjects, loadProjectAccess } from "@/lib/api/withProjectAccess";
+import { loadAccessibleProjects, loadProjectAccess, type LoadedProjectAccess } from "@/lib/api/withProjectAccess";
 import { userCanInProject } from "@/lib/api/permissions";
+import type { Action, Resource } from "@/lib/api/permissionsRegistry";
+import { logAccessDecision } from "@/lib/mcp/accessLog";
 import {
   createIssueSchema,
   issuePriorityEnum,
@@ -178,39 +180,67 @@ type IssueLinkEntry = { id: string; type: string; relationship: string; issue: L
  * issue is the source, relationship uses the type's outward label (e.g.
  * "blocks"). Inward: this issue is the target, relationship uses the type's
  * inward label (e.g. "is blocked by").
+ *
+ * QUIKTR-119: a linked issue can live in a DIFFERENT project than the one
+ * being viewed (cross-project links are allowed — see link_issues). Linked
+ * issues whose own project the caller can't see are filtered out here,
+ * rather than surfaced — otherwise this call would leak another project's
+ * issue key/title/status to someone who isn't a member of it, the same
+ * disclosure link_issues' inward-issue check now closes.
  */
 async function loadIssueLinks(
   orgId: string,
+  userId: string,
   issueId: string,
 ): Promise<{ outward: IssueLinkEntry[]; inward: IssueLinkEntry[] }> {
+  const linkSelectWithProject = { ...ISSUE_LINK_SELECT, projectId: true } as const;
   const [outwardRows, inwardRows] = await Promise.all([
     db.qtIssueLink.findMany({
       where: { orgId, sourceIssueId: issueId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, type: true, targetIssue: { select: ISSUE_LINK_SELECT } },
+      select: { id: true, type: true, targetIssue: { select: linkSelectWithProject } },
     }),
     db.qtIssueLink.findMany({
       where: { orgId, targetIssueId: issueId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, type: true, sourceIssue: { select: ISSUE_LINK_SELECT } },
+      select: { id: true, type: true, sourceIssue: { select: linkSelectWithProject } },
     }),
   ]);
 
+  const linkedProjectIds = new Set<string>([
+    ...outwardRows.map((r) => r.targetIssue.projectId),
+    ...inwardRows.map((r) => r.sourceIssue.projectId),
+  ]);
+  const accessible = new Map<string, boolean>();
+  await Promise.all(
+    Array.from(linkedProjectIds).map(async (pid) => {
+      accessible.set(pid, (await loadProjectAccess(orgId, userId, pid)) !== null);
+    }),
+  );
+
   const labelFor = (type: string) => ISSUE_LINK_TYPES.find((t) => t.type === type);
+  const stripProject = <T extends { projectId: string }>(issue: T): Omit<T, "projectId"> => {
+    const { projectId: _projectId, ...rest } = issue;
+    return rest;
+  };
 
   return {
-    outward: outwardRows.map((r) => ({
-      id: r.id,
-      type: r.type,
-      relationship: labelFor(r.type)?.outward ?? r.type,
-      issue: r.targetIssue,
-    })),
-    inward: inwardRows.map((r) => ({
-      id: r.id,
-      type: r.type,
-      relationship: labelFor(r.type)?.inward ?? r.type,
-      issue: r.sourceIssue,
-    })),
+    outward: outwardRows
+      .filter((r) => accessible.get(r.targetIssue.projectId))
+      .map((r) => ({
+        id: r.id,
+        type: r.type,
+        relationship: labelFor(r.type)?.outward ?? r.type,
+        issue: stripProject(r.targetIssue),
+      })),
+    inward: inwardRows
+      .filter((r) => accessible.get(r.sourceIssue.projectId))
+      .map((r) => ({
+        id: r.id,
+        type: r.type,
+        relationship: labelFor(r.type)?.inward ?? r.type,
+        issue: stripProject(r.sourceIssue),
+      })),
   };
 }
 
@@ -249,6 +279,71 @@ function resolveRequestedProjectId(
     };
   }
   return { ok: true, projectId: argsProjectId };
+}
+
+type ToolErrorResult = { content: [{ type: "text"; text: string }]; isError: true };
+
+/**
+ * QUIKTR-119 — the project-membership gate every tool runs before touching
+ * data, wrapped to also write an allow/deny row to QtMcpAccessLog (audit
+ * trail — every decision, not just denials, so the log can answer "did
+ * this even run a check" for an allowed call too). Drop-in replacement for
+ * the old `loadProjectAccess` + null-check pattern: same "Not found"
+ * response shape on denial, so no caller-visible behavior changes.
+ */
+async function checkProjectMembership(params: {
+  orgId: string;
+  userId: string;
+  projectId: string;
+  tool: string;
+}): Promise<{ ok: true; access: LoadedProjectAccess } | { ok: false; result: ToolErrorResult }> {
+  const { orgId, userId, projectId, tool } = params;
+  const access = await loadProjectAccess(orgId, userId, projectId);
+  if (!access) {
+    await logAccessDecision({ orgId, userId, projectId, tool, decision: "deny", reason: "not a project member" });
+    return { ok: false, result: { content: [{ type: "text", text: "Not found" }], isError: true } };
+  }
+  await logAccessDecision({
+    orgId,
+    userId,
+    projectId,
+    tool,
+    decision: "allow",
+    reason: access.isTenantAdmin ? "tenant/app admin" : "project member",
+  });
+  return { ok: true, access };
+}
+
+/**
+ * QUIKTR-119 — the (resource, action) write-permission gate, wrapped the
+ * same way as checkProjectMembership above. Same "You don't have access to
+ * this." response shape on denial as the old inline check.
+ */
+async function checkWritePermission(params: {
+  orgId: string;
+  userId: string;
+  projectId: string;
+  tool: string;
+  access: LoadedProjectAccess;
+  resource: Resource;
+  action: Action;
+}): Promise<{ ok: true } | { ok: false; result: ToolErrorResult }> {
+  const { orgId, userId, projectId, tool, access, resource, action } = params;
+  const allowed = access.isTenantAdmin || (await userCanInProject(userId, orgId, projectId, resource, action));
+  await logAccessDecision({
+    orgId,
+    userId,
+    projectId,
+    tool,
+    resource,
+    action,
+    decision: allowed ? "allow" : "deny",
+    reason: allowed ? `${resource}:${action}` : `lacks ${resource}:${action}`,
+  });
+  if (!allowed) {
+    return { ok: false, result: { content: [{ type: "text", text: "You don't have access to this." }], isError: true } };
+  }
+  return { ok: true };
 }
 
 export const mcpHandler = createMcpHandler(({ authInfo }) => {
@@ -290,10 +385,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "get_issue" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: {
@@ -310,7 +403,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      const links = await loadIssueLinks(orgId, issue.id);
+      const links = await loadIssueLinks(orgId, userId, issue.id);
       return { content: [{ type: "text", text: JSON.stringify({ ...issue, links }) }] };
     },
   );
@@ -331,10 +424,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "get_project" });
+      if (!membership.ok) return membership.result;
       const project = await db.qtProject.findFirst({
         where: { id: projectId, orgId, isDeleted: false },
         select: {
@@ -373,10 +464,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_custom_fields" });
+      if (!membership.ok) return membership.result;
       const fields = await getActiveFieldsForProject(orgId, projectId);
       return { content: [{ type: "text", text: JSON.stringify(fields) }] };
     },
@@ -399,10 +488,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_issue_types" });
+      if (!membership.ok) return membership.result;
       const rows = await db.qtIssueType.findMany({
         where: { projectId, isDeleted: false },
         orderBy: { orderIndex: "asc" },
@@ -437,10 +524,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "get_create_field_metadata" });
+      if (!membership.ok) return membership.result;
       const typeParsed = issueTypeEnum.safeParse(String(rawType ?? "").toUpperCase());
       if (!typeParsed.success) {
         return {
@@ -508,10 +593,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "get_member" });
+      if (!membership.ok) return membership.result;
       const member = await db.qtProjectMember.findFirst({
         where: { projectId, userId: targetUserId, isDeleted: false },
         select: { id: true, userId: true, role: true },
@@ -543,10 +626,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "search_users" });
+      if (!membership.ok) return membership.result;
       const members = await db.qtProjectMember.findMany({
         where: { projectId, isDeleted: false },
         select: { userId: true },
@@ -604,13 +685,18 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "create"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "create_issue" });
+      if (!membership.ok) return membership.result;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "create_issue",
+        access: membership.access,
+        resource: "Issue",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = createIssueInput.safeParse(args);
       if (!parsed.success) {
@@ -687,10 +773,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_comments" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -733,10 +817,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "start_sprint" });
+      if (!membership.ok) return membership.result;
       const sprint = await db.qtSprint.findFirst({
         where: { id: sprintId, projectId, isDeleted: false },
         select: { id: true, status: true },
@@ -747,9 +829,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (sprint.status !== "PLANNING") {
         return { content: [{ type: "text", text: `Sprint already ${sprint.status}` }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Sprint", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "start_sprint",
+        access: membership.access,
+        resource: "Sprint",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const updated = await db.qtSprint.update({
         where: { id: sprintId },
@@ -778,10 +867,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_transitions" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true, statusId: true, type: true, assigneeId: true, resolutionId: true, priority: true },
@@ -838,10 +925,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "move_issue" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true, key: true, resolutionId: true, ...selectIssueHistorySnapshot },
@@ -849,9 +934,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "move_issue",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = moveIssueSchema.safeParse(rest);
       if (!parsed.success) {
@@ -970,13 +1062,18 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Sprint", "create"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "create_sprint" });
+      if (!membership.ok) return membership.result;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "create_sprint",
+        access: membership.access,
+        resource: "Sprint",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const normalizedArgs =
         args && typeof args === "object"
@@ -1031,10 +1128,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "add_comment" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1042,12 +1137,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (
-        !access.isTenantAdmin &&
-        !(await userCanInProject(userId, orgId, projectId, "IssueComment", "create"))
-      ) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "add_comment",
+        access: membership.access,
+        resource: "IssueComment",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = createCommentSchema.safeParse(args);
       if (!parsed.success) {
@@ -1101,10 +1200,9 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "add_worklog" });
+      if (!membership.ok) return membership.result;
+      const { access } = membership;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true, parentId: true },
@@ -1112,9 +1210,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Timesheet", "create"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "add_worklog",
+        access,
+        resource: "Timesheet",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       let authorUserId = userId;
       if (authorId && authorId !== userId) {
@@ -1220,10 +1325,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_worklogs" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1254,10 +1357,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "complete_sprint" });
+      if (!membership.ok) return membership.result;
       const sprint = await db.qtSprint.findFirst({
         where: { id: sprintId, projectId, isDeleted: false },
         select: { id: true, status: true },
@@ -1271,9 +1372,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           isError: true,
         };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Sprint", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "complete_sprint",
+        access: membership.access,
+        resource: "Sprint",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const completedAt = new Date();
       const updated = await db.$transaction(async (tx) => {
@@ -1354,10 +1462,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "search_issues" });
+      if (!membership.ok) return membership.result;
 
       const limit = a.limit && a.limit > 0 ? Math.min(100, a.limit) : 25;
       const simpleWhere = {
@@ -1487,10 +1593,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "quiktrack_update_issue" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true, key: true, resolutionId: true, ...selectIssueHistorySnapshot },
@@ -1498,9 +1602,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "quiktrack_update_issue",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = updateIssueInput.safeParse(rest);
       if (!parsed.success) {
@@ -1679,10 +1790,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_remote_links" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1722,10 +1831,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "add_remote_link" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1733,9 +1840,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "add_remote_link",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = addRemoteLinkInput.safeParse(args);
       if (!parsed.success) {
@@ -1788,10 +1902,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "link_issues" });
+      if (!membership.ok) return membership.result;
       const outwardIssue = await db.qtIssue.findFirst({
         where: { id: outwardIssueId, orgId, projectId, isDeleted: false },
         select: { id: true, projectId: true },
@@ -1799,9 +1911,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!outwardIssue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "link_issues",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       if (inwardIssueId === outwardIssueId) {
         return { content: [{ type: "text", text: "Cannot link an issue to itself." }], isError: true };
@@ -1819,14 +1938,24 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         };
       }
       // Cross-project links are allowed (mirrors app/api/issues/[id]/links) —
-      // only the outward issue's project gates access to this call.
+      // but the caller must still be able to see the inward issue's own
+      // project (QUIKTR-119): without this, a caller could confirm an issue
+      // id exists in a project they aren't a member of just by attempting to
+      // link to it, using only the outward side's access as cover.
       const inwardIssue = await db.qtIssue.findFirst({
         where: { id: inwardIssueId, orgId, isDeleted: false },
-        select: { id: true },
+        select: { id: true, projectId: true },
       });
       if (!inwardIssue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
+      const inwardMembership = await checkProjectMembership({
+        orgId,
+        userId,
+        projectId: inwardIssue.projectId,
+        tool: "link_issues",
+      });
+      if (!inwardMembership.ok) return inwardMembership.result;
 
       const existing = await db.qtIssueLink.findFirst({
         where: { sourceIssueId: outwardIssue.id, targetIssueId: inwardIssue.id, type: linkTypeDef.type },
@@ -1882,10 +2011,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
       const { projectId } = resolved;
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
-      }
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tool: "list_issue_links" });
+      if (!membership.ok) return membership.result;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1893,7 +2020,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      const links = await loadIssueLinks(orgId, issue.id);
+      const links = await loadIssueLinks(orgId, userId, issue.id);
       return { content: [{ type: "text", text: JSON.stringify(links) }] };
     },
   );

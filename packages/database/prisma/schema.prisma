@@ -6763,6 +6763,38 @@ model QtPersonalAccessToken {
   @@schema("app_quiktrack")
 }
 
+/// QUIKTR-119 — one row per MCP access-control decision (allow/deny), for
+/// audit. Written by the MCP server on every gate check (membership +
+/// project-role), not just denials, so a full request trail exists.
+/// PROPOSED — not yet wired into apps/quiktrack/lib/mcp/server.ts pending
+/// integration-owner review; see docs/mcp-access-log-schema.md.
+model QtMcpAccessLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  /// Null when the call itself failed to resolve a project (e.g. a
+  /// user-scoped token with no projectId argument).
+  projectId String?
+  /// MCP tool name, e.g. "create_issue", "search_issues".
+  tool      String
+  /// The (resource, action) pair checked via userCanInProject, when the
+  /// tool is a write tool. Null for read tools, which only gate on
+  /// project membership (see lib/mcp/server.ts's existing access pattern).
+  resource  String?
+  action    String?
+  /// "allow" | "deny"
+  decision  String
+  /// Short, human-readable reason — e.g. "not a project member",
+  /// "lacks Issue:create", "ok".
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ QuikTrack RBAC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Two role layers sharing the SAME rule tables (QtRolePermission /
 // QtRoleNavigation):
