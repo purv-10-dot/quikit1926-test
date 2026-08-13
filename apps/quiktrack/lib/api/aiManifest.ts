@@ -320,7 +320,13 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     description: "Transition a sprint from ACTIVE to COMPLETED; freezes a velocity snapshot and moves incomplete issues.",
     entity: "sprint",
     http: { method: "POST", pathTemplate: "/api/sprints/{id}/complete" },
-    riskClass: "medium_write",
+    // high_risk, not medium_write: bulk (moves every incomplete issue in one
+    // call) AND irreversible (freezes an immutable QtSprintSnapshot). Per
+    // Suyash: high_risk operations are excluded from the persona planner's
+    // action catalogue entirely, so an agent can never propose this — humans
+    // do it in the UI. Completing the wrong sprint (or the right one early)
+    // is disruptive and awkward to unwind; nothing gained by automating it.
+    riskClass: "high_risk",
     requiredPermission: "Sprint:update",
     isSummary: false,
     inputSchema: {
