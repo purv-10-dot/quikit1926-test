@@ -12,6 +12,7 @@ import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { ListTable } from "./list-table";
 import { ListFilterButton } from "./list-filters";
 import { ColumnMenuButton } from "./column-menu-button";
+import { ExportMenu } from "./export-menu";
 import { COLUMN_DEFAULT_WIDTHS, resolveColumns } from "./list-columns";
 import { BulkActionBar } from "./bulk-action-bar";
 import { ImportModal } from "./import-modal";
@@ -412,6 +413,14 @@ export function ListView({ projectId }: Props) {
               <Upload className="h-4 w-4" />
               Import
             </button>
+          )}
+          {canExport && (
+            <ExportMenu
+              projectId={projectId}
+              filters={filters}
+              visibleColumnKeys={columns.map((c) => c.key)}
+              rows={issues}
+            />
           )}
           <ColumnMenuButton
             hidden={colPrefs.hidden}
