@@ -5,18 +5,31 @@ import Link from "next/link";
 import { Save, BarChart3, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
-import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { Table, TableScroll, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 const CONFIG_API = "/api/settings/activity-targets";
 const USERS_API = "/api/users/picker";
+const TYPE_TARGETS_API = "/api/settings/activity-type-targets";
 
 interface UserAssignment {
   enabled: boolean;
   dailyTarget?: number;
 }
+
+/** An ACTIVE activity type from Settings → Activity Types. Never hardcoded. */
+interface ActivityTypeOption {
+  id: string;
+  code: string;
+  label: string;
+  sortOrder: number;
+  countsSources: string[];
+}
+
+/** userId → activityTypeId → raw input string ("" means 0). */
+type TypeTargetGrid = Record<string, Record<string, string>>;
 
 interface TargetConfig {
   defaultDailyTarget: number;
@@ -48,6 +61,12 @@ export function ActivityTargetsPageClient() {
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [users, setUsers] = useState<PickerUser[]>([]);
 
+  // Activity Type-wise targets. `types` is loaded from the org's ACTIVE
+  // CrmActivityType rows, so a type added in Settings → Activity Types appears
+  // here automatically with no code change.
+  const [types, setTypes] = useState<ActivityTypeOption[]>([]);
+  const [typeGrid, setTypeGrid] = useState<TypeTargetGrid>({});
+
   // Client-side search + filters for the Assign Targets table. Purely a view
   // concern — filtering never touches `rows`, so hidden users keep their edits
   // and are still saved.
@@ -69,12 +88,14 @@ export function ActivityTargetsPageClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [cfgRes, usersRes] = await Promise.all([
+      const [cfgRes, usersRes, typeRes] = await Promise.all([
         fetch(CONFIG_API, { credentials: "include" }),
         fetch(USERS_API, { credentials: "include" }),
+        fetch(TYPE_TARGETS_API, { credentials: "include" }),
       ]);
       const cfgJson = await cfgRes.json();
       const usersJson = await usersRes.json();
+      const typeJson = await typeRes.json();
 
       if (!cfgRes.ok || !cfgJson?.success) {
         throw new Error(cfgJson?.error ?? "Failed to load activity targets");
@@ -84,6 +105,25 @@ export function ActivityTargetsPageClient() {
       setWeeklyWorkingDays(String(cfg.weeklyWorkingDays));
       applyConfigToRows(cfg);
       setUsers(Array.isArray(usersJson?.items) ? usersJson.items : []);
+
+      // Type-wise targets load independently: if this call fails the overall
+      // target section must still work, so it only warns.
+      if (typeRes.ok && typeJson?.success) {
+        const loadedTypes: ActivityTypeOption[] = Array.isArray(typeJson.data?.types)
+          ? typeJson.data.types
+          : [];
+        setTypes(loadedTypes);
+        const grid: TypeTargetGrid = {};
+        const stored = (typeJson.data?.targets ?? {}) as Record<string, Record<string, number>>;
+        for (const [userId, byType] of Object.entries(stored)) {
+          const entry: Record<string, string> = {};
+          for (const [typeId, value] of Object.entries(byType)) entry[typeId] = String(value);
+          grid[userId] = entry;
+        }
+        setTypeGrid(grid);
+      } else {
+        toast.error(typeJson?.error ?? "Failed to load activity type targets");
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load activity targets");
     } finally {
@@ -152,6 +192,38 @@ export function ActivityTargetsPageClient() {
     setRows((prev) => ({ ...prev, [userId]: { ...rowFor(userId), target } }));
   }
 
+  function typeTargetFor(userId: string, typeId: string): string {
+    return typeGrid[userId]?.[typeId] ?? "";
+  }
+
+  function setTypeTarget(userId: string, typeId: string, value: string) {
+    setTypeGrid((prev) => ({
+      ...prev,
+      [userId]: { ...(prev[userId] ?? {}), [typeId]: value },
+    }));
+  }
+
+  /**
+   * Min-width for the type-targets table: the sticky Salesperson column, one
+   * fixed-width cell per activity type, plus the trailing total. Driven by the
+   * live type count so the columns never crush as an admin adds types — the
+   * table simply grows wider and the wrapper scrolls.
+   */
+  const SALESPERSON_COL_PX = 220;
+  const TYPE_COL_PX = 120;
+  const TOTAL_COL_PX = 110;
+  const typeTableMinWidth =
+    SALESPERSON_COL_PX + types.length * TYPE_COL_PX + TOTAL_COL_PX;
+
+  /** Sum of a user's per-type targets — shown as a per-row total. */
+  function typeRowTotal(userId: string): number {
+    const entry = typeGrid[userId] ?? {};
+    return types.reduce((sum, t) => {
+      const n = Number(entry[t.id]);
+      return sum + (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
+    }, 0);
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -174,15 +246,45 @@ export function ActivityTargetsPageClient() {
         perUser,
       };
 
-      const res = await fetch(CONFIG_API, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // Per-activity-type targets. Every (user, type) cell the admin has touched
+      // is sent — including explicit 0s, which are a real assignment ("tracked,
+      // nothing expected") rather than a deletion. Blank inputs coerce to 0.
+      const typeTargets: { userId: string; activityTypeId: string; dailyTarget: number }[] = [];
+      for (const [userId, byType] of Object.entries(typeGrid)) {
+        for (const [activityTypeId, raw] of Object.entries(byType)) {
+          const trimmed = (raw ?? "").trim();
+          const n = trimmed === "" ? 0 : Number(trimmed);
+          if (!Number.isFinite(n) || n < 0) continue; // ignore junk input
+          typeTargets.push({ userId, activityTypeId, dailyTarget: Math.floor(n) });
+        }
+      }
+
+      const [res, typeRes] = await Promise.all([
+        fetch(CONFIG_API, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        typeTargets.length > 0
+          ? fetch(TYPE_TARGETS_API, {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ targets: typeTargets }),
+            })
+          : null,
+      ]);
+
       const json = await res.json();
       if (!res.ok || !json?.success) {
         throw new Error(json?.error ?? "Failed to save");
+      }
+      if (typeRes) {
+        const typeJson = await typeRes.json();
+        if (!typeRes.ok || !typeJson?.success) {
+          throw new Error(typeJson?.error ?? "Failed to save activity type targets");
+        }
       }
       toast.success("Activity targets saved");
       applyConfigToRows(json.data as TargetConfig);
@@ -391,6 +493,95 @@ export function ActivityTargetsPageClient() {
               </TBody>
             </Table>
           </div>
+        </CardBody>
+      </Card>
+
+      {/* Activity Type-wise targets */}
+      <Card className="crm-card">
+        <CardBody className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-crm-text">Activity Type Targets</h3>
+            <p className="mt-1 text-xs text-crm-muted">
+              Set a daily target per activity type for each salesperson. Types come from{" "}
+              <Link href="/settings/activity-types" className="text-crm-blue underline">
+                Settings → Activity Types
+              </Link>{" "}
+              — new types appear here automatically, and only active types are shown. Leave a cell
+              blank for 0. These targets are separate from the overall daily target above; a
+              salesperson can have either, both, or neither.
+            </p>
+          </div>
+
+          {types.length === 0 ? (
+            <p className="rounded-lg border border-crm-border bg-crm-panel px-4 py-6 text-center text-sm text-crm-muted">
+              No active activity types found.{" "}
+              <Link href="/settings/activity-types" className="text-crm-blue underline">
+                Create an activity type
+              </Link>{" "}
+              to assign type-wise targets.
+            </p>
+          ) : (
+            <TableScroll minWidth={typeTableMinWidth} bleed={false}>
+              <Table>
+                <THead>
+                  <TR>
+                    {/* Sticky first column; bg matches `.crm-table thead th`
+                        so scrolled cells pass underneath it, not through it. */}
+                    <TH className="sticky left-0 z-10 bg-crm-panel">Salesperson</TH>
+                    {types.map((t) => (
+                      <TH key={t.id} className="whitespace-nowrap">
+                        {t.label}
+                      </TH>
+                    ))}
+                    <TH className="whitespace-nowrap">Total / Day</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {filteredUsers.map((u) => (
+                    // Row carries an explicit background (and the hover tint) so
+                    // the sticky first cell below can inherit it and stay opaque.
+                    <TR key={u.id} className="bg-white hover:bg-crm-blue-soft">
+                      {/* Sticky so the salesperson stays visible while scrolling
+                          horizontally through a long list of type columns.
+                          `bg-inherit` takes the row's own background, so the
+                          row-hover tint still reads across this cell instead of
+                          being masked by an opaque white. */}
+                      <TD className="sticky left-0 z-10 bg-inherit">
+                        <span className="font-medium text-crm-text">{u.name}</span>
+                        {u.email && <span className="block text-xs text-crm-muted">{u.email}</span>}
+                      </TD>
+                      {types.map((t) => (
+                        <TD key={t.id}>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            className="crm-input w-24"
+                            placeholder="0"
+                            aria-label={`${t.label} daily target for ${u.name}`}
+                            value={typeTargetFor(u.id, t.id)}
+                            onChange={(e) => setTypeTarget(u.id, t.id, e.target.value)}
+                          />
+                        </TD>
+                      ))}
+                      <TD className="font-semibold tabular-nums text-crm-text">
+                        {typeRowTotal(u.id)}
+                      </TD>
+                    </TR>
+                  ))}
+                  {filteredUsers.length === 0 && (
+                    <TR>
+                      <TD colSpan={types.length + 2} className="text-center text-crm-muted">
+                        {users.length === 0
+                          ? "No active users found."
+                          : "No salespeople match the current search or filters."}
+                      </TD>
+                    </TR>
+                  )}
+                </TBody>
+              </Table>
+            </TableScroll>
+          )}
         </CardBody>
       </Card>
 

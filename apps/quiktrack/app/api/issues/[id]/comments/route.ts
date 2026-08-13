@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
-
-const createCommentSchema = z.object({
-  body: z.string().min(1).max(20_000),
-});
+import { createCommentSchema } from "@/lib/validation/comment";
 
 async function loadAccessibleIssue(
   orgId: string,
@@ -42,6 +38,7 @@ export const GET = withOrgAuth<{ id: string }>(
         body: true,
         createdAt: true,
         editedAt: true,
+        actorType: true,
       },
     });
     const userIds = Array.from(new Set(comments.map((c) => c.userId)));
@@ -97,6 +94,7 @@ export const POST = withOrgAuth<{ id: string }>(
         body: true,
         createdAt: true,
         editedAt: true,
+        actorType: true,
       },
     });
     const author = await db.user.findUnique({

@@ -21,6 +21,11 @@ import { GlobalExportModal, type GlobalExportSelection } from "@/components/expo
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { runExport } from "@/lib/export/xlsx";
 import { notify } from "@/lib/utils/notify";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
+import { DueDateRangeNav } from "@/components/filters/DueDateRangeNav";
+import { getPeriodRange, type PeriodView } from "@/lib/utils/periodRange";
+import { toDateInputValue } from "@/lib/utils/dateUtils";
 
 export default function WWWPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("WWW");
@@ -105,6 +110,14 @@ export default function WWWPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Due-date range nav (Day / Week / Month / All) — defaults to "All" so the
+  // list behaves exactly as before until the user narrows it. The range is
+  // computed server-side: `from`/`to` are sent to the API and applied to the
+  // `when` column in the Prisma query, not filtered client-side.
+  const [dateView, setDateView] = useState<PeriodView>("all");
+  const [anchorDate, setAnchorDate] = useState<string>(() => toDateInputValue(new Date().toISOString()));
+  const { from: dateFrom, to: dateTo } = useMemo(() => getPeriodRange(dateView, anchorDate), [dateView, anchorDate]);
+
   // DB-level list: pagination + search + who/team/status filters all run in
   // the route now. `search` is the debounced value from the shared store.
   const listFilters: WWWFilters = {
@@ -117,6 +130,8 @@ export default function WWWPage() {
     search: search.trim() || undefined,
     who: filterWho.length ? filterWho.join(",") : undefined,
     teamId: filterTeam || undefined,
+    from: dateFrom,
+    to: dateTo,
   };
   const { data: pageData, isLoading, error, refetch } = useWWWItemsPaginated(listFilters);
   const items = useMemo(() => pageData?.data ?? [], [pageData]);
@@ -161,12 +176,17 @@ export default function WWWPage() {
   }
 
   // Reset to page 1 whenever a filter/search/sort changes the result set.
-  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize, wwwSort]);
+  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize, wwwSort, dateFrom, dateTo]);
 
   // Status counts as "active" only when it actually narrows the list — with the
   // full set selected nothing is filtered out.
   const statusNarrows = filterStatus.length !== WWW_PAGE_DEFAULT_STATUSES.length;
   const activeFilterCount = (filterTeam ? 1 : 0) + (statusNarrows ? 1 : 0) + (filterWho.length ? 1 : 0);
+  const activeFilterLabel = useMemo(() => buildFilterSummaryLabel([
+    { label: "Team", values: filterTeam ? [teams.find(t => t.id === filterTeam)?.name].filter((n): n is string => Boolean(n)) : [] },
+    { label: "Who", values: selectedWhoOptions.map(o => o.label) },
+    { label: "Status", values: statusNarrows ? filterStatus.map(s => STATUS_FILTER_OPTIONS.find(o => o.value === s)?.label).filter((l): l is string => Boolean(l)) : [] },
+  ]), [filterTeam, teams, selectedWhoOptions, statusNarrows, filterStatus]);
 
   const handleWwwExport = useCallback(async (sel: ExportSelection) => {
     const columns = wwwColumns
@@ -297,6 +317,13 @@ export default function WWWPage() {
             </button>
           )}
 
+          <DueDateRangeNav
+            view={dateView}
+            onViewChange={setDateView}
+            anchorDate={anchorDate}
+            onAnchorDateChange={setAnchorDate}
+          />
+
           {/* Search */}
           <div className="relative">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -313,15 +340,12 @@ export default function WWWPage() {
 
           {/* Filter */}
           <div className="relative" ref={filterRef}>
-            <button
+            <FilterSummaryButton
+              label={activeFilterLabel}
+              active={activeFilterCount > 0}
+              open={showFilter}
               onClick={() => setShowFilter(o => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-              </svg>
-              {activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter"}
-            </button>
+            />
 
             {showFilter && (
               <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">

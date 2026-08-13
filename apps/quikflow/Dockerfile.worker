@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1.6
+#
+# Multi-stage Docker build for the QuikFlow execution worker — a standalone
+# BullMQ consumer (apps/quikflow/worker/main.ts), NOT the Next.js Builder UI.
+# Pattern mirrors services/realtime/Dockerfile: turbo prune --docker (slices
+# monorepo to just this app's deps) -> installer (npm ci + prisma generate +
+# esbuild bundle) -> runner (bundled dist + node_modules, non-root). NO tsx
+# at runtime, no HTTP server (this process has none — see worker/main.ts).
+#
+# Build (from monorepo root):
+#   docker build -f apps/quikflow/Dockerfile.worker -t quikflow-worker:latest .
+
+FROM node:20-alpine AS base
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 1 — builder: prune the monorepo down to the quikflow app + workspace
+# deps. The prune target matches the "name" in apps/quikflow/package.json.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS builder
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+RUN npm install -g turbo
+COPY . .
+RUN turbo prune quikflow --docker
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 2 — installer: install pruned deps, generate Prisma, bundle the
+# worker entrypoint to dist/worker.js.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS installer
+# Prisma's query engine needs OpenSSL (libssl) on Alpine. NOTE:
+# packages/database/prisma/schema.prisma must list a linux-musl-openssl
+# binaryTarget for the engine to load on Alpine at runtime.
+RUN apk update && apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY --from=builder /app/out/json/ .
+COPY --from=builder /app/out/package-lock.json ./package-lock.json
+RUN npm ci --ignore-scripts
+
+COPY --from=builder /app/out/full/ .
+COPY turbo.json turbo.json
+COPY tsconfig.base.json tsconfig.base.json
+
+# Placeholder — prisma generate parses the datasource url but never connects.
+ARG DATABASE_URL="postgresql://x:x@localhost:5432/x"
+ENV DATABASE_URL=$DATABASE_URL
+ENV NODE_ENV=production
+
+RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
+RUN npm run build:worker --workspace=quikflow
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 3 — runner: minimal image running the bundled JS as non-root.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS runner
+RUN apk add --no-cache openssl
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 worker
+
+ENV NODE_ENV=production
+
+# node_modules carries the externalized runtime deps (bullmq, ioredis, etc.)
+# + the generated Prisma client (@prisma / .prisma).
+COPY --from=installer --chown=worker:nodejs /app/node_modules ./node_modules
+COPY --from=installer --chown=worker:nodejs /app/apps/quikflow/dist ./apps/quikflow/dist
+
+USER worker
+WORKDIR /app/apps/quikflow
+CMD ["node", "dist/worker.js"]

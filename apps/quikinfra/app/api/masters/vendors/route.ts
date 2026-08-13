@@ -18,7 +18,7 @@ import {
 } from "@/lib/masters/vendors-repository";
 import { isWhitebooksGstVerifyEnabled } from "@/lib/integrations/whitebooks-gst";
 import { cachedJson } from "@/lib/http/cache";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 
 /**
@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "companyName", "vendorType", "category", "phone", "gstin", "city", "state", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),

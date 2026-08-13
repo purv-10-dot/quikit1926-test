@@ -249,9 +249,10 @@ describe("POST /api/store/good-returns/[id]/approve", () => {
       status: "pending_approval",
       currentStepOrder: 1,
     });
-    db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" }) // current
-      .mockResolvedValueOnce(null); // next → none → final
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never); // single step → final
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never);
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
     db.cnApprovalInstance.findUnique.mockResolvedValue({
       id: "inst1",

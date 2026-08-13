@@ -62,15 +62,24 @@ jobs:
               - 'apps/quikchat/**'
             quiklms:
               - 'apps/quiklms/**'
+            quikinsight:
+              - 'apps/quikinsight/**'
             realtime:
               - 'services/realtime/**'
+            quikcrmexpress:
+              - 'apps/quikcrmexpress/**'
 
       - name: Generate matrix
         id: set-matrix
         shell: bash
         run: |
           APPS=()
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms realtime)
+          # NOTE: quikcrmexpress is intentionally NOT in this list yet. The
+          # update-gitops step below maps each app to a deployment file in the
+          # external GitOps repo and `exit 1`s on an unknown app. Add
+          # "quikcrmexpress" here only together with its case branch in that
+          # step, once the GitOps deployment filename is confirmed.
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime quikcrmexpress)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -87,6 +96,8 @@ jobs:
             [ "${{ steps.filter.outputs.quikasset }}" = "true" ] && APPS+=("quikasset")
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
             [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
+            [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
+            [ "${{ steps.filter.outputs.quikcrmexpress }}" = "true" ] && APPS+=("quikcrmexpress")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
@@ -171,6 +182,7 @@ jobs:
             NEXT_PUBLIC_WEBSITE_URL=https://uat.quikit.ai
             NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
+            NEXT_PUBLIC_QUIKCRMEXPRESS_URL=https://uatcrmexpress.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
             NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
             NEXT_PUBLIC_APP_URL=https://uatsupport.quikit.ai
@@ -180,6 +192,8 @@ jobs:
             NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
             NEXT_PUBLIC_REALTIME_WS_URL=wss://uatsockets.quikit.ai
             NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
+            NEXT_PUBLIC_QUIKCREDFLOW_URL=https://uatcrmexpress.quikit.ai
+            NEXT_PUBLIC_QUIKINSIGHT_URL=https://uatinsights.quikit.ai
   update-gitops:
     name: Update GitOps Repository
     needs:
@@ -228,6 +242,10 @@ jobs:
                 FILE="quikitscale-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikscale-runtime:${TAG}"
                 ;;
+              quikinsight)
+                FILE="insights-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikinsight-runtime:${TAG}"
+                ;;
               quikinfra)
                 FILE="quikitinfra-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikinfra-runtime:${TAG}"
@@ -255,6 +273,10 @@ jobs:
               quiklms)
                 FILE="lms-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quiklms-runtime:${TAG}"
+                ;;
+              quikcrmexpress)
+                FILE="crmexpress-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikcrmexpress-runtime:${TAG}"
                 ;;
               realtime)
                 FILE="socket-deployment.yaml"

@@ -46,6 +46,13 @@ import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 import { recordAudit, recordApprovalAction, ApprovalActionError } from "@/lib/workflow/audit";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { resolveEffectiveStep } from "@/lib/approvals/step-resolution";
+import { repointNote } from "@/lib/approvals/complete-repaired-approval";
+import {
+  masterApprovalComment,
+  masterApprovalSkipComment,
+  validateMasterApproval,
+} from "@/lib/approvals/master-approve";
 
 export class ApprovalConflictError extends Error {
   code = "APPROVAL_CONFLICT";
@@ -92,7 +99,12 @@ export class ApprovalStateError extends Error {
   }
 }
 
-export type ApprovalActionKind = "approve" | "reject" | "return" | "reverse";
+export type ApprovalActionKind =
+  | "approve"
+  | "reject"
+  | "return"
+  | "reverse"
+  | "master_approve";
 
 export interface ApprovalRequest {
   ctx: TenantContext;
@@ -200,22 +212,57 @@ class ApprovalService {
       // The pinned user / role lives on cn_approval_workflow_step. We
       // load it and delegate to canActOnStep — the same gate every
       // entity-specific approve route uses.
-      const stepRow = await tx.cnApprovalWorkflowStep.findFirst({
-        where: { workflowId: instance.workflowId, stepOrder: currentStep },
-      });
+      // A mid-flight workflow edit can delete the step this instance is
+      // parked on. Fall back to the highest surviving step below it instead
+      // of throwing — the throw happened before the actor check, which left
+      // the request unactionable by everyone. See step-resolution.ts.
+      const resolved = await resolveEffectiveStep(tx, instance);
+      const stepRow = resolved.step;
       if (!stepRow) {
         throw new ApprovalStateError(
           "STEP_NOT_FOUND",
-          `Workflow step ${currentStep} not found on workflow ${instance.workflowId}. ` +
-            `The workflow may have been edited while this instance was mid-flight.`
+          `Workflow ${instance.workflowId} has no steps configured, so this ` +
+            `instance cannot be actioned. Reconfigure it under Settings → Workflows.`
         );
       }
+      // Master approval outranks the chain: it closes the request from
+      // whatever step it sits on and skips the rest, so it bypasses the actor
+      // check below and forces the terminal branch further down.
+      let master: {
+        actingStepOrder: number;
+        skippedStepOrders: number[];
+        reason: string;
+      } | null = null;
+      if (action === "master_approve") {
+        const check = await validateMasterApproval({
+          ctx,
+          instance,
+          entityLabel: instance.entityType,
+          reason: comments ?? "",
+        });
+        if (check.kind === "error") {
+          throw new ApprovalActionError(
+            check.status === 403
+              ? "APPROVAL_PERMISSION_DENIED"
+              : "MASTER_APPROVAL_INVALID",
+            check.body.error,
+          );
+        }
+        master = {
+          actingStepOrder: check.actingStepOrder,
+          skippedStepOrders: check.skippedStepOrders,
+          reason: check.reason,
+        };
+      }
+
+      const actingStepOrder = master?.actingStepOrder ?? resolved.effectiveStepOrder;
       // entityProjectId is unknown at the generic-service layer (the
       // cn_approval_instance row doesn't carry projectId — each entity
       // type stores it on its own table). Site-scoped users hitting this
       // generic endpoint will be denied by canActOnStep's project gate;
       // they should use the entity-specific approve route instead.
       if (
+        !master &&
         !canActOnStep(
           { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
           {
@@ -227,10 +274,10 @@ class ApprovalService {
         )
       ) {
         throw new ApprovalPermissionError(
-          `You are not authorized to ${action} this ${instance.entityType} at step ${currentStep}.`,
+          `You are not authorized to ${action} this ${instance.entityType} at step ${actingStepOrder}.`,
           {
             entityType: instance.entityType,
-            stepOrder: currentStep,
+            stepOrder: actingStepOrder,
             requiredPermission: stepRow.approverRoleId ?? "pinned-approver",
             actorRole: ctx.roleKey,
           }
@@ -238,15 +285,21 @@ class ApprovalService {
       }
 
       // ─── Double-action guard (same step, same user can't re-act) ──
-      const priorSameStep = await tx.cnApprovalHistory.findFirst({
-        where: { instanceId, stepOrder: currentStep, actionById: ctx.userId },
-      });
+      // Skipped for a repointed instance: its history rows were recorded
+      // against the pre-edit step numbering, so a match here means "you
+      // acted on a step that used to be numbered this way", not "you are
+      // acting twice on the step in front of you".
+      const priorSameStep = resolved.repointed
+        ? null
+        : await tx.cnApprovalHistory.findFirst({
+            where: { instanceId, stepOrder: actingStepOrder, actionById: ctx.userId },
+          });
       if (priorSameStep) {
         throw new ApprovalConflictError(
           `You already performed ${priorSameStep.action} on this step`,
           {
             instanceId,
-            stepOrder: currentStep,
+            stepOrder: actingStepOrder,
             priorActorId: ctx.userId,
             priorAction: priorSameStep.action,
             priorActionAt: priorSameStep.actionAt.toISOString(),
@@ -254,33 +307,71 @@ class ApprovalService {
         );
       }
 
+      // A master approval is recorded as a normal approve row, marked by its
+      // comment prefix — history has no actedVia column.
+      const recordedAction: Exclude<ApprovalActionKind, "master_approve"> =
+        action === "master_approve" ? "approve" : action;
+
       // ─── Record the action ───────────────────────────────────
       await recordApprovalAction(tx, ctx, {
         instanceId,
-        stepOrder: currentStep,
-        action,
-        comments,
+        stepOrder: actingStepOrder,
+        action: recordedAction,
+        comments: master
+          ? masterApprovalComment({
+              actingStepOrder,
+              skippedStepOrders: master.skippedStepOrders,
+              reason: master.reason,
+            })
+          : resolved.repointed
+            ? repointNote({
+                parkedStepOrder: currentStep,
+                actedStepOrder: actingStepOrder,
+                comments,
+              })
+            : comments,
       });
 
       // ─── Compute next state ──────────────────────────────────
       let newStatus = instance.status;
-      let newStep = currentStep;
+      let newStep = actingStepOrder;
       let completedAt: Date | null = null;
       let isFinalApproval = false;
 
-      if (action === "approve") {
-        // Count configured steps for this workflow
-        const totalSteps = await tx.cnApprovalWorkflowStep.count({
-          where: { workflowId: instance.workflowId },
-        });
-        if (currentStep >= totalSteps) {
-          // Final step — mark complete
+      if (master) {
+        // Terminal by definition — the remaining steps are recorded as skipped
+        // so the timeline has no silent gaps.
+        newStatus = "approved";
+        completedAt = new Date();
+        isFinalApproval = true;
+        newStep =
+          master.skippedStepOrders.length > 0
+            ? master.skippedStepOrders[master.skippedStepOrders.length - 1]
+            : actingStepOrder;
+        if (master.skippedStepOrders.length > 0) {
+          await tx.cnApprovalHistory.createMany({
+            data: master.skippedStepOrders.map((stepOrder) => ({
+              instanceId,
+              stepOrder,
+              action: "approve",
+              actionById: ctx.userId,
+              actionAt: new Date(),
+              comments: masterApprovalSkipComment(actingStepOrder),
+            })),
+          });
+        }
+      } else if (action === "approve") {
+        // Finality is "no step after this one in the instance's own chain",
+        // not a count comparison — step orders are not guaranteed contiguous
+        // after a workflow edit, so counting rows can overshoot or undershoot.
+        const nextStep =
+          resolved.steps.find((s) => s.stepOrder > actingStepOrder) ?? null;
+        if (!nextStep) {
           newStatus = "approved";
           completedAt = new Date();
           isFinalApproval = true;
         } else {
-          // Advance to next step
-          newStep = currentStep + 1;
+          newStep = nextStep.stepOrder;
         }
       } else if (action === "reject") {
         newStatus = "rejected";
@@ -294,14 +385,37 @@ class ApprovalService {
       }
 
       // ─── Persist status change on the instance ───────────────
-      await tx.cnApprovalInstance.update({
-        where: { id: instanceId },
+      // Conditional on the row still being pending, so two people entitled to
+      // act right now — a pool peer, or the workflow's master approver — can't
+      // both settle it and run `onFinalApproval` twice.
+      const claimed = await tx.cnApprovalInstance.updateMany({
+        where: {
+          id: instanceId,
+          ...(completedAt ? { status: "pending_approval" } : {}),
+        },
         data: {
           status: newStatus,
           currentStepOrder: newStep,
           completedAt: completedAt ?? undefined,
         },
       });
+      if ((claimed?.count ?? 0) === 0) {
+        const last = await tx.cnApprovalHistory.findFirst({
+          where: { instanceId },
+          orderBy: { actionAt: "desc" },
+        });
+        throw new ApprovalConflictError(
+          `Approval was settled by another approver while this action was in ` +
+            `flight — no further actions allowed on this instance.`,
+          {
+            instanceId,
+            stepOrder: actingStepOrder,
+            priorActorId: last?.actionById ?? "unknown",
+            priorAction: last?.action ?? "approve",
+            priorActionAt: last?.actionAt?.toISOString() ?? "",
+          },
+        );
+      }
 
       // ─── Envelope audit ──────────────────────────────────────
       await recordAudit(tx, ctx, {
@@ -311,7 +425,7 @@ class ApprovalService {
         changes: {
           entityType: instance.entityType,
           entityId: instance.entityId,
-          stepOrder: currentStep,
+          stepOrder: actingStepOrder,
           from: instance.status,
           to: newStatus,
           commentLength: comments?.length ?? 0,

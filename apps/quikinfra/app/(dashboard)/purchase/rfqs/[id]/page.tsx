@@ -21,6 +21,8 @@ import {
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 
@@ -196,11 +198,26 @@ export default function RFQDetailPage() {
               // sees live buttons.
               hidden={!canActOnCurrentStep(me, rfq)}
             />
+            <MasterApprovalAction
+              approval={rfq?.approval}
+              me={me}
+              entityLabel="RFQ"
+              actionEndpoint={`/api/purchase/rfqs/${id}/approve`}
+              invalidateKeys={[["rfqs"], ["rfq", id]]}
+            />
           </div>
         }
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={rfq?.approval?.repair}
+          entityLabel="RFQ"
+          actionEndpoint={`/api/purchase/rfqs/${id}/approve`}
+          invalidateKeys={[["rfqs"], ["rfq", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {/* Header Info */}
@@ -344,7 +361,11 @@ export default function RFQDetailPage() {
                                 )}
                                 {v.vendorId && items.length > 0 && (
                                   <a
-                                    href={`/api/purchase/rfqs/${id}/preview/pdf?vendorId=${encodeURIComponent(v.vendorId)}`}
+                                    href={
+                                      v.id
+                                        ? `/api/purchase/rfqs/${id}/preview/pdf?rowId=${encodeURIComponent(v.id)}`
+                                        : `/api/purchase/rfqs/${id}/preview/pdf?vendorId=${encodeURIComponent(v.vendorId)}`
+                                    }
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-xs text-accent-600 hover:text-accent-700 hover:underline"
@@ -379,6 +400,16 @@ export default function RFQDetailPage() {
                                 </div>
                               )}
                             </div>
+                            {(v.termsAndConditions ?? "").trim() && (
+                              <div className="mt-2">
+                                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-1">
+                                  Terms &amp; Conditions (custom for this vendor)
+                                </p>
+                                <pre className="whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-32 overflow-y-auto">
+                                  {v.termsAndConditions}
+                                </pre>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </li>
@@ -387,6 +418,25 @@ export default function RFQDetailPage() {
                 </ul>
               )}
             </div>
+
+            {/* Terms & Conditions — the RFQ's default snapshot. Vendors
+                without their own override (shown inline above, per
+                vendor) get this text on their PDF. Independent of the
+                master template: later master edits don't change it. */}
+            {(rfq.termsAndConditions ?? "").trim() && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Terms &amp; Conditions
+                  </h3>
+                </div>
+                <div className="px-5 py-4">
+                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-gray-700 max-h-80 overflow-y-auto">
+                    {rfq.termsAndConditions}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}

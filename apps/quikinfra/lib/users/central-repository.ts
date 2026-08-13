@@ -20,7 +20,7 @@
  * legacy repository can be deleted.
  */
 
-import { db as dbCentral } from "@quikit/database";
+import { db } from "@/lib/db";
 import { getQuikInfraAppId } from "@/lib/rbac/userCan";
 
 const INVITATION_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 72 hours
@@ -241,7 +241,7 @@ export async function listUsersCentral(
 ): Promise<CentralUserRecord[]> {
   const where = await buildUsersCentralWhere(orgId, opts);
   if (!where) return [];
-  const memberships = await dbCentral.orgMember.findMany({
+  const memberships = await db.orgMember.findMany({
     where,
     include: {
       user: {
@@ -282,7 +282,7 @@ export async function listUsersCentral(
 
   // Parallel batched fetches for profile + role.
   const [profiles, userAppRoles] = await Promise.all([
-    dbCentral.cnUserProfile.findMany({
+    db.cnUserProfile.findMany({
       where: { orgId, userId: { in: userIds } },
       select: {
         userId: true,
@@ -300,7 +300,7 @@ export async function listUsersCentral(
       mobile: string | null;
       mobileAccessEnabled: boolean;
     }>>,
-    dbCentral.cnUserAppRole.findMany({
+    db.cnUserAppRole.findMany({
       where: { orgId, userId: { in: userIds } },
       select: {
         userId: true,
@@ -354,7 +354,7 @@ export async function countUsersCentral(
 ): Promise<number> {
   const where = await buildUsersCentralWhere(orgId, opts);
   if (!where) return 0;
-  return dbCentral.orgMember.count({ where });
+  return db.orgMember.count({ where });
 }
 
 /**
@@ -365,7 +365,7 @@ export async function findUserByIdCentral(
   orgId: string,
   authUserId: string,
 ): Promise<CentralUserRecord | null> {
-  const membership = await dbCentral.orgMember.findUnique({
+  const membership = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: authUserId } },
     include: {
       user: {
@@ -402,7 +402,7 @@ export async function findUserByIdCentral(
   if (!membership) return null;
 
   const [profile, userAppRole] = await Promise.all([
-    dbCentral.cnUserProfile.findUnique({
+    db.cnUserProfile.findUnique({
       where: { orgId_userId: { orgId, userId: authUserId } },
       select: {
         firstName: true,
@@ -418,7 +418,7 @@ export async function findUserByIdCentral(
       mobile: string | null;
       mobileAccessEnabled: boolean;
     } | null>,
-    dbCentral.cnUserAppRole.findFirst({
+    db.cnUserAppRole.findFirst({
       where: { orgId, userId: authUserId },
       select: { role: { select: { name: true } } },
     }) as Promise<{ role: { name: string } | null } | null>,
@@ -457,7 +457,7 @@ export async function softDeleteUserCentral(
   authUserId: string,
 ): Promise<boolean> {
   try {
-    await dbCentral.orgMember.update({
+    await db.orgMember.update({
       where: { orgId_userId: { orgId, userId: authUserId } },
       data: { status: "inactive" },
     });
@@ -493,7 +493,7 @@ export async function updateUserCentral(
   authUserId: string,
   patch: UpdateUserCentralPatch,
 ): Promise<CentralUserRecord | null> {
-  const existing = await dbCentral.orgMember.findUnique({
+  const existing = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: authUserId } },
     select: { id: true },
   });
@@ -508,7 +508,7 @@ export async function updateUserCentral(
     patch.department !== undefined ||
     patch.mobileAccessEnabled !== undefined
   ) {
-    await dbCentral.cnUserProfile.upsert({
+    await db.cnUserProfile.upsert({
       where: { orgId_userId: { orgId, userId: authUserId } },
       update: {
         ...(patch.firstName !== undefined ? { firstName: patch.firstName } : {}),
@@ -539,7 +539,7 @@ export async function updateUserCentral(
     patch.lastName !== undefined ||
     patch.email !== undefined
   ) {
-    await dbCentral.user.update({
+    await db.user.update({
       where: { id: authUserId },
       data: {
         ...(patch.firstName !== undefined ? { firstName: patch.firstName } : {}),
@@ -551,7 +551,7 @@ export async function updateUserCentral(
 
   // Update OrgMember.status for the soft-delete / activate flow.
   if (patch.status !== undefined) {
-    await dbCentral.orgMember.update({
+    await db.orgMember.update({
       where: { orgId_userId: { orgId, userId: authUserId } },
       data: { status: patch.status },
     });

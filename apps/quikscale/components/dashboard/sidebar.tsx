@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import {
-  LayoutDashboard, Target, CheckSquare, Activity,
+  LayoutDashboard, Target, CheckSquare, Activity, Gauge,
   Calendar, FileText, TrendingUp, Building2,
   Users, User, CalendarDays, Clock,
   BookOpen, Star, List, UserCheck, MessageSquare,
@@ -86,6 +86,7 @@ const navigation: SidebarEntry[] = [
     { label: "Individual KPI", href: "/kpi",       icon: User,  moduleKey: "kpi.individual" },
     { label: "Teams KPI",      href: "/kpi/teams", icon: Users, moduleKey: "kpi.teams" },
   ]},
+  { label: "Critical Numbers", href: "/critical-numbers", icon: Gauge, moduleKey: "criticalNumbers" },
   { label: "Priority",       href: "/priority", icon: CheckSquare, moduleKey: "priority" },
   { label: "WWW",            href: "/www",      icon: Activity,    moduleKey: "www" },
   { label: "Meeting Rhythm", icon: Calendar, moduleKey: "clientMeetings", children: [
@@ -257,6 +258,7 @@ function NavGroup({ item }: { item: NavItem }) {
     return (
       <Link href={item.href!}
         data-tour={item.tourId}
+        data-tour-module={item.moduleKey}
         className={cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
           isActive ? "bg-accent-50 text-accent-700" : "text-gray-700 hover:bg-gray-50"
@@ -269,7 +271,7 @@ function NavGroup({ item }: { item: NavItem }) {
 
   // Group with children
   return (
-    <div data-tour={item.tourId}>
+    <div data-tour={item.tourId} data-tour-module={item.moduleKey}>
       <div className={cn(
         "flex items-center rounded-md transition-colors",
         isActive ? "text-accent-700" : "text-gray-700",

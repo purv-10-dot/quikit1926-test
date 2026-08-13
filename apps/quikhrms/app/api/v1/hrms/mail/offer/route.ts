@@ -17,6 +17,9 @@ const bodySchema = z.object({
   // When true, return the generated PDF for on-screen review WITHOUT emailing
   // the candidate or changing the offer status.
   preview: z.boolean().optional(),
+  // Extra recipients CC'd on the offer email (HR-typed list, e.g. hiring
+  // manager / reporting manager) — never used in preview mode.
+  cc: z.array(z.string().email()).optional(),
 }).refine(v => v.applicationId || v.offerId, { message: "applicationId or offerId required" });
 
 function fmtDate(d: Date | null | undefined): string {
@@ -75,6 +78,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       : meta?.supportingDoc?.key
         ? [meta.supportingDoc]
         : [];
+    // CC list — a fresh Send provides it explicitly; a bare Resend (no wizard,
+    // just the "Resend" button) sends no `cc` at all, so fall back to whatever
+    // was saved from the original send.
+    const effectiveCc = parsed.data.cc ?? meta?.cc;
 
     // Generate the offer PDF and download supporting docs concurrently.
     const [pdfBuffer, fetchedDocs] = await Promise.all([
@@ -160,7 +167,25 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       ...fetchedDocs,
     ];
 
-    const result = await resolveAndSend(orgId, {
+    // Mark as sent up front, then hand the SMTP send off to the background —
+    // a slow/hanging Office365 connection must never hold up this response
+    // (that's what was tripping the "Request Timeout" on UAT). The PDF +
+    // attachments are already built above, so all that's left is the network
+    // send; failures are still logged server-side even though nothing here
+    // awaits them.
+    await prisma.jobApplication.update({
+      where: { id: app.id },
+      data: {
+        offerStatus: "OfferSent", offerSentAt: new Date(), updatedBy: userId,
+        // Only overwrite the saved CC list on an explicit Send (cc provided) —
+        // a bare Resend passes no `cc` at all and must not wipe it out.
+        ...(parsed.data.cc !== undefined
+          ? { offeredComponents: JSON.parse(JSON.stringify({ ...(meta ?? {}), cc: parsed.data.cc })) }
+          : {}),
+      },
+    });
+
+    void resolveAndSend(orgId, {
       key: "recruit.offer-branded",
       to: candidate.email,
       vars: {
@@ -176,14 +201,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       },
       fallback: () => buildOfferEmail(offerData),
       attachments,
-    });
-
-    if (!result.sent) return internalError(`Mail send failed: ${result.error}`);
-
-    await prisma.jobApplication.update({
-      where: { id: app.id },
-      data: { offerStatus: "OfferSent", offerSentAt: new Date(), updatedBy: userId },
-    });
+      cc: effectiveCc,
+    }).then((result) => {
+      if (!result.sent) console.error(`[mail/offer] send failed for application ${app.id}:`, result.error);
+    }).catch((e) => console.error(`[mail/offer] send threw for application ${app.id}:`, e));
 
     return successResponse({ sent: true, offerId: app.id, to: candidate.email });
   } catch (error) {

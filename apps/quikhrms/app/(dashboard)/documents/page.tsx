@@ -17,7 +17,7 @@ import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Pagination } from "@/components/hrms/pagination";
 import { todayInput } from "@/lib/utils/date-input";
 
-type Category = "OfferLetter" | "Policy" | "IdProof" | "Certificate" | "Contract" | "AppointmentLetter" | "ExperienceLetter" | "RelievingLetter" | "NDA" | "Other";
+type Category = "OfferLetter" | "Policy" | "IdProof" | "Certificate" | "Contract" | "AppointmentLetter" | "ExperienceLetter" | "RelievingLetter" | "NDA" | "Insurance" | "Other";
 type Status = "Draft" | "Active" | "Archived" | "Expired";
 
 interface DocItem {
@@ -33,11 +33,11 @@ interface DocItem {
   tags: string[] | null;
   employeeId: string | null;
   createdAt: string;
-  metadata: { extractedText?: string; extractedAt?: string } | null;
+  metadata: { extractedText?: string; extractedAt?: string; notifyDaysBefore?: number } | null;
   _count: { acknowledgments: number; shares: number };
 }
 
-const CATEGORIES: Category[] = ["OfferLetter", "Policy", "IdProof", "Certificate", "Contract", "AppointmentLetter", "ExperienceLetter", "RelievingLetter", "NDA", "Other"];
+const CATEGORIES: Category[] = ["OfferLetter", "Policy", "IdProof", "Certificate", "Contract", "AppointmentLetter", "ExperienceLetter", "RelievingLetter", "NDA", "Insurance", "Other"];
 const STATUSES: Status[] = ["Draft", "Active", "Archived", "Expired"];
 
 const catColors: Record<string, string> = {
@@ -50,6 +50,7 @@ const catColors: Record<string, string> = {
   ExperienceLetter: "bg-cyan-100 text-cyan-700",
   RelievingLetter: "bg-orange-100 text-orange-700",
   NDA: "bg-sky-100 text-sky-700",
+  Insurance: "bg-blue-100 text-blue-700",
   Other: "bg-gray-100 text-gray-600",
 };
 
@@ -66,6 +67,7 @@ export default function DocumentLibraryPage() {
   const [form, setForm] = useState({
     title: "", description: "", category: "Other" as Category, fileUrl: "", fileType: "application/pdf",
     fileSize: 0, status: "Active" as Status, expiryDate: "", hasExpiry: false, employeeId: "", tags: "",
+    notifyDaysBefore: 30,
   });
 
   const qs = new URLSearchParams();
@@ -115,6 +117,7 @@ export default function DocumentLibraryPage() {
       hasExpiry: !!d.expiryDate,
       employeeId: d.employeeId ?? "",
       tags: (d.tags ?? []).join(", "),
+      notifyDaysBefore: d.metadata?.notifyDaysBefore ?? 30,
     });
     setEditDoc(d);
   };
@@ -138,7 +141,7 @@ export default function DocumentLibraryPage() {
             <FolderLock size={13} /> My Vault
           </Link>
           <button onClick={() => {
-            setForm({ title: "", description: "", category: "Other" as Category, fileUrl: "", fileType: "application/pdf", fileSize: 0, status: "Active" as Status, expiryDate: "", hasExpiry: false, employeeId: "", tags: "" });
+            setForm({ title: "", description: "", category: "Other" as Category, fileUrl: "", fileType: "application/pdf", fileSize: 0, status: "Active" as Status, expiryDate: "", hasExpiry: false, employeeId: "", tags: "", notifyDaysBefore: 30 });
             setShowUpload(true);
           }} className="btn btn-primary">
             <Plus size={14} /> Upload
@@ -230,6 +233,7 @@ export default function DocumentLibraryPage() {
             expiryDate: form.expiryDate || undefined,
             employeeId: form.employeeId || undefined,
             tags: form.tags ? form.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
+            metadata: form.category === "Insurance" && form.hasExpiry ? { notifyDaysBefore: form.notifyDaysBefore } : undefined,
           });
         }} className="space-y-4">
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -279,6 +283,13 @@ export default function DocumentLibraryPage() {
                   className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
               )}
             </div>
+            {form.category === "Insurance" && form.hasExpiry && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notify how many days before expiry?</label>
+                <NumberInput allowDecimal={false} value={form.notifyDaysBefore} onChange={(v) => setForm({ ...form, notifyDaysBefore: v ?? 30 })}
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+              </div>
+            )}
           </div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -309,6 +320,7 @@ export default function DocumentLibraryPage() {
                 status: form.status,
                 expiryDate: form.expiryDate || undefined,
                 tags: form.tags ? form.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
+                metadata: form.category === "Insurance" && form.hasExpiry ? { notifyDaysBefore: form.notifyDaysBefore } : undefined,
               },
             });
           }} className="space-y-4">
@@ -342,6 +354,13 @@ export default function DocumentLibraryPage() {
                     className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
                 )}
               </div>
+              {form.category === "Insurance" && form.hasExpiry && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notify how many days before expiry?</label>
+                  <NumberInput allowDecimal={false} value={form.notifyDaysBefore} onChange={(v) => setForm({ ...form, notifyDaysBefore: v ?? 30 })}
+                    className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                </div>
+              )}
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
                 <input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })}
                   className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" placeholder="legal, 2026" /></div>

@@ -64,7 +64,7 @@ describe("use-masters query hooks", () => {
     expect(lastUrl(fetchFn)).toBe("/api/masters/projects");
   });
 
-  it("useProjects encodes search + status into the query string", async () => {
+  it("useProjects encodes search, and omits status for the active default", async () => {
     const fetchFn = stubFetch({ data: [], total: 0 });
 
     const { result } = renderHook(
@@ -76,7 +76,20 @@ describe("use-masters query hooks", () => {
     const url = lastUrl(fetchFn);
     expect(url).toContain("/api/masters/projects?");
     expect(url).toContain("search=tower");
-    expect(url).toContain("status=active");
+    // Active-only is the API default, so the hook sends no status param.
+    expect(url).not.toContain("status=");
+    expect(url).not.toContain("includeInactive");
+  });
+
+  it("useProjects asks for inactive rows via includeInactive when status is 'all'", async () => {
+    const fetchFn = stubFetch({ data: [], total: 0 });
+
+    const { result } = renderHook(() => useProjects({ status: "all" }), {
+      wrapper: TestProviders,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(lastUrl(fetchFn)).toContain("includeInactive=true");
   });
 
   it("useProject is disabled when id is null (no fetch)", async () => {

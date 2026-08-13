@@ -9,6 +9,7 @@ import { audit, requestContext } from "@/lib/audit";
 import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
+import { emitPriorityCreated } from "@/lib/services/workflowEvents";
 import { findPriorityDuplicate, priorityDuplicateMessage } from "@/lib/api/priorityDuplicate";
 import { buildPriorityScopeWhere } from "@/lib/api/priorityListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
@@ -308,6 +309,17 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
         console.error("[POST /api/priority] notifyPriorityAssignment failed:", err);
       });
     }
+    // QuikFlow: emit priority.created (fire-and-forget, flag-gated).
+    emitPriorityCreated({
+      orgId,
+      priorityId: priority.id,
+      name: priority.name,
+      owner: priority.owner,
+      teamId: priority.teamId,
+      quarter: priority.quarter,
+      year: priority.year,
+      status: priority.overallStatus,
+    });
   }
 
   // Return the first row in the existing single-item envelope so the useCreate

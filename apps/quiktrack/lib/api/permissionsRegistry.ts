@@ -161,6 +161,32 @@ export const PERMISSION_TREE: PermissionModule[] = [
     ],
   },
   {
+    key: "TestManagement",
+    label: "Test Management (QuikTest)",
+    leaves: [
+      // Case authoring. `view` also gates the org-level Apps → QuikTest sidebar
+      // tree and the per-project "Tests" tab (see ENTITY_TO_NAV + PROJECT_TABS).
+      { resource: "TestCase", label: "Test case", actions: ACTIONS },
+      // Suites, sections and baselines.
+      { resource: "TestSuite", label: "Test suite", actions: ACTIONS },
+      // Plans, configurations and milestones. No delete — plans are archived,
+      // and deleting one would orphan its runs' rollups.
+      { resource: "TestPlan", label: "Test plan", actions: ["view", "create", "update"] },
+      // Run create/close/reopen/schedule. No delete: a run is an immutable
+      // historical record once it has results.
+      { resource: "TestRun", label: "Test run", actions: ["view", "create", "update"] },
+      // `create` IS "Execute Tests" — the gate on BOTH result write paths
+      // (manual runner + CI automation). No update/delete: the result store is
+      // append-only, so there is nothing to grant.
+      { resource: "TestResult", label: "Test result (execute)", actions: ["view", "create"] },
+      // QA-Manager sign-off on the Draft → In Review → Approved → Deprecated
+      // workflow. Create-only: an approval row is itself an audit entry.
+      { resource: "TestCaseApproval", label: "Test case approval", actions: ["create"] },
+      // Read-only reporting surface (pass rate, coverage, flakiness, activity).
+      { resource: "TestReport", label: "Test reports", actions: ["view"] },
+    ],
+  },
+  {
     key: "Docs",
     label: "Docs",
     leaves: [
@@ -259,6 +285,10 @@ export const ENTITY_TO_NAV: Record<string, string> = {
   Project: "spaces",
   Timesheet: "timesheet",
   Report: "reports",
+  // Surfaces the org-level "Apps → QuikTest" sidebar tree (the holistic,
+  // cross-project surface). The per-project "Tests" tab is gated separately by
+  // PROJECT_TABS using the same TestCase:view grant.
+  TestCase: "apps",
 };
 
 /**

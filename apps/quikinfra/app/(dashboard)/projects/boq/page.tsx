@@ -413,10 +413,12 @@ export default function BOQPage() {
                 value={selectedProject}
                 onChange={(v) => { setSelectedProject(v); setExpandedGroups(new Set()); setExpandAll(false); }}
                 placeholder="Select Project..."
-                options={(projectsData?.data ?? []).map((p) => ({
-                  value: p.id,
-                  label: `${p.code} — ${p.name}`,
-                }))}
+                options={(projectsData?.data ?? [])
+                  .filter((p) => (p as { executionMode?: string }).executionMode !== "FREE_SCOPE")
+                  .map((p) => ({
+                    value: p.id,
+                    label: `${p.code} — ${p.name}`,
+                  }))}
               />
             </div>
             {/* View toggle */}

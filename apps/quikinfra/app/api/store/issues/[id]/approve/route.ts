@@ -8,7 +8,14 @@ import {
   findMaterialIssueById,
   patchMaterialIssueStatus,
 } from "@/lib/store/material-issue-repository";
-import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import {
+  claimAndRecord,
+  gateApprovalAction,
+  gateConflictResponse,
+  GATE_ACTIONS,
+  type GateAction,
+} from "@/lib/approvals/approval-gate";
+import type { ClaimResult } from "@/lib/approvals/claim-instance";
 import { postMaterialIssueOutward, StockError } from "@/lib/stock/ledger-service";
 
 /**
@@ -28,7 +35,7 @@ import { postMaterialIssueOutward, StockError } from "@/lib/stock/ledger-service
  * Body: { action: "approve" | "reject" | "return", comments? }
  */
 
-type Action = "approve" | "reject" | "return";
+type Action = GateAction;
 
 export async function POST(
   req: NextRequest,
@@ -51,7 +58,7 @@ export async function POST(
   const action = (body.action ?? "approve") as Action;
   const comments = String(body.comments ?? "").trim();
 
-  if (!["approve", "reject", "return"].includes(action)) {
+  if (!GATE_ACTIONS.includes(action)) {
     return NextResponse.json(
       { error: `Unknown action: ${action}` },
       { status: 400 },
@@ -90,73 +97,28 @@ export async function POST(
       { status: 404 },
     );
   }
-  if (instance.status !== "pending_approval") {
-    return NextResponse.json(
-      {
-        error: `Approval already ${instance.status} — no further actions allowed.`,
-      },
-      { status: 409 },
-    );
-  }
 
-  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: instance.currentStepOrder,
-    },
+  // Authorisation, step resolution and the repair / master-approval branches
+  // live in the shared gate; this route keeps only the stock posting and the
+  // issue's own status patch.
+  const gate = await gateApprovalAction({
+    ctx,
+    instance,
+    entityLabel: "issue",
+    action,
+    comments,
+    projectId: issue.projectId ?? null,
   });
-  if (!currentStep) {
-    return NextResponse.json(
-      {
-        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this issue was mid-flight.`,
-      },
-      { status: 500 },
-    );
+  if (gate.kind === "error") {
+    return NextResponse.json(gate.body, { status: gate.status });
   }
-
-  if (
-    !canActOnStep(
-      { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
-      {
-        approverUserId: currentStep.approverUserId,
-        approverRoleId: currentStep.approverRoleId,
-      },
-      issue.projectId ?? null,
-    )
-  ) {
-    let expected = "an authorized approver";
-    if (currentStep.approverUserId) {
-      const pinned = await findCnUserById(currentStep.approverUserId);
-      expected = pinned?.fullName
-        ? `${pinned.fullName} (pinned approver)`
-        : "the pinned approver for this step";
-    } else if (currentStep.approverRoleId) {
-      expected =
-        `a user with role "${currentStep.approverRoleId}"` +
-        (issue.projectId ? ` assigned to this project` : "");
-    }
-    return NextResponse.json(
-      {
-        error: `You are not authorized to ${action} this issue at step ${instance.currentStepOrder}. Expected: ${expected}.`,
-      },
-      { status: 403 },
-    );
-  }
-
-  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
-    where: {
-      workflowId: instance.workflowId,
-      stepOrder: { gt: instance.currentStepOrder },
-    },
-    orderBy: { stepOrder: "asc" },
-  });
 
   // Final approval is the event that deducts stock. The /store/issue module
   // stores lines as JSON carrying only a uom *code* (no uomId), so resolve each
   // code to its uom id before posting — the stock ledger requires the id. Build
   // and validate the posting input up front; reject with 400 (before touching
   // the workflow) rather than write a wrong/zero-uom ledger row.
-  const isFinalApprove = action === "approve" && !nextStep;
+  const isFinalApprove = gate.isFinalApprove;
   let postingLines: Array<{ itemId: string; uomId: string; issuedQty: number; unitRate: number }> = [];
   if (isFinalApprove) {
     const rawLines = Array.isArray(issue.lines) ? (issue.lines as Array<Record<string, unknown>>) : [];
@@ -208,25 +170,18 @@ export async function POST(
   }
 
   let issueStatusUpdate: Record<string, unknown> | null = null;
+  let conflict: ClaimResult["conflict"] | undefined;
 
   try {
   await db.$transaction(async (tx) => {
-    await tx.cnApprovalHistory.create({
-      data: {
-        instanceId: instance.id,
-        stepOrder: instance.currentStepOrder,
-        action,
-        actionById: ctx.userId,
-        comments: comments || null,
-      },
-    });
+    const claim = await claimAndRecord(tx, ctx, instance, gate);
+    if (!claim.claimed) {
+      conflict = claim.conflict;
+      return;
+    }
 
-    if (action === "approve") {
-      if (!nextStep) {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { status: "approved", completedAt: new Date() },
-        });
+    if (gate.effectiveAction === "approve") {
+      if (gate.isFinalApprove) {
         // Final approval deducts stock: appends CnStockLedger rows AND syncs
         // CnStockBalance in this same txn. A StockError (e.g. insufficient
         // stock) rolls back the approval too, so status never advances past a
@@ -243,18 +198,9 @@ export async function POST(
           approvedAt: new Date(),
           approvedBy: ctx.userId,
         };
-      } else {
-        await tx.cnApprovalInstance.update({
-          where: { id: instance.id },
-          data: { currentStepOrder: nextStep.stepOrder },
-        });
-        // Mid-flow — issue keeps "pending_approval" as-is.
       }
-    } else if (action === "reject") {
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "rejected", completedAt: new Date() },
-      });
+      // Mid-flow — issue keeps "pending_approval" as-is; the gate advanced it.
+    } else if (gate.effectiveAction === "reject") {
       issueStatusUpdate = {
         status: "rejected",
         rejectedAt: new Date(),
@@ -264,10 +210,6 @@ export async function POST(
     } else {
       // "return" — back to draft, approvalId cleared so re-submission
       // creates a fresh instance rather than reopening a closed one.
-      await tx.cnApprovalInstance.update({
-        where: { id: instance.id },
-        data: { status: "returned", completedAt: new Date() },
-      });
       issueStatusUpdate = {
         status: "draft",
         approvalId: null,
@@ -282,6 +224,14 @@ export async function POST(
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.httpStatus });
     }
     throw err;
+  }
+
+  // Lost the claim — someone else settled it first. Nothing was written, so no
+  // stock moved and the status patch below must be skipped.
+  if (conflict) {
+    return NextResponse.json(await gateConflictResponse(conflict, "issue"), {
+      status: 409,
+    });
   }
 
   if (issueStatusUpdate) {

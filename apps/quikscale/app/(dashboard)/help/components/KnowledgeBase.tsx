@@ -14,7 +14,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BookOpen, ChevronLeft, ChevronRight, ExternalLink, Search, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, ExternalLink, Search, X } from "lucide-react";
 import { KB_CHAPTERS, KB_GROUPS, KB_META, chapterText } from "@/lib/knowledge-base";
 import { useOrgInfo } from "@/lib/hooks/useOrgInfo";
 import { KBBlocks } from "./KBBlocks";
@@ -24,6 +25,7 @@ const FIRST_ID = KB_CHAPTERS[0]!.id;
 
 export function KnowledgeBase() {
   const { org } = useOrgInfo();
+  const router = useRouter();
   const [activeId, setActiveId] = useState<string>(FIRST_ID);
   const [query, setQuery] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
@@ -46,6 +48,18 @@ export function KnowledgeBase() {
     if (firstPaint.current) { firstPaint.current = false; return; }
     contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeId]);
+
+  // The Knowledge Base is opened from the header "?" icon on any screen, not
+  // from a fixed sidebar entry, so there's no single "parent" page to link
+  // back to — fall back to the dashboard only when there's no in-app history
+  // to pop (e.g. a bookmarked/shared /help link opened in a fresh tab).
+  const goBack = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/dashboard");
+    }
+  }, [router]);
 
   const select = useCallback((id: string) => {
     setActiveId(id);
@@ -74,15 +88,25 @@ export function KnowledgeBase() {
     <div className="flex h-full min-h-0 flex-col">
       {/* Masthead */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-gray-200 px-6 py-5">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-accent-600">
-            Reference
-          </p>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-gray-900">
-            <BookOpen className="h-5 w-5 text-accent-600" />
-            {KB_META.title}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">{KB_META.subtitle}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label="Back"
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-accent-600">
+              Reference
+            </p>
+            <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-gray-900">
+              <BookOpen className="h-5 w-5 text-accent-600" />
+              {KB_META.title}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">{KB_META.subtitle}</p>
+          </div>
         </div>
         <KBDownloadButton orgName={org?.name ?? ""} />
       </div>

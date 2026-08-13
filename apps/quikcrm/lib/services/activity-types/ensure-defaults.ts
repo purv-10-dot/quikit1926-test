@@ -19,6 +19,7 @@
  * parallel requests can't create duplicates and a partial seed self-heals on
  * the next read.
  */
+import type { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import { DEFAULT_ACTIVITY_TYPES } from "@/lib/activities/activity-types-defaults";
 
@@ -26,7 +27,7 @@ export async function ensureDefaultActivityTypes(orgId: string): Promise<void> {
   // 1) Load every existing type for this org (code → id). No count gate.
   const existingTypes = await prisma.crmActivityType.findMany({
     where: { orgId },
-    select: { id: true, code: true },
+    select: { id: true, code: true, config: true },
   });
   const idByCode = new Map(existingTypes.map((t) => [t.code, t.id]));
 
@@ -43,6 +44,9 @@ export async function ensureDefaultActivityTypes(orgId: string): Promise<void> {
         code: t.code,
         label: t.label,
         category: t.category ?? null,
+        // config is a Json? column; Prisma wants InputJsonValue, not the
+        // structurally-open Record<string, unknown> the defaults are typed as.
+        config: (t.config ?? undefined) as Prisma.InputJsonValue | undefined,
         sortOrder: index,
         isActive: true,
       })),
@@ -55,6 +59,35 @@ export async function ensureDefaultActivityTypes(orgId: string): Promise<void> {
       select: { id: true, code: true },
     });
     for (const row of created) idByCode.set(row.code, row.id);
+  }
+
+  // 2b) Backfill `countsSources` on orgs seeded BEFORE that key existed.
+  //     Only fills types whose config is missing the key entirely — an admin
+  //     who has since tuned countsSources keeps their value, and every other
+  //     config key on the row is preserved by merging rather than replacing.
+  const configByCode = new Map(
+    existingTypes.map((t) => [
+      t.code,
+      (t.config && typeof t.config === "object" ? (t.config as Record<string, unknown>) : null),
+    ]),
+  );
+  const needsCountsSources = DEFAULT_ACTIVITY_TYPES.filter((t) => {
+    const seeded = t.config?.countsSources;
+    if (!seeded) return false; // nothing to backfill for activities-only types
+    if (!idByCode.has(t.code)) return false; // just created above, already correct
+    if (!configByCode.has(t.code)) return false; // not a pre-existing row
+    const current = configByCode.get(t.code);
+    return !current || current.countsSources === undefined;
+  });
+
+  for (const t of needsCountsSources) {
+    const id = idByCode.get(t.code);
+    if (!id) continue;
+    const merged = { ...(configByCode.get(t.code) ?? {}), ...t.config };
+    await prisma.crmActivityType.update({
+      where: { id },
+      data: { config: merged as object },
+    });
   }
 
   // 3) Backfill missing field definitions for every default type that has any.

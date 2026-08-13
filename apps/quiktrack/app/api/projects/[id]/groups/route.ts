@@ -14,17 +14,19 @@ export const GET = withOrgAuth<{ id: string }>(
         { status: 404 },
       );
     }
-    await ensureDefaultGroup(orgId, params.id, userId);
+    // params.id may be a projectKey; loadProjectAccess resolved it to the cuid.
+    const projectId = access.projectId;
+    await ensureDefaultGroup(orgId, projectId, userId);
 
     const groups = await db.qtTaskGroup.findMany({
-      where: { projectId: params.id, isDeleted: false },
+      where: { projectId, isDeleted: false },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     });
 
     const counts = await db.qtIssue.groupBy({
       by: ["groupId"],
       where: {
-        projectId: params.id,
+        projectId,
         isDeleted: false,
         type: { notIn: ["EPIC", "SUBTASK"] },
       },
@@ -59,6 +61,8 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 403 },
       );
     }
+    // params.id may be a projectKey; loadProjectAccess resolved it to the cuid.
+    const projectId = access.projectId;
     const parsed = createGroupSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -69,13 +73,13 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
-    await ensureDefaultGroup(orgId, params.id, userId);
-    const order = await nextGroupOrder(params.id);
+    await ensureDefaultGroup(orgId, projectId, userId);
+    const order = await nextGroupOrder(projectId);
     try {
       const group = await db.qtTaskGroup.create({
         data: {
           orgId,
-          projectId: params.id,
+          projectId,
           name: parsed.data.name.trim(),
           color: parsed.data.color ?? "#94a3b8",
           icon: parsed.data.icon ?? null,

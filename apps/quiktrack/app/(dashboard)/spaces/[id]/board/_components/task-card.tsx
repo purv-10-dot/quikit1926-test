@@ -13,6 +13,7 @@ import {
 import type { BoardIssue, BoardStatus, EpicLite } from "./board-meta";
 import { typeMeta, priorityMeta } from "./board-meta";
 import { SubtaskCard } from "./subtask-card";
+import { DraggableCard } from "./board-dnd";
 import type { ColumnInlineCreateMember } from "./column-inline-create";
 import { PopoverPanel } from "../../grouped-kanban/_components/cells/popover-panel";
 import { showToast } from "@/lib/ui/toast";
@@ -139,15 +140,9 @@ export function TaskCard({
 
   return (
     <div className="relative">
+      <DraggableCard id={task.id} statusId={task.statusId} issueKey={task.key} title={task.title || "Untitled"}>
       <div
         onClick={() => onOpen?.(task.id)}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = "move";
-          // Custom MIME so the column drop handler can tell an issue drop
-          // apart from a column reorder drop.
-          e.dataTransfer.setData("application/quiktrack-issue", task.id);
-        }}
         className="qt-board-card bg-white border border-gray-200 rounded-md p-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
       >
         {/* Title + ⋯ */}
@@ -162,6 +157,9 @@ export function TaskCard({
           <button
             ref={menuBtnRef}
             type="button"
+            // Stop the @dnd-kit PointerSensor from claiming this press so the
+            // menu button stays clickable (drag listeners live on the card root).
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen((v) => !v);
@@ -224,6 +222,8 @@ export function TaskCard({
             {hasSubtasks && (
               <button
                 type="button"
+                // Keep the subtask disclosure clickable under the drag sensor.
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsExpanded((v) => !v);
@@ -265,6 +265,7 @@ export function TaskCard({
           </div>
         </div>
       </div>
+      </DraggableCard>
 
       {/* Row actions menu — portaled so it never clips against the card/column
           overflow. Open opens the work item; Delete confirms then removes it. */}

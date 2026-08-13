@@ -120,6 +120,22 @@ function toNum(d: Prisma.Decimal | null): number | null {
   return d === null ? null : Number(d.toString());
 }
 
+/**
+ * Sibling order: explicit `sortOrder` first, then the activity code compared
+ * naturally. `sortOrder` is 0 on every row until something reorders the tree,
+ * so the code is what actually decides — and it must compare numerically
+ * (`numeric: true`), otherwise "10" sorts before "2" and "1.10" before "1.9".
+ */
+function bySortThenCode(
+  a: { sortOrder: number; activityCode: string },
+  b: { sortOrder: number; activityCode: string }
+): number {
+  return (
+    a.sortOrder - b.sortOrder ||
+    a.activityCode.localeCompare(b.activityCode, undefined, { numeric: true })
+  );
+}
+
 /** Resolve uomId → readable UOM code for a set of rows (single query). */
 async function uomCodeMap(
   orgId: string,
@@ -253,6 +269,12 @@ async function descendantIds(
  *   children of 1.2→ 1.2.1 …
  * Slots are max-based per parent (soft-deleted siblings keep their number,
  * so codes are never reused). Reparenting keeps a node's code stable.
+ *
+ * The sibling max alone is not enough: uniqueness is enforced project-wide
+ * (`@@unique([projectId, activityCode])`) while the max is per parent, so a
+ * code that was reparented out of this slot — or minted under a parent with a
+ * blank code — can already own the candidate. The candidate is therefore
+ * advanced past every code already taken under the same prefix.
  */
 async function resolveActivityCode(
   client: DbClient,
@@ -269,7 +291,8 @@ async function resolveActivityCode(
       where: { id: input.parentId, orgId, projectId },
       select: { activityCode: true },
     });
-    if (parent?.activityCode) parentPrefix = `${parent.activityCode}.`;
+    const parentCode = parent?.activityCode?.trim();
+    if (parentCode) parentPrefix = `${parentCode}.`;
   }
 
   const siblings = await client.cnActivityItem.findMany({
@@ -282,7 +305,18 @@ async function resolveActivityCode(
     const n = parseInt(last, 10);
     if (Number.isFinite(n) && n > max) max = n;
   }
-  return `${parentPrefix}${max + 1}`;
+
+  const taken = new Set(
+    (
+      await client.cnActivityItem.findMany({
+        where: { orgId, projectId, activityCode: { startsWith: parentPrefix } },
+        select: { activityCode: true },
+      })
+    ).map((r) => r.activityCode)
+  );
+  let next = max + 1;
+  while (taken.has(`${parentPrefix}${next}`)) next++;
+  return `${parentPrefix}${next}`;
 }
 
 function buildCreateData(
@@ -314,6 +348,22 @@ function buildCreateData(
   };
 }
 
+/**
+ * Turns the project-wide `(projectId, activityCode)` unique violation into a
+ * readable 409 — otherwise the route's catch-all reports a bare 500.
+ */
+function rethrowCodeConflict(e: unknown, activityCode: string): never {
+  if (e && typeof e === "object" && (e as { code?: string }).code === "P2002") {
+    throw new ScopeError(
+      "ACTIVITY_CODE_EXISTS",
+      `Activity code "${activityCode}" is already used in this project`,
+      409,
+      { activityCode }
+    );
+  }
+  throw e;
+}
+
 export async function createActivity(
   ctx: TenantContext,
   projectId: string,
@@ -322,10 +372,14 @@ export async function createActivity(
   await assertFreeScopeProject(ctx.orgId, projectId);
   const depth = await resolveDepth(db, ctx.orgId, projectId, input.parentId);
   const activityCode = await resolveActivityCode(db, ctx.orgId, projectId, input);
-  const row = await db.cnActivityItem.create({
-    data: buildCreateData(ctx, projectId, { ...input, activityCode }, depth),
-  });
-  return toActivityRecord(row);
+  try {
+    const row = await db.cnActivityItem.create({
+      data: buildCreateData(ctx, projectId, { ...input, activityCode }, depth),
+    });
+    return toActivityRecord(row);
+  } catch (e: unknown) {
+    rethrowCodeConflict(e, activityCode);
+  }
 }
 
 /**
@@ -343,10 +397,14 @@ export async function createActivities(
     for (const input of inputs) {
       const depth = await resolveDepth(tx, ctx.orgId, projectId, input.parentId);
       const activityCode = await resolveActivityCode(tx, ctx.orgId, projectId, input);
-      const row = await tx.cnActivityItem.create({
-        data: buildCreateData(ctx, projectId, { ...input, activityCode }, depth),
-      });
-      out.push(toActivityRecord(row));
+      try {
+        const row = await tx.cnActivityItem.create({
+          data: buildCreateData(ctx, projectId, { ...input, activityCode }, depth),
+        });
+        out.push(toActivityRecord(row));
+      } catch (e: unknown) {
+        rethrowCodeConflict(e, activityCode);
+      }
     }
     return out;
   });
@@ -399,8 +457,12 @@ export async function updateActivity(
     data.depth = await resolveDepth(db, ctx.orgId, projectId, patch.parentId);
   }
 
-  const row = await db.cnActivityItem.update({ where: { id }, data });
-  return toActivityRecord(row);
+  try {
+    const row = await db.cnActivityItem.update({ where: { id }, data });
+    return toActivityRecord(row);
+  } catch (e: unknown) {
+    rethrowCodeConflict(e, String(data.activityCode ?? ""));
+  }
 }
 
 /**
@@ -496,10 +558,8 @@ export async function listActivities(
       roots.push(r);
     }
   }
-  const bySort = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
-    a.sortOrder - b.sortOrder;
-  roots.sort(bySort);
-  childrenBy.forEach((a) => a.sort(bySort));
+  roots.sort(bySortThenCode);
+  childrenBy.forEach((a) => a.sort(bySortThenCode));
 
   const ordered: typeof rows = [];
   const walk = (n: (typeof rows)[number]) => {
@@ -569,6 +629,7 @@ export async function listActivityFolders(
 
   return rows
     .filter((r) => r.isGroup)
+    .sort(bySortThenCode)
     .map((folder) => {
       const parts: string[] = [];
       let cursor: (typeof rows)[number] | undefined = folder;
@@ -599,6 +660,7 @@ export async function listLeafActivities(
 
   return rows
     .filter((r) => !r.isGroup)
+    .sort(bySortThenCode)
     .map((leaf) => {
       const parts: string[] = [];
       let cursor = leaf.parentId ? byId.get(leaf.parentId) : undefined;

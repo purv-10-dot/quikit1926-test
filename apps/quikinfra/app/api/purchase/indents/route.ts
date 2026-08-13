@@ -11,7 +11,7 @@ import { findPRById } from "@/lib/purchase/pr-repository";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import { db } from "@/lib/db";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 /**
  * Decide whether the caller is a "workflow participant" for indents.
@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["indentNumber", "indentDate", "status", "createdAt"],
     { field: "indentDate", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     p,

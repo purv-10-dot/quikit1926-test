@@ -13,6 +13,7 @@ import {
   RIGHT_DRAWER_PANEL,
 } from "@/components/FormDrawer";
 import { useUpdateWbsTask, type WbsTask } from "@/hooks/use-wbs";
+import { validateDateRange } from "@/lib/validators";
 
 type WbsStatus = WbsTask["status"];
 
@@ -79,12 +80,19 @@ export function WbsEditTaskModal({
     (o) => !predecessors.includes(o.value),
   );
 
+  // Mirrors the server rule in updateWbsTask — end may equal start (a
+  // zero-duration task) but never precede it. Surfacing it inline matters here:
+  // the range was already part of `canSave`, so an invalid pair silently greyed
+  // out Save with nothing to tell the user why.
+  const dateRangeError = validateDateRange(startDate, endDate, "End date");
+  const endDateError = dateRangeError.valid ? undefined : dateRangeError.error;
+
   const canSave =
     name.trim().length > 0 &&
     wbsCode.trim().length > 0 &&
     !!startDate &&
     !!endDate &&
-    endDate >= startDate;
+    !endDateError;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -182,13 +190,18 @@ export function WbsEditTaskModal({
                     className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
                   />
                 </Field>
-                <Field label="End Date" required>
+                <Field label="End Date" required error={endDateError}>
                   <input
                     type="date"
                     value={endDate}
                     min={startDate || undefined}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400"
+                    aria-invalid={!!endDateError}
+                    className={`w-full h-9 px-2.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 ${
+                      endDateError
+                        ? "border-rose-300 focus:ring-rose-200 focus:border-rose-400"
+                        : "border-slate-300 focus:ring-accent-200 focus:border-accent-400"
+                    }`}
                   />
                 </Field>
 

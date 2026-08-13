@@ -28,12 +28,30 @@ export const PATCH = withOrgAuth<{ id: string; userId: string }>(
 
     const meeting = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
-      select: { id: true },
+      select: {
+        id: true,
+        absentTeamMembers: { where: { clientMemberId: params.userId }, select: { clientMemberId: true } },
+        dashboardNATeamMembers: { where: { clientMemberId: params.userId }, select: { clientMemberId: true } },
+      },
     });
     if (!meeting) {
       return NextResponse.json(
         { success: false, error: "Weekly meeting not found" },
         { status: 404 }
+      );
+    }
+    // A member flagged Absent/Dashboard-NA for this meeting can't also carry a
+    // saved score — that stale-row combination is what let the dashboard
+    // "Quality of the dashboards" cell and the Member Punch-In Excel export
+    // disagree (86% vs 90.3%). Block the save at the source instead of letting
+    // it silently create the same inconsistency again.
+    if (meeting.absentTeamMembers.length > 0 || meeting.dashboardNATeamMembers.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This member is marked Absent/Dashboard-NA for this meeting. Remove that flag before saving a score.",
+        },
+        { status: 409 }
       );
     }
 

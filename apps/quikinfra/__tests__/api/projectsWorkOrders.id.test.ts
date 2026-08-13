@@ -69,6 +69,8 @@ describe("GET /api/projects/work-orders/[id]", () => {
   it("returns the WO scoped to the org", async () => {
     setContext(makeAdminCtx());
     db.cnWorkOrder.findFirst.mockResolvedValue(woRow());
+    // The detail handler rolls up approved-DPR quantities to derive progressPct.
+    db.cnDPRWorkItem.findMany.mockResolvedValue([]);
     const res = await GET(req("GET"), params);
     expect(res.status).toBe(200);
     expect((await res.json()).id).toBe(ID);
@@ -265,9 +267,10 @@ describe("POST /api/projects/work-orders/[id]/approve", () => {
       status: "pending_approval",
       currentStepOrder: 1,
     });
-    db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" })
-      .mockResolvedValueOnce(null); // no next → final
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never); // single step → final
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never);
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
     db.cnApprovalWorkflowStep.count.mockResolvedValue(1);
 

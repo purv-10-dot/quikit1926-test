@@ -210,7 +210,9 @@ export function SupportRequestForm({
             disabled={isSubmitting}
             className={FIELD_CLS}
           >
-            <option value="">Select a request type…</option>
+            <option value="" disabled>
+              Select a request type…
+            </option>
             {SUPPORT_REQUEST_TYPES.map((t) => (
               <option key={t} value={t}>
                 {SUPPORT_REQUEST_TYPE_LABELS[t]}

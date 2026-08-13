@@ -5,6 +5,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
+import { emitDailyHuddleLogged } from "@/lib/services/workflowEvents";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
@@ -230,6 +231,15 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       absentClientMemberIds: d.absentClientMemberIds,
     },
     ...requestContext(request),
+  });
+
+  emitDailyHuddleLogged({
+    orgId,
+    meetingId: created.id,
+    clientId: d.clientId,
+    clientName: client.name,
+    meetingDate: created.meetingDate,
+    callStatus: d.callStatus,
   });
 
   return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });

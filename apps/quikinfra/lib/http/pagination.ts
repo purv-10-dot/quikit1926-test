@@ -170,6 +170,17 @@ export interface SortParams {
   orderBy: OrderByClause;
 }
 
+/**
+ * Tie-break for document lists whose primary sort is a business date that many
+ * rows share (DPR reportDate, GRN grnDate, PO poDate, ...). Pass as the 4th arg
+ * to `parseSort` so the newest row within a date group lands on top; the default
+ * `id asc` tie-break is creation order ascending, which buries it at the bottom.
+ */
+export const NEWEST_FIRST_TIEBREAK: { field: string; order: "asc" | "desc" } = {
+  field: "createdAt",
+  order: "desc",
+};
+
 /** Pull a URLSearchParams out of any of the accepted source shapes. */
 function toSearchParams(
   source: { url: string } | URL | URLSearchParams,
@@ -193,11 +204,15 @@ function toSearchParams(
  *     order: "desc",
  *   });
  *   listCompanies({ ...opts, ...paging, orderBy });
+ *
+ * Pass `NEWEST_FIRST_TIEBREAK` for document lists sorted by a business date that
+ * many rows share — see that constant for why.
  */
 export function parseSort(
   source: { url: string } | URL | URLSearchParams,
   allowed: readonly string[],
   fallback: { field: string; order?: "asc" | "desc" },
+  tiebreak: { field: string; order: "asc" | "desc" } = { field: "id", order: "asc" },
 ): SortParams {
   const params = toSearchParams(source);
   const rawBy = params.get("sortBy");
@@ -209,9 +224,9 @@ export function parseSort(
   const sortBy = rawBy && allowed.includes(rawBy) ? rawBy : fallback.field;
 
   const orderBy: OrderByClause =
-    sortBy === "id"
-      ? [{ id: sortOrder }]
-      : [{ [sortBy]: sortOrder }, { id: "asc" }];
+    sortBy === tiebreak.field
+      ? [{ [sortBy]: sortOrder }]
+      : [{ [sortBy]: sortOrder }, { [tiebreak.field]: tiebreak.order }];
 
   return { sortBy, sortOrder, orderBy };
 }

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { audit, requestContext } from "@/lib/audit";
+import { emitWeeklyMeetingLogged } from "@/lib/services/workflowEvents";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
@@ -341,6 +342,15 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       dashboardNAClientMemberIds: d.dashboardNAClientMemberIds,
     },
     ...requestContext(request),
+  });
+
+  emitWeeklyMeetingLogged({
+    orgId,
+    meetingId: created.id,
+    clientId: created.clientId,
+    clientName: client.name,
+    meetingDate: created.meetingDate,
+    callStatus: created.callStatus,
   });
 
   return NextResponse.json(

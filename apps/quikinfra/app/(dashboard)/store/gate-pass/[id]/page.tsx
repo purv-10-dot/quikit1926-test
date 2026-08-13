@@ -37,6 +37,8 @@ import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGatePass } from "@/hooks/use-store";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -411,11 +413,26 @@ export default function GatePassDetailPage() {
                 />
               );
             })()}
+            <MasterApprovalAction
+              approval={gp.approval}
+              me={me}
+              entityLabel="gate pass"
+              actionEndpoint={`/api/store/gate-passes/${id}/approve`}
+              invalidateKeys={[["gate-passes"], ["gate-pass", id]]}
+            />
           </div>
         }
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={gp?.approval?.repair}
+          entityLabel="gate pass"
+          actionEndpoint={`/api/store/gate-passes/${id}/approve`}
+          invalidateKeys={[["gate-passes"], ["gate-pass", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 space-y-6">
             {/* Overview card */}

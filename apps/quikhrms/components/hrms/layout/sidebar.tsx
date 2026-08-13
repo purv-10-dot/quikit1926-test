@@ -239,6 +239,7 @@ export const navigation: NavItem[] = [
       { label: "Company Documents", href: "/documents", perms: ["hrms.document.read"], navKey: "documents.company" },
       { label: "Employee Documents", href: "/documents/employees", perms: ["hrms.document.read"], navKey: "documents.employees" },
       { label: "My Vault", href: "/documents/my-vault", perms: ["hrms.document.read_self"], navKey: "documents.my-vault" },
+      { label: "Insurance", href: "/documents/insurance", perms: ["hrms.document.read"], navKey: "documents.insurance" },
     ],
   },
   {

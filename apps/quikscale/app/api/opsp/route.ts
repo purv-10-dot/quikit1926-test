@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { opspUpsertSchema, opspFinalizeSchema } from "@/lib/schemas/opspSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { emitOpspStatusChanged } from "@/lib/services/workflowEvents";
 import { validationError } from "@/lib/api/validationError";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { resolveFiscalYearStart } from "@/lib/api/fiscalYearStart";
@@ -548,6 +549,25 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     changes: ["status:finalized"],
     reason: "OPSP finalized",
   });
+
+  // QuikFlow: emit opsp.stage.changed + opsp.finalized (manual finalize).
+  if (result.count > 0) {
+    const finalized = await db.oPSPData.findFirst({
+      where: { orgId, userId: ownerId, year: yearNum, quarter, status: "finalized" },
+      select: { id: true },
+    });
+    if (finalized) {
+      emitOpspStatusChanged({
+        orgId,
+        opspId: finalized.id,
+        owner: ownerId,
+        quarter,
+        year: yearNum,
+        before: "draft",
+        after: "finalized",
+      });
+    }
+  }
 
   return NextResponse.json({ success: true, data: { count: result.count } }, { status: 201 });
 });

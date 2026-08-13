@@ -38,7 +38,9 @@ import {
   X as XIcon,
   CalendarDays,
   LayoutList,
+  AlertTriangle,
 } from "lucide-react";
+import type { ApprovalRepairInfo } from "@/lib/approvals/approval-info";
 import { PageFrame, PageHeader, PageContainer } from "@/components/PageShell";
 import { Pager } from "@/components/Pager";
 import { FilterPopoverButton } from "@/components/FilterPopoverButton";
@@ -63,6 +65,8 @@ interface DprRow {
   reportDate?: string;
   canActOnCurrentStep?: boolean;
   workItemCount?: number;
+  /** Set when the workflow was edited after submission — see ApprovalRepairInfo. */
+  approvalRepair?: ApprovalRepairInfo | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -998,10 +1002,23 @@ function DPRRow({
       {/* Status */}
       <td className="px-4 py-3">
         <span
-          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusColor}`}
+          className={`inline-block whitespace-nowrap text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusColor}`}
         >
           {(row.status ?? "draft").replace(/_/g, " ")}
         </span>
+        {row.approvalRepair?.orphaned && (
+          <span
+            title={
+              `Approval workflow was changed after submission — waiting at step ` +
+              `${row.approvalRepair.missingStepOrder}, which no longer exists. ` +
+              `Open the DPR for details.`
+            }
+            className="mt-1 inline-flex items-center whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+          >
+            <AlertTriangle className="mr-0.5 h-3 w-3" />
+            Workflow changed
+          </span>
+        )}
       </td>
 
       {/* Actions */}
@@ -1088,7 +1105,7 @@ function DPRRow({
             </>
           )}
           {isSubmitted && !canApprove && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200">
               Awaiting approver
             </span>
           )}

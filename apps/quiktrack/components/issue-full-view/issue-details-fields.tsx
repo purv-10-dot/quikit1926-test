@@ -109,7 +109,9 @@ export function PriorityField({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClose<HTMLDivElement>(open, () => setOpen(false));
-  const P = PRIORITY_META[value];
+  // `priority` is unconstrained in the DB, so an unmapped value must not crash
+  // the whole details panel — fall back to Medium for display.
+  const P = PRIORITY_META[value] ?? PRIORITY_META.MEDIUM;
   return (
     <div className="relative" ref={ref}>
       <button

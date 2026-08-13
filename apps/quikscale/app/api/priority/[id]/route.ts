@@ -5,6 +5,7 @@ const auth = withOrgAuthForResource("priority", "Priority");
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { notifyPriorityReplacement } from "@/lib/services/priorityNotifications";
+import { emitPriorityStatusChanged } from "@/lib/services/workflowEvents";
 import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
 import {
   audit,
@@ -88,6 +89,12 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   }
   const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes, resetWeeklyData } = parsed.data;
 
+  // Capture the prior status so QuikFlow can detect a transition after the update.
+  const prevStatusRow = await db.priority.findUnique({
+    where: { id: params.id },
+    select: { overallStatus: true },
+  });
+
   const updated = await db.priority.update({
     where: { id: params.id },
     data: {
@@ -117,6 +124,19 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   if (resetWeeklyData) {
     await db.priorityWeeklyStatus.deleteMany({ where: { priorityId: params.id } });
   }
+
+  // QuikFlow: emit priority.status.changed (+ priority.completed) on a transition.
+  emitPriorityStatusChanged({
+    orgId,
+    priorityId: updated.id,
+    name: updated.name,
+    owner: updated.owner,
+    teamId: updated.teamId,
+    quarter: updated.quarter,
+    year: updated.year,
+    before: prevStatusRow?.overallStatus ?? null,
+    after: updated.overallStatus,
+  });
 
   await writeAuditLog({
     orgId,

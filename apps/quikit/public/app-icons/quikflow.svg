@@ -1,0 +1,10 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="14" fill="url(#quikflow-g)" />
+  <path d="M35 12L20 36h10l-3 16 17-26H33l2-14z" fill="#ffffff" />
+  <defs>
+    <linearGradient id="quikflow-g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C3AED" />
+      <stop offset="1" stop-color="#4F46E5" />
+    </linearGradient>
+  </defs>
+</svg>

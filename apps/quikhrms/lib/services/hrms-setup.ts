@@ -22,7 +22,8 @@ export type HrmsSetupItemKey =
   | "holidays"
   | "onboardingTemplate"
   | "coreApprovalChains"
-  | "emailTemplates";
+  | "emailTemplates"
+  | "wfhQuota";
 
 export interface HrmsSetupItem {
   key: HrmsSetupItemKey;
@@ -39,6 +40,23 @@ export interface HrmsSetupItem {
   progress?: { done: number; total: number };
 }
 
+/**
+ * Per-settings-link completion state for the /settings page (Organization /
+ * Users & Roles / Setup & Configuration / Customizations cards). Only covers
+ * rows whose underlying checklist item is BLOCKING (mandatory) — this drives
+ * the small "Setup" badge shown next to a settings row until that required
+ * thing is done. Non-mandatory rows never get the badge, so they simply
+ * have no key here (departments/locations/leaveTypes/coreApprovalChains are
+ * the blocking keys in ITEM_META; payroll and leaveGroups are also blocking
+ * but aren't surfaced as a row on this page).
+ */
+export interface HrmsSettingsChecklist {
+  departments: boolean;
+  workLocations: boolean;
+  approvalChains: boolean;
+  leavePolicies: boolean;
+}
+
 export interface HrmsSetupProgress {
   /** Every item (blocking + recommended) done. */
   setupCompleted: boolean;
@@ -47,6 +65,7 @@ export interface HrmsSetupProgress {
   completedCount: number;
   totalCount: number;
   items: HrmsSetupItem[];
+  settingsChecklist: HrmsSettingsChecklist;
 }
 
 const ITEM_META: Record<
@@ -105,12 +124,18 @@ const ITEM_META: Record<
     title: "Set up templates & letter branding",
     description: "Configure pre-onboarding, onboarding, offboarding templates and letter branding (offer, joining, resignation, exit).",
     href: "/settings",
-    blocking: true,
+    blocking: false,
   },
   emailTemplates: {
     title: "Customize email templates",
     description: "Personalize the emails HRMS sends for your organisation.",
     href: "/settings/email-templates",
+    blocking: false,
+  },
+  wfhQuota: {
+    title: "Assign employees to WFH groups",
+    description: "Put every employee under a WFH quota group — directly or via their department.",
+    href: "/settings/wfh-quota",
     blocking: false,
   },
 };
@@ -154,7 +179,10 @@ export async function computeHrmsSetupProgress(
       (Object.keys(ITEM_META) as HrmsSetupItemKey[]).map((k) => [k, true]),
     ) as Record<HrmsSetupItemKey, boolean>;
     const items = buildItems(states);
-    return { setupCompleted: true, coreCompleted: true, completedCount: items.length, totalCount: items.length, items };
+    const settingsChecklist: HrmsSettingsChecklist = {
+      departments: true, workLocations: true, approvalChains: true, leavePolicies: true,
+    };
+    return { setupCompleted: true, coreCompleted: true, completedCount: items.length, totalCount: items.length, items, settingsChecklist };
   }
 
   const [
@@ -204,6 +232,28 @@ export async function computeHrmsSetupProgress(
     return !assignedEmp.has(e.id) && !(rid && assignedRole.has(rid));
   });
 
+  // WFH quota: complete once EVERY active employee is covered by an active WFH
+  // quota group — either directly (wfhQuotaGroupId) or via their department
+  // being listed on a group (mirrors resolveEffectiveWfhQuotaGroup's
+  // explicit-then-department priority). Vacuously true with no active employees.
+  const [employeesForWfh, activeWfhGroups] = await Promise.all([
+    prisma.employee.findMany({
+      where: { orgId, deletedAt: null, status: "Active" },
+      select: { id: true, departmentId: true, wfhQuotaGroupId: true },
+    }),
+    prisma.wfhQuotaGroup.findMany({
+      where: { orgId, deletedAt: null, isActive: true },
+      select: { id: true, departmentIds: true },
+    }),
+  ]);
+  const activeWfhGroupIds = new Set(activeWfhGroups.map((g) => g.id));
+  const wfhCoveredDepts = new Set(activeWfhGroups.flatMap((g) => g.departmentIds));
+  const wfhUnassigned = employeesForWfh.filter((e) => {
+    const explicitOk = e.wfhQuotaGroupId && activeWfhGroupIds.has(e.wfhQuotaGroupId);
+    const deptOk = e.departmentId && wfhCoveredDepts.has(e.departmentId);
+    return !explicitOk && !deptOk;
+  });
+
   // Templates & letter branding — 7 sub-checks: pre-onboarding, onboarding and
   // offboarding templates, plus offer/joining/resignation/exit letter bodies.
   // Exit letters count as one item but need BOTH the relieving and experience
@@ -220,6 +270,13 @@ export async function computeHrmsSetupProgress(
   const templatesDone = templateChecks.filter(Boolean).length;
   const templatesTotal = templateChecks.length;
 
+  const settingsChecklist: HrmsSettingsChecklist = {
+    departments: departmentCount > 0,
+    workLocations: locationCount > 0,
+    approvalChains: CORE_CHAIN_MODULES.every((m) => chainHasLevels(m)),
+    leavePolicies: leaveTypeCount > 0,
+  };
+
   const states: Record<HrmsSetupItemKey, boolean> = {
     departments: departmentCount > 0,
     locations: locationCount > 0,
@@ -231,6 +288,7 @@ export async function computeHrmsSetupProgress(
     onboardingTemplate: templatesDone === templatesTotal,
     coreApprovalChains: CORE_CHAIN_MODULES.every((m) => chainHasLevels(m)),
     emailTemplates: emailTemplateCount > 0,
+    wfhQuota: wfhUnassigned.length === 0,
   };
 
   const chainModulesDone = CORE_CHAIN_MODULES.filter((m) => chainHasLevels(m)).length;
@@ -264,5 +322,6 @@ export async function computeHrmsSetupProgress(
     completedCount,
     totalCount: items.length,
     items,
+    settingsChecklist,
   };
 }

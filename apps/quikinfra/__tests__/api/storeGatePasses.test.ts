@@ -37,6 +37,16 @@ function rawRow(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Resolve the repository's two parallel raw queries: the row page first, then
+ * the `COUNT(*)` used for `total`.
+ */
+function mockList(rows: Array<Record<string, unknown>>, total = rows.length) {
+  db.$queryRaw
+    .mockResolvedValueOnce(rows)
+    .mockResolvedValueOnce([{ count: total }]);
+}
+
 beforeEach(() => {
   resetMockDb();
   setContext(null);
@@ -58,23 +68,28 @@ describe("GET /api/store/gate-passes", () => {
 
   it("lists gate passes scoped to the org and returns {data,total}", async () => {
     setContext(makeAdminCtx());
-    db.$queryRaw.mockResolvedValue([rawRow(), rawRow({ id: "gp2", gatePassNumber: "GP-OUT-26-002" })]);
+    // listGatePasses issues TWO raw queries in parallel — the page of rows and
+    // a COUNT(*) — so each needs its own resolution.
+    mockList([rawRow(), rawRow({ id: "gp2", gatePassNumber: "GP-OUT-26-002" })], 2);
     const res = await GET(buildGET());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.total).toBe(2);
     expect(body.data[0].gatePassNumber).toBe("GP-OUT-26-001");
     // org scoping is enforced inside the raw query — the tenant id is bound
-    expect(db.$queryRaw.mock.calls[0]).toContain(TEST_TENANT);
+    expect(JSON.stringify(db.$queryRaw.mock.calls[0])).toContain(TEST_TENANT);
   });
 
   it("applies a search filter on gatePassNumber", async () => {
     setContext(makeAdminCtx());
-    db.$queryRaw.mockResolvedValue([rawRow(), rawRow({ id: "gp2", gatePassNumber: "GP-OUT-26-999" })]);
+    // Search is applied SQL-side, so the mock returns the already-filtered
+    // page; the assertion is that the term was bound into the query.
+    mockList([rawRow()], 1);
     const res = await GET(buildGET("search=001"));
     const body = await res.json();
     expect(body.data).toHaveLength(1);
     expect(body.data[0].gatePassNumber).toBe("GP-OUT-26-001");
+    expect(JSON.stringify(db.$queryRaw.mock.calls[0])).toContain("001");
   });
 });
 

@@ -11,10 +11,12 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
+import { emitWwwCreated } from "@/lib/services/workflowEvents";
 import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { buildWwwScopeWhere } from "@/lib/api/wwwListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
+import { dateRangeToWhere } from "@/lib/exports/rangeFilter";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -39,6 +41,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     { orgId, userId },
     { status, who: whoFilter, teamId: teamFilter, includeDeleted },
   );
+
+  // Due-date range nav (Day / Week / Month / All on the WWW toolbar) — "All"
+  // sends no from/to, so this is a no-op `{}` merge, matching prior behavior.
+  const from = searchParams.get("from") || undefined;
+  const to = searchParams.get("to") || undefined;
+  Object.assign(where, dateRangeToWhere("when", from, to));
 
   if (search) {
     // Global search across every visible WWW column: what/notes, who (assignee
@@ -202,6 +210,11 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     ),
   );
   const primaryItem = createdItems[0]!;
+
+  // QuikFlow: emit www.created per created row (fire-and-forget, flag-gated).
+  for (const it of createdItems) {
+    emitWwwCreated({ orgId, wwwId: it.id, what, owner: it.who, status: commonData.status });
+  }
 
   // Seed the note thread: if a note was entered on create, persist it as the
   // first WWWNote on each created item (the WWWItem.notes mirror already holds

@@ -4,6 +4,15 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
   Search,
   ChevronDown,
   Settings as SettingsIcon,
@@ -12,12 +21,14 @@ import {
 } from "lucide-react";
 import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
+import type { CardDragData, ColumnDropData } from "./board-dnd";
 import { AddColumnTile } from "./add-column-tile";
 import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
 import { FilterPanel, FilterRow } from "@/components/filters/filter-panel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useTransitionScreenPrompt } from "@/components/use-transition-screen-prompt";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { CustomFieldFilters } from "@/components/custom-fields/custom-field-filters";
 import type { CustomFilter } from "@/lib/customFields/filterQuery";
@@ -62,6 +73,12 @@ function memberColor(seed: string): string {
 
 export function BoardView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  // "Show a screen" gate: prompt for the transition screen before a DnD move.
+  const { promptForMove, modal: screenModal } = useTransitionScreenPrompt();
+  // Card drag uses @dnd-kit (droppable-zone pattern). 4px activation distance
+  // matches the Board-settings reference, so a plain click on a card still
+  // fires its onClick (opens the card) instead of starting a drag.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const [statuses, setStatuses] = useState<BoardStatus[]>([]);
   const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
   // Functional spaces have no sprints — the board is a Kanban "Activity Board"
@@ -70,6 +87,11 @@ export function BoardView({ projectId }: { projectId: string }) {
   const [allSprints, setAllSprints] = useState<{ id: string; name: string; status: string }[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
+  // Board-columns config (Board settings → map statuses to columns). When
+  // configured, the board renders these named columns instead of one-per-status.
+  const [boardColumns, setBoardColumns] = useState<
+    { id: string; name: string; statusIds: string[] }[] | null
+  >(null);
   const [epicsById, setEpicsById] = useState<Record<string, EpicLite>>({});
   // Shared with the backlog + work-item views via the same query key, so the
   // avatar stack is cached across navigation and the dev StrictMode double-fetch
@@ -139,14 +161,22 @@ export function BoardView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
+      const [statusesRes, sprintsRes, epicsRes, projectRes, boardColsRes] = await Promise.all([
         fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
         fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
         fetch(`/api/projects/${projectId}`).then((r) => r.json()),
+        fetch(`/api/projects/${projectId}/board-columns`).then((r) => r.json()).catch(() => null),
       ]);
       if (!alive) return;
       if (statusesRes?.success) setStatuses(statusesRes.data || []);
+      // Board columns come from Board Settings only. Workflow attachment does NOT
+      // affect the board's columns — the board always shows its existing columns.
+      if (boardColsRes?.success && boardColsRes.data?.configured) {
+        setBoardColumns(boardColsRes.data.columns as { id: string; name: string; statusIds: string[] }[]);
+      } else {
+        setBoardColumns(null);
+      }
       const functional = projectRes?.success && projectRes.data?.templateKey === "functional";
       setIsFunctional(functional);
       const sprintList: Array<{ id: string; name: string; status: string }> =
@@ -204,13 +234,22 @@ export function BoardView({ projectId }: { projectId: string }) {
     };
   }, []);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The card currently being dragged — drives the DragOverlay preview that
+  // follows the cursor (smooth, Jira-style) instead of the card just dimming
+  // in place.
+  const [activeCard, setActiveCard] = useState<CardDragData | null>(null);
+
+  function onCardDragStart(e: DragStartEvent) {
+    const data = e.active.data.current as CardDragData | undefined;
+    setActiveCard(data ?? null);
+  }
 
   const visibleStatuses = statuses.filter((s) => !s.isHidden);
   const statusesById = Object.fromEntries(statuses.map((s) => [s.id, s]));
 
-  // Drag-to-reorder columns AND drag-to-move issues between columns. Both
-  // share the same column drop target, but use different MIME types so the
-  // drop handler can tell them apart.
+  // Drag-to-reorder columns (native HTML5 on the column header). Card moves
+  // are handled separately by @dnd-kit (see onCardDragEnd), so this native
+  // path only carries the column-reorder MIME type now.
   function onColDragStart(id: string) {
     return (e: React.DragEvent) => {
       e.dataTransfer.effectAllowed = "move";
@@ -218,41 +257,89 @@ export function BoardView({ projectId }: { projectId: string }) {
     };
   }
   function onColDragOver(e: React.DragEvent) {
-    // Accept either an issue drop or a column reorder.
-    if (
-      e.dataTransfer.types.includes("application/quiktrack-issue") ||
-      e.dataTransfer.types.includes("application/quiktrack-column")
-    ) {
+    // Accept a column reorder drop.
+    if (e.dataTransfer.types.includes("application/quiktrack-column")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
     }
   }
-  function onColDrop(targetId: string) {
-    return async (e: React.DragEvent) => {
-      // Issue → column move (PATCH the issue's statusId).
-      const issueId = e.dataTransfer.getData("application/quiktrack-issue");
-      if (issueId) {
-        e.preventDefault();
-        try {
-          const res = await fetch(`/api/issues/${issueId}`, {
+  // CARD → COLUMN move. The move logic is preserved verbatim from the former
+  // native onColDrop issue branch; only the transport changed (native
+  // dataTransfer → @dnd-kit). `expectedStatusId` is the card's source status
+  // (optimistic-lock); `targetId` is the drop column's primary statusId.
+  async function runIssueMove(
+    issueId: string,
+    targetId: string,
+    expectedStatusId: string | undefined,
+  ) {
+    if (expectedStatusId === targetId) return; // dropped on the same column
+    // "Show a screen" gate: if this transition has a screen, prompt for its
+    // fields first and move via /move (which carries the inputs). Cancelling
+    // aborts the move.
+    let screenInputs: Record<string, unknown> | undefined;
+    try {
+      screenInputs = await promptForMove(issueId, targetId);
+    } catch {
+      setRefreshKey((k) => k + 1); // user cancelled → resync the card back
+      return;
+    }
+    try {
+      const r = screenInputs
+        ? await fetch(`/api/issues/${issueId}/move`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ statusId: targetId }),
-          }).then((r) => r.json());
-          if (res?.success) {
-            window.dispatchEvent(
-              new CustomEvent("quiktrack:issue-updated", {
-                detail: { projectId, issueId },
-              }),
-            );
-          }
-        } catch {
-          // ignore — next refresh reconciles
-        }
-        return;
+            body: JSON.stringify({ statusId: targetId, expectedStatusId, inputs: screenInputs }),
+          })
+        : await fetch(`/api/issues/${issueId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ statusId: targetId, expectedStatusId }),
+          });
+      const res = await r.json();
+      if (res?.success) {
+        window.dispatchEvent(
+          new CustomEvent("quiktrack:issue-updated", {
+            detail: { projectId, issueId },
+          }),
+        );
+      } else if (r.status === 422 && res?.code === "TRANSITION_VALIDATION_FAILED") {
+        // A validator blocked the move (e.g. resolution required).
+        window.alert(res.error ?? "This move needs more information.");
+        setRefreshKey((k) => k + 1);
+      } else if (r.status === 409 || r.status === 403) {
+        // Illegal transition, stale move, or blocked by a condition — resync.
+        setRefreshKey((k) => k + 1);
       }
+    } catch {
+      // ignore — next refresh reconciles
+    }
+  }
 
-      // Column reorder.
+  // @dnd-kit end handler for CARD drags. active.id = issue id; the card's
+  // source statusId rides along in active.data (expectedStatusId); over.id =
+  // the target column's primary statusId (the droppable body's id).
+  function onCardDragEnd(e: DragEndEvent) {
+    setActiveCard(null);
+    if (!e.over) return; // dropped outside any column
+    const issueId = String(e.active.id);
+    const expectedStatusId = (e.active.data.current as CardDragData | undefined)?.statusId;
+    const col = e.over.data.current as ColumnDropData | undefined;
+    // Same-column no-op: if the card's current status is already one of the
+    // target column's statuses, it was dropped back onto its own column — do
+    // nothing (avoids a pointless PATCH that the workflow 409s). Fall back to
+    // the raw over.id when the column data isn't present (defensive).
+    const targetStatuses = col?.statusIds ?? [String(e.over.id)];
+    if (expectedStatusId && targetStatuses.includes(expectedStatusId)) return;
+    const targetId = col?.primaryStatusId ?? String(e.over.id);
+    void runIssueMove(issueId, targetId, expectedStatusId);
+  }
+
+  // Column reorder — native HTML5 drag on the column HEADER only (classic
+  // one-status-per-column mode). Unchanged from before; kept native so it
+  // does not conflict with the @dnd-kit card DndContext (dnd-kit only
+  // intercepts pointer events on nodes carrying its listeners — the cards).
+  function onColDrop(targetId: string) {
+    return async (e: React.DragEvent) => {
       const src = e.dataTransfer.getData("application/quiktrack-column");
       if (!src || src === targetId) return;
       e.preventDefault();
@@ -286,6 +373,7 @@ export function BoardView({ projectId }: { projectId: string }) {
     // board easily exceeds the viewport width, so we let the inner column
     // strip own the horizontal scrollbar.
     <div className="px-6 py-4 min-w-0">
+      {screenModal}
       <Toolbar
         searchInput={searchInput}
         onSearchChange={setSearchInput}
@@ -308,19 +396,27 @@ export function BoardView({ projectId }: { projectId: string }) {
         }}
       />
 
-      {/* qt-board-scroll (globals.css) — slim rounded always-visible
-          horizontal scrollbar styled specifically for the board pane.
-          The strip fills the remaining vertical space so the bar sits
-          at the bottom of the viewport, matching Jira's pattern. */}
-      <div
-        className="flex gap-3 overflow-x-scroll w-full qt-board-scroll pb-2"
-        style={{ minHeight: "calc(100vh - 220px)" }}
+      {/* qt-board-scroll (globals.css) — always-visible horizontal scrollbar.
+          The strip has a FIXED height (h-[calc(100vh-240px)]); each column is
+          max-h-full and scrolls its own cards vertically inside it (see
+          board-column.tsx). So the board pane never grows past the viewport,
+          and the horizontal scrollbar stays pinned at the bottom of the pane —
+          always visible, Jira-style — instead of being pushed off-screen by a
+          tall column. */}
+      {/* Card drag is @dnd-kit; the DndContext wraps the whole columns strip so
+          a card can be dragged from any column and dropped onto any other. */}
+      <DndContext
+        sensors={sensors}
+        onDragStart={onCardDragStart}
+        onDragEnd={onCardDragEnd}
+        onDragCancel={() => setActiveCard(null)}
       >
+      <div className="flex gap-3 overflow-x-auto w-full qt-board-scroll pb-1 h-[calc(100vh-240px)]">
         {bootLoading &&
           Array.from({ length: 4 }).map((_, i) => (
             <div
               key={`sk-${i}`}
-              className="w-[300px] shrink-0 bg-gray-50 rounded p-2 min-h-[480px] space-y-2"
+              className="w-[300px] shrink-0 bg-gray-50 rounded p-2 h-full space-y-2 overflow-y-auto"
             >
               <div className="h-3 w-20 rounded bg-gray-200 animate-pulse" />
               {Array.from({ length: 3 }).map((_, j) => (
@@ -332,14 +428,56 @@ export function BoardView({ projectId }: { projectId: string }) {
             </div>
           ))}
 
-        {/* Functional spaces (Kanban) always show populated columns fed by
-            every task (sprintId={null} → no sprint filter). Scrum spaces only
-            populate columns once a sprint is ACTIVE. */}
+        {/* ── Board-columns mode (Board settings configured) ──────────────── */}
         {!bootLoading &&
+          boardColumns &&
+          (isFunctional || activeSprintId) &&
+          boardColumns.map((col) => {
+            // Render EVERY column — including ones with no statuses mapped yet
+            // (e.g. a freshly-added custom column). An unmapped column shows no
+            // cards but must still appear; a card dropped onto it moves to the
+            // column's first mapped status (drop disabled when it has none).
+            const primary = statusesById[col.statusIds[0]] ?? null;
+            return (
+              <BoardColumn
+                key={col.id}
+                refreshKey={refreshKey}
+                status={primary ?? undefined}
+                columnStatusIds={col.statusIds}
+                displayName={col.name}
+                allStatuses={visibleStatuses}
+                projectId={projectId}
+                sprintId={isFunctional ? null : activeSprintId}
+                epicsById={epicsById}
+                statusesById={statusesById}
+                filters={filters}
+                members={members}
+                availableSprints={allSprints.filter((sp) => sp.status !== "COMPLETED")}
+                onOpen={setOpenIssueId}
+                onColumnRenamed={() => {}}
+                onColumnDeleted={() => {}}
+                dragHandlers={{
+                  onDragOver: onColDragOver,
+                  onDrop: primary ? onColDrop(col.statusIds[0]) : undefined,
+                  onDragStart: () => {},
+                }}
+              />
+            );
+          })}
+        {!bootLoading && boardColumns && !isFunctional && !activeSprintId &&
+          boardColumns.map((col, idx) => (
+            <EmptyColumn key={col.id} name={col.name} showCta={idx === 0} projectId={projectId} />
+          ))}
+
+        {/* ── No Board-Settings mapping → show the project's existing statuses
+            as columns (unchanged whether or not a workflow is attached). ─────── */}
+        {!bootLoading &&
+          !boardColumns &&
           (isFunctional || activeSprintId) &&
           visibleStatuses.map((s) => (
             <BoardColumn
-              key={`${s.id}-${refreshKey}`}
+              key={s.id}
+              refreshKey={refreshKey}
               status={s}
               allStatuses={visibleStatuses}
               projectId={projectId}
@@ -363,24 +501,18 @@ export function BoardView({ projectId }: { projectId: string }) {
               }}
             />
           ))}
-
-        {/* Scrum, no active sprint — render the column shells empty, and put
-            the "Get started in the backlog" CTA inside the first column so the
-            board structure stays visible (matches Jira's behaviour). Functional
-            spaces never hit this branch. */}
         {!bootLoading &&
+          !boardColumns &&
           !isFunctional &&
           !activeSprintId &&
           visibleStatuses.map((s, idx) => (
-            <EmptyColumn
-              key={s.id}
-              name={s.name}
-              showCta={idx === 0}
-              projectId={projectId}
-            />
+            <EmptyColumn key={s.id} name={s.name} showCta={idx === 0} projectId={projectId} />
           ))}
 
-        {!bootLoading && (
+        {/* Add a custom board status. Only offered when there's no saved column
+            mapping; once you map statuses to columns in Board Settings, columns
+            are managed there. Workflow attachment does NOT change this. */}
+        {!bootLoading && !boardColumns && (
           <AddColumnTile
             projectId={projectId}
             defaultCategory="BACKLOG"
@@ -388,6 +520,21 @@ export function BoardView({ projectId }: { projectId: string }) {
           />
         )}
       </div>
+      {/* Card preview that follows the cursor while dragging — makes the drag
+          feel smooth (Jira-style) instead of the source card just dimming. */}
+      <DragOverlay dropAnimation={null}>
+        {activeCard ? (
+          <div className="w-[280px] rotate-2 cursor-grabbing rounded-md border border-gray-200 bg-white p-2.5 shadow-lg">
+            <div className="text-sm font-semibold text-gray-900 line-clamp-2">
+              {activeCard.title}
+            </div>
+            <div className="mt-1 text-[11px] font-medium tabular-nums text-gray-400">
+              {activeCard.key}
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
+      </DndContext>
 
       <EditIssueModal
         open={openIssueId !== null}
@@ -618,7 +765,7 @@ function EmptyColumn({
   projectId: string;
 }) {
   return (
-    <div className="w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col min-h-[480px]">
+    <div className="w-[300px] shrink-0 bg-gray-50 rounded p-2 flex flex-col h-full">
       <div className="px-1 mb-2 text-[11px] font-semibold tracking-wider uppercase text-gray-700">
         {name}
       </div>

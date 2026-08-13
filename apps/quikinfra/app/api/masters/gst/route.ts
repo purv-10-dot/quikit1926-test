@@ -9,7 +9,7 @@ import {
   createGSTCode,
   findGSTCodeStatusByCode,
 } from "@/lib/masters/gst-codes-repository";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
   const ctxOrResp = await requireMastersAction("construction.org_gst", "view");
@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["code", "name", "status", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   const result = await paginateDb(
     parsePagination(req),
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
       codeType: body.codeType,
       description: body.description,
       igstRate: body.igstRate,
+      cgstRate: body.cgstRate,
       isRcm: body.isRcm,
       effectiveFrom: body.effectiveFrom,
       effectiveTo: body.effectiveTo,

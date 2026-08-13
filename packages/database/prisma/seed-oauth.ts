@@ -61,6 +61,9 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 // quiklms was folded in from the standalone quikskill_lms app; it now binds
 // 3014 to sit next to the contiguous block. `apps/quiklms/package.json`
 // (`next dev -p 3014`) is the source of truth and its .env.local agrees.
+// quikflow moved from 3011 (2026-08-07, resolved a collision with quikchat)
+// and now shares 3014 with quiklms instead; quiklms's `dev` script is
+// disabled locally in favor of quikflow — see docs/13-app-ports-and-env.md.
 // In production these URLs MUST be passed via env vars (resolveAppUrl throws
 // when NODE_ENV=production and the env var is unset).
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -70,10 +73,12 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKCRMEXPRESS_BASE = resolveAppUrl("QUIKCRMEXPRESS_URL", "http://localhost:3017"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSUPPORT_BASE = resolveAppUrl("QUIKSUPPORT_URL", "http://localhost:3010"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKFLOW_BASE = resolveAppUrl("QUIKFLOW_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -98,6 +103,22 @@ const APPS = [
     },
   },
   {
+    slug: "quikflow",
+    name: "QuikFlow",
+    description: "No-code workflow automation across every QuikIT app — Trigger → Condition → Action.",
+    baseUrl: QUIKFLOW_BASE,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikflow.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikflow",
+      clientSecretPlain: resolveClientSecret("QUIKFLOW_OAUTH_CLIENT_SECRET", "quikflow-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKFLOW_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
     slug: "quikcrm",
     name: "QuikCRM",
     description: "Sales execution OS — Leads, pipeline, accounts, contacts, quotes, orders, telephony, reports.",
@@ -115,6 +136,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKCRM_OAUTH_CLIENT_SECRET", "quikcrm-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKCRM_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikcrmexpress",
+    name: "QuikCRMExpress",
+    description: "QuikCRMExpress CRM — leads, pipeline, telephony, disposition, automation.",
+    baseUrl: QUIKCRMEXPRESS_BASE,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikcrm.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikcrmexpress",
+      clientSecretPlain: resolveClientSecret("QUIKCRMEXPRESS_OAUTH_CLIENT_SECRET", "crmexpress-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKCRMEXPRESS_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

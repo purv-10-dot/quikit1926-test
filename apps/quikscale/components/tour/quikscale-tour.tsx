@@ -49,6 +49,51 @@ async function postCompletion(attempts = 2): Promise<boolean> {
   return false;
 }
 
+/** "sidebar" step body — Org Setup is only mentioned when the signed-in
+ * user actually has access to it (mirrors the org-setup step itself, which
+ * is dropped from `steps` when `[data-tour="nav-org-setup"]` isn't rendered). */
+const SIDEBAR_BODY_WITH_ORG_SETUP =
+  "Every module — Dashboard, Org Setup, and the four pillars below — lives in this sidebar. Each color-coded section groups related work.";
+const SIDEBAR_BODY_NO_ORG_SETUP =
+  "Every module — Dashboard and the four pillars below — lives in this sidebar. Each color-coded section groups related work.";
+
+/** Per-module text fragments for the pillar-section step bodies below — a
+ * section only names the modules the signed-in user actually has access to.
+ * Sourced from `data-tour-module={item.moduleKey}` attributes the sidebar
+ * renders on each nav item (present only when `filterNavigation` kept it),
+ * so this mirrors the same RBAC gate the sidebar itself uses. */
+const MODULE_LABEL_PARTS: Record<string, string> = {
+  kpi: "KPI (individual & team)",
+  priority: "Priority",
+  www: "WWW action items",
+  clientMeetings: "Meeting Rhythm for client meetings",
+  analytics: "Analytics/Scorecards",
+  opsp: "OPSP planning (create, history, review & category management)",
+  habits: "Habits tracking",
+  swt: "SWT analysis",
+  people: "Goals & Pillars (review cycles, self-assessment, 1:1s, feedback, talent)",
+  face: "FACe",
+  pace: "PACe",
+  survey: "Survey",
+};
+
+function joinWithAnd(parts: string[]): string {
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+/** Builds a section step's body from the modules actually visible inside it.
+ * Sections not listed here (e.g. "section-cash", a single-module pillar)
+ * keep their static body — the whole step is already dropped when the org
+ * has no visible module in that section, so per-module text adds nothing. */
+const SECTION_BODY_TEMPLATES: Record<string, (list: string) => string> = {
+  "section-execution": (list) => `Day-to-day tracking: ${list}.`,
+  "section-strategy": (list) => `${list}.`,
+  "section-people": (list) => `${list} all live here.`,
+};
+
 const STEPS: TourStep[] = [
   {
     id: "welcome",
@@ -59,8 +104,7 @@ const STEPS: TourStep[] = [
   {
     id: "sidebar",
     title: "Your navigation home",
-    body:
-      "Every module — Dashboard, Org Setup, and the four pillars below — lives in this sidebar. Each color-coded section groups related work.",
+    body: SIDEBAR_BODY_WITH_ORG_SETUP, // overwritten per-user in the open effect below
     selector: '[data-tour="sidebar"]',
   },
   {
@@ -376,8 +420,32 @@ export function QuikScaleTour() {
   // Re-resolve on every open — module flags can change between runs.
   useEffect(() => {
     if (!open) return;
+    const hasOrgSetup = !!document.querySelector('[data-tour="nav-org-setup"]');
+
+    /** For a pillar-section step, read which modules the sidebar actually
+     * rendered inside it (in DOM order, i.e. already permission-filtered)
+     * and rebuild the body sentence from just those. */
+    const dynamicSectionBody = (s: TourStep): string | null => {
+      const template = SECTION_BODY_TEMPLATES[s.id];
+      if (!template || !s.selector) return null;
+      const sectionEl = document.querySelector(s.selector);
+      if (!sectionEl) return null;
+      const moduleKeys = Array.from(sectionEl.querySelectorAll("[data-tour-module]"))
+        .map((el) => el.getAttribute("data-tour-module") ?? "")
+        .filter(Boolean);
+      const parts = moduleKeys.map((k) => MODULE_LABEL_PARTS[k]).filter((p): p is string => !!p);
+      if (parts.length === 0) return null;
+      return template(joinWithAnd(parts));
+    };
+
     setSteps(
-      STEPS.filter((s) => !s.selector || !!document.querySelector(s.selector)),
+      STEPS.filter((s) => !s.selector || !!document.querySelector(s.selector)).map((s) => {
+        if (s.id === "sidebar") {
+          return { ...s, body: hasOrgSetup ? SIDEBAR_BODY_WITH_ORG_SETUP : SIDEBAR_BODY_NO_ORG_SETUP };
+        }
+        const sectionBody = dynamicSectionBody(s);
+        return sectionBody ? { ...s, body: sectionBody } : s;
+      }),
     );
   }, [open]);
 

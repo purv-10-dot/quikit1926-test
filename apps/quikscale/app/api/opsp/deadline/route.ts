@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
+import { emitOpspStatusChanged } from "@/lib/services/workflowEvents";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 import { toErrorMessage } from "@/lib/api/errors";
 import { getFiscalYear, getFiscalQuarter, resolveQuarterForDate } from "@/lib/utils/fiscal";
@@ -144,6 +145,14 @@ export async function GET(_req: NextRequest) {
           await db.oPSPData.update({
             where: { id: opsp.id },
             data: { status: "finalized", updatedBy: "system:auto-finalize" },
+          });
+          // QuikFlow: auto-finalize fires stage.changed + finalized + auto_finalized.
+          emitOpspStatusChanged({
+            orgId,
+            opspId: opsp.id,
+            before: "draft",
+            after: "finalized",
+            auto: true,
           });
           await writeAuditLog({
             orgId,

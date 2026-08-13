@@ -91,16 +91,87 @@ function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ * Weekly-value achievement bands, expressed as a percentage of the flat
+ * per-week target (`target / weekCount`) — the SAME math the dashboard uses
+ * to compute QTD% for Cumulative KPIs (see kpiStats.ts `computeQtd`). Keyed
+ * by the KPI's own `healthStatus` label so the generated numbers actually
+ * tell the story that label implies (some under-achieved, some on-track,
+ * some over), instead of every demo KPI landing on the same inflated,
+ * target-independent ratio.
+ */
+export const ACHIEVEMENT_BAND_PCT: Record<string, [number, number]> = {
+  "on-track": [100, 118],
+  "at-risk": [78, 98],
+  "off-track": [50, 74],
+};
+
+export interface DemoWeeklyValues {
+  weeks: { weekNumber: number; value: number }[];
+  totalAchieved: number;
+  currentWeekValue: number;
+}
+
+/**
+ * Pure generator for a demo KPI's weekly values — split out from
+ * `seedDemoDataForOrg` so the achievement-band math is unit-testable without
+ * mocking the whole seeding transaction. Source of two real bugs fixed here:
+ * every week's value used to be computed off a formula unrelated to the
+ * dashboard's own QTD math (uniform ~390% over-achievement regardless of
+ * target or healthStatus), and only the trailing `min(currentWeek, 4)` weeks
+ * were filled — since `computeQtd()` (kpiStats.ts) sums the flat
+ * target/weekCount fallback across EVERY prior week regardless of whether it
+ * has a value, leaving early weeks empty dragged every KPI toward "behind"
+ * no matter which band it was seeded with.
+ */
+export function generateDemoWeeklyValues(
+  target: number,
+  weekCount: number,
+  currentWeek: number,
+  healthStatus: string,
+): DemoWeeklyValues {
+  const flatWeeklyTarget = weekCount > 0 ? target / weekCount : 0;
+  const [bandLow, bandHigh] = ACHIEVEMENT_BAND_PCT[healthStatus] ?? [90, 110];
+  const weeks: { weekNumber: number; value: number }[] = [];
+  let totalAchieved = 0;
+  let currentWeekValue = 0;
+  for (let w = 1; w <= currentWeek; w++) {
+    const value = Math.round(flatWeeklyTarget * (randInt(bandLow, bandHigh) / 100) * 100) / 100;
+    weeks.push({ weekNumber: w, value });
+    totalAchieved += value;
+    currentWeekValue = value;
+  }
+  return { weeks, totalAchieved, currentWeekValue };
+}
+
 export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Promise<SeedDemoDataResult> {
   const state = await db.demoDataState.findUnique({ where: { orgId } });
   if (state?.clearedAt) return { seeded: false, reason: "cleared" };
-  if (state?.seededAt) return { seeded: false, reason: "already-seeded" };
+  if (state) return { seeded: false, reason: "already-seeded" };
+
+  // Atomically claim the seed slot before touching any other table. This
+  // layout runs on every server-rendered hit (force-dynamic) and Next.js
+  // fires more than one of those per navigation (the page request plus link
+  // prefetches) — without a claim, two concurrent calls both pass the check
+  // above, both open their own `$transaction` below, and the second one dies
+  // deep inside it on an unrelated unique constraint (e.g. AccountabilityFunction
+  // `orgId,chartType,name`). `orgId` is `@unique` on DemoDataState, so the
+  // loser's `create` throws P2002 right here instead — clean, cheap bailout.
+  try {
+    await db.demoDataState.create({ data: { orgId } });
+  } catch (err) {
+    if ((err as { code?: string } | null)?.code === "P2002") {
+      return { seeded: false, reason: "already-seeded" };
+    }
+    throw err;
+  }
 
   const now = new Date();
 
-  await db.$transaction(async (tx) => {
+  try {
+    await db.$transaction(async (tx) => {
     // --- Org Setup: Quarter Settings (prerequisite for every other module) --
-    const { year, quarter, currentWeek } = await ensureQuarterContext(tx, orgId, adminUserId);
+    const { year, quarter, currentWeek, weekCount } = await ensureQuarterContext(tx, orgId, adminUserId);
 
     // --- Org Setup: Teams + Unit Master ---------------------------------
     const salesTeam = await tx.qsTeam.create({
@@ -157,17 +228,36 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
         },
       });
 
-      const weeksToFill = Math.min(currentWeek, 4);
-      for (let w = Math.max(1, currentWeek - weeksToFill + 1); w <= currentWeek; w++) {
+      const { weeks, totalAchieved, currentWeekValue } = generateDemoWeeklyValues(
+        def.target,
+        weekCount,
+        currentWeek,
+        def.healthStatus,
+      );
+      for (const { weekNumber, value } of weeks) {
         await tx.kPIWeeklyValue.create({
           data: {
             orgId,
             kpiId: kpi.id,
             userId: adminUserId,
-            weekNumber: w,
-            value: Math.round(def.target * (w / (currentWeek + 2)) * 100) / 100,
+            weekNumber,
+            value,
             createdBy: adminUserId,
           },
+        });
+      }
+
+      // The weekly-save routes (app/api/kpi/[id]/weekly[/batch]) recompute
+      // and persist qtdAchieved/progressPercent/currentWeekValue after every
+      // save. Demo rows are inserted directly via `tx.kPIWeeklyValue.create`
+      // above, bypassing that — left alone, `qtdAchieved` stays permanently
+      // null despite having real weekly values, which makes the dashboard's
+      // QTD badge fall back to its "no data entered" grey state.
+      if (weeks.length > 0) {
+        const progressPercent = def.target > 0 ? (totalAchieved / def.target) * 100 : 0;
+        await tx.kPI.update({
+          where: { id: kpi.id },
+          data: { qtdAchieved: totalAchieved, progressPercent, currentWeekValue },
         });
       }
     }
@@ -509,14 +599,15 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
       },
     });
 
-    // --- Tracking ----------------------------------------------------------------------
-    await tx.demoDataState.upsert({
-      where: { orgId },
-      create: { orgId, seededAt: now },
-      update: { seededAt: now },
     });
-  });
+  } catch (err) {
+    // Release the claim so a future request can retry cleanly instead of
+    // permanently believing this org is "already seeding" after a failed run.
+    await db.demoDataState.delete({ where: { orgId } }).catch(() => {});
+    throw err;
+  }
 
+  await db.demoDataState.update({ where: { orgId }, data: { seededAt: now } });
   return { seeded: true, reason: "created" };
 }
 
