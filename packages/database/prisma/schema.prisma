@@ -8813,6 +8813,12 @@ model CrmProspect {
   upworkJobId    String?
   upworkJob      CrmUpworkJob? @relation(fields: [upworkJobId], references: [id], onDelete: SetNull)
 
+  /// Outcome of the automatic email-discovery cascade, when it has been run for
+  /// this prospect. Kept in its own row rather than widened onto this table:
+  /// discovery has its own lifecycle (re-runnable, attempt-counted) and most
+  /// prospects arrive with an email already, so the columns would be mostly null.
+  emailDiscovery CrmProspectEmailDiscovery?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -8833,6 +8839,76 @@ model CrmProspect {
   // this industry / at this employer" filters, which are always tenant-scoped.
   @@index([orgId, companyIndustry])
   @@index([orgId, companyLinkedinUrl])
+  @@schema("app_quikcrm")
+}
+
+/// Result of the automatic email-discovery cascade for one prospect.
+///
+/// WHY A SEPARATE ROW: a discovered address is not the same thing as a known
+/// address. `CrmProspect.email` is what the CRM will actually mail; this table
+/// is the audit trail of how (and how confidently) a value was arrived at, plus
+/// the holding pen for suggestions too weak to promote. A guess that looks
+/// plausible but is wrong is worse than a blank field — it hard-bounces and
+/// burns sender reputation — so only high-confidence provider hits are copied
+/// onto the prospect (see email-discovery/cascade.ts::shouldPromote).
+model CrmProspectEmailDiscovery {
+  id         String      @id @default(cuid())
+  orgId      String
+  /// One discovery record per prospect: re-running overwrites in place and
+  /// increments `attempts` rather than accumulating history rows.
+  prospectId String      @unique
+  prospect   CrmProspect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  /// verified | guessed | not_found | domain_not_found | company_invalid
+  /// "verified" means a provider returned it with a score above threshold —
+  /// NOT that anyone delivered mail to it. Without SMTP probing (blocked on
+  /// serverless) no stronger claim is available.
+  status     String
+  /// The best address found, at whatever confidence. Copied to
+  /// CrmProspect.email only when it clears the promotion bar.
+  email      String?
+  /// 0..1. Provider score where one exists, else a fixed per-source value.
+  confidence Float       @default(0)
+  domain     String?
+  /// e.g. "firstname.lastname" — the shape the address was built from.
+  pattern    String?
+  /// hunter | apollo | pattern_memory | guess
+  source     String?
+  /// Incremented on every run, so a prospect that repeatedly fails can be
+  /// excluded from re-runs instead of burning provider credits forever.
+  attempts   Int         @default(0)
+  /// Last provider/parse error, for debugging a run that found nothing.
+  lastError  String?
+  lastRunAt  DateTime?
+
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
+/// Learned email pattern per company domain — the Postgres replacement for the
+/// source implementation's in-process Map cache.
+///
+/// Persisted rather than cached in memory because the discovery route is
+/// serverless: a Map dies with the instance, so every cold start would re-pay
+/// for a provider lookup it had already made. Scoped per org (not global) so one
+/// tenant's data never informs another's, consistent with every other table here.
+model CrmOrgEmailPattern {
+  id        String   @id @default(cuid())
+  orgId     String
+  domain    String
+  /// One of the keys understood by buildFromPattern().
+  pattern   String
+  /// Where the pattern came from: hunter | apollo | inferred
+  source    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, domain], name: "org_email_pattern_uk")
+  @@index([orgId])
   @@schema("app_quikcrm")
 }
 

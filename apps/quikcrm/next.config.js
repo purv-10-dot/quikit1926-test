@@ -18,7 +18,16 @@ const nextConfig = {
   // It stays off for local `next build` because standalone symlinks the
   // monorepo's workspace deps, which requires admin privileges on Windows.
   output: process.env.NEXT_BUILD_STANDALONE === "1" ? "standalone" : undefined,
-  transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
+  // @quikit/ai-sdk ships raw TypeScript (main: ./index.ts), so it must be
+  // transpiled here — the AI integration guide's readiness checklist lists this
+  // alongside wiring AIClient.
+  transpilePackages: [
+    "@quikit/ui",
+    "@quikit/auth",
+    "@quikit/shared",
+    "@quikit/database",
+    "@quikit/ai-sdk",
+  ],
   // Migration in progress: ported source has ESLint warnings (unused vars,
   // any-typed callbacks). TypeScript correctness is enforced via tsc; ESLint
   // can be re-enabled once the per-file cleanup pass lands.

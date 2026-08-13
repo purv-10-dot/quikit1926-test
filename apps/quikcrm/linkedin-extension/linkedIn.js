@@ -868,6 +868,34 @@ function enableSaveLinkedInData() {
           } else {
             showToast('Prospect saved to CRM!', 'success');
           }
+
+          // EMAIL DISCOVERY. Only when the profile yielded no email and the
+          // user asked for it — an address read off the profile is always
+          // better than anything we could infer, and the server refuses to
+          // overwrite one anyway.
+          //
+          // Handed to the background service worker rather than awaited here:
+          // the cascade takes seconds and this panel is usually closed the
+          // moment the toast appears, which would cancel a fetch started in
+          // this context. Fire-and-forget is the whole point — the save is
+          // already reported as complete, and the address shows up in the CRM
+          // when discovery finishes.
+          const savedProspectId = result.prospectId || (result.data && result.data.id);
+          if (!email && searchEmailEnabled && savedProspectId) {
+            try {
+              chrome.runtime.sendMessage(
+                { action: 'quikcrm:discoverEmail', prospectId: savedProspectId },
+                // A response callback is required for the worker to keep the
+                // channel open, but we ignore the result. Reading
+                // chrome.runtime.lastError suppresses the "port closed"
+                // warning that Chrome logs when the panel unloads first.
+                () => void chrome.runtime.lastError,
+              );
+            } catch (e) {
+              // Messaging failure must never turn a successful save into an error.
+              console.warn('[QuikCRM] could not start email discovery', e);
+            }
+          }
         } else {
           throw new Error(result.error || 'Failed to save prospect');
         }

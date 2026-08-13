@@ -55,13 +55,15 @@ export function emptyCompose(prefill?: {
   cc?: string[];
   bcc?: string[];
   subject?: string;
+  /** Pre-written body HTML (an AI draft, a template). Empty for a blank form. */
+  body?: string;
 }): ComposeValue {
   return {
     to: dedupeAddresses(prefill?.to ?? []).join(", "),
     cc: dedupeAddresses(prefill?.cc ?? []).join(", "),
     bcc: dedupeAddresses(prefill?.bcc ?? []).join(", "),
     subject: prefill?.subject ?? "",
-    body: "",
+    body: prefill?.body ?? "",
     attachments: [],
   };
 }

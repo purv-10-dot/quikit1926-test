@@ -210,6 +210,45 @@ async function qcrmEnsureProspect(tabId, pageFacts) {
   return prospectId;
 }
 
+// ── Step 2: discover the prospect's email ────────────────────────────────────
+
+/**
+ * Kick off server-side email discovery for a saved prospect.
+ *
+ * Called for prospects saved WITHOUT an email, which is the common case: a
+ * LinkedIn profile rarely exposes one. The server runs the cascade (company
+ * domain → published addresses → Hunter → Apollo) and fills in
+ * CrmProspect.email only when a data provider returns a high-confidence hit;
+ * weaker results are stored as a suggestion for the user to accept in the CRM.
+ *
+ * WHY IT LIVES IN THE SERVICE WORKER. The request takes seconds, and the side
+ * panel can be closed at any moment — a fetch started there dies with the page.
+ * The worker outlives the panel, so firing it here is what makes discovery
+ * asynchronous from the user's point of view: the save toast shows immediately
+ * and the address appears in the CRM whenever the cascade finishes.
+ *
+ * Never rejects. Discovery is an enhancement to a save that has already
+ * succeeded; a failure here must not surface as a failed save.
+ */
+async function qcrmDiscoverProspectEmail(prospectId) {
+  if (!prospectId) return { ok: false };
+
+  try {
+    const org = await qcrmGetSelectedOrganization();
+    const query = org && org.id ? `?orgId=${encodeURIComponent(org.id)}` : '';
+
+    const response = await qcrmApiFetch(
+      `/api/extension-auth/prospects/${encodeURIComponent(prospectId)}/discover-email${query}`,
+      { method: 'POST' },
+    );
+    const result = await qcrmReadJson(response, 'Email discovery failed');
+    return { ok: true, data: result.data || null };
+  } catch (e) {
+    console.warn('[QuikCRM] email discovery failed', e);
+    return { ok: false };
+  }
+}
+
 // ── Steps 3 & 4: log the activity ────────────────────────────────────────────
 
 /**

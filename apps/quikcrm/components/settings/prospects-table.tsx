@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, MessageSquare, Pencil, Search, StickyNote, UserPlus, X } from "lucide-react";
+import {
+  FileText,
+  Mail,
+  MessageSquare,
+  Pencil,
+  Search,
+  Sparkles,
+  StickyNote,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -23,6 +33,7 @@ import {
 import { LeadForm } from "@/components/leads/lead-form";
 import { ProspectForm } from "@/components/prospects/prospect-form";
 import { AddProspectNoteModal } from "@/components/prospects/add-prospect-note-modal";
+import { ComposeEmailModal, type ComposePrefill } from "@/components/email/compose-email-modal";
 import { RelativeTime } from "@/components/shared/relative-time";
 import { Pagination } from "@/components/shared/pagination";
 import { useToast } from "@/hooks/use-toast";
@@ -108,6 +119,18 @@ export function ProspectsTable({
   // Prospect whose "Add Note" modal is open. Independent of `selectedId` (the
   // convert radio) so adding a note never changes what would be converted.
   const [noteForId, setNoteForId] = useState<string | null>(null);
+  // ── Draft Email ──────────────────────────────────────────────────────────
+  // Drafting is a round-trip to the model, so the row shows a pending state
+  // while it runs and the compose modal only opens once a draft is in hand —
+  // an empty modal that fills in a few seconds later reads as broken.
+  // Independent of `selectedId` for the same reason as every other row action.
+  const [draftingId, setDraftingId] = useState<string | null>(null);
+  const [emailForId, setEmailForId] = useState<string | null>(null);
+  const [emailPrefill, setEmailPrefill] = useState<ComposePrefill | undefined>();
+  // Set when the draft came from the deterministic template instead of the AI
+  // runtime — the user is told, so a plainer draft is not mistaken for the
+  // model's best effort.
+  const [draftFallback, setDraftFallback] = useState<string | null>(null);
 
   // Filters. The server page ships the whole in-scope set (capped at 500), so
   // filtering and paging both happen here — no refetch, results are instant.
@@ -178,6 +201,10 @@ export function ProspectsTable({
   const noteProspect = useMemo(
     () => prospects.find((p) => p.id === noteForId) ?? null,
     [prospects, noteForId],
+  );
+  const emailProspect = useMemo(
+    () => prospects.find((p) => p.id === emailForId) ?? null,
+    [prospects, emailForId],
   );
   const postsSummary = useMemo(
     () => (postsProspect ? summarizeLinkedInPosts(postsProspect.posts) : null),
@@ -269,6 +296,47 @@ export function ProspectsTable({
       icpId: selected.icpId,
     };
   }, [selected]);
+
+  /**
+   * Draft an email for one prospect, then open the compose modal pre-filled.
+   *
+   * Nothing is persisted by the draft call — it reads the prospect and returns
+   * text. The email only exists once the user hits Send, which goes through the
+   * same /api/email/send path (and the same activity logging) as every other
+   * email in the app.
+   */
+  async function draftEmail(p: ProspectRow) {
+    if (draftingId) return; // one at a time — drafting is neither free nor fast
+    setDraftingId(p.id);
+    try {
+      const res = await fetch(`/api/prospects/${encodeURIComponent(p.id)}/draft-email`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        toast.error(json?.error ?? "Could not draft the email.");
+        return;
+      }
+      setEmailPrefill({
+        to: json.data.to ? [json.data.to] : [],
+        subject: json.data.subject,
+        body: json.data.bodyHtml,
+      });
+      setDraftFallback(json.data.source === "template" ? (json.data.fallbackReason ?? "") : null);
+      setEmailForId(p.id);
+    } catch {
+      toast.error("Could not draft the email.");
+    } finally {
+      setDraftingId(null);
+    }
+  }
+
+  function closeEmail() {
+    setEmailForId(null);
+    setEmailPrefill(undefined);
+    setDraftFallback(null);
+  }
 
   function openConvert() {
     if (!selected || isConverted(selected)) return;
@@ -607,6 +675,21 @@ export function ProspectsTable({
                             <StickyNote size={13} aria-hidden />
                             Add Note
                           </button>
+                          {/* Available on converted prospects too — the lead
+                              owns the pipeline, but the prospect record still
+                              holds the LinkedIn context the draft is built
+                              from, and re-drafting is always non-destructive. */}
+                          <button
+                            type="button"
+                            onClick={() => draftEmail(p)}
+                            disabled={draftingId !== null}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-crm-blue transition hover:bg-crm-panel hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:no-underline"
+                            aria-label={`Draft email for ${p.name}`}
+                            title={`Draft an email for ${p.name} from their CRM record`}
+                          >
+                            <Mail size={13} aria-hidden />
+                            {draftingId === p.id ? "Drafting…" : "Draft Email"}
+                          </button>
                           <button
                             type="button"
                             onClick={() => setEditForId(p.id)}
@@ -789,6 +872,36 @@ export function ProspectsTable({
         prospect={noteProspect}
         onClose={() => setNoteForId(null)}
         onSaved={() => setNoteForId(null)}
+      />
+
+      {/* The draft is a starting point, never a send. The user edits it here and
+          sends through the app's one send path, which logs the CrmEmailMessage
+          and the timeline activity against the Prospect. */}
+      <ComposeEmailModal
+        open={Boolean(emailProspect)}
+        onClose={closeEmail}
+        relatedKind="Prospect"
+        relatedObjectId={emailProspect?.id ?? ""}
+        prefill={emailPrefill}
+        notice={
+          <div className="mb-3 flex items-start gap-2 rounded-lg border border-crm-border bg-crm-panel/40 px-3 py-2 text-xs text-crm-muted">
+            <Sparkles size={14} className="mt-0.5 shrink-0 text-accent-600" aria-hidden />
+            <span>
+              {draftFallback === null ? (
+                <>
+                  Drafted from this prospect&apos;s CRM record. Read it before sending — it
+                  can be wrong.
+                </>
+              ) : (
+                <>
+                  AI drafting is unavailable, so this is a plain template.
+                  {draftFallback ? ` (${draftFallback})` : ""} Edit it before sending.
+                </>
+              )}
+            </span>
+          </div>
+        }
+        onSent={closeEmail}
       />
     </>
   );

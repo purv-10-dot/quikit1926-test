@@ -157,3 +157,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return true; // keep the message channel open for the async reply
 });
+
+// ── Email discovery ──────────────────────────────────────────────────────────
+//
+// Separate listener from the one above because that one requires `sender.tab`:
+// it acts on the LinkedIn tab a content script messaged from. This message
+// comes from the SIDE PANEL, which has no `sender.tab`, and needs no tab
+// anyway — the prospect is already saved and the work is entirely server-side.
+//
+// THE POINT OF ROUTING THIS THROUGH THE WORKER: the discovery cascade takes
+// seconds, and the panel is usually closed the moment the user sees the save
+// toast. A fetch started in the panel is cancelled when the panel unloads; one
+// started here is not. The panel therefore fires and forgets, and this handler
+// owns the request for its full lifetime.
+//
+// Replies { success } purely so a caller that chooses to wait can observe the
+// outcome. Nothing in the save flow depends on it.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || message.action !== 'quikcrm:discoverEmail') return undefined;
+
+  (async () => {
+    const result = await qcrmDiscoverProspectEmail(message.prospectId);
+    sendResponse({ success: result.ok, data: result.data || null });
+  })();
+
+  return true;
+});
