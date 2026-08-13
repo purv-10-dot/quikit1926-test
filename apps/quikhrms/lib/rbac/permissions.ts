@@ -59,6 +59,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.recruit.offer", category: "Recruit", name: "Manage Offers", description: "Send/withdraw offers" },
   { code: "hrms.recruit.interview", category: "Recruit", name: "Manage Interviews", description: "Schedule and score interviews" },
   { code: "hrms.recruit.approve", category: "Recruit", name: "Approve Requisitions", description: "Approve/reject raised requisitions" },
+  { code: "hrms.recruit.performance.read", category: "Recruit", name: "View Recruiter Performance (All)", description: "View performance/workload for every recruiter" },
+  { code: "hrms.recruit.performance.read_self", category: "Recruit", name: "View Own Recruiter Performance", description: "View own performance/workload only" },
 
   // ── Performance ──
   { code: "hrms.performance.read", category: "Performance", name: "View Performance", description: "View goals, appraisals (all)" },

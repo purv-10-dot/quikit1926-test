@@ -451,6 +451,7 @@ export default function ApprovalChainsPage() {
                           value={l.userId ?? ""}
                           onChange={(v) => updateLevel(idx, { userId: v })}
                           size="sm"
+                          searchable
                           placeholder="Pick an employee…"
                           options={employees.map((e) => ({
                             value: e.id,

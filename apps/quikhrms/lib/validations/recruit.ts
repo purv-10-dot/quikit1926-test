@@ -68,6 +68,18 @@ const requisitionBaseObject = z.object({
   referralBonusAmount: z.number().min(0).max(1000000, "Referral bonus can’t exceed ₹10,00,000").optional(),
   hiringManagerId: z.string().min(1, "Hiring manager required"),
   recruiterId: z.string().optional(),
+  // Recruiter Performance Dashboard — Job Level drives the default SLA;
+  // customSlaDays/Reason let HR override it for this one requisition.
+  jobLevelId: z.string().optional(),
+  customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
+  customSlaReason: z.string().max(1000).optional(),
+  // Optional multi-recruiter position split — e.g. 10 openings: 4 to
+  // Recruiter A, 3 to B, 3 to C. Omit entirely for the default single-
+  // recruiter case (recruiterId keeps working exactly as before).
+  recruiterAssignments: z.array(z.object({
+    employeeId: z.string().min(1),
+    positionsAssigned: z.number().int().min(1),
+  })).optional(),
 
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
@@ -111,7 +123,7 @@ function requisitionCrossFieldChecks(
   }
   // YYYY-MM-DD strings compare correctly lexicographically.
   if (d.targetJoiningDate && d.closedDate && d.targetJoiningDate < d.closedDate) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Target joining date should be on or after the close timeline", path: ["targetJoiningDate"] });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End Date should be on or after the Start Date", path: ["targetJoiningDate"] });
   }
 }
 

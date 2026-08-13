@@ -111,6 +111,8 @@ export const PERMISSION_TREE: PermModule[] = [
       { resource: "Recruit.Interview", label: "Interviews", actions: { view: NO, create: c("hrms.recruit.interview"), update: c("hrms.recruit.interview"), delete: NO } },
       { resource: "Recruit.Offer", label: "Offers", actions: { view: NO, create: c("hrms.recruit.offer"), update: c("hrms.recruit.offer"), delete: NO } },
       { resource: "Recruit.Approve", label: "Approve Requisitions", actions: { view: NO, create: NO, update: c("hrms.recruit.approve"), delete: NO } },
+      { resource: "Recruit.Performance", label: "Recruiter Performance (All)", actions: { view: c("hrms.recruit.performance.read"), create: NO, update: NO, delete: NO } },
+      { resource: "Recruit.Performance.Self", label: "Own Recruiter Performance", actions: { view: c("hrms.recruit.performance.read_self"), create: NO, update: NO, delete: NO } },
     ],
   },
   {

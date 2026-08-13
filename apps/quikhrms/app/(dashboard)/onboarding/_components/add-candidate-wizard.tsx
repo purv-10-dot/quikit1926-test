@@ -200,8 +200,10 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
     for (const c of certs) {
       if (c.credentialUrl.trim() && !isHttpUrl(c.credentialUrl)) return { step: 3, msg: "Certification credential URL must be a valid URL (https://…)." };
     }
-    if (!form.reportingManagerId || !form.roleId || !form.salaryTemplateId || !(form.ctcLpa && form.ctcLpa > 0))
-      return { step: 2, msg: "Reporting manager, role, salary template and CTC (LPA) are required." };
+    if (!form.reportingManagerId || !form.roleId)
+      return { step: 2, msg: "Reporting manager and role are required." };
+    if (form.salaryTemplateId && !(form.ctcLpa && form.ctcLpa > 0))
+      return { step: 2, msg: "CTC (LPA) is required when a salary template is selected." };
     // Onboarding template is required only for a full submit — Save Draft can
     // skip it (the server also skips the template requirement for drafts).
     if (!saveDraft && !form.templateId)
@@ -358,8 +360,8 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
                   <F label="Office Location"><Select value={form.officeLocationId} onChange={(v) => set("officeLocationId", v)} searchable placeholder="Select…" options={locOpts} /></F>
                   <F label="Reporting Manager *"><Select value={form.reportingManagerId} onChange={(v) => set("reportingManagerId", v)} searchable placeholder="Select…" options={mgrOpts} /></F>
                   <F label="Role *"><Select value={form.roleId} onChange={(v) => set("roleId", v)} searchable placeholder="Select…" options={roleOpts} /></F>
-                  <F label="Salary Template *"><Select value={form.salaryTemplateId} onChange={(v) => set("salaryTemplateId", v)} searchable placeholder="Select…" options={salaryOpts} /></F>
-                  <F label="CTC (LPA) *"><NumberInput min={0} value={form.ctcLpa} onChange={(v) => set("ctcLpa", v)} className={inputCls} /></F>
+                  <F label="Salary Template"><Select value={form.salaryTemplateId} onChange={(v) => set("salaryTemplateId", v)} searchable placeholder="Select… (optional — can be added later)" options={salaryOpts} /></F>
+                  <F label={`CTC (LPA)${form.salaryTemplateId ? " *" : ""}`}><NumberInput min={0} value={form.ctcLpa} onChange={(v) => set("ctcLpa", v)} className={inputCls} disabled={!form.salaryTemplateId} /></F>
                   {form.salaryTemplateId && (() => {
                     const tpl = (templatesData?.data ?? []).find((s) => s.id === form.salaryTemplateId);
                     if (!tpl) return null;

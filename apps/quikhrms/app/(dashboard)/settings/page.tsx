@@ -8,21 +8,14 @@ import {
   Briefcase, MapPin, Network, GitBranch, CalendarDays,
   FileText, ClipboardList, LayoutGrid, Link2, RotateCcw, ShieldAlert,
   Home, Mail, Clock, Receipt,
-  ShieldCheck, CalendarClock,
-  LifeBuoy, ExternalLink, Rss,
+  ShieldCheck, CalendarClock, Layers,
+  LifeBuoy, ExternalLink,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { PageBackground } from "@/components/hrms/page-background";
-import { Modal } from "@/components/hrms/modal";
-import { CareerPageSettingsContent } from "@/components/hrms/settings/career-page-settings";
 import type { HrmsSetupProgress, HrmsSettingsChecklist } from "@/lib/services/hrms-setup";
-
-// Items whose href matches this open in a popup Modal instead of navigating
-// to a separate page — currently just Career Page, since it's a quick
-// toggle+link config, not a full workspace worth its own route switch.
-const MODAL_ITEM_HREFS = new Set(["/settings/career-page"]);
 
 interface Item {
   label: string;
@@ -54,6 +47,7 @@ const CATEGORIES: CategoryDef[] = [
       { label: "Departments", href: "/settings/departments", icon: <Network size={14} />, perms: ["hrms.org.read", "hrms.org.write"], checklistKey: "departments" },
       { label: "Designations", href: "/settings/designations", icon: <Briefcase size={14} />, perms: ["hrms.org.read", "hrms.org.write"] },
       { label: "Work Locations", href: "/settings/locations", icon: <MapPin size={14} />, perms: ["hrms.org.read", "hrms.org.write"], checklistKey: "workLocations" },
+      { label: "Job Levels", href: "/settings/job-levels", icon: <Layers size={14} />, perms: ["hrms.settings.read", "hrms.settings.write"] },
       // "Teams", "Grades" and "Legal Entities" hidden from Settings — nothing
       // else was removed, the pages/APIs/data models are all untouched, so any
       // of them can be brought back by re-adding its one line here.
@@ -97,7 +91,6 @@ const CATEGORIES: CategoryDef[] = [
     accent: "blue",
     icon: <Palette size={18} />,
     items: [
-      { label: "Career Page", href: "/settings/career-page", icon: <Rss size={14} />, perms: ["hrms.settings.write"] },
       { label: "Pre-Onboarding Templates", href: "/pre-onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"] },
       { label: "Onboarding Templates", href: "/onboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.onboarding.write"] },
       { label: "Offboarding Templates", href: "/offboarding/templates", icon: <ClipboardList size={14} />, perms: ["hrms.offboarding.write"] },
@@ -105,7 +98,18 @@ const CATEGORIES: CategoryDef[] = [
       { label: "Joining Letter Branding", href: "/settings/joining-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Resignation Acceptance Letter", href: "/settings/resignation-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Exit Letters (Relieving / Experience)", href: "/settings/exit-letters", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
+      { label: "Appraisal Letter", href: "/settings/appraisal-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"] },
+    ],
+  },
+  {
+    key: "integrations",
+    title: "Integrations",
+    description: "Connect other QuikIT apps to this org's data",
+    accent: "blue",
+    icon: <Link2 size={18} />,
+    items: [
+      { label: "Directory API", href: "/settings/integrations/department-api", icon: <Network size={14} />, perms: ["hrms.settings.read", "hrms.settings.write"] },
     ],
   },
   {
@@ -139,7 +143,6 @@ export default function SettingsPage() {
   // "all" shows every category card; picking one from the left nav narrows
   // the grid to just that category.
   const [activeKey, setActiveKey] = useState<string>("all");
-  const [showCareerPageModal, setShowCareerPageModal] = useState(false);
 
   const visibleCategories = useMemo(
     () =>
@@ -279,7 +282,6 @@ export default function SettingsPage() {
                       key={i.href}
                       item={i}
                       needsSetup={!!i.checklistKey && settingsChecklist ? !settingsChecklist[i.checklistKey] : false}
-                      onModalOpen={MODAL_ITEM_HREFS.has(i.href) ? () => setShowCareerPageModal(true) : undefined}
                     />
                   ))}
                 </div>
@@ -288,24 +290,14 @@ export default function SettingsPage() {
           })}
         </div>
       </div>
-
-      <Modal
-        open={showCareerPageModal}
-        onClose={() => setShowCareerPageModal(false)}
-        title="Career Page"
-        subtitle="A public, no-login page where candidates can browse your open jobs and apply directly."
-        size="lg"
-      >
-        <CareerPageSettingsContent />
-      </Modal>
     </div>
   );
 }
 
-function SettingRow({ item, needsSetup, onModalOpen }: { item: Item; needsSetup: boolean; onModalOpen?: () => void }) {
+function SettingRow({ item, needsSetup }: { item: Item; needsSetup: boolean }) {
   const className = "group flex items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:text-[#16a34a] hover:bg-gray-50 transition rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bbf7d0] w-full text-left";
-  const content = (
-    <>
+  return (
+    <Link href={item.href} className={className}>
       <span className="text-gray-400 group-hover:text-[#22c55e] transition shrink-0">{item.icon}</span>
       <span className="truncate flex-1 min-w-0">{item.label}</span>
       {needsSetup && (
@@ -314,10 +306,6 @@ function SettingRow({ item, needsSetup, onModalOpen }: { item: Item; needsSetup:
         </span>
       )}
       <ChevronRight size={13} className="text-gray-300 group-hover:text-[#22c55e] opacity-0 group-hover:opacity-100 transition shrink-0" />
-    </>
+    </Link>
   );
-  if (onModalOpen) {
-    return <button type="button" onClick={onModalOpen} className={className}>{content}</button>;
-  }
-  return <Link href={item.href} className={className}>{content}</Link>;
 }

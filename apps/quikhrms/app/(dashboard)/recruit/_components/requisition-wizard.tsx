@@ -13,6 +13,8 @@ import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 export interface DeptOption { id: string; name: string; code?: string | null; }
 export interface PipelineOption { id: string; name: string; isDefault: boolean; stages: { name: string }[]; }
 export interface SkillWeightItem { skill: string; weight: number }
+export interface JobLevelOption { id: string; code: string; name: string; slaDays: number }
+export interface RecruiterAssignment { employeeId: string; positionsAssigned: number }
 
 export interface EmpOption {
   id: string;
@@ -39,6 +41,10 @@ export interface ReqFormShape {
   reportingToId: string;
   hiringManagerId: string;
   recruiterId: string;
+  jobLevelId: string;
+  customSlaDays: number | null;
+  customSlaReason: string;
+  recruiterAssignments: RecruiterAssignment[];
   experienceMin: number | null;
   experienceMax: number | null;
   salaryMin: number | null;
@@ -75,6 +81,7 @@ export const emptyReqForm: ReqFormShape = {
   positions: 1, type: "NewPosition", priority: "Medium",
   employmentType: "FullTime", workLocation: "Office",
   interviewPanelIds: [], reportingToId: "", hiringManagerId: "", recruiterId: "",
+  jobLevelId: "", customSlaDays: null, customSlaReason: "", recruiterAssignments: [],
   experienceMin: null, experienceMax: null, salaryMin: null, salaryMax: null, budget: null,
   targetJoiningDate: "", closedDate: "", etaToFillDays: null, jobGrade: "", costCenter: "",
   jobLocation: "", jobDuration: "", workTimings: "", interviewMode: "",
@@ -101,6 +108,15 @@ export function toReqPayload(f: ReqFormShape) {
     reportingToId: s(f.reportingToId),
     hiringManagerId: s(f.hiringManagerId),
     recruiterId: s(f.recruiterId),
+    jobLevelId: s(f.jobLevelId),
+    customSlaDays: n(f.customSlaDays),
+    customSlaReason: s(f.customSlaReason),
+    // Always reflects the wizard's current rows (always synced from/to
+    // recruiterId, so this covers both the plain single-recruiter case and
+    // an explicit multi-recruiter split) — never left stale on edit.
+    recruiterAssignments: f.recruiterAssignments.filter((a) => a.employeeId).length
+      ? f.recruiterAssignments.filter((a) => a.employeeId)
+      : undefined,
     experienceMin: n(f.experienceMin),
     experienceMax: n(f.experienceMax),
     salaryMin: n(f.salaryMin),
@@ -286,6 +302,7 @@ interface ReqWizardProps {
   departments: DeptOption[];
   pipelines: PipelineOption[];
   employees: EmpOption[];
+  jobLevels?: JobLevelOption[];
   submitting: boolean;
   onCancel: () => void;
   onSubmit: () => void;
@@ -294,13 +311,72 @@ interface ReqWizardProps {
   submitLabel?: string;
 }
 
-export function RequisitionWizard({ form, setForm, isEdit, departments, pipelines, employees, submitting, onCancel, onSubmit, showJustification, submitLabel }: ReqWizardProps) {
+export function RequisitionWizard({ form, setForm, isEdit, departments, pipelines, employees, jobLevels = [], submitting, onCancel, onSubmit, showJustification, submitLabel }: ReqWizardProps) {
   const api = useApiClient();
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [skillDraft, setSkillDraft] = useState("");
   const [weightDraft, setWeightDraft] = useState(7);
   const [generating, setGenerating] = useState(false);
+
+  // Raise mode (People → New Requisition) skips the whole Team & Pipeline step
+  // (no Hiring Pipeline / Interview Panel / Reports To / Hiring Manager /
+  // Recruiter picker) AND the Compensation & Planning step — the latter would
+  // otherwise be nearly empty there (Salary/Budget/Dates are all hidden too),
+  // so its one remaining field (Experience) moves into Basics instead. It also
+  // folds Scorecard & Skills into the Role Details step's tab — the content
+  // itself is unchanged, just no longer a separate step (see the render
+  // condition below). The main Recruit → Requisitions flow (showJustification
+  // false) is untouched and still shows every step.
+  const visibleSteps = showJustification
+    ? REQ_STEPS.filter((s) => s.id !== "team" && s.id !== "comp" && s.id !== "scorecard")
+        .map((s) => (s.id === "role" ? { ...s, label: "Role Details & Scorecard" } : s))
+    : REQ_STEPS;
+
+  // A pipeline is still required server-side even though raise mode hides the
+  // picker — silently default to the org's default pipeline (or the first
+  // one, if none is marked default) as soon as the list loads.
+  useEffect(() => {
+    if (!showJustification || form.pipelineId || pipelines.length === 0) return;
+    const def = pipelines.find((p) => p.isDefault) ?? pipelines[0];
+    if (def) setForm((p) => ({ ...p, pipelineId: def.id }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showJustification, pipelines, form.pipelineId]);
+
+  // Recruiter split defaults to exactly one row (today's single-recruiter
+  // behavior) — seeded once from recruiterId/positions the first time the
+  // wizard opens with no rows yet (fresh create, or an older requisition
+  // that predates the split feature).
+  useEffect(() => {
+    if (form.recruiterAssignments.length > 0) return;
+    setForm((p) => ({ ...p, recruiterAssignments: [{ employeeId: p.recruiterId, positionsAssigned: p.positions }] }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.recruiterAssignments.length, form.recruiterId]);
+
+  // With just one recruiter, "all positions" should never need manual
+  // balancing — keep that single row's count glued to the Positions field.
+  // Once split across 2+ recruiters, the counts become independently
+  // editable and HR balances them by hand.
+  useEffect(() => {
+    if (form.recruiterAssignments.length !== 1) return;
+    if (form.recruiterAssignments[0].positionsAssigned === form.positions) return;
+    setForm((p) => ({ ...p, recruiterAssignments: [{ ...p.recruiterAssignments[0], positionsAssigned: p.positions }] }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.recruiterAssignments.length, form.positions]);
+
+  const updateRecruiterRow = (idx: number, patch: Partial<RecruiterAssignment>) =>
+    setForm((p) => {
+      const rows = p.recruiterAssignments.map((r, i) => (i === idx ? { ...r, ...patch } : r));
+      return { ...p, recruiterAssignments: rows, recruiterId: rows[0]?.employeeId ?? "" };
+    });
+  const addRecruiterRow = () =>
+    setForm((p) => ({ ...p, recruiterAssignments: [...p.recruiterAssignments, { employeeId: "", positionsAssigned: 1 }] }));
+  const removeRecruiterRow = (idx: number) =>
+    setForm((p) => {
+      const rows = p.recruiterAssignments.filter((_, i) => i !== idx);
+      return { ...p, recruiterAssignments: rows, recruiterId: rows[0]?.employeeId ?? "" };
+    });
+  const recruiterPositionsTotal = form.recruiterAssignments.reduce((s, r) => s + (r.positionsAssigned || 0), 0);
 
   // ETA to Fill is auto-calculated from Start Date → End Date. Keep it in sync
   // whenever both dates are present (covers editing older requisitions whose
@@ -322,8 +398,22 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   const justificationOk = !showJustification || justificationLen >= JUSTIFICATION_MIN;
   // Office / Hybrid roles must have a job location (Remote doesn't).
   const jobLocationOk = form.workLocation === "Remote" || form.jobLocation.trim().length > 0;
-  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk && jobLocationOk;
-  const canStep2 = !!form.pipelineId && !!form.hiringManagerId;
+  // Experience range check — duplicated (not shared with compErrors.exp below)
+  // because Basics needs it and compErrors is defined further down; both stay
+  // in sync since they encode the same two rules (≤50yrs, min ≤ max).
+  const expRangeError = (form.experienceMin ?? 0) > 50 || (form.experienceMax ?? 0) > 50
+    || (form.experienceMin != null && form.experienceMax != null && form.experienceMin > form.experienceMax);
+  const expFilledIfRaise = !showJustification || (form.experienceMin != null && form.experienceMax != null);
+  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk && jobLocationOk
+    && expFilledIfRaise && (!showJustification || !expRangeError);
+  // Raise mode never shows this step's fields — hiringManagerId is never
+  // collected there, so it can't gate anything. pipelineId is still required,
+  // but is auto-filled behind the scenes (see the effect above).
+  // Recruiter positions must add up to the total Positions count before
+  // moving on — otherwise workload/quota tracking on the dashboard is wrong.
+  const recruiterSplitOk = form.recruiterAssignments.every((r) => r.employeeId)
+    && recruiterPositionsTotal === form.positions;
+  const canStep2 = showJustification ? !!form.pipelineId : !!form.pipelineId && !!form.hiringManagerId && recruiterSplitOk;
 
   // Step 3 (Compensation & Planning) cross-field logic checks.
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -337,32 +427,44 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     budget: form.budget != null && form.salaryMax != null && form.budget < form.salaryMax
       ? "Budget should be at least the max salary." : "",
     targetJoiningDate: form.targetJoiningDate && form.targetJoiningDate < todayStr
-      ? "Target joining date can’t be in the past."
+      ? "End Date can’t be in the past."
       : form.targetJoiningDate && form.closedDate && form.targetJoiningDate < form.closedDate
-        ? "Should be on or after the close timeline." : "",
+        ? "Should be on or after the Start Date." : "",
     closedDate: form.closedDate && form.closedDate < todayStr
-      ? "Timeline to close can’t be in the past." : "",
+      ? "Start Date can’t be in the past." : "",
   };
   // Experience + salary ranges, plus Start/End Date, are required for NEW
   // requisitions. Edits of older requisitions (created before these fields
   // existed / left blank) aren't forced — mirrors the questionsOk edit
   // exemption below. Cross-field checks (compErrors) are still enforced in
-  // step3Valid regardless.
-  const compRequiredFilled = isEdit || (form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null && !!form.closedDate && !!form.targetJoiningDate);
+  // step3Valid regardless. Raise mode hides Salary Min/Max/Budget and
+  // Start/End Date entirely, so only Experience stays required there.
+  const compRequiredFilled = isEdit || (
+    form.experienceMin != null && form.experienceMax != null
+    && (showJustification || (form.salaryMin != null && form.salaryMax != null && !!form.closedDate && !!form.targetJoiningDate))
+  );
   const step3Valid = compRequiredFilled && !compErrors.exp && !compErrors.salary && !compErrors.budget && !compErrors.targetJoiningDate && !compErrors.closedDate;
   // At least one technical question is required for NEW requisitions. Edits of
   // older requisitions (created before this field existed) aren't forced.
   const questionsOk = isEdit || form.technicalQuestions.length > 0;
   const canCreate = canStep1 && canStep2 && step3Valid && questionsOk;
 
-  const next = () => setStep((s) => Math.min(s + 1, REQ_STEPS.length - 1));
+  // Validity keyed by step ID (not position) so it stays correct whichever
+  // steps are actually in `visibleSteps` — raise mode drops "team" entirely,
+  // so index-based lookups would otherwise point at the wrong step.
+  const validById: Record<string, boolean> = {
+    basics: canStep1, team: canStep2, comp: step3Valid, role: true, scorecard: true,
+  };
+  const currentStepId = visibleSteps[step]?.id;
+
+  const next = () => setStep((s) => Math.min(s + 1, visibleSteps.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
-  const canAdvance = step === 0 ? canStep1 : step === 1 ? canStep2 : step === 2 ? step3Valid : true;
+  const canAdvance = currentStepId ? validById[currentStepId] : true;
 
   // Per-step validity + "can I jump to step i?" — a forward jump is only allowed
   // when EVERY prior step is complete, so users can't skip mandatory steps 1–3
   // by clicking a later step dot.
-  const stepValid = (idx: number) => (idx === 0 ? canStep1 : idx === 1 ? canStep2 : idx === 2 ? step3Valid : true);
+  const stepValid = (idx: number) => validById[visibleSteps[idx]?.id ?? ""] ?? true;
   const canReachStep = (i: number) => {
     for (let j = 0; j < i; j++) if (!stepValid(j)) return false;
     return true;
@@ -405,7 +507,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     <div className="w-full">
       {/* Stepper */}
       <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
-        {REQ_STEPS.map((s, i) => {
+        {visibleSteps.map((s, i) => {
           const done = i < step;
           const active = i === step;
           const reachable = i <= step || canReachStep(i);
@@ -422,7 +524,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   {s.label}
                 </span>
               </button>
-              {i < REQ_STEPS.length - 1 && <span className={clsx("w-8 h-px mx-1", done ? "bg-green-500" : "bg-gray-200")} />}
+              {i < visibleSteps.length - 1 && <span className={clsx("w-8 h-px mx-1", done ? "bg-green-500" : "bg-gray-200")} />}
             </div>
           );
         })}
@@ -430,7 +532,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
       <div className="min-h-[240px]">
         {/* Step 1 — Basics */}
-        {step === 0 && (
+        {currentStepId === "basics" && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -465,7 +567,14 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               </div>
               )}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className={clsx("grid grid-cols-2 gap-4", showJustification ? "md:grid-cols-7" : "md:grid-cols-5")}>
+              <div>
+                <label className={reqLabel}>Level <span className="text-gray-400 font-normal">(optional)</span></label>
+                <Select value={form.jobLevelId} onChange={(v) => setForm({ ...form, jobLevelId: v })} searchable
+                  placeholder={jobLevels.length === 0 ? "No levels — create under Settings → Job Levels" : "— Select —"}
+                  options={jobLevels.map((l) => ({ value: l.id, label: `${l.code} — ${l.name}`, description: `${l.slaDays} day SLA` }))} />
+                <p className="mt-1 text-[11px] text-gray-400">Drives the default hiring SLA for this role.</p>
+              </div>
               <div>
                 <label className={reqLabel}>Positions</label>
                 <NumberInput allowDecimal={false} min={1} max={500} value={form.positions}
@@ -491,7 +600,55 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 <Select value={form.workLocation} onChange={(v) => setForm({ ...form, workLocation: v, ...(v === "Remote" ? { jobLocation: "" } : {}) })}
                   options={["Office", "Remote", "Hybrid"].map((t) => ({ value: t, label: t }))} />
               </div>
+              {/* Raise mode has no separate Compensation & Planning step (it's
+                  removed for being nearly empty there — Salary/Budget/Dates are
+                  all hidden), so Experience lives here instead. */}
+              {showJustification && (<>
+                <div>
+                  <label className={reqLabel}>Exp Min (yrs) <span className="text-red-500">*</span></label>
+                  <NumberInput min={0} max={50} value={form.experienceMin}
+                    onChange={(v) => setForm({ ...form, experienceMin: v })}
+                    onBlur={() => { if (form.experienceMin != null && form.experienceMin > 50) setForm((p) => ({ ...p, experienceMin: 50 })); }}
+                    className={clsx(reqInput, expRangeError && errRing)} />
+                </div>
+                <div>
+                  <label className={reqLabel}>Exp Max (yrs) <span className="text-red-500">*</span></label>
+                  <NumberInput min={0} max={50} value={form.experienceMax}
+                    onChange={(v) => setForm({ ...form, experienceMax: v })}
+                    onBlur={() => { if (form.experienceMax != null && form.experienceMax > 50) setForm((p) => ({ ...p, experienceMax: 50 })); }}
+                    className={clsx(reqInput, expRangeError && errRing)} />
+                </div>
+              </>)}
             </div>
+            {showJustification && expRangeError && (
+              <p className={errText}>
+                {(form.experienceMin ?? 0) > 50 || (form.experienceMax ?? 0) > 50
+                  ? "Experience can’t exceed 50 years." : "Min experience can’t be greater than max."}
+              </p>
+            )}
+            {form.jobLevelId && (
+              <div>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+                  <input type="checkbox" checked={form.customSlaDays != null}
+                    onChange={(e) => setForm({ ...form, customSlaDays: e.target.checked ? (jobLevels.find((l) => l.id === form.jobLevelId)?.slaDays ?? 30) : null, customSlaReason: e.target.checked ? form.customSlaReason : "" })} />
+                  Override standard SLA for this requisition
+                </label>
+                {form.customSlaDays != null && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div>
+                      <label className={reqLabel}>Approved Custom ETA (days)</label>
+                      <NumberInput allowDecimal={false} min={1} max={3650} value={form.customSlaDays}
+                        onChange={(v) => setForm({ ...form, customSlaDays: v })} className={reqInput} />
+                    </div>
+                    <div>
+                      <label className={reqLabel}>Reason</label>
+                      <input type="text" value={form.customSlaReason} onChange={(e) => setForm({ ...form, customSlaReason: e.target.value })}
+                        placeholder="e.g. Specialized technology with limited talent pool" className={reqInput} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label className={reqLabel}>Priority</label>
               <div className="inline-flex items-center gap-2 flex-wrap">
@@ -504,6 +661,19 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 ))}
               </div>
             </div>
+            {showJustification && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="text-xs font-medium text-gray-700">Job Description</label>
+                  <button type="button" onClick={generate} disabled={generating} title="Also fills Requirements, Nice to have & Skill Weights on the next step"
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-[13px] font-semibold shrink-0 disabled:opacity-60">
+                    <Sparkles size={13} className={generating ? "animate-pulse" : ""} /> {generating ? "Generating…" : "Generate with AI"}
+                  </button>
+                </div>
+                <textarea rows={3} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
+                  placeholder="Overview of the role, scope and impact." className={clsx(reqInput, "resize-y")} />
+              </div>
+            )}
             {showJustification && (
               <div>
                 <label className={reqLabel}>Business Justification <span className="text-red-500">*</span></label>
@@ -525,8 +695,8 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
           </div>
         )}
 
-        {/* Step 2 — Team & Pipeline */}
-        {step === 1 && (
+        {/* Step 2 — Team & Pipeline (hidden entirely in raise mode) */}
+        {currentStepId === "team" && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -544,7 +714,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 <p className="mt-1 text-[11px] text-gray-400">Only these employees can be picked as interviewers for this role.</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={reqLabel}>Reports To</label>
                 <Select value={form.reportingToId} onChange={(v) => setForm({ ...form, reportingToId: v })} searchable
@@ -555,21 +725,52 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 <Select value={form.hiringManagerId} onChange={(v) => setForm({ ...form, hiringManagerId: v })} searchable
                   placeholder="— Select —" options={empOpts} />
               </div>
-              <div>
-                <label className={reqLabel}>Recruiter</label>
-                <Select value={form.recruiterId} onChange={(v) => setForm({ ...form, recruiterId: v })} searchable
-                  placeholder="— Select —" options={empOpts} />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className={reqLabel}>Recruiter(s)</label>
+                <button type="button" onClick={addRecruiterRow}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 hover:text-green-800">
+                  <Plus size={12} /> Add recruiter
+                </button>
               </div>
+              <div className="space-y-2">
+                {form.recruiterAssignments.map((row, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Select value={row.employeeId} onChange={(v) => updateRecruiterRow(idx, { employeeId: v })} searchable
+                        placeholder="— Select recruiter —"
+                        options={empOpts.filter((o) => o.value === row.employeeId || !form.recruiterAssignments.some((r) => r.employeeId === o.value))} />
+                    </div>
+                    <div className="w-28">
+                      <NumberInput allowDecimal={false} min={1} value={row.positionsAssigned}
+                        disabled={form.recruiterAssignments.length === 1}
+                        onChange={(v) => updateRecruiterRow(idx, { positionsAssigned: v ?? 1 })}
+                        className={clsx(reqInput, form.recruiterAssignments.length === 1 && "opacity-60 cursor-not-allowed")} />
+                    </div>
+                    {form.recruiterAssignments.length > 1 && (
+                      <button type="button" onClick={() => removeRecruiterRow(idx)} className="text-gray-400 hover:text-red-500 shrink-0">
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className={clsx("mt-1.5 text-[11px] font-medium", recruiterPositionsTotal !== form.positions ? "text-red-600" : "text-gray-400")}>
+                {form.recruiterAssignments.length > 1
+                  ? `${recruiterPositionsTotal} of ${form.positions} position(s) assigned${recruiterPositionsTotal !== form.positions ? " — must add up to the total positions before you can continue." : "."}`
+                  : "One recruiter gets all positions by default — click \"Add recruiter\" to split this requisition across a team."}
+              </p>
             </div>
           </div>
         )}
 
         {/* Step 3 — Compensation & Planning */}
-        {step === 2 && (
+        {currentStepId === "comp" && (
           <div className="space-y-3">
             <div>
               <p className={clsx(reqSection, "mb-2")}>Experience & Compensation</p>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className={clsx("grid grid-cols-2 gap-3", !showJustification && "md:grid-cols-5")}>
                 <div>
                   <label className={reqLabel}>Exp Min (yrs) <span className="text-red-500">*</span></label>
                   <NumberInput min={0} max={50} value={form.experienceMin}
@@ -584,6 +785,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     onBlur={() => { if (form.experienceMax != null && form.experienceMax > 50) setForm((p) => ({ ...p, experienceMax: 50 })); }}
                     className={clsx(reqInput, compErrors.exp && errRing)} />
                 </div>
+                {!showJustification && (<>
                 <div>
                   <label className={reqLabel}>Salary Min (LPA) <span className="text-red-500">*</span></label>
                   <NumberInput clamp min={0} max={999} value={form.salaryMin}
@@ -600,6 +802,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   <label className={reqLabel}>Budget (LPA)</label>
                   <NumberInput clamp min={0} max={999} value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
                 </div>
+                </>)}
               </div>
               {(compErrors.exp || compErrors.salary || compErrors.budget) && (
                 <ul className="mt-1.5 space-y-0.5">
@@ -611,9 +814,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               {/* Explain why Next is disabled when the required ranges are blank
                   (only for NEW requisitions — edits are exempt above). */}
               {!compRequiredFilled && (
-                <p className={clsx(errText, "mt-1.5")}>Experience, salary range, Start Date and End Date are required.</p>
+                <p className={clsx(errText, "mt-1.5")}>
+                  {showJustification ? "Experience is required." : "Experience, salary range, Start Date and End Date are required."}
+                </p>
               )}
             </div>
+            {!showJustification && (
             <div>
               <p className={clsx(reqSection, "mb-2")}>Planning & Budget</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -647,27 +853,27 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 </div>
               </div>
             </div>
+            )}
           </div>
         )}
 
         {/* Step 4 — Role Details */}
-        {step === 3 && (
+        {currentStepId === "role" && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-[#bbf7d0] bg-gradient-to-r from-[#f0fdf4] to-white px-3 py-2.5">
+            {/* Raise mode shows this in Basics instead (see above). */}
+            {!showJustification && (
               <div>
-                <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#15803d]"><Sparkles size={14} /> Auto-write with AI</div>
-                <p className="text-[11px] text-gray-600 mt-0.5">Generates the description, responsibilities &amp; skill weights from the role title and experience. Fully editable after.</p>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="text-xs font-medium text-gray-700">Job Description</label>
+                  <button type="button" onClick={generate} disabled={generating} title="Also fills Requirements, Nice to have & Skill Weights below"
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-[13px] font-semibold shrink-0 disabled:opacity-60">
+                    <Sparkles size={13} className={generating ? "animate-pulse" : ""} /> {generating ? "Generating…" : "Generate with AI"}
+                  </button>
+                </div>
+                <textarea rows={4} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
+                  placeholder="Overview of the role, scope and impact." className={clsx(reqInput, "resize-y")} />
               </div>
-              <button type="button" onClick={generate} disabled={generating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium shrink-0 disabled:opacity-60">
-                <Sparkles size={13} className={generating ? "animate-pulse" : ""} /> {generating ? "Generating…" : "Generate with AI"}
-              </button>
-            </div>
-            <div>
-              <label className={reqLabel}>Job Description</label>
-              <textarea rows={4} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
-                placeholder="Overview of the role, scope and impact." className={clsx(reqInput, "resize-y")} />
-            </div>
+            )}
             <div className="border-t border-gray-100 pt-3">
               <p className={clsx(reqSection, "mb-2")}>Requirements &amp; Posting</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -675,8 +881,10 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   items={form.requirements} onChange={(v) => setForm({ ...form, requirements: v })} />
                 <BulletListField label="Nice to have" placeholder="e.g. Open-source contributions"
                   items={form.niceToHave} onChange={(v) => setForm({ ...form, niceToHave: v })} />
-                <BulletListField label="Benefits &amp; Perks" placeholder="e.g. Health insurance, ESOPs, flexible hours"
-                  items={form.benefits} onChange={(v) => setForm({ ...form, benefits: v })} />
+                {!showJustification && (
+                  <BulletListField label="Benefits &amp; Perks" placeholder="e.g. Health insurance, ESOPs, flexible hours"
+                    items={form.benefits} onChange={(v) => setForm({ ...form, benefits: v })} />
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
                 <BulletListField label="Key responsibilities" placeholder="e.g. Run discovery workshops and consulting discussions"
@@ -708,9 +916,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
           </div>
         )}
 
-        {/* Step 5 — Scorecard & Skills */}
-        {step === 4 && (
-          <div className="space-y-3">
+        {/* Step 5 — Scorecard & Skills. In raise mode this has no tab of its
+            own — it renders stacked right under Role Details on that same
+            step (see the "role" folded into visibleSteps' label above). */}
+        {(currentStepId === "scorecard" || (showJustification && currentStepId === "role")) && (
+          <div className={clsx("space-y-3", showJustification && currentStepId === "role" && "mt-5 pt-4 border-t border-gray-100")}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <div className="rounded-lg border border-green-200 bg-gradient-to-br from-green-50/60 to-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
@@ -744,10 +955,13 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     if (e.key === "Enter") {
                       e.preventDefault();
                       const s = skillDraft.trim();
-                      if (s && !form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) {
-                        setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
-                        setSkillDraft("");
+                      if (!s) return;
+                      if (form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) {
+                        toast.error(`"${s}" is already added`);
+                        return;
                       }
+                      setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
+                      setSkillDraft("");
                     }
                   }}
                   // Only commit on Enter or the "+ Add" button — no onBlur add, so
@@ -763,7 +977,10 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   onClick={() => {
                     const s = skillDraft.trim();
                     if (!s) return;
-                    if (form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) return;
+                    if (form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) {
+                      toast.error(`"${s}" is already added`);
+                      return;
+                    }
                     setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
                     setSkillDraft("");
                   }}
@@ -772,8 +989,8 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             </div>
 
             {/* Technical Questions — merged into Scorecard & Skills */}
-            <div className="pt-3 border-t border-gray-100">
-              <p className={clsx(reqSection, "mb-1")}>Technical Questions <span className="text-red-500">*</span></p>
+            <div>
+              <p className={clsx(reqSection, "mb-1")}>Screening Technical Questions <span className="text-red-500">*</span></p>
               <p className="text-[11px] text-gray-500 mb-2">
                 Add role-specific questions the interview panel should ask candidates for this job. At least one is required.
               </p>
@@ -785,6 +1002,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               />
               {!questionsOk && <p className={errText}>Add at least one technical question.</p>}
             </div>
+          </div>
           </div>
         )}
       </div>
@@ -800,7 +1018,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               <ArrowLeft size={13} /> Back
             </button>
           )}
-          {step < REQ_STEPS.length - 1 ? (
+          {step < visibleSteps.length - 1 ? (
             <button type="button" onClick={next} disabled={!canAdvance}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium disabled:opacity-50">
               Next <ArrowRight size={13} />

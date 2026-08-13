@@ -9,7 +9,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Inbox, CheckCircle2, X as XIcon, Briefcase, AlertTriangle, FileText, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
-import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
+import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, JobLevelOption } from "../_components/requisition-wizard";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
 
@@ -129,6 +129,7 @@ export default function RequisitionApprovalsPage() {
   const { data: deptsData } = useQuery({ queryKey: ["departments"], queryFn: () => api.get<DeptOption[]>("/api/v1/hrms/departments?limit=200") });
   const { data: pipelinesData } = useQuery({ queryKey: ["pipelines"], queryFn: () => api.get<PipelineOption[]>("/api/v1/hrms/recruit/pipelines") });
   const { data: empData } = useQuery({ queryKey: ["employees-picker"], queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1") });
+  const { data: jobLevelsData } = useQuery({ queryKey: ["job-levels"], queryFn: () => api.get<JobLevelOption[]>("/api/v1/hrms/settings/job-levels") });
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ReqFormShape>(emptyReqForm);
@@ -360,6 +361,7 @@ export default function RequisitionApprovalsPage() {
           departments={deptsData?.data ?? []}
           pipelines={pipelinesData?.data ?? []}
           employees={empData?.data ?? []}
+          jobLevels={jobLevelsData?.data ?? []}
           submitting={editMut.isPending}
           onCancel={() => setEditId(null)}
           onSubmit={() => { if (editId) editMut.mutate({ id: editId, body: editForm }); }}

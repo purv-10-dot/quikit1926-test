@@ -214,6 +214,7 @@ export const navigation: NavItem[] = [
       { label: "Candidates", href: "/recruit/candidates", navKey: "recruit.candidates" },
       { label: "Hiring Pipeline", href: "/recruit/pipeline", navKey: "recruit.pipeline" },
       { label: "Interviews", href: "/recruit/interviews", perms: ["hrms.recruit.interview"], navKey: "recruit.interviews" },
+      { label: "Recruiter Performance", href: "/recruit/recruiter-performance", perms: ["hrms.recruit.performance.read", "hrms.recruit.performance.read_self"], navKey: "recruit.performance" },
       { label: "Document Types", href: "/settings/candidate-documents", navKey: "recruit.candidate-doc-types" },
     ],
   },

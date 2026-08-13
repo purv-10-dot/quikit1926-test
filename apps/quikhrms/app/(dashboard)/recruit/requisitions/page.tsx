@@ -12,11 +12,12 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
 import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
   ArrowLeft, ArrowRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star,
-  FileText, ClipboardList, ThumbsUp, Gem, HelpCircle } from "lucide-react";
+  FileText, ClipboardList, ThumbsUp, Gem, HelpCircle, CalendarClock, History, Building2, User, MapPin, Clock, Video,
+  Flag, Circle, Calendar, AlignLeft } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
-import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem } from "../_components/requisition-wizard";
+import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem, JobLevelOption } from "../_components/requisition-wizard";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
 
@@ -39,6 +40,10 @@ interface ReqItem {
   department: { id: string; name: string } | null;
   hiringManager: { id: string; firstName: string; lastName: string } | null;
   recruiter: { id: string; firstName: string; lastName: string } | null;
+  jobLevelId?: string | null;
+  customSlaDays?: number | null;
+  customSlaReason?: string | null;
+  recruiterSplits?: { employeeId: string; positionsAssigned: number }[];
   raiser?: { id: string; firstName: string; lastName: string } | null;
   creator?: { id: string; firstName: string; lastName: string } | null;
   rolePurpose?: string | null;
@@ -210,6 +215,9 @@ export default function RequisitionsPage() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
+  const [reviseTarget, setReviseTarget] = useState<ReqItem | null>(null);
+  const [reviseForm, setReviseForm] = useState({ startDate: "", endDate: "", reason: "" });
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<ReqItem | null>(null);
   const [decisions, setDecisions] = useState<Record<string, HeldAction>>({});
   const [openFeedback, setOpenFeedback] = useState<Set<string>>(new Set());
@@ -245,6 +253,12 @@ export default function RequisitionsPage() {
   });
   const employees = empData?.data ?? [];
 
+  const { data: jobLevelsData } = useQuery({
+    queryKey: ["job-levels"],
+    queryFn: () => api.get<JobLevelOption[]>("/api/v1/hrms/settings/job-levels"),
+  });
+  const jobLevels = jobLevelsData?.data ?? [];
+
   const createMut = useMutation({
     mutationFn: (body: ReqFormShape) => api.post("/api/v1/hrms/recruit/requisitions", toReqPayload(body)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setShowCreate(false); toast.success("Requisition created"); },
@@ -261,6 +275,35 @@ export default function RequisitionsPage() {
       api.patch(`/api/v1/hrms/recruit/requisitions/${id}`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setCancelTarget(null); },
   });
+
+  // ── Revise Date (Start/End Date only, with a mandatory reason) ───────────
+  const reviseMut = useMutation({
+    mutationFn: ({ id, startDate, endDate, reason }: { id: string; startDate: string; endDate: string; reason: string }) => {
+      const etaToFillDays = Math.max(0, Math.ceil((new Date(endDate + "T00:00:00").getTime() - new Date(startDate + "T00:00:00").getTime()) / 86400000));
+      return api.patch(`/api/v1/hrms/recruit/requisitions/${id}`, {
+        closedDate: startDate, targetJoiningDate: endDate, etaToFillDays, dateRevisionReason: reason,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["requisitions"] });
+      qc.invalidateQueries({ queryKey: ["req-date-history", reviseTarget?.id] });
+      setReviseTarget(null);
+      toast.success("Date revised");
+    },
+  });
+
+  interface DateHistoryEntry {
+    id: string; by: string; at: string;
+    startDateFrom: string | null; startDateTo: string | null;
+    endDateFrom: string | null; endDateTo: string | null;
+    reason: string | null;
+  }
+  const { data: dateHistoryData } = useQuery({
+    queryKey: ["req-date-history", viewReq?.id],
+    queryFn: () => api.get<DateHistoryEntry[]>(`/api/v1/hrms/recruit/requisitions/${viewReq!.id}/date-history`),
+    enabled: !!viewReq,
+  });
+  const dateHistory = dateHistoryData?.data ?? [];
 
   // ── Resume-a-held-requisition review flow ────────────────────────────────
   const { data: heldData, isLoading: heldLoading } = useQuery({
@@ -484,8 +527,18 @@ export default function RequisitionsPage() {
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
-                      <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => { setOpenSec(null); setViewReq(r); }} />
+                      <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => { setOpenSec(null); setShowAllHistory(false); setViewReq(r); }} />
                       {canManage && (<>
+                      {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
+                        <ActionBtn title="Revise Date" variant="amber" icon={<CalendarClock size={12} />} onClick={() => {
+                          setReviseForm({
+                            startDate: r.closedDate ? r.closedDate.slice(0, 10) : "",
+                            endDate: r.targetJoiningDate ? r.targetJoiningDate.slice(0, 10) : "",
+                            reason: "",
+                          });
+                          setReviseTarget(r);
+                        }} />
+                      )}
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
                         <ActionBtn title="Edit" variant="green" icon={<Pencil size={12} />} onClick={() => {
                           setForm(reqToForm(r));
@@ -551,6 +604,7 @@ export default function RequisitionsPage() {
           departments={departments}
           pipelines={pipelines}
           employees={employees}
+          jobLevels={jobLevels}
           submitting={createMut.isPending || editMut.isPending}
           onCancel={() => { setShowCreate(false); setEditId(null); }}
           onSubmit={() => { editId ? editMut.mutate({ id: editId, body: form }) : createMut.mutate(form); }}
@@ -575,36 +629,40 @@ export default function RequisitionsPage() {
           a != null || b != null ? `${a ?? "?"} – ${b ?? "?"} ${suffix}` : "—";
         const fmtDate = (d?: string | null) =>
           d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-        const fields: Array<[string, string]> = [
-          ["Department", viewReq.department?.name ?? "—"],
-          ["Recruiter (HR)", rcv],
-          ["Hiring Manager", hm],
-          ["Raised By", raisedBy],
-          ["Employment Type", viewReq.employmentType ?? "—"],
-          ["Work Location", viewReq.workLocation ?? "—"],
-          ["Job Location", viewReq.jobLocation ?? "—"],
-          ["Job Duration", viewReq.jobDuration ?? "—"],
-          ["Work Timings / Shift", viewReq.workTimings ?? "—"],
-          ["In-person / Video", INTERVIEW_MODE_LABEL[viewReq.interviewMode ?? ""] ?? "—"],
-          ["Positions", `${viewReq.filledPositions}/${viewReq.positions}`],
-          ["Applications", String(viewReq._count.applications)],
-          ["Priority", viewReq.priority ?? "—"],
-          ["Status", STATUS_LABEL[viewReq.status] ?? viewReq.status],
-          ["Experience", rng(viewReq.experienceMin, viewReq.experienceMax, "yrs")],
-          ["Salary", rng(viewReq.salaryMin, viewReq.salaryMax, "LPA")],
-          ["Education", viewReq.education ?? "—"],
-          ["Passing Year", viewReq.passingYear != null ? String(viewReq.passingYear) : "—"],
-          ["Job Grade", viewReq.jobGrade ?? "—"],
-          ["Cost Center", viewReq.costCenter ?? "—"],
-          ["Referral Bonus", viewReq.referralBonusAmount != null && `${viewReq.referralBonusAmount}` !== "" ? `₹${viewReq.referralBonusAmount}` : "—"],
-          ["Target Joining", fmtDate(viewReq.targetJoiningDate)],
-          ["Closes On", fmtDate(viewReq.closedDate)],
-          ["Posted On", fmtDate(viewReq.raisedAt ?? viewReq.createdAt)],
+        // lucide-react icons are forwardRef components, which don't structurally
+        // satisfy a narrow ComponentType<{size,className}> signature — ElementType
+        // is the permissive type that actually accepts them (and plain FCs too).
+        type AccIcon = React.ElementType;
+        interface DetailField { label: string; value: string; Icon: AccIcon; badge?: "status" | "priority" | "employment" }
+        const fields: DetailField[] = [
+          { label: "Department", value: viewReq.department?.name ?? "—", Icon: Building2 },
+          { label: "Recruiter (HR)", value: rcv, Icon: User },
+          { label: "Hiring Manager", value: hm, Icon: User },
+          { label: "Raised By", value: raisedBy, Icon: User },
+          { label: "Employment Type", value: viewReq.employmentType ?? "—", Icon: Briefcase, badge: "employment" },
+          { label: "Work Location", value: viewReq.workLocation ?? "—", Icon: Building2 },
+          { label: "Job Location", value: viewReq.jobLocation ?? "—", Icon: MapPin },
+          { label: "Job Duration", value: viewReq.jobDuration ?? "—", Icon: Clock },
+          { label: "Work Timings / Shift", value: viewReq.workTimings ?? "—", Icon: Clock },
+          { label: "In-person / Video", value: INTERVIEW_MODE_LABEL[viewReq.interviewMode ?? ""] ?? "—", Icon: Video },
+          { label: "Positions", value: `${viewReq.filledPositions}/${viewReq.positions}`, Icon: Users },
+          { label: "Applications", value: String(viewReq._count.applications), Icon: FileText },
+          { label: "Priority", value: viewReq.priority ?? "—", Icon: Flag, badge: "priority" },
+          { label: "Status", value: STATUS_LABEL[viewReq.status] ?? viewReq.status, Icon: Circle, badge: "status" },
+          { label: "Experience", value: rng(viewReq.experienceMin, viewReq.experienceMax, "yrs"), Icon: Star },
+          { label: "Salary", value: rng(viewReq.salaryMin, viewReq.salaryMax, "LPA"), Icon: IndianRupee },
+          { label: "Education", value: viewReq.education ?? "—", Icon: GraduationCap },
+          { label: "Passing Year", value: viewReq.passingYear != null ? String(viewReq.passingYear) : "—", Icon: Calendar },
+          { label: "Job Grade", value: viewReq.jobGrade ?? "—", Icon: AlignLeft },
+          { label: "Cost Center", value: viewReq.costCenter ?? "—", Icon: Building2 },
+          { label: "Referral Bonus", value: viewReq.referralBonusAmount != null && `${viewReq.referralBonusAmount}` !== "" ? `₹${viewReq.referralBonusAmount}` : "—", Icon: Gift },
+          { label: "Target Joining", value: fmtDate(viewReq.targetJoiningDate), Icon: Calendar },
+          { label: "Closes On", value: fmtDate(viewReq.closedDate), Icon: Calendar },
+          { label: "Posted On", value: fmtDate(viewReq.raisedAt ?? viewReq.createdAt), Icon: Calendar },
         ];
         const listBlock = (items: string[]) => (
           <ul className="list-disc pl-5 space-y-1 text-gray-700">{items.map((it, i) => <li key={i}>{it}</li>)}</ul>
         );
-        type AccIcon = React.ComponentType<{ size?: number; className?: string }>;
         const accordionItems: Array<{ key: string; label: string; Icon: AccIcon; tile: string; body: React.ReactNode }> = [];
         if (viewReq.jobDescription)
           accordionItems.push({ key: "jd", label: "Job Description", Icon: FileText, tile: "bg-blue-50 text-blue-600",
@@ -627,18 +685,72 @@ export default function RequisitionsPage() {
             ))}</div> });
         const firstKey = accordionItems[0]?.key;
         const effectiveOpen = openSec === null ? firstKey : openSec;
+        const typeLabel = viewReq.type.replace(/([a-z])([A-Z])/g, "$1 $2");
+        const badgeClass = (f: DetailField) =>
+          f.badge === "status" ? clsx("inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium", statusColors[viewReq.status])
+          : f.badge === "priority" ? clsx("inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium", priorityColors[viewReq.priority])
+          : f.badge === "employment" ? "inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium bg-green-50 text-green-700"
+          : "";
         return (
           <Modal open onClose={() => setViewReq(null)} size="2xl"
-            title={viewReq.title} subtitle={`${viewReq.requisitionNumber} · ${viewReq.type}`}>
-            <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
-                {fields.map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-                    <p className="text-gray-800 mt-0.5">{value}</p>
+            headerIcon={<Briefcase size={16} />}
+            title={viewReq.title} subtitle={`${viewReq.requisitionNumber} · ${typeLabel}`}
+            bodyClassName="p-0 flex flex-col">
+            <div className="p-4 space-y-4 overflow-y-auto text-xs flex-1 min-h-0">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3.5">
+                {fields.map((f) => (
+                  <div key={f.label} className="flex items-start gap-2.5">
+                    <span className="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 grid place-items-center shrink-0">
+                      <f.Icon size={14} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">{f.label}</p>
+                      {f.badge ? (
+                        <span className={clsx("mt-0.5", badgeClass(f))}>{f.value}</span>
+                      ) : (
+                        <p className="text-gray-800 font-medium mt-0.5 truncate" title={f.value}>{f.value}</p>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
+              {dateHistory.length > 0 && (
+                <div className="rounded-xl bg-indigo-50/60 ring-1 ring-indigo-100 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700 flex items-center gap-1.5">
+                      <History size={13} /> Revision History
+                    </p>
+                    {dateHistory.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllHistory((v) => !v)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-indigo-200 px-2 py-1 text-[10.5px] font-semibold text-indigo-700 hover:bg-indigo-50 transition shrink-0"
+                      >
+                        <History size={11} /> {showAllHistory ? "Show latest only" : `View all history (${dateHistory.length})`}
+                      </button>
+                    )}
+                  </div>
+                  <ul className="space-y-2">
+                    {(showAllHistory ? dateHistory : dateHistory.slice(0, 1)).map((h) => {
+                      const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+                      return (
+                        <li key={h.id} className="text-[11px] text-gray-600 border-l-2 border-amber-300 pl-2.5">
+                          <span className="font-medium text-gray-800">{h.by}</span>
+                          {" "}revised the dates on{" "}
+                          <span className="text-gray-500">{fmt(h.at)}</span>
+                          {h.startDateFrom !== h.startDateTo && (
+                            <> — Start: <span className="font-mono">{fmt(h.startDateFrom)} → {fmt(h.startDateTo)}</span></>
+                          )}
+                          {h.endDateFrom !== h.endDateTo && (
+                            <> · End: <span className="font-mono">{fmt(h.endDateFrom)} → {fmt(h.endDateTo)}</span></>
+                          )}
+                          {h.reason && <p className="text-gray-500 mt-0.5">Reason: {h.reason}</p>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               {accordionItems.length > 0 && (
                 <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
                   {accordionItems.map(({ key, label, Icon, tile, body }) => {
@@ -656,6 +768,18 @@ export default function RequisitionsPage() {
                     );
                   })}
                 </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-100 shrink-0">
+              <button type="button" onClick={() => setViewReq(null)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Close
+              </button>
+              {canManage && viewReq.status !== "ReqCancelled" && viewReq.status !== "ReqClosed" && (
+                <button type="button" onClick={() => { setForm(reqToForm(viewReq)); setEditId(viewReq.id); setShowCreate(true); setViewReq(null); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-green-300 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-50">
+                  <Pencil size={12} /> Edit Requisition
+                </button>
               )}
             </div>
           </Modal>
@@ -708,6 +832,55 @@ export default function RequisitionsPage() {
           </div>
         </div>
       )}
+
+      {/* Revise Date — Start/End Date only, with a mandatory reason (kept
+          separate from the full Edit wizard since this is meant to be a
+          quick, frequent action). Every revision is logged (who/when/why)
+          and shown in the Revision History list inside the View popup. */}
+      <Modal
+        open={!!reviseTarget}
+        onClose={() => setReviseTarget(null)}
+        title="Revise Date"
+        subtitle={reviseTarget ? `${reviseTarget.title} · ${reviseTarget.requisitionNumber}` : undefined}
+        size="sm"
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
+              <input type="date" value={reviseForm.startDate}
+                onChange={(e) => setReviseForm({ ...reviseForm, startDate: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">End Date</label>
+              <input type="date" value={reviseForm.endDate}
+                onChange={(e) => setReviseForm({ ...reviseForm, endDate: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
+            <textarea rows={3} value={reviseForm.reason}
+              onChange={(e) => setReviseForm({ ...reviseForm, reason: e.target.value })}
+              placeholder="e.g. Client delayed the interview panel"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500" />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setReviseTarget(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!reviseForm.startDate || !reviseForm.endDate || !reviseForm.reason.trim() || reviseMut.isPending}
+              onClick={() => reviseTarget && reviseMut.mutate({ id: reviseTarget.id, ...reviseForm })}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+            >
+              {reviseMut.isPending ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Resume-a-held-requisition — review held candidates before reopening. */}
       <Modal
@@ -875,6 +1048,12 @@ function reqToForm(r: ReqItem): ReqFormShape {
     reportingToId: r.reportingToId ?? "",
     hiringManagerId: r.hiringManager?.id ?? "",
     recruiterId: r.recruiter?.id ?? "",
+    jobLevelId: r.jobLevelId ?? "",
+    customSlaDays: reqNum(r.customSlaDays),
+    customSlaReason: r.customSlaReason ?? "",
+    recruiterAssignments: r.recruiterSplits?.length
+      ? r.recruiterSplits.map((s) => ({ employeeId: s.employeeId, positionsAssigned: s.positionsAssigned }))
+      : r.recruiter?.id ? [{ employeeId: r.recruiter.id, positionsAssigned: r.positions ?? 1 }] : [],
     experienceMin: reqNum(r.experienceMin),
     experienceMax: reqNum(r.experienceMax),
     salaryMin: reqNum(r.salaryMin),

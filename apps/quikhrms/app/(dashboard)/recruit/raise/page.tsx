@@ -7,7 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { useRouter } from "next/navigation";
 import { Briefcase } from "lucide-react";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
-import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
+import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, JobLevelOption } from "../_components/requisition-wizard";
 import { PageBackground } from "@/components/hrms/page-background";
 
 // People → "Raise Requisition" now uses the SAME 5-step wizard as
@@ -31,6 +31,10 @@ export default function RaiseRequisitionPage() {
   const { data: empData } = useQuery({
     queryKey: ["employees-picker"],
     queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
+  });
+  const { data: jobLevelsData } = useQuery({
+    queryKey: ["job-levels"],
+    queryFn: () => api.get<JobLevelOption[]>("/api/v1/hrms/settings/job-levels"),
   });
 
   const raiseMut = useMutation({
@@ -71,6 +75,7 @@ export default function RaiseRequisitionPage() {
           departments={deptsData?.data ?? []}
           pipelines={pipelinesData?.data ?? []}
           employees={empData?.data ?? []}
+          jobLevels={jobLevelsData?.data ?? []}
           submitting={raiseMut.isPending}
           showJustification
           submitLabel="Submit for Approval"
