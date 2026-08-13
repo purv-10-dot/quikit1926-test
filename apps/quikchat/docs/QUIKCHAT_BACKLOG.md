@@ -612,6 +612,29 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
 
 ## 10. Structural
 
+- **🔴 vitest is split 4.1.10 / 3.2.4, and neither of our two suites can start.**
+  `common_setup89` upgraded nine-plus workspaces to vitest **4.1.10**
+  (`packages/ai-sdk`, `packages/auth`, `packages/shared`, `admin`, `auth`,
+  `quikasset`, others) but left `apps/quikchat` and `services/realtime` on
+  **3.2.4**. npm hoists 4.x to the root; 3.2.4 gets nested copies whose transitive
+  deps (`loupe`, `strip-literal`, …) are never placed, so vitest exits before
+  running a single test — `ERR_MODULE_NOT_FOUND`, one package at a time.
+  Confirmed with `npm ls vitest`. Not a local corruption and not a bad merge
+  resolution: **anyone merging 89 hits it.** Regenerating the lock cannot fix it —
+  the conflict is in the `package.json` files, not the lock.
+  Two exits: upgrade both workspaces to 4.1.10 (a real 3→4 migration — attempted
+  once, and `vitest.config.ts` was then rejected with `code: 'InvalidArg'` in
+  `resolvePlugins`, most likely the `yamlRaw()` plugin), or a root `overrides`
+  entry pinning 3.2.4 (which drags nine workspaces backwards and is outside our
+  scope line). **This belongs to whoever owns 89.**
+  Last verified baseline is **140 files / 1288 tests** at `63735b13`, pre-merge.
+  Everything after that merge is unverified by tests.
+- **A lock-file conflict on a merge is not a conflict to resolve — it is a
+  question of whose dependency graph you want.** `--theirs` on
+  `package-lock.json` imports the other branch's entire resolution, including
+  version choices your workspaces never made; `--ours` keeps yours and risks
+  missing packages the other branch added. Neither is automatic, and the symptom
+  surfaces far downstream as missing modules rather than as a version error.
 - **30 excluded Vitest files** — real coverage that never runs, including
   `app/api/uploads/sign/route.test.ts`. The `.env.local` fix (Part A) recovered
   one non-excluded test; the 30 remain. Blocked on a decision: re-home to
@@ -624,8 +647,9 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   break survives a **fully green** CI and surfaces only when UAT deploys — which
   is exactly what happened: the branch was un-buildable on origin for several
   commits with lint, typecheck and 1261 tests all passing, and it was found by
-  accident. One line to fix; `.github/` is out of scope, so hand it to whoever
-  owns CI.
+  accident. Since fixed (`51dbcd84`); `next build` verified clean locally before
+  the `common_setup89` merge. **The CI gap itself remains open.** One line to fix;
+  `.github/` is out of scope, so hand it to whoever owns CI.
 - **No global line-ending normalisation.** `.gitattributes` exists but pins only
   `*.sh`, `Dockerfile` and `*.Dockerfile` to LF. There is no `* text=auto`, so
   every other file is unnormalised — hence the "LF will be replaced by CRLF"
