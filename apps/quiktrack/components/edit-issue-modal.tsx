@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { sanitizeRichText } from "@/lib/sanitize";
@@ -285,6 +286,7 @@ export function EditIssueModal({
   // controls the user can't actually use.
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
+  const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
@@ -688,6 +690,18 @@ export function EditIssueModal({
         }
         if (serverData && "description" in serverData && !descEditing) {
           setDescription((serverData.description as string | null) ?? "");
+        }
+        // A status change can run post-functions that ADD a comment and always
+        // writes a history row — both live in separate React Query caches that
+        // IssueActivity reads. Invalidate them so the Activity feed shows the
+        // workflow's comment / status-change entry without a manual refresh.
+        if ("statusId" in body) {
+          void queryClient.invalidateQueries({
+            queryKey: ["quiktrack", "issue-comments", issue.id],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["quiktrack", "issue-history", issue.id],
+          });
         }
         // Carry the issue's resulting sprint so listeners (the backlog) can also
         // refresh the DESTINATION section on a sprint move — not just the source
