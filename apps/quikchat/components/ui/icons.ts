@@ -72,6 +72,7 @@ export {
   Calendar,
   CalendarPlus,
   Clock,
+  MapPin,
   Inbox,
   Archive,
   Filter,

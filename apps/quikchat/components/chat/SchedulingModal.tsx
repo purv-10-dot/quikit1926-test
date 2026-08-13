@@ -67,6 +67,20 @@ export function SchedulingModal({
   const [date, setDate] = useState(todayLocal());
   const [time, setTime] = useState("10:00");
   const [duration, setDuration] = useState("30");
+  const [location, setLocation] = useState("");
+  const [allDay, setAllDay] = useState(false);
+  // All-day spans whole days, so "start time + duration" is meaningless — the
+  // form swaps to an end DATE. Inclusive: same value as `date` means one day.
+  const [endDate, setEndDate] = useState(todayLocal());
+  // Attendee ids invited as optional. Organizer is never in here.
+  const [optionalIds, setOptionalIds] = useState<ReadonlySet<string>>(new Set());
+  const toggleOptional = (id: string) =>
+    setOptionalIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [conferencing, setConferencing] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,14 +177,23 @@ export function SchedulingModal({
     setSubmitting(true);
     setError(null);
     try {
-      const start = toIso(date, time);
-      const end = new Date(new Date(start).getTime() + durMin * 60_000).toISOString();
+      // All-day sends CALENDAR DATES with an INCLUSIVE end; the server converts
+      // to the exclusive midnight-UTC instants storage and the providers want
+      // (lib/all-day.ts). Timed sends instants, as before.
+      const start = allDay ? date : toIso(date, time);
+      const end = allDay
+        ? endDate
+        : new Date(new Date(toIso(date, time)).getTime() + durMin * 60_000).toISOString();
+      const chosen = others.filter((m) => selected.has(m.id)).map((m) => m.id);
       const { meeting } = await createMeetingApi(channelId, {
         title: t,
         description: description.trim() || undefined,
+        location: location.trim() || undefined,
+        allDay,
         start,
         end,
-        attendeeUserIds: others.filter((m) => selected.has(m.id)).map((m) => m.id),
+        attendeeUserIds: chosen,
+        optionalAttendeeUserIds: chosen.filter((id) => optionalIds.has(id)),
         conferencing,
         clientMessageId: crypto.randomUUID(),
       });
@@ -265,6 +288,19 @@ export function SchedulingModal({
             />
           </label>
 
+          <label className="qc-field">
+            <span className="qc-field__label">Location</span>
+            <input
+              className="qc-input"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Room, address or link (optional)"
+              aria-label="Meeting location"
+            />
+          </label>
+
+          <Switch checked={allDay} onChange={setAllDay} label="All day" />
+
           <div className="qc-schedule__when">
             <label className="qc-field">
               <span className="qc-field__label">Date</span>
@@ -272,15 +308,35 @@ export function SchedulingModal({
                 type="date"
                 className="qc-input"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  // Never leave the end before the start.
+                  if (e.target.value > endDate) setEndDate(e.target.value);
+                }}
                 aria-label="Meeting date"
               />
             </label>
-            <TimeInput value={time} onChange={setTime} label="Start" />
-            <div className="qc-field">
-              <span className="qc-field__label">Duration</span>
-              <Segmented options={DURATIONS} value={duration} onChange={setDuration} />
-            </div>
+            {allDay ? (
+              <label className="qc-field">
+                <span className="qc-field__label">End date</span>
+                <input
+                  type="date"
+                  className="qc-input"
+                  value={endDate}
+                  min={date}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  aria-label="Meeting end date"
+                />
+              </label>
+            ) : (
+              <>
+                <TimeInput value={time} onChange={setTime} label="Start" />
+                <div className="qc-field">
+                  <span className="qc-field__label">Duration</span>
+                  <Segmented options={DURATIONS} value={duration} onChange={setDuration} />
+                </div>
+              </>
+            )}
           </div>
 
           <Switch
@@ -323,17 +379,37 @@ export function SchedulingModal({
                 </span>
               ) : null}
               {visibleOthers.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className="qc-att-chip"
-                  aria-pressed={selected.has(m.id)}
-                  data-selected={selected.has(m.id)}
-                  onClick={() => toggle(m.id)}
-                >
-                  <Avatar name={m.displayName} id={m.id} avatarUrl={m.avatarUrl} size={20} />
-                  {m.displayName}
-                </button>
+                <span key={m.id} className="qc-att-chip-wrap">
+                  <button
+                    type="button"
+                    className="qc-att-chip"
+                    aria-pressed={selected.has(m.id)}
+                    data-selected={selected.has(m.id)}
+                    onClick={() => toggle(m.id)}
+                  >
+                    <Avatar name={m.displayName} id={m.id} avatarUrl={m.avatarUrl} size={20} />
+                    {m.displayName}
+                  </button>
+                  {/* Only offered once they are actually invited — an optional
+                      toggle on someone who is not attending means nothing.
+                      Default required, matching the column default and what
+                      microsoft.ts hardcoded before this. */}
+                  {selected.has(m.id) ? (
+                    <button
+                      type="button"
+                      className="qc-att-optional"
+                      aria-pressed={optionalIds.has(m.id)}
+                      data-on={optionalIds.has(m.id) || undefined}
+                      aria-label={`${m.displayName} — ${
+                        optionalIds.has(m.id) ? "optional" : "required"
+                      }. Toggle.`}
+                      title={optionalIds.has(m.id) ? "Optional attendee" : "Required attendee"}
+                      onClick={() => toggleOptional(m.id)}
+                    >
+                      {optionalIds.has(m.id) ? "Optional" : "Required"}
+                    </button>
+                  ) : null}
+                </span>
               ))}
             </div>
           </div>

@@ -386,6 +386,22 @@ only, no component); duplicate `GET /api/org/roles/[id]/permissions`;
   `<video>` elements that can't attach a header.
 - **Scroll-to-divider on open** — Teams/WhatsApp scroll to the unread line; a
   divider above a large unread block is currently off-screen.
+- **⚠️ DEPLOY ORDER: meeting fields need their SQL on UAT before the code ships**
+  — `QcMeeting.location`, `QcMeeting.allDay` and `QcMeetingAttendee.optional`
+  exist **locally only** (applied by hand with `psql`, not by Pravin). Prisma
+  hard-errors on `SELECT … "allDay"` against a table without the column, so
+  deploying this code first breaks **every meeting read**, not just the new
+  fields — the meeting card, the calendar list and `/meeting/[id]/join` all go
+  down, not degrade. Code cannot defend against it: the column is in the
+  generated client's SELECT list whether or not the feature is used. The SQL
+  must run on each environment BEFORE the code reaches it. Same note is in the
+  PR description.
+- **Recurrence for meetings** — deliberately excluded from the field additions.
+  Graph's `recurrence` is a nested `{ pattern, range }` object, not a scalar, and
+  exceptions to a series need their own storage regardless of whether the series
+  is an RRULE string, a JSON blob or child rows. Sizing it as a column addition
+  would commit us to the wrong shape before the decision is made. Poll and
+  find-best-time likewise.
 - **Group ↔ Channel conversion** — deliberately excluded from the vocabulary
   change. Flipping a private Group to a public Channel makes **the entire
   message history visible to everyone in the org, retroactively** — there is no

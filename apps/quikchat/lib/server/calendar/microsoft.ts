@@ -258,11 +258,22 @@ export class MicrosoftCalendarProvider implements CalendarProvider {
       body: { contentType: "text", content: input.description ?? "" },
       start: { dateTime: input.start, timeZone: "UTC" },
       end: { dateTime: input.end, timeZone: "UTC" },
-      attendees: input.attendeeEmails.map((address) => ({
-        emailAddress: { address },
-        type: "required",
+      attendees: input.attendees.map((a) => ({
+        emailAddress: { address: a.email },
+        // Was hardcoded "required" for everyone.
+        type: a.optional ? "optional" : "required",
       })),
     };
+    if (input.location) {
+      body.location = { displayName: input.location };
+    }
+    if (input.allDay) {
+      // Graph REJECTS isAllDay unless start/end are exactly T00:00:00 in the
+      // supplied timeZone. The service guarantees midnight-UTC instants (and
+      // asserts it) precisely so this holds — see lib/all-day.ts. `end` is
+      // already exclusive, which is also what Graph expects.
+      body.isAllDay = true;
+    }
     if (input.conferencing) {
       body.isOnlineMeeting = true;
       body.onlineMeetingProvider = "teamsForBusiness";
