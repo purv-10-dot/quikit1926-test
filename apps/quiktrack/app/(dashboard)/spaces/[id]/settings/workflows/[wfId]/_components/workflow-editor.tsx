@@ -238,10 +238,11 @@ function EditorBody({
   );
 
   return (
-    // Pin to the viewport (minus the top nav) so the diagram body is bounded and
-    // fully on-screen — otherwise React Flow's 100%-height pane overflows below
-    // the fold and fitView centres content off-screen.
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+    // Fill the parent (the settings <main>) and clip our own overflow so the
+    // toolbar/sub-toolbar stay fixed and ONLY the diagram/panel body scrolls.
+    // (h-full not 100vh: the settings shell already accounts for the top nav, so
+    // 100vh would overflow <main> and scroll the whole editor, toolbar included.)
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Toolbar (Jira-style) */}
       <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2">
         <div className="min-w-0">
@@ -527,14 +528,17 @@ function EditorBody({
           )}
         </div>
 
-        {/* Right detail panel region + its left-edge collapse toggle. */}
-        <div className="relative flex min-h-0">
+        {/* Right detail panel region + its left-edge collapse toggle. When
+            collapsed the panels don't render, so keep a thin rail (w-6 + left
+            border) so the toggle button stays anchored inside the viewport and
+            fully visible instead of hanging off the right edge. */}
+        <div className={`relative flex min-h-0 ${panelCollapsed ? "w-6 shrink-0 border-l border-gray-200 bg-white" : ""}`}>
         {/* Small round collapse/expand button on the panel's LEFT edge (Jira). */}
         <button
           type="button"
           onClick={() => setPanelCollapsed((v) => !v)}
           title={panelCollapsed ? "Expand panel" : "Collapse panel"}
-          className="absolute -left-3 top-4 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
+          className="absolute -left-3 top-4 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
         >
           {panelCollapsed ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>

@@ -16,7 +16,9 @@ export default function WorkflowEditorPage({
 
   return (
     <RequireProjectPerm projectId={resolved.id} resource="Project" action="update">
-      <div className="h-[calc(100vh-0px)]">
+      {/* Fill the settings <main> exactly so the editor's own header stays put
+          and only its diagram/panel body scrolls (not the whole page). */}
+      <div className="h-full">
         <WorkflowEditor projectId={resolved.id} wfId={resolved.wfId} />
       </div>
     </RequireProjectPerm>
