@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Check, X, Pencil, History, Info } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
@@ -75,6 +75,9 @@ async function fetchStatuses(projectId: string): Promise<StatusMeta[]> {
 
 export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: string }) {
   const router = useRouter();
+  // The Workflows list links "View as text" with ?view=text — open on that tab.
+  const searchParams = useSearchParams();
+  const initialTab: "diagram" | "text" = searchParams.get("view") === "text" ? "text" : "diagram";
   const rm = useQuery({ queryKey: ["quiktrack", "workflow", wfId], queryFn: () => fetchReadModel(wfId) });
   const pool = useQuery({ queryKey: ["quiktrack", "statuses", projectId], queryFn: () => fetchStatuses(projectId) });
 
@@ -97,6 +100,7 @@ export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: s
       isActive={rm.data!.workflow.isActive}
       hasPendingDraft={rm.data!.draft !== null}
       pool={pool.data!}
+      initialTab={initialTab}
       onClose={() => router.push(`/spaces/${projectId}/settings/workflows`)}
     />
   );
@@ -114,6 +118,7 @@ function EditorBody({
   isActive,
   hasPendingDraft,
   pool,
+  initialTab = "diagram",
   onClose,
 }: {
   projectId: string;
@@ -122,11 +127,13 @@ function EditorBody({
   isActive: boolean;
   hasPendingDraft: boolean;
   pool: StatusMeta[];
+  /** Opening tab — "text" when the list linked "View as text" (?view=text). */
+  initialTab?: "diagram" | "text";
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const ed = useWorkflowEditor(wfId, initialDraft, hasPendingDraft);
-  const [tab, setTab] = useState<"diagram" | "text">("diagram");
+  const [tab, setTab] = useState<"diagram" | "text">(initialTab);
   const [showLabels, setShowLabels] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const [addStatusOpen, setAddStatusOpen] = useState(false);
