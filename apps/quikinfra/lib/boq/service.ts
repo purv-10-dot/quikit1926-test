@@ -25,9 +25,14 @@ import type { TenantContext } from "@/lib/auth/context";
 import { db } from "@/lib/db";
 import {
   postProgressEntry,
+  postActivityProgressEntry,
   ProgressLedgerError,
 } from "./progress-ledger";
-import { postBillingEntry, BillingLedgerError } from "./billing-ledger";
+import {
+  postBillingEntry,
+  postActivityBillingEntry,
+  BillingLedgerError,
+} from "./billing-ledger";
 import {
   runImportPipeline,
   type ImportMode,
@@ -838,6 +843,68 @@ export class BOQService {
       await postBillingEntry(tx, ctx, {
         projectId,
         boqNo,
+        qty,
+        direction: 1,
+        rabId: opts?.rabId,
+        rabLineId: opts?.rabLineId,
+        overrideFlag: opts?.overrideFlag,
+        overrideReason: opts?.overrideReason,
+      });
+    } catch (err: unknown) {
+      if (err instanceof BillingLedgerError) {
+        throw new BOQError(err.code, err.message, err.httpStatus);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * FREE_SCOPE variant of applyDPRProgressTxn — anchors on a CnActivityItem
+   * (scopeId) instead of a BOQ leaf. boqItemId is written null.
+   */
+  async applyActivityDPRProgressTxn(
+    tx: Prisma.TransactionClient,
+    ctx: TenantContext,
+    projectId: string,
+    scopeId: string,
+    qty: number,
+    workType: "sub_contractor" | "self",
+    opts?: { dprId?: string; dprLineId?: string; workOrderId?: string; overrideFlag?: boolean; overrideReason?: string }
+  ): Promise<void> {
+    try {
+      await postActivityProgressEntry(tx, ctx, {
+        projectId,
+        scopeId,
+        qty,
+        workType,
+        direction: 1,
+        dprId: opts?.dprId,
+        dprLineId: opts?.dprLineId,
+        workOrderId: opts?.workOrderId,
+        overrideFlag: opts?.overrideFlag,
+        overrideReason: opts?.overrideReason,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ProgressLedgerError) {
+        throw new BOQError(err.code, err.message, err.httpStatus);
+      }
+      throw err;
+    }
+  }
+
+  /** FREE_SCOPE variant of applyRABBillingTxn. */
+  async applyActivityRABBillingTxn(
+    tx: Prisma.TransactionClient,
+    ctx: TenantContext,
+    projectId: string,
+    scopeId: string,
+    qty: number,
+    opts?: { rabId?: string; rabLineId?: string; overrideFlag?: boolean; overrideReason?: string }
+  ): Promise<void> {
+    try {
+      await postActivityBillingEntry(tx, ctx, {
+        projectId,
+        scopeId,
         qty,
         direction: 1,
         rabId: opts?.rabId,

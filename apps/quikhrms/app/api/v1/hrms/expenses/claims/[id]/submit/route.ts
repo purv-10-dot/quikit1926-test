@@ -2,15 +2,20 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, forbidden, conflict, internalError } from "@/lib/api-response";
-import { buildPolicySnapshot, validateAgainstSnapshot } from "@/lib/services/expenses";
+import { buildPolicySnapshot, validateAgainstSnapshot, resolveExpenseLevelApproverIds, type ExpenseChainLevel } from "@/lib/services/expenses";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getActiveChainLevels } from "@/lib/services/approval-chain";
+import { notifyExpenseApprovers } from "@/lib/services/expense-notify";
 
 export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
     const { id } = params;
-    const claim = await prisma.expenseClaim.findFirst({ where: { id, orgId, deletedAt: null } });
+    const claim = await prisma.expenseClaim.findFirst({
+      where: { id, orgId, deletedAt: null },
+      include: { employee: { select: { reportingManagerId: true, department: { select: { headId: true } } } } },
+    });
     if (!claim) return notFound("Claim not found");
     // Owner-only submission.
     const meId = await resolveEmployeeId(orgId, userId);
@@ -60,6 +65,27 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
         violations: policyViolations,
       },
     });
+
+    // Notify whoever holds level 1 of the approval chain — same resolution
+    // order the approve route enforces (per-policy chain → central chain →
+    // reporting-manager/dept-head fallback).
+    void (async () => {
+      const chain: ExpenseChainLevel[] = (snapshot?.approvalChain as ExpenseChainLevel[] | undefined) ?? [];
+      const centralLevels = chain.length === 0 ? await getActiveChainLevels(orgId, "Expense") : null;
+      const approverIds = await resolveExpenseLevelApproverIds(
+        orgId, 1, chain, centralLevels,
+        { reportingManagerId: claim.employee?.reportingManagerId ?? null, departmentHeadId: claim.employee?.department?.headId ?? null },
+        updated.employeeId,
+      );
+      await notifyExpenseApprovers(orgId, {
+        id: updated.id,
+        employeeId: updated.employeeId,
+        title: updated.title,
+        category: updated.category,
+        totalAmount: Number(updated.totalAmount),
+        currency: updated.currency,
+      }, 1, approverIds);
+    })();
 
     return successResponse({ claim: updated, violations: policyViolations });
   } catch (error) {

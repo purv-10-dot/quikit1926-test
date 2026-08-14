@@ -93,7 +93,16 @@ describe("seedDefaultRoles — fresh org", () => {
             p.resource.startsWith("construction.org_"),
         )
         .map((p) => ({ resource: p.resource, action: p.action }));
-      return [...umbrella, ...perPage];
+      // Activity Scope has no legacy PERMISSIONS constant — the seeder mirrors
+      // each role's construction.boq grants onto construction.activity_scope
+      // (minus `import`, which the hand-entered scope tree has no use for).
+      const activityScope = umbrella
+        .filter((p) => p.resource === "construction.boq" && p.action !== "import")
+        .map((p) => ({
+          resource: "construction.activity_scope",
+          action: p.action,
+        }));
+      return [...umbrella, ...perPage, ...activityScope];
     });
     db.cnRolePermissionV2.createMany.mockResolvedValue({ count: 0 });
 

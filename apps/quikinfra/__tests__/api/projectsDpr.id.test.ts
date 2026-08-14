@@ -81,6 +81,83 @@ describe("GET /api/projects/dpr/[id]", () => {
       orgId: TEST_TENANT,
     });
   });
+
+  // Regression: FREE_SCOPE work items anchor on scopeId → CnActivityItem,
+  // not boqItemId. The enrich used to resolve unit/target from the BOQ
+  // table only, so activity rows came back with a blank ref, blank unit
+  // and totalTarget 0 — which pinned the form's % Completed at 0.0%.
+  it("resolves ref / unit / target from the activity for FREE_SCOPE work items", async () => {
+    setContext(makeAdminCtx());
+    db.cnDailyProgressReport.findFirst.mockResolvedValue(
+      dprRow({
+        workItems: [
+          {
+            id: "wi1",
+            boqItemId: null,
+            scopeType: "ACTIVITY",
+            scopeId: "act1",
+            description: "Earthwork in excavation",
+            todayQty: "2",
+            cumulativeQty: "2",
+            uomId: "uom1",
+            images: [],
+          },
+        ],
+      }),
+    );
+    db.cnActivityItem.findMany.mockResolvedValue([
+      {
+        id: "act1",
+        activityCode: "ACT-001",
+        uomId: "uom1",
+        tenderQty: "10",
+        scopeQty: "0",
+      },
+    ]);
+    db.cnUOM.findMany.mockResolvedValue([{ id: "uom1", code: "CUM" }]);
+
+    const res = await GET(req("GET"), params);
+    expect(res.status).toBe(200);
+    const [wi] = (await res.json()).workItems;
+    expect(wi.boqNo).toBe("ACT-001");
+    expect(wi.unit).toBe("CUM");
+    expect(wi.totalTarget).toBe(10);
+    // Scope anchor must round-trip so the edit form's PUT keeps the link.
+    expect(wi.scopeType).toBe("ACTIVITY");
+    expect(wi.scopeId).toBe("act1");
+    expect(db.cnActivityItem.findMany.mock.calls[0][0].where).toMatchObject({
+      orgId: TEST_TENANT,
+    });
+  });
+
+  it("prefers an activity's revised scopeQty over its tender baseline", async () => {
+    setContext(makeAdminCtx());
+    db.cnDailyProgressReport.findFirst.mockResolvedValue(
+      dprRow({
+        workItems: [
+          {
+            id: "wi1",
+            boqItemId: null,
+            scopeType: "ACTIVITY",
+            scopeId: "act1",
+            description: "Earthwork",
+            todayQty: "5",
+            cumulativeQty: "5",
+            uomId: null,
+            images: [],
+          },
+        ],
+      }),
+    );
+    db.cnActivityItem.findMany.mockResolvedValue([
+      { id: "act1", activityCode: "ACT-001", uomId: null, tenderQty: "100", scopeQty: "150" },
+    ]);
+
+    const res = await GET(req("GET"), params);
+    const [wi] = (await res.json()).workItems;
+    expect(wi.totalTarget).toBe(150);
+    expect(wi.unit).toBe("");
+  });
 });
 
 // ═══════════════════════════════════════════════
@@ -112,6 +189,59 @@ describe("PUT /api/projects/dpr/[id]", () => {
     const res = await PUT(req("PUT", { siteRemarks: "rain stopped work" }), params);
     expect(res.status).toBe(200);
     expect((await res.json()).id).toBe(ID);
+  });
+
+  // Regression: the work-item rewrite used to drop scopeType/scopeId and
+  // coerce boqItemId to "", so re-saving a FREE_SCOPE DPR orphaned every
+  // row from its activity.
+  it("persists the activity anchor for FREE_SCOPE work items", async () => {
+    setContext(makeAdminCtx());
+    db.cnDailyProgressReport.findFirst
+      .mockResolvedValueOnce(dprRow())
+      .mockResolvedValueOnce(dprRow());
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+
+    const res = await PUT(
+      req("PUT", {
+        workItems: [
+          {
+            boqItemId: "",
+            scopeType: "ACTIVITY",
+            scopeId: "act1",
+            boqNo: "ACT-001",
+            description: "Earthwork",
+            todayQty: 2,
+            uomId: "uom1",
+          },
+        ],
+      }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const [created] = db.cnDPRWorkItem.createMany.mock.calls[0][0].data;
+    expect(created.scopeType).toBe("ACTIVITY");
+    expect(created.scopeId).toBe("act1");
+    expect(created.boqItemId).toBeNull();
+  });
+
+  it("still writes boqItemId for BOQ-mode work items", async () => {
+    setContext(makeAdminCtx());
+    db.cnDailyProgressReport.findFirst
+      .mockResolvedValueOnce(dprRow())
+      .mockResolvedValueOnce(dprRow());
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+
+    await PUT(
+      req("PUT", {
+        workItems: [
+          { boqItemId: "boq1", description: "Concrete", todayQty: 3, uomId: "uom1" },
+        ],
+      }),
+      params,
+    );
+    const [created] = db.cnDPRWorkItem.createMany.mock.calls[0][0].data;
+    expect(created.boqItemId).toBe("boq1");
+    expect(created.scopeType).toBeNull();
   });
 });
 
@@ -276,9 +406,10 @@ describe("POST /api/projects/dpr/[id]/approve", () => {
       status: "pending_approval",
       currentStepOrder: 1,
     });
-    db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" }) // current
-      .mockResolvedValueOnce(null); // no next step → final
+    db.cnApprovalWorkflowStep.findMany.mockResolvedValue([
+      { stepOrder: 1, approverUserId: null, approverUserIds: [], approverRoleId: "SITE_ADMIN" },
+    ] as never); // single step → final
+    db.cnApprovalInstance.updateMany.mockResolvedValue({ count: 1 } as never);
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
     db.cnApprovalInstance.findUnique.mockResolvedValue({
       id: "inst1",

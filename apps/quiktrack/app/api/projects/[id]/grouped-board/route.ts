@@ -24,6 +24,8 @@ export const GET = withOrgAuth<{ id: string }>(
         { status: 404 },
       );
     }
+    // params.id may be a projectKey; loadProjectAccess resolved it to the cuid.
+    const projectId = access.projectId;
     const url = new URL(req.url);
     const sprintId = url.searchParams.get("sprintId");
     const assigneeId = url.searchParams.get("assigneeId");
@@ -32,7 +34,7 @@ export const GET = withOrgAuth<{ id: string }>(
     const search = url.searchParams.get("search")?.trim();
     const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
 
-    const defaultGroup = await ensureDefaultGroup(orgId, params.id, userId);
+    const defaultGroup = await ensureDefaultGroup(orgId, projectId, userId);
 
     // Grouped Kanban is an active-work board: backlog tasks (sprintId=null)
     // and tasks in PLANNED / COMPLETED sprints are never shown. Multiple
@@ -40,7 +42,7 @@ export const GET = withOrgAuth<{ id: string }>(
     // sprintId=all) unions every active sprint's tasks. A specific sprintId
     // is honored only if that sprint is currently active.
     const activeSprintRows = await db.qtSprint.findMany({
-      where: { projectId: params.id, status: "ACTIVE", isDeleted: false },
+      where: { projectId, status: "ACTIVE", isDeleted: false },
       select: { id: true },
     });
     const activeSprintIds = activeSprintRows.map((s) => s.id);
@@ -75,11 +77,11 @@ export const GET = withOrgAuth<{ id: string }>(
 
     const [groups, statuses, issues] = await Promise.all([
       db.qtTaskGroup.findMany({
-        where: { projectId: params.id, isDeleted: false },
+        where: { projectId, isDeleted: false },
         orderBy: [{ isDefault: "desc" }, { order: "asc" }, { createdAt: "asc" }],
       }),
       db.qtIssueStatus.findMany({
-        where: { projectId: params.id, isDeleted: false },
+        where: { projectId, isDeleted: false },
         orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
         select: {
           id: true,
@@ -112,7 +114,7 @@ export const GET = withOrgAuth<{ id: string }>(
           )
         : db.qtIssue.findMany({
         where: {
-          projectId: params.id,
+          projectId,
           orgId,
           isDeleted: false,
           type: { notIn: ["EPIC", "SUBTASK"] },
@@ -164,7 +166,7 @@ export const GET = withOrgAuth<{ id: string }>(
     return NextResponse.json({
       success: true,
       data: {
-        projectId: params.id,
+        projectId,
         defaultGroupId: defaultGroup.id,
         statuses,
         groups: groups.map((g) => ({

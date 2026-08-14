@@ -9,6 +9,7 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { attendanceDayStart } from "@/lib/attendance/day";
 import { regularizationBlockReason } from "@/lib/attendance/regularization-guards";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { notifyRegularizationApprovers } from "@/lib/services/attendance-notify";
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/attendance/regularizations — list pending/approval-scoped regularization requests */
@@ -143,6 +144,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       event: "attendance.regularization.requested",
       payload: { employeeId, recordId: record.id, date: day, reason },
     });
+    void notifyRegularizationApprovers(orgId, employeeId, record.id, day, reason);
 
     return successResponse(record, undefined, 201);
   } catch (error) {

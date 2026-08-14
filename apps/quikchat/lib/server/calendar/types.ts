@@ -19,14 +19,38 @@ export interface FreeBusyBlock {
  */
 export type FreeBusyForEmail = FreeBusyBlock[] | "unknown";
 
+/**
+ * One invitee. Structured rather than a second parallel `optionalEmails: []`
+ * array — two lists that must stay index-aligned is how an attendee ends up
+ * with someone else's optionality.
+ */
+export interface MeetingAttendeeInput {
+  email: string;
+  /** Graph `type: "optional"` / Google `attendees[].optional`. Default false. */
+  optional?: boolean;
+}
+
 export interface CreateMeetingInput {
   orgId: string;
   organizerId: string;
   title: string;
   description?: string;
+  /** Free text. Graph `location.displayName`; Google top-level `location`. */
+  location?: string;
+  /**
+   * Calendar-date event. `start`/`end` are then midnight-UTC instants and `end`
+   * is EXCLUSIVE (one day on the 14th = 14th 00:00Z → 15th 00:00Z) — the
+   * convention BOTH providers use, which is why the seam carries it in that
+   * form. The inclusive form is a DTO concern; see lib/all-day.ts.
+   *
+   * Providers must not treat this as a passthrough flag: Graph sets
+   * `isAllDay` and requires midnight alignment, while Google switches the
+   * payload SHAPE from `{ dateTime }` to `{ date }` and has no boolean at all.
+   */
+  allDay?: boolean;
   start: string; // ISO
   end: string; // ISO
-  attendeeEmails: string[];
+  attendees: MeetingAttendeeInput[];
   /** When true, request a conferencing (Meet) link. */
   conferencing: boolean;
 }

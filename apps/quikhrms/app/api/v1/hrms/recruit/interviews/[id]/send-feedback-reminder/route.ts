@@ -7,6 +7,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewFeedbackRequestEmail } from "@/lib/email-templates/interview-feedback-request";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
 import { stageNames } from "@/lib/services/pipeline-stages";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 /**
  * POST /api/v1/hrms/recruit/interviews/[id]/send-feedback-reminder
@@ -47,7 +48,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId }, params) => {
       expiresAt = gen.expiresAt;
     }
 
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
 
     const pipeline = iv.application?.requisition?.pipelineId
       ? await prisma.hiringPipeline.findFirst({ where: { id: iv.application.requisition.pipelineId, orgId } })

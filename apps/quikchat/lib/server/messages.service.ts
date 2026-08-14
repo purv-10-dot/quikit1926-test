@@ -11,11 +11,20 @@ import {
   type SendMessageInput,
 } from "@/lib/shared";
 import { loadMeetingDto } from "./calendar.serialize";
+import { MESSAGES_ORDER, olderThanCursor } from "./messages-cursor";
 import { displayNameOf, loadPublicUsers, toMessageDto, type MessageRow } from "./helpers";
 import * as notifications from "./notifications.service";
 import { getStorage } from "./storage";
 
 const MAX_CONTENT = 8000;
+
+/**
+ * How long after posting a message its sender may still edit it (QC_007).
+ * SOURCE OF TRUTH for the window — the client mirrors this value in
+ * `lib/message-actions.ts` (`EDIT_WINDOW_MS`) to hide the Edit action, since the
+ * `@/lib/shared` barrel isn't importable from client bundles. Change both.
+ */
+export const EDIT_WINDOW_MS = 15 * 60_000;
 
 /** How a message was authored — defaults to a human; agents stamp ai_agent. */
 export interface SendActor {
@@ -162,17 +171,26 @@ export async function list(
   before?: string,
 ): Promise<MessageDto[]> {
   await assertMembership(ctx.orgId, channelId, ctx.userId);
-  const where: { orgId: string; channelId: string; createdAt?: { lt: Date } } = {
-    orgId: ctx.orgId,
-    channelId,
-  };
+  const where: Prisma.QcMessageWhereInput = { orgId: ctx.orgId, channelId };
   if (before) {
-    const cursor = await prisma.qcMessage.findFirst({ where: { id: before, orgId: ctx.orgId } });
-    if (cursor) where.createdAt = { lt: cursor.createdAt };
+    // Scoped to `channelId`, not just `orgId`: an id from a DIFFERENT channel in
+    // the same org used to resolve here and produce a plausible-looking wrong
+    // page. It now takes the same 400 path as an unknown id.
+    const cursor = await prisma.qcMessage.findFirst({
+      where: { id: before, orgId: ctx.orgId, channelId },
+      select: { id: true, createdAt: true },
+    });
+    // Previously this was `if (cursor)` with no else — an unknown id silently
+    // dropped the filter and returned the NEWEST page: a 200 with wrong data,
+    // which the client cannot distinguish from a legitimate response. Safe to
+    // reject outright because deletes are tombstones (`type: "Delete"`, the row
+    // and its id survive), so no legitimate scroll-back can hold a dead cursor.
+    if (!cursor) throw new HttpError(400, "Unknown `before` cursor for this channel");
+    Object.assign(where, olderThanCursor(cursor));
   }
   const messages = await prisma.qcMessage.findMany({
     where,
-    orderBy: { createdAt: "desc" },
+    orderBy: MESSAGES_ORDER,
     take: Math.min(limit, 100),
   });
   return serializeMany(ctx, messages);
@@ -458,6 +476,11 @@ export async function editMessage(
   if (msg.senderId !== ctx.userId) throw new HttpError(403, "You can only edit your own messages");
   if (msg.type === "Delete" || msg.type === "SystemActivity") {
     throw new HttpError(403, "This message cannot be edited");
+  }
+  // QC_007: edits are only allowed inside a fixed window after posting. Delete has
+  // no such window — this gate is edit-only, by design.
+  if (Date.now() - msg.createdAt.getTime() > EDIT_WINDOW_MS) {
+    throw new HttpError(403, "Edit window has passed");
   }
   const trimmed = (content ?? "").trim();
   if (!trimmed) throw new HttpError(403, "Message cannot be empty");

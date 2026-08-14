@@ -118,7 +118,7 @@ export async function refreshLiabilityForPayRun(orgId: string, payRunId: string)
  *   Paid     — allocated >= deducted (within 1 paisa tolerance)
  *   Excess   — allocated > deducted (only flagged if difference > 1 paisa)
  */
-export function computeStatus(args: {
+function computeStatus(args: {
   totalDeducted: number;
   totalAllocated: number;
   dueDate: Date;

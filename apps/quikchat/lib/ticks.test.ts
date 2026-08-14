@@ -1,6 +1,12 @@
-import { ASSISTANT_BOT_USER_ID, type MessageDto, type PublicUser } from "@/lib/shared";
+import {
+  ASSISTANT_BOT_USER_ID,
+  type ChannelList,
+  type MessageDto,
+  type PublicUser,
+} from "@/lib/shared";
 import { describe, expect, it } from "vitest";
 import { isDeliveredToAll, isReadByAll, partitionMessageAudience, tickState } from "./ticks";
+import { applyReadEvent } from "./realtime-cache";
 
 const me = "me";
 const created = "2026-05-08T12:00:00Z";
@@ -109,5 +115,49 @@ describe("partitionMessageAudience (Message info)", () => {
     expect(audience.read[0]!.at).toBe(after);
     expect(audience.delivered.map((e) => e.user.id)).toEqual(["cara"]);
     expect(audience.pending.map((e) => e.user.id)).toEqual(["dan"]);
+  });
+});
+
+// QC_005 regression: the `read` socket event → applyReadEvent (channels cache
+// `memberReadAt`) → ConversationView passes `channel.memberReadAt` → tickState.
+// This guards the data contract between the two ends of that wiring (the keys
+// applyReadEvent writes are the keys tickState reads), so the blue "read" tick
+// can't silently stop working.
+describe("read event → tick contract (QC_005)", () => {
+  const channelId = "c1";
+  const dm: ChannelList = {
+    priority: [],
+    recent: [
+      {
+        channelId,
+        name: "Bob",
+        avatarUrl: null,
+        type: "dm",
+        visibility: "private",
+        isPriority: false,
+        unreadCount: 0,
+        lastActivityAt: created,
+        members: [u(me), u("bob")],
+        memberReadAt: {},
+        memberDeliveredAt: { bob: after },
+        lastMessage: null,
+      },
+    ],
+  } as unknown as ChannelList;
+
+  it("a bob `read` watermark flips an own message from delivered → read", () => {
+    // Before the read event: delivered (bob received, not yet read).
+    const item0 = dm.recent[0]!;
+    expect(tickState(own(), item0.members, item0.memberReadAt, item0.memberDeliveredAt)).toBe(
+      "delivered",
+    );
+
+    // Apply the read event exactly as onRead does in the client.
+    const next = applyReadEvent(dm, channelId, "bob", after);
+    const item1 = next.recent[0]!;
+    expect(item1.memberReadAt).toEqual({ bob: after });
+    expect(tickState(own(), item1.members, item1.memberReadAt, item1.memberDeliveredAt)).toBe(
+      "read",
+    );
   });
 });

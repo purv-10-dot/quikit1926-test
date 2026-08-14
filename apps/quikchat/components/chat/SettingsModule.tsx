@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Avatar,
   Bell,
@@ -8,17 +8,25 @@ import {
   Check,
   Headphones,
   Info,
+  LifeBuoy,
   Palette,
   Phone,
   Search,
   Settings,
+  Shield,
   Sun,
   Switch,
   Users,
 } from "@/components/ui";
+import { fetchMyPresence, updateMyPresence } from "@/lib/api";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
+import { DevicesSettings } from "@/components/settings/DevicesSettings";
+import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
-import { STORAGE_KEY, THEMES } from "./ColorThemePicker";
+import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
+import { SupportStatusTab } from "@quikit/ui/support";
+import { useMyPermissions } from "@/lib/authz/useMyPermissions";
+import { STORAGE_KEY, THEMES } from "@/lib/accent-theme";
 
 type SettingsCat =
   | "general"
@@ -27,7 +35,9 @@ type SettingsCat =
   | "account"
   | "devices"
   | "calls"
-  | "privacy";
+  | "privacy"
+  | "roles"
+  | "support";
 
 const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <Settings size={17} /> },
@@ -37,13 +47,23 @@ const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "privacy", label: "Privacy", icon: <Info size={17} /> },
   { key: "devices", label: "Devices", icon: <Headphones size={17} /> },
   { key: "calls", label: "Calls", icon: <Phone size={17} /> },
+  // Per-user, so it sits in the always-visible list rather than the
+  // admin-only tail below — every member sees their own support requests.
+  { key: "support", label: "Support Status", icon: <LifeBuoy size={17} /> },
 ];
+
+// Admin-only section. Appended to the nav only when the caller is a QuikChat
+// admin (client-side discoverability; the route + APIs stay requireAdmin-gated).
+const ROLES_CAT: { key: SettingsCat; label: string; icon: ReactNode } = {
+  key: "roles",
+  label: "Roles & Permissions",
+  icon: <Shield size={17} />,
+};
 
 export interface SettingsModuleProps {
   currentUserId: string;
   displayName: string;
   avatarUrl?: string | null;
-  onOpenNotificationSettings?: () => void;
 }
 
 function ToggleRow({
@@ -68,23 +88,62 @@ function ToggleRow({
   );
 }
 
-export function SettingsModule({
-  currentUserId,
-  displayName,
-  avatarUrl,
-  onOpenNotificationSettings,
-}: SettingsModuleProps) {
+export function SettingsModule({ currentUserId, displayName, avatarUrl }: SettingsModuleProps) {
   const [cat, setCat] = useState<SettingsCat>("general");
   const [query, setQuery] = useState("");
 
+  // Admins get the extra "Roles & Permissions" section. Same signal
+  // `requireAdmin` reads server-side (loadMyPermissions) — client-hide and
+  // server-gate agree. `isAdmin` is false until the fetch resolves, so the item
+  // never flashes for non-admins.
+  const { isAdmin } = useMyPermissions();
+  const visibleCategories = useMemo(
+    () => (isAdmin ? [...CATEGORIES, ROLES_CAT] : CATEGORIES),
+    [isAdmin],
+  );
+
   // Local (non-persistent) demo state for the General toggles + window options.
-  const [autoStart, setAutoStart] = useState(false);
-  const [openBg, setOpenBg] = useState(false);
-  const [keepRunning, setKeepRunning] = useState(true);
-  const [registerChat, setRegisterChat] = useState(true);
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [readReceipts, setReadReceipts] = useState(true);
-  const [typingIndicators, setTypingIndicators] = useState(true);
+
+  // "Share my last seen" — REAL, persisted to QcUserPresence.shareLastSeen via
+  // /api/me/presence (unlike the two demo toggles above it in the Privacy panel).
+  // Seeded from the server; the switch is optimistic and reverts on failure.
+  const [shareLastSeen, setShareLastSeen] = useState(true);
+  // Set the instant the user touches the switch, and checked before applying
+  // the seed GET's result below. Without this, clicking before that GET
+  // resolves — a real window: StrictMode double-invokes this effect in dev, and
+  // the first request pays a compile — lets the LATE response's
+  // `setShareLastSeen(server value)` silently overwrite the optimistic flip.
+  // The PUT still persists, so the UI would end up lying about which way a
+  // privacy switch is set. Never reset: this effect only ever seeds once, on
+  // mount, so there's no later legitimate seed to un-guard for.
+  const touchedRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void fetchMyPresence()
+      .then((p) => {
+        if (alive && !touchedRef.current) setShareLastSeen(p.shareLastSeen);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const toggleShareLastSeen = (next: boolean) => {
+    touchedRef.current = true;
+    setShareLastSeen(next);
+    // Privacy-only patch: no `status`, so the server leaves the current status
+    // (and its message/expiry) untouched and skips the presence fan-out.
+    void updateMyPresence({ shareLastSeen: next }).catch(() => {
+      // The UI must land on the server's ACTUAL value, not a guessed inverse:
+      // `!next` is only correct if the pre-click display was already synced
+      // with the server, which a click landing inside the seed-GET window
+      // breaks. Re-read the truth; fall back to the guess only if that fails
+      // too (no connectivity — nothing better available).
+      void fetchMyPresence()
+        .then((p) => setShareLastSeen(p.shareLastSeen))
+        .catch(() => setShareLastSeen(!next));
+    });
+  };
 
   // Accent color theme (persisted to localStorage under STORAGE_KEY; applied via data-accent).
   const [accent, setAccent] = useState("mist");
@@ -103,10 +162,12 @@ export function SettingsModule({
 
   const cats = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? CATEGORIES.filter((c) => c.label.toLowerCase().includes(q)) : CATEGORIES;
-  }, [query]);
+    return q
+      ? visibleCategories.filter((c) => c.label.toLowerCase().includes(q))
+      : visibleCategories;
+  }, [query, visibleCategories]);
 
-  const activeLabel = CATEGORIES.find((c) => c.key === cat)?.label ?? "Settings";
+  const activeLabel = visibleCategories.find((c) => c.key === cat)?.label ?? "Settings";
 
   const colorThemeSection = (
     <section className="qc-set-section">
@@ -195,52 +256,37 @@ export function SettingsModule({
         <header className="qc-set-head">
           <h1 className="qc-set-htitle">{activeLabel}</h1>
         </header>
+        {cat === "support" ? (
+          <div className="qc-set-scroll">
+            <SupportStatusTab />
+          </div>
+        ) : cat === "roles" ? (
+          // Full-bleed: RolesTab brings its own two-pane chrome. `.qc-set-embed`
+          // clamps its `h-screen` root to the content area (see theme.css) so it
+          // doesn't overflow the panel — reused verbatim, no restyle.
+          <div className="qc-set-embed">
+            <RolesTab />
+          </div>
+        ) : (
         <div className="qc-set-scroll">
           {cat === "general" ? (
             <>
-              <section className="qc-set-section">
-                <div className="qc-set-section__head">
-                  <Settings size={16} aria-hidden /> System
-                </div>
-                <div className="qc-set-section__body">
-                  <ToggleRow
-                    title="Auto-start QuikChat"
-                    checked={autoStart}
-                    onChange={setAutoStart}
-                  />
-                  <ToggleRow
-                    title="Open application in background"
-                    checked={openBg}
-                    onChange={setOpenBg}
-                  />
-                  <ToggleRow
-                    title="On close, keep the application running"
-                    checked={keepRunning}
-                    onChange={setKeepRunning}
-                  />
-                  <ToggleRow
-                    title="Register QuikChat as the chat app for the workspace"
-                    checked={registerChat}
-                    onChange={setRegisterChat}
-                  />
-                </div>
-              </section>
-
+              {/* The "System" section was removed with its four toggles
+                  (auto-start, open-in-background, keep-running-on-close,
+                  register-as-workspace-app). All four are Electron
+                  MAIN-PROCESS settings owned by the separate quikchat-desktop
+                  repo — `window.electron` exposes no API for any of them, so
+                  in a browser they could never do anything. Removing the whole
+                  section rather than leaving an empty header. See the backlog
+                  row: they need the desktop preload to expose them first. */}
               {appearanceSection}
               {colorThemeSection}
 
-              <section className="qc-set-section">
-                <div className="qc-set-section__head">
-                  <Calendar size={16} aria-hidden /> Meeting
-                </div>
-                <div className="qc-set-section__body">
-                  <ToggleRow
-                    title="Ask me to confirm when I leave a meeting"
-                    checked={confirmLeave}
-                    onChange={setConfirmLeave}
-                  />
-                </div>
-              </section>
+              {/* The "Meeting" section was removed with its single toggle
+                  ("Ask me to confirm when I leave a meeting"). Nothing read it:
+                  the only leave-confirm in the app is InfoDrawer's CHANNEL
+                  leave, which is unrelated, and the call UI has no leave
+                  confirmation to gate. Section removed rather than left empty. */}
             </>
           ) : null}
 
@@ -250,21 +296,10 @@ export function SettingsModule({
                 <Bell size={16} aria-hidden /> Notifications
               </div>
               <div className="qc-set-section__body">
-                <div className="qc-set-row">
-                  <div className="qc-set-row__text">
-                    <div className="qc-set-row__title">Notification preferences</div>
-                    <div className="qc-set-row__desc">
-                      Choose what you get notified about and how.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="qc-btn qc-btn--primary"
-                    onClick={() => onOpenNotificationSettings?.()}
-                  >
-                    Manage
-                  </button>
-                </div>
+                {/* The controls live here directly — no Manage button, no popup.
+                    Same component the bell/Activity gear opens in a dialog; it
+                    owns its own fetch + patch, so both surfaces stay in sync. */}
+                <NotificationSettingsPanel />
               </div>
             </section>
           ) : null}
@@ -309,17 +344,18 @@ export function SettingsModule({
               </div>
               <div className="qc-set-section__body">
                 <ToggleRow
-                  title="Read receipts"
-                  desc="Let others know when you've read their messages."
-                  checked={readReceipts}
-                  onChange={setReadReceipts}
+                  title="Share my last seen"
+                  desc="Show when you were last online. You'll only see other people's last seen if you share yours."
+                  checked={shareLastSeen}
+                  onChange={toggleShareLastSeen}
                 />
-                <ToggleRow
-                  title="Typing indicators"
-                  desc="Show others when you're typing."
-                  checked={typingIndicators}
-                  onChange={setTypingIndicators}
-                />
+                {/* "Read receipts" and "Typing indicators" were removed. Both
+                    were local useState with no column and no consumer —
+                    honouring them means the server suppressing read-receipt
+                    fanout and typing events per user, and every other client
+                    respecting it. That is a feature, not a wiring job; backlog.
+                    "Share my last seen" above is left alone because it is
+                    genuinely wired (PUT /api/me/presence). */}
               </div>
             </section>
           ) : null}
@@ -329,15 +365,7 @@ export function SettingsModule({
               <div className="qc-set-section__head">
                 <Headphones size={16} aria-hidden /> Devices
               </div>
-              <div className="qc-set-section__body">
-                <div className="qc-set-row">
-                  <div className="qc-set-row__text">
-                    <div className="qc-set-row__title">Audio device</div>
-                    <div className="qc-set-row__desc">Microphone and speaker used for calls.</div>
-                  </div>
-                  <span className="qc-set-row__value">6 - USB Audio 2.0</span>
-                </div>
-              </div>
+              <DevicesSettings />
             </section>
           ) : null}
 
@@ -358,6 +386,7 @@ export function SettingsModule({
             </section>
           ) : null}
         </div>
+        )}
       </section>
     </div>
   );

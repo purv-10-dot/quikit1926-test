@@ -57,6 +57,7 @@ const catColors: Record<string, string> = {
   ExperienceLetter: "bg-cyan-100 text-cyan-700",
   RelievingLetter: "bg-orange-100 text-orange-700",
   NDA: "bg-sky-100 text-sky-700",
+  Insurance: "bg-blue-100 text-blue-700",
   Other: "bg-gray-100 text-gray-600",
 };
 

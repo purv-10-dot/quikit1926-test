@@ -11,6 +11,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { clsx } from "clsx";
 import { ShieldCheck, Check, X, CalendarClock, Clock } from "lucide-react";
 
@@ -115,20 +116,15 @@ export default function ResignationApprovalsPage() {
         </div>
       </div>
 
-      <div className="surface-card p-1 inline-flex items-center gap-1 mb-4">
-        {(["pending", "all"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => { setTab(t); setPage(1); }}
-            className={clsx(
-              "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition capitalize",
-              tab === t ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-50",
-            )}
-          >
-            {t === "pending" ? <Clock size={14} /> : <CalendarClock size={14} />} {t === "pending" ? "Pending" : "All"}
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => { setTab(v as "pending" | "all"); setPage(1); }}
+        tabs={[
+          { value: "pending", label: "Pending", icon: <Clock size={14} /> },
+          { value: "all", label: "All", icon: <CalendarClock size={14} /> },
+        ]}
+      />
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         {isLoading ? (

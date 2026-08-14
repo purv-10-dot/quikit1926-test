@@ -99,6 +99,7 @@ export function CreateProjectForm() {
           name,
           projectKey: finalKey,
           projectType: backendTemplate === "discovery" ? "discovery" : "software",
+          managementStyle: projectType,
           templateKey: backendTemplate,
           icon: randomProjectIconKey(),
         }),
@@ -110,7 +111,10 @@ export function CreateProjectForm() {
       }
       // Discovery spaces land on their Ideas view; others on the backlog.
       const landing = backendTemplate === "discovery" ? "ideas" : "backlog";
-      router.push(`/spaces/${json.data.id}/${landing}`);
+      // Prefer the readable project key in the URL (the server echoes it back;
+      // fall back to the key we submitted, then the id — server resolves any).
+      const seg = json.data.projectKey ?? finalKey ?? json.data.id;
+      router.push(`/spaces/${seg}/${landing}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {

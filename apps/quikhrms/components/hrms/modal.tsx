@@ -73,6 +73,24 @@ export function Modal({ open, onClose, title, subtitle, headerIcon, children, si
     return () => window.removeEventListener("keydown", onKey);
   }, [render, onClose]);
 
+  // Lock the page's own scroll while the modal is mounted — otherwise the
+  // background page can still scroll behind the overlay, showing its own
+  // scrollbar alongside the modal's. Compensate the freed-up scrollbar width
+  // with padding so the page doesn't jump sideways when it's hidden.
+  useEffect(() => {
+    if (!render) return;
+    const { body } = document;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = body.style.overflow;
+    const prevPaddingRight = body.style.paddingRight;
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPaddingRight;
+    };
+  }, [render]);
+
   if (!render) return null;
   // Portal to <body> so the overlay escapes any parent stacking context
   // (e.g. a `relative z-10` page wrapper) and always covers the sticky top bar.

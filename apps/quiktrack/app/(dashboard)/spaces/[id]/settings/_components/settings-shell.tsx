@@ -26,6 +26,12 @@ const NAV: {
   { key: "details", label: "Details", href: (id) => `/spaces/${id}/settings` },
   { key: "user-management", label: "Roles & Permissions", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
   { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields`, perm: { resource: "ProjectMember", action: "update" } },
+  { key: "workflows", label: "Workflows", href: (id) => `/spaces/${id}/settings/workflows`, perm: { resource: "Project", action: "update" } },
+  { key: "screens", label: "Screens", href: (id) => `/spaces/${id}/settings/screens`, perm: { resource: "Project", action: "update" } },
+  { key: "board", label: "Board", href: (id) => `/spaces/${id}/settings/board`, perm: { resource: "Project", action: "update" } },
+  { key: "repositories", label: "Repositories", href: (id) => `/spaces/${id}/settings/repositories`, perm: { resource: "ProjectMember", action: "update" } },
+  // Personal Access Tokens moved to /settings/pats (user-scoped now, not
+  // project-nested) — see documents/MCP-V1-Auth-Scope-Requirements.md.
   // TODO: the following nav entries are coming soon — their pages are stubs.
   // Restore once their corresponding settings UIs are implemented.
   // { key: "access", label: "Access", href: (id) => `/spaces/${id}/settings/access` },
@@ -81,7 +87,7 @@ export function SettingsShell({
       : pathname.startsWith(href);
 
   return (
-    <div className="flex h-full bg-white">
+    <div className="flex h-full min-w-0 bg-white">
       {/* Inner sidebar */}
       <aside className="w-[240px] shrink-0 border-r border-gray-200 px-3 py-4 overflow-y-auto">
         <button
@@ -152,7 +158,10 @@ export function SettingsShell({
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto bg-white">{children}</main>
+      {/* min-w-0 lets this flex child shrink below its content width, so pages
+          with wide horizontal strips (e.g. Board columns) scroll instead of
+          overflowing the whole shell. */}
+      <main className="min-w-0 flex-1 overflow-y-auto bg-white">{children}</main>
     </div>
   );
 }

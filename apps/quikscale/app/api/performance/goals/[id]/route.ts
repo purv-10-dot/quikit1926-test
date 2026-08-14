@@ -4,6 +4,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("people.goals");
 import { validationError } from "@/lib/api/validationError";
 import { updateGoalSchema } from "@/lib/schemas/goalSchema";
+import { emitGoalStatusChanged } from "@/lib/services/workflowEvents";
 
 type Params = { id: string };
 
@@ -36,7 +37,7 @@ export const PUT = withOrgAuth<Params>(
   async ({ orgId }, request, { params }) => {
     const existing = await db.goal.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, targetValue: true, currentValue: true },
+      select: { id: true, targetValue: true, currentValue: true, status: true, ownerId: true, category: true },
     });
     if (!existing) {
       return NextResponse.json(
@@ -89,6 +90,17 @@ export const PUT = withOrgAuth<Params>(
         progressPercent: true,
         updatedAt: true,
       },
+    });
+
+    // QuikFlow: emit goal.status.changed (+ at_risk / achieved) on a transition.
+    emitGoalStatusChanged({
+      orgId,
+      goalId: goal.id,
+      title: goal.title,
+      owner: existing.ownerId,
+      category: existing.category,
+      before: existing.status,
+      after: goal.status,
     });
 
     return NextResponse.json({ success: true, data: goal });

@@ -1,6 +1,7 @@
 import { HttpError } from "@/lib/auth-shims";
 import { db as prisma } from "@quikit/database";
-import type { OrgContext } from "@/lib/shared";
+import type { CallDirection, CallHistoryItem, OrgContext } from "@/lib/shared";
+import { loadPublicUsers } from "../helpers";
 import * as messages from "../messages.service";
 
 // ============================================================================
@@ -271,6 +272,18 @@ export async function endCall(ctx: OrgContext, callId: string): Promise<CallDto>
     include: { participants: true },
   });
 
+  // Release the meeting's claim token (see meeting-call.ts). Hygiene, not
+  // correctness: `getOrStartMeetingCall` re-claims over a stale value anyway,
+  // because other terminal paths (the timeout sweep) don't run through here.
+  // Scoped by `callId` so it can only ever clear ITS OWN claim — never a newer
+  // call's — if this runs late.
+  if (call.meetingId) {
+    await prisma.qcMeeting.updateMany({
+      where: { id: call.meetingId, callId },
+      data: { callId: null },
+    });
+  }
+
   return serializeCall(updated);
 }
 
@@ -461,6 +474,104 @@ export async function postCallSummary(ctx: OrgContext, callId: string): Promise<
       status: call.status,
       participantCount: call.participants.length,
     },
+  });
+}
+
+// ============================================================================
+// History
+// ============================================================================
+
+/** Terminal states — a call is "history" once it can no longer be joined. */
+const TERMINAL_STATUSES = ["ended", "missed", "rejected", "timed_out"] as const;
+
+/** Newest-first cap; the History pane is a recent-activity list, not an archive. */
+const HISTORY_LIMIT = 100;
+
+/**
+ * The viewer's call history — terminal calls only. `ringing`/`active` are
+ * deliberately excluded: those are live and already served by
+ * `GET /api/calls/active` for rejoin.
+ *
+ * Direction is derived from the viewer's perspective, not the row: a call the
+ * viewer STARTED that nobody answered is an unanswered outgoing call, while
+ * "missed" is specifically an unanswered call TO the viewer. A declined
+ * incoming call counts as "incoming" — the viewer saw it and acted on it.
+ */
+export async function listHistory(ctx: OrgContext): Promise<CallHistoryItem[]> {
+  const calls = await prisma.qcCall.findMany({
+    where: {
+      orgId: ctx.orgId,
+      status: { in: [...TERMINAL_STATUSES] },
+      // Participant rows cover the normal case; initiatorId is a belt-and-braces
+      // OR so a call whose participant rows were pruned still shows for its owner.
+      OR: [{ initiatorId: ctx.userId }, { participants: { some: { userId: ctx.userId } } }],
+    },
+    include: { participants: true },
+    orderBy: { startedAt: "desc" },
+    take: HISTORY_LIMIT,
+  });
+
+  // Batch the two name lookups rather than resolving per row.
+  const otherUserIds: string[] = [];
+  const channelIds: string[] = [];
+  for (const call of calls) {
+    if (call.participants.length === 2) {
+      const other = call.participants.find((p) => p.userId !== ctx.userId);
+      if (other) otherUserIds.push(other.userId);
+    } else if (call.channelId) {
+      channelIds.push(call.channelId);
+    }
+  }
+
+  const users = await loadPublicUsers(otherUserIds);
+  // QcCall.channelId has no Prisma relation (plain String?), so channel names
+  // can't be `include`d — fetch them separately, scoped to the org.
+  const channels = channelIds.length
+    ? await prisma.qcChannel.findMany({
+        where: { id: { in: Array.from(new Set(channelIds)) }, orgId: ctx.orgId },
+        select: { id: true, name: true },
+      })
+    : [];
+  const channelNames = new Map(channels.map((c) => [c.id, c.name]));
+
+  return calls.map((call) => {
+    const status = call.status as CallHistoryItem["status"];
+    const isInitiator = call.initiatorId === ctx.userId;
+    const unanswered = status === "missed" || status === "timed_out";
+    const direction: CallDirection = !isInitiator && unanswered
+      ? "missed"
+      : isInitiator
+        ? "outgoing"
+        : "incoming";
+
+    // 1:1 is decided by participant count, NOT by channelId — a DM call carries
+    // its channel id too, so channelId presence doesn't imply a group call.
+    const isGroup = call.participants.length !== 2;
+    // Kept as its own binding (not inlined into the users.get below) because the
+    // raw id is now returned too — the history pane's quick-reply needs it to
+    // find-or-create the DM when the call carried no channel.
+    const otherUserId = isGroup
+      ? null
+      : (call.participants.find((p) => p.userId !== ctx.userId)?.userId ?? null);
+    const other = otherUserId ? users.get(otherUserId) : undefined;
+    const name = isGroup
+      ? ((call.channelId ? channelNames.get(call.channelId) : null) ?? "Group call")
+      : (other?.displayName ?? "Unknown");
+
+    return {
+      id: call.id,
+      name,
+      avatarUrl: isGroup ? null : (other?.avatarUrl ?? null),
+      direction,
+      type: call.type as CallType,
+      isGroup,
+      startedAt: call.startedAt.toISOString(),
+      // Unanswered calls have no talk time; normalize 0 to null so the UI hides it.
+      durationSeconds: call.duration && call.duration > 0 ? call.duration : null,
+      status,
+      channelId: call.channelId ?? null,
+      otherUserId,
+    };
   });
 }
 

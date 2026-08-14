@@ -23,7 +23,19 @@ export interface PresenceRedis {
 }
 
 const key = (orgId: string, userId: string) => `presence:${orgId}:${userId}`;
-const lastSeenKey = (orgId: string, userId: string) => `presence:lastseen:${orgId}:${userId}`;
+
+/**
+ * Durable last-seen key (no TTL) — written by `markOffline` on the last-socket
+ * disconnect.
+ *
+ * SOURCE OF TRUTH for this format. `apps/quikchat` READS this key directly off
+ * the same Redis instance rather than asking the gateway for it — see
+ * `readLastSeen()` in `apps/quikchat/lib/server/presence-redis.ts`, which
+ * carries the reciprocal pointer back here. Rename this and you MUST grep
+ * `presence:lastseen` across the monorepo; the two packages share no code.
+ */
+export const lastSeenKey = (orgId: string, userId: string) =>
+  `presence:lastseen:${orgId}:${userId}`;
 
 /** Add a socket to the user's set. `firstSocket` ⇒ a 0→1 online transition. */
 export async function markOnline(
@@ -57,14 +69,27 @@ export async function markOffline(
   return { lastSocket: true, lastSeen };
 }
 
-/** Heartbeat: refresh the TTL so an active user doesn't expire. */
+/**
+ * Heartbeat: keep the user's socket set alive.
+ *
+ * SELF-HEALING, and the `sadd` is the point of it. This used to be `pexpire`
+ * alone, which is a no-op on a key that has already expired — so a client whose
+ * heartbeat lapsed past the TTL (suspended laptop, a background tab throttled to
+ * Chrome's ≥1min timer floor, a network stall) stayed connected but vanished
+ * from the set permanently: invisible to `onlineUserIds`, and nothing in the
+ * system ever put them back. Re-adding the socket id makes every heartbeat a
+ * repair, so the set converges on the truth the sockets already know.
+ */
 export async function refresh(
   redis: PresenceRedis,
   orgId: string,
   userId: string,
+  socketId: string,
   ttlMs: number,
 ): Promise<void> {
-  await redis.pexpire(key(orgId, userId), ttlMs);
+  const k = key(orgId, userId);
+  await redis.sadd(k, socketId);
+  await redis.pexpire(k, ttlMs);
 }
 
 /**

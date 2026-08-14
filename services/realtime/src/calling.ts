@@ -10,17 +10,24 @@
  *    names a raw socket to forward to.
  * 4. One-active-call-per-user is enforced server-side in calling.service.ts.
  *
+ * Media no longer flows through this gateway (CALL-3 §4): 1:1 and group calls
+ * both join a LiveKit room directly (token minted by POST /api/calls/:id/token),
+ * so there's no offer/answer/ICE-candidate relay here anymore — only the
+ * pre-connect ring lifecycle (invite/accepted/reject/cancel/end/timeout).
+ *
  * Phase 0 hardening:
  *  - §2.1: ringing timeouts are Redis-backed (see ringing.ts) instead of an
  *    in-process Map, so accept-on-instance-B clears a ring started on A and the
  *    per-instance sweeper fires timeouts exactly once.
  *  - §2.2: the verified participant set is cached socket-locally after the first
- *    strict DB verify; offer/answer/ice-candidate reuse it. Invalidated on
- *    call:end / call:cancel.
+ *    strict DB verify; reject/cancel/end reuse it. Invalidated on call:end /
+ *    call:cancel.
  */
 import { db } from "@quikit/database";
 import type { Server as IOServer, Socket } from "socket.io";
-import { logger } from "./logger";
+import { errorFields, logger } from "./logger";
+import { broadcastConnectivity } from "./presence-broadcast";
+import { listChannelIdsForMember } from "./queries";
 import { clearRinging, setRinging, type RingingRedis } from "./ringing";
 import { userRoom } from "./rooms";
 
@@ -93,6 +100,37 @@ function invalidateCallAuth(socket: CallingSocket, callId: string): void {
   if (socket.data.callAuth) delete socket.data.callAuth[callId];
 }
 
+/**
+ * Derive the ephemeral `on_call` presence (or revert to plain `online`) for each
+ * participant and broadcast it to their shared-channel rooms. This is derived
+ * live in the gateway — NEVER persisted (invariant #1). Reverting to `online`
+ * (not to a stored status) is deliberate: the durable set-status lives on the
+ * client, which re-applies precedence and resurfaces busy/dnd/away on its own.
+ *
+ * Known v1 limitation: if a participant fully disconnects at the same moment a
+ * call ends, the revert can briefly show them `online` until the next presence
+ * event corrects it. `on_call` is a cosmetic nicety, so this is acceptable.
+ * Covers the 1:1 signaling path (call:invite/accepted/end); SFU group calls
+ * (/api/calls/group) don't ride these handlers and are out of scope for v1.
+ */
+async function broadcastCallPresence(
+  io: IOServer,
+  orgId: string,
+  participantIds: string[],
+  status: "on_call" | "online",
+): Promise<void> {
+  await Promise.all(
+    participantIds.map(async (uid) => {
+      try {
+        const channelIds = await listChannelIdsForMember(orgId, uid);
+        broadcastConnectivity(io, orgId, uid, channelIds, status);
+      } catch {
+        // best-effort — presence derivation must never break call signaling
+      }
+    }),
+  );
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -161,7 +199,7 @@ export function registerCallingHandlers(
           return;
         }
 
-        // Seed the §2.2 cache for subsequent offer/answer/ice on this socket.
+        // Seed the §2.2 cache for subsequent reject/cancel/end on this socket.
         cacheFor(socket)[callId] = {
           participantIds: call.participants.map((p) => p.userId),
           initiatorId: call.initiatorId,
@@ -173,6 +211,10 @@ export function registerCallingHandlers(
 
         if (targetSockets.length === 0) {
           // Offline: immediate unavailable response
+          logger.info(
+            { callId, orgId, initiatorId: userId, targetUserId },
+            "call invite: target has no connected sockets",
+          );
           socket.emit("call:unavailable", { callId, userId: targetUserId });
           ack?.({ ok: true });
           return;
@@ -186,6 +228,10 @@ export function registerCallingHandlers(
           initiatorId: call.initiatorId,
         };
         io.to(targetRoom).emit("call:ringing", ringPayload);
+        logger.info(
+          { callId, orgId, initiatorId: userId, targetUserId, tabs: targetSockets.length },
+          "call ringing",
+        );
 
         // §2.1: register the ringing record in Redis. Any instance can clear it
         // (accept/reject/cancel/end), and the per-instance sweeper claims it
@@ -200,7 +246,10 @@ export function registerCallingHandlers(
 
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:invite handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:invite handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -219,159 +268,16 @@ export function registerCallingHandlers(
           return;
         }
         await clearRinging(ringingRedis, callId);
-        logger.info({ callId, userId }, "call accepted — cleared ringing record");
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:accepted handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:ready ---
-  // Relay readiness signal from callee to other participants (write-free).
-  socket.on(
-    "call:ready",
-    async (payload: { callId: string }, ack?: (r: { ok: boolean }) => void) => {
-      try {
-        const { callId } = payload ?? {};
-        if (typeof callId !== "string") {
-          ack?.({ ok: false });
-          return;
-        }
+        // Call is now active → derive `on_call` for every participant (ephemeral).
         const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-        for (const pUserId of auth.participantIds) {
-          if (pUserId === userId) continue;
-          io.to(userRoom(orgId, pUserId)).emit("call:ready", { callId, fromUserId: userId });
-        }
+        if (auth) await broadcastCallPresence(io, orgId, auth.participantIds, "on_call");
+        logger.info({ callId, orgId, userId }, "call accepted — cleared ringing record");
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:ready handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:offer ---
-  // Relay WebRTC offer to the call's participants (excluding sender)
-  socket.on(
-    "call:offer",
-    async (
-      payload: { callId: string; sdp?: string; offer?: RTCSessionDescriptionInit },
-      ack?: (r: { ok: boolean }) => void,
-    ) => {
-      try {
-        const { callId, sdp, offer } = payload ?? {};
-        const sdpData = sdp ?? JSON.stringify(offer);
-        if (typeof callId !== "string" || !sdpData) {
-          ack?.({ ok: false });
-          return;
-        }
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-        for (const pUserId of auth.participantIds) {
-          if (pUserId === userId) continue;
-          io.to(userRoom(orgId, pUserId)).emit("call:offer", {
-            callId,
-            sdp: sdpData,
-            fromUserId: userId,
-          });
-        }
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:offer handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:answer ---
-  // Relay WebRTC answer to the call's initiator
-  socket.on(
-    "call:answer",
-    async (
-      payload: { callId: string; sdp?: string; answer?: RTCSessionDescriptionInit },
-      ack?: (r: { ok: boolean }) => void,
-    ) => {
-      try {
-        const { callId, sdp, answer } = payload ?? {};
-        const sdpData = sdp ?? JSON.stringify(answer);
-        if (typeof callId !== "string" || !sdpData) {
-          ack?.({ ok: false });
-          return;
-        }
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-        io.to(userRoom(orgId, auth.initiatorId)).emit("call:answer", {
-          callId,
-          sdp: sdpData,
-          fromUserId: userId,
-        });
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:answer handler error");
-        ack?.({ ok: false });
-      }
-    },
-  );
-
-  // --- call:ice-candidate ---
-  // Relay ICE candidate to all other participants
-  socket.on(
-    "call:ice-candidate",
-    async (
-      payload: {
-        callId: string;
-        candidate?: string | RTCIceCandidateInit;
-        sdpMid?: string;
-        sdpMLineIndex?: number;
-      },
-      ack?: (r: { ok: boolean }) => void,
-    ) => {
-      try {
-        const { callId, candidate: rawCandidate, sdpMid, sdpMLineIndex } = payload ?? {};
-        if (typeof callId !== "string" || rawCandidate == null) {
-          ack?.({ ok: false });
-          return;
-        }
-
-        // Normalize: accept either a JSON string or an object
-        const candidateStr =
-          typeof rawCandidate === "string" ? rawCandidate : JSON.stringify(rawCandidate);
-        const mid = sdpMid ?? (typeof rawCandidate === "object" ? rawCandidate.sdpMid : undefined);
-        const mLineIndex =
-          sdpMLineIndex ??
-          (typeof rawCandidate === "object" ? rawCandidate.sdpMLineIndex : undefined);
-
-        const auth = await resolveCallAuth(socket, callId, orgId, userId);
-        if (!auth) {
-          ack?.({ ok: false });
-          return;
-        }
-
-        for (const pUserId of auth.participantIds) {
-          if (pUserId === userId) continue;
-          io.to(userRoom(orgId, pUserId)).emit("call:ice-candidate", {
-            callId,
-            candidate: candidateStr,
-            sdpMid: mid,
-            sdpMLineIndex: mLineIndex,
-            fromUserId: userId,
-          });
-        }
-        ack?.({ ok: true });
-      } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:ice-candidate handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:accepted handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -398,9 +304,15 @@ export function registerCallingHandlers(
           callId,
           fromUserId: userId,
         });
+        logger.info({ callId, orgId, userId, initiatorId: auth.initiatorId }, "call rejected");
+        // Call is over → revert on_call to plain online for all participants.
+        await broadcastCallPresence(io, orgId, auth.participantIds, "online");
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:reject handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:reject handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -428,10 +340,19 @@ export function registerCallingHandlers(
           if (pUserId === userId) continue;
           io.to(userRoom(orgId, pUserId)).emit("call:cancelled", { callId });
         }
+        logger.info(
+          { callId, orgId, userId, participants: auth.participantIds.length },
+          "call cancelled by initiator",
+        );
+        // Call is over → revert on_call to plain online for all participants.
+        await broadcastCallPresence(io, orgId, auth.participantIds, "online");
         invalidateCallAuth(socket, callId); // §2.2 — call is over
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:cancel handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:cancel handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -456,10 +377,19 @@ export function registerCallingHandlers(
         if (pUserId === userId) continue;
         io.to(userRoom(orgId, pUserId)).emit("call:ended", { callId, fromUserId: userId });
       }
+      logger.info(
+        { callId, orgId, userId, participants: auth.participantIds.length },
+        "call ended",
+      );
+      // Call is over → revert on_call to plain online for all participants.
+      await broadcastCallPresence(io, orgId, auth.participantIds, "online");
       invalidateCallAuth(socket, callId); // §2.2 — call is over
       ack?.({ ok: true });
     } catch (e) {
-      logger.error({ error: e, socketId: socket.id }, "call:end handler error");
+      logger.error(
+        { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+        "call:end handler error",
+      );
       ack?.({ ok: false });
     }
   });

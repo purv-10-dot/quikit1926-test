@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>QuikTest — test flow guide</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font: 13px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; color: #1f2933;
+         max-width: 900px; margin: 0 auto; padding: 8px; }
+  h1 { font-size: 25px; margin: 0 0 4px; }
+  .sub { color: #6b7280; margin: 0 0 6px; }
+  .meta { color: #94a3b8; font-size: 11.5px; margin-bottom: 22px; }
+  .note { background: #fffbeb; border-left: 3px solid #d97706; padding: 8px 11px;
+          font-size: 12.5px; margin: 0 0 24px; }
+  .step { page-break-inside: avoid; margin-bottom: 26px; padding-bottom: 20px;
+          border-bottom: 1px solid #eef1f4; }
+  .step.pb { page-break-before: always; border-top: 0; }
+  .num { display: inline-block; background: #1f2933; color: #fff; border-radius: 4px;
+         padding: 1px 7px; font-size: 12px; font-weight: 600; margin-right: 8px; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  .does { margin: 0 0 4px; }
+  .url { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+         color: #475569; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;
+         display: inline-block; margin-bottom: 6px; word-break: break-all; }
+  .expect { background: #f0f7ff; border-left: 3px solid #2563eb; padding: 7px 10px;
+            margin: 8px 0; font-size: 12.5px; }
+  .gotcha { background: #fef2f2; border-left: 3px solid #dc2626; padding: 7px 10px;
+            margin: 8px 0; font-size: 12.5px; }
+  table { border-collapse: collapse; margin: 10px 0; font-size: 12.5px; width: 100%; }
+  th { background: #eef2f7; text-align: left; padding: 5px 8px; font-weight: 600; }
+  td { border-bottom: 1px solid #edf0f3; padding: 5px 8px; vertical-align: top; }
+  td:first-child { width: 32%; color: #475569; }
+  .shot { border: 1px dashed #cbd5e1; border-radius: 5px; padding: 30px 20px;
+          text-align: center; color: #94a3b8; font-size: 12px; margin-top: 10px; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px;
+         font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px;
+        padding: 10px; font-size: 11px; white-space: pre-wrap; word-break: break-all;
+        font-family: ui-monospace, Consolas, monospace; }
+  kbd { background: #1f2933; color: #fff; border-radius: 3px; padding: 1px 6px;
+        font-size: 11px; font-family: inherit; }
+</style>
+
+<h1>QuikTest — test flow guide</h1>
+<p class="sub">Author a test case, run it, record results, and see them on a work item.</p>
+<p class="meta">QuikTrack · localhost:3004 · project QUIKTR
+(<code>cmpqrve90001t97sjla4q6qp0</code>)</p>
+
+<div class="note">
+  <strong>Screenshots:</strong> a capture script is included at
+  <code>scripts/capture-quiktest-guide.mjs</code>, but it needs your logged-in session
+  (the app redirects anonymous requests to the launcher and its API returns 401).
+  Run it with your <code>next-auth.session-token</code> cookie to fill these boxes
+  automatically, or paste your own images into the dashed placeholders.
+  <br><br>
+  <code>cd apps/quiktrack</code><br>
+  <code>$env:QT_SESSION="&lt;cookie value&gt;"; node scripts/capture-quiktest-guide.mjs</code>
+</div>
+
+<!-- 01 -->
+<div class="step">
+  <h2><span class="num">01</span>Open the Tests tab</h2>
+  <div class="url">/spaces/cmpqrve90001t97sjla4q6qp0/test</div>
+  <p class="does">Open the project and click <strong>Tests</strong> in the tab bar.</p>
+  <div class="expect"><strong>Expect:</strong> the test case repository — suite tree on the
+    left, case list on the right. Empty on a fresh project.</div>
+  <div class="expect" style="border-color:#64748b;background:#f8fafc">
+    <strong>If the tab is missing:</strong> your role needs <code>TestCase:view</code>, or the
+    project has hidden it via the tab customizer. Org admins have it automatically.</div>
+  <div class="shot">screenshot 01 — Tests tab, empty repository</div>
+</div>
+
+<!-- 02 -->
+<div class="step">
+  <h2><span class="num">02</span>Create a test suite</h2>
+  <p class="does">Click <strong>+</strong> beside <strong>SUITES</strong>.</p>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Suite name</td><td>Regression</td></tr>
+    <tr><td>Description</td><td><em>optional</em></td></tr>
+  </table>
+  <div class="expect"><strong>Expect:</strong> the suite appears and a root folder
+    "All test cases" is created with it — a suite with no folder has nowhere to put a case.</div>
+  <div class="shot">screenshot 02 — New suite panel</div>
+</div>
+
+<!-- 03 -->
+<div class="step">
+  <h2><span class="num">03</span>Add a folder</h2>
+  <p class="does"><strong>Add folder</strong> below the tree for a root-level folder, or the
+    <strong>+</strong> that appears on hover over a folder to nest one inside it.</p>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Folder name</td><td>Login</td></tr>
+  </table>
+  <div class="expect"><strong>Expect:</strong> the folder joins the tree. Nesting is
+    unlimited; a folder shows its case count once it holds cases.</div>
+  <div class="shot">screenshot 03 — folder in the tree</div>
+</div>
+
+<!-- 04 -->
+<div class="step pb">
+  <h2><span class="num">04</span>Create a test case</h2>
+  <p class="does">Select the folder, then click <strong>New test case</strong>. Everything
+    shown greyed in the form is placeholder text, not a value.</p>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Title <strong>(required)</strong></td>
+        <td>Login with valid credentials redirects to dashboard</td></tr>
+    <tr><td>Priority</td><td>Medium</td></tr>
+    <tr><td>Type</td><td>Functional</td></tr>
+    <tr><td>Automation</td><td>Manual</td></tr>
+    <tr><td>Automation ID</td><td><code>login.spec.ts::valid_creds</code></td></tr>
+    <tr><td>Preconditions</td><td>A registered user exists with a verified email address.</td></tr>
+    <tr><td>Description</td><td><em>optional</em></td></tr>
+  </table>
+  <div class="gotcha"><strong>Automation ID matters:</strong> it is how CI matches its test
+    to this case. Leave it blank and automated results come back as
+    <code>unmatched</code>. It must be unique within the project — a duplicate returns 409.</div>
+  <div class="shot">screenshot 04 — case editor</div>
+</div>
+
+<!-- 05 -->
+<div class="step">
+  <h2><span class="num">05</span>Add the steps</h2>
+  <p class="does">Click <strong>Add step</strong> once per step. Reorder with the arrows,
+    remove with the bin.</p>
+  <table>
+    <tr><th>Action</th><th>Expected result</th></tr>
+    <tr><td>Navigate to /login</td><td>Login form is displayed</td></tr>
+    <tr><td>Enter valid email and password, submit</td><td>Redirected to /dashboard within 2s</td></tr>
+    <tr><td>Check the header</td><td>User's name is displayed top-right</td></tr>
+  </table>
+  <div class="expect"><strong>Expect:</strong> steps are numbered on save (1..n). A case can
+    be saved with no steps at all. Blank rows are dropped rather than rejected.</div>
+  <div class="shot">screenshot 05 — steps editor with three steps</div>
+</div>
+
+<!-- 06 -->
+<div class="step">
+  <h2><span class="num">06</span>Save, then link coverage</h2>
+  <p class="does">Click <strong>Create case</strong>. It appears in the table as
+    <code>TC-1</code>. Click the row to reopen it, scroll to <strong>Coverage</strong> →
+    <strong>Link a work item</strong> → type a key such as <code>QUIKTR</code> and pick a result.</p>
+  <div class="expect"><strong>Expect:</strong> the linked item is listed with its key and
+    title. <strong>This link is what makes the QuikTest panel appear on that work item</strong>
+    (step 12).</div>
+  <div class="gotcha"><strong>Coverage needs a saved case.</strong> While creating, the section
+    reads "Save the case first" — a link has nothing to attach to until the case exists.</div>
+  <div class="shot">screenshot 06 — coverage link added</div>
+</div>
+
+<!-- 07 -->
+<div class="step">
+  <h2><span class="num">07</span>Editing creates a version</h2>
+  <p class="does">Reopen the case, change the title, and save.</p>
+  <div class="expect"><strong>Expect:</strong> the button reads
+    <strong>"Save new version"</strong> and the subtitle says which version saving will
+    create. A PATCH is <em>not</em> an in-place edit: the previous definition stays pinned to
+    any run that already executed it, so historical runs keep showing the steps they ran.</div>
+  <div class="shot">screenshot 07 — "Save new version"</div>
+</div>
+
+<!-- 08 -->
+<div class="step pb">
+  <h2><span class="num">08</span>Create a run</h2>
+  <div class="url">/spaces/cmpqrve90001t97sjla4q6qp0/test/runs</div>
+  <p class="does">Click <strong>Test runs</strong> in the repository header, then
+    <strong>New run</strong>.</p>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Name</td><td>Sprint 14 regression</td></tr>
+    <tr><td>Suite</td><td>Regression</td></tr>
+    <tr><td>Build</td><td>1.4.0</td></tr>
+    <tr><td>Environment</td><td>staging</td></tr>
+    <tr><td>Include draft cases</td><td><strong>✔ tick this</strong></td></tr>
+  </table>
+  <div class="gotcha"><strong>Draft cases are excluded by default.</strong> A newly created
+    case is <code>DRAFT</code>, so without ticking the box the run fails with
+    "No approved test cases matched that selection". That is the approval workflow behaving
+    correctly, not an error.</div>
+  <div class="expect"><strong>Expect:</strong> one test is materialised per case, each pinning
+    the case's current version, and you land in the runner.</div>
+  <div class="shot">screenshot 08 — New run panel</div>
+</div>
+
+<!-- 09 -->
+<div class="step">
+  <h2><span class="num">09</span>The three-pane runner</h2>
+  <p class="does">Creating a run opens it. You can also click any run name in the list.</p>
+  <table>
+    <tr><th>Pane</th><th>Contents</th></tr>
+    <tr><td>Left</td><td>Work list with ✓/✕ status glyphs; filters All / Untested / Failed / Mine</td></tr>
+    <tr><td>Middle</td><td>The case detail and steps <strong>as pinned to this run</strong></td></tr>
+    <tr><td>Right</td><td>Outcome buttons, comment, elapsed timer</td></tr>
+  </table>
+  <div class="expect"><strong>Expect:</strong> the header shows <code>R1 · Sprint 14
+    regression</code> with the status donut — manual counts on the left, automation counts on
+    the right.</div>
+  <div class="shot">screenshot 09 — runner, three panes</div>
+</div>
+
+<!-- 10 -->
+<div class="step">
+  <h2><span class="num">10</span>Record a result</h2>
+  <p class="does">Click an outcome, or use the keyboard.</p>
+  <table>
+    <tr><th>Key</th><th>Outcome</th></tr>
+    <tr><td><kbd>1</kbd></td><td>Passed</td></tr>
+    <tr><td><kbd>2</kbd></td><td>Failed</td></tr>
+    <tr><td><kbd>3</kbd></td><td>Blocked</td></tr>
+    <tr><td><kbd>4</kbd></td><td>Retest</td></tr>
+    <tr><td><kbd>5</kbd></td><td>Skipped</td></tr>
+    <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Next / previous test</td></tr>
+  </table>
+  <div class="expect"><strong>Expect:</strong> the result is appended, the donut and the
+    left-hand glyph update, and the next test opens. Shortcuts are ignored while typing, so a
+    comment containing "1" won't record a pass.</div>
+  <div class="expect" style="border-color:#059669;background:#f0fdf4">
+    <strong>Now record a second result on the same test.</strong> The first is not
+    overwritten — both rows persist. Results are append-only: a correction is a new row, and
+    the database refuses UPDATE and DELETE outright. Check
+    <code>GET /api/test/tests/&lt;testId&gt;/results</code> to see the whole trail.</div>
+  <div class="shot">screenshot 10 — result recorded, donut updated</div>
+</div>
+
+<!-- 11 -->
+<div class="step">
+  <h2><span class="num">11</span>Close the run</h2>
+  <p class="does">Click <strong>Close run</strong> in the runner header, then try recording
+    another result.</p>
+  <div class="expect"><strong>Expect:</strong> the entry pane locks with "This run is closed,
+    so its results are frozen." The API rejects further results with <strong>409</strong>, so
+    the freeze holds for scripts too, not just the UI. <strong>Reopen run</strong> unlocks it.</div>
+  <div class="shot">screenshot 11 — closed run, entry locked</div>
+</div>
+
+<!-- 12 -->
+<div class="step pb">
+  <h2><span class="num">12</span>The work-item panel</h2>
+  <p class="does">Open the work item you linked in step 6. Scroll to between
+    <strong>Linked work items</strong> and <strong>Development</strong>.</p>
+  <div class="expect"><strong>Expect:</strong> a <strong>QuikTest: Results</strong> section
+    with six tabs (All Results / Tests / Cases / Runs / Plans / Milestones), the status donut,
+    and a <code>T1</code> row that expands to Project / Milestone / Test Run plus
+    "By &lt;user&gt; · &lt;timestamp&gt;". The Details sidebar gains
+    <strong>QuikTest: Cases</strong> and <strong>QuikTest: Runs</strong> deep links.</div>
+  <div class="gotcha"><strong>Empty panel?</strong> It only shows data once a case
+    <em>covers</em> that work item (step 6) or a failed result <em>raised</em> it as a defect.
+    No link, no rows.</div>
+  <div class="shot">screenshot 12 — QuikTest: Results panel, row expanded</div>
+</div>
+
+<!-- 13 -->
+<div class="step">
+  <h2><span class="num">13</span>CI ingestion — the automated write path</h2>
+  <p class="does">Mint a token with <code>POST /api/v1/token</code>, then report results keyed
+    by automation ID. Requires <code>TestResult:create</code> — the same grant a human tester
+    needs, so a token can never exceed a person's rights.</p>
+  <pre>curl -X POST http://localhost:3004/api/test/runs/&lt;runId&gt;/results \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"results":[
+        {"automationId":"login.spec.ts::valid_creds","status":"Passed","elapsedMs":1250},
+        {"automationId":"ghost::missing","status":"Failed"}
+      ]}'</pre>
+  <div class="expect"><strong>Expect:</strong> <code>{inserted: 1, unmatched:
+    [{automationId: "ghost::missing", count: 1}]}</code> — the known result lands, the unknown
+    id is reported and persisted, and the batch does not fail. Unmapped tests are never
+    silently dropped; see <code>GET /api/test/runs/&lt;runId&gt;/unmatched</code>.</div>
+  <p class="does">Same store, different format — JUnit/xUnit XML:</p>
+  <pre>curl -X POST http://localhost:3004/api/test/runs/&lt;runId&gt;/results/junit \
+  -H "Authorization: Bearer &lt;token&gt;" -H "Content-Type: text/xml" \
+  --data '&lt;testsuite name="Login"&gt;&lt;testcase classname="login.spec.ts" name="valid_creds" time="1.2"/&gt;&lt;/testsuite&gt;'</pre>
+  <div class="expect"><strong>Expect:</strong> the run flips to <code>mixed</code> once it
+    carries both sources. Automated outcomes land on <em>Automation Passed / Failed / Error</em>,
+    kept separate from the manual statuses so the donut's two columns stay meaningful.
+    Malformed XML returns <strong>400 with the line and column</strong> of the problem.</div>
+  <div class="shot">screenshot 13 — curl response showing inserted + unmatched</div>
+</div>
+
+<div class="step" style="border-bottom:0">
+  <h2>What this flow demonstrates</h2>
+  <table>
+    <tr><th>Behaviour</th><th>Why it matters</th></tr>
+    <tr><td>Version pinning</td><td>A run shows the steps it actually executed, even after
+      the case is edited.</td></tr>
+    <tr><td>Append-only results</td><td>No result is ever edited or deleted — enforced by a
+      database trigger, not just application code.</td></tr>
+    <tr><td>One trail, two paths</td><td>Manual and automated results share one table;
+      <code>source</code> is the only difference.</td></tr>
+    <tr><td>Unmatched reporting</td><td>A renamed CI test surfaces as a rising unmatched
+      count instead of silently vanishing.</td></tr>
+    <tr><td>Closed-run freeze</td><td>A finished run is a stable historical record.</td></tr>
+  </table>
+</div>
+
+</html>

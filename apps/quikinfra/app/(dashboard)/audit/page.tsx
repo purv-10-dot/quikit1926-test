@@ -37,11 +37,10 @@ export default function AuditLogPage() {
   return (
     <div className="p-6 max-w-6xl">
       <h1 className="text-lg font-semibold text-gray-900 mb-1">Audit Log</h1>
-      <p className="text-sm text-gray-500 mb-4">Recent state-changing actions. Currently wired on: RAB approve, Bill approve, Payroll finalize, Credit/Debit note create &amp; delete. Other write endpoints can opt-in via <code className="bg-gray-100 px-1 rounded text-xs">logAudit()</code>.</p>
+      <p className="text-sm text-gray-500 mb-4">Recent state-changing actions. Currently wired on: RAB approve, Bill approve, Payroll finalize, Credit/Debit note create &amp; delete. Other write endpoints can opt-in via <code className="bg-gray-100 px-1 rounded text-xs">recordAudit()</code>.</p>
       {loading ? <div className="text-sm text-gray-500">Loading…</div> : logs.length === 0 ? (
         <EmptyState icon={FileClock} title="No audit events" message="Perform an approve/finalize action elsewhere to populate this log." />
       ) : (
-        <>
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-gray-600"><tr>
@@ -64,20 +63,20 @@ export default function AuditLogPage() {
               </tr>
             ))}</tbody>
           </table>
+          {total > 0 && (
+            <Pager
+              variant="footer"
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          )}
         </div>
-        {total > 0 && (
-          <Pager
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={setPage}
-            onPageSizeChange={(s) => {
-              setPageSize(s);
-              setPage(1);
-            }}
-          />
-        )}
-        </>
       )}
     </div>
   );

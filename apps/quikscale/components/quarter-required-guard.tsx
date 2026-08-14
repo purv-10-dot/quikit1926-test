@@ -5,8 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { CalendarDays, Settings2 } from "lucide-react";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 
-// Pages that work without quarters — org setup is where you configure them
-const EXCLUDED_PREFIXES = ["/org-setup", "/settings"];
+// Pages that work without quarters — org setup is where you configure them.
+// Critical Numbers is quarter-independent: a metric carries its own date
+// window (time-based mode) or none at all (custom targets), so gating it on
+// fiscal-quarter config would block a module that never reads one.
+const EXCLUDED_PREFIXES = ["/org-setup", "/settings", "/critical-numbers"];
 
 export function QuarterRequiredGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

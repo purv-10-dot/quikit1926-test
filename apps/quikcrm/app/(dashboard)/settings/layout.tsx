@@ -70,6 +70,7 @@ const ALL_NAV_ITEMS = [
   { href: "/settings/api-keys", label: "API Keys" },
   { href: "/settings/audit", label: "Audit Log" },
   { href: "/settings/notifications", label: "Notifications" },
+  { href: "/settings/support", label: "Support Status" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

@@ -91,27 +91,6 @@ interface GrnLineInput {
   qtyReceived?: number | string | null;
   qtyRejected?: number | string | null;
 }
-interface AmendmentLine {
-  lineId?: string | null;
-  itemId?: string | null;
-  poQty?: number | string | null;
-  revisedQty?: number | string | null;
-  revisedRate?: number | string | null;
-}
-interface AmendmentInput {
-  vendorId?: string | null;
-  lines?: AmendmentLine[] | null;
-}
-interface OriginalPOLine {
-  lineId?: string | null;
-  itemId?: string | null;
-  qtyReceived?: number | string | null;
-  unitRate?: number | string | null;
-}
-interface OriginalPOInput {
-  vendorId?: string | null;
-  lines?: OriginalPOLine[] | null;
-}
 
 export function validateIndentCreation(body: PurchaseRequestBody): void {
   if (!body.sourceMrId && !body.directIndentReason?.trim()) {
@@ -316,50 +295,6 @@ export function validateGRNChallan(_body: PurchaseRequestBody): void {
 
 // ─── PO Amendment Validation (P0 Fix #10) ───────────────────────────
 
-export function validatePOAmendment(
-  amendment: AmendmentInput,
-  originalPO: OriginalPOInput,
-  existingGRNs: unknown[]
-): void {
-  const hasGRNs = existingGRNs.length > 0;
-
-  // Cannot change vendor if any GRN exists
-  if (hasGRNs && amendment.vendorId && amendment.vendorId !== originalPO.vendorId) {
-    throw new PurchaseValidationError(
-      ERR.PO_AMENDMENT_CONFLICT,
-      "Cannot change vendor on a PO that has existing GRNs. Cancel the PO and create a new one if vendor change is required."
-    );
-  }
-
-  // Cannot reduce line qty below already received
-  if (amendment.lines) {
-    for (const amdLine of amendment.lines) {
-      const origLine = originalPO.lines?.find((l) => l.lineId === amdLine.lineId || l.itemId === amdLine.itemId);
-      if (!origLine) continue;
-
-      const newQty = parseFloat(String(amdLine.revisedQty ?? amdLine.poQty ?? "0"));
-      const received = parseFloat(String(origLine.qtyReceived ?? "0"));
-
-      if (newQty < received) {
-        throw new PurchaseValidationError(
-          ERR.PO_AMENDMENT_CONFLICT,
-          `Cannot reduce qty to ${newQty} — already received ${received} for item ${amdLine.itemId}. Amended qty must be >= received qty.`
-        );
-      }
-
-      // Rate change after partial receipt — block in P0
-      if (received > 0 && amdLine.revisedRate && parseFloat(String(amdLine.revisedRate)) !== parseFloat(String(origLine.unitRate ?? "0"))) {
-        throw new PurchaseValidationError(
-          ERR.PO_AMENDMENT_CONFLICT,
-          `Cannot change rate for item ${amdLine.itemId} after partial receipt (${received} units already received). Rate changes on partially received lines require a debit/credit note (Phase 2).`
-        );
-      }
-    }
-  }
-}
 
 // ─── Demo Mode Flag (P0 Fix #1) ────────────────────────────────────
 
-export function isDemoMode(): boolean {
-  return process.env.ENABLE_DEMO_MODE === "true";
-}

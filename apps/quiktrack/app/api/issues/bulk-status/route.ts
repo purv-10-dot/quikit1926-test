@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
+import { assertTransitionForIssue, TransitionNotAllowedError } from "@/lib/services/workflow";
 
 const bodySchema = z.object({
   projectId: z.string().min(1),
@@ -25,7 +26,22 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         { status: 400 },
       );
     }
-    const { projectId, ids, statusId } = parsed.data;
+    const { projectId: projectIdOrKey, ids, statusId } = parsed.data;
+
+    // Body projectId may be a cuid OR a project KEY (readable URLs). Resolve to
+    // the real id, org-scoped, before it's used to scope statuses/issues below.
+    const project = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
+      select: { id: true },
+    });
+    if (!project) {
+      return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
+    }
+    const projectId = project.id;
 
     // QtIssueStatus is scoped by projectId (no orgId column); the project's
     // org ownership is enforced by the permission check below.
@@ -47,11 +63,48 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       return NextResponse.json({ success: false, error: "Not allowed" }, { status: 403 });
     }
 
-    const result = await db.qtIssue.updateMany({
+    // Workflow gate: each issue's move to `statusId` must be a legal transition
+    // on its type's active workflow. Split into allowed vs blocked and apply only
+    // the allowed set (partial success — Jira blocks the whole batch; we don't).
+    // Projects without a published scheme resolve every issue as allowed.
+    const targets = await db.qtIssue.findMany({
       where: { id: { in: ids }, orgId, projectId, isDeleted: false },
-      data: { statusId, updatedBy: userId },
+      select: { id: true, statusId: true, type: true },
     });
-    return NextResponse.json({ success: true, updated: result.count });
+
+    const allowedIds: string[] = [];
+    const blocked: { id: string; code: string }[] = [];
+    for (const it of targets) {
+      if (it.statusId === statusId) {
+        allowedIds.push(it.id); // no-op move
+        continue;
+      }
+      try {
+        await assertTransitionForIssue({
+          projectId,
+          issueType: it.type ?? "TASK",
+          fromStatusId: it.statusId,
+          toStatusId: statusId,
+        });
+        allowedIds.push(it.id);
+      } catch (error: unknown) {
+        if (error instanceof TransitionNotAllowedError) {
+          blocked.push({ id: it.id, code: error.code });
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const result =
+      allowedIds.length > 0
+        ? await db.qtIssue.updateMany({
+            where: { id: { in: allowedIds }, orgId, projectId, isDeleted: false },
+            data: { statusId, updatedBy: userId },
+          })
+        : { count: 0 };
+
+    return NextResponse.json({ success: true, updated: result.count, blocked });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

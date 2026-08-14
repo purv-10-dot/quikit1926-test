@@ -1,4 +1,5 @@
 import type {
+  CallHistoryItem,
   ChannelList,
   ChannelListItem,
   ChannelMemberDto,
@@ -29,7 +30,9 @@ import type {
   PublicUser,
   ThemePref,
   UiPrefsDto,
+  UpdateChannelInput,
 } from "@/lib/shared";
+import type { SetStatus } from "@/lib/presence-store";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: "include" });
@@ -52,8 +55,15 @@ export function fetchChannels(): Promise<ChannelList> {
   return getJson<ChannelList>("/api/channels");
 }
 
+/**
+ * History page size. Exported because end-of-history detection compares a
+ * returned page's length against it — if the two drift apart, scroll-back
+ * either stops one page early or never stops at all.
+ */
+export const MESSAGES_PAGE_SIZE = 30;
+
 export function fetchMessages(channelId: string, before?: string): Promise<MessageDto[]> {
-  const qs = new URLSearchParams({ limit: "30" });
+  const qs = new URLSearchParams({ limit: String(MESSAGES_PAGE_SIZE) });
   if (before) qs.set("before", before);
   return getJson<MessageDto[]>(`/api/channels/${channelId}/messages?${qs.toString()}`);
 }
@@ -98,6 +108,39 @@ export function patchUiPrefs(patch: { theme: ThemePref }): Promise<UiPrefsDto> {
   return send<UiPrefsDto>("/api/me/ui-prefs", "PATCH", patch);
 }
 
+// --- rich presence set-status ---
+
+export interface MyPresenceDto {
+  status: SetStatus;
+  statusMessage: string | null;
+  statusExpiresAt: string | null;
+  /** Mutual last-seen visibility (Privacy settings). Default on. */
+  shareLastSeen: boolean;
+}
+
+export function fetchMyPresence(): Promise<MyPresenceDto> {
+  return getJson<MyPresenceDto>("/api/me/presence");
+}
+
+/** At least one of `status` / `shareLastSeen` must be present (400 otherwise). */
+export function updateMyPresence(patch: {
+  status?: SetStatus;
+  statusMessage?: string | null;
+  /** Absolute ISO instant to auto-revert (client-computed); null = until changed. */
+  expiresAt?: string | null;
+  shareLastSeen?: boolean;
+}): Promise<MyPresenceDto> {
+  return send<MyPresenceDto>("/api/me/presence", "PUT", patch);
+}
+
+/**
+ * The DM peer's last-seen instant, or null when it must not be shown (mutual
+ * opt-out / appear_offline / never recorded — indistinguishable by design).
+ */
+export function fetchChannelLastSeen(channelId: string): Promise<{ lastSeen: string | null }> {
+  return getJson<{ lastSeen: string | null }>(`/api/channels/${channelId}/last-seen`);
+}
+
 // --- message actions (S05) ---
 
 export function toggleReactionApi(messageId: string, emoji: string): Promise<MessageDto> {
@@ -128,6 +171,11 @@ export function setMessagePinApi(messageId: string, pinned: boolean): Promise<Me
 
 export function fetchPinned(channelId: string): Promise<MessageDto[]> {
   return getJson<MessageDto[]>(`/api/channels/${channelId}/messages/pinned`);
+}
+
+/** Terminal call history for the Calls → History pane (newest first). */
+export function fetchCallHistory(): Promise<CallHistoryItem[]> {
+  return getJson<CallHistoryItem[]>("/api/calls/history");
 }
 
 export function fetchMembers(channelId: string): Promise<ChannelMemberDto[]> {
@@ -242,6 +290,45 @@ export function addMember(channelId: string, userId: string): Promise<ChannelLis
 
 export function removeMember(channelId: string, userId: string): Promise<{ removed: true }> {
   return send<{ removed: true }>(`/api/channels/${channelId}/members/${userId}`, "DELETE");
+}
+
+/** Edit group details (name / description / avatar). Admin-gated server-side. */
+export function updateChannel(
+  channelId: string,
+  patch: UpdateChannelInput,
+): Promise<ChannelListItem> {
+  return send<ChannelListItem>(`/api/channels/${channelId}`, "PATCH", patch);
+}
+
+/** Delete the group for everyone (dedicated route — NOT the leave DELETE). */
+export function deleteChannel(channelId: string): Promise<{ deleted: true }> {
+  return send<{ deleted: true }>(`/api/channels/${channelId}/delete`, "POST");
+}
+
+/**
+ * Leave a channel (self-removal). Plain `send()` isn't used here because it
+ * discards the response body on failure — a future server-side refusal (e.g.
+ * a last-admin guard) needs its real message surfaced, not a generic
+ * "DELETE ... → 400".
+ */
+export async function leaveChannel(channelId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`/api/channels/${channelId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const body = (await res.json().catch(() => ({}))) as { deleted?: boolean; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `leave → ${res.status}`);
+  return { deleted: !!body.deleted };
+}
+
+/**
+ * Pin / unpin a conversation for the CALLING user (QC_010). Per-member state on
+ * `qcChannelMember.isPinned` — it moves the channel between the list's
+ * `priority` and `recent` buckets. Not fanned out (nobody else's list changes),
+ * so callers refetch `["channels"]` themselves.
+ */
+export function pinChannel(channelId: string, pinned: boolean): Promise<{ pinned: boolean }> {
+  return send<{ pinned: boolean }>(`/api/channels/${channelId}/pin`, "PATCH", { pinned });
 }
 
 export async function setMemberRole(

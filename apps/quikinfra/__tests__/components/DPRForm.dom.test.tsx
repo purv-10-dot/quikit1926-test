@@ -36,6 +36,9 @@ vi.mock("@/hooks/use-masters", () => ({
 vi.mock("@/hooks/use-projects", () => ({
   useWorkOrders: () => wrap([]),
   useBOQ: () => wrap([]),
+  // FREE_SCOPE projects log progress against activity leaves instead of BOQ
+  // rows; the form reads both and picks by the project's executionMode.
+  useActivities: () => wrap([]),
 }));
 
 import { DPRForm } from "@/app/(dashboard)/projects/dpr/components/DPRForm";

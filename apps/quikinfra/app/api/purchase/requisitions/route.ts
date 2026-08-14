@@ -15,7 +15,7 @@ import {
   withPrNumberRetry,
 } from "@/lib/purchase/pr-repository";
 import { procurementByPr } from "@/lib/purchase/procurement-status";
-import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort, NEWEST_FIRST_TIEBREAK } from "@/lib/http/pagination";
 import {
   validatePrLinesAgainstBudget,
   formatBreachMessage,
@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
     searchParams,
     ["prNumber", "requestDate", "status", "estimatedTotal", "createdAt"],
     { field: "createdAt", order: "desc" },
+    NEWEST_FIRST_TIEBREAK,
   );
   // Each page of PRs is enriched with a rolled-up PO/GRN procurement status
   // so the list can show "ordered? / arrived?" without opening each PR.
@@ -167,6 +168,8 @@ export async function POST(req: NextRequest) {
           isUrgent,
           urgencyJustification: body.urgencyJustification ?? null,
           workCategoryId: body.workCategoryId || null,
+          scopeType: body.scopeType || null,
+          scopeId: body.scopeId || null,
           deliveryLocationId: body.deliveryLocationId || null,
           estimatedTotal: Math.round(estimatedTotal),
           stockCheckSummary,

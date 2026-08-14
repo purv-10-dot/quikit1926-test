@@ -70,12 +70,16 @@ const ACTIONS: Record<LifecycleAction, ActionConfig> = {
  */
 export function SpaceRowMenu({
   spaceId,
+  spaceKey,
   view,
   isAdmin,
   canArchive,
   onChanged,
 }: {
   spaceId: string;
+  // Readable project key for the settings deep-link URL; the id is still used
+  // for the lifecycle mutation calls (PATCH/DELETE/restore by project id).
+  spaceKey?: string;
   view: ProjectView;
   isAdmin: boolean;
   canArchive: boolean;
@@ -134,7 +138,7 @@ export function SpaceRowMenu({
         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-20 py-1">
           {view !== "trash" && (
             <Link
-              href={`/spaces/${spaceId}/settings`}
+              href={`/spaces/${spaceKey ?? spaceId}/settings`}
               onClick={() => setOpen(false)}
               className="flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
             >

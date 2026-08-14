@@ -7,6 +7,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 const bodySchema = z.object({
   interviewId: z.string().min(1),
@@ -71,7 +72,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
 
     // Reuse the interview's live feedback token, else mint + persist one, so the
     // tokenised no-login feedback link stays consistent across resends/reminders.
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
     let fbToken = interview.feedbackToken;
     let fbExpiresAt = interview.feedbackTokenExpiresAt;
     if (!fbToken || !fbExpiresAt || fbExpiresAt.getTime() < Date.now()) {

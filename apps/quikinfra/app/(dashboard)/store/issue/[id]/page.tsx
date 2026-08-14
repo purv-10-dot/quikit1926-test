@@ -33,6 +33,8 @@ import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useMaterialIssue } from "@/hooks/use-store";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
+import { RepairApprovalNotice } from "@/components/RepairApprovalNotice";
+import { MasterApprovalAction } from "@/components/MasterApprovalAction";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -335,18 +337,27 @@ export default function MaterialIssueDetailPage() {
               // gate so the bar follows the workflow-rbac helper
               // instead of the matrix key.
               return (
-                <ApprovalActionBar
-                  entityType="materialIssue"
-                  entityId={id}
-                  currentStatus={issue.status ?? undefined}
-                  requiredPermission="store.issue.approve"
-                  actionEndpoint={`/api/store/issues/${id}/approve`}
-                  invalidateKeys={[
-                    ["material-issues"],
-                    ["material-issue", id],
-                  ]}
-                  hidden={!canAct}
-                />
+                <>
+                  <ApprovalActionBar
+                    entityType="materialIssue"
+                    entityId={id}
+                    currentStatus={issue.status ?? undefined}
+                    requiredPermission="store.issue.approve"
+                    actionEndpoint={`/api/store/issues/${id}/approve`}
+                    invalidateKeys={[
+                      ["material-issues"],
+                      ["material-issue", id],
+                    ]}
+                    hidden={!canAct}
+                  />
+                  <MasterApprovalAction
+                    approval={issue?.approval}
+                    me={me}
+                    entityLabel="issue"
+                    actionEndpoint={`/api/store/issues/${id}/approve`}
+                    invalidateKeys={[["material-issues"], ["material-issue", id]]}
+                  />
+                </>
               );
             })()}
           </div>
@@ -354,6 +365,14 @@ export default function MaterialIssueDetailPage() {
       />
 
       <PageContainer>
+        <RepairApprovalNotice
+          repair={issue?.approval?.repair}
+          entityLabel="issue"
+          actionEndpoint={`/api/store/issues/${id}/approve`}
+          invalidateKeys={[["material-issues"], ["material-issue", id]]}
+          me={me}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 space-y-6">
           {/* ── Overview card ─────────────────────────────────────── */}

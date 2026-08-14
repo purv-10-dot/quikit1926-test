@@ -13,7 +13,7 @@
  * mint, impersonation) is unchanged from the previous implementation.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import {
   Rocket,
@@ -204,6 +204,13 @@ export default function AppLauncherPage() {
   const [selectedOrg, setSelectedOrg] = useState<OrgInfo | null>(null);
   const [loadingApps, setLoadingApps] = useState(true);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
+  // True once /api/apps/launcher has actually answered. Distinct from
+  // !loadingApps, which is briefly true with an empty catalog — see the
+  // ?handoff= effect below, which depends on the difference.
+  const [appsLoaded, setAppsLoaded] = useState(false);
+  // Set when a ?handoff= auto-launch has been kicked off, so a re-render can't
+  // mint a second launch token for the same deep link.
+  const handoffStartedRef = useRef(false);
   const [search, setSearch] = useState("");
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   // When an app launch is blocked because the org was suspended (the
@@ -262,16 +269,38 @@ export default function AppLauncherPage() {
     const launcherUrl =
       process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
       (typeof window !== "undefined" ? window.location.origin : "");
-    // After logout, land on the public marketing site instead of the launcher
-    // root — but only on the UAT launcher (uatapps.quikit.ai → uat.quikit.ai).
-    // Every other environment (incl. prod apps.quikit.ai) keeps landing on the
-    // launcher root. Decided at runtime from the browser host so no build-arg /
-    // Dockerfile wiring is needed. NOTE: the target origin must be in the
-    // launcher's /api/auth/signout-global allow-list or that hop rejects it.
+    // After logout, land on the public QuikIT marketing website rather than the
+    // launcher root. Resolution order:
+    //   1. NEXT_PUBLIC_WEBSITE_URL — explicit marketing origin (set per env).
+    //   2. uatapps.quikit.ai → uat.quikit.ai (pre-existing UAT special case).
+    //   3. localhost dev → the website dev server on :1001.
+    //   4. Anything else → launcher root (unchanged prod behaviour until
+    //      NEXT_PUBLIC_WEBSITE_URL is set on the project).
+    // Scoped to THIS launcher page only — each sub-app's own sign-out still
+    // lands the user on that app's landing page (see globalSignOut callers).
+    // NOTE: the target origin must be in the launcher's
+    // /api/auth/signout-global allow-list or that hop rejects it and falls back
+    // to the launcher root. localhost is auto-allowed outside production; for
+    // prod/UAT add the marketing origin to AUTH_ALLOWED_RETURN_ORIGINS.
     const host =
       typeof window !== "undefined" ? window.location.hostname : "";
+    const websiteUrl =
+      process.env.NEXT_PUBLIC_WEBSITE_URL?.replace(/\/+$/, "");
+
     const postLogoutRedirect =
-      host === "uatapps.quikit.ai" ? "https://uat.quikit.ai" : `${launcherUrl}/`;
+      websiteUrl ||
+      (typeof window !== "undefined" &&
+        window.location.hostname === "localhost"
+        ? "http://localhost:1001"
+        : launcherUrl);
+    // const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL?.replace(/\/+$/, "");
+    // const postLogoutRedirect =
+    //   websiteUrl ||
+    //   (host === "apps.quikit.ai"
+    //     ? "https://quikit.ai"
+    //     : host === "localhost"
+    //       ? "http://localhost:1001"
+    //       : `${launcherUrl}/`);
     await globalSignOut({
       authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl,
@@ -307,7 +336,7 @@ export default function AppLauncherPage() {
           }
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoadingOrgs(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -321,6 +350,9 @@ export default function AppLauncherPage() {
         setApps(j.data ?? []);
         setAvailable(j.available ?? []);
         setIsOrgAdmin(Boolean(j.isOrgAdmin));
+        // The catalog is now real, not just "not loading". The ?handoff=
+        // auto-launch below waits on THIS, never on the loading flags.
+        setAppsLoaded(true);
       }
     } catch {
       // best-effort
@@ -339,8 +371,22 @@ export default function AppLauncherPage() {
   }, [selectedOrg?.orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Deep-link handoff: ?handoff=<slug>&to=<path> auto-launches once loaded.
+  //
+  // Gate on `appsLoaded` — NOT on the loading flags. `loadingApps` starts true
+  // but the org effect above flips it to false on the very first render (when
+  // `selectedOrg` is still null), so there is a window where
+  // `loadingApps === false` while `apps` is still []. If the memberships fetch
+  // settles into that same commit, this effect used to run against an empty
+  // catalog, take the `!target` branch, and `replaceState` the deep-link params
+  // out of the URL — permanently. The catalog then arrived, the effect re-ran,
+  // found no `?handoff=` left to act on, and the user sat on a bare /apps grid.
+  // That is why an emailed work-item link dropped people on the launcher
+  // instead of the ticket. Waiting for a real catalog fetch removes the race;
+  // until one lands we leave the URL untouched so the params survive (e.g.
+  // through org selection, which triggers the fetch).
   useEffect(() => {
-    if (loadingOrgs || loadingApps) return;
+    if (!appsLoaded) return;
+    if (handoffStartedRef.current) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const slug = params.get("handoff");
@@ -351,8 +397,11 @@ export default function AppLauncherPage() {
       window.history.replaceState({}, "", "/apps");
       return;
     }
+    // handleLaunch navigates away; the ref stops a re-render from minting a
+    // second launch token for the same deep link while that is in flight.
+    handoffStartedRef.current = true;
     void handleLaunch(target, to);
-  }, [loadingOrgs, loadingApps, apps]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [appsLoaded, apps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function selectOrgInSession(orgId: string, role: string) {
     try {
@@ -427,7 +476,7 @@ export default function AppLauncherPage() {
       );
       window.alert(
         `Launch URL for "${app.name}" is not configured. ` +
-          `Set ${app.slug.toUpperCase()}_URL in the launcher's environment.`,
+        `Set ${app.slug.toUpperCase()}_URL in the launcher's environment.`,
       );
       return;
     }
@@ -548,9 +597,9 @@ export default function AppLauncherPage() {
   const tileV = reduce
     ? { hidden: { opacity: 0 }, show: { opacity: 1 } }
     : {
-        hidden: { opacity: 0, y: 18 },
-        show: { opacity: 1, y: 0, transition: { duration: 0.5, ease } },
-      };
+      hidden: { opacity: 0, y: 18 },
+      show: { opacity: 1, y: 0, transition: { duration: 0.5, ease } },
+    };
 
   function initialOf(name: string) {
     return (name?.[0] ?? "Q").toUpperCase();
@@ -849,9 +898,8 @@ export default function AppLauncherPage() {
                                     ? undefined
                                     : `Membership ${org.status} — not yet accessible`
                                 }
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                                  isActive && !selected ? "hover:bg-white/[0.05]" : ""
-                                }`}
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${isActive && !selected ? "hover:bg-white/[0.05]" : ""
+                                  }`}
                                 style={{
                                   opacity: isActive ? 1 : 0.5,
                                   cursor: isActive ? "pointer" : "not-allowed",

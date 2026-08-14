@@ -12,6 +12,7 @@ import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
 import { ShieldCheck, Check, X, MessageSquare, Megaphone, Heart, ThumbsUp } from "lucide-react";
 import { clsx } from "clsx";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 type Tab = "announcement" | "post" | "recognition" | "feedback";
 
@@ -30,16 +31,23 @@ interface BaseItem {
   rejectionReason: string | null;
 }
 
+// Announcements store plain URL strings; posts can store either plain URLs or
+// { type, url, ... } objects (see createSocialPostSchema) — normalizeAttachment
+// below flattens both into one shape for rendering.
+type RawAttachment = string | { type?: "image" | "video"; url: string; fileName?: string; mimeType?: string };
+
 interface AnnouncementItem extends BaseItem {
   title: string;
   content: string;
   author: EmployeeMini;
+  attachments: RawAttachment[] | null;
 }
 
 interface PostItem extends BaseItem {
   content: string;
   type: string;
   employee: EmployeeMini;
+  attachments: RawAttachment[] | null;
 }
 
 interface RecognitionItem extends BaseItem {
@@ -68,6 +76,40 @@ const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
 
 function fullName(e: EmployeeMini) {
   return `${e.firstName} ${e.lastName}`.trim();
+}
+
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+
+function normalizeAttachment(a: RawAttachment): { type: "image" | "video"; url: string; fileName?: string } {
+  if (typeof a === "string") return { type: VIDEO_EXT.test(a) ? "video" : "image", url: a };
+  return { type: a.type ?? (VIDEO_EXT.test(a.url) ? "video" : "image"), url: a.url, fileName: a.fileName };
+}
+
+/** Thumbnail grid for a pending item's attachments — click opens the original in a new tab. */
+function AttachmentGrid({ attachments }: { attachments: RawAttachment[] | null | undefined }) {
+  if (!attachments || attachments.length === 0) return null;
+  const items = attachments.map(normalizeAttachment);
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {items.map((a, i) => (
+        <a
+          key={i}
+          href={a.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={a.fileName ?? `View ${a.type}`}
+          className="relative w-20 h-20 rounded-lg overflow-hidden ring-1 ring-gray-200 bg-gray-100 hover:ring-green-400 transition shrink-0"
+        >
+          {a.type === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={a.url} alt={a.fileName ?? "attachment"} className="w-full h-full object-cover" />
+          ) : (
+            <video src={a.url} className="w-full h-full object-cover bg-black" />
+          )}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 export default function EngagementApprovalsPage() {
@@ -174,24 +216,12 @@ export default function EngagementApprovalsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-4">
-        <div className="flex gap-4 overflow-x-auto">
-          {visibleTabs.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => switchTab(t.value)}
-              className={clsx(
-                "inline-flex items-center gap-1.5 px-1 py-3 text-[13px] font-semibold border-b-2 transition -mb-px whitespace-nowrap",
-                tab === t.value
-                  ? "border-[#22c55e] text-[#22c55e] font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700",
-              )}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <TabSwitcher
+        className="mb-4"
+        value={tab}
+        onChange={(v) => switchTab(v as Tab)}
+        tabs={visibleTabs.map((t) => ({ value: t.value, label: t.label, icon: t.icon }))}
+      />
 
       {/* Status filter */}
       <div className="flex items-center gap-2 mb-4">
@@ -277,6 +307,7 @@ function ItemCard({
             <>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-1">{(item as AnnouncementItem).title}</h3>
               <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as AnnouncementItem).content}</p>
+              <AttachmentGrid attachments={(item as AnnouncementItem).attachments} />
               <p className="text-xs text-gray-500 mt-2">
                 By {fullName((item as AnnouncementItem).author)} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>
@@ -285,6 +316,7 @@ function ItemCard({
           {type === "post" && (
             <>
               <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{(item as PostItem).content}</p>
+              <AttachmentGrid attachments={(item as PostItem).attachments} />
               <p className="text-xs text-gray-500 mt-2">
                 By {fullName((item as PostItem).employee)} · {(item as PostItem).type} · {new Date(item.createdAt).toLocaleString("en-IN")}
               </p>

@@ -45,11 +45,52 @@ export function UserAvatar({
   );
 }
 
+// ─── PageFrame ──────────────────────────────────────────────────────
+
+/**
+ * Full-height page wrapper for list/grid pages. Claims exactly the height of
+ * the shell's <main> so nothing overflows it — the grid inside supplies the
+ * page's single scrollbar instead of stacking a second one on top of main's.
+ *
+ * Use it with `<PageContainer fill>`:
+ *
+ *   <PageFrame>
+ *     <PageHeader … />
+ *     <PageContainer fill>
+ *       <DataTable … />
+ *     </PageContainer>
+ *   </PageFrame>
+ *
+ * Keep fixed-position siblings (drawers, modals, dialogs) outside the frame.
+ * Pages that genuinely scroll as a whole (detail views, forms, dashboards)
+ * should keep using a bare <PageContainer>.
+ */
+export function PageFrame({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`flex h-full min-h-0 flex-col ${className ?? ""}`}>
+      {children}
+    </div>
+  );
+}
+
 // ─── PageContainer ──────────────────────────────────────────────────
 
-export function PageContainer({ children, className }: { children: ReactNode; className?: string }) {
+export function PageContainer({
+  children,
+  className,
+  fill = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Fill the remaining height of a {@link PageFrame} and hand it to the child grid. */
+  fill?: boolean;
+}) {
   return (
-    <div className={`p-6 max-w-[1600px] mx-auto ${className ?? ""}`}>
+    <div
+      className={`p-6 max-w-[1600px] mx-auto ${
+        fill ? "flex min-h-0 w-full flex-1 flex-col" : ""
+      } ${className ?? ""}`}
+    >
       {children}
     </div>
   );
@@ -67,7 +108,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, breadcrumbs, actions, onBack }: PageHeaderProps) {
   return (
-    <div className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] border-b border-slate-200 px-6 py-4">
+    <div className="shrink-0 sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] border-b border-slate-200 px-6 py-4">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
           {breadcrumbs.map((crumb, i) => (
@@ -190,7 +231,10 @@ export function StatusChip({
     (safeStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "—");
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${color}`}>
+    // `whitespace-nowrap` is load-bearing: multi-word statuses ("Pending
+    // Approval", "Approved L1") otherwise wrap mid-label inside narrow table
+    // cells and read as clipped.
+    <span className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-md text-[11px] font-semibold border ${color}`}>
       {label}
     </span>
   );
@@ -441,7 +485,7 @@ export function TabBar({
   onTabChange: (key: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-b border-slate-200 px-6 bg-white">
+    <div className="shrink-0 flex items-center gap-1 border-b border-slate-200 px-6 bg-white">
       {tabs.map((tab) => (
         <button
           key={tab.key}
@@ -543,13 +587,3 @@ export function PageSkeleton() {
   );
 }
 
-export function TableSkeleton({ rows = 5 }: { rows?: number }) {
-  return (
-    <div className="animate-pulse space-y-2">
-      <div className="h-10 bg-slate-100 rounded-lg" />
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-12 bg-slate-50 rounded-lg" />
-      ))}
-    </div>
-  );
-}

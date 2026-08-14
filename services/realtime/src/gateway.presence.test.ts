@@ -6,9 +6,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 vi.mock("@quikit/database", async () => await import("./testdb"));
 
-import { createGateway, type Gateway } from "./gateway";
+import { createGateway, PRESENCE_RESYNC_EVERY, type Gateway } from "./gateway";
 import { createMetrics } from "./metrics";
-import { FIXTURES } from "./testdb";
+import { addPresence, FIXTURES, resetStore } from "./testdb";
 
 const { orgA, orgB, alice, bob, carol, general, announcements } = FIXTURES;
 const SECRET = "test-realtime-secret";
@@ -38,7 +38,15 @@ function connectReady(token: string): Promise<Socket> {
   });
 }
 
-function connectWithSnapshot(token: string): Promise<{ socket: Socket; snapshot: string[] }> {
+interface SnapshotUser {
+  userId: string;
+  status?: string;
+  statusMessage?: string;
+}
+
+function connectWithSnapshot(
+  token: string,
+): Promise<{ socket: Socket; snapshot: string[]; users: SnapshotUser[] }> {
   return new Promise((resolve, reject) => {
     const s = ioClient(url, {
       auth: { token },
@@ -47,11 +55,12 @@ function connectWithSnapshot(token: string): Promise<{ socket: Socket; snapshot:
       forceNew: true,
     });
     openSockets.push(s);
-    let snapshot: string[] = [];
-    s.on("presence_snapshot", (p: { userIds: string[] }) => {
-      snapshot = p.userIds;
+    let users: SnapshotUser[] = [];
+    // New shape is `{ users:[{userId,status?}] }`; tolerate the legacy `{ userIds }`.
+    s.on("presence_snapshot", (p: { users?: SnapshotUser[]; userIds?: string[] }) => {
+      users = p.users ?? (p.userIds ?? []).map((userId) => ({ userId }));
     });
-    s.on("ready", () => resolve({ socket: s, snapshot }));
+    s.on("ready", () => resolve({ socket: s, snapshot: users.map((u) => u.userId), users }));
     s.on("connect_error", reject);
   });
 }
@@ -98,6 +107,8 @@ afterEach(async () => {
   for (const s of openSockets.splice(0)) s.disconnect();
   // Let server-side disconnect handlers (markOffline) settle.
   await delay(80);
+  // Clear any set-status rows a test seeded so presence doesn't leak forward.
+  resetStore();
 });
 
 afterAll(async () => {
@@ -124,6 +135,51 @@ describe("presence", () => {
     const noLeak = expectNoEvent(a, "presence");
     await connectReady(mintToken(carol, orgB)); // globex — shares nothing with acme
     await noLeak;
+  });
+
+  it("seeds the snapshot with each online user's durable set-status", async () => {
+    addPresence({ orgId: orgA, userId: alice, status: "busy", statusMessage: "focusing" });
+    await connectReady(mintToken(alice, orgA));
+    const { users } = await connectWithSnapshot(mintToken(bob, orgA));
+    const aliceEntry = users.find((u) => u.userId === alice);
+    expect(aliceEntry?.status).toBe("busy");
+    expect(aliceEntry?.statusMessage).toBe("focusing");
+  });
+
+  it("broadcasts a connecting user's durable set-status to observers (connect-time seed)", async () => {
+    const b = await connectReady(mintToken(bob, orgA)); // observer in #general
+    addPresence({ orgId: orgA, userId: alice, status: "dnd", statusMessage: null });
+    const got = waitForEvent<{ userId: string; status: string }>(b, "presence_status");
+    await connectReady(mintToken(alice, orgA));
+    expect(await got).toMatchObject({ userId: alice, status: "dnd" });
+  });
+
+  // §2 self-healing. Presence keys expire silently — a TTL lapse broadcasts
+  // nothing — so a client that missed a transition has no way to learn of it.
+  // The heartbeat carries a periodic re-sync; `applySnapshot` replaces the
+  // client's online set wholesale, so it converges without a diff.
+  it("re-sends presence_snapshot every Nth heartbeat, carrying a missed transition", async () => {
+    const a = await connectReady(mintToken(alice, orgA));
+
+    // Drift: bob is online in Redis, but `a` was never told — exactly the state
+    // a silent TTL expiry or a dropped broadcast leaves behind.
+    const bobKey = `presence:${orgA}:${bob}`;
+    await presenceMock.sadd(bobKey, "socket-a-never-heard-about");
+
+    try {
+      const snap = waitForEvent<{ users: SnapshotUser[] }>(a, "presence_snapshot", 3_000);
+      for (let i = 0; i < PRESENCE_RESYNC_EVERY; i++) a.emit("heartbeat");
+      expect((await snap).users.map((u) => u.userId)).toContain(bob);
+    } finally {
+      await presenceMock.del(bobKey);
+    }
+  });
+
+  it("does not re-send the snapshot on every heartbeat", async () => {
+    const a = await connectReady(mintToken(alice, orgA));
+    const quiet = expectNoEvent(a, "presence_snapshot", 300);
+    for (let i = 0; i < PRESENCE_RESYNC_EVERY - 1; i++) a.emit("heartbeat");
+    await quiet;
   });
 
   it("multi-tab: stays online until the LAST socket leaves, then broadcasts offline", async () => {

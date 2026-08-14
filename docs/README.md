@@ -2,6 +2,8 @@
 
 Reference + onboarding for the QuikIT monorepo. Read in the order below if you're new; jump to specific docs as questions come up.
 
+> **Looking for end-user documentation?** The QuikCRM (CrmExpress) product manual has moved into the app it documents: [`apps/crmexpress/docs/Product Documents/`](../apps/crmexpress/docs/Product%20Documents/README.md) — written for people using the product, not building it. The docs below are for developers.
+
 ## Reading order
 
 ### Day 1 — get running
@@ -25,6 +27,7 @@ Reference + onboarding for the QuikIT monorepo. Read in the order below if you'r
 - [11-app-developer-integration-handbook.md](./11-app-developer-integration-handbook.md) — end-to-end handbook for building & integrating a new app
 - [12-auth-service-integration-response.md](./12-auth-service-integration-response.md) — `/api/verify-token` contract + agent-JWT issuance spec
 - [13-app-ports-and-env.md](./13-app-ports-and-env.md) — definitive per-app port table + every env var
+- [14-ai-integration-guide.md](./14-ai-integration-guide.md) — adding AI to an app: `@quikit/ai-sdk`, the two integration models, P0 enablers, FAQ
 - [login-roles-architecture-and-flow.md](./login-roles-architecture-and-flow.md) — auth → org → in-app RBAC: the full role & permission flow (plain-English + code)
 - [registration-otp-flow.md](./registration-otp-flow.md) — self-serve sign-up + OTP verification flow
 - [cache-management.md](./cache-management.md) — the 4-layer cache model (React.cache → LRU → Redis → DB) + session store

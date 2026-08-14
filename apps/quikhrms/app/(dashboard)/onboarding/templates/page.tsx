@@ -131,6 +131,12 @@ const TAG: Record<TypeDef["color"], string> = {
 const INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-green-500/25 focus:border-green-500";
 
 interface Step {
+  // Stable identity for this step across template edits — lets "Re-apply
+  // template" on an already-assigned candidate match steps back to their
+  // in-progress OnboardingTask (see apply-template route) instead of only
+  // matching by title, so renaming/reordering/re-wording a step doesn't strand
+  // or wipe a candidate's uploads/approvals on it.
+  id: string;
   title: string; stepType: StepType; assigneeRole: AssigneeRole; dueInDays: number; isMandatory: boolean;
   description?: string; dependencies?: string; reminder?: string; visibility?: string; notes?: string;
   config: Record<string, unknown>;
@@ -138,8 +144,11 @@ interface Step {
 interface TaskTpl extends Partial<Step> { title: string; assigneeRole: AssigneeRole; dueInDays: number; category: Category; isMandatory: boolean; sortOrder: number; }
 interface Template { id: string; name: string; description: string | null; departmentId: string | null; designationId: string | null; tasks: TaskTpl[]; isActive: boolean; createdAt: string; }
 
-const newStep = (): Step => ({ title: "", stepType: "CustomTask", assigneeRole: "HRRole", dueInDays: 3, isMandatory: true, config: {} });
+const newStep = (): Step => ({ id: crypto.randomUUID(), title: "", stepType: "CustomTask", assigneeRole: "HRRole", dueInDays: 3, isMandatory: true, config: {} });
+// Legacy templates saved before step ids existed get one backfilled here —
+// it's persisted the next time this template is saved.
 const toStep = (t: TaskTpl): Step => ({
+  id: t.id ?? crypto.randomUUID(),
   title: t.title, stepType: (t.stepType as StepType) ?? "CustomTask", assigneeRole: t.assigneeRole,
   dueInDays: t.dueInDays, isMandatory: t.isMandatory, description: t.description ?? undefined,
   dependencies: t.dependencies, reminder: t.reminder, visibility: t.visibility, notes: t.notes,
@@ -182,7 +191,7 @@ export default function OnboardingTemplatesPage() {
   const patch = (i: number, p: Partial<Step>) => setSteps((s) => s.map((st, idx) => idx === i ? { ...st, ...p } : st));
   const patchConfig = (i: number, key: string, v: unknown) => setSteps((s) => s.map((st, idx) => idx === i ? { ...st, config: { ...st.config, [key]: v } } : st));
   const addStep = () => setSteps((s) => { setOpenIdx(s.length); return [...s, newStep()]; });
-  const dupStep = (i: number) => setSteps((s) => { setOpenIdx(i + 1); return [...s.slice(0, i + 1), { ...s[i], config: { ...s[i].config }, title: `${s[i].title || "Untitled"} (copy)` }, ...s.slice(i + 1)]; });
+  const dupStep = (i: number) => setSteps((s) => { setOpenIdx(i + 1); return [...s.slice(0, i + 1), { ...s[i], id: crypto.randomUUID(), config: { ...s[i].config }, title: `${s[i].title || "Untitled"} (copy)` }, ...s.slice(i + 1)]; });
   const delStep = (i: number) => setSteps((s) => {
     if (s.length <= 1) return s;
     setOpenIdx((cur) => (cur === null ? null : cur === i ? null : cur > i ? cur - 1 : cur));
@@ -193,6 +202,7 @@ export default function OnboardingTemplatesPage() {
   const submit = () => {
     if (!name.trim()) return;
     const tasks = steps.map((s, i) => ({
+      id: s.id,
       title: s.title.trim() || "Untitled step", description: s.description || undefined,
       assigneeRole: s.assigneeRole, dueInDays: s.dueInDays, category: TYPES[s.stepType].category,
       isMandatory: s.isMandatory, sortOrder: i, stepType: s.stepType, config: s.config,

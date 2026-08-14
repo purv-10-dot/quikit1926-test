@@ -28,6 +28,12 @@ export const PROJECT_TABS: ProjectTab[] = [
   { path: "grouped-kanban", label: "Grouped Kanban", perm: { resource: "GroupedKanban", action: "view" } },
   { path: "list", label: "List", perm: { resource: "ProjectList", action: "view" } },
   { path: "task-table", label: "Task Table", perm: { resource: "ProjectTaskTable", action: "view" } },
+  { path: "reports", label: "Reports", perm: { resource: "ProjectReports", action: "view" } },
+  // QuikTest — the per-project test-management surface (repository, runs,
+  // plans, reports). The org-level cross-project view is the sidebar's
+  // "Apps → QuikTest" tree instead.
+  { path: "test", label: "Tests", perm: { resource: "TestCase", action: "view" } },
+  { path: "development", label: "Development", perm: { resource: "Board", action: "view" } },
   { path: "timesheet", label: "Timesheet", perm: { resource: "Timesheet", action: "view" } },
   { path: "docs", label: "Docs", perm: { resource: "Doc", action: "view" } },
   // Product Discovery only — the "All ideas" surface. Excluded from the
@@ -48,6 +54,19 @@ const DEFAULT_TAB_PATHS: string[] = PROJECT_TABS.filter(
 
 /** Ordered list of every known tab path. */
 export const PROJECT_TAB_PATHS: string[] = PROJECT_TABS.map((t) => t.path);
+
+/**
+ * Tabs a project of the given template may EVER show — the universe the tab
+ * customizer offers and "Show all" selects. Discovery-only tabs (Ideas) appear
+ * only for discovery spaces; everything else is offered on non-discovery spaces.
+ * Keeps the customizer in sync with the default-tab rule above.
+ */
+export function selectableTabs(templateKey?: string | null): ProjectTab[] {
+  const isDiscovery = templateKey === "discovery";
+  return PROJECT_TABS.filter((t) =>
+    DISCOVERY_ONLY_TABS.has(t.path) ? isDiscovery : true,
+  );
+}
 
 /** Route segment → gating perm (used by the space layout's route guard). */
 export const TAB_ROUTE_GATES: Record<string, { resource: string; action: string }> =

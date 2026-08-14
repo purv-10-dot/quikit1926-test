@@ -51,7 +51,7 @@ const emptyKra = (): KraDraft => ({
   title: "", description: "", weight: 100, kpis: [emptyKpi()],
 });
 
-export const emptyDraft = (): ScorecardDraft => ({
+const emptyDraft = (): ScorecardDraft => ({
   name: "",
   description: "",
   designationId: "",
@@ -253,38 +253,40 @@ export function ScorecardEditor({
           </Field>
         </div>
 
-        <Field label="Description">
-          <textarea
-            rows={2}
-            value={draft.description}
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-            placeholder="What this scorecard is for"
-            className={inputCls + " resize-none"}
-          />
-        </Field>
-
-        <Field label="Tags">
-          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-md bg-gray-50 ring-1 ring-gray-200">
-            {draft.tags.map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded text-[11px] font-medium text-gray-800 ring-1 ring-gray-200">
-                {t}
-                <button type="button" onClick={() => removeTag(t)} className="hover:text-red-600">×</button>
-              </span>
-            ))}
-            <input
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); addTag(); }
-                else if (e.key === "Backspace" && !tagInput && draft.tags.length) {
-                  setDraft((d) => ({ ...d, tags: d.tags.slice(0, -1) }));
-                }
-              }}
-              placeholder="Add tag and press Enter (e.g. Operations)"
-              className="flex-1 min-w-[120px] text-xs px-2 py-1 bg-transparent focus:outline-none"
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="Description">
+            <textarea
+              rows={2}
+              value={draft.description}
+              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+              placeholder="What this scorecard is for"
+              className={inputCls + " resize-none"}
             />
-          </div>
-        </Field>
+          </Field>
+
+          <Field label="Tags">
+            <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-md bg-gray-50 ring-1 ring-gray-200">
+              {draft.tags.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded text-[11px] font-medium text-gray-800 ring-1 ring-gray-200">
+                  {t}
+                  <button type="button" onClick={() => removeTag(t)} className="hover:text-red-600">×</button>
+                </span>
+              ))}
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); addTag(); }
+                  else if (e.key === "Backspace" && !tagInput && draft.tags.length) {
+                    setDraft((d) => ({ ...d, tags: d.tags.slice(0, -1) }));
+                  }
+                }}
+                placeholder="Add tag and press Enter (e.g. Operations)"
+                className="flex-1 min-w-[120px] text-xs px-2 py-1 bg-transparent focus:outline-none"
+              />
+            </div>
+          </Field>
+        </div>
 
         <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
           <input

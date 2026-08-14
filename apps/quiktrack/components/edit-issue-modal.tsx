@@ -6,6 +6,11 @@ import { useSession } from "next-auth/react";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { sanitizeRichText } from "@/lib/sanitize";
+import {
+  readDescriptionDraft,
+  writeDescriptionDraft,
+  clearDescriptionDraft,
+} from "@/lib/utils/description-draft";
 import type { FieldValue } from "@/lib/customFields/registry";
 import {
   X,
@@ -42,8 +47,10 @@ import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
+import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
 import { DescriptionAttachments } from "@/components/description-attachments";
 import { RichTextView } from "@/components/rich-text-view";
+import { WorkflowStatusControl } from "@/components/workflow-status-control";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
@@ -613,7 +620,14 @@ export function EditIssueModal({
           const d = i.data as IssueFull;
           setIssue(d);
           setTitle(d.title);
-          setDescription(d.description ?? "");
+          const savedDescription = d.description ?? "";
+          const draft = readDescriptionDraft(d.id);
+          if (draft !== null && draft !== savedDescription) {
+            setDescription(draft);
+            setDescEditing(true);
+          } else {
+            setDescription(savedDescription);
+          }
           setStatusId(d.statusId);
           setPriority((d.priority as Priority) ?? "MEDIUM");
           setAssigneeId(d.assigneeId ?? "");
@@ -1066,42 +1080,23 @@ export function EditIssueModal({
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </button> */}
 
-                <div className="relative" ref={statusRef}>
-                  <button
-                    type="button"
-                    onClick={() => setStatusOpen((v) => !v)}
-                    className={`inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-semibold uppercase tracking-wide rounded ${statusPillCls(currentStatus?.category)}`}
-                  >
-                    {currentStatus?.name ?? "—"}
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                  {statusOpen && (
-                    <div className="absolute left-0 top-full mt-1 min-w-[200px] bg-white border border-gray-200 rounded shadow-lg z-50 py-1">
-                      {statuses.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            setStatusId(s.id);
-                            setStatusOpen(false);
-                            void patch({ statusId: s.id });
-                          }}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-left ${
-                            s.id === statusId ? "bg-blue-50" : "hover:bg-gray-50"
-                          }`}
-                        >
-                          <span
-                            className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-                              s.category,
-                            )}`}
-                          >
-                            {s.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {currentIssueId && (
+                  <WorkflowStatusControl
+                    issueId={currentIssueId}
+                    projectId={projectId}
+                    currentStatusId={statusId}
+                    currentStatusName={currentStatus?.name ?? "—"}
+                    currentStatusCategory={currentStatus?.category}
+                    statuses={statuses.map((s) => ({ id: s.id, name: s.name, category: s.category }))}
+                    onChange={(id) => {
+                      setStatusId(id);
+                      void patch({ statusId: id });
+                    }}
+                    onViewWorkflow={() =>
+                      window.open(`/spaces/${projectId}/settings/workflows`, "_blank")
+                    }
+                  />
+                )}
 
                 {/* <button className="inline-flex items-center justify-center h-7 w-7 rounded text-amber-500 hover:bg-amber-50" aria-label="Automation">
                   <ZapIcon className="h-3.5 w-3.5" />
@@ -1115,7 +1110,10 @@ export function EditIssueModal({
                   <div>
                     <RichTextEditor
                       value={description}
-                      onChange={setDescription}
+                      onChange={(value) => {
+                        setDescription(value);
+                        writeDescriptionDraft(issue.id, value);
+                      }}
                       mentions={memberMentions}
                       uploadImage={(file) => uploadProjectImage(projectId, file)}
                       uploadFile={(file) => uploadProjectFile(projectId, file)}
@@ -1126,6 +1124,7 @@ export function EditIssueModal({
                         onClick={() => {
                           setDescEditing(false);
                           void patch({ description: description ?? "" });
+                          clearDescriptionDraft(issue.id);
                         }}
                         className="h-8 px-3 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
                       >
@@ -1136,6 +1135,7 @@ export function EditIssueModal({
                         onClick={() => {
                           setDescription(issue.description ?? "");
                           setDescEditing(false);
+                          clearDescriptionDraft(issue.id);
                         }}
                         className="h-8 px-3 text-xs text-gray-700 hover:bg-gray-100 rounded"
                       >
@@ -1310,6 +1310,7 @@ export function EditIssueModal({
                                   <SubtaskGridRow
                                     key={s.id}
                                     subtask={s}
+                                    projectId={projectId}
                                     statuses={statuses}
                                     members={members}
                                     selected={selectedSubtaskIds.has(s.id)}
@@ -1718,6 +1719,14 @@ export function EditIssueModal({
                 {issue.updatedAt && <div>Updated {fmtDateLabel(issue.updatedAt)}</div>}
               </div>
 
+              {/* Development — placed BELOW the Details section (Jira layout):
+                  branches/commits/PRs + action links, linked via the issue key. */}
+              {issue?.id && issue.key && (
+                <div className="mt-6">
+                  <IssueDevelopment issueId={issue.id} issueKey={issue.key} />
+                </div>
+              )}
+
               {/* Activity — Comments / History / Work log tabs. Mounted at
                   the bottom of the right rail per the reference designs. */}
               {issue?.id && issue.projectId && (
@@ -1817,6 +1826,7 @@ interface InlineSubtask {
 
 function SubtaskGridRow({
   subtask,
+  projectId,
   statuses,
   members,
   selected,
@@ -1825,6 +1835,7 @@ function SubtaskGridRow({
   onPatched,
 }: {
   subtask: InlineSubtask;
+  projectId: string;
   statuses: Status[];
   members: Member[];
   selected: boolean;
@@ -1870,7 +1881,8 @@ function SubtaskGridRow({
 
   const st = statuses.find((x) => x.id === subtask.statusId);
   const ass = members.find((m) => m.userId === subtask.assigneeId);
-  const P = PRIORITY_META[(subtask.priority as Priority) ?? "MEDIUM"];
+  const P =
+    PRIORITY_META[(subtask.priority as Priority) ?? "MEDIUM"] ?? PRIORITY_META.MEDIUM;
 
   async function patch(body: Record<string, unknown>) {
     try {
@@ -2104,45 +2116,20 @@ function SubtaskGridRow({
         )}
       </div>
 
-      {/* Status */}
+      {/* Status — subtasks are work items, so gate by the workflow (only legal
+          transitions + the "Show a screen" modal). Falls back to a free picker
+          when the project has no published workflow. */}
       <div className="px-3 py-2">
-        <button
-          type="button"
-          onClick={(e) => setSPos(sPos ? null : anchor(e))}
-          className={`inline-flex items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded whitespace-nowrap max-w-full ${statusPillCls(
-            st?.category,
-          )}`}
-        >
-          {st?.name ?? "—"}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        {sPos && (
-          <div
-            data-fixed-popover
-            style={{ position: "fixed", top: sPos.top, left: sPos.left }}
-            className="min-w-[180px] bg-white border border-gray-200 rounded shadow-lg z-[80] py-1"
-          >
-            {statuses
-              .filter((x) => x.id !== subtask.statusId)
-              .map((x) => (
-                <button
-                  key={x.id}
-                  type="button"
-                  onClick={() => {
-                    setSPos(null);
-                    void patch({ statusId: x.id });
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
-                >
-                  <span
-                    className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(x.category)}`}
-                  >
-                    {x.name}
-                  </span>
-                </button>
-              ))}
-          </div>
-        )}
+        <WorkflowStatusControl
+          issueId={subtask.id}
+          projectId={projectId}
+          currentStatusId={subtask.statusId}
+          currentStatusName={st?.name ?? "—"}
+          currentStatusCategory={st?.category}
+          statuses={statuses.map((x) => ({ id: x.id, name: x.name, category: x.category }))}
+          onChange={(statusId) => patch({ statusId })}
+          size="sm"
+        />
       </div>
 
       {/* ETA — inline-editable */}
@@ -2351,7 +2338,10 @@ function RowPriorityPicker({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false));
-  const Sel = PRIORITY_META[value];
+  // `priority` is a free-text column with no DB constraint, so a bad value from
+  // an API caller or an import lands here as an unmapped key. Falling back keeps
+  // the whole issue viewable instead of crashing the modal on one bad field.
+  const Sel = PRIORITY_META[value] ?? PRIORITY_META.MEDIUM;
   return (
     <div className="relative" ref={ref}>
       <button

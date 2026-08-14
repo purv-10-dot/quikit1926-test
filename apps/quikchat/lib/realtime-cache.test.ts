@@ -1,13 +1,16 @@
 import type { ChannelList, ChannelListItem, MessageDto } from "@/lib/shared";
 import { describe, expect, it } from "vitest";
 import {
+  applyChannelUpdated,
   applyDeliveredEvent,
   applyReadEvent,
   bumpChannelList,
+  dmChannelIdsWithMember,
   markChannelRead,
   mergeMessageEvent,
   patchMessageEvent,
   prependOlder,
+  removeChannelFromList,
   seedFromApiPage,
   shouldApplyDelivered,
   shouldApplyRead,
@@ -107,6 +110,20 @@ describe("mergeMessageEvent", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.id).toBe("real-1");
   });
+
+  it("dedupes stale optimistic and server rows that share the same logical message", () => {
+    const list = [
+      msg({ id: "temp-1", senderId: "me", content: "draft", clientMessageId: "c1" }),
+      msg({ id: "real-1", senderId: "me", content: "final", clientMessageId: "c1" }),
+    ];
+    const out = mergeMessageEvent(
+      list,
+      msg({ id: "real-1", senderId: "me", content: "final", clientMessageId: "c1" }),
+      "me",
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.id).toBe("real-1");
+  });
 });
 
 describe("patchMessageEvent", () => {
@@ -119,6 +136,7 @@ describe("patchMessageEvent", () => {
 
 const chan = (over: Partial<ChannelListItem> & { channelId: string }): ChannelListItem => ({
   name: over.channelId,
+  description: null,
   avatarUrl: null,
   type: "group",
   visibility: "public",
@@ -163,6 +181,44 @@ describe("bumpChannelList", () => {
     expect(bumpChannelList(state, "nope", last("m1"), { active: false, fromSelf: false })).toBe(
       state,
     );
+  });
+});
+
+describe("dmChannelIdsWithMember (last-seen invalidation scope)", () => {
+  const user = (id: string) => ({ id, displayName: id, avatarUrl: null });
+  const state: ChannelList = {
+    priority: [chan({ channelId: "dm-pinned", type: "dm", members: [user("me"), user("peer")] })],
+    recent: [
+      chan({ channelId: "dm-peer", type: "dm", members: [user("me"), user("peer")] }),
+      chan({ channelId: "dm-other", type: "dm", members: [user("me"), user("other")] }),
+      // A group containing the peer: last-seen is a 1:1 readout, and the route
+      // rejects non-DMs, so this must never be invalidated.
+      chan({ channelId: "grp", type: "group", members: [user("me"), user("peer")] }),
+    ],
+  };
+
+  it("returns every DM with that member, across priority and recent", () => {
+    expect(dmChannelIdsWithMember(state, "peer").sort()).toEqual(["dm-peer", "dm-pinned"]);
+  });
+
+  it("excludes groups the member belongs to", () => {
+    expect(dmChannelIdsWithMember(state, "peer")).not.toContain("grp");
+  });
+
+  it("excludes DMs the member is not in", () => {
+    expect(dmChannelIdsWithMember(state, "peer")).not.toContain("dm-other");
+  });
+
+  it("returns nothing for a user who shares no DM", () => {
+    expect(dmChannelIdsWithMember(state, "stranger")).toEqual([]);
+  });
+
+  it("never repeats a channel id", () => {
+    const dup: ChannelList = {
+      priority: [chan({ channelId: "dm-1", type: "dm", members: [user("peer"), user("peer")] })],
+      recent: [],
+    };
+    expect(dmChannelIdsWithMember(dup, "peer")).toEqual(["dm-1"]);
   });
 });
 
@@ -221,5 +277,75 @@ describe("applyDeliveredEvent (S14a)", () => {
   it("shouldApplyDelivered ignores the current user's own delivered", () => {
     expect(shouldApplyDelivered("me", "me")).toBe(false);
     expect(shouldApplyDelivered("bob", "me")).toBe(true);
+  });
+});
+
+describe("applyChannelUpdated (QC_008)", () => {
+  const state: ChannelList = {
+    priority: [chan({ channelId: "c1", name: "old", description: null, avatarUrl: null })],
+    recent: [chan({ channelId: "c2", name: "other" })],
+  };
+
+  it("merges only the provided fields into the matching channel", () => {
+    const next = applyChannelUpdated(state, {
+      channelId: "c1",
+      name: "new",
+      avatarUrl: "https://signed/av.png",
+    });
+    expect(next.priority[0]!.name).toBe("new");
+    expect(next.priority[0]!.avatarUrl).toBe("https://signed/av.png");
+    // Untouched fields + other channels unchanged.
+    expect(next.priority[0]!.description).toBeNull();
+    expect(next.recent[0]!.name).toBe("other");
+  });
+
+  it("can clear the description (null) without touching name/avatar", () => {
+    const seeded: ChannelList = {
+      priority: [chan({ channelId: "c1", name: "keep", description: "was here" })],
+      recent: [],
+    };
+    const next = applyChannelUpdated(seeded, { channelId: "c1", description: null });
+    expect(next.priority[0]!.description).toBeNull();
+    expect(next.priority[0]!.name).toBe("keep");
+  });
+
+  /**
+   * `publishRosterChanged` (channels.service) reuses `channel_updated` to signal
+   * a MEMBERSHIP change — someone left, was removed, or had their role changed —
+   * with a payload of nothing but `{ channelId }`. That is only safe because the
+   * merge below is field-guarded: the event's job there is to trigger the
+   * `["members"]` / `["channels"]` refetch in `onChannelUpdated`, not to carry
+   * new channel details.
+   *
+   * If this ever becomes an unconditional assign, every roster change would
+   * blank the channel's name, description and avatar in the sidebar.
+   */
+  it("leaves the channel untouched when the payload carries only a channelId", () => {
+    const seeded: ChannelList = {
+      priority: [
+        chan({ channelId: "c1", name: "Design", description: "the good stuff", avatarUrl: "a.png" }),
+      ],
+      recent: [],
+    };
+    const next = applyChannelUpdated(seeded, { channelId: "c1" });
+    expect(next.priority[0]).toEqual(seeded.priority[0]);
+  });
+});
+
+describe("removeChannelFromList (QC_008)", () => {
+  it("drops a deleted channel from both lists", () => {
+    const state: ChannelList = {
+      priority: [chan({ channelId: "c1" })],
+      recent: [chan({ channelId: "c2" }), chan({ channelId: "c3" })],
+    };
+    const next = removeChannelFromList(state, "c2");
+    expect(next.priority.map((c) => c.channelId)).toEqual(["c1"]);
+    expect(next.recent.map((c) => c.channelId)).toEqual(["c3"]);
+  });
+
+  it("is a no-op when the channel is absent", () => {
+    const state: ChannelList = { priority: [], recent: [chan({ channelId: "c1" })] };
+    const next = removeChannelFromList(state, "zzz");
+    expect(next.recent.map((c) => c.channelId)).toEqual(["c1"]);
   });
 });

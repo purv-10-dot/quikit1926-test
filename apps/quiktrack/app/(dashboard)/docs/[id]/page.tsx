@@ -16,6 +16,7 @@ export default function StandaloneDocPage({ params }: { params: { id: string } }
   const [projectId, setProjectId] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "denied">("loading");
 
+  
   useEffect(() => {
     let alive = true;
     fetch(`/api/docs/${params.id}`)

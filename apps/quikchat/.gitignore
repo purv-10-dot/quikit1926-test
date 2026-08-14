@@ -1,4 +1,4 @@
-node_modules
+﻿node_modules
 .next
 .env
 .env.local
@@ -8,4 +8,14 @@ coverage
 *.tsbuildinfo
 .turbo
 .vercel
-uploads/
+/.uploads/
+/docs/init-prompt-quikchat.md
+
+# Root .gitignore blanket-ignores *.md; re-include this app's docs.
+# Nested .gitignore wins over the parent, and *.md matches files (not
+# the docs/ directory), so this negation is honoured.
+!/docs/**/*.md
+
+# Personal working-context prompt - deliberately not tracked.
+# Must stay AFTER the negation above: last match wins.
+/docs/init-prompt-quikchat.md

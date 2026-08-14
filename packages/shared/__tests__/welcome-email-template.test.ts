@@ -39,25 +39,37 @@ describe("renderWelcomeEmail", () => {
     }
   });
 
-  it("renders the login URL as text and as a link, after the mission copy", () => {
+  it("renders a Get Started button pointing at the login URL", () => {
     // Test fixture only. The renderer is a pure function — the real URL comes
     // from buildLoginUrl() (NEXT_PUBLIC_AUTH_URL) in the calling app's mailer,
     // never from this module.
     const loginUrl = FIXTURE_LOGIN_URL;
     const { html } = renderWelcomeEmail({ firstName: "Jane", loginUrl });
-    expect(html).toContain("Sign in to your workspace to get started:");
     expect(html).toContain(`<a href="${loginUrl}"`);
-    // The URL itself is visible, not hidden behind link text.
-    expect(html).toContain(`>${loginUrl}</a>`);
-    // Placed between the mission paragraph and the "next few days" lead-in.
-    expect(html.indexOf(loginUrl)).toBeGreaterThan(html.indexOf("Complete your workspace setup"));
-    expect(html.indexOf(loginUrl)).toBeLessThan(html.indexOf("Over the next few days"));
+    expect(html).toContain(">Get Started</a>");
+    expect(html).toContain("background:#16130F");
+    expect(html).toContain("color:#ffffff");
   });
 
-  it("omits the sign-in line entirely when no usable login URL is given", () => {
+  it("never shows the login URL as visible text", () => {
+    const { html } = renderWelcomeEmail({ firstName: "Jane", loginUrl: FIXTURE_LOGIN_URL });
+    // The URL appears exactly once — inside the href, not as link text.
+    expect(html.split(FIXTURE_LOGIN_URL).length - 1).toBe(1);
+    expect(html).not.toContain(`>${FIXTURE_LOGIN_URL}<`);
+    expect(html).not.toContain("Sign in to your workspace");
+  });
+
+  it("places the button between the mission copy and the next-few-days lead-in", () => {
+    const { html } = renderWelcomeEmail({ firstName: "Jane", loginUrl: FIXTURE_LOGIN_URL });
+    const btn = html.indexOf("Get Started");
+    expect(btn).toBeGreaterThan(html.indexOf("Complete your workspace setup"));
+    expect(btn).toBeLessThan(html.indexOf("Over the next few days"));
+  });
+
+  it("omits the button entirely when no usable login URL is given", () => {
     for (const loginUrl of [undefined, "", "/login", "javascript:alert(1)"]) {
       const { html } = renderWelcomeEmail({ firstName: "Jane", loginUrl });
-      expect(html).not.toContain("Sign in to your workspace");
+      expect(html).not.toContain("Get Started");
       expect(html).not.toContain("<a ");
     }
   });

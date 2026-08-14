@@ -1,29 +1,54 @@
 "use client";
 
 import type { ChannelListItem } from "@/lib/shared";
-import { Avatar, CalendarPlus, IconButton, Info, Phone, Search } from "@/components/ui";
+import {
+  Avatar,
+  CalendarPlus,
+  IconButton,
+  Info,
+  Phone,
+  Pin,
+  PinOff,
+  Search,
+} from "@/components/ui";
 import { useProfile } from "@/components/profile/ProfileProvider";
+import { formatLastSeen } from "@/lib/format";
+import type { EffectiveStatus } from "@/lib/presence-store";
+import { avatarVariantFor } from "./ChannelList";
 
 export interface ConversationHeaderProps {
   channel: ChannelListItem;
   /** User ids currently online (shared-channel presence). */
   online?: ReadonlySet<string>;
+  /** Effective presence status accessor (rich status dot). Falls back to online-only. */
+  statusOf?: (userId: string) => EffectiveStatus;
   /** Excluded from the "N online" count and the DM presence sub-line. */
   currentUserId?: string;
+  /**
+   * DM peer's last-seen instant, already privacy-resolved server-side. Only read
+   * when the peer is offline. null/absent → the plain "Direct message" fallback:
+   * "hidden by privacy" and "never recorded" must look identical here.
+   */
+  lastSeen?: string | null;
   onToggleInfo: () => void;
   /** Open the scheduling modal seeded with the channel's members (S15a). */
   onSchedule?: () => void;
   /** Start a call in the current channel. */
   onCall?: () => void;
+  /** Pin / unpin this conversation in the viewer's own list (QC_010). */
+  onTogglePin?: () => void;
 }
 
 export function ConversationHeader({
   channel,
   online,
+  statusOf,
   currentUserId,
+  lastSeen,
   onToggleInfo,
   onSchedule,
   onCall,
+  onTogglePin,
 }: ConversationHeaderProps) {
   const { openProfile } = useProfile();
   const isGroup = channel.type === "group";
@@ -37,12 +62,16 @@ export function ConversationHeader({
     !isGroup && online
       ? channel.members.some((m) => m.id !== currentUserId && online.has(m.id))
       : false;
+  // Offline DM only: "last seen today at 3:42 PM", falling back to the static
+  // label when there's no value to show. The "Active now" path is unchanged —
+  // a live peer's last-seen is irrelevant even when one is loaded.
+  const lastSeenLabel = !isGroup && !dmOnline ? formatLastSeen(lastSeen) : "";
   const sub = isGroup
     ? `${channel.members.length} members${onlineCount ? ` · ${onlineCount} online` : ""}`
     : channel.members.length > 0
       ? dmOnline
         ? "Active now"
-        : "Direct message"
+        : lastSeenLabel || "Direct message"
       : "";
 
   return (
@@ -52,7 +81,7 @@ export function ConversationHeader({
           name={channel.name ?? "Direct message"}
           id={channel.channelId}
           avatarUrl={channel.avatarUrl}
-          group={isGroup}
+          variant={avatarVariantFor(channel)}
           size={38}
         />
         <div className="qc-min0">
@@ -80,6 +109,7 @@ export function ConversationHeader({
                 avatarUrl={m.avatarUrl}
                 size={24}
                 online={online ? online.has(m.id) : undefined}
+                status={statusOf?.(m.id)}
               />
             </button>
           ))}
@@ -100,6 +130,14 @@ export function ConversationHeader({
         {onSchedule ? (
           <IconButton label="Schedule meeting" onClick={onSchedule}>
             <CalendarPlus size={18} />
+          </IconButton>
+        ) : null}
+        {onTogglePin ? (
+          <IconButton
+            label={channel.isPriority ? "Unpin conversation" : "Pin conversation"}
+            onClick={onTogglePin}
+          >
+            {channel.isPriority ? <PinOff size={18} /> : <Pin size={18} />}
           </IconButton>
         ) : null}
         <IconButton label="Conversation info" onClick={onToggleInfo}>

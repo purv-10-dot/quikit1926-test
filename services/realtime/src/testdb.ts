@@ -30,6 +30,13 @@ export interface FakeCall {
   type: string;
   participants: Array<{ userId: string }>;
 }
+export interface FakePresence {
+  orgId: string;
+  userId: string;
+  status: string;
+  statusMessage: string | null;
+  statusExpiresAt: Date | null;
+}
 
 export const FIXTURES = {
   orgA: "org-acme",
@@ -46,6 +53,7 @@ interface Store {
   channels: Map<string, FakeChannel>;
   members: FakeMember[];
   calls: Map<string, FakeCall>;
+  presences: FakePresence[];
 }
 
 function seedStore(): Store {
@@ -63,6 +71,7 @@ function seedStore(): Store {
       { orgId: orgA, channelId: nonMember, userId: bob },
     ],
     calls: new Map<string, FakeCall>(),
+    presences: [],
   };
 }
 
@@ -74,11 +83,19 @@ export function resetStore(): void {
   store.channels = fresh.channels;
   store.members = fresh.members;
   store.calls = fresh.calls;
+  store.presences = fresh.presences;
 }
 
 /** Register a call the calling handlers can look up. */
 export function addCall(call: FakeCall): void {
   store.calls.set(call.id, call);
+}
+
+/** Seed a durable set-status row (QcUserPresence) for presence-seed tests. */
+export function addPresence(
+  p: Omit<FakePresence, "statusExpiresAt"> & { statusExpiresAt?: Date | null },
+): void {
+  store.presences.push({ statusExpiresAt: null, ...p });
 }
 
 // --- Prisma-shaped fake (only the methods the gateway uses) ---
@@ -126,6 +143,22 @@ export const db = {
       include?: { participants?: boolean };
     }): Promise<FakeCall | null> {
       return store.calls.get(args.where.id) ?? null;
+    },
+  },
+  qcUserPresence: {
+    async findUnique(args: {
+      where: { orgId_userId: { orgId: string; userId: string } };
+    }): Promise<FakePresence | null> {
+      const { orgId, userId } = args.where.orgId_userId;
+      return store.presences.find((p) => p.orgId === orgId && p.userId === userId) ?? null;
+    },
+    async findMany(args: {
+      where: { orgId: string; userId?: { in: string[] } };
+    }): Promise<FakePresence[]> {
+      const { orgId, userId } = args.where;
+      return store.presences.filter(
+        (p) => p.orgId === orgId && (!userId?.in || userId.in.includes(p.userId)),
+      );
     },
   },
 };

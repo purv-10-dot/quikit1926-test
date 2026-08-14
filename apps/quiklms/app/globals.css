@@ -529,108 +529,49 @@
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
- * Dark-mode compatibility layer.
- *
- * THE PROBLEM. The token system at the top of this file is complete and correct
- * — `.dark` redefines every surface/text/line channel — but only ~40 of the
- * app's components actually consume it. The other 115 files were ported from the
- * legacy frontend still writing raw Tailwind greys (`bg-white`, `bg-gray-50`,
- * `text-gray-900`, `border-gray-200`), and 75 of those carry no `dark:` variant
- * at all. Those classes are theme-blind: in dark mode they keep painting a white
- * card with near-black text on a near-black canvas, which is the washed-out,
- * unreadable dashboard this fixes.
- *
- * WHY A SHIM AND NOT A CLASS MIGRATION. Rewriting them properly means ~3,600
- * edits across 115 files, every one a chance to recolour something semantic
- * (a status pill, a chart series, white-on-brand text) with no way to eyeball
- * the result before a deploy. This maps the legacy palette onto the tokens in
- * one place instead, and stays reversible: as files migrate to `bg-surface` /
- * `text-fg`, they simply stop matching these selectors, and the block can be
- * deleted outright once the last one does.
- *
- * HOW IT STAYS SAFE — three guards:
- *
- *   1. `[class~="…"]` matches a WHOLE class token, so `bg-white/70`,
- *      `border-white/50` and `md:bg-white` are left alone. Translucent white
- *      over a brand gradient is deliberate and must not be repainted.
- *   2. `:not([class*="dark:bg-"])` skips any element that already declares its
- *      own dark variant — the ~40 files that did this properly keep winning,
- *      and this block cannot regress them.
- *   3. Only neutrals are touched. `text-white` and every semantic hue
- *      (green/red/amber/blue statuses, chart palettes, the KPI traffic lights)
- *      are untouched by design.
- *
- * Unlayered and last in the file, so it outranks the Tailwind utilities it
- * corrects. Everything resolves to the same `--surface` / `--fg` / `--line`
- * channels the migrated components already use, so both halves of the app land
- * on one palette.
- * ────────────────────────────────────────────────────────────────────────────*/
 
-/* ── Surfaces ───────────────────────────────────────────────────────────────*/
-.dark [class~="bg-white"]:not([class*="dark:bg-"]) {
-  background-color: rgb(var(--surface));
-}
-.dark [class~="bg-gray-50"]:not([class*="dark:bg-"]),
-.dark [class~="bg-slate-50"]:not([class*="dark:bg-"]),
-.dark [class~="bg-gray-100"]:not([class*="dark:bg-"]),
-.dark [class~="bg-slate-100"]:not([class*="dark:bg-"]) {
-  background-color: rgb(var(--surface-muted));
-}
-/* Progress tracks and inset wells read as a recess, not a raised panel. */
-.dark [class~="bg-gray-200"]:not([class*="dark:bg-"]),
-.dark [class~="bg-slate-200"]:not([class*="dark:bg-"]) {
-  background-color: rgb(var(--surface-sunken));
-}
+/* ─────────────────────────────────────────────────────────────────────────
+   @quikit/ui design tokens.
 
-/* Hover surfaces. A `hover:` utility is its own class token, so it needs its
-   own rule — `[class~="bg-gray-50"]` does not match `hover:bg-gray-50`. */
-.dark [class~="hover:bg-white"]:hover:not([class*="dark:hover:bg-"]),
-.dark [class~="hover:bg-gray-50"]:hover:not([class*="dark:hover:bg-"]),
-.dark [class~="hover:bg-gray-100"]:hover:not([class*="dark:hover:bg-"]),
-.dark [class~="hover:bg-slate-50"]:hover:not([class*="dark:hover:bg-"]),
-.dark [class~="hover:bg-slate-100"]:hover:not([class*="dark:hover:bg-"]) {
-  background-color: rgb(var(--surface-muted));
-}
+   This app has its own token namespace and does NOT import
+   "@quikit/ui/styles", so the platform's `--color-*` variables were simply
+   undefined here. Every shared @quikit/ui component (Contact Support,
+   DataTable, EmptyState, Pagination, …) styles itself with them, so they were
+   rendering with transparent backgrounds and invisible borders.
 
-/* ── Text ───────────────────────────────────────────────────────────────────*/
-.dark [class~="text-gray-900"]:not([class*="dark:text-"]),
-.dark [class~="text-slate-900"]:not([class*="dark:text-"]),
-.dark [class~="text-gray-800"]:not([class*="dark:text-"]),
-.dark [class~="text-slate-800"]:not([class*="dark:text-"]) {
-  color: rgb(var(--fg));
-}
-.dark [class~="text-gray-700"]:not([class*="dark:text-"]),
-.dark [class~="text-slate-700"]:not([class*="dark:text-"]),
-.dark [class~="text-gray-600"]:not([class*="dark:text-"]),
-.dark [class~="text-slate-600"]:not([class*="dark:text-"]) {
-  color: rgb(var(--fg-muted));
-}
-.dark [class~="text-gray-500"]:not([class*="dark:text-"]),
-.dark [class~="text-slate-500"]:not([class*="dark:text-"]),
-.dark [class~="text-gray-400"]:not([class*="dark:text-"]),
-.dark [class~="text-slate-400"]:not([class*="dark:text-"]) {
-  color: rgb(var(--fg-subtle));
-}
-
-/* ── Lines ──────────────────────────────────────────────────────────────────*/
-.dark [class~="border-gray-100"]:not([class*="dark:border-"]),
-.dark [class~="border-slate-100"]:not([class*="dark:border-"]),
-.dark [class~="border-gray-200"]:not([class*="dark:border-"]),
-.dark [class~="border-slate-200"]:not([class*="dark:border-"]) {
-  border-color: rgb(var(--line));
-}
-.dark [class~="border-gray-300"]:not([class*="dark:border-"]),
-.dark [class~="border-slate-300"]:not([class*="dark:border-"]) {
-  border-color: rgb(var(--line-strong));
-}
-.dark [class~="divide-gray-200"] > :not([hidden]) ~ :not([hidden]),
-.dark [class~="divide-slate-200"] > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgb(var(--line));
-}
-
-/* ── Form fields ────────────────────────────────────────────────────────────*/
-.dark [class~="placeholder-gray-400"]::placeholder,
-.dark [class~="placeholder-gray-500"]::placeholder {
-  color: rgb(var(--fg-subtle));
+   Declaring them is additive and cannot regress anything: nothing in this app
+   referenced these names before, so the only rules they can affect are the
+   shared-component rules that were previously broken. The app's own
+   brand tokens are untouched.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --color-secondary: #6366F1;
+  --color-secondary-light: #E0E8FF;
+  --color-secondary-dark: #4F46E5;
+  --color-success: #10B981;
+  --color-success-light: #D1FAE5;
+  --color-success-dark: #047857;
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-warning-dark: #B45309;
+  --color-danger: #EF4444;
+  --color-danger-light: #FEE2E2;
+  --color-danger-dark: #B91C1C;
+  --color-neutral-50: #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B;
+  --color-neutral-900: #0F172A;
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F8FAFC;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  --color-text-tertiary: #94A3B8;
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
 }

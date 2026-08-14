@@ -4,7 +4,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import {
   calculateDailyMonthlyStats, calculateWeeklyMonthlyStats,
   computeMemberPunchIn, calculateOverallFinalAverage,
-  previousMonths, type MonthlyStatRow,
+  previousMonths, parseYearMonthNum, type MonthlyStatRow,
 } from "@/lib/services/clientMeetingsMath";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
@@ -22,6 +22,15 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const mode = (url.searchParams.get("mode") ?? "daily") as "daily" | "weekly";
   const monthsBack = parseInt(url.searchParams.get("monthsBack") ?? "6", 10);
   const punchUserId = url.searchParams.get("punchInUserId");
+  // Member Punch-In tab has its own "Select Year"/"Select Month" pickers,
+  // independent of the Performance tab's rolling `monthsBack` window — a
+  // selected month outside that window must still be queryable. Falls back
+  // to the dashboard's own range only if the client didn't send them (older
+  // clients / defensive default), which mirrors the old (buggy) behavior.
+  const punchYearMonth = parseYearMonthNum(
+    url.searchParams.has("punchYear") ? parseInt(url.searchParams.get("punchYear")!, 10) : undefined,
+    url.searchParams.has("punchMonth") ? parseInt(url.searchParams.get("punchMonth")!, 10) : undefined,
+  );
 
   if (!clientId)
     return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
@@ -45,7 +54,10 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   // Roster size — fallback for meetings that didn't snapshot `totalMembers`
   // and the canonical denominator for Weekly attendance (the model has no
   // `totalMembers` column).
-  const rosterSize = client.teamMembers.filter(tm => !tm.member.deletedAt).length;
+  const activeRoster = client.teamMembers
+    .filter(tm => !tm.member.deletedAt)
+    .map(tm => ({ id: tm.member.id, name: tm.member.name }));
+  const rosterSize = activeRoster.length;
 
   if (mode === "daily") {
     const huddles = await db.clientDailyHuddle.findMany({
@@ -122,24 +134,26 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
             priorityStartEndDate: s.priorityStartEndDate,
             priorityColor: s.priorityColor,
           })),
+          // Must match the Member Punch-In query below: memberScores rows are
+          // keyed by ClientMember.id, so compare against the ClientMember-keyed
+          // absent/NA relations, not the legacy User-keyed ones.
+          absentUserIds: m.absentTeamMembers.map(a => a.clientMemberId),
+          dashboardNAUserIds: m.dashboardNATeamMembers.map(a => a.clientMemberId),
         };
       }),
       months,
       client.weeklyStartTime, client.weeklyEndTime,
+      activeRoster,
     );
   }
 
-  // Compute column totals ("Total Average" column in the UI).
+  // Compute column totals ("Total Average" column in the UI). Whole-number
+  // rounding for every metric, including "Quality of the dashboards" — it's
+  // computed by the same calculateOverallFinalAverage the Excel export uses,
+  // so integer rounding here can't cause it to drift from the export.
   const avgCol = (key: keyof MonthlyStatRow) => {
     const nums = monthlyStats.filter(m => m.isUpdate).map(m => m[key] as number);
     return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
-  };
-  // "Quality of the dashboards" carries 2-decimal precision end-to-end so the
-  // dashboard cell matches the Member Punch-In Excel "Total Average of All
-  // Members" exactly (e.g. 49.75%) — integer rounding here would drift.
-  const avgColPrecise = (key: keyof MonthlyStatRow) => {
-    const nums = monthlyStats.filter(m => m.isUpdate).map(m => m[key] as number);
-    return nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : 0;
   };
   const overallStats = {
     TotalavgHeld: avgCol("avgHeld"),
@@ -148,7 +162,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     TotalavgFormat: avgCol("avgFormat"),
     TotalavgAttendance: avgCol("avgAttendance"),
     TotalavgStuckCalls: avgCol("avgStuckCalls"),
-    TotalavgAuality: avgColPrecise("avgAuality"),
+    TotalavgAuality: avgCol("avgAuality"),
     TotalavgKP: avgCol("avgKP"),
     TotalavgWWW: avgCol("avgWWW"),
     TotalavgEF: avgCol("avgEF"),
@@ -170,8 +184,19 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       // (sourced from `client.teamMembers[].member.id`), so we MUST compare
       // against the ClientMember-keyed relations or the AB / NA flags
       // never match and every absent row renders as 0%.
+      //
+      // Scope to the SELECTED month (punchYearMonth), not the dashboard's own
+      // `from`/`toEnd` rolling window — the two are unrelated. Reusing the
+      // rolling window here was the bug: the "Total Avg" row and "Total
+      // Weekly Average" pill were computed over the whole 6-month window
+      // while the UI only displayed rows from the selected month, so the two
+      // numbers had no mathematical relationship to each other.
+      const punchFrom = punchYearMonth ? new Date(Date.UTC(punchYearMonth.year, punchYearMonth.month, 1)) : from;
+      const punchToEnd = punchYearMonth
+        ? new Date(Date.UTC(punchYearMonth.year, punchYearMonth.month + 1, 0, 23, 59, 59, 999))
+        : toEnd;
       const meetings = await db.clientWeeklyMeeting.findMany({
-        where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+        where: { orgId, clientId, deletedAt: null, meetingDate: { gte: punchFrom, lte: punchToEnd } },
         include: {
           absentTeamMembers: true,
           dashboardNATeamMembers: true,
@@ -217,9 +242,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       totalCallsAssessed,
       // External Client Member roster — matches Update tab + Absent picker.
       // Field name kept as `userId` for client back-compat; semantically a ClientMember.id.
-      roster: client.teamMembers
-        .filter(tm => !tm.member.deletedAt)
-        .map(tm => ({ userId: tm.member.id, name: tm.member.name })),
+      roster: activeRoster.map(m => ({ userId: m.id, name: m.name })),
       punchIn,
       punchInOverallAverage,
     },

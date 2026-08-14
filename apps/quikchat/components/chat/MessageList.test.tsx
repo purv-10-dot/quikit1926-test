@@ -1,5 +1,5 @@
 import type { MessageDto, PublicUser } from "@/lib/shared";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decideScroll, MessageList } from "./MessageList";
 
@@ -113,6 +113,266 @@ describe("MessageList", () => {
   });
 });
 
+describe("MessageList — unread divider", () => {
+  function renderUnread(messages: MessageDto[], openedUnreadCount: number) {
+    return render(
+      <MessageList
+        messages={messages}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={openedUnreadCount}
+      />,
+    );
+  }
+
+  const three = [
+    base({ id: "a", content: "one", createdAt: "2026-05-08T12:00:00Z" }),
+    base({ id: "b", content: "two", createdAt: "2026-05-08T12:01:00Z" }),
+    base({ id: "c", content: "three", createdAt: "2026-05-08T12:02:00Z" }),
+  ];
+
+  it("renders above the first unread message", () => {
+    renderUnread(three, 2); // "b" and "c" are unread → divider above "b"
+    const list = screen.getByTestId("message-list");
+    const divider = screen.getByTestId("unread-divider");
+    const rowB = list.querySelector('[data-message-id="b"]')!;
+    // The divider's wrapper <div> immediately precedes "b"'s wrapper <div>.
+    expect(divider.closest("div")!.nextElementSibling).toBe(rowB.closest("div"));
+    expect(divider).toHaveTextContent("2 unread messages");
+    // The existing single-list invariant, asserted alongside the new feature.
+    expect(screen.getAllByTestId("message-list")).toHaveLength(1);
+  });
+
+  it("does not render when everything is read", () => {
+    renderUnread(three, 0);
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+  });
+
+  it("stays put when a new message arrives while the channel is open", () => {
+    const { rerender } = renderUnread(three, 1); // only "c" unread → divider above "c"
+    expect(screen.getByTestId("unread-divider").closest("div")!.nextElementSibling).toBe(
+      screen.getByTestId("message-list").querySelector('[data-message-id="c"]')!.closest("div"),
+    );
+
+    // A new message arrives (appended) — same mount, no key change, matching
+    // what actually happens while ConversationView stays on this channel.
+    rerender(
+      <MessageList
+        messages={[
+          ...three,
+          base({ id: "d", content: "four", createdAt: "2026-05-08T12:03:00Z" }),
+        ]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={1}
+      />,
+    );
+
+    // Still above "c" — did NOT chase the new message "d" to the bottom.
+    const list = screen.getByTestId("message-list");
+    expect(screen.getAllByTestId("unread-divider")).toHaveLength(1);
+    expect(screen.getByTestId("unread-divider").closest("div")!.nextElementSibling).toBe(
+      list.querySelector('[data-message-id="c"]')!.closest("div"),
+    );
+  });
+
+  it("recalculates after a switch away and back (remount, not rerender)", () => {
+    const first = renderUnread(three, 1); // divider above "c"
+    expect(
+      screen.getByTestId("unread-divider").closest("div")!.nextElementSibling,
+    ).toBe(screen.getByTestId("message-list").querySelector('[data-message-id="c"]')!.closest("div"));
+    first.unmount();
+
+    // Simulate leaving and returning: a fresh mount (ConversationView remounts
+    // MessageList via its channel-keyed `key`), with a channel now fully read.
+    renderUnread(three, 0);
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+  });
+
+  it("REGRESSION: the label always agrees with the rendered position, even when fewer unread-eligible messages are loaded than openedUnreadCount claims", () => {
+    // The exact reported bug: openedUnreadCount=7 (fresh + correct, from the
+    // channels list) but only 6 non-self messages are actually loaded at
+    // freeze time (a stale messages-query cache page not yet caught up by
+    // its background refetch — see MessageList's comment on the freeze).
+    // Before the fix, the label rendered the raw `openedUnreadCount` (7)
+    // while the position — resolved against the shorter array — only had 6
+    // messages below it. Whatever the label says, it must match reality.
+    const six = Array.from({ length: 6 }, (_, i) =>
+      base({ id: `m${i}`, content: `msg ${i}`, createdAt: `2026-05-08T12:0${i}:00Z` }),
+    );
+    renderUnread(six, 7);
+
+    const list = screen.getByTestId("message-list");
+    const divider = screen.getByTestId("unread-divider");
+    // The divider's wrapper div also holds the boundary message's own row as
+    // the divider's next sibling (see the JSX: date-divider?, unread-divider?,
+    // MessageRow, all inside one `<div key={message.id}>`).
+    const boundaryRow = divider.nextElementSibling as HTMLElement;
+    const allRows = Array.from(list.querySelectorAll("[data-message-id]"));
+    const boundaryIdx = allRows.indexOf(boundaryRow);
+    expect(boundaryIdx).toBeGreaterThanOrEqual(0);
+    const belowCount = allRows.length - boundaryIdx; // inclusive of the boundary row
+
+    const labelMatch = /^(\d+) unread message/.exec(divider.textContent ?? "");
+    expect(labelMatch).not.toBeNull();
+    const labelledCount = Number(labelMatch![1]);
+    // The actual bug assertion: label and rendered position must agree.
+    expect(labelledCount).toBe(belowCount);
+    // Pinned to the honest number (6, what was actually found) — not the
+    // claimed 7 the old code would have shown.
+    expect(divider).toHaveTextContent("6 unread messages");
+    expect(belowCount).toBe(6);
+  });
+
+  it("sending clears the divider", () => {
+    const { rerender } = renderUnread(three, 1); // divider above "c"
+    expect(screen.getByTestId("unread-divider")).toBeInTheDocument();
+
+    // The current user sends a new message — appended, senderId === me.
+    rerender(
+      <MessageList
+        messages={[...three, base({ id: "mine", senderId: me, content: "sent", createdAt: "2026-05-08T12:03:00Z" })]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={1}
+      />,
+    );
+
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+  });
+
+  it("an incoming message (from someone else) does not clear the divider", () => {
+    const { rerender } = renderUnread(three, 1); // divider above "c"
+    expect(screen.getByTestId("unread-divider")).toBeInTheDocument();
+
+    rerender(
+      <MessageList
+        messages={[...three, base({ id: "d", senderId: "u-bob", content: "four", createdAt: "2026-05-08T12:03:00Z" })]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={1}
+      />,
+    );
+
+    expect(screen.getByTestId("unread-divider")).toBeInTheDocument();
+  });
+});
+
+describe("MessageList — deferred divider resolution (messagesFetching)", () => {
+  const three = [
+    base({ id: "a", content: "one", createdAt: "2026-05-08T12:00:00Z" }),
+    base({ id: "b", content: "two", createdAt: "2026-05-08T12:01:00Z" }),
+    base({ id: "c", content: "three", createdAt: "2026-05-08T12:02:00Z" }),
+  ];
+  // 7 messages, all from someone else, oldest (m0) to newest (m6).
+  const seven = Array.from({ length: 7 }, (_, i) =>
+    base({ id: `m${i}`, senderId: "u-bob", content: `msg ${i}`, createdAt: `2026-05-08T12:0${i}:00Z` }),
+  );
+  const stale = seven.slice(1); // missing m0, the oldest unread message
+
+  function renderDeferred(
+    messages: MessageDto[],
+    openedUnreadCount: number,
+    messagesFetching: boolean,
+  ) {
+    return render(
+      <MessageList
+        messages={messages}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={openedUnreadCount}
+        messagesFetching={messagesFetching}
+      />,
+    );
+  }
+
+  it("resolves synchronously when messagesFetching is omitted — no visible change on a first-time open", () => {
+    // The common path (no stale cache): messagesFetching defaults to false,
+    // so resolution must still happen within the same render/mount as
+    // before this change, not on some later tick.
+    renderDeferred(three, 1, false);
+    expect(screen.getByTestId("unread-divider")).toBeInTheDocument();
+  });
+
+  it("REGRESSION: defers resolution while messagesFetching is true, then resolves against the CORRECT, complete array once it settles", () => {
+    // The exact bug the deferred design fixes: `stale` is missing the oldest
+    // unread message (m0) — a stale cached page not yet caught up by its
+    // background refetch. While messagesFetching is true, nothing must
+    // resolve yet (resolving against `stale` now would freeze on "m1" —
+    // wrong, and permanent, since the design never re-resolves).
+    const { rerender } = renderDeferred(stale, 7, true);
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+
+    // The refetch settles: messagesFetching flips false, `messages` is now
+    // the full, correct 7-message array.
+    rerender(
+      <MessageList
+        messages={seven}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={7}
+        messagesFetching={false}
+      />,
+    );
+
+    const divider = screen.getByTestId("unread-divider");
+    const list = screen.getByTestId("message-list");
+    // Resolved against the COMPLETE array: boundary is "m0", not "m1" (which
+    // is where resolving against the incomplete `stale` array would have
+    // permanently pinned it).
+    expect(divider.nextElementSibling).toBe(list.querySelector('[data-message-id="m0"]'));
+    expect(divider).toHaveTextContent("7 unread messages");
+  });
+
+  it("skips resolving entirely if the user sends before messagesFetching ever settles", () => {
+    const { rerender } = renderDeferred(stale, 7, true);
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+
+    // A send lands WHILE still waiting on the refetch — appended, senderId
+    // === me, messagesFetching still true.
+    rerender(
+      <MessageList
+        messages={[...stale, base({ id: "mine", senderId: me, content: "sent", createdAt: "2026-05-08T12:10:00Z" })]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={7}
+        messagesFetching={true}
+      />,
+    );
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+
+    // The refetch finally settles — must NOT resurrect a divider: the user
+    // already read everything above by sending, before there was ever
+    // anything to show.
+    rerender(
+      <MessageList
+        messages={[...seven, base({ id: "mine", senderId: me, content: "sent", createdAt: "2026-05-08T12:10:00Z" })]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={7}
+        messagesFetching={false}
+      />,
+    );
+    expect(screen.queryByTestId("unread-divider")).toBeNull();
+  });
+});
+
 describe("decideScroll (Bug 2)", () => {
   const snap = (len: number, firstId: string, lastId: string) => ({ len, firstId, lastId });
 
@@ -177,5 +437,220 @@ describe("re-pin on late content resize (Item 3)", () => {
     // near the bottom by default).
     roCb!();
     expect(scrollSpy).toHaveBeenCalled();
+  });
+});
+
+describe("MessageList — scroll-back wiring", () => {
+  /**
+   * WHAT THESE DO NOT PROVE: jsdom has no layout engine. `scrollHeight`,
+   * `clientHeight` and `scrollTop` are 0 unless stubbed, and `scrollIntoView`
+   * is a no-op. So these assert that the right CALLS happen with the right
+   * arguments — never that the viewport actually held its position or that the
+   * unread line ended up on screen. Those two live in
+   * `__tests__/e2e/ui/scrollback.spec.ts`, which has a real browser.
+   */
+  function renderPaged(over: Partial<Parameters<typeof MessageList>[0]> = {}) {
+    return render(
+      <MessageList
+        messages={[
+          base({ id: "a", content: "one", createdAt: "2026-05-08T12:00:00Z" }),
+          base({ id: "b", content: "two", createdAt: "2026-05-08T12:01:00Z" }),
+        ]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        {...over}
+      />,
+    );
+  }
+
+  /** jsdom reports 0 for every metric; give the scroller a real geometry. */
+  function setScrollGeometry(el: HTMLElement, scrollTop: number, scrollHeight = 2000) {
+    Object.defineProperty(el, "scrollHeight", { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, "clientHeight", { value: 500, configurable: true });
+    el.scrollTop = scrollTop;
+  }
+
+  /**
+   * Let the opening scroll settle. The paging trigger is gated for one animation
+   * frame after the view is positioned on open, so that the programmatic
+   * scroll's own events are not mistaken for the reader scrolling up.
+   */
+  async function settleOpenScroll() {
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+  }
+
+  it("asks for older history when the viewport nears the top", async () => {
+    const onLoadOlder = vi.fn();
+    renderPaged({ onLoadOlder });
+    const list = screen.getByTestId("message-list");
+    await settleOpenScroll();
+
+    setScrollGeometry(list, 10); // inside NEAR_TOP_PX
+    fireEvent.scroll(list);
+
+    expect(onLoadOlder).toHaveBeenCalled();
+  });
+
+  it("ignores the conversation's own opening scroll", () => {
+    // No frame flush: this is the state the view is in the instant it opens, at
+    // scrollTop 0 and near the top. A programmatic landing is not a reader
+    // reaching for history, and paging here fetches a page nobody asked for.
+    const onLoadOlder = vi.fn();
+    renderPaged({ onLoadOlder });
+    const list = screen.getByTestId("message-list");
+
+    setScrollGeometry(list, 0);
+    fireEvent.scroll(list);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("never asks when the list is shorter than its viewport", async () => {
+    // Under a screenful: scrollTop is pinned at 0 forever, so every scroll event
+    // looks near-top. Must not fetch — `atEnd` would latch, but only after a
+    // wasted round trip.
+    const onLoadOlder = vi.fn();
+    renderPaged({ onLoadOlder });
+    const list = screen.getByTestId("message-list");
+    await settleOpenScroll();
+
+    setScrollGeometry(list, 0, 400); // scrollHeight 400 < clientHeight 500
+    fireEvent.scroll(list);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("does not ask while scrolled away from the top", async () => {
+    const onLoadOlder = vi.fn();
+    renderPaged({ onLoadOlder });
+    const list = screen.getByTestId("message-list");
+    await settleOpenScroll();
+
+    setScrollGeometry(list, 900); // well past NEAR_TOP_PX
+    fireEvent.scroll(list);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("does not ask again while a page is already in flight, or once history ends", async () => {
+    const onLoadOlder = vi.fn();
+    const { rerender } = renderPaged({ onLoadOlder, loadingOlder: true });
+    const list = screen.getByTestId("message-list");
+    await settleOpenScroll();
+    setScrollGeometry(list, 0);
+
+    fireEvent.scroll(list);
+    expect(onLoadOlder).not.toHaveBeenCalled();
+
+    rerender(
+      <MessageList
+        messages={[base({ id: "a", createdAt: "2026-05-08T12:00:00Z" })]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        onLoadOlder={onLoadOlder}
+        atEndOfHistory
+      />,
+    );
+    const list2 = screen.getByTestId("message-list");
+    setScrollGeometry(list2, 0);
+    fireEvent.scroll(list2);
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("shows a loading affordance only while a page is in flight", () => {
+    const { rerender } = renderPaged({ loadingOlder: false });
+    expect(screen.queryByTestId("loading-older")).toBeNull();
+
+    rerender(
+      <MessageList
+        messages={[base({ id: "a", createdAt: "2026-05-08T12:00:00Z" })]}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        loadingOlder
+      />,
+    );
+    expect(screen.getByTestId("loading-older")).toBeInTheDocument();
+  });
+
+  it("keeps exactly one unread divider, on the same message, across a prepend", () => {
+    const three = [
+      base({ id: "a", content: "one", createdAt: "2026-05-08T12:00:00Z" }),
+      base({ id: "b", content: "two", createdAt: "2026-05-08T12:01:00Z" }),
+      base({ id: "c", content: "three", createdAt: "2026-05-08T12:02:00Z" }),
+    ];
+    const props = {
+      currentUserId: me,
+      members,
+      memberReadAt: {},
+      memberDeliveredAt: {},
+      openedUnreadCount: 2, // divider above "b"
+    };
+    const { rerender } = render(<MessageList messages={three} {...props} />);
+
+    const boundaryBefore = screen.getByTestId("unread-divider").nextElementSibling;
+    expect(boundaryBefore).toBe(
+      screen.getByTestId("message-list").querySelector('[data-message-id="b"]'),
+    );
+
+    // An older page arrives at the FRONT — the divider must not move, duplicate,
+    // or re-resolve against the now-longer array.
+    const older = [
+      base({ id: "x", content: "old1", createdAt: "2026-05-08T11:00:00Z" }),
+      base({ id: "y", content: "old2", createdAt: "2026-05-08T11:30:00Z" }),
+    ];
+    rerender(<MessageList messages={[...older, ...three]} {...props} />);
+
+    expect(screen.getAllByTestId("unread-divider")).toHaveLength(1);
+    expect(screen.getByTestId("unread-divider").nextElementSibling).toBe(
+      screen.getByTestId("message-list").querySelector('[data-message-id="b"]'),
+    );
+  });
+
+  it("scrolls to the unread divider on open instead of the bottom", () => {
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const three = [
+      base({ id: "a", content: "one", createdAt: "2026-05-08T12:00:00Z" }),
+      base({ id: "b", content: "two", createdAt: "2026-05-08T12:01:00Z" }),
+      base({ id: "c", content: "three", createdAt: "2026-05-08T12:02:00Z" }),
+    ];
+    render(
+      <MessageList
+        messages={three}
+        currentUserId={me}
+        members={members}
+        memberReadAt={{}}
+        memberDeliveredAt={{}}
+        openedUnreadCount={2}
+      />,
+    );
+
+    // The DIVIDER must be the scroll target, not its message row: the divider
+    // renders above the row, so aligning the row to the top leaves the line
+    // itself just off-screen (measured 31px above the viewport in Chrome).
+    const divider = screen.getByTestId("unread-divider");
+    const targets = scrollSpy.mock.instances as unknown as Element[];
+    expect(targets).toContain(divider);
+    scrollSpy.mockRestore();
+  });
+
+  it("leaves the bottom-scroll behaviour alone when there is no divider", () => {
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    renderPaged({ openedUnreadCount: 0 });
+
+    const rows = screen
+      .getByTestId("message-list")
+      .querySelectorAll("[data-message-id]");
+    const targets = scrollSpy.mock.instances as unknown as Element[];
+    // Nothing that carries a message id was scrolled to; only the bottom sentinel.
+    for (const row of Array.from(rows)) expect(targets).not.toContain(row);
+    scrollSpy.mockRestore();
   });
 });

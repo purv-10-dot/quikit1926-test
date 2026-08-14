@@ -89,4 +89,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST requisitions/[id]/reject", e);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.recruit.approve"] });

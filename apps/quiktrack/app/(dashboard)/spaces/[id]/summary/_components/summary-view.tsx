@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Filter,
   Info,
   X,
   ChevronUp,
@@ -26,6 +25,11 @@ import {
 } from "@/components/illustrations/summary-icons";
 import { StatusDonut } from "./status-donut";
 import { ChartTip } from "./chart-tip";
+import {
+  SummaryFilter,
+  type SummaryFilters,
+  type FilterOptions,
+} from "./summary-filter";
 
 interface Summary {
   totalIssues: number;
@@ -51,7 +55,15 @@ interface Summary {
     total: number;
   }>;
   recent: { completed: number; updated: number; created: number; dueSoon: number };
+  filterOptions?: FilterOptions;
 }
+
+const EMPTY_OPTIONS: FilterOptions = {
+  parents: [],
+  assignees: [],
+  statuses: [],
+  types: [],
+};
 
 const PRIORITY_ORDER = ["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"] as const;
 
@@ -105,19 +117,41 @@ export function SummaryView({ projectId }: { projectId: string }) {
   const [data, setData] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [filters, setFilters] = useState<SummaryFilters>({
+    parents: [],
+    assignees: [],
+    statuses: [],
+    types: [],
+  });
+  const loadedOnce = useRef(false);
 
   useEffect(() => {
     let alive = true;
-    fetch(`/api/projects/${projectId}/summary`)
+    // Only show the full-page skeleton before the first load. On subsequent
+    // filter changes we keep the current view (and the filter bar) mounted so
+    // the dropdowns don't disappear mid-interaction.
+    if (!loadedOnce.current) setLoading(true);
+    const params = new URLSearchParams();
+    if (filters.parents.length) params.set("parents", filters.parents.join(","));
+    if (filters.assignees.length) params.set("assignees", filters.assignees.join(","));
+    if (filters.statuses.length) params.set("statuses", filters.statuses.join(","));
+    if (filters.types.length) params.set("types", filters.types.join(","));
+    const qs = params.toString();
+    fetch(`/api/projects/${projectId}/summary${qs ? `?${qs}` : ""}`)
       .then((r) => r.json())
       .then((j) => {
         if (alive && j?.success) setData(j.data);
       })
-      .finally(() => alive && setLoading(false));
+      .finally(() => {
+        if (alive) {
+          setLoading(false);
+          loadedOnce.current = true;
+        }
+      });
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, filters]);
 
   const recent = data?.recent ?? { completed: 0, updated: 0, created: 0, dueSoon: 0 };
   const total = data?.totalIssues ?? 0;
@@ -201,10 +235,11 @@ export function SummaryView({ projectId }: { projectId: string }) {
       )}
 
       <div className="mb-4">
-        <button className="inline-flex items-center gap-1.5 h-8 px-3 text-sm border border-gray-300 rounded hover:bg-gray-50">
-          <Filter className="h-3.5 w-3.5" />
-          Filter
-        </button>
+        <SummaryFilter
+          options={data?.filterOptions ?? EMPTY_OPTIONS}
+          value={filters}
+          onChange={setFilters}
+        />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
@@ -444,7 +479,12 @@ export function SummaryView({ projectId }: { projectId: string }) {
 
       <div className="border border-gray-200 rounded-lg p-5 bg-white">
         <h3 className="text-sm font-semibold text-gray-900">Epic progress</h3>
-        {(data?.epicProgress ?? []).length > 0 ? (
+        {/* Only epics that actually have work items — an epic with no items has
+            nothing to progress, so it's hidden rather than shown as an empty
+            "No items" bar. If none have items, the empty-state below shows. */}
+        {(() => {
+          const epicsWithItems = (data?.epicProgress ?? []).filter((e) => e.total > 0);
+          return epicsWithItems.length > 0 ? (
           <>
             <p className="mt-1 text-xs text-gray-600">
               See how your epics are progressing at a glance.
@@ -461,7 +501,7 @@ export function SummaryView({ projectId }: { projectId: string }) {
               </span>
             </div>
             <div className="mt-4 space-y-4">
-              {(data?.epicProgress ?? []).map((e) => {
+              {epicsWithItems.map((e) => {
                 const t = Math.max(1, e.total);
                 const donePct = (e.done / t) * 100;
                 const inProgPct = (e.inProgress / t) * 100;
@@ -476,10 +516,10 @@ export function SummaryView({ projectId }: { projectId: string }) {
                         {e.title}
                       </span>
                       <span className="ml-auto text-xs text-gray-500 tabular-nums shrink-0">
-                        {e.total === 0 ? "No items" : `${completePct}%`}
+                        {`${completePct}%`}
                       </span>
                     </div>
-                    {e.total > 0 ? (
+                    {(
                       <ChartTip
                         content={
                           <>
@@ -520,8 +560,6 @@ export function SummaryView({ projectId }: { projectId: string }) {
                           />
                         </div>
                       </ChartTip>
-                    ) : (
-                      <div className="h-5 w-full rounded bg-gray-100" />
                     )}
                   </div>
                 );
@@ -532,13 +570,12 @@ export function SummaryView({ projectId }: { projectId: string }) {
           <div className="mt-6 flex flex-col items-center text-center">
             <EpicProgressIllustration />
             <p className="mt-3 text-xs text-gray-600 max-w-[360px]">
-              Use epics to track larger initiatives in your project.{" "}
-              <a className="text-blue-600 hover:underline" href="#">
-                What is an epic?
-              </a>
+              Use epics to track larger initiatives in your project. Create an
+              epic from the Epics tab, then group related work items under it.
             </p>
           </div>
-        )}
+          );
+        })()}
       </div>
 
       <div className="text-center text-xs text-gray-500 pt-6 pb-2">

@@ -247,8 +247,17 @@ function appUrl(): string {
   return url.replace(/\/+$/, "");
 }
 
-function issueLink(projectId: string, issueId: string): string {
-  return `${appUrl()}/spaces/${projectId}/board?issue=${issueId}`;
+/**
+ * Deep-link to a single work item, using the app's canonical readable URL
+ * (`/browse/SCRUM-58`). That route resolves key → issue server-side (org-scoped)
+ * and renders the full-page work-item view.
+ *
+ * Do NOT point this at `/spaces/<projectId>/board?issue=<id>`: the board route
+ * takes only `params`, never `searchParams`, so the query string is silently
+ * dropped and the recipient lands on the project board instead of the ticket.
+ */
+function issueLink(issueKey: string): string {
+  return `${appUrl()}/browse/${encodeURIComponent(issueKey)}`;
 }
 
 export const SUPPORT_EMAIL = "support@quikit.ai";
@@ -400,7 +409,7 @@ export async function emailIssueAssigned(args: {
   issue: IssueRef;
   reassignedBy: string | null;
 }): Promise<void> {
-  const link = issueLink(args.issue.projectId, args.issue.id);
+  const link = issueLink(args.issue.key);
   const project = args.issue.projectName ?? "QuikTrack";
   const html = shell({
     title: "Task Assigned",
@@ -431,7 +440,7 @@ export async function emailIssueStatusChanged(args: {
   toStatus: string;
   changedBy: string | null;
 }): Promise<void> {
-  const link = issueLink(args.issue.projectId, args.issue.id);
+  const link = issueLink(args.issue.key);
   const project = args.issue.projectName ?? "QuikTrack";
   const html = shell({
     title: "Status Update",
@@ -465,7 +474,7 @@ export async function emailIssueMention(args: {
   context: "comment" | "description";
   excerpt: string;
 }): Promise<void> {
-  const link = issueLink(args.issue.projectId, args.issue.id);
+  const link = issueLink(args.issue.key);
   const project = args.issue.projectName ?? "QuikTrack";
   const where = args.context === "comment" ? "a comment" : "the description";
   const html = shell({
@@ -613,7 +622,7 @@ export async function emailIssueOverdue(args: {
   recipientName: string | null;
   issue: IssueRef & { dueDate: string };
 }): Promise<void> {
-  const link = issueLink(args.issue.projectId, args.issue.id);
+  const link = issueLink(args.issue.key);
   const project = args.issue.projectName ?? "QuikTrack";
   const due = new Date(args.issue.dueDate);
   const dueLabel = Number.isFinite(due.getTime())

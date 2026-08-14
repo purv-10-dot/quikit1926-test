@@ -5,6 +5,7 @@ import { successResponse, validationError, notFound, internalError } from "@/lib
 import { generateDocUploadToken } from "@/lib/services/doc-upload-token";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildPolicyAckRequestEmail } from "@/lib/email-templates/policy-ack-request";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 interface PolicyFile { url: string; fileName: string }
 
@@ -33,7 +34,7 @@ export const POST = withAuth(async (_req: NextRequest, { orgId }, params) => {
     if (!to) return validationError("The employee has no email on file.");
 
     const { token } = generateDocUploadToken(task.id, orgId);
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    const base = appBaseUrl();
     const link = `${base}/exit-ack/${token}`;
     const candidateName = emp ? `${emp.firstName} ${emp.lastName}`.trim() : "there";
     const companyName = company?.companyName ?? "Our Company";

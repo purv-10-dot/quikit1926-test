@@ -108,6 +108,13 @@ export const MENU_CATALOG: MenuItem[] = [
   // NOT in the sidebar — same reason as Banks above. Drop it until the
   // sidebar grows the link.
   { key: "pm.boq",        label: "BOQ",                  url: "/projects/boq",         module: "PROJECT MGMT", supports: allFour },
+  // Activity Scope is the manual-BOQ screen for FREE_SCOPE projects. It has its
+  // own `construction.activity_scope` resource rather than sharing BOQ's, so the
+  // two checkboxes move independently. Without a row here it had no checkbox at
+  // all: `menuKeyForUrl` is an exact-match lookup, so `canViewMenu` fell through
+  // to `true` and the page stayed visible — on its own keeping the PROJECT MGMT
+  // group in the sidebar.
+  { key: "pm.activity_scope", label: "Activity Scope",   url: "/projects/activities",  module: "PROJECT MGMT", supports: allFour },
   { key: "pm.wbs",        label: "WBS & Planning",       url: "/projects/wbs",         module: "PROJECT MGMT", supports: allFour },
   { key: "pm.estimation", label: "Material Estimation", url: "/projects/estimation",  module: "PROJECT MGMT", supports: allFour },
   { key: "pm.work_order", label: "Work Orders",          url: "/projects/work-orders", module: "PROJECT MGMT", supports: allFour },
@@ -204,6 +211,36 @@ export function menuKeyForUrl(url: string | undefined): string | undefined {
 }
 
 /**
+ * Resolve a live pathname to its catalog row, matching the LONGEST catalog URL
+ * that is a path-segment prefix of it. Unlike `menuKeyForUrl` (exact match,
+ * used for nav items whose href is always a catalog URL) this also resolves
+ * detail and nested routes — `/projects/boq/abc123` → `pm.boq`.
+ *
+ * Returns undefined for paths outside the catalog (`/dashboard`, `/approvals`,
+ * `/settings/**`), which carry their own gates.
+ *
+ * Longest-prefix matters: `/masters/item-groups` must not resolve to a shorter
+ * sibling. Segment boundaries matter too, so `/projects/boq-archive` does NOT
+ * resolve to `/projects/boq`.
+ */
+export function menuKeyForPath(pathname: string | undefined): string | undefined {
+  if (!pathname) return undefined;
+  const path = pathname.replace(/\/+$/, "") || "/";
+  let bestKey: string | undefined;
+  let bestLen = -1;
+  for (const item of MENU_CATALOG) {
+    const url = item.url;
+    if (!url) continue;
+    if (path !== url && !path.startsWith(`${url}/`)) continue;
+    if (url.length > bestLen) {
+      bestLen = url.length;
+      bestKey = item.key;
+    }
+  }
+  return bestKey;
+}
+
+/**
  * Map the `modulesAssigned` keys used on the user form (lowercase,
  * underscore-separated) to the `MenuModule` group headers in the catalog
  * (uppercase, space-separated). Keep this in sync with `ASSIGNABLE_MODULES`
@@ -221,6 +258,44 @@ export const MODULE_KEY_TO_MENU_MODULE: Record<string, MenuModule> = {
 };
 
 /**
+ * Extra module keys that put a page in scope, beyond its own menu group.
+ *
+ * Matrix display and the sidebar fallback both scope pages by module, but
+ * `modulesAssigned` is derived from the RESOURCE side
+ * (MODULE_TO_RESOURCES → modulesFromRevokes / modulesFromPermissions).
+ * When a page's menu group and its resource's module disagree, the page
+ * silently disappears: the grant IS written to CnUserPermissionExtra, but
+ * the row renders off because its display module looks unassigned — and
+ * the next save then revokes the grant for real.
+ *
+ * Empty today: the one such page was Projects, whose `construction.project`
+ * resource used to live in `project_mgmt` while the page renders under
+ * MASTERS. That resource now sits in `masters` where it belongs, so the
+ * override is no longer needed — and keeping it would re-break the fix by
+ * putting Projects back in scope whenever project_mgmt is assigned.
+ */
+const MENU_KEY_EXTRA_SCOPE_MODULES: Record<string, readonly string[]> = {};
+
+/**
+ * Module keys that put a page in scope: its own menu group plus any extra
+ * owners above. SYSTEM pages map to no assignable module and return an
+ * empty list (never auto-granted).
+ */
+function scopeModuleKeys(item: MenuItem): string[] {
+  const out: string[] = [];
+  for (const [moduleKey, menuModule] of Object.entries(MODULE_KEY_TO_MENU_MODULE)) {
+    if (menuModule === item.module) out.push(moduleKey);
+  }
+  out.push(...(MENU_KEY_EXTRA_SCOPE_MODULES[item.key] ?? []));
+  return out;
+}
+
+/** True when any module that puts this page in scope is assigned. */
+function inScope(item: MenuItem, assigned: ReadonlySet<string>): boolean {
+  return scopeModuleKeys(item).some((k) => assigned.has(k));
+}
+
+/**
  * Build a permission matrix that grants everything under the given
  * assigned modules and denies everything else. Used to seed a new user's
  * permissions from their `modulesAssigned` selection so admins don't
@@ -231,13 +306,11 @@ export function buildMatrixFromModules(
   modulesAssigned: string[] | null | undefined,
 ): PermissionMatrix {
   const assigned = new Set(
-    (modulesAssigned ?? [])
-      .map((k) => MODULE_KEY_TO_MENU_MODULE[k])
-      .filter(Boolean),
+    (modulesAssigned ?? []).filter((k) => MODULE_KEY_TO_MENU_MODULE[k]),
   );
   const out: PermissionMatrix = {};
   for (const item of MENU_CATALOG) {
-    const grant = assigned.has(item.module);
+    const grant = inScope(item, assigned);
     // Assigning a module grants the FULL action set (add/edit/delete/view)
     // on its pages by default — so a user given a module can actually
     // operate it, matching the role's grants. Unassigned modules get nothing.
@@ -274,14 +347,12 @@ export function buildModuleScopedMatrix(
   saved: PermissionMatrix | null | undefined,
 ): PermissionMatrix {
   const assigned = new Set(
-    (modulesAssigned ?? [])
-      .map((k) => MODULE_KEY_TO_MENU_MODULE[k])
-      .filter(Boolean),
+    (modulesAssigned ?? []).filter((k) => MODULE_KEY_TO_MENU_MODULE[k]),
   );
   const out = buildMatrixFromModules(modulesAssigned);
   if (!saved) return out;
   for (const item of MENU_CATALOG) {
-    if (!assigned.has(item.module)) continue; // unassigned → keep base (off)
+    if (!inScope(item, assigned)) continue; // unassigned → keep base (off)
     const row = saved[item.key];
     if (!row) continue;
     out[item.key] = {

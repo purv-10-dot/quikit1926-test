@@ -3,7 +3,7 @@ import { zPhoneOptional } from "./identifiers";
 
 // ─── Hiring Pipeline ────────────────────────────────────
 
-export const pipelineStageConfigSchema = z.object({
+const pipelineStageConfigSchema = z.object({
   name: z.string().min(1),
   sendMail: z.boolean().default(false),
   mailTemplate: z.enum(["interview", "offer-branded", "offer-default", "welcome", "joining-letter"]).nullable().optional(),
@@ -186,6 +186,12 @@ export const createInterviewSchema = z.object({
   duration: z.number().int().default(60),
   location: z.string().optional(),
   meetingLink: z.string().optional(),
+  // Take-Home Task (only used when type === "TakeHome"). All optional — the
+  // interview row is created normally; these are persisted via raw SQL.
+  takeHomeInstructions: z.string().max(10000).optional(),
+  takeHomeAttachmentUrl: z.string().max(1000).optional(),
+  takeHomeAttachmentLink: z.string().max(1000).optional(),
+  takeHomeDueDate: z.string().optional(),
 });
 
 export const updateInterviewSchema = z.object({

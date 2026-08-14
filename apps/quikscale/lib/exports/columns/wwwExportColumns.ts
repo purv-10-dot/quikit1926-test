@@ -7,10 +7,13 @@
  */
 import type { Cell } from "../buildWorkbook";
 import { statusArgb } from "../exportColors";
+import { WWW_TBD_LABEL } from "@/lib/constants/www";
 
 export interface WwwExportRow {
   whoName: string;
   when: Date | null;
+  /** True when the due date is To Be Decided — `when` holds a placeholder. */
+  dueDateTBD?: boolean;
   what: string | null;
   /** Latest revised date, "YYYY-MM-DD" or "". */
   revisedDate: string;
@@ -36,7 +39,9 @@ function fmtDate(d: Date | null): string {
 
 const COLUMNS: WwwExportColumn[] = [
   { key: "who", label: "Who", value: (r) => r.whoName },
-  { key: "when", label: "When", value: (r) => fmtDate(r.when) },
+  // TBD rows carry a placeholder date, so exporting `when` verbatim would ship
+  // a date the user never chose. Print the label instead.
+  { key: "when", label: "When", value: (r) => (r.dueDateTBD ? WWW_TBD_LABEL : fmtDate(r.when)) },
   { key: "what", label: "What", value: (r) => r.what ?? "" },
   { key: "revisedDate", label: "Revised Date", value: (r) => r.revisedDate },
   { key: "status", label: "Status", value: (r) => r.status ?? "", fill: (r) => statusArgb(r.status) },

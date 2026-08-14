@@ -98,7 +98,7 @@ describe("syncMailbox — live", () => {
     );
   });
 
-  it("mirrors unknown-address mail (P3 store-everything) but does NOT CRM-match/notify", async () => {
+  it("mirrors unknown-address INBOUND mail but does NOT persist/notify", async () => {
     fetchNewMessages.mockResolvedValue({ messages: [msg("m1", "stranger@nowhere.com")], historyId: "101" });
     matchRecordByAnyAddress.mockResolvedValue(null);
     const r = await syncMailbox(LIVE_CONN as never);
@@ -119,6 +119,61 @@ describe("syncMailbox — live", () => {
     expect(upsertMailboxEmail).toHaveBeenCalledOnce();
     // Cross-link mirror → CRM message.
     expect(linkMailboxEmailToCrm).toHaveBeenCalledWith("mbx1", "cm1", "Lead", "lead1");
+  });
+
+  // Regression: mail SENT from Outlook/Gmail to a non-CRM address used to be
+  // mirror-only — no Activity was ever created. It must now persist as a
+  // standalone activity so outbound work always shows up in Activities.
+  it("persists unmatched OUTBOUND mail as a standalone activity", async () => {
+    fetchNewMessages.mockResolvedValue({
+      messages: [msg("m1", "rep@company.com", "outbound")],
+      historyId: "101",
+    });
+    matchRecordByAnyAddress.mockResolvedValue(null);
+    persistMessage.mockResolvedValue({ messageId: "cm1", threadId: "y", activityId: "z", created: true });
+
+    const r = await syncMailbox(LIVE_CONN as never);
+
+    expect(r.standalone).toBe(1);
+    expect(r.skipped).toBe(0);
+    expect(persistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ relatedKind: "None", relatedObjectId: "standalone", direction: "outbound" }),
+    );
+    // No CRM record to cross-link the mirror row to.
+    expect(linkMailboxEmailToCrm).not.toHaveBeenCalled();
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("links unmatched-but-outbound dedupe replays without creating twice", async () => {
+    fetchNewMessages.mockResolvedValue({
+      messages: [msg("m1", "rep@company.com", "outbound")],
+      historyId: "101",
+    });
+    matchRecordByAnyAddress.mockResolvedValue(null);
+    persistMessage.mockResolvedValue({ messageId: "cm1", threadId: "y", activityId: "z", created: false });
+
+    const r = await syncMailbox(LIVE_CONN as never);
+
+    expect(r.standalone).toBe(1);
+    expect(r.created).toBe(0);
+  });
+
+  it("attaches matched OUTBOUND mail to the record, not standalone", async () => {
+    fetchNewMessages.mockResolvedValue({
+      messages: [msg("m1", "rep@company.com", "outbound")],
+      historyId: "101",
+    });
+    matchRecordByAnyAddress.mockResolvedValue({ kind: "Contact", id: "c1", opportunityId: "opp1" });
+    persistMessage.mockResolvedValue({ messageId: "cm1", threadId: "y", activityId: "z", created: true });
+
+    const r = await syncMailbox(LIVE_CONN as never);
+
+    expect(r.matched).toBe(1);
+    expect(r.standalone).toBe(0);
+    expect(persistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ relatedKind: "Contact", relatedObjectId: "c1", opportunityId: "opp1" }),
+    );
+    expect(linkMailboxEmailToCrm).toHaveBeenCalledWith("mbx1", "cm1", "Contact", "c1");
   });
 
   it("does not notify on dedupe hit (created=false)", async () => {

@@ -23,16 +23,6 @@ export enum MRStatus {
   REJECTED = "rejected",
 }
 
-export enum MRLineStatus {
-  DRAFT = "draft",
-  SUBMITTED = "submitted",
-  APPROVED_FOR_ISSUE = "approved_for_issue",
-  APPROVED_FOR_INDENT = "approved_for_indent",
-  REJECTED = "rejected",
-  ISSUED_FROM_STOCK = "issued_from_stock",
-  IN_INDENT_PROCESS = "in_indent_process",
-  FULLY_SERVED = "fully_served",
-}
 
 // ─── Indent ─────────────────────────────────────────────────────────
 
@@ -49,15 +39,6 @@ export enum IndentStatus {
   CANCELLED = "cancelled",
 }
 
-export enum IndentLineStatus {
-  OPEN = "open",
-  PARTIALLY_PO_CREATED = "partially_po",
-  FULLY_PO_CREATED = "fully_po",
-  PARTIALLY_RECEIVED = "partially_received",
-  FULLY_RECEIVED = "fully_received",
-  CLOSED = "closed",
-  REJECTED = "rejected",
-}
 
 // ─── Purchase Order ─────────────────────────────────────────────────
 
@@ -75,12 +56,6 @@ export enum POStatus {
   REJECTED = "rejected",
 }
 
-export enum POLineStatus {
-  OPEN = "open",
-  PARTIALLY_RECEIVED = "partially_received",
-  FULLY_RECEIVED = "fully_received",
-  CANCELLED = "cancelled",
-}
 
 // ─── GRN ────────────────────────────────────────────────────────────
 

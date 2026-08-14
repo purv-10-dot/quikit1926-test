@@ -4,8 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 
-/**
- * GET /api/apps/switcher
+ /**
+ * GET /api/apps/s witcher
  *
  * Returns the apps the current user can open from the in-app AppSwitcher (the
  * waffle grid in the header). Mirrors quikscale/quiktrack and the QuikIT
@@ -23,7 +23,7 @@ import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
   }
 
   const userId = session.user.id;
@@ -90,6 +90,7 @@ export async function GET() {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikcrmexpress: process.env.QUIKCRMEXPRESS_URL,
     quiksupport: process.env.QUIKSUPPORT_URL,
     quikhrms: process.env.QUIKHRMS_URL,
   };
@@ -105,6 +106,7 @@ export async function GET() {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
+    quikcrmexpress: "http://localhost:3017",
     quiksupport: "http://localhost:3010",
     quikhrms: "http://localhost:3009",
   };

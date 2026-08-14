@@ -63,6 +63,13 @@
   --qc-text-muted: #9a9aa1;
   --qc-bg-hover: #f6f6f5;
 
+  /* Was referenced at three call sites and never defined, so `border-radius:
+     var(--qc-r-sm)` was an invalid declaration and those elements rendered
+     SQUARE. Defining it is therefore a visual change, not bookkeeping. 6px
+     rather than reusing --qc-r-md because every call site is a deliberate
+     step DOWN from md: `.qc-act-rowmenu.qc-iconbtn` overrides the 32px/8px
+     `.qc-iconbtn` base to 24px, and `.qc-cal2-event__more` is 22px. */
+  --qc-r-sm: 6px;
   --qc-r-md: 8px;
   --qc-r-lg: 12px;
   --qc-r-xl: 18px;
@@ -75,6 +82,9 @@
   --qc-ink: #1c1c1f;
   --qc-ink-fg: #f7f7f8;
   --qc-verified: #2f80ed;
+  /* Read-tick blue (WhatsApp/Teams convention). Dedicated token — NOT --qc-verified
+     (which drives the on_call dot + verified badge) and NOT the themeable accent. */
+  --qc-tick-read: #2f80ed;
   --qc-shadow-card: 0 1px 2px rgba(17, 17, 20, 0.04), 0 12px 32px rgba(17, 17, 20, 0.08);
 
   /* Calendar (S15a): busy-block fill + tentative/amber RSVP state. */
@@ -99,6 +109,7 @@
   --qc-danger: #e05545;
   --qc-warn: #e0a93a;
   --qc-busy: rgba(224, 85, 69, 0.26);
+  --qc-tick-read: #5aa2ff; /* brighter blue for contrast on the dark chat bg */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -118,6 +129,7 @@
     --qc-danger: #e05545;
     --qc-warn: #e0a93a;
     --qc-busy: rgba(224, 85, 69, 0.26);
+    --qc-tick-read: #5aa2ff; /* brighter blue for contrast on the dark chat bg */
   }
 }
 
@@ -186,6 +198,42 @@ body {
 }
 .qc-btn--ghost:hover:not(:disabled) {
   background: var(--qc-surface-2);
+}
+.qc-btn--danger {
+  background: #dc2626;
+  color: #fff;
+}
+.qc-btn--danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+/* Group-management drawer bits (QC_008). */
+.qc-drawer-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.qc-hero-photo-btn {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--qc-accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.qc-hero-photo-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.qc-detail-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qc-danger-zone .qc-danger-text {
+  font-size: 13px;
+  color: var(--qc-text-2, #6b7280);
+  margin: 4px 0 8px;
 }
 
 .qc-iconbtn {
@@ -256,28 +304,67 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  /* Rounded square, not a circle — 20% (not a fixed --qc-r-* token) so the
+     roundedness stays proportional across the avatar's many render sizes. */
+  border-radius: 20%;
   overflow: hidden;
 }
-.qc-avatar--group .qc-avatar__inner {
+/* A public CHANNEL is a place, not people: neutral tile with a full-size hash,
+   sized to carry the same visual weight as the initials/photo it replaces.
+   Private groups deliberately do NOT get this — they render like a person,
+   because a group is its members. */
+.qc-avatar--channel .qc-avatar__inner {
   border-radius: var(--qc-r-md);
   background: #d9d9d9 !important;
   color: var(--qc-text-2);
+}
+.qc-avatar__hash {
+  /* 0.4 * size is the initials' font-size (set inline); the hash needs to run
+     larger to read as a glyph rather than a character. Line-height 1 keeps it
+     optically centred at every avatar size. */
+  font-size: 1.5em;
+  line-height: 1;
+  font-weight: 500;
 }
 .qc-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+/* Presence dot: positioned wrapper for the PresenceIndicator SVG (the SVG draws
+   its own colored circle + surface ring + glyph). */
 .qc-presence-dot {
   position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--qc-presence);
-  border: 2px solid var(--qc-surface);
+  right: -2px;
+  bottom: -2px;
+  line-height: 0;
+  display: inline-flex;
+}
+
+/* Rich presence status colors. Semantic (like KPI states) — NOT accent-themed:
+   the color IS the meaning, so these stay fixed across the 7 accents. The
+   PresenceIndicator SVG fills `currentColor`, so each status just sets `color`. */
+.qc-presence-svg {
+  display: block;
+}
+.qc-presence--available,
+.qc-presence--online {
+  color: var(--qc-presence); /* green */
+}
+.qc-presence--busy,
+.qc-presence--dnd {
+  color: var(--qc-danger); /* red — dnd adds a dash glyph to separate from busy */
+}
+.qc-presence--away,
+.qc-presence--brb {
+  color: var(--qc-warn, #b7791f); /* amber */
+}
+.qc-presence--offline,
+.qc-presence--appear_offline {
+  color: var(--qc-text-3, #9a9aa1); /* gray — rendered as a hollow ring */
+}
+.qc-presence--on_call {
+  color: var(--qc-verified, #2f80ed); /* distinct blue, not confusable with busy */
 }
 
 /* --- Badge --- */
@@ -416,17 +503,45 @@ body {
   min-height: 0;
 }
 .qc-pane-convo {
+  position: relative; /* anchors .qc-drop-overlay */
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
+/* Pane-wide file-drop affordance. `pointer-events: none` keeps it purely
+   visual — the drag/drop listeners live on .qc-pane-convo itself, and an
+   overlay that could catch its own drag events would throw off the
+   dragenter/dragleave depth counter that drives `dropActive`. */
+.qc-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--qc-accent) 10%, transparent);
+  border: 2px dashed var(--qc-accent);
+  border-radius: inherit;
+}
+.qc-drop-overlay__label {
+  padding: 8px 16px;
+  border-radius: var(--qc-r-md);
+  background: var(--qc-surface);
+  color: var(--qc-text);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--qc-shadow-card);
+}
 .qc-drawer {
   width: 260px;
   flex: none;
   border-left: 0.5px solid var(--qc-border);
   padding: 14px;
+  min-height: 0; /* allow shrinking below content height inside the flex row */
+  overflow-y: auto; /* scroll internally instead of overflowing the card (QC_008 danger zone) */
 }
 
 @media (max-width: 720px) {
@@ -487,6 +602,63 @@ body {
 }
 .qc-list-section {
   padding: 10px 12px 4px;
+}
+/* Collapsible section header: title + count on the left, its own `+` on the
+   right. The `+` is rendered conditionally by ChannelList — for Channels it
+   appears only with the Channel.Public:create grant — so this styles the row,
+   never the permission. */
+.qc-list-section--head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-right: 6px;
+}
+.qc-list-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.qc-list-section__chev {
+  display: inline-block;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--qc-text-3);
+  /* Points down when expanded, right when collapsed. */
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+.qc-list-section__chev[data-collapsed="true"] {
+  transform: rotate(0deg);
+}
+.qc-list-section__count {
+  font-size: 11px;
+  color: var(--qc-text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Per-section empty copy. Deliberately quiet — an empty section is a normal
+   state, not a problem to solve. */
+.qc-list-empty {
+  padding: 2px 12px 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qc-text-3);
+}
+/* Plain-copy replacement for the removed visibility dropdown in NewGroupModal. */
+.qc-modal-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qc-text-3);
 }
 .qc-chan-row {
   display: flex;
@@ -563,6 +735,9 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Flex container of the truncating name span — must allow its child to shrink
+     so text-overflow:ellipsis can trigger instead of clipping. */
+  min-width: 0;
 }
 .qc-convo-sub {
   font-size: 12px;
@@ -574,7 +749,7 @@ body {
 .qc-avatar-stack > * {
   margin-left: -6px;
   border: 2px solid var(--qc-surface);
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-pinned-banner {
   display: flex;
@@ -612,7 +787,7 @@ body {
 .qc-typing__avatars > * {
   margin-left: -6px;
   border: 2px solid var(--qc-surface);
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-typing__text {
   display: inline-flex;
@@ -657,6 +832,39 @@ body {
   overflow-y: auto;
   min-height: 0;
   padding: 12px 0;
+  /* Containing block for .qc-msg-load-older below. */
+  position: relative;
+  /* DO NOT REMOVE — this is not a cleanup candidate.
+     MessageList's `decideScroll` "preserve" branch manually restores scrollTop
+     after older history is prepended, and that manual correction is the SINGLE
+     SOURCE OF TRUTH for scroll anchoring here. Chrome/Edge/Firefox also apply
+     their own native CSS scroll anchoring to content inserted above the
+     viewport; with both active the prepend is compensated TWICE and scrollTop
+     clamps to the bottom, throwing the reader to the newest message every time
+     they scroll up. Measured: native moved scrollTop 154 → 2361 on a 2240px
+     prepend, the manual pass added 2240 again, 4601 clamped to maxScroll 3945.
+     Safari implements no scroll anchoring at all, so the manual correction is
+     required regardless — which is why the fix is to disable the native one
+     rather than to drop ours. */
+  overflow-anchor: none;
+}
+/* Scroll-back loading affordance. `position: absolute` is load-bearing, not
+   cosmetic: it keeps this out of flow so it contributes nothing to
+   scrollHeight, which the prepend-anchoring math in MessageList depends on.
+   It sits at the top of the CONTENT (not the viewport), which is precisely
+   where the reader is looking when an older page is being fetched. */
+.qc-msg-load-older {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--qc-text-muted);
 }
 .qc-date-divider {
   display: flex;
@@ -670,6 +878,28 @@ body {
   background: var(--qc-surface-2);
   border-radius: var(--qc-r-pill);
   padding: 3px 10px;
+}
+/* Unread-messages divider: same centered-label idiom as the date divider
+   above, but with a line either side (Teams-style) so it reads as a distinct
+   marker rather than another date pill, using existing tokens only. */
+.qc-unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0;
+}
+.qc-unread-divider::before,
+.qc-unread-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--qc-border);
+}
+.qc-unread-divider span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--qc-accent);
+  white-space: nowrap;
 }
 /* Bubble layout (S14a): own messages right + accent-soft, others left + surface-2. */
 .qc-row {
@@ -734,7 +964,7 @@ body {
   color: var(--qc-text-3);
 }
 .qc-tick--read {
-  color: var(--qc-accent);
+  color: var(--qc-tick-read);
 }
 .qc-row__text {
   font-size: 14px;
@@ -1087,6 +1317,45 @@ body {
   flex-direction: column;
   min-width: 140px;
 }
+.qc-menu-label {
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--qc-text-3);
+}
+.qc-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--qc-border);
+}
+/* Timed-status "clear after" chips in the status picker. */
+.qc-status-durations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 9px 6px;
+}
+.qc-status-chip {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: var(--qc-r-pill);
+  border: 1px solid var(--qc-border-strong);
+  background: transparent;
+  color: var(--qc-text-2);
+  cursor: pointer;
+}
+.qc-status-chip:hover {
+  background: var(--qc-bg-hover);
+}
+.qc-status-chip[data-active="true"] {
+  background: var(--qc-accent-soft);
+  border-color: var(--qc-accent);
+  color: var(--qc-text);
+}
 .qc-menu-item {
   display: flex;
   align-items: center;
@@ -1235,6 +1504,11 @@ body {
   min-width: 0;
 }
 .qc-quote {
+  /* It's a <button> — cancel the UA defaults (inline-block + centered text) so
+     the author/text lines left-align as a block quote above the message. */
+  display: block;
+  width: 100%;
+  text-align: left;
   border-left: 2px solid var(--qc-border-strong);
   background: var(--qc-surface-2);
   border-radius: 4px;
@@ -1247,6 +1521,20 @@ body {
   font-size: 11px;
   font-weight: 500;
   color: var(--qc-text-2);
+}
+/* Reply-jump landing flash (QC_014): a brief tint on the target row so you can
+   see where the jump landed. Transient UI accent (not a semantic-locked color);
+   --qc-accent-soft is defined in both light and dark. */
+.qc-row--flash {
+  animation: qc-row-flash 1.5s ease-out;
+}
+@keyframes qc-row-flash {
+  0% {
+    background: var(--qc-accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
 }
 .qc-quote__text {
   font-size: 12px;
@@ -1619,6 +1907,16 @@ body {
   opacity: 0.45;
   cursor: default;
 }
+.qc-act-head__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qc-act-head__confirm-text {
+  font-size: 13px;
+  color: var(--qc-text-2);
+  white-space: nowrap;
+}
 .qc-act-search {
   position: relative;
   display: flex;
@@ -1888,7 +2186,13 @@ body {
   min-height: 0;
   border: 0.5px solid var(--qc-border);
   border-radius: var(--qc-r-lg);
-  background: #f2f2f2;
+  /* Token, NOT a literal — this was #f2f2f2, which stayed light in dark mode while
+     .qc-calls-details (var(--qc-bg)) flipped, leaving --qc-text title/names at
+     ~1.1:1 on a stuck-light panel. --qc-surface-2 is #f4f4f3 in light (visually
+     identical to the old literal) and #1f1f22 in dark. Deliberately not --qc-bg:
+     the active row is var(--qc-surface) (#ffffff in light), which would disappear
+     against a white panel. */
+  background: var(--qc-surface-2);
   overflow: hidden;
 }
 .qc-calls-hhead {
@@ -1959,7 +2263,11 @@ body {
   cursor: pointer;
 }
 .qc-calls-row:hover {
-  background: color-mix(in srgb, #ffffff 55%, transparent);
+  /* Text-colored wash so it self-inverts per theme: ~6% near-black over the light
+     panel, ~6% near-white over the dark one. The old `#ffffff 55%` literal was
+     invisible only because the panel was always light — on a dark panel it painted
+     a near-white smear (≈#8f8e90) across the row. */
+  background: color-mix(in srgb, var(--qc-text) 6%, transparent);
 }
 .qc-calls-row[data-active="true"] {
   background: var(--qc-surface);
@@ -2265,6 +2573,23 @@ body {
   flex-direction: column;
   gap: 18px;
 }
+/* Full-bleed embed slot for a section that brings its own chrome (RolesTab).
+   RolesTab's root is `h-screen` (built for the standalone /settings/roles
+   route); when embedded here, clamp ONLY that root (direct child) to the
+   content area so it fills the panel instead of the viewport. The `> *`
+   selector must stay direct-child so it never reaches the matrix's inner
+   scroll regions. */
+.qc-set-embed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.qc-set-embed > * {
+  flex: 1;
+  min-height: 0;
+  height: 100% !important;
+}
 .qc-set-section {
   border: 0.5px solid var(--qc-border);
   border-radius: var(--qc-r-lg);
@@ -2313,6 +2638,38 @@ body {
   font-size: 13px;
   color: var(--qc-text-2);
   flex: none;
+}
+/* Settings dropdown (Devices pickers). Matches .qc-device-picker select so the
+   in-call picker and Settings look the same once Session B shares the module. */
+.qc-set-select {
+  flex: none;
+  max-width: 260px;
+  padding: 6px 8px;
+  border-radius: var(--qc-r-md);
+  border: 0.5px solid var(--qc-border-strong);
+  font: inherit;
+  font-size: 13px;
+  color: var(--qc-text);
+  background: var(--qc-surface);
+}
+.qc-set-select:disabled {
+  color: var(--qc-text-3);
+  background: var(--qc-surface-2);
+  cursor: not-allowed;
+}
+/* Inline notice inside a settings section (permission prompt, unsupported note). */
+.qc-set-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-md);
+  background: var(--qc-surface-2);
+  font-size: 12.5px;
+  color: var(--qc-text-2);
 }
 /* Window-choice cards */
 .qc-set-cards {
@@ -2368,7 +2725,10 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 1.5px solid var(--qc-border-strong);
+  /* QC_003 — --qc-border-strong is rgba(17,17,20,0.12) ≈ 1.15:1 on white, which
+     left the unselected ring invisible. --qc-text-3 clears 3:1 in both themes.
+     This is a selection indicator, not decorative chrome. */
+  border: 1.5px solid var(--qc-text-3);
   flex: none;
 }
 .qc-set-radio[data-on="true"] {
@@ -2779,6 +3139,228 @@ body {
   font-size: 13px;
   color: var(--qc-text);
   max-width: 240px;
+  min-width: 0; /* so the (truncating) name gives way first when the row is tight */
+}
+/* Upload failed but the file is STILL staged — Send retries it. Same treatment as
+   .qc-assist-error, the app's other persistent failure surface. */
+.qc-attach-chip[data-failed="true"] {
+  border-color: var(--qc-danger);
+  background: color-mix(in srgb, var(--qc-danger) 8%, var(--qc-surface));
+}
+.qc-attach-chip[data-failed="true"] .qc-attach-chip__icon {
+  color: var(--qc-danger);
+}
+.qc-attach-chip__error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 12px;
+  color: var(--qc-danger);
+}
+
+/* Voice-note recording bar — a SIBLING above .qc-composer__box (like the attach
+   chip / format bar), never a child of it: theme.css targets
+   `.qc-composer__box > div` positionally for the TipTap wrapper. */
+.qc-voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 4px 4px 4px 10px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-md);
+  background: var(--qc-surface-2);
+}
+.qc-voice-bar__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #ef4444; /* semantic "live", not brandable */
+  animation: qc-voice-pulse 1.4s ease-in-out infinite;
+}
+@keyframes qc-voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qc-voice-bar__dot {
+    animation: none;
+  }
+}
+.qc-voice-bar__label {
+  font-size: 13px;
+  color: var(--qc-text-2);
+}
+.qc-voice-bar__time {
+  font-size: 13px;
+  color: var(--qc-text);
+  font-variant-numeric: tabular-nums; /* the timer must not jitter as digits change */
+}
+.qc-voice-bar__spacer {
+  flex: 1 1 auto;
+}
+
+/* Voice typing: the privacy note inside the listening bar. Allowed to shrink
+   away on a narrow composer rather than pushing the Stop button off the row. */
+.qc-speech-note {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: 11px;
+  color: var(--qc-text-3, var(--qc-text-2));
+}
+
+/* Two-state dictation locale pill ("EN" / "हि"). Sits in the composer's button
+   row, so it matches an IconButton's height and hit area without being one. */
+.qc-speech-lang {
+  flex: none;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-pill);
+  background: transparent;
+  color: var(--qc-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.qc-speech-lang:hover:not(:disabled) {
+  background: var(--qc-surface-2);
+  color: var(--qc-text);
+}
+.qc-speech-lang:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Received voice note: label above the (untouched) native <audio controls>. */
+.qc-voice-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qc-voice-note__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--qc-text-2);
+}
+/* Custom player row. Wraps on a narrow bubble (time + speed drop to line 2)
+   instead of overflowing; the waveform track absorbs the remaining width. */
+.qc-voice-note__player {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.qc-voice-note__play {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--qc-r-pill);
+  background: var(--qc-surface-2);
+  color: var(--qc-text);
+}
+/* The bar row is absolutely positioned, so it contributes NOTHING to this
+   element's intrinsic size — the flex layout can't see that 40 bars need
+   39 gaps x 2px (gap never shrinks) + 40 x min-width 1px = a 118px floor.
+   min-width must therefore be set above that floor by hand: an explicit value
+   also overrides the flex item's default `min-width: auto`. Undersizing it
+   doesn't merely spill, it BREAKS PROGRESS — clip-path percentages resolve
+   against this element's own border box, so a squeezed track clips the played
+   layer early and every bar past the edge stays unplayed forever. */
+.qc-voice-note__track {
+  position: relative;
+  flex: 1 1 120px;
+  min-width: 120px;
+  overflow: hidden;
+  height: 26px;
+}
+.qc-voice-note__track:focus-within {
+  /* The scrub input itself is transparent, so focus is shown on the track. */
+  outline: 2px solid var(--qc-accent);
+  outline-offset: 2px;
+  border-radius: var(--qc-r-md);
+}
+.qc-voice-note__wave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.qc-voice-note__bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--qc-text-3);
+}
+/* Played portion: the SAME bars, clipped to the progress fraction. clip-path
+   doesn't affect layout, so both layers stay in identical positions and a
+   timeupdate only rewrites one custom property (no per-bar re-render). */
+.qc-voice-note__bars--played {
+  color: var(--qc-accent-strong);
+  clip-path: inset(0 calc(100% - var(--qc-vn-progress, 0) * 100%) 0 0);
+  transition: clip-path 0.12s linear;
+}
+.qc-voice-note__bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: var(--qc-r-pill);
+  background: currentColor;
+}
+.qc-voice-note__scrub {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+.qc-voice-note__scrub:disabled {
+  cursor: default;
+}
+.qc-voice-note__time {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--qc-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.qc-voice-note__speed {
+  flex: none;
+  padding: 1px 7px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-pill);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: var(--qc-text-2);
+  cursor: pointer;
+}
+.qc-voice-note__speed:hover {
+  background: var(--qc-surface-2);
+  color: var(--qc-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qc-voice-note__bars--played {
+    transition: none;
+  }
 }
 
 /* clickable image/video attachment */
@@ -3027,7 +3609,7 @@ body {
   border: none;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-avatar-btn:focus-visible {
   outline: 2px solid var(--qc-accent);
@@ -3173,6 +3755,30 @@ body {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Filter over the channel members already offered as attendee chips. */
+.qc-schedule__attfilter {
+  margin-bottom: 8px;
+}
+.qc-schedule__attempty {
+  font-size: 13px;
+  color: var(--qc-text-muted);
+  padding: 4px 0;
+}
+/* Actionable precondition when the active provider needs a per-user connect. */
+.qc-schedule__connect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--qc-border);
+  border-radius: 8px;
+  background: var(--qc-bg-subtle, var(--qc-bg));
+  font-size: 13px;
+  color: var(--qc-text);
+}
 .qc-att-chip {
   display: inline-flex;
   align-items: center;
@@ -3213,6 +3819,20 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 60%;
+}
+/* Delete affordance (edit mode) pins to the left, same trick as qc-schedule__err. */
+.qc-schedule__actions-left {
+  margin-right: auto;
+}
+.qc-schedule__delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+.qc-schedule__delete-confirm-text {
+  font-size: 13px;
+  color: var(--qc-text-2);
 }
 
 /* --- Free/busy grid --- */
@@ -3443,6 +4063,39 @@ body {
   border-radius: var(--qc-r-pill);
   padding: 6px 14px;
   text-decoration: none;
+}
+/* The Teams fallback. Deliberately de-emphasised against the QuikChat action
+   above it — same affordance, lower visual weight, so the in-product join is
+   the default choice and this is the escape hatch for external guests. */
+.qc-meeting__join--secondary {
+  color: var(--qc-text-muted);
+  background: transparent;
+  border: 1px solid var(--qc-border);
+  font-weight: 500;
+}
+
+/* /meeting/[id]/join — the resolving state and its dead ends. */
+.qc-meeting-join {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 60vh;
+  padding: 24px;
+  text-align: center;
+  color: var(--qc-text);
+}
+.qc-meeting-join__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.qc-meeting-join__body {
+  font-size: 14px;
+  color: var(--qc-text-muted);
+  max-width: 46ch;
+  margin: 0;
 }
 .qc-meeting__attendees {
   display: flex;
@@ -4260,6 +4913,18 @@ body {
  * Color themes (accent palettes). Each sets the page frame color (light + dark),
  * the accent, and the light own-bubble tint. Dark own-bubble derives from the
  * frame color via color-mix. Applied via [data-accent] on <html>.
+ *
+ * QC_003 — the accent INVERTS between themes. Light mode uses the deep tone on
+ * light surfaces; dark mode uses the theme's pale tone on dark surfaces, with
+ * --qc-accent-fg flipped to dark ink so accent-BACKGROUND surfaces (primary
+ * button, checked segmented option) stay legible. Previously the dark blocks
+ * only overrode --qc-frame-bg, so a deep accent landed on --qc-surface (#161618)
+ * at 1.75:1 (graphite) – 2.5:1 (sand) — under the 3:1 WCAG 1.4.11 floor for
+ * non-text indicators, which made the selected theme card, focus rings and
+ * own-reaction borders effectively invisible. The pale tones land at ~12:1.
+ * Keep --qc-accent / --qc-accent-strong on the same side of the surface: the
+ * -strong variant is the hover step, so in dark mode it is a DEEPER PALE tone,
+ * never a dark one, or .qc-btn--primary:hover inverts to dark-on-dark.
  * ========================================================================== */
 [data-accent="sage"] {
   --qc-frame-bg: #c6dbba;
@@ -4269,6 +4934,9 @@ body {
 }
 [data-theme="dark"][data-accent="sage"] {
   --qc-frame-bg: #3f5d43;
+  --qc-accent: #c6dbba;
+  --qc-accent-strong: #b3cda5;
+  --qc-accent-fg: #17171a;
 }
 [data-accent="mint"] {
   --qc-frame-bg: #bfe3d1;
@@ -4278,6 +4946,9 @@ body {
 }
 [data-theme="dark"][data-accent="mint"] {
   --qc-frame-bg: #365d53;
+  --qc-accent: #bfe3d1;
+  --qc-accent-strong: #a9d7c0;
+  --qc-accent-fg: #17171a;
 }
 [data-accent="mist"] {
   --qc-frame-bg: #c4d8e8;
@@ -4287,6 +4958,9 @@ body {
 }
 [data-theme="dark"][data-accent="mist"] {
   --qc-frame-bg: #344d66;
+  --qc-accent: #c4d8e8;
+  --qc-accent-strong: #adc9dd;
+  --qc-accent-fg: #17171a;
 }
 [data-accent="lavender"] {
   --qc-frame-bg: #d4cae8;
@@ -4296,6 +4970,9 @@ body {
 }
 [data-theme="dark"][data-accent="lavender"] {
   --qc-frame-bg: #54446b;
+  --qc-accent: #d4cae8;
+  --qc-accent-strong: #c2b5dd;
+  --qc-accent-fg: #17171a;
 }
 [data-accent="rose"] {
   --qc-frame-bg: #e3c8cf;
@@ -4305,6 +4982,9 @@ body {
 }
 [data-theme="dark"][data-accent="rose"] {
   --qc-frame-bg: #65434c;
+  --qc-accent: #e3c8cf;
+  --qc-accent-strong: #d6b3bc;
+  --qc-accent-fg: #17171a;
 }
 [data-accent="sand"] {
   --qc-frame-bg: #e5d8c3;
@@ -4314,6 +4994,9 @@ body {
 }
 [data-theme="dark"][data-accent="sand"] {
   --qc-frame-bg: #645542;
+  --qc-accent: #e5d8c3;
+  --qc-accent-strong: #d8c7ab;
+  --qc-accent-fg: #17171a;
 }
 [data-accent="graphite"] {
   --qc-frame-bg: #d3d7dc;
@@ -4323,6 +5006,30 @@ body {
 }
 [data-theme="dark"][data-accent="graphite"] {
   --qc-frame-bg: #3a414a;
+  --qc-accent: #d3d7dc;
+  --qc-accent-strong: #c0c6cd;
+  --qc-accent-fg: #17171a;
+}
+
+/* QC_003 companion. --qc-accent-soft is deliberately NOT re-pointed for dark mode:
+   the [data-accent] blocks above set it to the opaque pale tone, and equal
+   specificity + later source order means it wins over the translucent value in
+   [data-theme="dark"], so it stays a LIGHT background even in dark mode. Every
+   surface below puts text on that pale island, so each needs dark ink:
+     - .qc-mention / .qc-att-chip / .qc-cal-icon / .qc-meeting__icon paint
+       accent-colored text (--qc-accent / --qc-accent-strong), which went
+       pale-on-pale once the dark accent became pale.
+     - .qc-status-chip / .qc-pick-row paint --qc-text (#f5f5f4 in dark) on it and
+       were ALREADY unreadable before QC_003 — ~1.34:1 on mist's #c4d8e8. Fixed
+       here, same mechanism.
+   Fold all six back into --qc-accent-soft when that token itself is fixed. */
+[data-theme="dark"] .qc-mention,
+[data-theme="dark"] .qc-att-chip[data-selected="true"],
+[data-theme="dark"] .qc-cal-icon,
+[data-theme="dark"] .qc-meeting__icon,
+[data-theme="dark"] .qc-status-chip[data-active="true"],
+[data-theme="dark"] .qc-pick-row[data-selected="true"] {
+  color: var(--qc-accent-fg);
 }
 
 /* Color-theme picker popover */
@@ -5566,9 +6273,6 @@ body {
   background: var(--qc-surface-2);
   border-left-color: transparent;
 }
-.qc-card .qc-chan-row .qc-avatar__inner {
-  border-radius: 20%;
-}
 .qc-chan-toprow {
   display: flex;
   align-items: center;
@@ -5636,8 +6340,13 @@ body {
   gap: 10px;
   min-width: 0;
 }
-.qc-convo-head__id .qc-avatar__inner {
-  border-radius: 20%;
+/* Name/sub column claims the leftover width and is allowed to shrink, so a long
+   name ellipses within a bounded region instead of expanding the header and
+   clipping (header owns space-between). Scoped to the header — the shared
+   `.qc-min0` utility (also used by MeetingCard) is left untouched. */
+.qc-convo-head__id > .qc-min0 {
+  flex: 1;
+  min-width: 0;
 }
 .qc-card .qc-convo-head__actions .qc-iconbtn {
   border: 0.5px solid var(--qc-border);
@@ -5673,9 +6382,6 @@ body {
   padding: 6px 4px 18px;
   margin-bottom: 4px;
   border-bottom: 0.5px solid var(--qc-border);
-}
-.qc-drawer-hero .qc-avatar__inner {
-  border-radius: 20%;
 }
 .qc-drawer-hero__name {
   margin-top: 6px;
@@ -5750,8 +6456,13 @@ body {
   padding-left: 10px;
 }
 
-/* Hidden chrome: the "Reconnecting…" float and the "Markdown supported" hint. */
-.qc-reconnect-float,
+/* Hidden chrome: the "Markdown supported" hint.
+ *
+ * `.qc-reconnect-float` used to be hidden here too. It is back: with the polling
+ * fallback removed there is no degraded mode left, so a dead socket and a live
+ * one look identical and the app just goes quiet. ChatWorkspace only renders it
+ * while disconnected, and only after a short grace period, so a healthy session
+ * still shows nothing. */
 .qc-format-bar__hint {
   display: none;
 }
@@ -5826,6 +6537,12 @@ body {
 }
 [data-theme="dark"] .qc-card .qc-msg-scroll .qc-row[data-own="true"] .qc-tick {
   color: rgba(255, 255, 255, 0.8);
+}
+/* Read tick must stay blue in dark mode: same specificity as the rule above,
+   placed after it so source order wins (otherwise the white-80% override makes
+   read == delivered). */
+[data-theme="dark"] .qc-card .qc-msg-scroll .qc-row[data-own="true"] .qc-tick--read {
+  color: var(--qc-tick-read);
 }
 /* Header: frosted-glass blur over the patterned background. Round its own top
    corners — a backdrop-filter element isn't clipped by the panel's rounded
@@ -6044,4 +6761,47 @@ body {
 
 .qc-hidden {
   display: none !important;
+}
+
+
+/* ── Meeting: location, all-day, optional attendees ─────────────────────── */
+.qc-meeting__location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--qc-text-2);
+}
+/* Shown only when at least one attendee is optional — nothing new renders for
+   the common case where everyone is required. */
+.qc-meeting__att-counts {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--qc-text-3);
+}
+/* Optional attendees sort after required ones; position carries the meaning, so
+   this only softens them rather than adding a competing badge next to the RSVP
+   dot. */
+.qc-meeting__att[data-optional] .qc-avatar {
+  opacity: 0.72;
+}
+.qc-att-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.qc-att-optional {
+  border: 1px solid var(--qc-border);
+  background: transparent;
+  color: var(--qc-text-3);
+  border-radius: var(--qc-r-sm);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.qc-att-optional[data-on] {
+  color: var(--qc-text-2);
+  border-style: dashed;
 }

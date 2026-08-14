@@ -15,6 +15,7 @@
 import { toErrorMessage, getErrorCode , getErrorMeta} from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
+import { loadRepairFlags } from "@/lib/approvals/list-repair-flags";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -52,21 +53,6 @@ export interface CreateIndentInput {
   lines: IndentLineInput[];
 }
 
-export interface UpdateIndentInput {
-  indentNumber?: string;
-  prId?: string | null;
-  sourceMrNumber?: string | null;
-  projectId?: string;
-  requestedById?: string;
-  indentDate?: Date;
-  requiredDate?: Date | null;
-  isUrgent?: boolean;
-  directIndentReason?: string | null;
-  estimatedTotal?: string | number | null;
-  status?: string;
-  approvalId?: string | null;
-  updatedBy: string;
-}
 
 export interface ListIndentsOptions {
   orgId: string;
@@ -523,15 +509,22 @@ export async function listIndents(opts: ListIndentsOptions): Promise<any[]> {
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
   const allLines = rows.flatMap((r) => r.lines ?? []);
-  const [{ itemById, uomById, vendorById }, prInfoById] = await Promise.all([
-    loadLineLookups(allLines, opts.orgId),
-    loadSourcePrInfo(
-      rows.map((r) => r.prId).filter((x): x is string => Boolean(x)),
-    ),
-  ]);
-  return rows.map((r) =>
-    enrichIndent(r, itemById, uomById, prInfoById, vendorById),
-  );
+  const [{ itemById, uomById, vendorById }, prInfoById, repairByApprovalId] =
+    await Promise.all([
+      loadLineLookups(allLines, opts.orgId),
+      loadSourcePrInfo(
+        rows.map((r) => r.prId).filter((x): x is string => Boolean(x)),
+      ),
+      // Flags rows whose workflow was edited after submission, so the list can
+      // mark them instead of the user opening each pending row to find out.
+      loadRepairFlags(rows.map((r) => r.approvalId)),
+    ]);
+  return rows.map((r) => ({
+    ...enrichIndent(r, itemById, uomById, prInfoById, vendorById),
+    approvalRepair: r.approvalId
+      ? (repairByApprovalId.get(r.approvalId) ?? null)
+      : null,
+  }));
 }
 
 export async function findIndentById(
@@ -639,37 +632,6 @@ export async function createIndent(
   return enrichIndent(row, itemById, uomById, prInfoById, vendorById);
 }
 
-export async function updateIndent(
-  orgId: string,
-  id: string,
-  patch: UpdateIndentInput,
-): Promise<any | null> {
-  const existing = await db.cnPurchaseIndent.findFirst({
-    where: { id, orgId },
-    select: { id: true },
-  });
-  if (!existing) return null;
-
-  await withSchemaDriftRetry(
-    () => {
-      const data: Record<string, unknown> = { updatedBy: patch.updatedBy };
-      for (const [k, v] of Object.entries(patch)) {
-        if (v !== undefined && k !== "updatedBy") {
-          if (k === "estimatedTotal" && v !== null) data[k] = String(v);
-          else data[k] = v;
-        }
-      }
-      return data;
-    },
-    (payload) =>
-      db.cnPurchaseIndent.update({
-        where: { id },
-        data: payload,
-      }),
-  );
-
-  return findIndentById(orgId, id);
-}
 
 export async function softDeleteIndent(
   orgId: string,

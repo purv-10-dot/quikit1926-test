@@ -13,6 +13,10 @@ const permState = {
   can: (_p: string | string[]) => true,
   hasModule: (_k: string) => true,
   canViewMenu: (_u: string | undefined) => true,
+  // Direct-URL gate: the shell renders an Access Denied body instead of the
+  // page children when this returns false.
+  canViewPath: (_p: string | undefined) => true,
+  isMenuGranted: (_u: string | undefined) => true,
   isLoading: false,
   roleKey: "admin" as string | null,
   userType: "ADMIN" as string | null,
@@ -30,6 +34,10 @@ beforeEach(() => {
   setContext(makeAdminCtx());
   permState.isLoading = false;
   permState.roleKey = "admin";
+  permState.hasModule = () => true;
+  permState.canViewMenu = () => true;
+  permState.canViewPath = () => true;
+  permState.isMenuGranted = () => true;
 });
 
 describe("QuikInfraShell (render-smoke)", () => {
@@ -76,5 +84,34 @@ describe("QuikInfraShell (render-smoke)", () => {
       </QuikInfraShell>,
     );
     expect(screen.getByLabelText(/search navigation/i)).toBeInTheDocument();
+  });
+
+  // Regression: Projects renders in the MASTERS sidebar group, but
+  // `construction.project` belongs to the project_mgmt module. Granting
+  // Projects alone left the whole Masters group hidden, so the grant had no
+  // visible effect. A module-denied group must survive on an explicit
+  // per-page grant.
+  it("keeps a module-denied group when one page inside it is granted", () => {
+    permState.hasModule = (k: string) => k !== "masters";
+    permState.isMenuGranted = (u: string | undefined) => u === "/masters/projects";
+    render(
+      <QuikInfraShell>
+        <div>child</div>
+      </QuikInfraShell>,
+    );
+    expect(screen.getByText("Masters")).toBeInTheDocument();
+  });
+
+  it("drops a module-denied group when nothing inside it is granted", () => {
+    permState.hasModule = (k: string) => k !== "masters";
+    permState.isMenuGranted = () => false;
+    render(
+      <QuikInfraShell>
+        <div>child</div>
+      </QuikInfraShell>,
+    );
+    expect(screen.queryByText("Masters")).not.toBeInTheDocument();
+    // unrelated groups are untouched
+    expect(screen.getByText("Project Mgmt")).toBeInTheDocument();
   });
 });

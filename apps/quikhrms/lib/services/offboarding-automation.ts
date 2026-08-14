@@ -7,6 +7,7 @@ import { getResignationLetterAttachment } from "@/lib/services/resignation-lette
 import { getExitLetterAttachment } from "@/lib/services/exit-letters";
 import { generateDocUploadToken } from "@/lib/services/doc-upload-token";
 import { buildPolicyAckRequestEmail } from "@/lib/email-templates/policy-ack-request";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 // ── "Start offboarding" completion-chained automation (mirrors onboarding) ────
 // Offboarding tasks carry stepType/config in raw columns (not the generated
@@ -16,7 +17,7 @@ const ACTION_STEP_TYPES = new Set(["CustomTask", "AssetReturn", "AccessRevoke", 
 const RESIGNATION_LETTER_KEY = "offboarding.resignation-acceptance";
 const RELIEVING_LETTER_KEY = "offboarding.relieving-letter";
 const EXPERIENCE_LETTER_KEY = "offboarding.experience-letter";
-const appBase = () => process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+const appBase = () => appBaseUrl();
 
 type TaskRow = { id: string; instanceId: string; title: string; status: string; stepType: string | null; config: Record<string, unknown> | null };
 
@@ -44,7 +45,7 @@ function actionDetail(stepType: string | null, cfg: Record<string, unknown>): st
   return undefined;
 }
 
-export function isSendableStep(t: TaskRow): boolean {
+function isSendableStep(t: TaskRow): boolean {
   const st = t.stepType ?? "CustomTask";
   const cfg = cfgOf(t);
   if (st === "SendEmail") return Array.isArray(cfg.templates) && (cfg.templates as unknown[]).filter(Boolean).length > 0;
@@ -192,7 +193,7 @@ export async function sendStepRequest(t: TaskRow, orgId: string): Promise<boolea
   return false;
 }
 
-export async function isAutomated(instanceId: string, orgId: string): Promise<boolean> {
+async function isAutomated(instanceId: string, orgId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ automated: boolean }[]>`
     SELECT "automated" FROM "app_quikhrms"."OffboardingInstance" WHERE id = ${instanceId} AND "orgId" = ${orgId} LIMIT 1`;
   return !!rows[0]?.automated;

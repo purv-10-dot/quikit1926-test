@@ -6,6 +6,7 @@ import { InfoDrawer } from "./InfoDrawer";
 const channel: ChannelListItem = {
   channelId: "c1",
   name: "general",
+  description: null,
   avatarUrl: null,
   type: "group",
   visibility: "public",
@@ -89,6 +90,45 @@ describe("InfoDrawer", () => {
     expect(screen.getByTestId("pinned-item")).toHaveTextContent("pinned note");
   });
 
+  // QC_010 — pin is per-user state, so it shows for any member (no admin gate) and
+  // the label tracks channel.isPriority.
+  it("offers Pin for an unpinned conversation and reports the toggle", () => {
+    const onTogglePin = vi.fn();
+    render(
+      <InfoDrawer
+        channel={channel}
+        members={members}
+        pinned={[]}
+        currentUserId="u-bob"
+        onTogglePin={onTogglePin}
+      />,
+    );
+    const btn = screen.getByTestId("toggle-pin");
+    expect(btn).toHaveTextContent("Pin");
+    fireEvent.click(btn);
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Unpin for a pinned conversation", () => {
+    render(
+      <InfoDrawer
+        channel={{ ...channel, isPriority: true }}
+        members={members}
+        pinned={[]}
+        currentUserId="u-bob"
+        onTogglePin={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("toggle-pin")).toHaveTextContent("Unpin");
+  });
+
+  it("omits the pin row when no handler is supplied", () => {
+    render(
+      <InfoDrawer channel={channel} members={members} pinned={[]} currentUserId="u-bob" />,
+    );
+    expect(screen.queryByTestId("channel-pin-pref")).toBeNull();
+  });
+
   it("hides management controls for non-admins", () => {
     render(
       <InfoDrawer
@@ -139,5 +179,122 @@ describe("InfoDrawer", () => {
       />,
     );
     expect(screen.getByTestId("role-error")).toHaveTextContent("Cannot demote the last admin");
+  });
+
+  describe("Leave", () => {
+    it("offers Leave to a non-admin member of a public channel, with rejoin-via-Discover copy", () => {
+      const onLeaveChannel = vi.fn();
+      render(
+        <InfoDrawer
+          channel={channel}
+          members={members}
+          pinned={[]}
+          currentUserId="u-bob"
+          onLeaveChannel={onLeaveChannel}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("leave-channel"));
+      expect(screen.getByText(/You can rejoin anytime from Discover/)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("leave-confirm"));
+      expect(onLeaveChannel).toHaveBeenCalledTimes(1);
+    });
+
+    it("warns that a private group needs a new invite to rejoin", () => {
+      render(
+        <InfoDrawer
+          channel={{ ...channel, visibility: "private" }}
+          members={members}
+          pinned={[]}
+          currentUserId="u-bob"
+          onLeaveChannel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("leave-channel"));
+      expect(screen.getByText(/you'll need a new invite to rejoin/)).toBeInTheDocument();
+    });
+
+    it("cancel dismisses the confirm without calling onLeaveChannel", () => {
+      const onLeaveChannel = vi.fn();
+      render(
+        <InfoDrawer
+          channel={channel}
+          members={members}
+          pinned={[]}
+          currentUserId="u-bob"
+          onLeaveChannel={onLeaveChannel}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("leave-channel"));
+      fireEvent.click(screen.getByText("Cancel"));
+      expect(screen.queryByTestId("leave-confirm")).toBeNull();
+      expect(onLeaveChannel).not.toHaveBeenCalled();
+    });
+
+    // The server has no last-admin guard on leave (see channels.service.ts) —
+    // this is a purely informational warning, not a block.
+    it("warns the sole admin that the group will be orphaned, but still allows leaving", () => {
+      const onLeaveChannel = vi.fn();
+      render(
+        <InfoDrawer
+          channel={channel}
+          members={members}
+          pinned={[]}
+          currentUserId="u-alice"
+          onLeaveChannel={onLeaveChannel}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("leave-channel"));
+      expect(
+        screen.getByText(/You're the only admin — no one will be able to manage this group/),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("leave-confirm"));
+      expect(onLeaveChannel).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not warn about sole-admin orphaning for a non-admin leaver", () => {
+      render(
+        <InfoDrawer
+          channel={channel}
+          members={members}
+          pinned={[]}
+          currentUserId="u-bob"
+          onLeaveChannel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("leave-channel"));
+      expect(screen.queryByText(/the only admin/)).toBeNull();
+    });
+
+    it("does not offer Leave for a direct message", () => {
+      render(
+        <InfoDrawer
+          channel={{ ...channel, type: "dm" }}
+          members={members}
+          pinned={[]}
+          currentUserId="u-bob"
+          onLeaveChannel={vi.fn()}
+        />,
+      );
+      expect(screen.queryByTestId("leave-channel")).toBeNull();
+      expect(screen.queryByTestId("leave-section")).toBeNull();
+    });
+
+    it("does not offer Leave for the AI chat", () => {
+      render(
+        <InfoDrawer
+          channel={{ ...channel, type: "ai" }}
+          members={members}
+          pinned={[]}
+          currentUserId="u-bob"
+          onLeaveChannel={vi.fn()}
+        />,
+      );
+      expect(screen.queryByTestId("leave-channel")).toBeNull();
+    });
+
+    it("is absent when no onLeaveChannel handler is supplied", () => {
+      render(<InfoDrawer channel={channel} members={members} pinned={[]} currentUserId="u-bob" />);
+      expect(screen.queryByTestId("leave-section")).toBeNull();
+    });
   });
 });

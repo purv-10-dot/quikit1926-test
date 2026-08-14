@@ -27,7 +27,11 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { menuKeyForUrl, buildMatrixFromModules } from "@/lib/rbac/menu-catalog";
+import {
+  menuKeyForUrl,
+  menuKeyForPath,
+  buildMatrixFromModules,
+} from "@/lib/rbac/menu-catalog";
 
 export interface MeResponse {
   userId: string;
@@ -148,6 +152,26 @@ export function usePermissions() {
   }
 
   /**
+   * Strict counterpart of `canViewMenu`: true ONLY when the matrix carries an
+   * explicit view grant for this URL's catalog row. Unlike `canViewMenu` this
+   * never falls through to `true` for a missing matrix or an un-catalogued
+   * URL, so it's safe to use as the sole gate.
+   *
+   * Used by the sidebar to rescue a single granted page out of a module the
+   * user doesn't otherwise have — e.g. Projects, which renders in the MASTERS
+   * group while `construction.project` belongs to project_mgmt.
+   */
+  function isMenuGranted(url: string | undefined): boolean {
+    if (isSuper) return true;
+    if (!effectiveMatrix) return false;
+    const key = menuKeyForUrl(url);
+    if (!key) return false;
+    const row = effectiveMatrix[key];
+    if (!row) return false;
+    return row.view !== false;
+  }
+
+  /**
    * Check whether the user can perform a specific action (`add`, `edit`,
    * `delete`, `view`) on the page identified by the given nav URL.
    * Used by the dashboard's Quick Actions to hide create-shortcuts when
@@ -173,6 +197,26 @@ export function usePermissions() {
     return row[action] !== false;
   }
 
+  /**
+   * Route-level gate for the CURRENT pathname — the direct-URL counterpart of
+   * `canViewMenu`. Hiding a sidebar link never stopped anyone typing the URL,
+   * and the dashboard pages have no server-side authorization (middleware only
+   * checks the session), so this is what turns a hidden page into a denied one.
+   *
+   * Resolves detail routes to their parent page (`/projects/boq/x` → `pm.boq`)
+   * and returns true for paths outside the catalog (`/dashboard`, `/approvals`,
+   * `/settings/**`) which carry their own gates.
+   */
+  function canViewPath(pathname: string | undefined): boolean {
+    if (isSuper) return true;
+    const key = menuKeyForPath(pathname);
+    if (!key) return true;
+    if (!effectiveMatrix) return true;
+    const row = effectiveMatrix[key];
+    if (!row) return false;
+    return row.view !== false;
+  }
+
   return {
     isLoading: query.isLoading,
     isError: query.isError,
@@ -188,6 +232,8 @@ export function usePermissions() {
     hasRole,
     hasModule,
     canViewMenu,
+    canViewPath,
+    isMenuGranted,
     canMenuAction,
     isSuper,
   };

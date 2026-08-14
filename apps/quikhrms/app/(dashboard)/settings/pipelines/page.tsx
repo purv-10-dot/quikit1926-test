@@ -36,8 +36,9 @@ interface BrandingSettings {
 }
 
 const STAGE_CATALOG: { value: string; label: string; description?: string }[] = [
-  { value: "PhoneScreen", label: "Phone Screen", description: "Quick call to qualify candidate" },
   { value: "TechnicalInterview", label: "Technical Interview", description: "Engineering / skills evaluation" },
+  { value: "TechnicalInterviewL1", label: "Technical Interview - L1", description: "First-level technical round" },
+  { value: "TechnicalInterviewL2", label: "Technical Interview - L2", description: "Second-level technical round" },
   { value: "ManagerInterview", label: "Manager Interview", description: "Hiring manager round" },
   { value: "HODInterview", label: "HOD Interview", description: "Head of Department round" },
   { value: "HRInterview", label: "HR Interview", description: "HR / culture fit round" },
@@ -51,8 +52,16 @@ const STAGE_CATALOG: { value: string; label: string; description?: string }[] = 
   { value: "JoiningLetter", label: "Joining Letter", description: "Issue appointment / joining letter" },
 ];
 
-const REQUIRED_STAGES = ["Screening", "HRInterview", "Offer", "Hired"] as const;
+const REQUIRED_STAGES = ["Screening", "PhoneScreen", "HRInterview", "Offer", "Hired"] as const;
 const isRequiredStage = (name: string) => REQUIRED_STAGES.some((r) => r.toLowerCase() === name.toLowerCase());
+
+// "Screening" is the stage's internal name (required, stored as-is in
+// existing pipelines) — only the displayed label reads "Source".
+function stageLabel(name: string): string {
+  if (name === "HRInterview") return "HR Interview";
+  if (name === "Screening") return "Source";
+  return name.replace(/([A-Z])/g, " $1").trim();
+}
 
 function inferTemplate(name: string): MailTemplate {
   if (/interview|phonescreen|assessment|finalround/i.test(name)) return "interview";
@@ -125,6 +134,7 @@ export default function PipelinesPage() {
   const openCreate = () => {
     const seed: StageConfig[] = [
       { name: "Screening", sendMail: false, mailTemplate: null },
+      { name: "PhoneScreen", sendMail: false, mailTemplate: "interview" },
       { name: "HRInterview", sendMail: false, mailTemplate: "interview" },
       { name: "Offer", sendMail: false, mailTemplate: "offer-branded" },
       { name: "Hired", sendMail: false, mailTemplate: "welcome" },
@@ -140,7 +150,11 @@ export default function PipelinesPage() {
       if (stages.some((s) => s.name.toLowerCase() === req.toLowerCase())) continue;
       const cfg = { name: req, sendMail: false, mailTemplate: inferTemplate(req) };
       if (req === "Screening") stages.unshift(cfg);
-      else if (req === "HRInterview") {
+      else if (req === "PhoneScreen") {
+        // Phone Screen sits right after Source (Screening), before any other round.
+        const screeningIdx = stages.findIndex((s) => s.name.toLowerCase() === "screening");
+        if (screeningIdx >= 0) stages.splice(screeningIdx + 1, 0, cfg); else stages.unshift(cfg);
+      } else if (req === "HRInterview") {
         const offerIdx = stages.findIndex((s) => /^(offer|hired)$/i.test(s.name));
         if (offerIdx >= 0) stages.splice(offerIdx, 0, cfg); else stages.push(cfg);
       } else stages.push(cfg);
@@ -288,7 +302,7 @@ export default function PipelinesPage() {
                         : "bg-[#dcfce7] text-[#16a34a] ring-[#22c55e]")}>
                       <span className={clsx("w-4 h-4 rounded-full bg-white text-[10px] font-bold inline-flex items-center justify-center ring-1",
                         s.sendMail ? "ring-emerald-400 text-emerald-700" : "ring-[#22c55e] text-[#22c55e]")}>{i + 1}</span>
-                      {s.name.replace(/([A-Z])/g, " $1").trim()}
+                      {stageLabel(s.name)}
                       {s.sendMail && <Mail size={10} className="ml-0.5" />}
                     </span>
                     {i < p.stages.length - 1 && <ChevronRight size={12} className="text-gray-300" />}
@@ -325,7 +339,7 @@ export default function PipelinesPage() {
                     <div className="flex items-center gap-2">
                       <GripVertical size={14} className="text-slate-400" />
                       <span className="w-6 h-6 rounded-full bg-[#dcfce7] text-[#16a34a] text-[11px] font-medium inline-flex items-center justify-center">{i + 1}</span>
-                      <span className="flex-1 text-[13px] text-gray-800 font-semibold">{s.name === "HRInterview" ? "HR Interview" : s.name.replace(/([A-Z])/g, " $1").trim()}</span>
+                      <span className="flex-1 text-[13px] text-gray-800 font-semibold">{stageLabel(s.name)}</span>
 
                       {mailAllowed ? (
                         <label className={clsx(
@@ -412,7 +426,7 @@ export default function PipelinesPage() {
                 />
               </div>
             </div>
-            <p className="mt-1 text-[11px] text-gray-400">Pick from catalog — custom stage names are disabled. Screening, HR Interview, Offer and Hired are required and always present.</p>
+            <p className="mt-1 text-[11px] text-gray-400">Pick from catalog — custom stage names are disabled. Source, Phone Screen, HR Interview, Offer and Hired are required and always present.</p>
           </div>
 
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">

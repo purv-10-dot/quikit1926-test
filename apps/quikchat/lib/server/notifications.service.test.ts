@@ -291,18 +291,18 @@ async function setSettings(userId: string, patch: Record<string, unknown>) {
 describe("shouldDeliver gating", () => {
   const noon = new Date(2026, 5, 18, 12, 0, 0); // local noon → inside a 00:00–23:59 DND window
 
-  it("muted channel (level none): persists but pre-marked read, no desktop", async () => {
+  it("muted channel (level none): persists but pre-marked read, no alerts", async () => {
     await prisma.qcNotificationPreference.create({
       data: { orgId: orgAId, userId: alphaId, channelId: grpId, level: "none" },
     });
     const d = await notifications.shouldDeliver(orgAId, alphaId, grpId, "group", "mention", noon);
-    expect(d).toEqual({ persistRow: true, desktop: false, persistAsRead: true });
+    expect(d).toEqual({ persistRow: true, desktop: false, sound: false, persistAsRead: true });
   });
 
-  it("snooze: unread, no desktop", async () => {
+  it("snooze: unread, no alerts", async () => {
     await setSettings(alphaId, { snoozedUntil: new Date(noon.getTime() + 3_600_000) });
     const d = await notifications.shouldDeliver(orgAId, alphaId, grpId, "group", "mention", noon);
-    expect(d).toEqual({ persistRow: true, desktop: false, persistAsRead: false });
+    expect(d).toEqual({ persistRow: true, desktop: false, sound: false, persistAsRead: false });
   });
 
   it("DND suppresses non-priority but priority bypasses with priorityDuringDnd", async () => {
@@ -321,7 +321,12 @@ describe("shouldDeliver gating", () => {
       "reaction",
       noon,
     );
-    expect(reaction).toEqual({ persistRow: true, desktop: false, persistAsRead: false });
+    expect(reaction).toEqual({
+      persistRow: true,
+      desktop: false,
+      sound: false,
+      persistAsRead: false,
+    });
     // mention is priority → bypasses DND.
     const mentionD = await notifications.shouldDeliver(
       orgAId,
@@ -345,10 +350,18 @@ describe("shouldDeliver gating", () => {
     expect(d.desktop).toBe(false);
   });
 
-  it("desktopEnabled off: row persists unread, no desktop", async () => {
+  // desktop/sound are independent toggles: turning popups off must not mute the
+  // chime. See notifications.gate.test.ts for the full matrix.
+  it("desktopEnabled off: row persists unread, no desktop — but still sound", async () => {
     await setSettings(alphaId, { desktopEnabled: false });
     const d = await notifications.shouldDeliver(orgAId, alphaId, grpId, "group", "mention", noon);
-    expect(d).toEqual({ persistRow: true, desktop: false, persistAsRead: false });
+    expect(d).toEqual({ persistRow: true, desktop: false, sound: true, persistAsRead: false });
+  });
+
+  it("soundEnabled off: row persists unread, desktop still fires", async () => {
+    await setSettings(alphaId, { soundEnabled: false });
+    const d = await notifications.shouldDeliver(orgAId, alphaId, grpId, "group", "mention", noon);
+    expect(d).toEqual({ persistRow: true, desktop: true, sound: false, persistAsRead: false });
   });
 
   it("reaction only delivers at level 'all'", async () => {
@@ -359,9 +372,9 @@ describe("shouldDeliver gating", () => {
     expect(d.persistRow).toBe(false);
   });
 
-  it("default (no settings/pref) → delivers with desktop", async () => {
+  it("default (no settings/pref) → delivers with desktop + sound", async () => {
     const d = await notifications.shouldDeliver(orgAId, alphaId, grpId, "group", "mention", noon);
-    expect(d).toEqual({ persistRow: true, desktop: true, persistAsRead: false });
+    expect(d).toEqual({ persistRow: true, desktop: true, sound: true, persistAsRead: false });
   });
 });
 
@@ -379,13 +392,13 @@ describe("realtime notification publish", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.orgId).toBe(orgAId);
     expect(events[0]!.userId).toBe(alphaId);
-    const payload = events[0]!.payload as { desktop: boolean; type: string };
-    expect(payload).toMatchObject({ type: "mention", desktop: true });
+    const payload = events[0]!.payload as { desktop: boolean; sound: boolean; type: string };
+    expect(payload).toMatchObject({ type: "mention", desktop: true, sound: true });
     // Sender never receives a notification event.
     expect(events.some((e) => e.userId === senderId)).toBe(false);
   });
 
-  it("muted channel still emits the event but with desktop:false", async () => {
+  it("muted channel still emits the event but with desktop:false + sound:false", async () => {
     await prisma.qcNotificationPreference.create({
       data: { orgId: orgAId, userId: alphaId, channelId: grpId, level: "none" },
     });
@@ -396,6 +409,7 @@ describe("realtime notification publish", () => {
     const events = __getPublishedForTest().filter((e) => e.event === "notification");
     expect(events).toHaveLength(1);
     expect((events[0]!.payload as { desktop: boolean; isRead: boolean }).desktop).toBe(false);
+    expect((events[0]!.payload as { sound: boolean }).sound).toBe(false);
     expect((events[0]!.payload as { isRead: boolean }).isRead).toBe(true);
   });
 

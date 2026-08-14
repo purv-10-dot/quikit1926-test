@@ -3,6 +3,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
+import { appBaseUrl } from "@/lib/utils/app-url";
 
 export interface InterviewMailStatus {
   candidate: { sent: boolean; to: string | null; error?: string };
@@ -68,7 +69,7 @@ export async function sendInterviewInvites(orgId: string, interviewId: string): 
     }
 
     if (interview.interviewer.workEmail && candidate) {
-      const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+      const base = appBaseUrl();
       const { token: fbToken, expiresAt: fbExpiresAt } = generateFeedbackToken(interview.id, orgId);
       const notifyData = {
         interviewerName,

@@ -217,6 +217,3 @@ export const updateEmployeeSchema = employeeBaseSchema.partial().omit({
   workEmail: true,
   dateOfJoining: true,
 }).superRefine(employeeDateChecks);
-
-export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
-export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;

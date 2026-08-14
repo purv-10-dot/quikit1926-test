@@ -102,7 +102,7 @@ async function resolveEmployeeByAuthUser(claims: {
  * Exported for non-NextResponse handlers (e.g. the SSE stream route) that
  * need authenticated identity but can't go through the withAuth wrapper.
  */
-export async function resolveIdentity(
+async function resolveIdentity(
   req: NextRequest
 ): Promise<{ orgId: string; userId: string; fromSession: boolean } | null> {
   // verifyJWT = decode the NextAuth JWT AND confirm its shared `sessionId` is

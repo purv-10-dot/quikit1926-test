@@ -8,7 +8,7 @@ import {
   FolderOpen, Folder, FileText, Search, List, LayoutGrid, SlidersHorizontal,
   Lock, Unlock, AlertTriangle, Pencil, Trash2, X, Loader2,
 } from "lucide-react";
-import { PageContainer, EmptyState, PrimaryButton, SecondaryButton } from "@/components/PageShell";
+import { PageFrame, PageContainer, EmptyState, PrimaryButton, SecondaryButton } from "@/components/PageShell";
 import { QuickCreateDrawer, exportCSV } from "@/components/QuickCreateDrawer";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SelectInput } from "@/components/FormDrawer";
@@ -402,8 +402,9 @@ export default function BOQPage() {
 
   return (
     <>
+      <PageFrame>
       {/* Top toolbar matching reference UI */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-2">
+      <div className="shrink-0 bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {/* Project selector */}
@@ -412,10 +413,12 @@ export default function BOQPage() {
                 value={selectedProject}
                 onChange={(v) => { setSelectedProject(v); setExpandedGroups(new Set()); setExpandAll(false); }}
                 placeholder="Select Project..."
-                options={(projectsData?.data ?? []).map((p) => ({
-                  value: p.id,
-                  label: `${p.code} — ${p.name}`,
-                }))}
+                options={(projectsData?.data ?? [])
+                  .filter((p) => (p as { executionMode?: string }).executionMode !== "FREE_SCOPE")
+                  .map((p) => ({
+                    value: p.id,
+                    label: `${p.code} — ${p.name}`,
+                  }))}
               />
             </div>
             {/* View toggle */}
@@ -470,13 +473,13 @@ export default function BOQPage() {
         </div>
       </div>
 
-      <PageContainer className="!p-3 !pt-2">
+      <PageContainer fill className="!p-3 !pt-2">
         {!selectedProject ? (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm py-16">
             <EmptyState title="Select a project" description="Choose a project to view its BOQ." icon={<FileSpreadsheet className="w-8 h-8" />} />
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Locked banner */}
             {lockState.isLocked && (
               <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
@@ -500,7 +503,7 @@ export default function BOQPage() {
             ) : items.length === 0 ? (
               <div className="py-12"><EmptyState title="No BOQ items" description="Import from Excel or add manually." icon={<FileSpreadsheet className="w-8 h-8" />} /></div>
             ) : (
-              <div className="overflow-x-auto max-h-[calc(100vh-240px)] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <table className="w-full border-collapse">
                   <thead className="sticky top-0 z-10">
                     {/* Two-level header matching reference */}
@@ -551,6 +554,7 @@ export default function BOQPage() {
           </div>
         )}
       </PageContainer>
+      </PageFrame>
 
       <QuickCreateDrawer open={addDrawerOpen} onClose={() => setAddDrawerOpen(false)} config={addConfig} />
       <BOQImportDrawer

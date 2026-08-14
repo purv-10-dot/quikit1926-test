@@ -197,6 +197,13 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
           <div className="mx-auto w-full max-w-[1400px] p-6">{children}</div>
         </main>
       </div>
+
+      {/* Floating support launcher. Mounted HERE rather than in each route
+          group's layout: all eight authenticated groups (learner, teacher,
+          parent, manager, tenant-admin, sub-admin, super-admin, shared) render
+          through this shell, so one mount covers every role. Outside <main> so
+          it stays pinned to the viewport instead of scrolling with the page. */}
+      <SupportLauncher appSlug="quiklms" />
     </div>
   );
 }

@@ -9,7 +9,7 @@
 import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Plus, Download, Upload, Trash2, Pencil, RotateCcw } from "lucide-react";
-import { PageHeader, PageContainer, PrimaryButton, SecondaryButton, EmptyState } from "./PageShell";
+import { PageFrame, PageHeader, PageContainer, PrimaryButton, SecondaryButton, EmptyState } from "./PageShell";
 import { DataTable, type ColDef } from "./DataTable";
 import { useServerList } from "@/hooks/use-server-list";
 import { exportCSV } from "./QuickCreateDrawer";
@@ -433,6 +433,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
 
   return (
     <>
+      <PageFrame>
       <PageHeader
         title={title}
         subtitle={subtitle ?? `Manage ${entityName.toLowerCase()} master data`}
@@ -453,7 +454,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
         }
       />
 
-      <PageContainer>
+      <PageContainer fill>
         {/* Status-view switcher — Active | Inactive | All. Opt-in via
             `showStatusTabs` so the default master pages keep the
             previous behavior of just hiding inactive rows. The Users
@@ -528,6 +529,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
           />
         )}
       </PageContainer>
+      </PageFrame>
 
       {/* Delete confirm modal — the page's onDelete fires only after the
           user clicks Delete in this dialog. */}

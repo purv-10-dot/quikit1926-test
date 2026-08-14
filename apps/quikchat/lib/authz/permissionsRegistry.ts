@@ -52,7 +52,13 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "Channel.DM", label: "Start Direct Message", actions: ["create"] },
       // DECISION 4 — org_admin decides moderation (default Moderator + Admin).
       { resource: "Channel.Moderate", label: "Moderate Channel", actions: ["update", "delete"] },
-      { resource: "Channel.InviteExternal", label: "Invite External Guest", actions: ["create"] },
+      // NO `Channel.InviteExternal`. It was declared here with no code path
+      // anywhere calling userCan(..., "Channel.InviteExternal", ...) — a cell an
+      // admin could tick that read as a security control and did nothing.
+      // Implementing it needs external/guest identity, which QuikChat does not
+      // have: invites are strictly intra-org (acceptInvite 404s a cross-org
+      // code) and cannot onboard a non-member. Intent kept in docs/RBAC_PLAN.md;
+      // re-add here only together with a real gate.
     ],
   },
   {

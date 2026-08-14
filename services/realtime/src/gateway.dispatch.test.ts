@@ -16,9 +16,15 @@ function fakeIo() {
   const emits: Array<{ room: string; event: string; payload: unknown }> = [];
   const joins: Array<{ rooms: string[]; target: string }> = [];
   const io = {
-    to: (room: string) => ({
-      emit: (event: string, payload: unknown) => emits.push({ room, event, payload }),
-    }),
+    to: (room: string) => {
+      const op = {
+        emit: (event: string, payload: unknown) => emits.push({ room, event, payload }),
+        get local() {
+          return op;
+        },
+      };
+      return op;
+    },
     in: (rooms: string | string[]) => ({
       socketsJoin: (target: string) =>
         joins.push({ rooms: Array.isArray(rooms) ? rooms : [rooms], target }),
@@ -31,8 +37,15 @@ const ORG = "org-a";
 const CH = "ch-1";
 
 describe("dispatchFanout routing", () => {
-  it("routes message / message_update / reaction / read / delivered verbatim to the channel room", () => {
-    for (const event of ["message", "message_update", "reaction", "read", "delivered"] as const) {
+  it("routes message / message_update / reaction / read / delivered / call_group_started verbatim to the channel room", () => {
+    for (const event of [
+      "message",
+      "message_update",
+      "reaction",
+      "read",
+      "delivered",
+      "call_group_started",
+    ] as const) {
       const { io, emits } = fakeIo();
       const payload = { id: event };
       dispatchFanout(io, { orgId: ORG, channelId: CH, event, payload });
@@ -83,6 +96,35 @@ describe("dispatchFanout routing", () => {
     });
     expect(joins).toEqual([]);
     expect(emits).toEqual([]);
+  });
+
+  it("relays channel_updated to the channel room (QC_008)", () => {
+    const { io, emits } = fakeIo();
+    const payload = { channelId: CH, name: "Renamed", avatarUrl: "https://signed/av.png" };
+    dispatchFanout(io, { orgId: ORG, channelId: CH, event: "channel_updated", payload });
+    expect(emits).toEqual([{ room: channelRoom(ORG, CH), event: "channel_updated", payload }]);
+  });
+
+  it("relays channel_deleted to the channel room (QC_008)", () => {
+    const { io, emits } = fakeIo();
+    const payload = { channelId: CH, memberIds: ["u-a", "u-b"] };
+    dispatchFanout(io, { orgId: ORG, channelId: CH, event: "channel_deleted", payload });
+    expect(emits).toEqual([{ room: channelRoom(ORG, CH), event: "channel_deleted", payload }]);
+  });
+
+  it("drops channel_updated / channel_deleted with no channelId in the payload", () => {
+    for (const event of ["channel_updated", "channel_deleted"] as const) {
+      const { io, emits } = fakeIo();
+      dispatchFanout(io, { orgId: ORG, channelId: CH, event, payload: {} });
+      expect(emits).toEqual([]);
+    }
+  });
+
+  it("scopes channel_deleted by evt.orgId — never the payload (tenant isolation)", () => {
+    const { io, emits } = fakeIo();
+    const payload = { channelId: CH, orgId: "org-evil", memberIds: ["u-a"] };
+    dispatchFanout(io, { orgId: ORG, channelId: CH, event: "channel_deleted", payload });
+    expect(emits[0]!.room).toBe(channelRoom(ORG, CH));
   });
 
   it("always scopes the room by evt.orgId — never the payload (tenant isolation)", () => {

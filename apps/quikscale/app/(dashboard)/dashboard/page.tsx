@@ -23,10 +23,12 @@ import { HistoryButton } from "@/components/audit/HistoryButton";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { ChangeHistoryPanel } from "@/app/(dashboard)/kpi/components/ChangeHistoryPanel";
 import { useSessionState } from "@/lib/hooks/useSessionState";
-import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
+import { useWWWStatusFilter, DASHBOARD_DEFAULT_STATUSES } from "@/lib/hooks/useWWWStatusFilter";
+import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, ALL_STATUS_LABEL, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
+import { WWW_TBD_LABEL } from "@/lib/constants/www";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
   weekDateLabel, ALL_WEEKS, weeksArray, rollingVisibleWeeks,
@@ -38,12 +40,16 @@ import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
-import { resolveProgressQtd, resolveProgressOverall, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
+import { resolveProgressQtd, resolveProgressOverall, resolvePace, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
+import { FormulaTooltip } from "../kpi/components/FormulaTooltip";
+import { explainAvgKpi, explainOverall, explainQtd, explainQtr } from "../kpi/components/kpiFormulaTooltips";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
 import { ALL_STATIC_COLS, COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useTableColumns";
 import { ALL_WEEKS as FISCAL_ALL_WEEKS } from "@/lib/utils/fiscal";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
 import { DashboardMoreActions, type DashboardSectionKey } from "./DashboardMoreActions";
 
 // Debounce a fast-changing value (e.g. a search input) so it only drives a
@@ -155,8 +161,8 @@ function formatDate(iso?: string | null): string {
  * focused on open work without making the user uncheck completed each time.
  *
  * Behavior:
- *   - Button label shows the count of selected statuses (or "All statuses"
- *     when every option is checked, "No statuses" when none are checked).
+ *   - Button label shows the count of selected statuses (or "All status"
+ *     when every option is checked, "No status" when none are checked).
  *   - Click outside closes the popover (matches the file's existing
  *     mousedown-handler pattern for other dropdowns on this page).
  *   - Toggling a checkbox applies immediately — no separate Apply button.
@@ -186,11 +192,12 @@ function StatusMultiSelect({
     onChange(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
   }
 
+  // Wording per product: "status", never "statuses" (matches ALL_STATUS_LABEL).
   const label = selected.length === ITEM_STATUS_ORDER.length
-    ? "All statuses"
+    ? ALL_STATUS_LABEL
     : selected.length === 0
-      ? "No statuses"
-      : `${selected.length} statuses`;
+      ? "No status"
+      : `${selected.length} status`;
 
   return (
     <div className="relative" ref={ref}>
@@ -392,8 +399,9 @@ function Section({ badge, count, right, children }: { badge: string; count?: num
 /**
  * Collapsible container for the "KPI Overview" card grid on dashboard.
  * Starts collapsed; clicking the header toggles. The AvgKPICard summary
- * pill (avg % · on-track · at-risk · behind) lives inside the header to
- * the right of the card-count badge — visible even when collapsed.
+ * pill (avg % · on-track · at-risk · behind · over-achieved) lives inside
+ * the header to the right of the card-count badge — visible even when
+ * collapsed.
  */
 function KPIOverviewContainer({ count, loading, kpis, currentWeek, weekCount, children }: { count: number; loading: boolean; kpis: KPIRow[]; currentWeek: number | null; weekCount: number; children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false);
@@ -575,18 +583,46 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
   // colors (text-blue-700 etc.) instead of the text-on-color text-white
   // tones — so the percentage label is visible on the white card.
   //
-  // The card shows OVERALL quarterly progress: QTD Achieved / Quarterly Goal
-  // (e.g. 33.2K / 150K = 22%) — the SAME basis as the Individual-KPI table's
-  // Progress column and the Stats modal's "Overall Progress" headline. (It used
-  // to divide by the to-date QTD goal — 33.2K / 125.2K = 27% — which made the
-  // card disagree with the table and the Stats headline.) Standalone KPIs are
-  // unchanged: resolveProgressOverall re-derives their per-week average against
-  // the constant quarterly target, exactly as before.
+  // The card's headline figure (achieved / goal text + the "Overall" bar) is
+  // QTD Achieved / Quarterly Goal (e.g. 33.2K / 150K = 22%) — the SAME basis
+  // as the Individual-KPI table's Progress column and the Stats modal's
+  // "Overall Progress" headline. Standalone KPIs are unchanged:
+  // resolveProgressOverall re-derives their per-week average against the
+  // constant quarterly target, exactly as before.
   const { achieved, goal } = resolveProgressOverall(kpi, currentWeek, weekCount);
   const pct = goal > 0 ? (achieved / goal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   const badge = kpi.qtdAchieved != null
     ? getProgressBadgeColors(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+
+  // Second bar — pace vs to-date. `resolveProgressQtd` gives the to-date goal
+  // (Σ targets through last week, NOT the full quarterly goal) and the
+  // to-date achieved value. This is the SAME pair `computeKpiOverviewStats`
+  // uses to bucket cards into onTrack/atRisk/behind for the AvgKPICard pill
+  // above — surfacing it here lets the card's own color agree with that
+  // pill instead of only showing the Overall (quarterly) ratio.
+  const qtd = resolveProgressQtd(kpi, currentWeek, weekCount);
+  const qtdGoal = qtd.goal;
+  // Bar 1: QTR — achieved-to-date ÷ the full quarter's potential. Cumulative
+  // divides by the quarterly goal; Standalone by `target × weeksPerQuarter`
+  // (its flat target never accrues, so the quarterly goal is a per-week
+  // number). See `resolvePace`.
+  //
+  // Both branches are now PERFORMANCE numbers, so both honor `reverseColor`
+  // and the not-yet-entered gray state. Cumulative used to pass
+  // `(…, true, false)` — "always updated, never reverse-scored" — because it
+  // was a pure calendar line where neither flag applied. It no longer is.
+  const pace = resolvePace(kpi, currentWeek, weekCount);
+  const qtdGoalVsQuarterlyPct = pace.goal > 0 ? (pace.achieved / pace.goal) * 100 : 0;
+  const paceBadge = hasAnyWeeklyValue
+    ? getProgressBadgeColors(pace.achieved, pace.goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+  // Bar 2: QTD Achieved / QTD Goal — actual performance against where the
+  // KPI should be *right now*, not against the full quarter.
+  const qtdAchievedVsQtdGoalPct = qtdGoal > 0 ? (qtd.achieved / qtdGoal) * 100 : 0;
+  const qtdBadge = kpi.qtdAchieved != null
+    ? getProgressBadgeColors(qtd.achieved, qtdGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
   // Currency KPIs with a scale render their value in that unit (₹4 Cr / $9 M);
   // non-currency stays plain compact, toggle-driven. Display-only.
@@ -601,27 +637,50 @@ function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }
     });
   const [historyOpen, setHistoryOpen] = useState(false);
   return (
-    <div className="group relative bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
-      <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="group relative bg-white border border-gray-200 rounded-xl px-5 py-4 hover:shadow-md transition-shadow">
+      <div className="absolute right-2.5 top-2.5 opacity-0 transition-opacity group-hover:opacity-100">
         <HistoryButton entityId={kpi.id} onClick={() => setHistoryOpen(true)} />
       </div>
-      <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5 pr-6" title={kpi.name}>{kpi.name}</p>
-      <div
-        className="flex items-baseline gap-1 mb-2"
-        title="QTD Achieved / Quarterly Goal"
-      >
-        <span className="text-base font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
-        <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>
-        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          {/* Bar width still clamps at 100% (container width). The color
-              band already signals over-achievement; the text shows the
-              true percentage. */}
-          <div className={`h-1.5 rounded-full ${badge.bar}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      <p className="text-xs text-gray-500 font-medium truncate mb-2 pr-6" title={kpi.name}>{kpi.name}</p>
+      {/* Hovering the headline explains the calculation (formula + this KPI's
+          own numbers) instead of the old bare `title` label. Same for the two
+          bars below. See kpiFormulaTooltips.ts. */}
+      <FormulaTooltip explain={explainOverall(kpi, currentWeek, weekCount)} triggerClassName="block">
+        <div className="flex items-baseline gap-1.5 mb-3">
+          <span className="text-lg font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
+          <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
+          <span className={`text-[11px] font-semibold ${badge.text}`}>({pct.toFixed(0)}%)</span>
         </div>
-      </div>
+      </FormulaTooltip>
+      {/* Bar 1 — QTR: achieved-to-date over the full quarter's potential.
+          Cumulative divides by the Quarterly Goal; Standalone by
+          (target × weeksPerQuarter), since its flat target never accrues.
+          A burn-up either way — 100% means the whole quarter is banked.
+          Color-coded the same way as Bar 2. */}
+      <FormulaTooltip explain={explainQtr(kpi, currentWeek, weekCount)} triggerClassName="block mb-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTR</span>
+          <span className={`text-xs font-semibold ${paceBadge.text}`}>{qtdGoalVsQuarterlyPct.toFixed(0)}%</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-2 rounded-full ${paceBadge.bar}`} style={{ width: `${Math.min(qtdGoalVsQuarterlyPct, 100)}%` }} />
+          </div>
+        </div>
+      </FormulaTooltip>
+      {/* Bar 2 — QTD Achieved / QTD Goal: actual performance vs. where the
+          KPI should be right now. Color-coded, same basis as the
+          on-track/at-risk/behind buckets in the AvgKPICard pill above. */}
+      <FormulaTooltip explain={explainQtd(kpi, currentWeek, weekCount)} triggerClassName="block">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-medium text-gray-400 w-9 flex-shrink-0">QTD</span>
+          <span className={`text-xs font-semibold ${qtdBadge.text}`}>{qtdAchievedVsQtdGoalPct.toFixed(0)}%</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            {/* Bar width still clamps at 100% (container width). The color
+                band already signals over-achievement; the text shows the
+                true percentage. */}
+            <div className={`h-2 rounded-full ${qtdBadge.bar}`} style={{ width: `${Math.min(qtdAchievedVsQtdGoalPct, 100)}%` }} />
+          </div>
+        </div>
+      </FormulaTooltip>
       {historyOpen && <ChangeHistoryPanel kpi={kpi} onClose={() => setHistoryOpen(false)} />}
     </div>
   );
@@ -633,7 +692,8 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
   // raw server-stamped `kpi.progressPercent` over-counted Standalone KPIs
   // (cumulative SUM ÷ goal) — see computeKpiOverviewStats /
   // docs/STANDALONE_QTD_ACHIEVED_FIX.md §4.
-  const { avg, onTrack, atRisk, behind } = computeKpiOverviewStats(kpis, currentWeek, weekCount);
+  const stats = computeKpiOverviewStats(kpis, currentWeek, weekCount);
+  const { avg, onTrack, atRisk, behind, overAchieved, notStarted } = stats;
 
   const ringColor = avg >= 80 ? "#22c55e" : avg >= 50 ? "#f59e0b" : "#ef4444";
   const textColor = avg >= 80 ? "text-green-600" : avg >= 50 ? "text-amber-500" : "text-red-500";
@@ -644,15 +704,19 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
 
   return (
     <div className={`flex items-center gap-3 px-4 py-1.5 rounded-full border ${border}`}>
-      {/* Mini donut */}
-      <svg width={28} height={28} viewBox="0 0 24 24" className="-rotate-90 flex-shrink-0">
-        <circle cx={12} cy={12} r={R} fill="none" stroke="#e5e7eb" strokeWidth={3} />
-        <circle cx={12} cy={12} r={R} fill="none" stroke={ringColor} strokeWidth={3}
-          strokeDasharray={`${dash} ${CIRC}`} strokeLinecap="round" />
-      </svg>
-      {/* Avg % */}
-      <span className={`text-sm font-bold ${textColor}`}>{avg}%</span>
-      <span className="text-xs text-gray-400">avg KPI</span>
+      {/* Donut + % + label share ONE tooltip explaining the weighted-average
+          formula with the live Σ achieved / Σ goal substitution. */}
+      <FormulaTooltip explain={explainAvgKpi(stats)} triggerClassName="flex items-center gap-3">
+        {/* Mini donut */}
+        <svg width={28} height={28} viewBox="0 0 24 24" className="-rotate-90 flex-shrink-0">
+          <circle cx={12} cy={12} r={R} fill="none" stroke="#e5e7eb" strokeWidth={3} />
+          <circle cx={12} cy={12} r={R} fill="none" stroke={ringColor} strokeWidth={3}
+            strokeDasharray={`${dash} ${CIRC}`} strokeLinecap="round" />
+        </svg>
+        {/* Avg % */}
+        <span className={`text-sm font-bold ${textColor}`}>{avg}%</span>
+        <span className="text-xs text-gray-400">avg KPI</span>
+      </FormulaTooltip>
       {/* Divider */}
       <span className="hidden sm:inline-block w-px h-4 bg-gray-300" />
       {/* Breakdown */}
@@ -668,6 +732,19 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
         <div className="flex flex-col items-center leading-tight">
           <span className="text-sm font-bold text-red-500">{behind}</span>
           <span className="text-[10px] text-red-400">behind</span>
+        </div>
+        {/* Over Achieved — blue, matching the ≥120% "target exceeded" band in
+            colorLogic. Semantic data-state color, so it stays hardcoded blue
+            rather than accent-* (see CLAUDE.md §Accent Color System). */}
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-blue-600">{overAchieved}</span>
+          <span className="text-[10px] text-blue-500 whitespace-nowrap">ahead</span>
+        </div>
+        {/* Not Started — gray, mirrors the neutral card color; dashboard-only
+            bucket (excluded from the KPI table's own gray/neutral styling). */}
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-gray-500">{notStarted}</span>
+          <span className="text-[10px] text-gray-400 whitespace-nowrap">idle</span>
         </div>
       </div>
     </div>
@@ -1008,7 +1085,10 @@ function WWWSection({ items }: { items: WWWItem[] }) {
 
                   const content: Record<string, React.ReactNode> = {
                     who:         <span className="text-xs font-medium text-gray-800 truncate block">{whoName}</span>,
-                    when:        <DateCell iso={item.when} />,
+                    // TBD items store a placeholder date — show the label, not the date.
+                    when:        item.dueDateTBD
+                      ? <span className="text-xs text-gray-500 italic">{WWW_TBD_LABEL}</span>
+                      : <DateCell iso={item.when} />,
                     what:        <span className="text-xs text-gray-800 line-clamp-2 block">{item.what}</span>,
                     revisedDate: lastRevised ? <DateCell iso={lastRevised} /> : <span className="text-xs text-gray-300">—</span>,
                     notes:       <NoteTooltip text={item.notes}><span className="text-xs text-gray-600 line-clamp-2 cursor-default">{item.notes || <span className="text-gray-300">—</span>}</span></NoteTooltip>,
@@ -1041,7 +1121,7 @@ export default function DashboardPage() {
   // reflects an owner picked on KPI / Priority / WWW) and writes it (so those
   // pages pick up the Team tab's choice). The My Dashboard tab is a personal,
   // self-only view and deliberately leaves the shared owner untouched.
-  const { filterOwner, year, setYear, quarter, setQuarter, setFilterTeam, setFilterOwner } = useFilterContext();
+  const { filterOwners, year, setYear, quarter, setQuarter, setFilterTeam, setFilterOwners } = useFilterContext();
   const [activeTab, setActiveTab] = useState<"individual" | "team">("individual");
 
   // Dashboard-level trash toggle — per-section. When a section is in this Set,
@@ -1105,7 +1185,8 @@ export default function DashboardPage() {
   // Seed from the shared filter so revisiting the Team tab reflects an owner
   // picked elsewhere (KPI / Priority / WWW). The dashboard remounts on each
   // navigation, so this re-reads the current shared owner every visit.
-  const [teamTabOwnerId, setTeamTabOwnerId] = useState<string>(filterOwner);
+  // MULTI-select owner, shared with KPI / Priority / WWW via FilterContext.
+  const [teamTabOwnerIds, setTeamTabOwnerIds] = useState<string[]>(filterOwners);
   // Note: clearing the owner when the team changes is done in the Team picker's
   // onChange (below), NOT in an effect — an effect keyed on teamTabTeamId would
   // also fire on mount and wipe the owner we just seeded from the shared filter.
@@ -1149,19 +1230,19 @@ export default function DashboardPage() {
   //     along via FilterContext, so the modules show your own data for the
   //     current period.
   //   • Team tab → the picked owner / team.
-  // The Team tab still shows a persisted owner because `teamTabOwnerId` is seeded
-  // from `ctx.filterOwner` at mount (before this effect's self-write), and the
+  // The Team tab still shows a persisted owner because `teamTabOwnerIds` is seeded
+  // from `ctx.filterOwners` at mount (before this effect's self-write), and the
   // owner-reset-on-team-change lives in the Team picker's onChange (not a mount
   // effect). WWW ignores `filterTeam` by product rule, so team never bleeds in.
   useEffect(() => {
     if (activeTab === "individual") {
       setFilterTeam("");
-      setFilterOwner(userId || "");
+      setFilterOwners(userId ? [userId] : []);
     } else {
       setFilterTeam(teamTabTeamId || "");
-      setFilterOwner(teamTabOwnerId || "");
+      setFilterOwners(teamTabOwnerIds);
     }
-  }, [activeTab, teamTabTeamId, teamTabOwnerId, userId, setFilterTeam, setFilterOwner]);
+  }, [activeTab, teamTabTeamId, teamTabOwnerIds, userId, setFilterTeam, setFilterOwners]);
 
   // Team-scope member set — ONLY the selected team's members (a bounded list),
   // used to filter individual KPIs/Priorities/WWW by `owner ∈ team`. Gated so
@@ -1181,14 +1262,13 @@ export default function DashboardPage() {
     fetchNextPage: fetchMoreOwners,
   } = useInfiniteUsers(teamTabTeamId || undefined, ownerSearch);
 
-  // Multi-select WWW status filter. Defaults to every status EXCEPT
-  // "completed" — keeps the dashboard focused on actionable work; users can
-  // re-include completed items via the dropdown. Persisted (browser-tab session)
-  // under its own key so the selection survives navigation + refresh; this is
-  // the Dashboard WWW section's own filter, independent of the WWW page's.
-  const [wwwStatusFilter, setWwwStatusFilter] = useSessionState<string[]>(
-    "qs:dash:www:status",
-    ITEM_STATUS_ORDER.filter(s => s !== "completed"),
+  // Multi-select WWW status filter — SHARED with the WWW module page, so a
+  // selection made here carries over there and vice versa (see
+  // useWWWStatusFilter). Until the user touches it, this section keeps its own
+  // default of every status EXCEPT "completed", which keeps the dashboard
+  // focused on actionable work.
+  const [wwwStatusFilter, setWwwStatusFilter] = useWWWStatusFilter(
+    DASHBOARD_DEFAULT_STATUSES,
   );
 
   /* ── My Dashboard tab — always scoped to the current user ───────────── */
@@ -1219,32 +1299,32 @@ export default function DashboardPage() {
   // Filter A (teamTabTeamId) + Filter C (teamTabOwnerId) apply to all sections.
   // Filter B (teamTabKpiType) only swaps the KPI section level.
   const teamScopeUserIds = teamTabTeamId ? teamUserIds : null;
-  const ownerFilter = teamTabOwnerId || null;
+  const ownerFilter = teamTabOwnerIds.length ? new Set(teamTabOwnerIds) : null;
 
   const teamKpis: KPIRow[] = useMemo(() => {
     if (teamTabKpiType === "individual") {
       let rows = allIndKpis;
       if (teamScopeUserIds) rows = rows.filter((k) => !!k.owner && teamScopeUserIds.has(k.owner));
-      if (ownerFilter) rows = rows.filter((k) => k.owner === ownerFilter);
+      if (ownerFilter) rows = rows.filter((k) => !!k.owner && ownerFilter.has(k.owner));
       return rows;
     }
     // Team-level KPIs: scope by teamId, then by ownerIds when an owner is picked.
     let rows = allTeamKpis;
     if (teamTabTeamId) rows = rows.filter((k) => k.teamId === teamTabTeamId);
     if (ownerFilter) {
-      rows = rows.filter((k) => ((k.ownerIds ?? []) as string[]).includes(ownerFilter));
+      rows = rows.filter((k) => ((k.ownerIds ?? []) as string[]).some((id) => ownerFilter.has(id)));
     }
     return rows;
   }, [teamTabKpiType, allIndKpis, allTeamKpis, teamScopeUserIds, ownerFilter, teamTabTeamId]);
 
   const teamPriorities = useMemo(() => {
-    if (ownerFilter) return allPriorities.filter((p) => p.owner === ownerFilter);
+    if (ownerFilter) return allPriorities.filter((p) => ownerFilter.has(p.owner));
     if (teamScopeUserIds) return allPriorities.filter((p) => teamScopeUserIds.has(p.owner));
     return allPriorities;
   }, [allPriorities, teamScopeUserIds, ownerFilter]);
 
   const teamWwwByOwner = useMemo(() => {
-    if (ownerFilter) return allWWW.filter((w) => w.who === ownerFilter);
+    if (ownerFilter) return allWWW.filter((w) => ownerFilter.has(w.who));
     if (teamScopeUserIds) return allWWW.filter((w) => teamScopeUserIds.has(w.who));
     return allWWW;
   }, [allWWW, teamScopeUserIds, ownerFilter]);
@@ -1334,11 +1414,11 @@ export default function DashboardPage() {
       f.scope = "mine";
     } else {
       f.kpiLevel = teamTabKpiType;
-      if (teamTabOwnerId) f.owner = teamTabOwnerId;
+      if (teamTabOwnerIds.length) f.owner = teamTabOwnerIds.join(",");
       else if (teamTabTeamId) f.teamId = teamTabTeamId;
     }
     return f;
-  }, [year, quarter, kpiSearch, kpiSortBy, kpiSortOrder, activeTab, teamTabKpiType, teamTabOwnerId, teamTabTeamId]);
+  }, [year, quarter, kpiSearch, kpiSortBy, kpiSortOrder, activeTab, teamTabKpiType, teamTabOwnerIds, teamTabTeamId]);
 
   const priFilters = useMemo<ListFilters>(() => ({
     year,
@@ -1348,12 +1428,12 @@ export default function DashboardPage() {
     sortOrder: priSortBy ? priSortOrder : undefined,
     ...(activeTab === "individual"
       ? { owner: userId }
-      : teamTabOwnerId
-        ? { owner: teamTabOwnerId }
+      : teamTabOwnerIds.length
+        ? { owner: teamTabOwnerIds.join(",") }
         : teamTabTeamId
           ? { teamId: teamTabTeamId }
           : {}),
-  }), [year, quarter, priSearch, priSortBy, priSortOrder, activeTab, userId, teamTabOwnerId, teamTabTeamId]);
+  }), [year, quarter, priSearch, priSortBy, priSortOrder, activeTab, userId, teamTabOwnerIds, teamTabTeamId]);
 
   const wwwFilters = useMemo<ListFilters>(() => ({
     search: wwwSearch.trim() || undefined,
@@ -1365,12 +1445,12 @@ export default function DashboardPage() {
     status: wwwStatusFilter.length ? wwwStatusFilter.join(",") : "__none__",
     ...(activeTab === "individual"
       ? { who: userId }
-      : teamTabOwnerId
-        ? { who: teamTabOwnerId }
+      : teamTabOwnerIds.length
+        ? { who: teamTabOwnerIds.join(",") }
         : teamTabTeamId
           ? { teamId: teamTabTeamId }
           : {}),
-  }), [wwwSearch, wwwSortBy, wwwSortOrder, wwwStatusFilter, activeTab, userId, teamTabOwnerId, teamTabTeamId]);
+  }), [wwwSearch, wwwSortBy, wwwSortOrder, wwwStatusFilter, activeTab, userId, teamTabOwnerIds, teamTabTeamId]);
 
   const kpiTableQuery = useInfiniteKPIs(kpiFilters);
   const priTableQuery = useInfinitePriorities(priFilters);
@@ -1383,35 +1463,58 @@ export default function DashboardPage() {
   const wwwRows = wwwTableQuery.rows;
   const wwwTotal = wwwTableQuery.total;
 
-  // Owner-picker label fallback. `teamTabOwnerId` is seeded from the persisted
+  // Owner-picker chip labels. `teamTabOwnerIds` is seeded from the persisted
   // shared filter at mount (and the owner list is a server-paginated 25/page
-  // slice), so the applied owner often isn't in `ownerOptions`. Without a
-  // fallback the FilterPicker trigger shows "All Users" even though the filter
-  // IS applied (the "N filters" badge proves it). Resolve the owner's name from
-  // any loaded source — the selected team's members, or the owner-scoped KPI /
-  // Priority / WWW rows — and feed it as the picker's `selectedOption`. Mirrors
-  // the KPI page's `selectedOwnerOption` pattern.
-  const selectedOwnerOption = useMemo(() => {
-    if (!teamTabOwnerId) return undefined;
-    if (ownerOptions.some((u) => u.id === teamTabOwnerId)) return undefined;
-    const fromTeam = teamMembersForScope.find((u) => u.id === teamTabOwnerId);
-    if (fromTeam) {
-      return userToFilterOption({
-        id: teamTabOwnerId,
-        firstName: fromTeam.firstName,
-        lastName: fromTeam.lastName,
-        email: fromTeam.email ?? "",
-      });
-    }
-    const found =
-      kpiRows.find((k) => k.owner === teamTabOwnerId)?.owner_user ??
-      kpiRows.flatMap((k) => k.owners ?? []).find((o) => o.id === teamTabOwnerId) ??
-      priRows.find((p) => p.owner === teamTabOwnerId)?.owner_user ??
-      wwwRows.find((w) => w.who === teamTabOwnerId)?.who_user;
-    return found
-      ? userToFilterOption({ id: teamTabOwnerId, firstName: found.firstName, lastName: found.lastName, email: "" })
-      : undefined;
-  }, [teamTabOwnerId, ownerOptions, teamMembersForScope, kpiRows, priRows, wwwRows]);
+  // slice), so a selected owner often isn't in `ownerOptions`. Without this the
+  // chips would fall back to raw ids even though the filter IS applied (the
+  // "N filters" badge proves it). Resolve each selected id from any loaded
+  // source — the selected team's members, or the owner-scoped KPI / Priority /
+  // WWW rows — and feed them as the picker's `selectedOptions`. Mirrors the KPI
+  // page's `selectedOwnerOptions` pattern.
+  const selectedOwnerOptions = useMemo(() => {
+    if (teamTabOwnerIds.length === 0) return [];
+    return teamTabOwnerIds
+      .map((id) => {
+        const fromTeam = teamMembersForScope.find((u) => u.id === id);
+        if (fromTeam) {
+          return userToFilterOption({
+            id,
+            firstName: fromTeam.firstName,
+            lastName: fromTeam.lastName,
+            email: fromTeam.email ?? "",
+          });
+        }
+        const found =
+          kpiRows.find((k) => k.owner === id)?.owner_user ??
+          kpiRows.flatMap((k) => k.owners ?? []).find((o) => o.id === id) ??
+          priRows.find((p) => p.owner === id)?.owner_user ??
+          wwwRows.find((w) => w.who === id)?.who_user;
+        return found
+          ? userToFilterOption({ id, firstName: found.firstName, lastName: found.lastName, email: "" })
+          : undefined;
+      })
+      .filter((o): o is NonNullable<typeof o> => Boolean(o));
+  }, [teamTabOwnerIds, teamMembersForScope, kpiRows, priRows, wwwRows]);
+
+  // Active filter label — surfaces the selected Team + Owner *names* (not just
+  // a "N filters" count) so users can tell at a glance which scope they're
+  // looking at. Owner name resolution mirrors `selectedOwnerOption` above:
+  // prefer the loaded `ownerOptions` page, else fall back to whatever name we
+  // could resolve from currently-loaded rows.
+  const activeFilterLabel = useMemo(() => {
+    const teamName = teamTabTeamId ? teams.find((t) => t.id === teamTabTeamId)?.name : undefined;
+    const ownerNames = teamTabOwnerIds
+      .map((id) => {
+        const owner = ownerOptions.find((u) => u.id === id);
+        if (owner) return `${owner.firstName} ${owner.lastName}`;
+        return selectedOwnerOptions.find((o) => o.value === id)?.label;
+      })
+      .filter((n): n is string => Boolean(n));
+    return buildFilterSummaryLabel([
+      { label: "Team", values: teamName ? [teamName] : [] },
+      { label: "Owner", values: ownerNames },
+    ]);
+  }, [teamTabTeamId, teamTabOwnerIds, teams, ownerOptions, selectedOwnerOptions]);
 
   // Sort handlers — the tables call these with the backend sort key + dir.
   // Toggling the same column to the same direction again is a no-op for the
@@ -1491,7 +1594,7 @@ export default function DashboardPage() {
   const filterRef = useRef<HTMLDivElement>(null);
   // Active filter badge count for the Team tab — "Individual" default for B
   // is not counted; only A (team) and C (owner) contribute.
-  const teamFilterCount = (teamTabTeamId ? 1 : 0) + (teamTabOwnerId ? 1 : 0);
+  const teamFilterCount = (teamTabTeamId ? 1 : 0) + (teamTabOwnerIds.length ? 1 : 0);
 
   // Fiscal year list — DB-scoped via shared hook
   const { years: fyYears, configured: fyConfigured } = useFiscalYears();
@@ -1551,15 +1654,12 @@ export default function DashboardPage() {
           {/* Filter button — only on Team tab. My Dashboard is locked to current user. */}
           {activeTab === "team" && (
             <div className="relative" ref={filterRef}>
-              <button
+              <FilterSummaryButton
+                label={activeFilterLabel}
+                active={teamFilterCount > 0}
+                open={showFilter}
                 onClick={() => setShowFilter(o => !o)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || teamFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-              >
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-                </svg>
-                {teamFilterCount > 0 ? `${teamFilterCount} filter${teamFilterCount > 1 ? "s" : ""}` : "Filter"}
-              </button>
+              />
 
               {showFilter && (
                 <div
@@ -1578,7 +1678,7 @@ export default function DashboardPage() {
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
                     <FilterPicker
                       value={teamTabTeamId}
-                      onChange={(v) => { setTeamTabTeamId(v); setTeamTabOwnerId(""); }}
+                      onChange={(v) => { setTeamTabTeamId(v); setTeamTabOwnerIds([]); }}
                       options={teams.map(t => ({ value: t.id, label: t.name }))}
                       allLabel="All Users"
                     />
@@ -1613,13 +1713,11 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                     <FilterPicker
-                      value={teamTabOwnerId}
-                      onChange={(v) => {
-                        setTeamTabOwnerId(v);
-                        setShowFilter(false);
-                      }}
+                      multiple
+                      values={teamTabOwnerIds}
+                      onChangeMultiple={setTeamTabOwnerIds}
                       options={ownerOptions.map(userToFilterOption)}
-                      selectedOption={selectedOwnerOption}
+                      selectedOptions={selectedOwnerOptions}
                       onSearchChange={setOwnerSearch}
                       onLoadMore={fetchMoreOwners}
                       hasMore={ownersHasMore}
@@ -1628,11 +1726,11 @@ export default function DashboardPage() {
                       allLabel="All Users"
                     />
                   </div>
-                  {(teamTabTeamId || teamTabOwnerId || teamTabKpiType !== "individual") && (
+                  {(teamTabTeamId || teamTabOwnerIds.length > 0 || teamTabKpiType !== "individual") && (
                     <button
                       onClick={() => {
                         setTeamTabTeamId("");
-                        setTeamTabOwnerId("");
+                        setTeamTabOwnerIds([]);
                         setTeamTabKpiType("individual");
                       }}
                       className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -1688,15 +1786,16 @@ export default function DashboardPage() {
                 is clipped so a long card set never produces a horizontal
                 scrollbar; pr-1 keeps the vertical scrollbar off the cards. */}
             <div
-              className="grid gap-3 pt-3 overflow-y-auto overflow-x-hidden pr-1"
-              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", maxHeight: 420 }}
+              className="grid gap-4 pt-3 overflow-y-auto overflow-x-hidden pr-1"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", maxHeight: 480 }}
             >
               {kpisLoading
                 ? [1, 2, 3, 4].map(i => (
-                    <div key={i} className="bg-white border border-gray-200 rounded-xl px-4 py-3 animate-pulse">
+                    <div key={i} className="bg-white border border-gray-200 rounded-xl px-5 py-4 animate-pulse">
                       <div className="h-2 bg-gray-100 rounded w-3/4 mb-3" />
-                      <div className="h-4 bg-gray-100 rounded w-1/2 mb-2" />
-                      <div className="h-1.5 bg-gray-100 rounded w-full" />
+                      <div className="h-5 bg-gray-100 rounded w-1/2 mb-3" />
+                      <div className="h-2 bg-gray-100 rounded w-full mb-2" />
+                      <div className="h-2 bg-gray-100 rounded w-full" />
                     </div>
                   ))
                 : (

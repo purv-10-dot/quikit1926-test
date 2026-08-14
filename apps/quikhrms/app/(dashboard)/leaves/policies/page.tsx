@@ -7,6 +7,7 @@ import { LeaveRulesWizard, type LeaveTypeRules } from "../_components/leave-rule
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
 import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { useToast } from "@/components/hrms/toast";
@@ -228,31 +229,21 @@ export default function LeavePoliciesPage() {
     <div className="space-y-4">
       {/* Subtle HR-themed page background (scoped to this page only). */}
       <PageBackground src="/images/pre-onboarding-bg.png" />
-      <div className="surface-card p-1 inline-flex items-center gap-1 flex-wrap">
-        {showTypes && <TabButton active={tab === "types"} onClick={() => setTab("types")} icon={<Tag size={14} />} label="Leave Types" />}
-        {showGroups && <TabButton active={tab === "groups"} onClick={() => setTab("groups")} icon={<Layers size={14} />} label="Leave Groups" />}
-        {showMembers && <TabButton active={tab === "members"} onClick={() => setTab("members")} icon={<Users size={14} />} label="Employees In Leave Group" />}
-        {showDashboard && <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<LayoutDashboard size={14} />} label="Leave Dashboard" />}
-      </div>
+      <TabSwitcher
+        value={tab}
+        onChange={(v) => setTab(v as "types" | "groups" | "members" | "dashboard")}
+        tabs={[
+          ...(showTypes ? [{ value: "types" as const, label: "Leave Types", icon: <Tag size={14} /> }] : []),
+          ...(showGroups ? [{ value: "groups" as const, label: "Leave Groups", icon: <Layers size={14} /> }] : []),
+          ...(showMembers ? [{ value: "members" as const, label: "Employees In Leave Group", icon: <Users size={14} /> }] : []),
+          ...(showDashboard ? [{ value: "dashboard" as const, label: "Leave Dashboard", icon: <LayoutDashboard size={14} /> }] : []),
+        ]}
+      />
       {tab === "types" && showTypes && <LeaveTypesTab />}
       {tab === "groups" && showGroups && <LeaveGroupsTab />}
       {tab === "members" && showMembers && <EmployeesInGroupTab />}
       {tab === "dashboard" && showDashboard && <LeaveDashboardTab />}
     </div>
-  );
-}
-
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition",
-        active ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-[#166534] hover:bg-gray-50",
-      )}
-    >
-      {icon} {label}
-    </button>
   );
 }
 
@@ -699,6 +690,9 @@ function GroupDetail({ group, tab, setTab, onAssign }: {
   onAssign: () => void;
 }) {
   const api = useApiClient();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { confirm } = useDialog();
   // The list endpoint returns assignment rows without hydrated employees, so
   // fetch the group's own detail (which hydrates employee + department) for the
   // members table. Falls back to the list row while it loads.
@@ -710,6 +704,32 @@ function GroupDetail({ group, tab, setTab, onAssign }: {
 
   const empAssignments = g.assignments.filter((a) => a.assigneeType === "Employee");
   const empCount = empAssignments.length;
+
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const removeMut = useMutation({
+    mutationFn: (assignmentId: string) =>
+      api.delete(`/api/v1/hrms/leaves/groups/${group.id}/assignments?assignmentId=${assignmentId}`),
+    onSuccess: () => {
+      // Both the "Assign Employees" modal and this table read the group via
+      // different query keys — invalidate all of them so neither goes stale.
+      qc.invalidateQueries({ queryKey: ["leave-group-detail", group.id] });
+      qc.invalidateQueries({ queryKey: ["leave-group", group.id] });
+      qc.invalidateQueries({ queryKey: ["leave-groups"] });
+      toast.success("Removed from group");
+    },
+    onError: (e: unknown) => toast.error("Couldn't remove", e instanceof Error ? e.message : undefined),
+  });
+
+  const handleRemove = async (assignmentId: string, name: string) => {
+    setOpenMenuFor(null);
+    const ok = await confirm({
+      title: "Remove from group?",
+      description: `${name} will lose this group's leave rules and quotas. This cannot be undone.`,
+      variant: "danger",
+      confirmLabel: "Remove",
+    });
+    if (ok) removeMut.mutate(assignmentId);
+  };
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -789,8 +809,28 @@ function GroupDetail({ group, tab, setTab, onAssign }: {
                           </td>
                           <td className="px-4 py-2.5 text-gray-600">{e?.jobTitle || "—"}</td>
                           <td className="px-4 py-2.5 text-gray-600">{e?.department?.name || "—"}</td>
-                          <td className="px-4 py-2.5 text-right">
-                            <button className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><MoreVertical size={15} /></button>
+                          <td className="px-4 py-2.5 text-right relative">
+                            <button
+                              type="button"
+                              onClick={() => setOpenMenuFor(openMenuFor === a.id ? null : a.id)}
+                              className="p-1.5 rounded hover:bg-gray-100 text-gray-400"
+                            >
+                              <MoreVertical size={15} />
+                            </button>
+                            {openMenuFor === a.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setOpenMenuFor(null)} />
+                                <div className="absolute right-4 top-9 z-50 w-44 bg-white rounded-lg shadow-lg border border-gray-200 p-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemove(a.id, e ? `${e.firstName} ${e.lastName}` : "This employee")}
+                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12.5px] font-medium text-red-600 hover:bg-red-50 text-left"
+                                  >
+                                    <X size={13} /> Remove from group
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </td>
                         </tr>
                       );
@@ -991,10 +1031,14 @@ function LeaveGroupEditor({ group, onClose }: { group: LeaveGroup | null; onClos
                       <div className="text-xs font-semibold text-gray-900 truncate">{t.name}</div>
                       <div className="text-[10px] text-gray-500">
                         {t.code} · {(() => {
+                          // Group-driven only: show the group's own quota. If it
+                          // hasn't been configured (⚙) yet, show "Set quota" — do
+                          // NOT fall back to the base leave-type's days, since the
+                          // balance ignores the base once the type is in a group.
                           const r = item?.rules as { isUnlimited?: boolean; maxBalance?: number } | undefined;
                           if (r?.isUnlimited) return "Unlimited";
                           if (r && typeof r.maxBalance === "number") return `${r.maxBalance} days/yr`;
-                          return `${t.maxBalance} days/yr`;
+                          return "Set quota ⚙";
                         })()}
                       </div>
                     </div>
@@ -1121,6 +1165,9 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
       api.delete(`/api/v1/hrms/leaves/groups/${group.id}/assignments?assignmentId=${assignmentId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leave-group", group.id] });
+      // The "Employees in this group" table (behind this modal) reads a
+      // separate query key — invalidate it too so it doesn't go stale.
+      qc.invalidateQueries({ queryKey: ["leave-group-detail", group.id] });
       qc.invalidateQueries({ queryKey: ["leave-groups"] });
       toast.success("Removed");
     },

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 
+
 /**
  * GET /api/apps/switcher
  *
@@ -72,6 +73,7 @@ export async function GET() {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikcrmexpress: process.env.QUIKCRMEXPRESS_URL,
     quikasset: process.env.QUIKASSET_URL,
   };
   const isDev = process.env.NODE_ENV !== "production";
@@ -85,6 +87,7 @@ export async function GET() {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
+    quikcrmexpress: "http://localhost:3017",
     quikasset: "http://localhost:3012",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {

@@ -79,6 +79,7 @@ export interface ChannelLastMessage {
 export interface ChannelListItem {
   channelId: string;
   name: string | null;
+  description: string | null;
   avatarUrl: string | null;
   type: ChannelType;
   visibility: ChannelVisibility;
@@ -155,6 +156,17 @@ export interface CreateChannelInput {
 }
 
 /**
+ * Group-details patch (QC_008). Every field optional — only provided keys are
+ * changed. `avatarUrl` carries the uploaded object's storage path (objectPath);
+ * the server resolves it to a signed URL on read (mirrors message media).
+ */
+export interface UpdateChannelInput {
+  name?: string;
+  description?: string;
+  avatarUrl?: string;
+}
+
+/**
  * Knowledge-base document visibility (Stage 3 ingest). `APP` is reserved for
  * Stage 4 (filing into a target app) — the relay's accepted enum permits it to
  * match the runtime, but Stage 3 never sends it (the UI offers only PRIVATE/ORG).
@@ -226,18 +238,25 @@ export interface NotificationDto {
 }
 
 /**
- * The realtime `notification` event payload: a serialized row plus a transient
- * `desktop` flag telling the client whether to ALSO fire an OS-level popup
- * (the row itself always updates the in-app bell/badge regardless).
+ * The realtime `notification` event payload: a serialized row plus transient
+ * `desktop` / `sound` flags telling the client whether to ALSO fire an OS-level
+ * popup and/or play a sound (the row itself always updates the in-app
+ * bell/badge regardless). Both are server-decided (mute / snooze / DND / the
+ * user's own toggles) and independent of each other. Neither belongs on the
+ * persisted row — strip them before storing the DTO.
  */
 export interface NotificationRealtimePayload extends NotificationDto {
   desktop: boolean;
+  sound: boolean;
 }
 
 export interface NotificationSettingsDto {
   defaultChannelLevel: NotificationLevel;
   dmsLevel: NotificationLevel;
+  /** Message-notification chime. */
   soundEnabled: boolean;
+  /** Ringtone / ringback / call tones — independent of `soundEnabled`. */
+  callSoundsEnabled: boolean;
   desktopEnabled: boolean;
   emailEnabled: boolean;
   dndEnabled: boolean;
@@ -306,6 +325,8 @@ export interface MeetingAttendeeDto {
   user: PublicUser;
   email: string;
   rsvp: AttendeeRsvp;
+  /** Optional attendees are invited but not required (Graph `type: "optional"`). */
+  optional: boolean;
 }
 
 /**
@@ -319,7 +340,21 @@ export interface MeetingDto {
   organizerId: string;
   title: string;
   description: string | null;
+  location: string | null;
+  /** Calendar-date event: `start`/`end` denote whole days, not instants. */
+  allDay: boolean;
   start: string;
+  /**
+   * ⚠️ INCLUSIVE — the last moment (timed) or last DAY (all-day) the meeting
+   * covers. This DIVERGES from storage and from both calendar providers, which
+   * use an EXCLUSIVE all-day end: a one-day event on the 14th is stored and
+   * sent as 14th 00:00Z → 15th 00:00Z, but arrives here as 14th → 14th.
+   *
+   * Deliberate. The DTO is our contract, not Graph's, and the alternative makes
+   * every renderer responsible for knowing the convention — with a silent
+   * failure mode (a one-day event drawn across two days). The single conversion
+   * lives in `lib/all-day.ts`; never apply the ±1 day by hand.
+   */
   end: string;
   joinUrl: string | null;
   status: MeetingStatus;
@@ -330,9 +365,19 @@ export interface MeetingDto {
 export interface CreateMeetingInput {
   title: string;
   description?: string;
+  /** Free text — a room, an address, anything. Graph: `location.displayName`. */
+  location?: string;
+  /**
+   * When true, `start`/`end` are CALENDAR DATES (`YYYY-MM-DD`), not instants,
+   * and `end` is INCLUSIVE — the last day covered. The server converts to the
+   * stored/provider form via `lib/all-day.ts`.
+   */
+  allDay?: boolean;
   start: string;
   end: string;
   attendeeUserIds: string[];
+  /** Subset of `attendeeUserIds` invited as optional rather than required. */
+  optionalAttendeeUserIds?: string[];
   conferencing: boolean;
   /** Idempotent send id for the announcing Meeting message. */
   clientMessageId?: string;
@@ -400,4 +445,56 @@ export interface UpdateCalendarInput {
   name?: string;
   color?: string;
   sortOrder?: number;
+}
+
+// ============================================================================
+// Call history
+// ============================================================================
+
+/**
+ * Direction as the VIEWER experienced the call. Note there is no voicemail
+ * feature — these three are the whole vocabulary.
+ *   - "missed"   — an unanswered call TO the viewer (missed / timed_out).
+ *   - "outgoing" — the viewer initiated it, whatever the outcome (a call of
+ *                  mine that nobody picked up is still outgoing, not missed).
+ *   - "incoming" — someone called the viewer and the viewer handled it,
+ *                  including declining it.
+ */
+export type CallDirection = "incoming" | "outgoing" | "missed";
+
+/**
+ * One terminal call in the viewer's history (GET /api/calls/history).
+ * Timestamps are ISO and durations are raw seconds — all presentation
+ * (day/time/date labels, "m:ss") happens client-side via lib/format.ts, as
+ * everywhere else in the app.
+ */
+export interface CallHistoryItem {
+  id: string;
+  /** Other participant's display name (1:1) or the channel name (group). */
+  name: string;
+  /** Other participant's avatar; always null for group calls. */
+  avatarUrl: string | null;
+  direction: CallDirection;
+  type: "audio" | "video";
+  /** True when the call had more than two participants. */
+  isGroup: boolean;
+  /** ISO instant the call started (ring start, not answer). */
+  startedAt: string;
+  /** Talk time in seconds; null when the call was never answered. */
+  durationSeconds: number | null;
+  /** Terminal status, so the UI can distinguish declined from ended. */
+  status: "ended" | "missed" | "rejected" | "timed_out";
+  /**
+   * Channel the call belonged to, when it had one. Null for a direct call placed
+   * outside a channel (QcCall.channelId is nullable), so presence must not be
+   * assumed. A send target for the history pane's quick-reply.
+   */
+  channelId?: string | null;
+  /**
+   * The other participant's user id on a 1:1 call; null for a group call. Lets a
+   * quick reply find-or-create the DM even when the call carried no channel.
+   * Named to match `otherUserId` in calling.service.ts, which is where the value
+   * is resolved — one term for the concept, not two.
+   */
+  otherUserId?: string | null;
 }

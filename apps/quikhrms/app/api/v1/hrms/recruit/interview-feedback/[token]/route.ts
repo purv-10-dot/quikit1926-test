@@ -7,6 +7,7 @@ import { stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
 import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
+import { feedbackNotYetOpen, feedbackNotOpenMessage } from "@/lib/recruit/feedback-window";
 
 const ok = <T>(data: T, status = 200) => NextResponse.json({ success: true, data }, { status });
 const err = (code: string, message: string, status: number) =>
@@ -40,6 +41,7 @@ async function loadInterviewByToken(token: string) {
   return { interview };
 }
 
+
 /**
  * GET /api/v1/hrms/recruit/interview-feedback/[token]
  * Public — validates token and returns interview + candidate detail for the feedback form.
@@ -63,6 +65,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
   return ok({
     alreadySubmitted: iv.overallRating != null,
+    // The form stays locked until the interview's start time (the page renders
+    // a "opens at …" notice instead of the scorecard).
+    notYetOpen: feedbackNotYetOpen(iv.scheduledAt),
     companyName: company?.companyName ?? "Our Company",
     interview: {
       id: iv.id,
@@ -110,6 +115,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if ("error" in r) return err("INVALID_TOKEN", r.error ?? "Invalid link", 400);
   const iv = r.interview;
   if (iv.overallRating != null) return err("ALREADY_SUBMITTED", "Feedback already submitted for this interview", 409);
+  if (feedbackNotYetOpen(iv.scheduledAt)) {
+    return err("INTERVIEW_NOT_STARTED", feedbackNotOpenMessage(iv.scheduledAt), 409);
+  }
 
   const body = await req.json().catch(() => ({}));
   const parsed = submitSchema.safeParse(body);

@@ -275,15 +275,6 @@ export const BENEFIT_PRESETS = [
   { key: "OtherBenefit", label: "Other Benefit", category: "OtherBenefit" },
 ];
 
-export const REIMBURSEMENT_PRESETS = [
-  { key: "FuelReimbursement", label: "Fuel Reimbursement", category: "FuelReimbursement" },
-  { key: "DriverReimbursement", label: "Driver Reimbursement", category: "DriverReimbursement" },
-  { key: "VehicleMaintenanceReimbursement", label: "Vehicle Maintenance Reimbursement", category: "VehicleMaintenanceReimbursement" },
-  { key: "TelephoneReimbursement", label: "Telephone Reimbursement", category: "TelephoneReimbursement" },
-  { key: "LeaveTravelAllowance", label: "Leave Travel Allowance", category: "LeaveTravelAllowance" },
-  { key: "OtherReimbursement", label: "Other Reimbursement", category: "OtherReimbursement" },
-];
-
 // Income Tax Act investment sections (for Benefits association)
 export interface InvestmentOption {
   section: string;

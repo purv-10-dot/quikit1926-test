@@ -1,0 +1,392 @@
+Automation1:-
+
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is 1. Not using Tally/ Busy or 2. Invalid client details ( number/email) or 3. other ( self notes) or 
+4. Student Lead or 5. Language Barrier or 6. Looking to buy Tally/ Busy or 7.Unable to sync 
+(Oracle user) or Unable to sync (Oracle user)
+
+and
+
+Contact Stage is New Lead or Not Connected or Interested -Follow Up or Demo Scheduled or 
+Demo Completed-demo data or Demo Completed-demo Syncing or Payment Done or Customer or 
+Discussion Pending or Negotiation or Not Connected (New Lead) or Not Connected (Discussion pending) or 
+Not Connected (Demo Scheduled) or Interested Followup Counselling or Future Lead
+
+
+Then 
+
+Lead Stage   is  Disqualified
+
+--------------------------------------------------------------------------------------------------------------------
+
+Automation2:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+
+Lead Stage is New Lead or Interested -Follow Up or Payment Done or Negotiation or Not Connected (New Lead) 
+or Interested Followup Counselling or Future Lead
+
+and 
+
+Sub Stage is 1. No. Busy or 2. Not reachable or 3. Invalid No. or 4. Switch off
+
+
+Then
+
+Lead Stage is Not Connected (New Lead)
+
+
+
+--------------------------------------------------------------------------------------------------------------------
+
+Automation3:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+
+Sub Stage is 1. Can't talk right now or 2. Internet Issue or 3. Other ( self notes) or 
+Qualified with Tally or Qualified with Busy
+
+and 
+
+Lead Stage is New Lead or Not Connected or Interested -Follow Up or Payment Done or Discussion Pending 
+or Negotiation or Not Connected (New Lead) or Interested Followup Counselling or Disqualified or Not Interested 
+or Future Lead
+
+
+Lead Stage is Discussion Pending
+
+-------------------------------------------------------------------------------------------------------------------
+
+Automation3:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is For Scheduling Demo or Demo Now
+
+and 
+
+Lead Stage is Interested -Follow Up or Payment Done or
+Discussion Pending or Negotiation or Not Connected (New Lead) or Not Connected (Discussion pending) 
+or Not Connected (Demo Scheduled) or Interested Followup Counselling or Disqualified or Not Interested or 
+Future Lead or New Lead or Not Connected
+
+Lead Stage is Discussion Pending
+
+--------------------------------------------------------------------------------------------------------------
+Automation 4:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is For Scheduling Demo or Demo Now
+
+and 
+
+Lead Stage is Interested -Follow Up or Payment Done or 
+Discussion Pending or Negotiation or Not Connected (New Lead) or 
+Not Connected (Discussion pending) or Not Connected (Demo Scheduled) or 
+Interested Followup Counselling or Disqualified or Not Interested or 
+Future Lead or New Lead or Not Connected
+
+Lead Stage is Demo Scheduled
+
+--------------------------------------------------------------------------------------------
+
+Automation 5:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is In Scheduling Demo
+
+and 
+
+Lead Stage is New Lead or Not Connected or Interested -Follow Up or 
+Payment Done or Discussion Pending or Negotiation or Not Connected (New Lead) or 
+Not Connected (Discussion pending) or Interested Followup Counselling or Disqualified or Not Interested or Future Lead
+
+Lead Stage is Not Interested
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 6:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+
+Sub Stage is 1. No. Busy or 2. Not reachable or 3. Invalid No. or 4. Switch off
+
+and 
+
+Lead Stage is Interested -Follow Up or Payment Done or Discussion Pending or Negotiation or Not Connected (Discussion pending) 
+or Interested Followup Counselling or Future Lead
+
+Lead Stage is Demo Completed-demo Syncing
+
+
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Automation 7:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is Demo Completed with Demo Data
+
+and 
+
+Lead Stage is Interested -Follow Up or Demo Scheduled or Payment Done or Negotiation or Not Connected (Demo Scheduled)
+or Interested Followup Counselling or Future Lead
+
+Lead Stage is Demo Completed-demo data
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Automation 8:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is Demo Completed with Synced Data
+
+and 
+
+Lead Stage is Interested -Follow Up or Demo Scheduled or Payment Done or 
+Negotiation or Not Connected (Demo Scheduled) or Interested Followup Counselling or Future Lead
+
+Lead Stage is Demo Completed-demo Syncing
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 8:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is For Demo Done
+
+and 
+
+Lead Stage is Interested -Follow Up or Demo Scheduled or Payment Done or Negotiation or Not Connected (Demo Scheduled) 
+or Interested Followup Counselling or Future Lead
+
+Lead Stage is Not Interested
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 9:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is 1. No. Busy or 2. Not reachable or 3. Invalid No. or 4. Switch off
+
+and 
+
+Lead Stage is Demo Scheduled or Payment Done or Negotiation or Not Connected (Demo Scheduled) or Future Lead
+
+
+Lead Stage is Not Connected (Demo Scheduled)
+
+------------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 10:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Lead Stage is Demo Completed-demo Syncing or Payment Done or Negotiation or Interested Followup Counselling or Future Lead or Interested -Follow Up or 
+Demo Completed-demo data
+
+and 
+
+Sub Stage is 1. TL to revert or 2. Wait for the Confirmation
+
+Lead Stage is Payment link sent
+
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 11:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Lead Stage is Demo Completed-demo data or Demo Completed-demo Syncing or Payment Done or Negotiation or Interested Followup Counselling or 
+Payment link sent or Future Lead or Interested -Follow Up
+
+and 
+
+Sub Stage is For Making Payment
+
+Lead Stage is Not Interested
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 12:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is 1. No. Busy or 2. Not reachable or 3. Invalid No. or 4. Switch off
+
+and 
+
+Lead Stage is Interested -Follow Up or Payment Done or Negotiation or Not Connected (Interested FollowUp) or 
+Interested Followup Counselling or Future Lead
+
+Lead Stage is Not Connected (Interested FollowUp
+
+-------------------------------------------------------------------------------------------------------
+
+
+Automation 13:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is 1. No. Busy or 2. Not reachable or 3. Invalid No. or 4. Switch off
+
+and 
+
+Lead Stage is Negotiation or Future Lead or Interested -Follow Up or Not Connected (Payment Link sent) or Payment Done
+
+Lead Stage is Not Connected (Payment Link sent)
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+Automation 14:-
+
+ELSE IF
+Status is Future Lead or Payment Done or Rechurned Disqualified
+
+MultiIfElse37 -         Details
+Evaluate on	:	Trigger data
+
+Condition is if 
+
+Status is Rechurned Disqualified
+
+Lead Stage is Disqualified
+
+Status is Payment Done
+
+Lead StagePayment Done
+
+ELSE Update
+
+Lead StageFuture Lead
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Automation 14:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+
+Status is Interested Followup Counselling
+
+Lead Stage is Interested Followup Counselling
+
+-----------------------------------------------------------
+Automation 15:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is Razorpay or Cheque or Bank Transfer (NEFT/IMPS) or Cash Deposit or UPI
+
+Lead StagePayment Done
+
+--------------------------------------------------------------------------------------------------
+
+Automation 16:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is Negotiation
+
+Update
+
+Lead Stage is Negotiation
+
+---------------------------------------------------------------------------------------------------------------
+Automation 17:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is Interested Followup
+
+Update
+
+Lead Stage is Interested -Follow Up
+
+--------------------------------------------------------------------------------------------------------------------
+
+Automation 18:-
+
+Trigerr is activity on the lead
+
+condition is if
+
+Sub Stage is Not required now
+
+update 
+
+Lead StageFuture Lead
+
+-----------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

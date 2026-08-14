@@ -10,7 +10,10 @@ import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invit
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
 import { notifyInterviewScheduled } from "@/lib/services/interview-notifications";
 import { generateMeetingLink } from "@/lib/meetings";
+import { appBaseUrl } from "@/lib/utils/app-url";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
+import { generateTakeHomeToken } from "@/lib/services/take-home-token";
+import { buildTakeHomeTaskEmail } from "@/lib/email-templates/take-home-task";
 import type { Prisma } from "@quikit/database";
 
 // Interview types that warrant an auto-generated video meeting link.
@@ -216,6 +219,26 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       data: { deletedAt: new Date(), updatedBy: userId },
     }).catch(() => null);
 
+    // Take-Home Task: persist the brief + a fresh tokenised submission link via
+    // RAW SQL. The take-home columns exist in the DB but the generated Prisma
+    // client isn't regenerated, so they must never be touched through the typed
+    // client. Strictly guarded behind type === "TakeHome" — every other type is
+    // untouched. The token drives the candidate's public submission page.
+    let takeHomeToken: string | null = null;
+    if (data.type === "TakeHome") {
+      const { token, expiresAt } = generateTakeHomeToken(interview.id, orgId);
+      takeHomeToken = token;
+      await prisma.$executeRaw`
+        UPDATE "app_quikhrms"."Interview"
+        SET "takeHomeInstructions" = ${data.takeHomeInstructions ?? null},
+            "takeHomeAttachmentUrl" = ${data.takeHomeAttachmentUrl ?? null},
+            "takeHomeAttachmentLink" = ${data.takeHomeAttachmentLink ?? null},
+            "takeHomeDueDate" = ${data.takeHomeDueDate ?? null}::date,
+            "submissionToken" = ${token},
+            "submissionTokenExpiresAt" = ${expiresAt}
+        WHERE id = ${interview.id} AND "orgId" = ${orgId}`;
+    }
+
     // Resolve this round's pipeline stage once — reused for the "technical round"
     // JD decision below and the currentStage auto-advance further down.
     const pipeline = interview.application?.requisition?.pipelineId
@@ -232,12 +255,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         : isTechnicalRound
           ? (interview.application?.requisition?.jobDescription ?? null)
           : null;
+    // Phone Screen is an informal qualifying call the recruiter makes directly —
+    // no candidate/interviewer email should fire for it (unlike every other round).
+    const isPhoneScreenRound = roundStage.toLowerCase() === "phonescreen";
+    // HR round is internal-only — the candidate is never emailed for it, only
+    // the HR interviewer (who still gets their normal notify + feedback link).
+    const isHRRound = roundStage.toLowerCase() === "hrinterview";
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {
       candidate: { sent: false, to: null }, interviewer: { sent: false, to: null },
     };
     try {
+      if (isPhoneScreenRound) {
+        // Skip every email below — see isPhoneScreenRound comment above.
+      } else {
       const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
       const companyName = company?.companyName ?? "Our Company";
       const dt = new Date(interview.scheduledAt);
@@ -250,7 +282,33 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "Candidate";
       const jobTitle = interview.application?.requisition?.title ?? "the role";
 
-      if (candidate?.email) {
+      if (isHRRound) {
+        mailStatus.candidate = { sent: false, to: null, error: "Skipped — HR round is interviewer-only" };
+      } else if (candidate?.email && interview.type === "TakeHome") {
+        // Take-Home: send the task brief + tokenised submit link INSTEAD of the
+        // standard interview invite. No meeting link is generated for this type.
+        const base = appBaseUrl();
+        const submitUrl = base && takeHomeToken ? `${base}/take-home/${takeHomeToken}` : "";
+        const dueStr = data.takeHomeDueDate
+          ? new Date(`${data.takeHomeDueDate}T00:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })
+          : "";
+        const thData = {
+          candidateName, jobTitle, companyName,
+          roundName: roundStage || `Round ${interview.round}`,
+          instructions: data.takeHomeInstructions ?? "",
+          dueDate: dueStr,
+          submitUrl,
+          hasAttachment: !!data.takeHomeAttachmentUrl,
+          attachmentLink: data.takeHomeAttachmentLink ?? null,
+        };
+        void resolveAndSend(orgId, {
+          key: "recruit.take-home-task",
+          to: candidate.email,
+          vars: { ...thData, roundName: thData.roundName ?? "", dueDate: thData.dueDate ?? "", hasAttachment: thData.hasAttachment, attachmentLink: thData.attachmentLink ?? "" },
+          fallback: () => buildTakeHomeTaskEmail(thData),
+        }).catch((e) => console.error("[interview] take-home mail failed:", e));
+        mailStatus.candidate = { sent: true, to: candidate.email };
+      } else if (candidate?.email) {
         const inviteData = {
           candidateName, jobTitle,
           interviewDate: dateStr, interviewTime: timeStr,
@@ -277,7 +335,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       if (interview.interviewer.workEmail && candidate) {
         // Tokenised, no-login feedback link. Persisted on the interview so the
         // post-interview reminder/cron reuse the same token (see send-feedback-reminder).
-        const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+        const base = appBaseUrl();
         const { token: fbToken, expiresAt: fbExpiresAt } = generateFeedbackToken(interview.id, orgId);
         const notifyData = {
           interviewerName,
@@ -371,6 +429,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           });
         }
       }
+      } // end !isPhoneScreenRound
     } catch (e) {
       console.error("Interview auto-mail failed:", e);
     }

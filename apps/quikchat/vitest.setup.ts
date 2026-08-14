@@ -1,6 +1,12 @@
-// Load .env so integration tests (Prisma against local Postgres) and the auth
-// harness see DATABASE_URL / NEXTAUTH_SECRET, mirroring how the app boots.
-import "dotenv/config";
+// Load .env.local so integration tests (Prisma against local Postgres) and the
+// auth harness see DATABASE_URL / NEXTAUTH_SECRET, mirroring how the app boots.
+// This app only ever has `.env.local` (dev secrets, gitignored) — plain
+// `dotenv/config` only reads `.env`, which doesn't exist here, so it silently
+// loaded nothing. List `.env.local` first so it wins; `.env` stays as a
+// fallback for anyone who does have one (dotenv doesn't overwrite keys already
+// set by an earlier file in the list).
+import { config } from "dotenv";
+config({ path: [".env.local", ".env"] });
 // Runtime registration of the jest-dom matchers. jest-dom is hoisted to the repo
 // root, so `@testing-library/jest-dom/vitest`'s self-extend binds root vitest 4.x's
 // `expect` — a different instance than quikchat's nested vitest 3.2.4 that the tests
@@ -39,17 +45,12 @@ delete process.env.MICROSOFT_CLIENT_ID;
 delete process.env.MICROSOFT_CLIENT_SECRET;
 delete process.env.MICROSOFT_REDIRECT_URI;
 delete process.env.MICROSOFT_CALENDAR_REDIRECT_URL;
-// Keep calling hermetic too (CALL-1): a developer's real ICE_MODE/SFU_MODE/TURN_*
-// creds in .env must never route to a live LiveKit/coturn during tests.
-delete process.env.ICE_MODE;
+// Keep calling hermetic too (CALL-1): a developer's real SFU_MODE/LIVEKIT_*
+// creds in .env must never route to a live LiveKit during tests.
 delete process.env.SFU_MODE;
-delete process.env.TURN_URLS;
-delete process.env.TURN_USERNAME;
-delete process.env.TURN_CREDENTIAL;
 delete process.env.LIVEKIT_URL;
 delete process.env.LIVEKIT_API_KEY;
 delete process.env.LIVEKIT_API_SECRET;
-delete process.env.STUN_URLS;
 // Deterministic secrets for handshake-token + agent-JWT tests.
 process.env.REALTIME_TOKEN_SECRET ??= "test-realtime-secret";
 process.env.AGENT_JWT_SECRET ??= "test-agent-secret";
@@ -60,42 +61,16 @@ if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
-// WebRTC globals for jsdom (CALL-2). jsdom has no WebRTC support; install
-// minimal stubs so component tests don't crash on RTCPeerConnection usage.
-if (typeof globalThis.RTCPeerConnection === "undefined") {
+// jsdom has no getUserMedia/getDisplayMedia; add mediaDevices to the existing
+// navigator without replacing it. Used by voice recorder, screen share, and
+// device-settings tests (LiveKit calling goes through the mocked
+// "livekit-client" module below, not raw getUserMedia).
+if (typeof globalThis.navigator !== "undefined" && !globalThis.navigator.mediaDevices) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).RTCPeerConnection = class MockRTCPeerConnection {
-    localDescription: RTCSessionDescription | null = null;
-    remoteDescription: RTCSessionDescription | null = null;
-    async createOffer() {
-      return { type: "offer" as RTCSdpType, sdp: "" };
-    }
-    async createAnswer() {
-      return { type: "answer" as RTCSdpType, sdp: "" };
-    }
-    async setLocalDescription(desc: RTCSessionDescriptionInit) {
-      this.localDescription = desc as RTCSessionDescription;
-    }
-    async setRemoteDescription(desc: RTCSessionDescriptionInit) {
-      this.remoteDescription = desc as RTCSessionDescription;
-    }
-    async addIceCandidate(_candidate: RTCIceCandidateInit) {}
-    addEventListener() {}
-    removeEventListener() {}
-    close() {}
+  (globalThis.navigator as any).mediaDevices = {
+    getUserMedia: async () => new MediaStream(),
+    getDisplayMedia: async () => new MediaStream(),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).RTCSessionDescription = class {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).RTCIceCandidate = class {};
-  // Add mediaDevices to existing navigator without replacing it
-  if (typeof globalThis.navigator !== "undefined" && !globalThis.navigator.mediaDevices) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis.navigator as any).mediaDevices = {
-      getUserMedia: async () => new MediaStream(),
-      getDisplayMedia: async () => new MediaStream(),
-    };
-  }
 }
 
 // MediaStream is not available in jsdom; provide a minimal mock for tests.
@@ -149,6 +124,7 @@ vi.mock("livekit-client", () => ({
     LocalTrackUnpublished: "localTrackUnpublished",
     ActiveSpeakersChanged: "activeSpeakersChanged",
     Disconnected: "disconnected",
+    Reconnecting: "reconnecting",
     Reconnected: "reconnected",
   },
   Track: {

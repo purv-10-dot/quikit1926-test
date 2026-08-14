@@ -9,7 +9,8 @@ import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount, useQtdReferenceWeek } from "@/lib/hooks/useCurrentWeek";
+import { kpiQtrPercent } from "../components/kpiStats";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
@@ -28,6 +29,8 @@ import { runExport } from "@/lib/export/xlsx";
 import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { getKPIs } from "@/lib/services/kpiService";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -176,6 +179,9 @@ export default function TeamsKPIPage() {
   }, [kpis, teams]);
 
   const selectedFilterTeams = teams.filter(t => filterTeamIds.includes(t.id));
+  const activeFilterLabel = useMemo(() => buildFilterSummaryLabel([
+    { label: "Team", values: selectedFilterTeams.map(t => t.name) },
+  ]), [selectedFilterTeams]);
 
   // "You are here" pill — reflects TODAY's real fiscal position (the quarter
   // that actually contains today within the selected year), not the selected
@@ -264,30 +270,13 @@ export default function TeamsKPIPage() {
 
           {/* Team filter — compact button + searchable multi-select dropdown. Matches the year picker style. */}
           <div className="relative" ref={teamRef}>
-            <button
+            <FilterSummaryButton
+              label={activeFilterLabel}
+              active={filterTeamIds.length > 0}
+              open={showTeamPicker}
               onClick={() => { setShowTeamPicker(o => !o); setTeamSearch(""); }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${
-                showTeamPicker || filterTeamIds.length > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"
-              }`}
-            >
-              {/* Users/team icon */}
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              {selectedFilterTeams.length === 1 && (
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selectedFilterTeams[0].color || "#0066cc" }} />
-              )}
-              <span className="max-w-[180px] truncate">
-                {selectedFilterTeams.length === 0
-                  ? "All teams"
-                  : selectedFilterTeams.length === 1
-                    ? selectedFilterTeams[0].name
-                    : `${selectedFilterTeams.length} teams selected`}
-              </span>
-              <svg className="h-3 w-3 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+              maxWidthClass="max-w-[180px]"
+            />
 
             {showTeamPicker && (
               <div className="absolute top-full right-0 mt-1.5 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
@@ -504,6 +493,9 @@ function TeamKPIMoreActions({
 }) {
   const tablePrefs = useTablePrefs("kpi");
   const weekCount = useQuarterWeekCount(year, quarter);
+  // QTD reference week for the export's Progress column — same input KPITable
+  // feeds `resolvePace`, so the sheet matches the on-screen column.
+  const qtdWeek = useQtdReferenceWeek(year, quarter);
   const { years: fyYears } = useFiscalYears();
   const availableExportYears = fyYears.length ? fyYears : [year];
   // Includes the quarter's week columns so "Hide all" actually hides every data
@@ -537,7 +529,10 @@ function TeamKPIMoreActions({
             case "quarterlyGoal": return k.quarterlyGoal ?? "";
             case "qtdGoal": return k.qtdGoal ?? "";
             case "qtdAchieved": return k.qtdAchieved ?? 0;
-            case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
+            // Overall Quarter Progress (Achieved ÷ Quarterly Goal) — recomputed
+            // rather than read off the stale server `progressPercent` column so
+            // the export matches the table + Dashboard card. See kpiStats.ts.
+            case "progress": return `${kpiQtrPercent(k, qtdWeek, weekCount).toFixed(1)}%`;
             case "description": return k.description ?? "";
             default: return "";
           }

@@ -3,6 +3,7 @@ import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { Topbar } from "@/components/layout/Topbar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { AiDock } from "@/components/layout/AiDock";
+import { SupportLauncher } from "@quikit/ui/support";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
       <CommandPalette />
       <AiDock />
+      {/* Floating support launcher. Lifted 64px so it stacks ABOVE the AiDock
+          FAB (fixed bottom-5 right-5) instead of covering it. */}
+      <SupportLauncher appSlug="quikfinance" bottomOffset={64} />
     </SidebarProvider>
   );
 }

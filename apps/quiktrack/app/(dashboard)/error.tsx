@@ -8,6 +8,7 @@ import { ErrorFallback } from "@/components/error-fallback";
  * recoverable fallback. A throw in any dashboard page (spaces, timesheet,
  * reports, etc.) lands here instead of white-screening.
  */
+
 export default function DashboardError({
   error,
   reset,

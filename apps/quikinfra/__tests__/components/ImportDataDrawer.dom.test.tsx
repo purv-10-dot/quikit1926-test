@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ImportDataDrawer } from "@/components/ImportDataDrawer";
+import { clearToasts, subscribeToasts, type ToastRecord } from "@/lib/toast";
 
 // xlsx is dynamically imported inside parseFile(). Mock it so the parse
 // stage resolves to a deterministic 2-row sheet without touching a real
@@ -48,8 +49,30 @@ function setup(props: Partial<React.ComponentProps<typeof ImportDataDrawer>> = {
   return { onClose, onImport, onComplete, ...utils };
 }
 
+/** Snapshot of the live toast stack, updated on every emit. */
+function captureToasts(): { records: () => ToastRecord[]; stop: () => void } {
+  let latest: ToastRecord[] = [];
+  const stop = subscribeToasts((t) => {
+    latest = t;
+  });
+  return { records: () => latest, stop };
+}
+
+/** Upload → mapping → run the 2-row import, then settle. */
+async function runTwoRowImport() {
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [makeFile()] } });
+  fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /import 2 rows/i })).toBeInTheDocument(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /import 2 rows/i }));
+  await waitFor(() => expect(screen.getByText(/imported,/i)).toBeInTheDocument());
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  clearToasts();
 });
 
 describe("ImportDataDrawer", () => {
@@ -122,5 +145,64 @@ describe("ImportDataDrawer", () => {
     );
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument();
+  });
+
+  // Regression: every row drove the entity's create mutation, and the
+  // global MutationCache toasted on each one — a 40-row file buried the
+  // screen under 40 identical "Vendor created" notifications.
+  it("emits exactly one summary toast for the whole run, not one per row", async () => {
+    const { records, stop } = captureToasts();
+    // Stand in for a create mutation that toasts on success, the way the
+    // masters pages' handlers do via useCreateX().mutateAsync.
+    const onImport = vi.fn(async () => {
+      const { areToastsSuppressed, toast } = await import("@/lib/toast");
+      if (!areToastsSuppressed()) toast.success("Vendor created");
+      return { ok: true as const };
+    });
+    setup({ onImport });
+
+    await runTwoRowImport();
+
+    expect(onImport).toHaveBeenCalledTimes(2);
+    expect(records()).toHaveLength(1);
+    expect(records()[0]).toMatchObject({
+      variant: "success",
+      message: "2 Vendors imported",
+    });
+    stop();
+  });
+
+  it("summarises a partial run as a single warning toast", async () => {
+    const { records, stop } = captureToasts();
+    let call = 0;
+    const onImport = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? { ok: true as const }
+        : { ok: false as const, error: "Duplicate GSTIN" };
+    });
+    setup({ onImport });
+
+    await runTwoRowImport();
+
+    expect(records()).toHaveLength(1);
+    expect(records()[0]).toMatchObject({
+      variant: "warning",
+      message: "1 of 2 Vendors imported — 1 failed",
+    });
+    stop();
+  });
+
+  it("reports a run where every row failed as a single error toast", async () => {
+    const { records, stop } = captureToasts();
+    const onImport = vi.fn(async () => ({ ok: false as const, error: "Name is required" }));
+    const { onComplete } = setup({ onImport });
+
+    await runTwoRowImport();
+
+    expect(records()).toHaveLength(1);
+    expect(records()[0]!.variant).toBe("error");
+    expect(onComplete).not.toHaveBeenCalled();
+    stop();
   });
 });

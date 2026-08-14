@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight, Bot } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
-import { uploadProjectImage } from "@/lib/upload-image";
+import { RichTextView } from "@/components/rich-text-view";
+import { uploadProjectImage, uploadProjectFile } from "@/lib/upload-image";
 import { sanitizeRichText } from "@/lib/sanitize";
 import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
@@ -28,6 +29,7 @@ interface Comment {
   body: string;
   createdAt: string;
   editedAt: string | null;
+  actorType?: string;
   user: User | null;
 }
 
@@ -38,7 +40,21 @@ interface HistoryRow {
   oldValue: string | null;
   newValue: string | null;
   createdAt: string;
+  actorType?: string;
   user: User | null;
+}
+
+/** Small marker shown next to a human name when the change/comment came from
+ * an MCP-authenticated tool rather than someone at the keyboard. */
+function AutomatedBadge() {
+  return (
+    <span
+      title="Automated via MCP"
+      className="inline-flex items-center justify-center h-4 w-4 rounded bg-gray-100 text-gray-500 shrink-0"
+    >
+      <Bot className="h-3 w-3" />
+    </span>
+  );
 }
 
 interface WorkLogRow {
@@ -315,6 +331,7 @@ function CommentsView({
               placeholder="Add a comment..."
               mentions={mentions ?? []}
               uploadImage={(file) => uploadProjectImage(projectId, file)}
+              uploadFile={(file) => uploadProjectFile(projectId, file)}
             />
             <div className="flex items-center justify-end gap-2">
               <button
@@ -381,14 +398,19 @@ function CommentsView({
                 <span className="text-xs font-semibold text-gray-900">
                   {userName(c.user)}
                 </span>
+                {c.actorType === "agent" && <AutomatedBadge />}
                 <span className="text-[11px] text-gray-500">{relativeTime(c.createdAt)}</span>
                 {c.editedAt && (
                   <span className="text-[11px] text-gray-400">(edited)</span>
                 )}
               </div>
-              <div
+              {/* RichTextView (not dangerouslySetInnerHTML) so file
+                  attachments in a comment render as the same inline cards as
+                  the description — the read-only `.prose` chip styling would
+                  otherwise hide the attachment anchors entirely. */}
+              <RichTextView
+                html={sanitizeRichText(c.body)}
                 className="prose prose-sm max-w-none text-sm text-gray-800 mt-1"
-                dangerouslySetInnerHTML={{ __html: sanitizeRichText(c.body) }}
               />
             </div>
           </div>
@@ -429,9 +451,10 @@ function HistoryView({
               {userInitials(r.user)}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-xs text-gray-900">
+              <div className="text-xs text-gray-900 inline-flex items-center gap-1.5">
                 <span className="font-semibold">{userName(r.user)}</span>{" "}
                 <span className="text-gray-700">changed the {r.field}</span>
+                {r.actorType === "agent" && <AutomatedBadge />}
               </div>
               <div className="text-[11px] text-gray-500 mt-0.5">{relativeTime(r.createdAt)}</div>
               <div className="mt-1 text-xs text-gray-700 inline-flex items-center gap-2 flex-wrap">

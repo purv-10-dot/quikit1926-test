@@ -13,6 +13,11 @@ import {
   optionWeight,
   fieldHasWeights,
 } from "./ideas-types";
+import {
+  anchorFromRect,
+  useAnchoredPanel,
+  type PanelAnchor,
+} from "@/lib/hooks/useAnchoredPanel";
 
 /** Click-to-set 1–5 rating dots (Impact / Effort). Hover previews the value. */
 function RatingCell({
@@ -353,9 +358,10 @@ function LabelsCell({
   onSave: (v: string[] | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<PanelAnchor | null>(null);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanel(ref, anchor, { width: 256 });
 
   useEffect(() => {
     if (!open) return;
@@ -390,7 +396,7 @@ function LabelsCell({
         onClick={(e) => {
           if (open) { setOpen(false); return; }
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          setAnchor({ x: r.left, y: r.bottom + 4 });
+          setAnchor(anchorFromRect(r));
           setQ(""); setOpen(true);
         }}
         className="group/dd flex min-h-[24px] w-full flex-wrap items-center gap-1 text-left"
@@ -409,7 +415,7 @@ function LabelsCell({
       {open && anchor && (
         <div
           ref={ref}
-          style={{ position: "fixed", left: anchor.x, top: anchor.y, width: 256 }}
+          style={panelStyle}
           className="z-50 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl"
           onClick={(e) => e.stopPropagation()}
         >
@@ -480,12 +486,13 @@ function OptionsMenu({
   field: FieldDef;
   current: string | null;
   showCheck: boolean;
-  anchor: { x: number; y: number } | null;
+  anchor: PanelAnchor | null;
   onPick: (value: string | null) => void;
   onClose: () => void;
   render: (value: string) => React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanel(ref, anchor, { width: 256 });
   const [q, setQ] = useState("");
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -505,7 +512,7 @@ function OptionsMenu({
   return (
     <div
       ref={ref}
-      style={anchor ? { position: "fixed", left: anchor.x, top: anchor.y, width: 256 } : undefined}
+      style={panelStyle}
       className="z-50 rounded-md border border-gray-200 bg-white shadow-lg"
     >
       <div className="border-b border-gray-100 p-2">
@@ -563,11 +570,12 @@ function MultiOptionsMenu({
 }: {
   field: FieldDef;
   selected: string[];
-  anchor: { x: number; y: number } | null;
+  anchor: PanelAnchor | null;
   onToggle: (value: string) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanel(ref, anchor, { width: 256 });
   const [q, setQ] = useState("");
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -587,7 +595,7 @@ function MultiOptionsMenu({
   return (
     <div
       ref={ref}
-      style={anchor ? { position: "fixed", left: anchor.x, top: anchor.y, width: 256 } : undefined}
+      style={panelStyle}
       className="z-50 rounded-md border border-gray-200 bg-white shadow-lg"
     >
       <div className="border-b border-gray-100 p-2">
@@ -686,7 +694,7 @@ export function EditableCell({
   knownLabels?: string[];
 }) {
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<PanelAnchor | null>(null);
   const [editing, setEditing] = useState(false);
   const blank = value === null || value === undefined || value === "";
 
@@ -752,7 +760,7 @@ export function EditableCell({
           onClick={(e) => {
             if (open) { setOpen(false); return; }
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setAnchor({ x: r.left, y: r.bottom + 4 });
+            setAnchor(anchorFromRect(r));
             setOpen(true);
           }}
           className="group/dd flex min-h-[24px] w-full items-center justify-between gap-1 text-left"
@@ -808,7 +816,7 @@ export function EditableCell({
           onClick={(e) => {
             if (open) { setOpen(false); return; }
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setAnchor({ x: r.left, y: r.bottom + 4 });
+            setAnchor(anchorFromRect(r));
             setOpen(true);
           }}
           className="group/dd flex min-h-[24px] w-full items-center justify-between gap-1 text-left"

@@ -1,200 +1,101 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track } from "livekit-client";
-import { GroupCallGrid, type Participant } from "./GroupCallGrid";
+import { useEffect, useState } from "react";
+import { GroupCallGrid } from "./GroupCallGrid";
 import { CallControls } from "./CallControls";
+import { RemovedFromCallToast } from "./RemovedFromCallToast";
+import { useLiveKitRoom } from "@/lib/use-livekit-room";
 
 export interface LiveKitGroupCallProps {
-  roomId: string;
   token: string;
   livekitUrl: string;
   callId: string;
   localUserId: string;
+  callType: "audio" | "video";
+  /** Host = the call's initiator, matching the roomAdmin grant on the token. */
+  isHost: boolean;
+  /** Shown in the removed-from-call explanation; falls back to a generic label. */
+  channelName?: string;
   onEndCall: () => void;
 }
 
 export function LiveKitGroupCall({
-  roomId,
   token,
   livekitUrl,
+  callId,
   localUserId,
+  callType,
+  isHost,
+  channelName = "this call",
   onEndCall,
 }: LiveKitGroupCallProps) {
-  const roomRef = useRef<Room | null>(null);
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showParticipantList, setShowParticipantList] = useState(false);
-  const [mediaError, setMediaError] = useState<string | null>(null);
-  const [isReconnecting, setIsReconnecting] = useState(false);
+  const {
+    participants,
+    isMuted,
+    isCameraOff,
+    isScreenSharing,
+    mediaError,
+    isReconnecting,
+    terminalDisconnect,
+    removedByHost,
+    toggleMute,
+    toggleCamera,
+    toggleScreenShare,
+    handleDeviceChange,
+    disconnect,
+  } = useLiveKitRoom({ livekitUrl, token, localUserId, callType });
 
+  const handleEndCall = () => {
+    disconnect();
+    onEndCall();
+  };
+
+  // Host-only participant management. Best-effort: these are live UI actions
+  // on someone else's connection, not persisted state — a failed fetch just
+  // means the click didn't take, no different from a dropped LiveKit RPC.
+  const handleToggleMuteOther = (identity: string, muted: boolean) => {
+    void fetch(`/api/calls/${callId}/participants/${identity}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: muted ? "mute" : "unmute" }),
+    }).catch(() => undefined);
+  };
+
+  const handleRemove = (identity: string) => {
+    void fetch(`/api/calls/${callId}/participants/${identity}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "remove" }),
+    }).catch(() => undefined);
+  };
+
+  const handleMuteAll = () => {
+    void fetch(`/api/calls/${callId}/mute-all`, { method: "POST" }).catch(() => undefined);
+  };
+
+  // The room ended remotely (deleted, or reconnection exhausted) — run the
+  // same end-call path the hang-up button uses. An effect, not a render-time
+  // call: onEndCall causes side effects (PATCH, window.close()) that must
+  // never run during render.
   useEffect(() => {
-    const room = new Room({
-      adaptiveStream: true,
-      dynacast: true,
-    });
-    roomRef.current = room;
+    // `removedByHost` is excluded: it renders the explanation below, and
+    // onEndCall closes the window. Running it here too would tear the window
+    // down before the removed participant could read why — which is the exact
+    // silent close this change exists to fix. Their dismiss triggers it.
+    if (terminalDisconnect && !removedByHost) onEndCall();
+  }, [terminalDisconnect, removedByHost, onEndCall]);
 
-    const updateParticipants = () => {
-      const list: Participant[] = [];
-      const localP = room.localParticipant;
+  // Removed by the host: hold the window open on an explanation instead of the
+  // silent close that made a kick indistinguishable from the call simply
+  // ending. `removedByHost` is a strict subset of `terminalDisconnect` and is
+  // only ever set on an explicit PARTICIPANT_REMOVED, so an unrecognised
+  // disconnect reason still takes the normal path above.
+  if (removedByHost) {
+    return <RemovedFromCallToast channelName={channelName} onDismiss={onEndCall} />;
+  }
 
-      const cameraPub = localP.getTrackPublication(Track.Source.Camera);
-      const micPub = localP.getTrackPublication(Track.Source.Microphone);
-      const screenPub = localP.getTrackPublication(Track.Source.ScreenShare);
-      const localTracks: MediaStreamTrack[] = [];
-      if (cameraPub?.track?.mediaStreamTrack) {
-        localTracks.push(cameraPub.track.mediaStreamTrack);
-      }
-      if (micPub?.track?.mediaStreamTrack) {
-        localTracks.push(micPub.track.mediaStreamTrack);
-      }
-      const localStream = localTracks.length > 0 ? new MediaStream(localTracks) : null;
-
-      list.push({
-        id: localUserId,
-        name: "You",
-        isSpeaking: localP.isSpeaking,
-        isMuted: !localP.isMicrophoneEnabled,
-        hasVideo: cameraPub?.isEnabled ?? false,
-        hasScreenShare: screenPub?.isEnabled ?? false,
-        videoStream: localStream,
-      });
-
-      room.remoteParticipants.forEach((p) => {
-        const cameraPub = p.getTrackPublication(Track.Source.Camera);
-        const micPub = p.getTrackPublication(Track.Source.Microphone);
-        const screenPub = p.getTrackPublication(Track.Source.ScreenShare);
-        const tracks: MediaStreamTrack[] = [];
-        if (cameraPub?.track?.mediaStreamTrack) {
-          tracks.push(cameraPub.track.mediaStreamTrack);
-        }
-        if (micPub?.track?.mediaStreamTrack) {
-          tracks.push(micPub.track.mediaStreamTrack);
-        }
-        const videoStream = tracks.length > 0 ? new MediaStream(tracks) : null;
-
-        list.push({
-          id: p.identity,
-          name: p.name || p.identity,
-          isSpeaking: p.isSpeaking,
-          isMuted: !p.isMicrophoneEnabled,
-          hasVideo: cameraPub?.isEnabled ?? false,
-          hasScreenShare: screenPub?.isEnabled ?? false,
-          videoStream,
-        });
-      });
-
-      setParticipants(list);
-      setIsMuted(!localP.isMicrophoneEnabled);
-      setIsCameraOff(!localP.isCameraEnabled);
-      setIsScreenSharing(localP.isScreenShareEnabled);
-    };
-
-    room
-      .on(RoomEvent.ParticipantConnected, updateParticipants)
-      .on(RoomEvent.ParticipantDisconnected, updateParticipants)
-      .on(RoomEvent.TrackSubscribed, updateParticipants)
-      .on(RoomEvent.TrackUnsubscribed, updateParticipants)
-      .on(RoomEvent.LocalTrackPublished, updateParticipants)
-      .on(RoomEvent.LocalTrackUnpublished, updateParticipants)
-      .on(RoomEvent.ActiveSpeakersChanged, updateParticipants)
-      .on(RoomEvent.Disconnected, () => {
-        setIsReconnecting(true);
-      })
-      .on(RoomEvent.Reconnected, () => {
-        setIsReconnecting(false);
-      });
-
-    const init = async () => {
-      try {
-        await room.connect(livekitUrl, token);
-        setIsReconnecting(false);
-
-        // Enable camera and microphone independently. If camera access fails
-        // (no camera, permission denied), still join with microphone so the call
-        // can continue audio-only.
-        let cameraOk = false;
-        let micOk = false;
-        try {
-          await room.localParticipant.setCameraEnabled(true);
-          cameraOk = true;
-        } catch (cameraErr) {
-          console.warn("LiveKit camera enable failed:", cameraErr);
-        }
-        try {
-          await room.localParticipant.setMicrophoneEnabled(true);
-          micOk = true;
-        } catch (micErr) {
-          console.warn("LiveKit microphone enable failed:", micErr);
-        }
-
-        setIsCameraOff(!cameraOk);
-        setIsMuted(!micOk);
-
-        if (!cameraOk && !micOk) {
-          setMediaError("Could not access camera or microphone.");
-        }
-
-        updateParticipants();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to connect to group call";
-        setMediaError(msg);
-        console.error("LiveKit connection failed:", err);
-      }
-    };
-
-    void init();
-
-    return () => {
-      void room.disconnect();
-    };
-  }, [roomId, token, livekitUrl, localUserId]);
-
-  const toggleMute = useCallback(() => {
-    const room = roomRef.current;
-    if (!room) return;
-    const enabled = room.localParticipant.isMicrophoneEnabled;
-    void room.localParticipant.setMicrophoneEnabled(!enabled);
-    setIsMuted(enabled);
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === localUserId ? { ...p, isMuted: enabled } : p)),
-    );
-  }, [localUserId]);
-
-  const toggleCamera = useCallback(() => {
-    const room = roomRef.current;
-    if (!room) return;
-    const enabled = room.localParticipant.isCameraEnabled;
-    void room.localParticipant.setCameraEnabled(!enabled);
-    setIsCameraOff(enabled);
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === localUserId ? { ...p, hasVideo: !enabled } : p)),
-    );
-  }, [localUserId]);
-
-  const toggleScreenShare = useCallback(
-    (_stream: MediaStream | null) => {
-      const room = roomRef.current;
-      if (!room) return;
-      const enabled = room.localParticipant.isScreenShareEnabled;
-      void room.localParticipant.setScreenShareEnabled(!enabled);
-      setIsScreenSharing(!enabled);
-      setParticipants((prev) =>
-        prev.map((p) => (p.id === localUserId ? { ...p, hasScreenShare: !enabled } : p)),
-      );
-    },
-    [localUserId],
-  );
-
-  const handleDeviceChange = useCallback((kind: "audioinput" | "videoinput", deviceId: string) => {
-    void roomRef.current?.switchActiveDevice(
-      kind === "audioinput" ? "audioinput" : "videoinput",
-      deviceId,
-    );
-  }, []);
+  if (terminalDisconnect) return null;
 
   return (
     <div
@@ -211,13 +112,11 @@ export function LiveKitGroupCall({
           <GroupCallGrid
             participants={participants}
             localUserId={localUserId}
-            isAdmin={true}
+            isAdmin={isHost}
             showParticipantList={showParticipantList}
-            onToggleMute={(id, _muted) => {
-              if (id === localUserId) toggleMute();
-            }}
-            onRemove={() => {}}
-            onMuteAll={() => {}}
+            onToggleMute={handleToggleMuteOther}
+            onRemove={handleRemove}
+            onMuteAll={handleMuteAll}
           />
         </div>
       )}
@@ -238,7 +137,7 @@ export function LiveKitGroupCall({
           isCameraOff={isCameraOff}
           onToggleMute={toggleMute}
           onToggleCamera={toggleCamera}
-          onEndCall={onEndCall}
+          onEndCall={handleEndCall}
           isScreenSharing={isScreenSharing}
           onToggleScreenShare={toggleScreenShare}
           screenShareLiveKitMode={true}

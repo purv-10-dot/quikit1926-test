@@ -11,6 +11,7 @@ import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
 import { PageBackground } from "@/components/hrms/page-background";
+import { TabSwitcher } from "@/components/hrms/tab-switcher";
 
 interface LeaveRequest {
   id: string;
@@ -107,11 +108,6 @@ export default function TeamLeavesPage() {
   const pending = pendingData?.data ?? [];
   const processed = (historyData?.data ?? []).filter((r) => r.status !== "Pending");
 
-  const tabs = [
-    { key: "pending" as const, label: "Pending Approvals", count: pending.length },
-    { key: "history" as const, label: "History", count: processed.length },
-  ];
-
   // ── Excel export (exports the currently active tab's rows) ──
   const exportColumns = [
     { header: "Employee", key: "employee", width: 24 },
@@ -146,30 +142,15 @@ export default function TeamLeavesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-gray-200 mb-3 shrink-0">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={clsx(
-              "relative inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold transition-colors -mb-px border-b-2 rounded-t-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400",
-              tab === t.key
-                ? "border-accent-600 text-accent-700"
-                : "border-transparent text-gray-500 hover:text-gray-800",
-            )}
-          >
-            {t.label}
-            <span
-              className={clsx(
-                "inline-flex items-center justify-center min-w-[1.15rem] h-[1.05rem] px-1 rounded-full text-[11px] font-semibold",
-                tab === t.key ? "bg-accent-100 text-accent-700" : "bg-gray-100 text-gray-500",
-              )}
-            >
-              {t.count}
-            </span>
-          </button>
-        ))}
-      </div>
+      <TabSwitcher
+        className="mb-3 shrink-0"
+        value={tab}
+        onChange={(v) => setTab(v as "pending" | "history")}
+        tabs={[
+          { value: "pending", label: "Pending Approvals", count: pending.length },
+          { value: "history", label: "History", count: processed.length },
+        ]}
+      />
 
       {/* Pending Approvals tab */}
       {tab === "pending" && (

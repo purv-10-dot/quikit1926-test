@@ -1,14 +1,28 @@
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, internalError } from "@/lib/api-response";
+import { successResponse, validationError, internalError } from "@/lib/api-response";
+import { verifyPayrollResetOtp } from "@/lib/services/payroll-reset-otp";
+
+const schema = z.object({
+  otp: z.string().trim().regex(/^\d{4}$/, "Enter the 4-digit code"),
+});
 
 /**
  * Wipes payroll setup data for current tenant so checklist shows 0/7.
- * Destructive — protected by hrms.settings.write permission.
+ * Destructive — protected by hrms.settings.write permission AND a one-time
+ * OTP (issued via /request-otp) verified fresh on every call.
  */
-export const POST = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
+    const body = await req.json().catch(() => ({}));
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
+
+    const otpOk = await verifyPayrollResetOtp(orgId, parsed.data.otp);
+    if (!otpOk) return validationError("Invalid or expired verification code");
+
     await prisma.$transaction(async (tx) => {
       // Pay runs / payslips first (FK to EmployeeSalary / PayRun)
       await tx.payslip.deleteMany({ where: { orgId } });

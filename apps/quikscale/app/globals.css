@@ -192,3 +192,42 @@ html.dark .glass {
   background: rgba(245, 158, 11, 0.06);
   transition: box-shadow 0.15s ease;
 }
+
+/* ============================================================================
+   ONBOARDING TOUR (QuikScaleTour + Scout mascot) — components/tour/*
+   ============================================================================ */
+
+/* Spotlight ring — soft pulsing outline on the tour's spotlighted target. */
+@keyframes qs-tour-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55); }
+  50%      { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }
+}
+.qs-tour-ring { animation: qs-tour-ring 1.6s ease-out infinite; }
+
+/* Tour bubble slide-in from below. */
+@keyframes qs-tour-slide-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.qs-tour-slide-in { animation: qs-tour-slide-in 0.35s ease-out both; }
+
+/* Scout — gentle bob with a subtle side-to-side tilt, anchored near the feet
+   so the mascot sways naturally instead of translating as a rigid block. */
+@keyframes qs-mascot-bob {
+  0%, 100% { transform: translateY(0)    rotate(-1.2deg); }
+  50%      { transform: translateY(-6px) rotate(1.2deg);  }
+}
+.qs-mascot-bob {
+  animation: qs-mascot-bob 3.2s ease-in-out infinite;
+  transform-origin: 50% 95%;
+}
+
+/* Scout — vertical bounce (loader / empty-state fallback mode). ease-out on
+   the way up, ease-in coming down so the landing reads as a thump. */
+@keyframes qs-mascot-bounce {
+  0%   { transform: translateY(0);     animation-timing-function: ease-out; }
+  45%  { transform: translateY(-22px); animation-timing-function: ease-in;  }
+  90%  { transform: translateY(0);     animation-timing-function: ease-out; }
+  100% { transform: translateY(0); }
+}
+.qs-mascot-bounce { animation: qs-mascot-bounce 1.2s infinite; }

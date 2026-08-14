@@ -33,8 +33,7 @@ function enrichWO(
     boqNo: l.boqItemId ?? "",
     boqItemId: l.boqItemId ?? "",
     description: l.description ?? "",
-    uomId: l.uomId ?? "",
-    uomCode: l.uomId ?? "",
+    uomCode: l.uomCode ?? "",
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
@@ -284,6 +283,8 @@ export async function POST(req: NextRequest) {
     boqItems?: Array<{
       boqNo?: string | null;
       boqItemId?: string | null;
+      scopeType?: string | null;
+      scopeId?: string | null;
       description?: string | null;
       quantity?: number | string | null;
       uomCode?: string | null;
@@ -376,10 +377,15 @@ export async function POST(req: NextRequest) {
         lines: {
           create: boqItems.map((it) => ({
             lineType: (it.lineType as string) ?? "boq",
-            boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
+            boqItemId:
+              it.scopeType === "ACTIVITY"
+                ? null
+                : String(it.boqNo ?? it.boqItemId ?? ""),
+            scopeType: it.scopeType ?? null,
+            scopeId: it.scopeId ?? null,
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
-            uomId: String(it.uomCode ?? it.uomId ?? ""),
+            uomCode: String(it.uomCode ?? it.uomId ?? ""),
             negotiatedRate: String(Number(it.rate) || 0),
             amount: String(Number(it.amount) || 0),
             lineDate: it.lineDate ? new Date(it.lineDate) : null,
