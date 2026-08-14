@@ -8,7 +8,6 @@ import { SupportLauncher } from "@quikit/ui/support";
 // Reads the session per request and gates on app access — never prerender.
 export const dynamic = "force-dynamic";
 
-
 const APP_SLUG = "quikchat";
 
 /**
