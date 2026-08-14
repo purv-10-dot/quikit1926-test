@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@quikit/ui";
 import { showToast } from "@/lib/ui/toast";
 
@@ -17,6 +18,9 @@ export function AddWorkItemsModal({
   releaseId,
   excludeIds,
   onAdded,
+  title = "Add work items",
+  singleSelect = false,
+  onSave,
 }: {
   open: boolean;
   onClose: () => void;
@@ -24,6 +28,13 @@ export function AddWorkItemsModal({
   releaseId: string;
   excludeIds: string[];
   onAdded: () => void;
+  title?: string;
+  /** Restricts selection to a single issue (used by "Link work item", which
+   * links exactly one issue into Related Work). */
+  singleSelect?: boolean;
+  /** Overrides the default "add to this release's Work Items" behavior —
+   * used by "Link work item" to instead create a related-work row. */
+  onSave?: (issueIds: string[]) => Promise<boolean>;
 }) {
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<IssueOption[]>([]);
@@ -61,6 +72,7 @@ export function AddWorkItemsModal({
 
   function toggle(id: string) {
     setSelected((prev) => {
+      if (singleSelect) return prev.has(id) ? new Set() : new Set([id]);
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -72,15 +84,23 @@ export function AddWorkItemsModal({
     if (selected.size === 0 || saving) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/releases/${releaseId}/issues`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueIds: Array.from(selected) }),
-      }).then((r) => r.json());
-      if (!res?.success) {
-        showToast(res?.error || "Couldn't add work items.", "error");
-        return;
-      }
+      const issueIds = Array.from(selected);
+      const ok = onSave
+        ? await onSave(issueIds)
+        : await fetch(`/api/releases/${releaseId}/issues`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ issueIds }),
+          })
+            .then((r) => r.json())
+            .then((res) => {
+              if (!res?.success) {
+                showToast(res?.error || "Couldn't add work items.", "error");
+                return false;
+              }
+              return true;
+            });
+      if (!ok) return;
       onAdded();
       onClose();
     } finally {
@@ -88,11 +108,19 @@ export function AddWorkItemsModal({
     }
   }
 
-  return (
+  if (!open) return null;
+
+  // Portalled to document.body directly — this modal is invoked from deep
+  // inside the release detail tree (collapsible sections, flex layout), and
+  // relying on Modal's own `fixed` centering through arbitrary ancestor
+  // markup is fragile (any ancestor with a CSS transform, e.g. from a
+  // Framer Motion animation elsewhere, would silently break `fixed`'s
+  // containing block). Mounting at the true document root sidesteps that.
+  return createPortal(
     <Modal open={open} onOpenChange={(v) => !v && onClose()} className="max-w-lg">
       <ModalContent>
         <ModalHeader onClose={onClose}>
-          <ModalTitle>Add work items</ModalTitle>
+          <ModalTitle>{title}</ModalTitle>
         </ModalHeader>
         <ModalBody>
           <input
@@ -144,6 +172,7 @@ export function AddWorkItemsModal({
           </button>
         </ModalFooter>
       </ModalContent>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }

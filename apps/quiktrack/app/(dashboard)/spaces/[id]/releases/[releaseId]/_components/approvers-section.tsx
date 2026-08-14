@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { CheckCircle2, Plus, UserCheck, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Plus, UserCheck, X } from "lucide-react";
 import { showToast } from "@/lib/ui/toast";
 import { confirmDialog } from "@/lib/ui/confirm";
+import { PortalDropdown } from "../../_shared/portal-dropdown";
 import {
   APPROVER_STATUS_META,
   memberInitials,
@@ -29,6 +30,7 @@ export function ApproversSection({
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
 
+  const [sectionOpen, setSectionOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerUserId, setPickerUserId] = useState("");
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -85,9 +87,14 @@ export function ApproversSection({
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-900">
+        <button
+          type="button"
+          onClick={() => setSectionOpen((v) => !v)}
+          className="flex items-center gap-1.5 text-sm font-semibold text-gray-900"
+        >
+          {sectionOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           Approvers <span className="text-gray-400 font-normal">{approvers.length}</span>
-        </h3>
+        </button>
         {canManage && !pickerOpen && (
           <button
             type="button"
@@ -100,25 +107,21 @@ export function ApproversSection({
         )}
       </div>
 
-      {pickerOpen && (
+      {sectionOpen && pickerOpen && (
         <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-          <select
-            value={pickerUserId}
-            onChange={(e) => setPickerUserId(e.target.value)}
-            className="flex-1 h-8 px-2 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Choose a member</option>
-            {availableMembers.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {memberLabel(m)}
-              </option>
-            ))}
-          </select>
+          <div className="flex-1">
+            <PortalDropdown
+              placeholder="Choose a member"
+              options={availableMembers.map((m) => ({ value: m.userId, label: memberLabel(m) }))}
+              selected={pickerUserId ? [pickerUserId] : []}
+              onChange={(next) => setPickerUserId(next[0] ?? "")}
+            />
+          </div>
           <button
             type="button"
             disabled={!pickerUserId}
             onClick={addApprover}
-            className="h-8 px-2.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
+            className="h-9 px-2.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
           >
             Add
           </button>
@@ -128,14 +131,14 @@ export function ApproversSection({
               setPickerOpen(false);
               setPickerUserId("");
             }}
-            className="h-8 px-2 text-xs text-gray-700 hover:bg-gray-100 rounded"
+            className="h-9 px-2 text-xs text-gray-700 hover:bg-gray-100 rounded"
           >
             Cancel
           </button>
         </div>
       )}
 
-      {approvers.length === 0 ? (
+      {!sectionOpen ? null : approvers.length === 0 ? (
         <div className="px-4 py-10 text-center">
           <UserCheck className="mx-auto h-6 w-6 text-gray-300" />
           <div className="mt-2 text-sm font-medium text-gray-700">No approvers have been added</div>

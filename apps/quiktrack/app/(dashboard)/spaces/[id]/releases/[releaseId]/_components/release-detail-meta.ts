@@ -1,5 +1,6 @@
 export type ReleaseStatus = "UNRELEASED" | "RELEASED" | "ARCHIVED";
 export type ApproverStatus = "PENDING" | "APPROVED" | "CHANGES_REQUESTED";
+export type RelatedLinkStatus = "OPEN" | "IN_PROGRESS" | "DONE";
 
 export interface ReleaseApprover {
   id: string;
@@ -14,8 +15,20 @@ export interface ReleaseApprover {
 export interface ReleaseRelatedLink {
   id: string;
   title: string;
-  url: string;
+  url: string | null;
   type: string | null;
+  status: RelatedLinkStatus;
+  assigneeId: string | null;
+  issueId: string | null;
+  /** Live data from the linked QtIssue (when issueId is set) — the card's
+   * own title/status/assignee below are unrelated to this; this is what
+   * renders as the extra status pill + assignee avatar on the card. */
+  issue: {
+    key: string;
+    title: string;
+    status: { name: string; color: string | null; category: string };
+    assignee: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
+  } | null;
   createdAt: string;
 }
 
@@ -54,6 +67,12 @@ export const APPROVER_STATUS_META: Record<ApproverStatus, { label: string; class
   APPROVED: { label: "Approved", className: "bg-green-100 text-green-800" },
   CHANGES_REQUESTED: { label: "Changes requested", className: "bg-red-100 text-red-700" },
 };
+
+export const RELATED_LINK_STATUS_OPTIONS: { value: RelatedLinkStatus; label: string; className: string }[] = [
+  { value: "OPEN", label: "Open", className: "bg-gray-100 text-gray-700" },
+  { value: "IN_PROGRESS", label: "In progress", className: "bg-blue-100 text-blue-800" },
+  { value: "DONE", label: "Done", className: "bg-green-100 text-green-800" },
+];
 
 export function memberLabel(m: ReleaseMember): string {
   const u = m.user;

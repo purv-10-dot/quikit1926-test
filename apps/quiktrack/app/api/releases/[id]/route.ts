@@ -5,14 +5,60 @@ import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 import { updateReleaseSchema } from "@/lib/validation/release";
 
 async function loadRelease(id: string, orgId: string) {
-  return db.qtRelease.findFirst({
+  const release = await db.qtRelease.findFirst({
     where: { id, isDeleted: false, project: { orgId, isDeleted: false } },
     include: {
       approvers: { orderBy: { createdAt: "asc" } },
-      relatedLinks: { orderBy: { createdAt: "asc" } },
+      relatedLinks: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          issue: {
+            select: {
+              key: true,
+              title: true,
+              assigneeId: true,
+              status: { select: { name: true, color: true, category: true } },
+            },
+          },
+        },
+      },
       _count: { select: { issues: true } },
     },
   });
+  if (!release) return release;
+
+  // QtIssue.assigneeId has no Prisma relation (plain string, resolved
+  // app-side everywhere else too) — look up the linked issues' assignees in
+  // one batch and merge them into each related-work row's `issue.assignee`.
+  const assigneeIds = Array.from(
+    new Set(
+      release.relatedLinks
+        .map((l) => l.issue?.assigneeId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const assignees = assigneeIds.length
+    ? await db.user.findMany({
+        where: { id: { in: assigneeIds } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      })
+    : [];
+  const assigneeById = new Map(assignees.map((a) => [a.id, a] as const));
+
+  return {
+    ...release,
+    relatedLinks: release.relatedLinks.map((l) => ({
+      ...l,
+      issue: l.issue
+        ? {
+            key: l.issue.key,
+            title: l.issue.title,
+            status: l.issue.status,
+            assignee: l.issue.assigneeId ? assigneeById.get(l.issue.assigneeId) ?? null : null,
+          }
+        : null,
+    })),
+  };
 }
 
 async function userCanView(userId: string, orgId: string, projectId: string) {

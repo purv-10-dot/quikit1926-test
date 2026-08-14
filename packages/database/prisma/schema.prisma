@@ -6907,19 +6907,33 @@ model QtReleaseApprover {
 }
 
 /// Freeform "Related work" links on a release (release notes docs,
-/// dashboards, etc.) â€” manually added URLs, not tied to any other QuikTrack
-/// feature.
+/// dashboards, etc.) — manually added URLs, or a reference to a real QtIssue
+/// picked via "Link work item" (issueId set). A row with issueId set renders
+/// as the issue's key/title and its row action is "Unlink" (clears issueId,
+/// keeping the row as a blank placeholder) instead of "Remove".
 model QtReleaseRelatedLink {
-  id        String    @id @default(cuid())
-  releaseId String
-  title     String
-  url       String
-  type      String?
-  createdAt DateTime  @default(now())
-  createdBy String?
-  release   QtRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  releaseId  String
+  title      String
+  /// Nullable — a row created from a template picker starts as a placeholder
+  /// card (no URL yet) until the user fills it in via "Open"/edit.
+  url        String?
+  type       String?
+  /// OPEN | IN_PROGRESS | DONE. Freeform per-row tracking state (not tied to
+  /// QtIssueStatus — related work isn't a QtIssue).
+  status     String    @default("OPEN")
+  assigneeId String?
+  /// Set when this row was created via "Link work item" — references the
+  /// real QtIssue it represents. Unlinking clears this field rather than
+  /// deleting the row.
+  issueId    String?
+  createdAt  DateTime  @default(now())
+  createdBy  String?
+  release    QtRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  issue      QtIssue?  @relation(fields: [issueId], references: [id], onDelete: SetNull)
 
   @@index([releaseId])
+  @@index([issueId])
   @@schema("app_quiktrack")
 }
 
@@ -7051,6 +7065,7 @@ model QtIssue {
   devPullRequests  QtDevPullRequest[]
   remoteLinks      QtRemoteLink[]
   releases         QtIssueRelease[]
+  relatedLinkRefs  QtReleaseRelatedLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
