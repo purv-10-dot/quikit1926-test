@@ -11,10 +11,10 @@ const schema = z.object({
   secondaryColor: z.string().optional(),
 });
 
-// PATCH /api/tenants/:id/branding — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// PATCH /api/tenants/:id/branding — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
+  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN']);
   assertTenantMatch(actor, params!.id);
 
   await findTenant(params!.id);

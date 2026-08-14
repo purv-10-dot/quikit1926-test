@@ -35,10 +35,10 @@ const saveMasterCourseSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
 });
 
-// POST /api/master-courses/:id/save — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/master-courses/:id/save — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = (await parseBody(req, saveMasterCourseSchema)) as Record<string, unknown>;
   const id = params!.id;
   const orgId = actor.orgId ?? undefined;

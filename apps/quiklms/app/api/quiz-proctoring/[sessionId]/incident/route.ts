@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles } from '@/lib/auth/context';
+import { requireAuth, requireRoles, requireQuizProctoring } from '@/lib/auth/context';
 import { reviewIncident } from '@/lib/services/quiz-proctoring-service';
 
 // Enums, not free-form strings. `z.string()` let a typo through Zod and into
@@ -18,6 +18,8 @@ const schema = z.object({
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER']);
+
+  await requireQuizProctoring(actor);
   const body = await parseBody(req, schema);
   const incident = await reviewIncident(actor, actor.id, params!.sessionId, body);
   return json({ success: true, data: incident });

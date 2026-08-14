@@ -2,10 +2,10 @@ import { route, json, BadRequest } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { removeAssignment } from '@/lib/services/course-assignments-service';
 
-// DELETE /api/course-assignments/:assignmentId — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// DELETE /api/course-assignments/:assignmentId — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const DELETE = route(async (req, { params }) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const orgId = user.orgId;
   if (!orgId) throw BadRequest('Tenant ID is required');
   await removeAssignment(orgId, params!.assignmentId);

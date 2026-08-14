@@ -37,8 +37,8 @@ vi.mock('@/lib/db', () => ({
 
 import { linkParentStudent, unlinkParentStudent } from '@/lib/services/users-service';
 
-const PARENT = { id: 'p1', orgId: 'org-1', role: 'PARENT', secondaryRole: null };
-const STUDENT = { id: 's1', orgId: 'org-1', role: 'LEARNER', secondaryRole: null };
+const PARENT = { id: 'p1', orgId: 'org-1', role: 'PARENT' };
+const STUDENT = { id: 's1', orgId: 'org-1', role: 'LEARNER' };
 
 /** Resolve each lookup by the id the service asked for. */
 const resolveUsers = (rows: Record<string, unknown>) =>
@@ -88,11 +88,6 @@ describe('linking', () => {
     await expect(linkParentStudent('org-1', 'p1', 's1')).rejects.toMatchObject({
       message: 'Parent does not have the PARENT role',
     });
-  });
-
-  it('accepts PARENT held as a secondary role, as the legacy RolesGuard did', async () => {
-    resolveUsers({ p1: { ...PARENT, role: 'TEACHER', secondaryRole: 'PARENT' }, s1: STUDENT });
-    await expect(linkParentStudent('org-1', 'p1', 's1')).resolves.toMatchObject({ success: true });
   });
 
   it('scopes both lookups to the caller’s org', async () => {

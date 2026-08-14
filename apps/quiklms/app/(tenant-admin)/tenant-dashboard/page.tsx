@@ -481,7 +481,7 @@ const CorporateDashboard = () => {
       </div>
 
       {/* Course Filter Bar */}
-      <div className="relative z-50 bg-white/60 backdrop-blur-md border border-white/40 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-4 sm:p-5 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+      <div className="relative z-50 bg-white/60 dark:bg-surface/60 backdrop-blur-md border border-white/40 dark:border-white/10 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-4 sm:p-5 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-600">
             <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
@@ -494,7 +494,7 @@ const CorporateDashboard = () => {
           <div className="relative flex-1 min-w-[240px] max-w-sm" ref={dropdownRef}>
             <button
               onClick={() => setShowDropdown(prev => !prev)}
-              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/80 hover:bg-white hover:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-200 shadow-sm"
+              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white/80 dark:bg-surface/80 hover:bg-white dark:hover:bg-surface hover:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all duration-200 shadow-sm"
             >
               <span className={selectedCourseName ? 'text-slate-900 font-semibold' : 'text-slate-400'}>
                 {selectedCourseName || 'All Courses (Overall)'}
@@ -507,7 +507,7 @@ const CorporateDashboard = () => {
             {showDropdown && (
               <div className="absolute z-30 mt-2 w-full bg-white border border-slate-100 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                 {/* Search input */}
-                <div className="p-3 border-b border-slate-50 bg-slate-50/50">
+                <div className="p-3 border-b border-slate-50 dark:border-line bg-slate-50/50 dark:bg-surface-muted/50">
                   <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-slate-200 focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all">
                     <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
                     <input
@@ -555,7 +555,7 @@ const CorporateDashboard = () => {
                           setShowDropdown(false);
                           setCourseSearch('');
                         }}
-                        className={`w-full text-left px-5 py-3 text-sm hover:bg-indigo-50 transition-all flex items-center justify-between gap-3 border-b border-slate-50 last:border-0 ${
+                        className={`w-full text-left px-5 py-3 text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-all flex items-center justify-between gap-3 border-b border-slate-50 dark:border-line last:border-0 ${
                           selectedCourseId === c.courseId
                             ? 'bg-indigo-50/80 text-indigo-700 font-bold'
                             : 'text-slate-600 font-medium'
@@ -652,7 +652,7 @@ const CorporateDashboard = () => {
           <div
             key={i}
             onClick={() => handleStatClick(kpi.filter as DrillFilter)}
-            className={`group relative overflow-hidden bg-white/70 backdrop-blur-sm border border-white/50 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-300 ${
+            className={`group relative overflow-hidden bg-white/70 dark:bg-surface/70 backdrop-blur-sm border border-white/50 dark:border-white/10 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-300 ${
               selectedCourseId
                 ? 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(0,0,0,0.08)]'
                 : ''
@@ -747,7 +747,7 @@ const CorporateDashboard = () => {
         ].map((item, i) => (
           <div
             key={i}
-            className="group relative overflow-hidden bg-white/70 backdrop-blur-sm border border-white/50 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(0,0,0,0.08)]"
+            className="group relative overflow-hidden bg-white/70 dark:bg-surface/70 backdrop-blur-sm border border-white/50 dark:border-white/10 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(0,0,0,0.08)]"
             style={{ borderLeft: `4px solid ${item.color}` }}
           >
             <div className="flex items-center gap-4 relative z-10">
@@ -870,7 +870,7 @@ const CorporateDashboard = () => {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-line">
                   {filteredLearners.map((l, idx) => {
                     const isMissed = !!(
                       l.isMandatory &&
@@ -939,7 +939,7 @@ const CorporateDashboard = () => {
       {/* Charts (always visible) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
         {/* Bar Chart */}
-        <div className="bg-white/70 backdrop-blur-md border border-white/50 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-8 transition-all duration-500 hover:shadow-[0_30px_70px_rgba(0,0,0,0.06)] group">
+        <div className="bg-white/70 dark:bg-surface/70 backdrop-blur-md border border-white/50 dark:border-white/10 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-8 transition-all duration-500 hover:shadow-[0_30px_70px_rgba(0,0,0,0.06)] group">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
@@ -1001,7 +1001,7 @@ const CorporateDashboard = () => {
         </div>
 
         {/* Pie Chart */}
-        <div className="bg-white/70 backdrop-blur-md border border-white/50 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-8 transition-all duration-500 hover:shadow-[0_30px_70px_rgba(0,0,0,0.06)] group">
+        <div className="bg-white/70 dark:bg-surface/70 backdrop-blur-md border border-white/50 dark:border-white/10 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-8 transition-all duration-500 hover:shadow-[0_30px_70px_rgba(0,0,0,0.06)] group">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
@@ -1126,7 +1126,7 @@ const CorporateDashboard = () => {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-line">
                 {tableRows.map(course => (
                   <tr
                     key={course.courseId}
@@ -1223,7 +1223,7 @@ const CorporateDashboard = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white border border-[#f2f2f7] rounded-3xl shadow-xl p-8 mb-12">
+      <div className="bg-white border border-[#f2f2f7] dark:border-line rounded-3xl shadow-xl p-8 mb-12">
         <h3 className="text-xl font-bold text-gray-900 mb-8 flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-[var(--brand-primary)] flex items-center justify-center shadow-lg shadow-[var(--brand-primary-light)]">
             <CheckCircle className="w-7 h-7 text-white" />
@@ -1268,7 +1268,7 @@ const CorporateDashboard = () => {
             <Link
               key={i}
               href={a.href}
-              className="group relative p-6 bg-[#f8f9fb] border border-[#f2f2f7] rounded-xl hover:bg-white hover:shadow-lg hover:border-transparent transition-all duration-300"
+              className="group relative p-6 bg-[#f8f9fb] dark:bg-surface-muted border border-[#f2f2f7] dark:border-line rounded-xl hover:bg-white dark:hover:bg-surface hover:shadow-lg hover:border-transparent transition-all duration-300"
             >
               <div className="flex items-start gap-4">
                 <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
@@ -1280,10 +1280,10 @@ const CorporateDashboard = () => {
                   />
                 </div>
                 <div>
-                  <p className="font-bold text-[#1c1c1e] group-hover:text-[var(--brand-primary)] transition-colors text-sm">
+                  <p className="font-bold text-[#1c1c1e] dark:text-fg group-hover:text-[var(--brand-primary)] transition-colors text-sm">
                     {a.label}
                   </p>
-                  <p className="text-[#8e8e93] text-[11px] mt-1 font-medium">{a.desc}</p>
+                  <p className="text-[#8e8e93] dark:text-fg-subtle text-[11px] mt-1 font-medium">{a.desc}</p>
                 </div>
               </div>
             </Link>

@@ -7,7 +7,7 @@ import { MAX_THUMBNAIL_BYTES } from '@/lib/constants/uploads';
 const MAX_BYTES = MAX_THUMBNAIL_BYTES;
 
 /**
- * POST /api/upload/course-thumbnail — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * POST /api/upload/course-thumbnail — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Accepts multipart (server stores the bytes) or JSON metadata (response
  * carries a presigned PUT). Thumbnails are capped at 5MB, so in practice every
@@ -23,7 +23,7 @@ const MAX_BYTES = MAX_THUMBNAIL_BYTES;
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const intent = await readUploadIntent(req);
   // Order matches the legacy handler: type first, then size.
   if (!intent.fileType.startsWith('image/')) throw BadRequest('Only image files are allowed');

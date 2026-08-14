@@ -22,7 +22,7 @@ import { db } from '@/lib/db';
  *
  * Access rules:
  *  - Anyone may read their own record.
- *  - SUPER_ADMIN / TENANT_ADMIN / SUB_ADMIN: unrestricted within their org
+ *  - ADMIN / TENANT_ADMIN / SUB_ADMIN: unrestricted within their org
  *    (they already administer every student in it).
  *  - PARENT: must be linked to the student via `LmsUserParent`.
  *  - TEACHER: must run a batch the student is in, or be their assigned manager.
@@ -36,7 +36,7 @@ export async function assertCanViewStudent(
   if (actor.id === studentId) return;
 
   const isAdmin =
-    userHasRole(actor, 'SUPER_ADMIN') ||
+    userHasRole(actor, 'ADMIN') ||
     userHasRole(actor, 'TENANT_ADMIN') ||
     userHasRole(actor, 'SUB_ADMIN');
   if (isAdmin) return;
@@ -88,7 +88,7 @@ export async function assertCanViewBatch(
   batchId: string,
 ): Promise<void> {
   const isAdmin =
-    userHasRole(actor, 'SUPER_ADMIN') ||
+    userHasRole(actor, 'ADMIN') ||
     userHasRole(actor, 'TENANT_ADMIN') ||
     userHasRole(actor, 'SUB_ADMIN');
   if (isAdmin) return;

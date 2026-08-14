@@ -259,65 +259,32 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Sidebar — "aurora" premium treatment.
+ * Sidebar — quikhrms's clean light panel, re-tinted per tenant.
  *
- * Everything here is driven by the tenant brand vars (--brand-primary /
- * --brand-secondary) via color-mix(), so the whole effect re-tints per tenant
- * instead of hardcoding indigo. It reads correctly in light *and* dark, and the
- * global `prefers-reduced-motion` block above already neutralises every
- * transition/animation defined below for users who ask for that.
+ * Modelled on apps/quikhrms/components/hrms/layout/sidebar.tsx: a calm white
+ * surface where the only colour is the active row and its icon. The previous
+ * "aurora" treatment (blurred brand blooms behind the panel, a per-row gradient
+ * wash, a left indicator bar, and a sheen that swept across on hover) is gone —
+ * four competing signals per row is what made a nine-item menu read as busy
+ * rather than premium.
  *
- * color-mix() is already the baseline in this app (see Sidebar's active state),
- * so relying on it here is safe.
+ * Everything still runs through the tenant brand vars (--brand-primary /
+ * --brand-secondary) via color-mix() rather than quikhrms's hardcoded
+ * #eaf1fe/#2563eb, so the menu re-tints per tenant. It reads correctly in light
+ * *and* dark, and the global `prefers-reduced-motion` block above already
+ * neutralises every transition defined below.
  * ────────────────────────────────────────────────────────────────────────────*/
 @layer components {
+  /* A whisper of brand at the very top, and nothing else — enough to tie the
+     panel to the tenant's colour without tinting the rows themselves. */
   .qs-sidebar {
     position: relative;
-    isolation: isolate; /* keeps the z-index:-1 glow layer trapped inside the panel */
     background-image: linear-gradient(
       180deg,
-      color-mix(in srgb, var(--brand-primary) 7%, transparent) 0%,
-      color-mix(in srgb, var(--brand-primary) 2%, transparent) 14%,
-      transparent 42%
+      color-mix(in srgb, var(--brand-primary) 5%, transparent) 0%,
+      transparent 18%
     );
   }
-
-  /* Ambient brand "blooms". Kept in a clipped layer (not on .qs-sidebar itself)
-     so the blur can't spill over the collapse toggle that sits outside the edge. */
-  .qs-sidebar-glow {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: -1;
-  }
-  .qs-sidebar-glow::before,
-  .qs-sidebar-glow::after {
-    content: '';
-    position: absolute;
-    border-radius: 9999px;
-    filter: blur(44px);
-  }
-  .qs-sidebar-glow::before {
-    top: -90px;
-    left: -70px;
-    width: 300px;
-    height: 300px;
-    background: radial-gradient(circle at center,
-      color-mix(in srgb, var(--brand-primary) 30%, transparent), transparent 68%);
-    opacity: 0.55;
-  }
-  .qs-sidebar-glow::after {
-    bottom: 64px;
-    right: -90px;
-    width: 240px;
-    height: 240px;
-    background: radial-gradient(circle at center,
-      color-mix(in srgb, var(--brand-secondary) 26%, transparent), transparent 70%);
-    opacity: 0.4;
-  }
-  .dark .qs-sidebar-glow::before { opacity: 0.42; }
-  .dark .qs-sidebar-glow::after  { opacity: 0.34; }
 
   /* Brand mark — gradient tile with an outer glow and an inner top sheen. */
   .qs-brandmark {
@@ -338,61 +305,25 @@
     pointer-events: none;
   }
 
-  /* Nav links ---------------------------------------------------------------- */
+  /* Nav rows ----------------------------------------------------------------
+     `.qs-nav-row` is a group header (never "active" itself, only tinted when a
+     child is); `.qs-nav-link` is a real destination and carries the pill. */
+  .qs-nav-row,
   .qs-nav-link {
-    position: relative;
-    overflow: hidden;
-    transition: color .18s ease, background-color .18s ease, transform .16s ease;
+    transition: color .16s ease, background-color .16s ease;
   }
-  .qs-nav-link:active { transform: scale(0.98); }
-  /* Lift real content above the ::before bar / ::after sheen. */
-  .qs-nav-link > * { position: relative; z-index: 1; }
-
-  /* Left indicator bar: nudges out on hover, full-height + glowing when active. */
-  .qs-nav-link::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 50%;
-    width: 3px; height: 0;
-    transform: translateY(-50%);
-    border-radius: 0 4px 4px 0;
-    background: linear-gradient(180deg, var(--brand-primary), var(--brand-secondary));
-    box-shadow: 0 0 10px color-mix(in srgb, var(--brand-primary) 70%, transparent);
-    opacity: 0;
-    transition: height .24s cubic-bezier(.16, 1, .3, 1), opacity .2s ease;
-  }
-  .qs-nav-link:hover::before                 { height: 44%; opacity: .55; }
-  .qs-nav-link[data-active='true']::before   { height: 60%; opacity: 1; }
-
-  /* One-shot light sheen that sweeps across on hover. */
-  .qs-nav-link::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(100deg,
-      transparent 25%,
-      color-mix(in srgb, var(--brand-primary) 13%, transparent) 50%,
-      transparent 75%);
-    transform: translateX(-130%);
-    transition: transform .65s cubic-bezier(.16, 1, .3, 1);
-  }
-  .qs-nav-link:hover::after { transform: translateX(130%); }
-
+  .qs-nav-row:hover,
   .qs-nav-link:not([data-active='true']):hover {
     background-color: rgb(var(--surface-muted));
   }
-  .qs-nav-link[data-active='true'] {
-    background-image: linear-gradient(90deg,
-      color-mix(in srgb, var(--brand-primary) 16%, transparent),
-      color-mix(in srgb, var(--brand-primary) 5%, transparent));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 24%, transparent);
-  }
 
-  /* Icon: pops on hover, gains a soft brand glow when active. */
-  .qs-nav-icon { transition: transform .2s cubic-bezier(.16, 1, .3, 1); }
-  .qs-nav-link:hover .qs-nav-icon { transform: scale(1.14); }
-  .qs-nav-link[data-active='true'] .qs-nav-icon {
-    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-primary) 55%, transparent));
+  /* Active row: a flat brand-tinted pill — quikhrms's `bg-[#eaf1fe]`, mixed from
+     the tenant's own accent instead of a fixed blue. */
+  .qs-nav-link[data-active='true'] {
+    background-color: color-mix(in srgb, var(--brand-primary) 13%, transparent);
+  }
+  .dark .qs-nav-link[data-active='true'] {
+    background-color: color-mix(in srgb, var(--brand-primary) 22%, transparent);
   }
 
   /* Collapsible group body. The 0fr→1fr grid trick animates to the content's
@@ -416,17 +347,6 @@
     transition-delay: 0s;
   }
 
-  .qs-group-btn { transition: color .16s ease; }
-  .qs-group-btn:hover { color: rgb(var(--fg-muted)); }
-
-  /* Staggered slide-in on first paint (delay is set inline per item). AppShell
-     persists across route changes, so this plays once — not on every navigation. */
-  .qs-nav-enter { animation: qs-nav-in .42s cubic-bezier(.16, 1, .3, 1) both; }
-  @keyframes qs-nav-in {
-    from { opacity: 0; transform: translateX(-8px); }
-    to   { opacity: 1; transform: translateX(0); }
-  }
-
   /* Collapse toggle — brand-lit ring on hover. */
   .qs-collapse-btn {
     transition: color .18s ease, border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
@@ -437,23 +357,26 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 14%, transparent);
   }
 
-  /* Tenant badge at the foot of the panel. */
-  .qs-tenant-card {
-    background-image: linear-gradient(135deg,
-      color-mix(in srgb, var(--brand-primary) 12%, rgb(var(--surface-muted))),
-      rgb(var(--surface-muted)));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 14%, transparent);
-    transition: box-shadow .2s ease;
-  }
-  .qs-tenant-card:hover {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 26%, transparent);
-  }
-  .qs-tenant-avatar {
+  /* Account row at the foot of the panel — replaced the tenant badge that used
+     to sit here (the tenant is named once, at the top, next to its logo). */
+  .qs-account-row { transition: background-color .16s ease; }
+  .qs-account-row:hover { background-color: rgb(var(--surface-muted)); }
+
+  /* The circular avatar. Round, not the old rounded-square tile: it is a person
+     now, not a tenant, and the shape is what distinguishes the two. */
+  .qs-account-avatar {
     color: var(--brand-on, #ffffff);
     background-image: linear-gradient(135deg, var(--brand-secondary), var(--brand-primary));
     box-shadow:
       0 3px 10px -3px color-mix(in srgb, var(--brand-secondary) 55%, transparent),
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+
+  /* Menu rises out of the footer, so it animates upward rather than downward. */
+  .qs-account-pop { animation: qs-account-in .16s ease-out both; }
+  @keyframes qs-account-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   /* ── Topbar — glassy header that echoes the sidebar's brand wash ─────────── */
@@ -486,22 +409,8 @@
     border-color: color-mix(in srgb, var(--brand-primary) 40%, transparent);
   }
 
-  /* Account chip — gradient that echoes the sidebar brand mark. */
-  .qs-accountbtn {
-    color: var(--brand-on, #ffffff);
-    background-image: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-    box-shadow:
-      0 4px 12px -3px color-mix(in srgb, var(--brand-primary) 55%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
-    transition: filter .16s ease, transform .12s ease, box-shadow .16s ease;
-  }
-  .qs-accountbtn:hover {
-    filter: brightness(1.08);
-    box-shadow:
-      0 6px 18px -4px color-mix(in srgb, var(--brand-primary) 65%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  }
-  .qs-accountbtn:active { transform: scale(0.98); }
+  /* The topbar account chip (.qs-accountbtn) is gone — profile and sign out
+     moved to the sidebar footer above. */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -618,4 +527,110 @@
     background-color: rgb(239 68 68 / 0.28);
     box-shadow: inset 0 0 0 1px rgb(248 113 113 / 0.55);
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Dark-mode compatibility layer.
+ *
+ * THE PROBLEM. The token system at the top of this file is complete and correct
+ * — `.dark` redefines every surface/text/line channel — but only ~40 of the
+ * app's components actually consume it. The other 115 files were ported from the
+ * legacy frontend still writing raw Tailwind greys (`bg-white`, `bg-gray-50`,
+ * `text-gray-900`, `border-gray-200`), and 75 of those carry no `dark:` variant
+ * at all. Those classes are theme-blind: in dark mode they keep painting a white
+ * card with near-black text on a near-black canvas, which is the washed-out,
+ * unreadable dashboard this fixes.
+ *
+ * WHY A SHIM AND NOT A CLASS MIGRATION. Rewriting them properly means ~3,600
+ * edits across 115 files, every one a chance to recolour something semantic
+ * (a status pill, a chart series, white-on-brand text) with no way to eyeball
+ * the result before a deploy. This maps the legacy palette onto the tokens in
+ * one place instead, and stays reversible: as files migrate to `bg-surface` /
+ * `text-fg`, they simply stop matching these selectors, and the block can be
+ * deleted outright once the last one does.
+ *
+ * HOW IT STAYS SAFE — three guards:
+ *
+ *   1. `[class~="…"]` matches a WHOLE class token, so `bg-white/70`,
+ *      `border-white/50` and `md:bg-white` are left alone. Translucent white
+ *      over a brand gradient is deliberate and must not be repainted.
+ *   2. `:not([class*="dark:bg-"])` skips any element that already declares its
+ *      own dark variant — the ~40 files that did this properly keep winning,
+ *      and this block cannot regress them.
+ *   3. Only neutrals are touched. `text-white` and every semantic hue
+ *      (green/red/amber/blue statuses, chart palettes, the KPI traffic lights)
+ *      are untouched by design.
+ *
+ * Unlayered and last in the file, so it outranks the Tailwind utilities it
+ * corrects. Everything resolves to the same `--surface` / `--fg` / `--line`
+ * channels the migrated components already use, so both halves of the app land
+ * on one palette.
+ * ────────────────────────────────────────────────────────────────────────────*/
+
+/* ── Surfaces ───────────────────────────────────────────────────────────────*/
+.dark [class~="bg-white"]:not([class*="dark:bg-"]) {
+  background-color: rgb(var(--surface));
+}
+.dark [class~="bg-gray-50"]:not([class*="dark:bg-"]),
+.dark [class~="bg-slate-50"]:not([class*="dark:bg-"]),
+.dark [class~="bg-gray-100"]:not([class*="dark:bg-"]),
+.dark [class~="bg-slate-100"]:not([class*="dark:bg-"]) {
+  background-color: rgb(var(--surface-muted));
+}
+/* Progress tracks and inset wells read as a recess, not a raised panel. */
+.dark [class~="bg-gray-200"]:not([class*="dark:bg-"]),
+.dark [class~="bg-slate-200"]:not([class*="dark:bg-"]) {
+  background-color: rgb(var(--surface-sunken));
+}
+
+/* Hover surfaces. A `hover:` utility is its own class token, so it needs its
+   own rule — `[class~="bg-gray-50"]` does not match `hover:bg-gray-50`. */
+.dark [class~="hover:bg-white"]:hover:not([class*="dark:hover:bg-"]),
+.dark [class~="hover:bg-gray-50"]:hover:not([class*="dark:hover:bg-"]),
+.dark [class~="hover:bg-gray-100"]:hover:not([class*="dark:hover:bg-"]),
+.dark [class~="hover:bg-slate-50"]:hover:not([class*="dark:hover:bg-"]),
+.dark [class~="hover:bg-slate-100"]:hover:not([class*="dark:hover:bg-"]) {
+  background-color: rgb(var(--surface-muted));
+}
+
+/* ── Text ───────────────────────────────────────────────────────────────────*/
+.dark [class~="text-gray-900"]:not([class*="dark:text-"]),
+.dark [class~="text-slate-900"]:not([class*="dark:text-"]),
+.dark [class~="text-gray-800"]:not([class*="dark:text-"]),
+.dark [class~="text-slate-800"]:not([class*="dark:text-"]) {
+  color: rgb(var(--fg));
+}
+.dark [class~="text-gray-700"]:not([class*="dark:text-"]),
+.dark [class~="text-slate-700"]:not([class*="dark:text-"]),
+.dark [class~="text-gray-600"]:not([class*="dark:text-"]),
+.dark [class~="text-slate-600"]:not([class*="dark:text-"]) {
+  color: rgb(var(--fg-muted));
+}
+.dark [class~="text-gray-500"]:not([class*="dark:text-"]),
+.dark [class~="text-slate-500"]:not([class*="dark:text-"]),
+.dark [class~="text-gray-400"]:not([class*="dark:text-"]),
+.dark [class~="text-slate-400"]:not([class*="dark:text-"]) {
+  color: rgb(var(--fg-subtle));
+}
+
+/* ── Lines ──────────────────────────────────────────────────────────────────*/
+.dark [class~="border-gray-100"]:not([class*="dark:border-"]),
+.dark [class~="border-slate-100"]:not([class*="dark:border-"]),
+.dark [class~="border-gray-200"]:not([class*="dark:border-"]),
+.dark [class~="border-slate-200"]:not([class*="dark:border-"]) {
+  border-color: rgb(var(--line));
+}
+.dark [class~="border-gray-300"]:not([class*="dark:border-"]),
+.dark [class~="border-slate-300"]:not([class*="dark:border-"]) {
+  border-color: rgb(var(--line-strong));
+}
+.dark [class~="divide-gray-200"] > :not([hidden]) ~ :not([hidden]),
+.dark [class~="divide-slate-200"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(var(--line));
+}
+
+/* ── Form fields ────────────────────────────────────────────────────────────*/
+.dark [class~="placeholder-gray-400"]::placeholder,
+.dark [class~="placeholder-gray-500"]::placeholder {
+  color: rgb(var(--fg-subtle));
 }

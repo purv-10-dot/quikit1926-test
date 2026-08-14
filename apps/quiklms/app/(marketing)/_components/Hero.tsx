@@ -12,7 +12,6 @@ import {
   LayoutDashboard,
   MonitorPlay,
   PlayCircle,
-  ScrollText,
   ShieldCheck,
 } from './icons';
 
@@ -35,8 +34,11 @@ const COURSES = [
  * Deliberately lighter than the QuikHRMS hero it is modelled on: that one
  * clones real panels and flies them into the mockup on scroll (~250 lines of
  * imperative geometry). The docking animation is the first thing to break when
- * the mockup markup changes, so this keeps the mesh, the chips and the tilt —
- * the parts that carry the look — and leaves the choreography out.
+ * the mockup markup changes, so this keeps the mesh and the tilt — the parts
+ * that carry the look — and leaves the choreography out.
+ *
+ * The bobbing gutter chips and the notification cards beside the mockup were
+ * removed on request; their `.hero-chip` / `.float-card` CSS went with them.
  */
 export default function Hero() {
   const dashRef = useRef<HTMLDivElement>(null);
@@ -122,35 +124,6 @@ export default function Hero() {
       </div>
       <div className="grid-overlay" aria-hidden="true" />
 
-      {/* Floating gutter chips — desktop only (hidden under 1180px in CSS). */}
-      <div className="hero-chip hc-1" aria-hidden="true">
-        <span className="hc-i" style={{ background: '#6366f1' }}>
-          <Award />
-        </span>
-        <div>
-          Certificate issued
-          <small>Fire Safety · verified</small>
-        </div>
-      </div>
-      <div className="hero-chip hc-2" aria-hidden="true">
-        <span className="hc-i" style={{ background: '#22d3ee' }}>
-          <ShieldCheck />
-        </span>
-        <div>
-          Proctored attempt
-          <small>Fullscreen enforced</small>
-        </div>
-      </div>
-      <div className="hero-chip hc-3" aria-hidden="true">
-        <span className="hc-i" style={{ background: '#8b5cf6' }}>
-          <MonitorPlay />
-        </span>
-        <div>
-          SCORM 2004
-          <small>Progress reported back</small>
-        </div>
-      </div>
-
       <div className="wrap">
         <div className="hero-inner">
           <span className="pill">
@@ -199,34 +172,6 @@ export default function Hero() {
       {/* ---------------- Learner dashboard mockup ---------------- */}
       <div className="wrap">
         <div className="hero-stage">
-          <div className="float-card fc-1" aria-hidden="true">
-            <span className="fc-ico" style={{ background: '#16a34a' }}>
-              <ClipboardCheck />
-            </span>
-            <div>
-              Quiz passed
-              <small>86% · above threshold</small>
-            </div>
-          </div>
-          <div className="float-card fc-2" aria-hidden="true">
-            <span className="fc-ico" style={{ background: '#6366f1' }}>
-              <ScrollText />
-            </span>
-            <div>
-              Certificate ready
-              <small>QR verification live</small>
-            </div>
-          </div>
-          <div className="float-card fc-3" aria-hidden="true">
-            <span className="fc-ico" style={{ background: '#f59e0b' }}>
-              <Calendar />
-            </span>
-            <div>
-              Exam in 2 days
-              <small>Proctoring enabled</small>
-            </div>
-          </div>
-
           <div className="lms-dash" ref={dashRef}>
             <div className="dash-bar" aria-hidden="true">
               <i />

@@ -1,7 +1,7 @@
 import { route, json } from '@/lib/http';
 import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
-import { ensureLmsAppRolesSeeded } from '@/lib/api/seed-lms-app-roles';
+import { ensureLmsAppRolesSeeded, syncCentralAppRoleMirror } from '@/lib/api/seed-lms-app-roles';
 import { ensureLmsRbacSeeded } from '@/lib/api/seed-lms-permissions';
 
 /**
@@ -33,6 +33,12 @@ export const GET = route(async (req) => {
       // that predates it; both are per-process cached, so it is a no-op after the
       // first load rather than 392 grants on every page view.
       await ensureLmsRbacSeeded(actor.orgId);
+      // Correct the central `UserAppAccess.role` copy, which quikit's
+      // invitation-accept path writes as `member` for an `org_admin` — see
+      // `syncCentralAppRoleMirror`. Here rather than at provisioning time because
+      // the row only exists once the invitation has been accepted. Display-only:
+      // it never writes an assignment, so no one's permissions change.
+      await syncCentralAppRoleMirror(actor.id, actor.orgId, actor.role);
     } catch {
       /* advisory — retried on the next load; provision-roles is the eager path */
     }
@@ -43,7 +49,7 @@ export const GET = route(async (req) => {
   const dbUser = actor.id
     ? await db.lmsUser.findUnique({
         where: { id: actor.id },
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, secondaryRole: true, orgId: true, managerId: true, isActive: true },
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, orgId: true, managerId: true, isActive: true },
       })
     : null;
 
@@ -61,25 +67,10 @@ export const GET = route(async (req) => {
     email: dbUser?.email ?? actor.email,
     firstName: dbUser?.firstName ?? actor.firstName,
     lastName: dbUser?.lastName ?? actor.lastName,
-    /**
-     * The ACTIVE role, not the `LmsUser.role` column.
-     *
-     * This read `dbUser?.role ?? actor.role`, which meant the client was told the
-     * user's PRIMARY role even after they switched — so a teacher who switched to
-     * Sub Admin got sub-admin pages driven by a `user.role` of TEACHER. `actor.role`
-     * is itself resolved from that same row (getAuthContext reads it), so nothing is
-     * lost by preferring it, and `primaryRole` below keeps the raw column available.
-     */
+    /** Single-role model (quikscale parity) — `actor.role` is the only role. */
     role: actor.role,
-    /** The `LmsUser.role` column — the role they are when not switched. */
-    primaryRole: dbUser?.role ?? actor.roles[0],
-    secondaryRole: dbUser?.secondaryRole ?? actor.secondaryRole,
-    /**
-     * Every role they may act as, default first. The header switcher renders from
-     * THIS rather than from `localStorage.qs_roles`, which is what let the role set
-     * go stale (and vanish) across a switch. See components/AppShell.tsx.
-     */
-    roles: actor.roles,
+    /** The `LmsUser.role` column, kept for callers that read `primaryRole` directly. */
+    primaryRole: dbUser?.role ?? actor.role,
     orgId: dbUser?.orgId ?? actor.orgId,
     tenantType: actor.tenantType,
     managerId: dbUser?.managerId ?? null,

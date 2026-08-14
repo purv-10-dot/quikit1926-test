@@ -33,7 +33,7 @@ interface TenantRow {
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
-export default function SuperAdminAnalyticsPage() {
+export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<PlatformStats>({
     totalTenants: 0, activeTenants: 0, pausedTenants: 0, trialTenants: 0,

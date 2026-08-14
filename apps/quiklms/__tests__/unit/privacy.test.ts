@@ -32,8 +32,8 @@ const student = {
   providerId: 'g-1',
 };
 
-const teacher = { id: 'u-t', role: 'TEACHER', secondaryRole: null, orgId: 'org-1', isActive: true } as never;
-const admin = { id: 'u-a', role: 'TENANT_ADMIN', secondaryRole: null, orgId: 'org-1', isActive: true } as never;
+const teacher = { id: 'u-t', role: 'TEACHER', orgId: 'org-1', isActive: true } as never;
+const admin = { id: 'u-a', role: 'TENANT_ADMIN', orgId: 'org-1', isActive: true } as never;
 
 function req(url = 'http://x/api/users?role=LEARNER') {
   return new Request(url, { headers: { 'user-agent': 'jest', 'x-forwarded-for': '203.0.113.9' } }) as never;
@@ -99,21 +99,6 @@ describe('applyTeacherPrivacy', () => {
     const out = await applyTeacherPrivacy(admin, req(), student);
     expect(out).toHaveProperty('email', 'ada@school.test');
     expect(h.auditCreate).not.toHaveBeenCalled();
-  });
-
-  it('gates on the PRIMARY role only — a secondary TEACHER is not stripped', async () => {
-    // Legacy: `request.user?.role !== 'TEACHER'` → passthrough. Reproduced.
-    const secondaryTeacher = { ...(admin as any), role: 'TENANT_ADMIN', secondaryRole: 'TEACHER' } as never;
-    const out = await applyTeacherPrivacy(secondaryTeacher, req(), student);
-    expect(out).toHaveProperty('email');
-  });
-
-  it('DOES strip a primary TEACHER who also holds SUB_ADMIN', async () => {
-    // requireRoles lets this actor reach the admin routes; the legacy interceptor
-    // gates on primary role, so it still strips.
-    const teacherSubAdmin = { ...(teacher as any), role: 'TEACHER', secondaryRole: 'SUB_ADMIN' } as never;
-    const out = await applyTeacherPrivacy(teacherSubAdmin, req(), student);
-    expect(out).not.toHaveProperty('email');
   });
 
   it('writes an audit row with the fields it withheld', async () => {

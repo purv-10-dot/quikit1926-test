@@ -53,12 +53,19 @@ describe('a teacher created from the roster form is schedulable', () => {
     });
   });
 
+  // `qualification` is `LmsUserQualification` (PGT/TGT/PRT/NTT/Other) and
+  // `rateType` is `LmsRateType` — both real Postgres enums, so this case uses
+  // real members. It previously asserted `qualification: 'M.Sc'`, which Prisma
+  // rejects: the update threw, `enrichRosterUser` swallowed it, and the whole
+  // teacher profile — subjects and availability included — was silently dropped.
+  // Out-of-enum values are now discarded field-by-field instead
+  // (see teacher-profile-roundtrip.test.ts).
   it('persists subjects, rate, rate type, qualification and payout', async () => {
     await enrichRosterUser('u1', 'org-1', 'TEACHER', {
       subjects: ['Maths', 'Physics'],
       ratePerClass: 500,
       rateType: 'per_class',
-      qualification: 'M.Sc',
+      qualification: 'PGT',
       monthlyPayout: 40000,
     });
 
@@ -67,7 +74,7 @@ describe('a teacher created from the roster form is schedulable', () => {
       subjects: ['Maths', 'Physics'],
       ratePerClass: 500,
       rateType: 'per_class',
-      qualification: 'M.Sc',
+      qualification: 'PGT',
       monthlyPayout: 40000,
     });
   });

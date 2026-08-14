@@ -48,3 +48,12 @@ graphify-out/
 
 # Markdown files — local-only docs, analyses, scratch notes; never committed.
 *.md
+
+# ────────────────────────────────────────────────────────────────────────────
+# QuikLMS migrations — applied by hand per environment (dev/uat/prod), so the
+# SQL is not carried in git. Only matches *_quiklms_* / *app_quiklms* names;
+# every other app's migrations stay tracked. Already-committed files are
+# unaffected — .gitignore only applies to untracked paths.
+# ────────────────────────────────────────────────────────────────────────────
+packages/database/prisma/migrations/*_quiklms_*/
+packages/database/prisma/manual-migrations/*app_quiklms*

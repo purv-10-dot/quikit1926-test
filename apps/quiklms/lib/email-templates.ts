@@ -9,7 +9,7 @@
 const FRONTEND_URL = (process.env.NEXTAUTH_URL || 'http://localhost:3014').trim().replace(/\/$/, '');
 
 const ROLE_NAMES: Record<string, string> = {
-  SUPER_ADMIN: 'Super Administrator',
+  ADMIN: 'Super Administrator',
   TENANT_ADMIN: 'Tenant Administrator',
   SUB_ADMIN: 'Sub Admin',
   MANAGER: 'Manager',

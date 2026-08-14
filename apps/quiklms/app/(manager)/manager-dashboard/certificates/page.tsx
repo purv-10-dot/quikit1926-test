@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Award, Download, CheckCircle, Calendar, X, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
 import { api } from '@/lib/api';
+import { downloadCertificatePdf, certificateFilename } from '@/lib/certificate-download';
 import ReadMoreText from '@/components/ReadMoreText';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -83,19 +84,10 @@ const CertificatesPage = () => {
 
     try {
       const courseName = certificate.courseTitle || 'Certificate';
-      const filename = `${courseName.replace(/[^a-zA-Z0-9\s-]/g, '')}_Certificate.pdf`;
 
-      const r = await fetch(`/api/certificates/${certificate._id}/download`, { credentials: 'include' });
-      const blob = await r.blob();
-
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
+      // Throws (with the server's own message) rather than saving an error body
+      // as a .pdf — see lib/certificate-download.ts.
+      await downloadCertificatePdf(certificate._id, certificateFilename(courseName));
 
       toast.success(`Downloading certificate for ${courseName}...`);
 
@@ -105,9 +97,9 @@ const CertificatesPage = () => {
         format: 'pdf',
       }).catch(() => { /* silent */ });
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CertificatesPage] Download failed:', err);
-      toast.error('Failed to download certificate. Please try again.');
+      toast.error(err instanceof Error ? err.message : 'Failed to download certificate. Please try again.');
     } finally {
       setDownloading(prev => ({ ...prev, [certificate._id]: false }));
     }

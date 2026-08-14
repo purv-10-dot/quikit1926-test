@@ -16,6 +16,7 @@ import {
   // the name from later versions and is `undefined` here (breaks the prod build
   // with "Element type is invalid"). Aliased so usages below stay unchanged.
   BookUser, Award, Calendar, Home, PlayCircle as CirclePlay, Wallet, Shield,
+  Settings, Briefcase,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { FeatureSet } from '@/lib/features';
@@ -33,11 +34,43 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+/**
+ * Icon for a group's collapsed accordion row, keyed by `NavGroup.id`.
+ *
+ * Kept as a lookup rather than a field on every group literal: the same ids
+ * ('overview', 'people', 'communication', …) recur across all ten role menus
+ * below, so one map is one place to change instead of ~40 duplicated fields.
+ * `Sidebar` falls back to the group's first item icon for an unmapped id, so a
+ * new group renders sensibly before it is added here.
+ */
+export const GROUP_ICONS: Record<string, LucideIcon> = {
+  overview:       LayoutDashboard,
+  organizations:  Building2,
+  content:        LibraryBig,
+  system:         ShieldCheck,
+  people:         Users,
+  academics:      GraduationCap,
+  learning:       BookOpen,
+  classes:        CalendarDays,
+  operations:     ListChecks,
+  reports:        BarChart3,
+  administration: UserCheck,
+  communication:  MessageSquare,
+  settings:       Settings,
+  work:           Briefcase,
+  team:           Users,
+  achievements:   Award,
+  growth:         TrendingUp,
+  finance:        Wallet,
+  child:          UserRound,
+  support:        BookUser,
+};
+
 type TenantType = 'corporate' | 'school' | null;
 
 // ── Super Admin ──────────────────────────────────────────────────────────────
 
-function superAdminGroups(): NavGroup[] {
+function adminGroups(): NavGroup[] {
   return [
     {
       id: 'overview',
@@ -54,7 +87,7 @@ function superAdminGroups(): NavGroup[] {
         { label: 'Onboard Tenant',  path: '/onboarding', icon: UserPlus },
         // The old super-admin sidebar had a Users entry (/dashboard/users)
         // right after Organizations. The page survives the port at
-        // /user-management and SUPER_ADMIN passes its route guard, but nothing
+        // /user-management and ADMIN passes its route guard, but nothing
         // linked to it — cross-tenant user management was reachable only by
         // typing the URL.
         { label: 'Users',           path: '/user-management', icon: Users },
@@ -107,6 +140,10 @@ function tenantAdminSchoolGroups(): NavGroup[] {
       label: 'Academics',
       items: [
         { label: 'Batches',             path: '/batches',              icon: Layers },
+        // No admin attendance entry, by design: attendance is taken by the
+        // TEACHER from their own dashboard, which is how the reference app models
+        // it (`pages/teacher/AttendancePage.tsx`; `pages/school-admin/` has no
+        // attendance screen at all).
         { label: 'Exams',               path: '/exams',                icon: FileEdit },
         { label: 'Question Bank',       path: '/question-bank',        icon: Database },
         { label: 'Course Assignment',   path: '/school-courses',       icon: BookPlus },
@@ -195,7 +232,7 @@ function tenantAdminCorporateGroups(): NavGroup[] {
         { label: 'Course Assignments', path: '/course-assignments',   icon: BookPlus,  feature: 'showCourseAssignments' },
         { label: 'Create Course',      path: '/create-course',        icon: Sparkles },
         { label: 'Compliance',         path: '/compliance',           icon: ClipboardCheck, feature: 'showCompliance' },
-        { label: 'Quiz Proctoring',    path: '/quiz-proctoring',      icon: Shield },
+        { label: 'Quiz Proctoring',    path: '/quiz-proctoring',      icon: Shield,    feature: 'showQuizProctoring' },
       ],
     },
     {
@@ -348,7 +385,7 @@ function subAdminCorporateGroups(): NavGroup[] {
         { label: 'Course Assignments', path: '/course-assignments',   icon: BookPlus,  feature: 'showCourseAssignments' },
         { label: 'Create Course',      path: '/create-course',        icon: Sparkles },
         { label: 'Compliance',         path: '/compliance',           icon: ClipboardCheck, feature: 'showCompliance' },
-        { label: 'Quiz Proctoring',    path: '/quiz-proctoring',      icon: Shield },
+        { label: 'Quiz Proctoring',    path: '/quiz-proctoring',      icon: Shield,    feature: 'showQuizProctoring' },
       ],
     },
     {
@@ -436,7 +473,14 @@ function teacherGroups(): NavGroup[] {
       id: 'classes',
       label: 'My Classes',
       items: [
-        { label: 'Batches',     path: '/teacher-dashboard/batches',     icon: CalendarDays },
+        // `/teacher-dashboard/batches` is `MyClassesPage` — a week-by-week class
+        // CALENDAR, not a batch list. Labelled "Batches", it hid the teacher's
+        // schedule behind a word that reads as an admin screen, which is why a
+        // newly-created batch looked like it had never reached the teacher: the
+        // classes were there, under a menu item nobody opened to find a calendar.
+        // "My Classes" is the reference app's own label for this exact page
+        // (`t('nav.myClasses')` on `/teacher-dashboard/classes`, TeacherLayout.tsx).
+        { label: 'My Classes',  path: '/teacher-dashboard/batches',     icon: CalendarDays },
         { label: 'Attendance',  path: '/teacher-dashboard/attendance',  icon: ClipboardCheck },
         { label: 'Homework',    path: '/teacher-dashboard/homework',    icon: BookOpen },
         { label: 'Tutoring',    path: '/teacher-dashboard/tutoring',    icon: BookUser },
@@ -613,7 +657,7 @@ const isSchool = (tenantType: TenantType): boolean => tenantType === 'school';
 
 export function getNavGroups(role: string, tenantType: TenantType): NavGroup[] {
   switch (role) {
-    case 'SUPER_ADMIN':  return superAdminGroups();
+    case 'ADMIN':  return adminGroups();
     case 'TENANT_ADMIN': return isSchool(tenantType) ? tenantAdminSchoolGroups() : tenantAdminCorporateGroups();
     case 'SUB_ADMIN':    return isSchool(tenantType) ? subAdminSchoolGroups() : subAdminCorporateGroups();
     case 'MANAGER':      return managerGroups();

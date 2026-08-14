@@ -49,8 +49,8 @@ const PUT = (a: APIRequestContext, p: string, data: unknown) => a.put(p, { timeo
 interface Envelope<T> {
   success?: boolean;
   data?: T;
-  statusCode?: number;
   message?: string;
+  error?: string;
 }
 
 /** A bank question with a known answer key, used to build publishable exams. */
@@ -142,7 +142,7 @@ test.describe("Phase 13 — exams RBAC", () => {
     const res = await GET(api, `/api/exams/${MISSING}`);
     expect(res.status()).toBe(404);
     const body = (await safeJson(res)) as Envelope<never>;
-    expect(body.statusCode, "lib/http.ts error envelope").toBe(404);
+    expect(body.success, "lib/http.ts error envelope").toBe(false);
     await api.dispose();
   });
 
