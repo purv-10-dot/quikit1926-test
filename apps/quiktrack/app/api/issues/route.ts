@@ -71,6 +71,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterSprintId = url.searchParams.get("sprintId");
   const filterParentId = url.searchParams.get("parentId");
   const filterEpicId = url.searchParams.get("epicId");
+  // Releases (Fix Versions) are a many-to-many join (QtIssueRelease), unlike
+  // sprint/epic which are direct columns — resolve to an id-IN filter instead
+  // of a where-clause spread.
+  const filterReleaseId = url.searchParams.get("releaseId");
   const filterAssigneeId = url.searchParams.get("assigneeId");
   const filterPriority = url.searchParams.get("priority");
   // When set, also return a To Do / In Progress / Done breakdown for the
@@ -164,10 +168,23 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     }
   }
 
+  // Resolve the release's linked issue ids ONCE (outside the where object) so
+  // an empty result set short-circuits to `{ id: { in: [] } }` instead of
+  // silently matching every issue.
+  let releaseIssueIds: string[] | null = null;
+  if (filterReleaseId) {
+    const links = await db.qtIssueRelease.findMany({
+      where: { releaseId: filterReleaseId },
+      select: { issueId: true },
+    });
+    releaseIssueIds = links.map((l) => l.issueId);
+  }
+
   const where = {
     orgId: orgId,
     projectId,
     isDeleted: false,
+    ...(releaseIssueIds ? { id: { in: releaseIssueIds } } : {}),
     ...typeWhere,
     ...(filterStatusIds.length > 0
       ? { statusId: { in: filterStatusIds } }

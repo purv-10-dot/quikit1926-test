@@ -6436,6 +6436,7 @@ model QtProject {
   teams                QtProjectTeam[]
   sprints              QtSprint[]
   sprintSnapshots      QtSprintSnapshot[]
+  releases             QtRelease[]
   projectRoles         QtProjectRole[]
   projectUserRoles     QtProjectUserRole[]
   customFields         QtCustomField[]
@@ -6833,6 +6834,95 @@ model QtSprintSnapshot {
   @@schema("app_quiktrack")
 }
 
+/// Releases (Jira "Fix Versions") â€” per-project, like QtSprint. An issue can
+/// belong to multiple releases at once (see QtIssueRelease), unlike sprint
+/// assignment which is single-valued.
+///
+/// Designs section (Jira-parity linked-designs UI) is intentionally NOT
+/// modeled yet â€” deferred pending a follow-up spec. A `designs` relation may
+/// be added here later without touching the fields below.
+model QtRelease {
+  id           String                 @id @default(cuid())
+  projectId    String
+  name         String
+  description  String?
+  status       String                 @default("UNRELEASED") // UNRELEASED | RELEASED | ARCHIVED
+  startDate    DateTime?
+  releaseDate  DateTime?
+  /// Single org member (User.id) designated as the release driver. Plain
+  /// string, not a Prisma relation â€” same convention as QtIssue.assigneeId.
+  driverId     String?
+  releasedAt   DateTime?
+  archivedAt   DateTime?
+  isDeleted    Boolean                @default(false)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  project      QtProject              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues       QtIssueRelease[]
+  approvers    QtReleaseApprover[]
+  relatedLinks QtReleaseRelatedLink[]
+
+  @@index([projectId, status])
+  @@schema("app_quiktrack")
+}
+
+/// Many-to-many join between QtIssue and QtRelease (Jira "Fix Version(s)").
+/// Composite PK prevents duplicate links; the issueId index supports "which
+/// releases is this issue in" lookups from the issue side (e.g. the issue
+/// detail panel's Fix versions field).
+model QtIssueRelease {
+  releaseId String
+  issueId   String
+  addedAt   DateTime  @default(now())
+  addedBy   String?
+  release   QtRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  issue     QtIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, issueId])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+/// One row per org member designated as an approver for a release. Carries
+/// the approver's own approve/request-changes decision (status/comment/actedAt)
+/// â€” the approver acts on their own row via an ownership check in the route,
+/// not via a separate permission grant.
+model QtReleaseApprover {
+  id        String    @id @default(cuid())
+  releaseId String
+  userId    String
+  status    String    @default("PENDING") // PENDING | APPROVED | CHANGES_REQUESTED
+  comment   String?
+  actedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  release   QtRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, userId])
+  @@index([releaseId])
+  @@schema("app_quiktrack")
+}
+
+/// Freeform "Related work" links on a release (release notes docs,
+/// dashboards, etc.) â€” manually added URLs, not tied to any other QuikTrack
+/// feature.
+model QtReleaseRelatedLink {
+  id        String    @id @default(cuid())
+  releaseId String
+  title     String
+  url       String
+  type      String?
+  createdAt DateTime  @default(now())
+  createdBy String?
+  release   QtRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([releaseId])
+  @@schema("app_quiktrack")
+}
+
 model QtIssueStatus {
   id                  String                     @id @default(cuid())
   projectId           String
@@ -6960,6 +7050,7 @@ model QtIssue {
   devCommits       QtDevCommit[]
   devPullRequests  QtDevPullRequest[]
   remoteLinks      QtRemoteLink[]
+  releases         QtIssueRelease[]
 
   @@unique([projectId, key])
   @@index([orgId])

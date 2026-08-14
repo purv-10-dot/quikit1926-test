@@ -24,6 +24,7 @@ export const PROJECT_TABS: ProjectTab[] = [
   { path: "timeline", label: "Timeline", perm: { resource: "ProjectTimeline", action: "view" } },
   { path: "backlog", label: "Backlog", perm: { resource: "ProjectBacklog", action: "view" } },
   { path: "epics", label: "Epics", perm: { resource: "ProjectBacklog", action: "view" } },
+  { path: "releases", label: "Releases", perm: { resource: "Release", action: "view" } },
   { path: "board", label: "Board", perm: { resource: "Board", action: "view" } },
   { path: "grouped-kanban", label: "Grouped Kanban", perm: { resource: "GroupedKanban", action: "view" } },
   { path: "list", label: "List", perm: { resource: "ProjectList", action: "view" } },

@@ -90,6 +90,12 @@ interface EpicOption {
   title: string;
 }
 
+interface ReleaseOption {
+  id: string;
+  name: string;
+  status: string;
+}
+
 interface IssueFull {
   id: string;
   key: string;
@@ -301,6 +307,8 @@ export function EditIssueModal({
   const [members, setMembers] = useState<Member[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [epics, setEpics] = useState<EpicOption[]>([]);
+  const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  const [issueReleaseIds, setIssueReleaseIds] = useState<string[]>([]);
 
   const [title, setTitle] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -615,8 +623,10 @@ export function EditIssueModal({
       fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
       fetch(`/api/sprints?projectId=${projectId}&limit=50`).then((r) => r.json()),
       fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=100`).then((r) => r.json()),
+      fetch(`/api/releases?projectId=${projectId}&limit=50`).then((r) => r.json()),
+      fetch(`/api/issues/${currentIssueId}/releases`).then((r) => r.json()),
     ])
-      .then(([i, s, m, sp, ep]) => {
+      .then(([i, s, m, sp, ep, rel, issueRel]) => {
         if (!alive) return;
         if (i?.success && i.data) {
           const d = i.data as IssueFull;
@@ -655,6 +665,15 @@ export function EditIssueModal({
             title: e.title,
           })),
         );
+        const releaseData = rel?.success ? rel.data ?? [] : [];
+        setReleases(
+          releaseData.map((r: { id: string; name: string; status: string }) => ({
+            id: r.id,
+            name: r.name,
+            status: r.status,
+          })),
+        );
+        setIssueReleaseIds(issueRel?.success ? (issueRel.data as string[]) ?? [] : []);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -718,6 +737,25 @@ export function EditIssueModal({
       } else {
         // The change didn't persist (e.g. a field that's read-only for the
         // caller's role). Surface it instead of silently losing the edit.
+        showToast(res?.error || "That change couldn't be saved.", "error");
+      }
+    } catch {
+      showToast("Couldn't save your change. Please try again.", "error");
+    }
+  }
+
+  // Fix versions live in a separate many-to-many join (QtIssueRelease), not a
+  // column on QtIssue, so they get their own PUT rather than going through
+  // the generic `patch()` PATCH helper.
+  async function patchReleases(releaseIds: string[]) {
+    if (!issue) return;
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/releases`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ releaseIds }),
+      }).then((r) => r.json());
+      if (!res?.success) {
         showToast(res?.error || "That change couldn't be saved.", "error");
       }
     } catch {
@@ -1601,6 +1639,33 @@ export function EditIssueModal({
                             }}
                           />
                         )}
+                      </DetailRow>
+                    )}
+
+                    {/* Fix versions — Jira "Fix Version(s)": many-to-many, so
+                        Epics can carry them too (unlike Sprint, which is a
+                        single-assignment field epics don't participate in). */}
+                    {locked("releases") ? (
+                      <DetailRow label="Fix versions">
+                        <LockedChip>
+                          {issueReleaseIds
+                            .map((id) => releases.find((r) => r.id === id)?.name)
+                            .filter(Boolean)
+                            .join(", ") || "—"}
+                        </LockedChip>
+                      </DetailRow>
+                    ) : (
+                      <DetailRow label="Fix versions">
+                        <FixVersionsPicker
+                          releases={releases}
+                          value={issueReleaseIds}
+                          onChange={(ids) => {
+                            setIssueReleaseIds(ids);
+                            void patchReleases(ids);
+                          }}
+                          onCreated={(r) => setReleases((prev) => [...prev, r])}
+                          projectId={projectId}
+                        />
                       </DetailRow>
                     )}
 
@@ -2669,6 +2734,179 @@ function SprintOption({
         active ? "bg-blue-50 border-l-2 border-blue-600" : "hover:bg-gray-50"
       }`}
     >
+      <span className="text-gray-800">{name}</span>
+    </button>
+  );
+}
+
+/**
+ * Jira-style "Fix versions" multi-select. Grouped by Unreleased/Released so
+ * the active release set is easy to scan, with an inline "+ Create new
+ * version" row (mirrors Jira's picker) that creates the release via the
+ * releases API and immediately selects it — no separate modal round trip.
+ */
+function FixVersionsPicker({
+  releases,
+  value,
+  onChange,
+  onCreated,
+  projectId,
+}: {
+  releases: ReleaseOption[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  onCreated: (release: ReleaseOption) => void;
+  projectId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false));
+
+  const selected = releases.filter((r) => value.includes(r.id));
+  const filtered = query
+    ? releases.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()))
+    : releases;
+  const unreleased = filtered.filter((r) => r.status === "UNRELEASED");
+  const other = filtered.filter((r) => r.status !== "UNRELEASED");
+
+  function toggle(id: string) {
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  }
+
+  async function createVersion() {
+    const name = query.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/releases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, name }),
+      }).then((r) => r.json());
+      if (res?.success) {
+        const created: ReleaseOption = { id: res.data.id, name: res.data.name, status: res.data.status };
+        onCreated(created);
+        onChange([...value, created.id]);
+        setQuery("");
+      } else {
+        showToast(res?.error || "Couldn't create the version.", "error");
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`text-sm text-left px-2 -mx-2 py-1 rounded w-full ${
+          open ? "border border-blue-500 ring-2 ring-blue-500 bg-white" : "hover:bg-gray-50"
+        }`}
+      >
+        {selected.length > 0 ? (
+          <span className="flex flex-wrap gap-1">
+            {selected.map((r) => (
+              <span
+                key={r.id}
+                className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-xs"
+              >
+                {r.name}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-gray-500">Select version</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-[320px] bg-white border border-gray-200 rounded shadow-lg z-50 max-h-80 overflow-hidden flex flex-col">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Select version"
+              className="w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="overflow-y-auto">
+            {unreleased.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-gray-500 uppercase">
+                  Unreleased
+                </div>
+                {unreleased.map((r) => (
+                  <FixVersionOption
+                    key={r.id}
+                    name={r.name}
+                    checked={value.includes(r.id)}
+                    onClick={() => toggle(r.id)}
+                  />
+                ))}
+              </>
+            )}
+            {other.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-gray-500 uppercase">
+                  Released
+                </div>
+                {other.map((r) => (
+                  <FixVersionOption
+                    key={r.id}
+                    name={r.name}
+                    checked={value.includes(r.id)}
+                    onClick={() => toggle(r.id)}
+                  />
+                ))}
+              </>
+            )}
+            {filtered.length === 0 && (
+              <div className="px-3 py-3 text-xs text-gray-500">No versions found.</div>
+            )}
+          </div>
+          {query.trim() && !releases.some((r) => r.name.toLowerCase() === query.trim().toLowerCase()) && (
+            <div className="border-t border-gray-100">
+              <button
+                type="button"
+                disabled={creating}
+                onClick={createVersion}
+                className="flex items-center gap-1.5 w-full px-3 py-2 text-sm text-left text-blue-600 hover:bg-blue-50 disabled:opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {creating ? "Creating…" : `Create new version "${query.trim()}"`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FixVersionOption({
+  name,
+  checked,
+  onClick,
+}: {
+  name: string;
+  checked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50"
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => undefined}
+        className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-400 pointer-events-none"
+      />
       <span className="text-gray-800">{name}</span>
     </button>
   );

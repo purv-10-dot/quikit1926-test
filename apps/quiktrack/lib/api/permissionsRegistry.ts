@@ -87,6 +87,11 @@ export interface PermissionModule {
  *   Sprint         — create + update via /api/sprints[/:id]. No view (sprints
  *                    are visible to members in the backlog, not gated) and no
  *                    delete (no sprint-delete enforcement).
+ *   Release        — full CRUD via /api/releases[/:id]; `view` also gates the
+ *                    Releases tab. ReleaseApprover create/update/delete gates
+ *                    roster management (add/remove approvers); an approver's
+ *                    own approve/request-changes action is ownership-checked
+ *                    in the route, not a separate grant.
  *   Issue          — create / update / delete via /api/issues[/:id]. No view:
  *                    issue visibility is membership-based, not gated by a grant.
  *   IssueComment   — create via /api/issues/:id/comments. No view (comments
@@ -118,6 +123,19 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [
       // No view (membership-based, not gated) and no delete (not enforced).
       { resource: "Sprint", label: "Sprint", actions: ["create", "update"] },
+    ],
+  },
+  {
+    key: "Releases",
+    label: "Releases",
+    leaves: [
+      // `view` gates the Releases tab (see PROJECT_TABS) in addition to the
+      // usual CRUD grants.
+      { resource: "Release", label: "Release", actions: ACTIONS },
+      // Add/remove approver rows on a release. An approver acting on their
+      // OWN row (approve / request changes / comment) is an ownership check
+      // in the route, not a grant — same pattern as IssueComment edit/delete.
+      { resource: "ReleaseApprover", label: "Release approver", actions: ["create", "update", "delete"] },
     ],
   },
   {
