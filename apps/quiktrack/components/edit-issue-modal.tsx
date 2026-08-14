@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
+import { WatchButton } from "@/components/issue-full-view/watch-button";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { sanitizeRichText } from "@/lib/sanitize";
 import {
@@ -30,8 +31,6 @@ import {
   Plus,
   MoreHorizontal,
   Lock,
-  Eye,
-  Share2,
   ZapIcon,
   SlidersHorizontal,
   Link2,
@@ -1066,20 +1065,7 @@ export function EditIssueModal({
                     </span>
                   )}
                 </div>
-                {/* <div className="inline-flex items-center gap-1 text-gray-500">
-                  <button className="p-1 hover:bg-gray-100 rounded" aria-label="Lock">
-                    <Lock className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="p-1 rounded bg-blue-50 text-blue-600" aria-label="Watching">
-                    <Eye className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="p-1 hover:bg-gray-100 rounded" aria-label="Share">
-                    <Share2 className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="p-1 hover:bg-gray-100 rounded" aria-label="More">
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                </div> */}
+                <WatchButton issueId={issue.id} />
               </div>
 
               {/* Time-exceeded banner — shows when total logged hours

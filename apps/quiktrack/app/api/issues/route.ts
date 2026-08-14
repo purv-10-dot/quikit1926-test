@@ -555,6 +555,21 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     void recalcParentRollup(issue.parentId, orgId);
   }
 
+  // Auto-watch: the reporter (always the creator) and the initial assignee
+  // (if different) start watching, matching Jira's default. Manual unwatch
+  // still works afterwards — this only seeds the initial watcher set.
+  void db.qtIssueWatcher
+    .createMany({
+      data: [
+        { orgId, issueId: issue.id, userId, source: "AUTO" },
+        ...(issue.assigneeId && issue.assigneeId !== userId
+          ? [{ orgId, issueId: issue.id, userId: issue.assigneeId, source: "AUTO" }]
+          : []),
+      ],
+      skipDuplicates: true,
+    })
+    .catch((e) => console.error("[watch] auto-watch on create failed:", e));
+
   // Email anyone @-mentioned in the new issue's description.
   if (issue.description) {
     void notifyMentions({

@@ -399,6 +399,7 @@ async function notifyOnUpdate(args: {
     const userIds = new Set<string>();
     if (args.actorUserId) userIds.add(args.actorUserId);
     if (args.assigneeChanged && args.after.assigneeId) userIds.add(args.after.assigneeId);
+    if (args.assigneeChanged && args.before.assigneeId) userIds.add(args.before.assigneeId);
     if (args.statusChanged && args.after.assigneeId) userIds.add(args.after.assigneeId);
 
     const [users, project, statusesNeeded] = await Promise.all([
@@ -450,6 +451,15 @@ async function notifyOnUpdate(args: {
         emailSent = true;
       }
       directRecipients.push(args.after.assigneeId);
+      // Auto-watch: a newly assigned person starts watching, matching Jira.
+      // skipDuplicates so re-assigning back to an existing (manual or auto)
+      // watcher is a no-op rather than an error.
+      await db.qtIssueWatcher
+        .createMany({
+          data: [{ orgId: args.orgId, issueId: issueRef.id, userId: args.after.assigneeId, source: "AUTO" }],
+          skipDuplicates: true,
+        })
+        .catch((e) => console.error("[watch] auto-watch on assign failed:", e));
       await notifyDirect({
         orgId: args.orgId,
         recipientId: args.after.assigneeId,
@@ -490,6 +500,26 @@ async function notifyOnUpdate(args: {
         fromValue: statusById.get(args.before.statusId)?.name ?? null,
         toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
         emailSent,
+      });
+    }
+
+    if (args.assigneeChanged) {
+      const nameOf = (id: string | null) => {
+        if (!id) return "Unassigned";
+        const u = userById.get(id);
+        return u ? [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email : "Unassigned";
+      };
+      await notifyWatchers({
+        orgId: args.orgId,
+        issueId: issueRef.id,
+        actorId: args.actorUserId,
+        type: "REASSIGNED",
+        projectId: issueRef.projectId,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: nameOf(args.before.assigneeId),
+        toValue: nameOf(args.after.assigneeId),
+        skipRecipientIds: directRecipients,
       });
     }
 

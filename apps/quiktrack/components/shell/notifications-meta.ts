@@ -28,6 +28,7 @@ export interface NotificationRow {
 export const ITEM_LABEL: Record<string, string> = {
   MENTION: "mentioned you on",
   ASSIGNED: "assigned you to",
+  REASSIGNED: "changed the assignee of",
   REPORTER: "set you as reporter on",
   STATUS_CHANGED: "changed the status of",
   PRIORITY_CHANGED: "changed the priority of",
@@ -39,7 +40,12 @@ export const ITEM_LABEL: Record<string, string> = {
 
 export function summarise(n: NotificationRow): string | null {
   if (n.snippet) return n.snippet;
-  if (n.type === "STATUS_CHANGED" || n.type === "PRIORITY_CHANGED" || n.type === "SPRINT_MOVED") {
+  if (
+    n.type === "STATUS_CHANGED" ||
+    n.type === "PRIORITY_CHANGED" ||
+    n.type === "SPRINT_MOVED" ||
+    n.type === "REASSIGNED"
+  ) {
     if (n.fromValue && n.toValue) return `${n.fromValue} → ${n.toValue}`;
     if (n.toValue) return n.toValue;
   }

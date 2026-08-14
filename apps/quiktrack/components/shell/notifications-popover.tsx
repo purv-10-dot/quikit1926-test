@@ -14,7 +14,7 @@ interface UnreadCounts {
   total: number;
 }
 
-const POLL_MS = 60_000;
+const POLL_MS = 15_000;
 
 export function NotificationsPopover() {
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -60,7 +60,10 @@ export function NotificationsPopover() {
   }, []);
 
   useEffect(() => {
-    if (open) void loadList(tab, onlyUnread);
+    if (!open) return;
+    void loadList(tab, onlyUnread);
+    const id = setInterval(() => void loadList(tab, onlyUnread), POLL_MS);
+    return () => clearInterval(id);
   }, [open, tab, onlyUnread, loadList]);
 
   useEffect(() => {
