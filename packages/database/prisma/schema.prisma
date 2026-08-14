@@ -6846,6 +6846,12 @@ model QtRelease {
   projectId    String
   name         String
   description  String?
+  /// Editable label for the freeform rich-text block at the top of the
+  /// release detail page (Jira's "Give this section a name"). Null renders
+  /// the placeholder label; distinct from `description` (the sidebar field).
+  sectionTitle String?
+  /// Rich-text (sanitized HTML) body of that same freeform block.
+  sectionText  String?
   status       String                 @default("UNRELEASED") // UNRELEASED | RELEASED | ARCHIVED
   startDate    DateTime?
   releaseDate  DateTime?

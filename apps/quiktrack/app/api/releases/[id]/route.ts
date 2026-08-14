@@ -102,7 +102,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
-    const { name, description, startDate, releaseDate, driverId, status } = parsed.data;
+    const { name, description, startDate, releaseDate, driverId, status, sectionTitle, sectionText } = parsed.data;
     const now = new Date();
     const updated = await db.qtRelease.update({
       where: { id: release.id },
@@ -123,6 +123,8 @@ export const PATCH = withOrgAuth<{ id: string }>(
               archivedAt: status === "ARCHIVED" ? now : release.archivedAt,
             }
           : {}),
+        ...(sectionTitle !== undefined ? { sectionTitle } : {}),
+        ...(sectionText !== undefined ? { sectionText } : {}),
         updatedBy: userId,
       },
     });

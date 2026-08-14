@@ -37,6 +37,8 @@ export interface ReleaseDetail {
   projectId: string;
   name: string;
   description: string | null;
+  sectionTitle: string | null;
+  sectionText: string | null;
   status: ReleaseStatus;
   startDate: string | null;
   releaseDate: string | null;

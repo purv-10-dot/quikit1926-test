@@ -9,6 +9,10 @@ export const createReleaseSchema = z.object({
   startDate: z.string().datetime().optional(),
   releaseDate: z.string().datetime().optional(),
   driverId: z.string().optional(),
+  // The freeform rich-text block at the top of the release detail page
+  // ("Give this section a name" + its body) — independent of `description`.
+  sectionTitle: z.string().max(120).nullable().optional(),
+  sectionText: z.string().max(50_000).nullable().optional(),
 });
 
 export const updateReleaseSchema = createReleaseSchema

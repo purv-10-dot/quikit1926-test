@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronDown, ChevronRight, PanelRightClose, PanelRightOpen, Rocket } from "lucide-react";
+import { Check, ChevronLeft, ChevronDown, ChevronRight, PanelRightClose, PanelRightOpen, Rocket, X } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { showToast } from "@/lib/ui/toast";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
@@ -26,10 +26,13 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [descOpen, setDescOpen] = useState(true);
-  const [descText, setDescText] = useState("");
   const [descDraft, setDescDraft] = useState("");
   const [descEditing, setDescEditing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [sectionTitleEditing, setSectionTitleEditing] = useState(false);
+  const [sectionTitleDraft, setSectionTitleDraft] = useState("");
 
   const bump = () => setRefreshKey((k) => k + 1);
 
@@ -51,6 +54,21 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
     void load();
     void loadMembers();
   }, [load, loadMembers]);
+
+  async function saveName() {
+    const t = nameDraft.trim();
+    if (!t || !release) return;
+    setNameEditing(false);
+    if (t === release.name) return;
+    await patch({ name: t });
+  }
+
+  async function saveSectionTitle() {
+    const t = sectionTitleDraft.trim();
+    setSectionTitleEditing(false);
+    if (!release || t === (release.sectionTitle ?? "")) return;
+    await patch({ sectionTitle: t || null });
+  }
 
   async function patch(body: Record<string, unknown>) {
     if (!release) return;
@@ -96,11 +114,54 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
       </div>
 
       <header className="flex items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded bg-blue-100">
             <Rocket className="h-4 w-4 text-blue-600" />
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{release.name}</h1>
+          {nameEditing ? (
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <input
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveName();
+                  if (e.key === "Escape") setNameEditing(false);
+                }}
+                className="flex-1 min-w-0 h-9 px-3 text-2xl font-semibold border border-blue-500 rounded focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={!nameDraft.trim()}
+                onClick={() => void saveName()}
+                className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
+                aria-label="Save name"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setNameEditing(false)}
+                className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+                aria-label="Cancel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <h1
+              onClick={() => {
+                if (!canUpdate) return;
+                setNameDraft(release.name);
+                setNameEditing(true);
+              }}
+              className={`text-2xl font-semibold tracking-tight text-gray-900 truncate rounded px-1 -mx-1 ${
+                canUpdate ? "cursor-text hover:bg-gray-50" : ""
+              }`}
+            >
+              {release.name}
+            </h1>
+          )}
         </div>
         <button
           type="button"
@@ -113,68 +174,123 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
         </button>
       </header>
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setDescOpen((v) => !v)}
-          className="flex items-center gap-1.5 w-full px-4 py-3 text-sm font-semibold text-gray-900"
-        >
-          {descOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          Give this section a name
-        </button>
-        {descOpen && (
-          <div className="px-4 pb-4">
-            {descEditing ? (
-              <div>
-                <RichTextEditor value={descDraft} onChange={setDescDraft} placeholder="Add your own text here! You can use rich text, hyperlinks, dates, emojis, and more." />
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDescText(descDraft);
-                      setDescEditing(false);
-                    }}
-                    className="h-8 px-3 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDescEditing(false)}
-                    className="h-8 px-3 text-xs text-gray-700 hover:bg-gray-100 rounded"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : descText ? (
-              <div
-                onClick={() => {
-                  setDescDraft(descText);
-                  setDescEditing(true);
-                }}
-                className="cursor-text rounded px-2 py-1.5 -mx-2 hover:bg-gray-50"
-              >
-                <RichTextView html={sanitizeRichText(descText)} />
-              </div>
-            ) : (
+      <div
+        className={`grid gap-5 items-start ${
+          sidebarOpen ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"
+        }`}
+      >
+        <div className="min-w-0 space-y-4">
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center gap-1.5 w-full px-4 py-3">
               <button
                 type="button"
-                onClick={() => {
-                  setDescDraft("");
-                  setDescEditing(true);
-                }}
-                className="block w-full text-left text-sm text-gray-500 rounded px-2 py-1.5 -mx-2 hover:bg-gray-50"
+                onClick={() => setDescOpen((v) => !v)}
+                className="p-0.5 -m-0.5 rounded hover:bg-gray-100 text-gray-500"
+                aria-label={descOpen ? "Collapse section" : "Expand section"}
               >
-                Add your own text here! You can use rich text, hyperlinks, dates, emojis, and more.
+                {descOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
+              {sectionTitleEditing ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <input
+                    autoFocus
+                    value={sectionTitleDraft}
+                    onChange={(e) => setSectionTitleDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveSectionTitle();
+                      if (e.key === "Escape") setSectionTitleEditing(false);
+                    }}
+                    placeholder="Give this section a name"
+                    className="flex-1 min-w-0 h-8 px-2 text-sm border border-blue-500 rounded focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveSectionTitle()}
+                    className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
+                    aria-label="Save section name"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSectionTitleEditing(false)}
+                    className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                    aria-label="Cancel"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canUpdate) return;
+                    setSectionTitleDraft(release.sectionTitle ?? "");
+                    setSectionTitleEditing(true);
+                  }}
+                  className={`text-sm font-semibold rounded px-1 -mx-1 text-left ${
+                    release.sectionTitle ? "text-gray-900" : "text-gray-400"
+                  } ${canUpdate ? "hover:bg-gray-50" : ""}`}
+                >
+                  {release.sectionTitle || "Give this section a name"}
+                </button>
+              )}
+            </div>
+            {descOpen && (
+              <div className="px-4 pb-4">
+                {descEditing ? (
+                  <div>
+                    <RichTextEditor value={descDraft} onChange={setDescDraft} placeholder="Add your own text here! You can use rich text, hyperlinks, dates, emojis, and more." />
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDescEditing(false);
+                          void patch({ sectionText: descDraft || null });
+                        }}
+                        className="h-8 px-3 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDescEditing(false)}
+                        className="h-8 px-3 text-xs text-gray-700 hover:bg-gray-100 rounded"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : release.sectionText ? (
+                  <div
+                    onClick={() => {
+                      if (!canUpdate) return;
+                      setDescDraft(release.sectionText ?? "");
+                      setDescEditing(true);
+                    }}
+                    className={`rounded px-2 py-1.5 -mx-2 ${canUpdate ? "cursor-text hover:bg-gray-50" : ""}`}
+                  >
+                    <RichTextView html={sanitizeRichText(release.sectionText)} />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canUpdate}
+                    onClick={() => {
+                      setDescDraft("");
+                      setDescEditing(true);
+                    }}
+                    className={`block w-full text-left text-sm text-gray-500 rounded px-2 py-1.5 -mx-2 ${
+                      canUpdate ? "hover:bg-gray-50" : "cursor-default"
+                    }`}
+                  >
+                    Add your own text here! You can use rich text, hyperlinks, dates, emojis, and more.
+                  </button>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
 
-      <div className="flex items-start gap-5 flex-wrap lg:flex-nowrap">
-        <div className="flex-1 min-w-0 space-y-4">
           <RelatedWorkSection
             projectId={projectId}
             releaseId={release.id}
@@ -195,7 +311,7 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
         </div>
 
         {sidebarOpen && (
-          <div className="w-full lg:w-[320px] shrink-0 space-y-4">
+          <div className="min-w-0 space-y-4 pt-4 border-t border-gray-200 lg:pt-0 lg:border-t-0">
             <ReleaseHeaderBar release={release} members={members} canEdit={canUpdate} onPatch={patch} />
             <ApproversSection
               releaseId={release.id}
