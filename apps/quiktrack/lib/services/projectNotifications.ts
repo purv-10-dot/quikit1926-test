@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { emailProjectInvite } from "@/lib/email/sendEmail";
+import { notifyDirect } from "@/lib/notifications/notify";
 
 /**
  * Email a person that they've been added to a project. Used when an existing
@@ -28,16 +29,32 @@ export async function notifyProjectInvite(args: {
         select: { firstName: true, lastName: true },
       }),
     ]);
-    if (!recipient?.email) return;
-    await emailProjectInvite({
-      to: recipient.email,
-      recipientName:
-        [recipient.firstName, recipient.lastName].filter(Boolean).join(" ").trim() || null,
+    const projectName = project?.name ?? "a project";
+    const invitedBy = actor
+      ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || null
+      : null;
+
+    let emailSent = false;
+    if (recipient?.email) {
+      await emailProjectInvite({
+        to: recipient.email,
+        recipientName:
+          [recipient.firstName, recipient.lastName].filter(Boolean).join(" ").trim() || null,
+        projectId: args.projectId,
+        projectName,
+        invitedBy,
+      });
+      emailSent = true;
+    }
+
+    await notifyDirect({
+      orgId: args.orgId,
+      recipientId: args.recipientUserId,
+      actorId: args.actorUserId,
+      type: "PROJECT_INVITE",
       projectId: args.projectId,
-      projectName: project?.name ?? "a project",
-      invitedBy: actor
-        ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || null
-        : null,
+      snippet: invitedBy ? `${invitedBy} added you to "${projectName}"` : `Added you to "${projectName}"`,
+      emailSent,
     });
   } catch (e) {
     console.error("[projectInvite] failed:", e instanceof Error ? e.message : e);

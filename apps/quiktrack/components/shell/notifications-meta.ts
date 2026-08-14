@@ -21,6 +21,7 @@ export interface NotificationRow {
   toValue: string | null;
   isRead: boolean;
   readAt: string | null;
+  emailSent: boolean;
   createdAt: string;
 }
 
@@ -33,6 +34,7 @@ export const ITEM_LABEL: Record<string, string> = {
   SPRINT_MOVED: "moved",
   COMMENTED: "commented on",
   WATCHED_UPDATE: "updated",
+  OVERDUE: "flagged as overdue",
 };
 
 export function summarise(n: NotificationRow): string | null {

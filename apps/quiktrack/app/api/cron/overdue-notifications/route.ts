@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { emailIssueOverdue } from "@/lib/email/sendEmail";
 import { safeSecretEqual } from "@/lib/secret-compare";
+import { notifyDirect } from "@/lib/notifications/notify";
 
 /**
  * Daily-cron-friendly endpoint that scans every project for overdue,
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
       key: true,
       title: true,
       projectId: true,
+      orgId: true,
       assigneeId: true,
       dueDate: true,
     },
@@ -96,6 +98,17 @@ export async function POST(req: NextRequest) {
       },
     });
     emailed++;
+    await notifyDirect({
+      orgId: issue.orgId,
+      recipientId: issue.assigneeId,
+      type: "OVERDUE",
+      projectId: issue.projectId,
+      issueId: issue.id,
+      issueKey: issue.key,
+      issueTitle: issue.title,
+      snippet: `Due ${issue.dueDate.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`,
+      emailSent: true,
+    });
   }
 
   return NextResponse.json({ success: true, scanned: overdueIssues.length, emailed });

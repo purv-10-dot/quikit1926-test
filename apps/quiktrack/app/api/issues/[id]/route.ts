@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
+import { notifyDirect, notifyWatchers } from "@/lib/notifications/notify";
 import {
   executeTransition,
   postFunctionPatchToPrisma,
@@ -434,8 +435,11 @@ async function notifyOnUpdate(args: {
       projectName: project?.name ?? null,
     };
 
+    const directRecipients: string[] = [];
+
     if (args.assigneeChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
+      let emailSent = false;
       if (a?.email) {
         await emailIssueAssigned({
           to: a.email,
@@ -443,11 +447,25 @@ async function notifyOnUpdate(args: {
           issue: issueRef,
           reassignedBy: actorName,
         });
+        emailSent = true;
       }
+      directRecipients.push(args.after.assigneeId);
+      await notifyDirect({
+        orgId: args.orgId,
+        recipientId: args.after.assigneeId,
+        actorId: args.actorUserId,
+        type: "ASSIGNED",
+        projectId: issueRef.projectId,
+        issueId: issueRef.id,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        emailSent,
+      });
     }
 
     if (args.statusChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
+      let emailSent = false;
       if (a?.email) {
         await emailIssueStatusChanged({
           to: a.email,
@@ -457,7 +475,37 @@ async function notifyOnUpdate(args: {
           toStatus: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
           changedBy: actorName,
         });
+        emailSent = true;
       }
+      directRecipients.push(args.after.assigneeId);
+      await notifyDirect({
+        orgId: args.orgId,
+        recipientId: args.after.assigneeId,
+        actorId: args.actorUserId,
+        type: "STATUS_CHANGED",
+        projectId: issueRef.projectId,
+        issueId: issueRef.id,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: statusById.get(args.before.statusId)?.name ?? null,
+        toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
+        emailSent,
+      });
+    }
+
+    if (args.statusChanged) {
+      await notifyWatchers({
+        orgId: args.orgId,
+        issueId: issueRef.id,
+        actorId: args.actorUserId,
+        type: "STATUS_CHANGED",
+        projectId: issueRef.projectId,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: statusById.get(args.before.statusId)?.name ?? null,
+        toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
+        skipRecipientIds: directRecipients,
+      });
     }
   } catch (e) {
     console.error("[email] notifyOnUpdate failed:", e instanceof Error ? e.message : e);

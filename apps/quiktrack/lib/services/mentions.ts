@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { emailIssueMention, emailDocMention } from "@/lib/email/sendEmail";
+import { notifyDirect } from "@/lib/notifications/notify";
 
 /**
  * Extract mentioned user ids from comment/description HTML. The editor's mention
@@ -72,9 +73,9 @@ export async function notifyMentions(args: {
     };
 
     await Promise.all(
-      users.map((u) =>
-        u.email
-          ? emailIssueMention({
+      users.map(async (u) => {
+        const emailSent = u.email
+          ? await emailIssueMention({
               to: u.email,
               recipientName:
                 [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || null,
@@ -82,9 +83,26 @@ export async function notifyMentions(args: {
               mentionedBy: actorName,
               context: args.context,
               excerpt,
-            }).catch((e) => console.error("[mentions] email failed:", e))
-          : Promise.resolve(),
-      ),
+            })
+              .then(() => true)
+              .catch((e) => {
+                console.error("[mentions] email failed:", e);
+                return false;
+              })
+          : false;
+        await notifyDirect({
+          orgId: args.orgId,
+          recipientId: u.id,
+          actorId: args.actorUserId,
+          type: "MENTION",
+          projectId: issueRef.projectId,
+          issueId: issueRef.id,
+          issueKey: issueRef.key,
+          issueTitle: issueRef.title,
+          snippet: excerpt,
+          emailSent,
+        });
+      }),
     );
   } catch (e) {
     console.error("[mentions] notifyMentions failed:", e instanceof Error ? e.message : e);

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCheck, ListChecks } from "lucide-react";
-import { ITEM_LABEL, summarise, type NotificationRow } from "@/components/shell/notifications-meta";
+import { CheckCheck } from "lucide-react";
+import type { NotificationRow } from "@/components/shell/notifications-meta";
+import { NotificationItem } from "@/components/shell/notification-item";
 
 type Tab = "direct" | "watching" | "all";
 
@@ -15,6 +15,7 @@ interface UnreadCounts {
 
 const TABS: { value: Tab; label: string }[] = [
   { value: "direct", label: "Direct" },
+  { value: "watching", label: "Watching" },
   { value: "all", label: "All" },
 ];
 
@@ -123,7 +124,7 @@ export function NotificationsPage() {
           </div>
         )}
         {items.map((n) => (
-          <Row key={n.id} item={n} onOpen={() => markOne(n.id)} />
+          <NotificationItem key={n.id} item={n} onOpen={() => markOne(n.id)} />
         ))}
         {loading && <div className="p-4 text-center text-xs text-gray-400">Loading…</div>}
         {nextCursor && !loading && (
@@ -140,63 +141,3 @@ export function NotificationsPage() {
   );
 }
 
-function Row({ item, onOpen }: { item: NotificationRow; onOpen: () => void }) {
-  const a = item.actor;
-  const actorName = a ? `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim() || a.email : "Someone";
-  const initials = a
-    ? `${(a.firstName?.[0] || a.email?.[0] || "?").toUpperCase()}${(a.lastName?.[0] || "").toUpperCase()}`
-    : "?";
-  const summary = summarise(item);
-
-  if (item.type === "checklist_due") {
-    return (
-      <Link
-        href="/dashboard"
-        onClick={onOpen}
-        className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${
-          item.isRead ? "" : "bg-accent-50/40"
-        }`}
-      >
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-          <ListChecks className="h-4 w-4" />
-          {!item.isRead && (
-            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-gray-900">Checklist reminder</div>
-          {summary && <div className="text-sm text-gray-700 mt-0.5">{summary}</div>}
-          <div className="text-[11px] text-gray-400 mt-1">{new Date(item.createdAt).toLocaleString()}</div>
-        </div>
-      </Link>
-    );
-  }
-
-  const issueHref = item.projectId
-    ? `/spaces/${item.projectId}/board${item.issueId ? `?openIssue=${encodeURIComponent(item.issueId)}` : ""}`
-    : "/notifications";
-  return (
-    <Link
-      href={issueHref}
-      onClick={onOpen}
-      className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${
-        item.isRead ? "" : "bg-accent-50/40"
-      }`}
-    >
-      <div className="relative h-8 w-8 shrink-0 rounded-full bg-accent-600 text-white text-xs font-semibold flex items-center justify-center">
-        {initials}
-        {!item.isRead && (
-          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-xs text-gray-500">
-          <span className="font-medium text-gray-900">{actorName}</span> {ITEM_LABEL[item.type] ?? "updated"}{" "}
-          {item.issueKey && <span className="font-medium text-accent-700">{item.issueKey}</span>}
-        </div>
-        {summary && <div className="text-sm text-gray-700 mt-0.5">{summary}</div>}
-        <div className="text-[11px] text-gray-400 mt-1">{new Date(item.createdAt).toLocaleString()}</div>
-      </div>
-    </Link>
-  );
-}

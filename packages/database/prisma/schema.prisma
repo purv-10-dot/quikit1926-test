@@ -7957,6 +7957,7 @@ model QtNotification {
   toValue     String?
   isRead      Boolean   @default(false)
   readAt      DateTime?
+  emailSent   Boolean   @default(false)
   createdAt   DateTime  @default(now())
 
   @@index([recipientId, tab, isRead, createdAt])

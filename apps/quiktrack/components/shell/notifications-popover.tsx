@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, ExternalLink, MoreHorizontal, CheckCheck, ListChecks } from "lucide-react";
-import { ITEM_LABEL, summarise, type NotificationRow } from "./notifications-meta";
+import { Bell, ExternalLink, MoreHorizontal, CheckCheck } from "lucide-react";
+import type { NotificationRow } from "./notifications-meta";
+import { NotificationItem } from "./notification-item";
 
 type Tab = "direct" | "watching";
 
@@ -19,7 +20,7 @@ export function NotificationsPopover() {
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [tab] = useState<Tab>("direct");
+  const [tab, setTab] = useState<Tab>("direct");
   const [unread, setUnread] = useState<UnreadCounts>({ direct: 0, watching: 0, total: 0 });
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -205,18 +206,24 @@ export function NotificationsPopover() {
           </div>
 
           <div className="px-4 border-b border-gray-200 flex items-center gap-4">
-            <button
-              type="button"
-              className="relative pb-2 text-sm font-medium text-accent-700"
-            >
-              Direct
-              {unread.direct > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent-100 text-accent-700 text-[10px] font-semibold">
-                  {unread.direct}
-                </span>
-              )}
-              <span className="absolute -bottom-px left-0 right-0 h-0.5 bg-accent-600 rounded" />
-            </button>
+            {(["direct", "watching"] as Tab[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`relative pb-2 text-sm font-medium ${
+                  tab === t ? "text-accent-700" : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {t === "direct" ? "Direct" : "Watching"}
+                {unread[t] > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent-100 text-accent-700 text-[10px] font-semibold">
+                    {unread[t]}
+                  </span>
+                )}
+                {tab === t && <span className="absolute -bottom-px left-0 right-0 h-0.5 bg-accent-600 rounded" />}
+              </button>
+            ))}
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -239,91 +246,3 @@ export function NotificationsPopover() {
   );
 }
 
-function NotificationItem({
-  item,
-  onOpen,
-  closePopover,
-}: {
-  item: NotificationRow;
-  onOpen: () => void;
-  closePopover: () => void;
-}) {
-  const a = item.actor;
-  const initials = a
-    ? `${(a.firstName?.[0] || a.email?.[0] || "?").toUpperCase()}${(a.lastName?.[0] || "").toUpperCase()}`
-    : "?";
-  const actorName = a ? `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim() || a.email : "Someone";
-  const summary = summarise(item);
-  const onClick = () => {
-    onOpen();
-    closePopover();
-  };
-
-  // Personal checklist reminder — no actor/issue, so render its own clean row
-  // (icon + "Checklist reminder" + the due-item snippet) instead of the
-  // issue-shaped "[actor] updated [KEY]" layout.
-  if (item.type === "checklist_due") {
-    return (
-      <Link
-        href="/dashboard"
-        onClick={onClick}
-        className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-          item.isRead ? "" : "bg-accent-50/40"
-        }`}
-      >
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-          <ListChecks className="h-4 w-4" />
-          {!item.isRead && (
-            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-gray-900">Checklist reminder</div>
-          {summary && <div className="text-sm text-gray-700 line-clamp-2 mt-0.5">{summary}</div>}
-          <div className="text-[11px] text-gray-400 mt-1">{relTime(item.createdAt)}</div>
-        </div>
-      </Link>
-    );
-  }
-
-  const issueHref = item.projectId
-    ? `/spaces/${item.projectId}/board${item.issueId ? `?openIssue=${encodeURIComponent(item.issueId)}` : ""}`
-    : "/notifications";
-  return (
-    <Link
-      href={issueHref}
-      onClick={onClick}
-      className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-        item.isRead ? "" : "bg-accent-50/40"
-      }`}
-    >
-      <div className="relative h-8 w-8 shrink-0 rounded-full bg-accent-600 text-white text-xs font-semibold flex items-center justify-center">
-        {initials}
-        {!item.isRead && (
-          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-xs text-gray-500">
-          <span className="font-medium text-gray-900">{actorName}</span> {ITEM_LABEL[item.type] ?? "updated"}{" "}
-          {item.issueKey && <span className="font-medium text-accent-700">{item.issueKey}</span>}
-        </div>
-        {summary && <div className="text-sm text-gray-700 line-clamp-2 mt-0.5">{summary}</div>}
-        <div className="text-[11px] text-gray-400 mt-1">{relTime(item.createdAt)}</div>
-      </div>
-    </Link>
-  );
-}
-
-function relTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  const diff = Date.now() - t;
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
