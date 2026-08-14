@@ -29,7 +29,7 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **quikasset** | `3012` | `3012` | [apps/quikasset/package.json](../apps/quikasset/package.json) | QuikAsset — asset/inventory management. |
 | **quikfinance** | `3013` | `3013` | [apps/quikfinance/package.json](../apps/quikfinance/package.json) | QuikFinance — finance module. |
 | **quiklms** | `3014` | `3014` | [apps/quiklms/package.json](../apps/quiklms/package.json) | QuikLMS — learning management (folded in from standalone quikskill_lms). **`dev` script disabled locally (2026-08-07)** — shares port `3014` with quikflow; run `npm run dev:manual` instead of `turbo dev` to start it standalone. |
-| **quikflow** | `3014` | `3014` | [apps/quikflow/package.json](../apps/quikflow/package.json) | QuikFlow — no-code workflow automation (Zapier/n8n analog). Has a separate BullMQ `worker` process (`npm run worker`). Moved from `3011` (2026-08-07) to resolve a collision with quikchat; now shares `3014` with quiklms instead — see quiklms row. |
+| **quikflow** | `3014` | `3014` | [apps/quikflow/package.json](../apps/quikflow/package.json) | QuikFlow — no-code workflow automation (Zapier/n8n analog). Has a separate BullMQ `worker` process (`npm run worker`) shipped as its **own image** (`Dockerfile.worker`). Moved from `3011` (2026-08-07) to resolve a collision with quikchat; now shares `3014` with quiklms instead — see quiklms row. UAT: `uatflow.quikit.ai`; queue broker `bullmq.quikit.ai`. |
 
 ### Startup flow
 
