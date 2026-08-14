@@ -21,6 +21,12 @@ import { PATCH, DELETE } from "./route";
 const ORG = "org-1";
 const gate = requireAdmin as unknown as ReturnType<typeof vi.fn>;
 
+function del(): NextRequest {
+  return new Request("http://test.local/api/org/roles/r1", {
+    method: "DELETE",
+  }) as unknown as NextRequest;
+}
+
 function patch(body: unknown): NextRequest {
   return new Request("http://test.local/api/org/roles/r1", {
     method: "PATCH",
@@ -78,6 +84,101 @@ describe("PATCH /api/org/roles/[id] — re-mirror on rename", () => {
     const res = (await PATCH(patch({ description: "tweak" }), { params: { id: "r1" } }))!;
     expect(res.status).toBe(200);
     expect(mockDb.userAppAccess.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The one-default invariant, defended at the route rather than repaired after.
+ *
+ * Zero defaults is not a neutral state: the Admin Portal's invite modal falls
+ * back to `data[0]` ordered `isSystem DESC` — the `admin` role — so an org with
+ * no default silently preselects ADMIN for every newly invited user.
+ * `convergeDefaultRole` does repair it, but only on the next seed pass, up to
+ * the 5-minute cache TTL later. These two routes are how the state gets created
+ * in the first place.
+ */
+describe("one-default invariant", () => {
+  const roleRow = {
+    id: "r1",
+    isSystem: false,
+    name: "Member",
+    appId: "app-qc",
+  };
+
+  it("PATCH 409s when clearing the only default", async () => {
+    mockDb.qcAppRole.findFirst.mockResolvedValue(roleRow as never);
+    mockDb.qcAppRole.count.mockResolvedValue(0 as never); // no OTHER default exists
+
+    const res = (await PATCH(patch({ isDefault: false }), { params: { id: "r1" } }))!;
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/only default role/i);
+    expect(mockDb.qcAppRole.update).not.toHaveBeenCalled();
+  });
+
+  it("PATCH allows clearing a default when another one remains", async () => {
+    mockDb.qcAppRole.findFirst.mockResolvedValue(roleRow as never);
+    mockDb.qcAppRole.count.mockResolvedValue(1 as never); // another default exists
+    mockDb.qcAppRole.update.mockResolvedValue({
+      id: "r1",
+      name: "Member",
+      description: null,
+      isSystem: false,
+      isDefault: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    const res = (await PATCH(patch({ isDefault: false }), { params: { id: "r1" } }))!;
+
+    expect(res.status).toBe(200);
+    expect(mockDb.qcAppRole.update).toHaveBeenCalled();
+  });
+
+  it("PATCH does not run the last-default check when setting a default", async () => {
+    mockDb.qcAppRole.findFirst.mockResolvedValue(roleRow as never);
+    mockDb.qcAppRole.findUnique.mockResolvedValue(null as never);
+    mockDb.qcAppRole.updateMany.mockResolvedValue({ count: 1 } as never);
+    mockDb.qcAppRole.update.mockResolvedValue({
+      id: "r1",
+      name: "Member",
+      description: null,
+      isSystem: false,
+      isDefault: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    const res = (await PATCH(patch({ isDefault: true }), { params: { id: "r1" } }))!;
+
+    expect(res.status).toBe(200);
+    // Promoting demotes the others; it never counts them.
+    expect(mockDb.qcAppRole.count).not.toHaveBeenCalled();
+    expect(mockDb.qcAppRole.updateMany).toHaveBeenCalled();
+  });
+
+  // The path the brief did not mention: assertRoleDeletable guards isSystem and
+  // admin-lockout, and has never looked at isDefault — so deleting the default
+  // role reached the same zero-defaults state as the PATCH hole.
+  it("DELETE 409s when the target role is the default", async () => {
+    mockDb.qcAppRole.findFirst.mockResolvedValue({ isDefault: true } as never);
+
+    const res = (await DELETE(del(), { params: { id: "r1" } }))!;
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/default role/i);
+    expect(mockDb.qcAppRole.delete).not.toHaveBeenCalled();
+  });
+
+  it("DELETE proceeds for a non-default role", async () => {
+    mockDb.qcAppRole.findFirst.mockResolvedValue({ isDefault: false } as never);
+    mockDb.qcUserAppRole.findMany.mockResolvedValue([] as never);
+    mockDb.qcAppRole.delete.mockResolvedValue({ id: "r1" } as never);
+
+    const res = (await DELETE(del(), { params: { id: "r1" } }))!;
+
+    expect(res.status).toBe(200);
+    expect(mockDb.qcAppRole.delete).toHaveBeenCalledWith({ where: { id: "r1" } });
   });
 });
 

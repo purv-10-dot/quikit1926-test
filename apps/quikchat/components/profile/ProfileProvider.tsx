@@ -25,8 +25,23 @@ interface ProfileContextValue {
   openProfile: (target: ProfileTarget) => void;
   /** ChatWorkspace registers the DM-start opener used by the "Message" action. */
   registerStartDm: (fn: (userId: string) => void) => void;
-  /** Register the call-start opener used by the "Call" action. */
-  registerStartCall: (fn: (userId: string) => void) => void;
+  /**
+   * Register the call-start opener used by the "Call" action.
+   *
+   * `type` is optional on purpose: existing registrants (CallHandler) accept a
+   * userId alone and existing callers pass nothing, so both keep today's
+   * behaviour. It exists so a caller that genuinely distinguishes audio from
+   * video — CallsModule's separate "Call" and "Video call" buttons — can say
+   * which it means. `createCall` has taken `"audio" | "video"` all along; the
+   * only gap was this signature.
+   */
+  registerStartCall: (fn: (userId: string, type?: CallType) => void) => void;
+  /**
+   * Start a call with a user directly, without opening the profile card first.
+   * No-op until something registers an opener — same contract as the rest of
+   * this provider.
+   */
+  startCallWith: (userId: string, type?: CallType) => void;
   /**
    * The active ConversationView registers the meeting scheduler (S15a) so the
    * profile card's "Schedule meeting" opens the current channel's modal seeded
@@ -35,10 +50,14 @@ interface ProfileContextValue {
   registerScheduleWith: (fn: ((userId: string) => void) | null) => void;
 }
 
+/** Audio-only vs video. Mirrors `CreateCallInput["type"]` in calling.service. */
+export type CallType = "audio" | "video";
+
 const defaultValue: ProfileContextValue = {
   openProfile: () => undefined,
   registerStartDm: () => undefined,
   registerStartCall: () => undefined,
+  startCallWith: () => undefined,
   registerScheduleWith: () => undefined,
 };
 const ProfileContext = createContext<ProfileContextValue>(defaultValue);
@@ -61,7 +80,7 @@ export function ProfileProvider({
 }) {
   const [target, setTarget] = useState<ProfileTarget | null>(null);
   const startDmRef = useRef<((userId: string) => void) | null>(null);
-  const startCallRef = useRef<((userId: string) => void) | null>(null);
+  const startCallRef = useRef<((userId: string, type?: CallType) => void) | null>(null);
   const scheduleRef = useRef<((userId: string) => void) | null>(null);
   // Mirrors scheduleRef in render state so the card can show/hide the action.
   const [canSchedule, setCanSchedule] = useState(false);
@@ -70,8 +89,11 @@ export function ProfileProvider({
   const registerStartDm = useCallback((fn: (userId: string) => void) => {
     startDmRef.current = fn;
   }, []);
-  const registerStartCall = useCallback((fn: (userId: string) => void) => {
+  const registerStartCall = useCallback((fn: (userId: string, type?: CallType) => void) => {
     startCallRef.current = fn;
+  }, []);
+  const startCallWith = useCallback((userId: string, type?: CallType) => {
+    startCallRef.current?.(userId, type);
   }, []);
   const registerScheduleWith = useCallback((fn: ((userId: string) => void) | null) => {
     scheduleRef.current = fn;
@@ -79,8 +101,14 @@ export function ProfileProvider({
   }, []);
 
   const value = useMemo(
-    () => ({ openProfile, registerStartDm, registerStartCall, registerScheduleWith }),
-    [openProfile, registerStartDm, registerStartCall, registerScheduleWith],
+    () => ({
+      openProfile,
+      registerStartDm,
+      registerStartCall,
+      startCallWith,
+      registerScheduleWith,
+    }),
+    [openProfile, registerStartDm, registerStartCall, startCallWith, registerScheduleWith],
   );
 
   return (

@@ -69,14 +69,27 @@ export async function markOffline(
   return { lastSocket: true, lastSeen };
 }
 
-/** Heartbeat: refresh the TTL so an active user doesn't expire. */
+/**
+ * Heartbeat: keep the user's socket set alive.
+ *
+ * SELF-HEALING, and the `sadd` is the point of it. This used to be `pexpire`
+ * alone, which is a no-op on a key that has already expired — so a client whose
+ * heartbeat lapsed past the TTL (suspended laptop, a background tab throttled to
+ * Chrome's ≥1min timer floor, a network stall) stayed connected but vanished
+ * from the set permanently: invisible to `onlineUserIds`, and nothing in the
+ * system ever put them back. Re-adding the socket id makes every heartbeat a
+ * repair, so the set converges on the truth the sockets already know.
+ */
 export async function refresh(
   redis: PresenceRedis,
   orgId: string,
   userId: string,
+  socketId: string,
   ttlMs: number,
 ): Promise<void> {
-  await redis.pexpire(key(orgId, userId), ttlMs);
+  const k = key(orgId, userId);
+  await redis.sadd(k, socketId);
+  await redis.pexpire(k, ttlMs);
 }
 
 /**

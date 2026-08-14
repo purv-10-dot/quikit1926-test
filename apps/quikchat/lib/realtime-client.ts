@@ -42,7 +42,11 @@ export function createRealtimeClient(opts: RealtimeClientOptions): RealtimeClien
 
   const socket = io(opts.url, {
     autoConnect: opts.autoConnect ?? true,
-    transports: ["polling", "websocket"],
+    // WebSocket-only: with 2 gateway replicas and no session affinity, the
+    // polling handshake lands on a different pod than the one that answers
+    // the next poll ("Session ID unknown" → connect/disconnect flapping).
+    // WebSocket skips the polling handshake, so no affinity is needed.
+    transports: ["websocket"],
     // Called on every (re)connect → fresh, short-lived token each time.
     auth: (cb) => {
       getToken()

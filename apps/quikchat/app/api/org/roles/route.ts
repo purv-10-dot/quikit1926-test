@@ -82,32 +82,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: `Role "${name}" already exists` }, { status: 409 });
     }
 
-    if (isDefault) {
-      await db.qcAppRole.updateMany({
-        where: { orgId, appId, isDefault: true },
-        data: { isDefault: false },
+    // TRANSACTIONAL, and that is the point. By design this path cannot zero the
+    // defaults — it only demotes when the new role is itself becoming the
+    // default. But as two separate statements it could by FAILURE: if the
+    // create threw after the demote landed (a name-uniqueness race past the
+    // pre-check above, or any transient DB error), the org would be left with
+    // zero defaults — the state that makes the Admin Portal preselect `admin`
+    // for every new invitee. One transaction makes the demote conditional on
+    // the create succeeding.
+    const role = await db.$transaction(async (tx) => {
+      if (isDefault) {
+        await tx.qcAppRole.updateMany({
+          where: { orgId, appId, isDefault: true },
+          data: { isDefault: false },
+        });
+      }
+      return tx.qcAppRole.create({
+        data: {
+          orgId,
+          appId,
+          name,
+          description: description ?? null,
+          isSystem: false,
+          isDefault: isDefault ?? false,
+          createdBy: userId,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isSystem: true,
+          isDefault: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
-    }
-
-    const role = await db.qcAppRole.create({
-      data: {
-        orgId,
-        appId,
-        name,
-        description: description ?? null,
-        isSystem: false,
-        isDefault: isDefault ?? false,
-        createdBy: userId,
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        isSystem: true,
-        isDefault: true,
-        createdAt: true,
-        updatedAt: true,
-      },
     });
 
     return NextResponse.json({ success: true, data: role }, { status: 201 });

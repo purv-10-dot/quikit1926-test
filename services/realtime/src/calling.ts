@@ -25,7 +25,7 @@
  */
 import { db } from "@quikit/database";
 import type { Server as IOServer, Socket } from "socket.io";
-import { logger } from "./logger";
+import { errorFields, logger } from "./logger";
 import { broadcastConnectivity } from "./presence-broadcast";
 import { listChannelIdsForMember } from "./queries";
 import { clearRinging, setRinging, type RingingRedis } from "./ringing";
@@ -211,6 +211,10 @@ export function registerCallingHandlers(
 
         if (targetSockets.length === 0) {
           // Offline: immediate unavailable response
+          logger.info(
+            { callId, orgId, initiatorId: userId, targetUserId },
+            "call invite: target has no connected sockets",
+          );
           socket.emit("call:unavailable", { callId, userId: targetUserId });
           ack?.({ ok: true });
           return;
@@ -224,6 +228,10 @@ export function registerCallingHandlers(
           initiatorId: call.initiatorId,
         };
         io.to(targetRoom).emit("call:ringing", ringPayload);
+        logger.info(
+          { callId, orgId, initiatorId: userId, targetUserId, tabs: targetSockets.length },
+          "call ringing",
+        );
 
         // §2.1: register the ringing record in Redis. Any instance can clear it
         // (accept/reject/cancel/end), and the per-instance sweeper claims it
@@ -238,7 +246,10 @@ export function registerCallingHandlers(
 
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:invite handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:invite handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -260,10 +271,13 @@ export function registerCallingHandlers(
         // Call is now active → derive `on_call` for every participant (ephemeral).
         const auth = await resolveCallAuth(socket, callId, orgId, userId);
         if (auth) await broadcastCallPresence(io, orgId, auth.participantIds, "on_call");
-        logger.info({ callId, userId }, "call accepted — cleared ringing record");
+        logger.info({ callId, orgId, userId }, "call accepted — cleared ringing record");
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:accepted handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:accepted handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -290,11 +304,15 @@ export function registerCallingHandlers(
           callId,
           fromUserId: userId,
         });
+        logger.info({ callId, orgId, userId, initiatorId: auth.initiatorId }, "call rejected");
         // Call is over → revert on_call to plain online for all participants.
         await broadcastCallPresence(io, orgId, auth.participantIds, "online");
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:reject handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:reject handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -322,12 +340,19 @@ export function registerCallingHandlers(
           if (pUserId === userId) continue;
           io.to(userRoom(orgId, pUserId)).emit("call:cancelled", { callId });
         }
+        logger.info(
+          { callId, orgId, userId, participants: auth.participantIds.length },
+          "call cancelled by initiator",
+        );
         // Call is over → revert on_call to plain online for all participants.
         await broadcastCallPresence(io, orgId, auth.participantIds, "online");
         invalidateCallAuth(socket, callId); // §2.2 — call is over
         ack?.({ ok: true });
       } catch (e) {
-        logger.error({ error: e, socketId: socket.id }, "call:cancel handler error");
+        logger.error(
+          { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+          "call:cancel handler error",
+        );
         ack?.({ ok: false });
       }
     },
@@ -352,12 +377,19 @@ export function registerCallingHandlers(
         if (pUserId === userId) continue;
         io.to(userRoom(orgId, pUserId)).emit("call:ended", { callId, fromUserId: userId });
       }
+      logger.info(
+        { callId, orgId, userId, participants: auth.participantIds.length },
+        "call ended",
+      );
       // Call is over → revert on_call to plain online for all participants.
       await broadcastCallPresence(io, orgId, auth.participantIds, "online");
       invalidateCallAuth(socket, callId); // §2.2 — call is over
       ack?.({ ok: true });
     } catch (e) {
-      logger.error({ error: e, socketId: socket.id }, "call:end handler error");
+      logger.error(
+        { ...errorFields(e), callId: payload?.callId, orgId, userId, socketId: socket.id },
+        "call:end handler error",
+      );
       ack?.({ ok: false });
     }
   });

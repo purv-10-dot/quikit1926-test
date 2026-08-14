@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 // Registers vi.mock for "@/lib/db" + "@quikit/database" (hoisted).
 import { mockDb, resetMockDb } from "../../__tests__/helpers/mockDb";
-import { userCan, isOrgAdmin, loadMyPermissions } from "./permissions";
+import { userCan, loadMyPermissions, __resetAppIdCacheForTest } from "./permissions";
 
 const ORG = "org-1";
 const USER = "user-1";
@@ -34,18 +34,6 @@ describe("userCan", () => {
     mockDb.qcRolePermission.findFirst.mockResolvedValue(null as never);
     mockDb.qcUserPermissionExtra.findFirst.mockResolvedValue(null as never);
     expect(await userCan(USER, ORG, "Assistant.IngestOrg", "create")).toBe(false);
-  });
-});
-
-describe("isOrgAdmin", () => {
-  it("is true when the user holds the system admin role", async () => {
-    mockDb.qcUserAppRole.findFirst.mockResolvedValue({ id: "uar-1" } as never);
-    expect(await isOrgAdmin(USER, ORG)).toBe(true);
-  });
-
-  it("is false when the user holds no admin role (extras are ignored)", async () => {
-    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
-    expect(await isOrgAdmin(USER, ORG)).toBe(false);
   });
 });
 
@@ -100,5 +88,53 @@ describe("loadMyPermissions", () => {
       permissions: [],
       extras: [],
     });
+  });
+});
+
+/**
+ * Negative caching on `getQuikChatAppId`.
+ *
+ * The miss was the expensive case: `cachedAppId` was only assigned on success,
+ * so an environment with no `App` row re-queried on every userCan, every
+ * loadMyPermissions, every extraAdminCheck, and once per request via
+ * ensureUserRole — the broken deployment was also the slowest one.
+ */
+describe("getQuikChatAppId caching (via userCan)", () => {
+  beforeEach(() => {
+    resetMockDb();
+    __resetAppIdCacheForTest();
+  });
+
+  it("queries once for a miss, not once per permission check", async () => {
+    mockDb.app.findUnique.mockResolvedValue(null as never);
+
+    expect(await userCan(USER, ORG, "Channel", "create")).toBe(false);
+    expect(await userCan(USER, ORG, "Channel", "view")).toBe(false);
+    expect(await userCan(USER, ORG, "Call", "create")).toBe(false);
+
+    expect(mockDb.app.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("queries once for a hit and reuses it", async () => {
+    mockDb.app.findUnique.mockResolvedValue({ id: "app-qc" } as never);
+    mockDb.qcRolePermission.findFirst.mockResolvedValue(null as never);
+    mockDb.qcUserPermissionExtra.findFirst.mockResolvedValue(null as never);
+
+    await userCan(USER, ORG, "Channel", "create");
+    await userCan(USER, ORG, "Channel", "view");
+
+    expect(mockDb.app.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  // Without the reset hook this would be impossible to test in-file at all —
+  // which is the coupling the hook exists to break.
+  it("re-queries after the cache is reset", async () => {
+    mockDb.app.findUnique.mockResolvedValue(null as never);
+    await userCan(USER, ORG, "Channel", "create");
+    expect(mockDb.app.findUnique).toHaveBeenCalledTimes(1);
+
+    __resetAppIdCacheForTest();
+    await userCan(USER, ORG, "Channel", "create");
+    expect(mockDb.app.findUnique).toHaveBeenCalledTimes(2);
   });
 });

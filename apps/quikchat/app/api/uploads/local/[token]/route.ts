@@ -2,7 +2,6 @@ import { LocalDriver, localUploadSecret } from "@/lib/server/storage/local";
 import {
   verifyToken,
   type DownloadTokenPayload,
-  type UploadTokenPayload,
 } from "@/lib/server/storage/tokens";
 
 export const dynamic = "force-dynamic";
@@ -12,34 +11,18 @@ interface Ctx {
 }
 
 /**
- * PUT /api/uploads/local/{token} — the local analog of a signed upload URL.
- * The HMAC token IS the authorization (minted by POST /api/uploads/sign).
- */
-export async function PUT(req: Request, { params }: Ctx): Promise<Response> {
-  const payload = verifyToken<UploadTokenPayload>(params.token, localUploadSecret());
-  if (!payload || payload.kind !== "up") {
-    return Response.json({ error: "Invalid or expired upload token" }, { status: 401 });
-  }
-  const ct = (req.headers.get("content-type") ?? "").split(";")[0]!.trim();
-  if (ct !== payload.contentType) {
-    return Response.json({ error: "Content-Type mismatch" }, { status: 400 });
-  }
-  const buf = Buffer.from(await req.arrayBuffer());
-  if (buf.byteLength > payload.maxBytes) {
-    return Response.json({ error: "Payload too large" }, { status: 413 });
-  }
-  try {
-    await new LocalDriver().write(payload.objectPath, buf);
-  } catch {
-    return Response.json({ error: "Write failed" }, { status: 400 });
-  }
-  return Response.json({ ok: true, objectPath: payload.objectPath });
-}
-
-/**
  * GET /api/uploads/local/{token} — short-lived download (token minted at
  * serialize time after the normal message-read auth). Streams with the right
  * Content-Type + Content-Disposition (inline for media, attachment for files).
+ *
+ * The token stays in the path here (unlike the PUT upload route, which moved
+ * its token to a header — see UPLOAD_TOKEN_HEADER): this URL is consumed
+ * directly by `<img>`/`<a>`/`<video>` src/href, which can't attach a custom
+ * header. That leaves the same latent http.sys/IIS 260-char URL-segment risk
+ * on this path if the token ever grows long enough — currently moot since UAT
+ * runs the GCS driver (downloads there are direct storage.googleapis.com
+ * signed URLs, never through this route), but worth knowing before this driver
+ * is ever the one in front of that proxy.
  */
 export async function GET(_req: Request, { params }: Ctx): Promise<Response> {
   const payload = verifyToken<DownloadTokenPayload>(params.token, localUploadSecret());

@@ -26,7 +26,7 @@ import { ThemeToggle } from "@/components/settings/ThemeToggle";
 import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
 import { SupportStatusTab } from "@quikit/ui/support";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
-import { STORAGE_KEY, THEMES } from "./ColorThemePicker";
+import { STORAGE_KEY, THEMES } from "@/lib/accent-theme";
 
 type SettingsCat =
   | "general"
@@ -103,13 +103,6 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
   );
 
   // Local (non-persistent) demo state for the General toggles + window options.
-  const [autoStart, setAutoStart] = useState(false);
-  const [openBg, setOpenBg] = useState(false);
-  const [keepRunning, setKeepRunning] = useState(true);
-  const [registerChat, setRegisterChat] = useState(true);
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [readReceipts, setReadReceipts] = useState(true);
-  const [typingIndicators, setTypingIndicators] = useState(true);
 
   // "Share my last seen" — REAL, persisted to QcUserPresence.shareLastSeen via
   // /api/me/presence (unlike the two demo toggles above it in the Privacy panel).
@@ -278,49 +271,22 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
         <div className="qc-set-scroll">
           {cat === "general" ? (
             <>
-              <section className="qc-set-section">
-                <div className="qc-set-section__head">
-                  <Settings size={16} aria-hidden /> System
-                </div>
-                <div className="qc-set-section__body">
-                  <ToggleRow
-                    title="Auto-start QuikChat"
-                    checked={autoStart}
-                    onChange={setAutoStart}
-                  />
-                  <ToggleRow
-                    title="Open application in background"
-                    checked={openBg}
-                    onChange={setOpenBg}
-                  />
-                  <ToggleRow
-                    title="On close, keep the application running"
-                    checked={keepRunning}
-                    onChange={setKeepRunning}
-                  />
-                  <ToggleRow
-                    title="Register QuikChat as the chat app for the workspace"
-                    checked={registerChat}
-                    onChange={setRegisterChat}
-                  />
-                </div>
-              </section>
-
+              {/* The "System" section was removed with its four toggles
+                  (auto-start, open-in-background, keep-running-on-close,
+                  register-as-workspace-app). All four are Electron
+                  MAIN-PROCESS settings owned by the separate quikchat-desktop
+                  repo — `window.electron` exposes no API for any of them, so
+                  in a browser they could never do anything. Removing the whole
+                  section rather than leaving an empty header. See the backlog
+                  row: they need the desktop preload to expose them first. */}
               {appearanceSection}
               {colorThemeSection}
 
-              <section className="qc-set-section">
-                <div className="qc-set-section__head">
-                  <Calendar size={16} aria-hidden /> Meeting
-                </div>
-                <div className="qc-set-section__body">
-                  <ToggleRow
-                    title="Ask me to confirm when I leave a meeting"
-                    checked={confirmLeave}
-                    onChange={setConfirmLeave}
-                  />
-                </div>
-              </section>
+              {/* The "Meeting" section was removed with its single toggle
+                  ("Ask me to confirm when I leave a meeting"). Nothing read it:
+                  the only leave-confirm in the app is InfoDrawer's CHANNEL
+                  leave, which is unrelated, and the call UI has no leave
+                  confirmation to gate. Section removed rather than left empty. */}
             </>
           ) : null}
 
@@ -383,18 +349,13 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
                   checked={shareLastSeen}
                   onChange={toggleShareLastSeen}
                 />
-                <ToggleRow
-                  title="Read receipts"
-                  desc="Let others know when you've read their messages."
-                  checked={readReceipts}
-                  onChange={setReadReceipts}
-                />
-                <ToggleRow
-                  title="Typing indicators"
-                  desc="Show others when you're typing."
-                  checked={typingIndicators}
-                  onChange={setTypingIndicators}
-                />
+                {/* "Read receipts" and "Typing indicators" were removed. Both
+                    were local useState with no column and no consumer —
+                    honouring them means the server suppressing read-receipt
+                    fanout and typing events per user, and every other client
+                    respecting it. That is a feature, not a wiring job; backlog.
+                    "Share my last seen" above is left alone because it is
+                    genuinely wired (PUT /api/me/presence). */}
               </div>
             </section>
           ) : null}

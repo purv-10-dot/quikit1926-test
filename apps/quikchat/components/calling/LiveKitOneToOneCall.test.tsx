@@ -59,6 +59,9 @@ const createMockRoom = () => {
 
 vi.mock("livekit-client", () => ({
   Room: vi.fn(() => createMockRoom()),
+  // Real enum values — use-livekit-room compares against PARTICIPANT_REMOVED at
+  // runtime to tell a host removal from an ordinary disconnect.
+  DisconnectReason: { CLIENT_INITIATED: 1, PARTICIPANT_REMOVED: 4, ROOM_DELETED: 5 },
   RoomEvent: {
     ParticipantConnected: "ParticipantConnected",
     ParticipantDisconnected: "ParticipantDisconnected",

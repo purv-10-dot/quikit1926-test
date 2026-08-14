@@ -72,6 +72,29 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       }
     }
 
+    // Refuse to clear the LAST default. Zero defaults is not a neutral state:
+    // the Admin Portal's invite modal falls back to `data[0]` ordered
+    // `isSystem DESC`, which is the `admin` role — so an org with no default
+    // silently preselects ADMIN for every newly invited user.
+    // `convergeDefaultRole` repairs it on the next seed pass, but that is a
+    // background repair with up to a 5-minute window; the route should not
+    // create the state and lean on the cleanup.
+    if (data.isDefault === false) {
+      const otherDefaults = await db.qcAppRole.count({
+        where: { orgId, appId: existing.appId, isDefault: true, id: { not: existing.id } },
+      });
+      if (otherDefaults === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "This is the only default role. Make another role the default instead of clearing this one.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     if (data.isDefault === true) {
       await db.qcAppRole.updateMany({
         where: { orgId, appId: existing.appId, isDefault: true, id: { not: existing.id } },
@@ -137,6 +160,25 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
         return NextResponse.json({ success: false, error: e.message }, { status: 400 });
       }
       throw e;
+    }
+
+    // Same one-default invariant as PATCH, reached a different way: deleting the
+    // default role also leaves the org with ZERO defaults, which is what makes
+    // the Admin Portal preselect `admin` for new invitees. `assertRoleDeletable`
+    // guards isSystem and admin-lockout — it has never looked at isDefault.
+    const target = await db.qcAppRole.findFirst({
+      where: { id: params.id, orgId },
+      select: { isDefault: true },
+    });
+    if (target?.isDefault) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This is the default role. Make another role the default before deleting it.",
+        },
+        { status: 409 },
+      );
     }
 
     // Capture affected members + appId BEFORE the delete — the CASCADE wipes the
