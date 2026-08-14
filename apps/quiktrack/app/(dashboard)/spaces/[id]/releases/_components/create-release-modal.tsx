@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@quikit/ui";
 import { showToast } from "@/lib/ui/toast";
+import { PortalDropdown } from "../_shared/portal-dropdown";
+import { DatePickerInput } from "../_shared/date-picker-input";
 import type { ReleaseListItem, ReleaseMember } from "./releases-meta";
 import { memberLabel } from "./releases-meta";
 
@@ -98,38 +100,25 @@ export function CreateReleaseModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Start date</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <DatePickerInput value={startDate} onChange={setStartDate} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Release date</label>
-              <input
-                type="date"
-                value={releaseDate}
-                onChange={(e) => setReleaseDate(e.target.value)}
-                className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <DatePickerInput value={releaseDate} onChange={setReleaseDate} />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Driver</label>
-            <select
-              value={driverId}
-              onChange={(e) => setDriverId(e.target.value)}
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Unassigned</option>
-              {members.map((m) => (
-                <option key={m.userId} value={m.userId}>
-                  {memberLabel(m)}
-                </option>
-              ))}
-            </select>
+            <PortalDropdown
+              placeholder="Unassigned"
+              options={[
+                { value: "", label: "Unassigned" },
+                ...members.map((m) => ({ value: m.userId, label: memberLabel(m) })),
+              ]}
+              selected={[driverId]}
+              onChange={(next) => setDriverId(next[0] ?? "")}
+            />
           </div>
 
           <div>

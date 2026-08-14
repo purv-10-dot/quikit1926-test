@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckSquare, Bug, BookOpen, Zap, Link2, Plus, X } from "lucide-react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { showToast } from "@/lib/ui/toast";
+import { PortalDropdown } from "../../_shared/portal-dropdown";
 import { AddWorkItemsModal } from "./add-work-items-modal";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
@@ -122,40 +123,41 @@ export function WorkItemsSection({
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-wrap gap-2">
         <h3 className="text-sm font-semibold text-gray-900">Work items</h3>
         <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={epicFilter}
-            onChange={(e) => setEpicFilter(e.target.value)}
-            className="h-8 px-2 text-xs border border-gray-300 rounded bg-white"
-          >
-            <option value="">Epic: all</option>
-            {epics.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.key}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-8 px-2 text-xs border border-gray-300 rounded bg-white"
-          >
-            <option value="">Status: all</option>
-            <option value="DONE">Done</option>
-            <option value="IN_PROGRESS">In progress</option>
-            <option value="BACKLOG">To do</option>
-          </select>
-          <select
-            value={assigneeFilter}
-            onChange={(e) => setAssigneeFilter(e.target.value)}
-            className="h-8 px-2 text-xs border border-gray-300 rounded bg-white"
-          >
-            <option value="">Assignee: all</option>
-            {assigneeOptions.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <div className="w-36">
+            <PortalDropdown
+              placeholder="Epic: all"
+              options={[
+                { value: "", label: "Epic: all" },
+                ...epics.map((ep) => ({ value: ep.id, label: ep.key })),
+              ]}
+              selected={[epicFilter]}
+              onChange={(next) => setEpicFilter(next[0] ?? "")}
+            />
+          </div>
+          <div className="w-36">
+            <PortalDropdown
+              placeholder="Status: all"
+              options={[
+                { value: "", label: "Status: all" },
+                { value: "DONE", label: "Done" },
+                { value: "IN_PROGRESS", label: "In progress" },
+                { value: "BACKLOG", label: "To do" },
+              ]}
+              selected={[statusFilter]}
+              onChange={(next) => setStatusFilter(next[0] ?? "")}
+            />
+          </div>
+          <div className="w-40">
+            <PortalDropdown
+              placeholder="Assignee: all"
+              options={[
+                { value: "", label: "Assignee: all" },
+                ...assigneeOptions.map(([id, name]) => ({ value: id, label: name })),
+              ]}
+              selected={[assigneeFilter]}
+              onChange={(next) => setAssigneeFilter(next[0] ?? "")}
+            />
+          </div>
           {canEdit && (
             <button
               type="button"

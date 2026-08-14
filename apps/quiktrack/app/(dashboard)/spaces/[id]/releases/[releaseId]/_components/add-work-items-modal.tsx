@@ -102,23 +102,25 @@ export function AddWorkItemsModal({
             placeholder="Search work items…"
             className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+          <div className="mt-2 max-h-72 overflow-y-auto rounded-md border border-gray-200">
             {options.length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-gray-500">No matching work items.</div>
             ) : (
-              options.map((o) => (
+              options.map((o, idx) => (
                 <label
                   key={o.id}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                  className={`flex min-h-[40px] cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-blue-50/60 ${
+                    idx > 0 ? "border-t border-gray-100" : ""
+                  } ${selected.has(o.id) ? "bg-blue-50/60" : ""}`}
                 >
                   <input
                     type="checkbox"
                     checked={selected.has(o.id)}
                     onChange={() => toggle(o.id)}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                    className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-400"
                   />
-                  <span className="text-gray-500 shrink-0">{o.key}</span>
-                  <span className="text-gray-800 truncate">{o.title}</span>
+                  <span className="shrink-0 text-xs font-medium text-gray-500">{o.key}</span>
+                  <span className="truncate text-gray-800">{o.title}</span>
                 </label>
               ))
             )}
