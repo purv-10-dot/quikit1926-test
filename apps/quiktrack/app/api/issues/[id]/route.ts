@@ -12,7 +12,7 @@ import {
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
-import { notifyDirect, notifyWatchers } from "@/lib/notifications/notify";
+import { notifyDirect, notifyWatchers, isEmailEnabled } from "@/lib/notifications/notify";
 import {
   executeTransition,
   postFunctionPatchToPrisma,
@@ -441,7 +441,7 @@ async function notifyOnUpdate(args: {
     if (args.assigneeChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
       let emailSent = false;
-      if (a?.email) {
+      if (a?.email && (await isEmailEnabled(args.after.assigneeId))) {
         await emailIssueAssigned({
           to: a.email,
           assigneeName: [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || null,
@@ -476,7 +476,7 @@ async function notifyOnUpdate(args: {
     if (args.statusChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
       let emailSent = false;
-      if (a?.email) {
+      if (a?.email && (await isEmailEnabled(args.after.assigneeId))) {
         await emailIssueStatusChanged({
           to: a.email,
           recipientName: [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || null,

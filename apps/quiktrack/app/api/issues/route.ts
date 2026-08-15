@@ -8,6 +8,7 @@ import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
 import { emailIssueAssigned } from "@/lib/email/sendEmail";
+import { isEmailEnabled } from "@/lib/notifications/notify";
 import { validateIssueValues, writeIssueValues } from "@/lib/services/customFieldValues";
 import type { FieldValue } from "@/lib/customFields/registry";
 import { customFiltersToWhere, parseCustomFilters } from "@/lib/customFields/filterQuery";
@@ -602,7 +603,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
             select: { email: true, firstName: true, lastName: true },
           }),
         ]);
-        if (assignee?.email) {
+        if (assignee?.email && (await isEmailEnabled(assigneeId))) {
           await emailIssueAssigned({
             to: assignee.email,
             assigneeName:

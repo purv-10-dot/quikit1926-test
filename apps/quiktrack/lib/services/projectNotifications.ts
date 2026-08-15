@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { emailProjectInvite } from "@/lib/email/sendEmail";
-import { notifyDirect } from "@/lib/notifications/notify";
+import { notifyDirect, isEmailEnabled } from "@/lib/notifications/notify";
 
 /**
  * Email a person that they've been added to a project. Used when an existing
@@ -35,7 +35,7 @@ export async function notifyProjectInvite(args: {
       : null;
 
     let emailSent = false;
-    if (recipient?.email) {
+    if (recipient?.email && (await isEmailEnabled(args.recipientUserId))) {
       await emailProjectInvite({
         to: recipient.email,
         recipientName:

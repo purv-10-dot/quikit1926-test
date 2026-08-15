@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { emailIssueMention, emailDocMention } from "@/lib/email/sendEmail";
-import { notifyDirect } from "@/lib/notifications/notify";
+import { notifyDirect, isEmailEnabled } from "@/lib/notifications/notify";
 
 /**
  * Extract mentioned user ids from comment/description HTML. The editor's mention
@@ -46,7 +46,7 @@ export async function notifyMentions(args: {
     );
     if (targets.length === 0) return;
 
-    const [users, project, actor] = await Promise.all([
+    const [users, project, actor, emailPrefs] = await Promise.all([
       // Resolve emails for the mentioned ids (they come from the project's
       // member list, so they're already valid org users).
       db.user.findMany({
@@ -58,7 +58,13 @@ export async function notifyMentions(args: {
         where: { id: args.actorUserId },
         select: { firstName: true, lastName: true },
       }),
+      db.qtUserNotificationSetting.findMany({
+        where: { userId: { in: targets } },
+        select: { userId: true, emailInstantEnabled: true },
+      }),
     ]);
+    // Missing row = never configured = emails on (see isEmailEnabled's doc comment).
+    const emailDisabled = new Set(emailPrefs.filter((p) => !p.emailInstantEnabled).map((p) => p.userId));
 
     const actorName = actor
       ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || null
@@ -74,7 +80,7 @@ export async function notifyMentions(args: {
 
     await Promise.all(
       users.map(async (u) => {
-        const emailSent = u.email
+        const emailSent = u.email && !emailDisabled.has(u.id)
           ? await emailIssueMention({
               to: u.email,
               recipientName:
@@ -130,7 +136,7 @@ export async function notifyDocMentions(args: {
     );
     if (targets.length === 0) return;
 
-    const [users, actor] = await Promise.all([
+    const [users, actor, emailPrefs] = await Promise.all([
       db.user.findMany({
         where: { id: { in: targets } },
         select: { id: true, email: true, firstName: true, lastName: true },
@@ -139,7 +145,12 @@ export async function notifyDocMentions(args: {
         where: { id: args.actorUserId },
         select: { firstName: true, lastName: true },
       }),
+      db.qtUserNotificationSetting.findMany({
+        where: { userId: { in: targets } },
+        select: { userId: true, emailInstantEnabled: true },
+      }),
     ]);
+    const emailDisabled = new Set(emailPrefs.filter((p) => !p.emailInstantEnabled).map((p) => p.userId));
     const actorName = actor
       ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || null
       : null;
@@ -147,7 +158,7 @@ export async function notifyDocMentions(args: {
 
     await Promise.all(
       users.map((u) =>
-        u.email
+        u.email && !emailDisabled.has(u.id)
           ? emailDocMention({
               to: u.email,
               recipientName:

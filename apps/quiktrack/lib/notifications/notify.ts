@@ -8,6 +8,38 @@ import { db } from "@/lib/db";
  * not block an email that already went out (or vice versa).
  */
 
+/**
+ * Per-user gate: QtUserNotificationSetting rows only exist once a user visits
+ * the notification settings page or flips a toggle (see
+ * app/api/notifications/settings/route.ts), so a missing row means "never
+ * configured" — defaults to the schema default (inAppEnabled: true), not "off".
+ */
+async function isInAppEnabled(userId: string): Promise<boolean> {
+  const pref = await db.qtUserNotificationSetting.findUnique({
+    where: { userId },
+    select: { inAppEnabled: true },
+  });
+  return pref?.inAppEnabled ?? true;
+}
+
+/**
+ * Email counterpart of {@link isInAppEnabled}. Callers in lib/services/*.ts
+ * and the issue/cron routes check this before invoking any lib/email/sendEmail.ts
+ * template. The Prisma column defaults to `false`, but that default exists
+ * only to seed a *newly created* row when a user flips the in-app toggle
+ * first — it must never read as "emails off" for the far more common case of
+ * a user who has never opened notification settings at all. So the read-side
+ * fallback here is `true` (matches pre-existing behavior: everyone got every
+ * email before this preference existed) — the row is opt-OUT, not opt-in.
+ */
+export async function isEmailEnabled(userId: string): Promise<boolean> {
+  const pref = await db.qtUserNotificationSetting.findUnique({
+    where: { userId },
+    select: { emailInstantEnabled: true },
+  });
+  return pref?.emailInstantEnabled ?? true;
+}
+
 export interface NotifyDirectArgs {
   orgId: string;
   recipientId: string;
@@ -29,6 +61,7 @@ export interface NotifyDirectArgs {
 export async function notifyDirect(args: NotifyDirectArgs): Promise<void> {
   try {
     if (args.actorId && args.recipientId === args.actorId) return; // never notify yourself
+    if (!(await isInAppEnabled(args.recipientId))) return;
     await db.qtNotification.create({
       data: {
         orgId: args.orgId,
@@ -82,7 +115,15 @@ export async function notifyWatchers(args: NotifyWatchersArgs): Promise<void> {
       where: { issueId: args.issueId },
       select: { userId: true },
     });
-    const recipientIds = watchers.map((w) => w.userId).filter((id) => !skip.has(id));
+    const candidateIds = watchers.map((w) => w.userId).filter((id) => !skip.has(id));
+    if (candidateIds.length === 0) return;
+
+    const prefs = await db.qtUserNotificationSetting.findMany({
+      where: { userId: { in: candidateIds } },
+      select: { userId: true, inAppEnabled: true },
+    });
+    const disabled = new Set(prefs.filter((p) => !p.inAppEnabled).map((p) => p.userId));
+    const recipientIds = candidateIds.filter((id) => !disabled.has(id));
     if (recipientIds.length === 0) return;
 
     await db.qtNotification.createMany({

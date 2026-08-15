@@ -60,7 +60,7 @@ const SECTIONS: PopoverSection[] = [
         label: "Notification settings",
         description: "Manage email and in-app notifications from QuikTrack",
         icon: Bell,
-        disabled: true,
+        href: "/settings/notifications",
       },
     ],
   },

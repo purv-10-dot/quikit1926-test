@@ -16,3 +16,14 @@ export const updateGeneralSettingsSchema = z
   });
 
 export type UpdateGeneralSettingsInput = z.infer<typeof updateGeneralSettingsSchema>;
+
+export const updateNotificationSettingsSchema = z
+  .object({
+    inAppEnabled: z.boolean().optional(),
+    emailInstantEnabled: z.boolean().optional(),
+  })
+  .refine((d) => d.inAppEnabled !== undefined || d.emailInstantEnabled !== undefined, {
+    message: "At least one of inAppEnabled or emailInstantEnabled must be provided",
+  });
+
+export type UpdateNotificationSettingsInput = z.infer<typeof updateNotificationSettingsSchema>;
