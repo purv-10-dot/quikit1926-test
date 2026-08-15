@@ -30,7 +30,7 @@ export const addApproverSchema = z.object({
   userId: z.string().min(1),
 });
 
-export const RELEASE_APPROVER_ACT_STATUSES = ["APPROVED", "CHANGES_REQUESTED"] as const;
+export const RELEASE_APPROVER_ACT_STATUSES = ["APPROVED", "DECLINED", "PENDING"] as const;
 
 export const actApproverSchema = z.object({
   status: z.enum(RELEASE_APPROVER_ACT_STATUSES),
@@ -45,6 +45,9 @@ export const addRelatedLinkSchema = z.object({
   // placeholder card with no URL yet.
   url: z.string().url().optional(),
   type: z.string().max(40).optional(),
+  // Set only when this row is a "Create release notes" card — its presence
+  // marks the row as generated notes rather than a plain related-work link.
+  noteBody: z.string().max(100_000).optional(),
 });
 
 export const updateRelatedLinkSchema = z.object({
@@ -54,6 +57,7 @@ export const updateRelatedLinkSchema = z.object({
   assigneeId: z.string().nullable().optional(),
   // Unlink action sends `issueId: null` to detach without deleting the row.
   issueId: z.null().optional(),
+  noteBody: z.string().max(100_000).optional(),
 });
 
 /** "Link work item" — attaches a real QtIssue to an EXISTING related-work

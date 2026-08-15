@@ -38,6 +38,7 @@ export const POST = withOrgAuth<{ id: string }>(
         title: parsed.data.title,
         url: parsed.data.url,
         type: parsed.data.type,
+        noteBody: parsed.data.noteBody,
         createdBy: userId,
       },
     });

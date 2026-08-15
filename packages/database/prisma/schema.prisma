@@ -6899,7 +6899,7 @@ model QtReleaseApprover {
   id        String    @id @default(cuid())
   releaseId String
   userId    String
-  status    String    @default("PENDING") // PENDING | APPROVED | CHANGES_REQUESTED
+  status    String    @default("PENDING") // PENDING | APPROVED | DECLINED
   comment   String?
   actedAt   DateTime?
   createdAt DateTime  @default(now())
@@ -6933,6 +6933,10 @@ model QtReleaseRelatedLink {
   /// real QtIssue it represents. Unlinking clears this field rather than
   /// deleting the row.
   issueId    String?
+  /// Set only for a "Create release notes" row — the generated notes body
+  /// (sanitized HTML). Its presence (not `type`) is what marks a row as a
+  /// release-notes card rather than a plain related-work link.
+  noteBody   String?
   createdAt  DateTime  @default(now())
   createdBy  String?
   release    QtRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)

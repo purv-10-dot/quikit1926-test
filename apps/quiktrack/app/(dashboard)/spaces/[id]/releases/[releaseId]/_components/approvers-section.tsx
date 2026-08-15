@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { CheckCircle2, ChevronDown, ChevronRight, Plus, UserCheck, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, UserCheck, X } from "lucide-react";
 import { showToast } from "@/lib/ui/toast";
 import { confirmDialog } from "@/lib/ui/confirm";
 import { PortalDropdown } from "../../_shared/portal-dropdown";
+import { ApproverStatusMenu } from "./approver-status-menu";
 import {
-  APPROVER_STATUS_META,
   memberInitials,
   memberLabel,
+  type ApproverStatus,
   type ReleaseApprover,
   type ReleaseMember,
 } from "./release-detail-meta";
@@ -33,7 +34,6 @@ export function ApproversSection({
   const [sectionOpen, setSectionOpen] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerUserId, setPickerUserId] = useState("");
-  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const availableMembers = members.filter((m) => !approvers.some((a) => a.userId === m.userId));
@@ -69,13 +69,13 @@ export function ApproversSection({
     else showToast(res?.error || "Couldn't remove the approver.", "error");
   }
 
-  async function act(a: ReleaseApprover, status: "APPROVED" | "CHANGES_REQUESTED") {
+  async function act(a: ReleaseApprover, status: ApproverStatus) {
     setBusyId(a.id);
     try {
       const res = await fetch(`/api/releases/${releaseId}/approvers/${a.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, comment: commentDrafts[a.id]?.trim() || undefined }),
+        body: JSON.stringify({ status }),
       }).then((r) => r.json());
       if (res?.success) onChanged();
       else showToast(res?.error || "Couldn't record your decision.", "error");
@@ -147,7 +147,6 @@ export function ApproversSection({
         <div className="divide-y divide-gray-100">
           {approvers.map((a) => {
             const m = members.find((x) => x.userId === a.userId);
-            const meta = APPROVER_STATUS_META[a.status];
             const isSelf = a.userId === currentUserId;
             return (
               <div key={a.id} className="px-4 py-3 space-y-2">
@@ -160,10 +159,12 @@ export function ApproversSection({
                       {m ? memberLabel(m) : "Unknown member"}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${meta.className}`}>
-                      {meta.label}
-                    </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <ApproverStatusMenu
+                      status={a.status}
+                      disabled={!isSelf || busyId === a.id}
+                      onPick={(status) => void act(a, status)}
+                    />
                     {canManage && (
                       <button
                         type="button"
@@ -183,36 +184,6 @@ export function ApproversSection({
                 {a.actedAt && (
                   <div className="text-[11px] text-gray-400">
                     Acted {new Date(a.actedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
-                  </div>
-                )}
-
-                {isSelf && a.status === "PENDING" && (
-                  <div className="space-y-1.5">
-                    <input
-                      value={commentDrafts[a.id] ?? ""}
-                      onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [a.id]: e.target.value }))}
-                      placeholder="Optional comment"
-                      className="w-full h-8 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={busyId === a.id}
-                        onClick={() => void act(a, "APPROVED")}
-                        className="inline-flex items-center gap-1 h-7 px-2.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded disabled:opacity-60"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === a.id}
-                        onClick={() => void act(a, "CHANGES_REQUESTED")}
-                        className="h-7 px-2.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded disabled:opacity-60"
-                      >
-                        Request changes
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>

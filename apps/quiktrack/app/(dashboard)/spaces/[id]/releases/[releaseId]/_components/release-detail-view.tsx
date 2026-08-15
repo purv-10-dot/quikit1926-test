@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronLeft, ChevronDown, ChevronRight, PanelRightClose, PanelRightOpen, Rocket, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { showToast } from "@/lib/ui/toast";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { RichTextView } from "@/components/rich-text-view";
 import { sanitizeRichText } from "@/lib/sanitize";
+import { ReleaseDetailHeader } from "./release-detail-header";
 import { ReleaseHeaderBar } from "./release-header-bar";
 import { ProgressPanel } from "./progress-panel";
 import { RelatedWorkSection } from "./related-work-section";
@@ -29,8 +30,6 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
   const [descDraft, setDescDraft] = useState("");
   const [descEditing, setDescEditing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [nameEditing, setNameEditing] = useState(false);
-  const [nameDraft, setNameDraft] = useState("");
   const [sectionTitleEditing, setSectionTitleEditing] = useState(false);
   const [sectionTitleDraft, setSectionTitleDraft] = useState("");
 
@@ -54,14 +53,6 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
     void load();
     void loadMembers();
   }, [load, loadMembers]);
-
-  async function saveName() {
-    const t = nameDraft.trim();
-    if (!t || !release) return;
-    setNameEditing(false);
-    if (t === release.name) return;
-    await patch({ name: t });
-  }
 
   async function saveSectionTitle() {
     const t = sectionTitleDraft.trim();
@@ -113,66 +104,18 @@ export function ReleaseDetailView({ projectId, releaseId }: { projectId: string;
         </Link>
       </div>
 
-      <header className="flex items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded bg-blue-100">
-            <Rocket className="h-4 w-4 text-blue-600" />
-          </span>
-          {nameEditing ? (
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <input
-                autoFocus
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveName();
-                  if (e.key === "Escape") setNameEditing(false);
-                }}
-                className="flex-1 min-w-0 h-9 px-3 text-2xl font-semibold border border-blue-500 rounded focus:outline-none"
-              />
-              <button
-                type="button"
-                disabled={!nameDraft.trim()}
-                onClick={() => void saveName()}
-                className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50"
-                aria-label="Save name"
-              >
-                <Check className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setNameEditing(false)}
-                className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
-                aria-label="Cancel"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <h1
-              onClick={() => {
-                if (!canUpdate) return;
-                setNameDraft(release.name);
-                setNameEditing(true);
-              }}
-              className={`text-2xl font-semibold tracking-tight text-gray-900 truncate rounded px-1 -mx-1 ${
-                canUpdate ? "cursor-text hover:bg-gray-50" : ""
-              }`}
-            >
-              {release.name}
-            </h1>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setSidebarOpen((v) => !v)}
-          className="p-1.5 hover:bg-gray-100 rounded text-gray-500"
-          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-        >
-          {sidebarOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-        </button>
-      </header>
+      <ReleaseDetailHeader
+        projectId={projectId}
+        release={release}
+        canUpdate={canUpdate}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onSaveName={(name) => patch({ name })}
+        onNotesSaved={() => {
+          void load();
+          bump();
+        }}
+      />
 
       <div
         className={`grid gap-5 items-start ${

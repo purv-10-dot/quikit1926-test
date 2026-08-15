@@ -67,7 +67,7 @@ export const PATCH = withOrgAuth<{ id: string; approverId: string }>(
       data: {
         status: parsed.data.status,
         comment: parsed.data.comment ?? null,
-        actedAt: new Date(),
+        actedAt: parsed.data.status === "PENDING" ? null : new Date(),
       },
     });
     return NextResponse.json({ success: true, data: updated });

@@ -41,7 +41,7 @@ export const PATCH = withOrgAuth<{ id: string; linkId: string }>(
         { status: 400 },
       );
     }
-    const { title, url, status, assigneeId, issueId } = parsed.data;
+    const { title, url, status, assigneeId, issueId, noteBody } = parsed.data;
     const updated = await db.qtReleaseRelatedLink.update({
       where: { id: link.id },
       data: {
@@ -50,6 +50,7 @@ export const PATCH = withOrgAuth<{ id: string; linkId: string }>(
         ...(status !== undefined ? { status } : {}),
         ...(assigneeId !== undefined ? { assigneeId } : {}),
         ...(issueId !== undefined ? { issueId } : {}),
+        ...(noteBody !== undefined ? { noteBody } : {}),
       },
     });
     return NextResponse.json({ success: true, data: updated });

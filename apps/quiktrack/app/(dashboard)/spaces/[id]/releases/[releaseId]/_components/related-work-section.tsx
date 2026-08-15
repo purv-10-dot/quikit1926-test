@@ -8,6 +8,7 @@ import { confirmDialog } from "@/lib/ui/confirm";
 import { PortalDropdown } from "../../_shared/portal-dropdown";
 import { RELATED_WORK_TEMPLATES, RELATED_WORK_CATEGORIES } from "./related-work-templates";
 import { AddWorkItemsModal } from "./add-work-items-modal";
+import { CreateReleaseNotesModal } from "./create-release-notes-modal";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import type { ReleaseRelatedLink } from "./release-detail-meta";
 
@@ -26,6 +27,7 @@ export function RelatedWorkSection({
 }) {
   const [sectionOpen, setSectionOpen] = useState(true);
   const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
+  const [notesLinkId, setNotesLinkId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerTriggerRef = useRef<HTMLButtonElement>(null);
   const pickerMenuRef = useRef<HTMLDivElement>(null);
@@ -300,6 +302,7 @@ export function RelatedWorkSection({
                   onCreateWorkItem={() => void createWorkItemFromLink(l)}
                   onUnlink={() => void unlinkWorkItem(l)}
                   onOpenIssue={() => l.issueId && setEditingIssueId(l.issueId)}
+                  onOpenNotes={() => l.noteBody !== null && setNotesLinkId(l.id)}
                 />
               ))}
             </div>
@@ -324,6 +327,14 @@ export function RelatedWorkSection({
         issueId={editingIssueId}
         projectId={projectId}
         onClose={() => setEditingIssueId(null)}
+        onSaved={onChanged}
+      />
+
+      <CreateReleaseNotesModal
+        open={notesLinkId !== null}
+        onClose={() => setNotesLinkId(null)}
+        releaseId={releaseId}
+        existingLinkId={notesLinkId}
         onSaved={onChanged}
       />
     </div>
@@ -356,6 +367,7 @@ function RelatedWorkRow({
   onCreateWorkItem,
   onUnlink,
   onOpenIssue,
+  onOpenNotes,
 }: {
   link: ReleaseRelatedLink;
   canEdit: boolean;
@@ -365,8 +377,10 @@ function RelatedWorkRow({
   onCreateWorkItem: () => void;
   onUnlink: () => void;
   onOpenIssue: () => void;
+  onOpenNotes: () => void;
 }) {
-  const isPlaceholder = !link.url && !link.issue;
+  const isNotes = link.noteBody !== null;
+  const isPlaceholder = !link.url && !link.issue && !isNotes;
   const [expanded, setExpanded] = useState(isPlaceholder);
   const [titleDraft, setTitleDraft] = useState(link.title);
   const [urlDraft, setUrlDraft] = useState(link.url ?? "");
@@ -406,12 +420,16 @@ function RelatedWorkRow({
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => (isNotes ? onOpenNotes() : setExpanded((v) => !v))}
           className="flex items-center gap-2.5 min-w-0 text-left flex-1"
         >
           <FileText className="h-4 w-4 shrink-0 text-blue-500" />
           <div className="min-w-0">
-            {link.url ? (
+            {isNotes ? (
+              <span className="block text-sm text-gray-900 hover:text-blue-700 hover:underline truncate">
+                {link.title}
+              </span>
+            ) : link.url ? (
               <a
                 href={link.url}
                 target="_blank"
@@ -465,7 +483,11 @@ function RelatedWorkRow({
 
           {canEdit && (
             <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-              {link.issue ? (
+              {isNotes ? (
+                <button type="button" onClick={onOpenNotes} className="text-xs font-medium text-blue-600 hover:underline">
+                  Open
+                </button>
+              ) : link.issue ? (
                 <button type="button" onClick={onUnlink} className="text-xs font-medium text-blue-600 hover:underline">
                   Unlink
                 </button>
@@ -492,7 +514,7 @@ function RelatedWorkRow({
         </div>
       </div>
 
-      {expanded && canEdit && !link.issue && (
+      {expanded && canEdit && !link.issue && !isNotes && (
         <div className="mt-2 ml-6 space-y-3 rounded-md border border-gray-200 bg-gray-50/60 p-3">
           <div className="text-[11px] text-gray-500">
             Required fields are marked with an asterisk <span className="text-red-500">*</span>

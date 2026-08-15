@@ -1,5 +1,5 @@
 export type ReleaseStatus = "UNRELEASED" | "RELEASED" | "ARCHIVED";
-export type ApproverStatus = "PENDING" | "APPROVED" | "CHANGES_REQUESTED";
+export type ApproverStatus = "PENDING" | "APPROVED" | "DECLINED";
 export type RelatedLinkStatus = "OPEN" | "IN_PROGRESS" | "DONE";
 
 export interface ReleaseApprover {
@@ -20,6 +20,10 @@ export interface ReleaseRelatedLink {
   status: RelatedLinkStatus;
   assigneeId: string | null;
   issueId: string | null;
+  /** Set only for a "Create release notes" card — the generated notes body
+   * (sanitized HTML). Its presence marks this row as release notes rather
+   * than a plain related-work link. */
+  noteBody: string | null;
   /** Live data from the linked QtIssue (when issueId is set) — the card's
    * own title/status/assignee below are unrelated to this; this is what
    * renders as the extra status pill + assignee avatar on the card. */
@@ -67,7 +71,7 @@ export const RELEASE_STATUS_OPTIONS: { value: ReleaseStatus; label: string }[] =
 export const APPROVER_STATUS_META: Record<ApproverStatus, { label: string; className: string }> = {
   PENDING: { label: "Pending", className: "bg-gray-100 text-gray-700" },
   APPROVED: { label: "Approved", className: "bg-green-100 text-green-800" },
-  CHANGES_REQUESTED: { label: "Changes requested", className: "bg-red-100 text-red-700" },
+  DECLINED: { label: "Declined", className: "bg-red-100 text-red-700" },
 };
 
 export const RELATED_LINK_STATUS_OPTIONS: { value: RelatedLinkStatus; label: string; className: string }[] = [
