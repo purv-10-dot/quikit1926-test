@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@quikit/ui";
+import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@/components/modal";
 import { showToast } from "@/lib/ui/toast";
 import { PortalDropdown } from "../_shared/portal-dropdown";
 import { DatePickerInput } from "../_shared/date-picker-input";

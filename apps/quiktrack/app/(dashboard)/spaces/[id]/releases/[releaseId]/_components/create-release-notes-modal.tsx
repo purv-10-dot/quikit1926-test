@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
-import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@quikit/ui";
+import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from "@/components/modal";
 import { showToast } from "@/lib/ui/toast";
 import { sanitizeRichText } from "@/lib/sanitize";
 import { PortalDropdown } from "../../_shared/portal-dropdown";
