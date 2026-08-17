@@ -33,7 +33,7 @@ import { roleDisplayNameFor } from '@/lib/email-templates';
 const QUIKLMS_SLUG = 'quiklms';
 
 /** The tenant login entry point — SSO handoff bounces through here. */
-const LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').replace(/\/$/, '')}/login`;
+const LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3016').replace(/\/$/, '')}/login`;
 
 /**
  * Invitation lifetime. Mirrors INVITATION_TTL_MS in

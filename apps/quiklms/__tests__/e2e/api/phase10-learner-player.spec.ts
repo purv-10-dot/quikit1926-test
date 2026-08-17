@@ -202,7 +202,7 @@ test.describe("Phase 10 — resume, attempts, file proxy", () => {
 
   test("GET /api/learner/file-proxy refuses a loopback SSRF target", async () => {
     const api = await apiAs("learner");
-    const res = await api.get(`/api/learner/file-proxy?url=${encodeURIComponent("http://127.0.0.1:3014/api/health")}`);
+    const res = await api.get(`/api/learner/file-proxy?url=${encodeURIComponent("http://127.0.0.1:3016/api/health")}`);
     expect(res.status(), "SSRF guard must reject loopback").toBe(400);
     await api.dispose();
   });

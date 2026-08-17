@@ -31,7 +31,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
 
   use: {
-    baseURL: "http://localhost:3016",
+    baseURL: "http://localhost:3018",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -46,17 +46,21 @@ export default defineConfig({
 
   webServer: {
     // Port 3014 is the app's own `npm run dev` port — using it here would
-    // collide with a dev server already running locally. Use a dedicated
-    // port for the e2e preview build instead (3015 is quikscale's e2e port).
+    // collide with a dev server already running locally, so the e2e preview
+    // build gets a dedicated port. It must also avoid every OTHER app's dev
+    // port: this was 3016, which became quiklms's dev port when quiklms moved
+    // off the shared 3014 (see docs/13-app-ports-and-env.md), so a local
+    // quiklms dev server would have silently served these e2e specs. 3018 is
+    // unassigned (3015 = quikscale e2e, 3019 = quikhrms e2e).
     // The `.next` wipe guards against a stale middleware/edge bundle baking
     // in a NEXT_PUBLIC_* value from a prior build that used a different env.
     command:
-      'node -e "require(\'fs\').rmSync(\'.next\',{recursive:true,force:true})" && npm run build && npx next start -p 3016',
-    url: "http://localhost:3016",
+      'node -e "require(\'fs\').rmSync(\'.next\',{recursive:true,force:true})" && npm run build && npx next start -p 3018',
+    url: "http://localhost:3018",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     stdout: "ignore",
     stderr: "pipe",
-    env: { NEXTAUTH_URL: "http://localhost:3016" },
+    env: { NEXTAUTH_URL: "http://localhost:3018" },
   },
 });
