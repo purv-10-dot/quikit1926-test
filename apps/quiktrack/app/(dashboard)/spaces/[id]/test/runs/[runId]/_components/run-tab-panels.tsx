@@ -87,15 +87,19 @@ export function RunTabPanels({
           loading={testsLoading}
           assigneeName={assigneeName}
         />
-        <CaseDetailPane detail={detail} loading={detailLoading} />
+        <CaseDetailPane
+          detail={detail}
+          loading={detailLoading}
+          members={members}
+          onReassign={onReassign}
+          assignDisabled={submitting || run?.state === "closed"}
+        />
         <ResultEntryPane
           detail={detail}
           statuses={statuses}
           onSubmit={onSubmit}
           submitting={submitting}
           onAdvance={onAdvance}
-          members={members}
-          onReassign={onReassign}
         />
       </div>
     );

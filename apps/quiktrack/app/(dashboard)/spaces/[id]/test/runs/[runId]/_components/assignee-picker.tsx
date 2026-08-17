@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, User, UserX } from "lucide-react";
 import type { MemberOption as Member } from "../../../_components/use-project-members";
 
@@ -28,6 +28,27 @@ export function AssigneePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss on outside click / Escape. Without this the menu stayed open until
+  // something was chosen, which is what the screenshot shows.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const current = members.find((m) => m.userId === currentId);
 
@@ -42,7 +63,7 @@ export function AssigneePicker({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={boxRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -74,8 +95,12 @@ export function AssigneePicker({
             </button>
           )}
           {members.length === 0 && (
+            // Only reachable for a genuinely empty project now. This used to show
+            // on every project because the members hook mapped over the endpoint's
+            // `{ members, pendingInvites }` OBJECT instead of `.members`, which
+            // silently yielded an empty array.
             <p className="px-2 py-1.5 text-xs text-gray-400">
-              No project members to assign.
+              Nobody has been added to this project yet.
             </p>
           )}
           {members.map((m) => (

@@ -2,6 +2,8 @@
 
 import { AlertTriangle } from "lucide-react";
 import { caseRef, labelOf } from "../../../_components/case-meta";
+import type { MemberOption } from "../../../_components/use-project-members";
+import { AssigneePicker } from "./assignee-picker";
 import { ResultHistory } from "./result-history";
 import { testRef, type TestDetail } from "./runner-types";
 
@@ -17,9 +19,21 @@ import { testRef, type TestDetail } from "./runner-types";
 interface CaseDetailPaneProps {
   detail: TestDetail | null;
   loading: boolean;
+  /** Project members for the assignee picker. */
+  members?: MemberOption[];
+  /** Omit to hide the picker entirely (e.g. a read-only surface). */
+  onReassign?: (userId: string | null) => Promise<void> | void;
+  /** True on a closed run — the API refuses reassignment there. */
+  assignDisabled?: boolean;
 }
 
-export function CaseDetailPane({ detail, loading }: CaseDetailPaneProps) {
+export function CaseDetailPane({
+  detail,
+  loading,
+  members,
+  onReassign,
+  assignDisabled,
+}: CaseDetailPaneProps) {
   if (loading) {
     return (
       <div className="flex-1 p-6 text-sm text-gray-400">Loading test…</div>
@@ -54,11 +68,26 @@ export function CaseDetailPane({ detail, loading }: CaseDetailPaneProps) {
         {detail.case.title}
       </h2>
 
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
         <span>Priority: {labelOf(detail.case.priority)}</span>
         <span>Type: {labelOf(detail.case.type)}</span>
         {detail.case.automationId && (
           <span className="font-mono">{detail.case.automationId}</span>
+        )}
+        {/* QUIKTR-317 — per-test assignment lives HERE, with the test's own
+            metadata, rather than above the Passed/Failed buttons: whoever records
+            a result is not necessarily the assignee, and a picker in the entry
+            pane implied it was. */}
+        {onReassign && (
+          <span className="inline-flex items-center gap-1.5">
+            <span>Assigned to:</span>
+            <AssigneePicker
+              currentId={detail.assigneeId ?? null}
+              members={members ?? []}
+              onChange={onReassign}
+              disabled={assignDisabled}
+            />
+          </span>
         )}
       </div>
 

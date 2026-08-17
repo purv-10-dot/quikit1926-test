@@ -51,11 +51,20 @@ export function useProjectMembers(projectId: string): ProjectMembersApi {
     `/api/projects/${projectId}/members`,
     {
       staleTime: 5 * 60_000,
-      select: (d) =>
-        ((d as RawMember[] | null) ?? []).map((m) => ({
+      // The endpoint returns `data: { members, pendingInvites }` — an OBJECT, not
+      // an array. Mapping over `data` directly silently produced an empty list
+      // ("No project members to assign"), because `.map` on a non-array via a
+      // wrong cast yields nothing rather than throwing.
+      select: (d) => {
+        const raw = (d as { members?: RawMember[] } | RawMember[] | null) ?? null;
+        // Tolerate both shapes: if this endpoint is ever flattened to a bare
+        // array, the picker keeps working instead of emptying again.
+        const list: RawMember[] = Array.isArray(raw) ? raw : (raw?.members ?? []);
+        return list.map((m) => ({
           userId: m.userId,
           name: memberDisplayName(m),
-        })),
+        }));
+      },
     },
   );
 

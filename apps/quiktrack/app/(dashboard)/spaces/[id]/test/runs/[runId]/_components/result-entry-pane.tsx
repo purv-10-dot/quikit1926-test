@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Lock, Pause, Play, RotateCcw } from "lucide-react";
 import { Button, Textarea } from "@quikit/ui";
-import { AssigneePicker, type MemberOption } from "./assignee-picker";
 
 /** Current-status pill (QUIKTR-318). Semantic data states → fixed colours. */
 const CURRENT_PILL: Record<string, string> = {
@@ -48,9 +47,6 @@ interface ResultEntryPaneProps {
   submitting: boolean;
   /** Advance to the next test after a successful save. */
   onAdvance: () => void;
-  /** Project members available to execute this run-case (QUIKTR-317). */
-  members: MemberOption[];
-  onReassign: (userId: string | null) => Promise<void> | void;
 }
 
 /** The primary outcomes, in the order a tester reaches for them. */
@@ -70,8 +66,6 @@ export function ResultEntryPane({
   onSubmit,
   submitting,
   onAdvance,
-  members,
-  onReassign,
 }: ResultEntryPaneProps) {
   const [comment, setComment] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -149,18 +143,11 @@ export function ResultEntryPane({
         </p>
       </div>
 
-      {/* QUIKTR-317 — assignment is run administration, so it stays available
-          even on a closed run's pane header... except the API refuses it, so the
-          picker is disabled there to match. */}
-      <div className="border-b border-gray-200 px-4 py-2.5">
-        <p className="mb-1 text-xs font-medium text-gray-600">Assigned to</p>
-        <AssigneePicker
-          currentId={detail.assigneeId ?? null}
-          members={members}
-          onChange={onReassign}
-          disabled={submitting || closed}
-        />
-      </div>
+      {/* Assignment deliberately does NOT live here. This pane is for RECORDING an
+          outcome, and the person executing a test is not necessarily its assignee —
+          putting a picker above the Passed/Failed buttons implied you were
+          assigning yourself in order to record. Assignment happens on the test row
+          in the list (and the run's owner is set at creation). */}
 
       {closed ? (
         <div className="p-4">
