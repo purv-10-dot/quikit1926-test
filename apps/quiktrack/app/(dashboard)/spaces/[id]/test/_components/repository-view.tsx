@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Layers, Plus } from "lucide-react";
+import { Layers, Plus, Upload } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
@@ -11,6 +11,8 @@ import { CaseDetailPanel } from "./case-detail-panel";
 import { CaseEditorPanel } from "./case-editor-panel";
 import { CaseTable } from "./case-table";
 import { loadColumns } from "./columns-menu";
+import { ImportCasesPanel } from "./import-cases-panel";
+import { RepositoryHeader } from "./repository-header";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
 import { useCasePanels } from "./use-case-panels";
@@ -56,6 +58,7 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   // Read → Edit → back handoff lives in the hook; see use-case-panels.ts.
   const panels = useCasePanels();
+  const [importOpen, setImportOpen] = useState(false);
 
   // Visible columns (QUIKTR-335). Starts at the defaults and reads the stored
   // preference AFTER mount — localStorage is unavailable during SSR, so seeding
@@ -196,36 +199,13 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2.5">
-        {/* Two tabs, not a heading: "Test cases" and "Test runs" are the two halves
-            of QuikTest, and the old header buried the runs link as a secondary
-            button so it read as an action rather than a place. */}
-        <nav className="flex items-center gap-1">
-          <span className="rounded-md bg-accent-50 px-2.5 py-1.5 text-[13px] font-medium text-accent-800">
-            Test cases
-          </span>
-          <Link
-            href={`/spaces/${projectId}/test/runs`}
-            className="rounded-md px-2.5 py-1.5 text-[13px] text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-          >
-            Test runs
-          </Link>
-        </nav>
-
-        {/* Only shown when there is somewhere to put a case. With no suite the
-            empty state's own button is the single call to action, so the two no
-            longer compete. */}
-        {canCreate && treeSuites.length > 0 && (
-          <Button
-            size="sm"
-            className="bg-accent-600 text-white hover:bg-accent-700"
-            onClick={openCreate}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            New test case
-          </Button>
-        )}
-      </div>
+      <RepositoryHeader
+        projectId={projectId}
+        canCreate={canCreate}
+        hasSuites={treeSuites.length > 0}
+        onCreate={openCreate}
+        onImport={() => setImportOpen(true)}
+      />
 
       <div className="flex min-h-0 flex-1">
         {suitesLoading ? (
@@ -296,6 +276,19 @@ export function RepositoryView({ projectId }: { projectId: string }) {
           )}
         </div>
       </div>
+
+      <ImportCasesPanel
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        projectId={projectId}
+        suiteId={activeSuiteId}
+        suiteName={activeSuite?.name ?? null}
+        // The folder the user is looking at. Null means "All cases in this suite", in
+        // which case the server falls back to the suite's first folder.
+        sectionId={activeSectionId}
+        sectionName={activeSectionName}
+        onImported={refresh}
+      />
 
       <CaseDetailPanel
         open={panels.detailOpen}
