@@ -588,8 +588,8 @@ matrix entry from `Dockerfile.worker`, pushing
   not route user traffic to it.
 - It needs `REDIS_URL` (the BullMQ broker, `https://bullmq.quikit.ai` in UAT),
   `DATABASE_URL` + `DATABASE_URL_DIRECT`, `WF_CONNECTION_ENC_KEY` (decrypts
-  stored connector tokens), `QUIKFLOW_URL`, and the `QUIKFLOW_GOOGLE_*` /
-  `QUIKFLOW_MS_*` / `QUIKFLOW_TEAMS_*` / `FATHOM_*` connector credentials.
+  stored connector tokens), `QUIKFLOW_URL`, and the `GOOGLE_*` / `MICROSOFT_*`
+  (shared by mail + Teams calendar) / `FATHOM_*` connector credentials.
 - Keep it at **one replica** unless you have verified the scheduler tick is safe
   to run concurrently — it fans out due `WfSchedule` rows on a repeatable job.
 

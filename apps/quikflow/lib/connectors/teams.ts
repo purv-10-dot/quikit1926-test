@@ -4,9 +4,13 @@
  * the user's Outlook/Exchange calendar, so we create ordinary /me/events and
  * flip `isOnlineMeeting` to attach a Teams meeting.
  *
- * Env: QUIKFLOW_TEAMS_CLIENT_ID / QUIKFLOW_TEAMS_CLIENT_SECRET / QUIKFLOW_TEAMS_TENANT.
- * (Deliberately NOT the MS_TEAMS_* names — those are already used by QuikHRMS's
- * app-only Graph integration, a different Azure app registration entirely.)
+ * Env: MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET / MICROSOFT_TENANT_ID —
+ * the SAME Azure app registration as the Outlook mail connector (./microsoft.ts).
+ * Deliberate, not an oversight: QuikFlow reuses one Azure app for both mail and
+ * Teams calendar rather than keeping a QUIKFLOW_TEAMS_* copy. Practically this
+ * means revoking/rotating consent for one connector affects the other.
+ * (Still NOT the MS_TEAMS_* names — those are QuikHRMS's own, unrelated
+ * app-only Graph integration on a different Azure app registration.)
  * Delegated Graph scopes: Calendars.ReadWrite, User.Read, offline_access.
  */
 import {
@@ -29,7 +33,7 @@ const SCOPES = ["offline_access", "Calendars.ReadWrite", "User.Read"];
 const MAX_CALENDAR_VIEW = 250;
 
 function cfg(): MsAppConfig {
-  return msAppConfig("QUIKFLOW_TEAMS");
+  return msAppConfig("MICROSOFT", "common", "MICROSOFT_TENANT_ID");
 }
 
 /** Build the Graph recurrence object from QuikFlow's simplified shape. Exported for tests. */

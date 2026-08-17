@@ -30,8 +30,12 @@ interface MsTokenResponse {
 /**
  * Read an MsAppConfig from env, throwing a clear error when a var is missing so
  * a mis-provisioned provider fails loudly at connect time (not silently).
+ *
+ * `tenantVar` lets a caller point at a differently-named tenant var (e.g. the
+ * shared `MICROSOFT_TENANT_ID`) when it doesn't follow the `${prefix}_TENANT`
+ * convention. Defaults to `${prefix}_TENANT` for callers that do.
  */
-export function msAppConfig(prefix: string, defaultTenant = "common"): MsAppConfig {
+export function msAppConfig(prefix: string, defaultTenant = "common", tenantVar?: string): MsAppConfig {
   const clientId = process.env[`${prefix}_CLIENT_ID`];
   const clientSecret = process.env[`${prefix}_CLIENT_SECRET`];
   if (!clientId) throw new Error(`${prefix}_CLIENT_ID is not set.`);
@@ -39,7 +43,7 @@ export function msAppConfig(prefix: string, defaultTenant = "common"): MsAppConf
   return {
     clientId,
     clientSecret,
-    tenant: process.env[`${prefix}_TENANT`] || defaultTenant,
+    tenant: process.env[tenantVar ?? `${prefix}_TENANT`] || defaultTenant,
   };
 }
 
