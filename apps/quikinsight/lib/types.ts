@@ -222,8 +222,11 @@ export interface GA4Analytics {
   eventCount: number;
   keyEvents: number;
   avgEngagementTime: number; // seconds per active user
-  /** Session-weighted average across channels, 0–1 (not a percentage). */
-  bounceRate: number;
+  /**
+   * Session-weighted average across channels, 0–1 (not a percentage).
+   * null when there were no sessions to weight — render an em-dash, not 0%.
+   */
+  bounceRate: number | null;
   dailyTrend: Array<{ date: string; activeUsers: number; eventCount: number; newUsers: number }>;
   prevDailyTrend: Array<{ date: string; activeUsers: number }>;
   topCountries: Array<{ country: string; activeUsers: number }>;

@@ -7,18 +7,19 @@
  * representative sample data instead, so the value of each page is visible
  * before any OAuth is done.
  *
- * THE RULE IS PER-SOURCE.
- * Each surface answers for itself: a card or page backed by a CONNECTED source
- * shows real data; one whose source is not connected keeps showing sample data,
- * stamped "Mock". Connecting Google Analytics makes the GA4 page real and
- * leaves LinkedIn on stamped samples — the product stays fully populated while
- * a workspace is onboarded one source at a time, instead of half-emptying the
- * moment the first integration lands.
+ * THE RULE IS ALL-OR-NOTHING, PER WORKSPACE.
+ * A workspace with NO integrations at all sees sample data everywhere, so the
+ * product demonstrates itself before any OAuth is done. The moment ANYTHING is
+ * connected the workspace is live, and samples stop completely — including on
+ * pages whose own source is still unconnected. Those show their real zeros and
+ * a "Connect source" marker instead.
  *
- * The mix is only safe because every sampled surface is LABELLED at the point
- * of display (banner + Mock stamp). Without that labelling this rule would put
- * fabricated numbers beside real ones with nothing to tell them apart, which is
- * how an invented figure ends up in a client report.
+ * WHY NOT PER-SOURCE. Mixing fabricated figures beside real ones in a document
+ * people email to clients is how an invented number gets quoted as fact. A
+ * stamp on the card is not enough protection once the rest of the page is
+ * genuine: the reader's default assumption flips from "this is a demo" to
+ * "this is my account". Zeros are unhelpful but they are true, and a marker
+ * tells the user exactly how to fix them.
  *
  * WHERE IT LIVES. Every `lib/api/<platform>.ts` wrapper funnels through here,
  * so the behaviour is one line per platform and the page components stay
@@ -74,18 +75,23 @@ export function hasAnyConnection(): Promise<boolean> {
 }
 
 /**
- * Returns the live payload when THIS platform is connected; otherwise the
- * sample, marked as such.
+ * Sample data only for a workspace that has connected nothing at all.
  *
- * A connected platform is never overridden — a real account with genuinely zero
- * activity keeps showing its real zeros rather than being papered over with
- * invented traffic. That distinction is the whole point of keying on this
- * platform's own `connected` flag rather than any workspace-level state.
+ * Two guards, in order:
+ *   1. This platform is connected  -> its real payload, always. A live account
+ *      with genuinely zero activity keeps its real zeros rather than being
+ *      papered over with invented traffic.
+ *   2. Any OTHER platform is connected -> still the real payload (zeros), not a
+ *      sample. The workspace is live, and fabricated figures must not appear
+ *      beside real ones. The page marks the card "Connect source".
+ *
+ * Only when neither holds does the sample stand in.
  */
-export function withSample<T extends { connected: boolean }>(
+export async function withSample<T extends { connected: boolean }>(
   live: T,
   sample: Omit<T, "connected">,
-): T & SampleFlag {
-  if (live?.connected) return live;
+): Promise<T & SampleFlag> {
+  if (live?.connected) return live as T & SampleFlag;
+  if (await hasAnyConnection()) return live as T & SampleFlag;
   return { ...(sample as object), connected: true, isSampleData: true } as T & SampleFlag;
 }

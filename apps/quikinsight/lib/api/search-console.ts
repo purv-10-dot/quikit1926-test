@@ -13,8 +13,9 @@ export interface SearchConsoleData {
   topPages?: Array<{ page: string; clicks: number; impressions: number }>;
 }
 
-export async function getSearchConsoleData(): Promise<SearchConsoleData> {
-  const res = await fetch("/api/search-console", { cache: "no-store" });
+export async function getSearchConsoleData(days?: number): Promise<SearchConsoleData> {
+  const qs = days ? `?days=${days}` : "";
+  const res = await fetch(`/api/search-console${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load Search Console data (${res.status})`);
   const live = (await res.json()) as SearchConsoleData;
   // Not connected -> representative sample data + a banner on the page.

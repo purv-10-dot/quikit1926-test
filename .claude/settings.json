@@ -11,7 +11,11 @@
       "Bash(grep -oE \"^[a-zA-Z0-9_./\\\\[\\\\]-]+\\\\.tsx?\" /tmp/tsc2.txt)",
       "Bash(echo \"exit=$?\")",
       "Bash(npx tsc *)",
-      "Bash(F=\"/c/Users/saadk/Downloads/quikinsight-ui-preview-v15.html\"; grep -n \"PLATFORM_DETAILS = {\" \"$F\"; sed -n '/PLATFORM_DETAILS = {/,/^};/p' \"$F\" | sed -n '1,40p' | cut -c1-190)"
+      "Bash(F=\"/c/Users/saadk/Downloads/quikinsight-ui-preview-v15.html\"; grep -n \"PLATFORM_DETAILS = {\" \"$F\"; sed -n '/PLATFORM_DETAILS = {/,/^};/p' \"$F\" | sed -n '1,40p' | cut -c1-190)",
+      "Bash(node -r dotenv/config ./cols.mjs)",
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/fix_drift.py\")",
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/reports_table.py\")",
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/scope_report.py\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",

@@ -184,6 +184,16 @@ export async function getGA4Data(
     }),
   ]);
 
+  // If EVERY report failed there is no data here, only zeros — and zeros are
+  // indistinguishable from a genuinely quiet week. Surfacing them as real
+  // numbers told users they had no traffic when in fact the OAuth grant was
+  // dead. Fail loudly instead so the route can report needsReauth and the page
+  // stamps the section as sample data.
+  const ga4Settled = [channelRes, trendRes, summaryRes, countryRes, pageRes, eventRes];
+  if (ga4Settled.every((r) => r.status === "rejected")) {
+    throw (ga4Settled.find((r) => r.status === "rejected") as PromiseRejectedResult).reason;
+  }
+
   const rows = (r: PromiseSettledResult<{ data: { rows?: unknown[] } }>) =>
     (r.status === "fulfilled" ? r.value.data.rows ?? [] : []) as Array<{
       dimensionValues?: Array<{ value?: string | null }>;
@@ -425,6 +435,11 @@ export async function getYouTubeData(
   // Public channel stats (statsRes) succeed for any channel; the per-channel
   // analytics reports require manager access, so degrade gracefully to zeros
   // instead of failing the whole YouTube page for a managed channel.
+  // Same rule as GA4: all-rejected means no data, not a channel with zero views.
+  if (_yt.every((r) => r.status === "rejected")) {
+    throw (_yt.find((r) => r.status === "rejected") as PromiseRejectedResult).reason;
+  }
+
   const _pick = (i: number): any => (_yt[i].status === "fulfilled" ? (_yt[i] as PromiseFulfilledResult<any>).value : { data: {} });
   const statsRes = _pick(0), analyticsRes = _pick(1), topVideosRes = _pick(2), dailyRes = _pick(3), sourcesRes = _pick(4), prevAnalyticsRes = _pick(5);
 

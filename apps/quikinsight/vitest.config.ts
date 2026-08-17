@@ -12,6 +12,14 @@ export default defineConfig({
     setupFiles: ["./__tests__/setup.ts"],
     include: ["__tests__/**/*.test.{ts,tsx}"],
     exclude: ["__tests__/e2e/**", "node_modules/**"],
+    // auth-config.test.ts deletes and reassigns shared process.env keys
+    // (NODE_ENV, NEXT_PHASE, QUIKIT_*) around vi.resetModules() to re-import
+    // lib/auth under different environments. Module registries are isolated per
+    // file, but process.env is per WORKER — so running files in parallel let
+    // those mutations land mid-import in another file and failed roughly one run
+    // in five. The suite is ~2s end to end; determinism is worth more than the
+    // parallelism here.
+    fileParallelism: false,
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

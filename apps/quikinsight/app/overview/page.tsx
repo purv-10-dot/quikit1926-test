@@ -7,6 +7,7 @@ import { hasAnyConnection } from "@/lib/api/sample";
 import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import ConnectSourcePrompt from "@/components/ui/ConnectSourcePrompt";
 import MockBadge from "@/components/ui/MockBadge";
+import ConnectSourceBadge from "@/components/ui/ConnectSourceBadge";
 import { getRecommendations, getActivity } from "@/lib/api/insights";
 import { getConnectors } from "@/lib/api/connectors";
 import type { Connector } from "@/types";
@@ -31,23 +32,28 @@ import {
 /**
  * Dashboard — ported from the v15 UI preview.
  *
- * MOCK DATA IS PER-SECTION, NOT PER-PAGE.
+ * MOCK DATA IS ALL-OR-NOTHING, PER WORKSPACE (see lib/api/sample.ts).
  *
- * Every section answers for itself: if its source is connected it shows real
- * data, otherwise it keeps the preview's sample figures and carries a "Mock"
- * stamp. So the dashboard is fully populated on day one and converts to real
- * numbers a source at a time as the workspace is onboarded — it never
- * half-empties the moment the first integration lands.
+ * Nothing connected  -> every section shows sample figures, each stamped
+ *                       <MockBadge />, so the product demonstrates itself.
+ * Anything connected -> NO sample figures anywhere. Sections with a live
+ *                       endpoint show real data; sections without one show
+ *                       zeros and a <ConnectSourceBadge /> pointing at
+ *                       /integrations.
  *
- * That mix is only safe because EVERY sampled section is stamped. If you add a
- * section here, give it a `mock` flag and a <MockBadge /> in the same change —
- * an unstamped fabricated number sitting beside a real one is how an invented
- * figure ends up in a client report.
+ * The two badges are mutually exclusive: "Mock" means the numbers are invented,
+ * "Connect source" means they are real and they are zero. Never mix fabricated
+ * figures into a live workspace — a stamp is not enough protection once the
+ * rest of the page is genuine, because the reader's assumption has flipped from
+ * "this is a demo" to "this is my account".
  *
- * Sections with a live source today: the KPI strip, AI recommendations, the
- * activity feed, and the Email Marketing card. Everything else (health score,
- * daily brief, channel glance, charts, lead funnel, budget pacing, campaigns)
- * has no endpoint yet and is always stamped.
+ * `showMock` / `needsSource` below are the only switches. If you add a section,
+ * route its data through them in the same change.
+ *
+ * Sections with a live endpoint today: the KPI strip, AI recommendations and
+ * the activity feed. Everything else (health score, daily brief, channel
+ * glance, charts, lead funnel, budget pacing, campaigns, email card) has no
+ * endpoint yet, so it is sampled when empty and zeroed when live.
  */
 function displayFirstName(name?: string | null, email?: string | null): string {
   const n = (name ?? "").trim();
@@ -130,8 +136,32 @@ export default function OverviewPage() {
   const comparing = resolvedPeriod.previous !== null;
   const mult = rangeMultiplier(rangeDays);
 
+  /**
+   * These sections have no live endpoint yet (health score, AI brief, channel
+   * glance, trend charts, lead funnel, budget pacing, campaigns table).
+   *
+   * They show sample figures ONLY while the workspace has nothing connected.
+   * The moment anything is connected the workspace is live and fabricated
+   * numbers must not sit beside real ones — so they render empty with a
+   * "Connect source" marker instead. Same rule as lib/api/sample.ts.
+   */
+  const showMock = sampleMode === true;
+  const needsSource = sampleMode === false;
+
+  // No live endpoint feeds the email card yet, so once the workspace is live it
+  // reads zero. Previously the "connected" branch rendered these demo figures
+  // under the heading "Live send, open, and click performance".
+  const emailStats = showMock
+    ? EMAIL_STATS
+    : { sends: 0, openRate: 0, clickRate: 0, unsubRate: 0, pipeline: 0 };
+
   // ── DEMO: channel glance totals ────────────────────────────────────────────
   const glance = useMemo(() => {
+    // Live workspace: no live endpoint feeds these yet, so they read zero
+    // rather than borrowing the demo numbers.
+    if (!showMock) {
+      return { paidPipeline: "0.00", paidRoas: "0.0", followers: "0.0", engagement: "0.0", sends: "0.0" };
+    }
     const paid = CHANNELS.filter((c) => c.type === "paid");
     const paidSpend = paid.reduce((s, c) => s + c.spend, 0);
     const paidPipeline = paid.reduce((s, c) => s + c.pipeline, 0);
@@ -143,7 +173,7 @@ export default function OverviewPage() {
       engagement: (platforms.reduce((s, p) => s + p.engagement, 0) / platforms.length).toFixed(1),
       sends: (EMAIL_STATS.sends / 1000).toFixed(1),
     };
-  }, []);
+  }, [showMock]);
 
   // ── KPI strip. "all" prefers LIVE data; the other tabs are DEMO. ───────────
   /**
@@ -156,6 +186,20 @@ export default function OverviewPage() {
     comparing ? { delta, trend } : { delta: "", trend: "flat" as const };
 
   const kpis = useMemo(() => {
+    // The organic / paid / email tabs are fed entirely by the demo constants —
+    // there is no per-channel live endpoint. On a live workspace they must show
+    // zeros, not the sample story. The "all" tab falls through to data.kpis.
+    if (needsSource && view !== "all") {
+      const zeros: Record<string, Array<[string, string]>> = {
+        organic: [["Followers", "0"], ["Engagement rate", "0.0%"], ["Organic reach", "0"], ["Content pipeline", "$0.00M"]],
+        paid:    [["Paid pipeline", "$0.00M"], ["Paid spend", "$0.00M"], ["CAC", "$0"], ["ROAS", "0.0x"]],
+        email:   [["Emails sent", "0"], ["Open rate", "0.0%"], ["Click rate", "0.0%"], ["Email pipeline", "$0.00M"]],
+      };
+      return (zeros[view] ?? []).map(([label, value]) => ({
+        label, value, delta: "", trend: "flat" as const, sub: "",
+        comparison: "unavailable" as const,
+      }));
+    }
     if (view === "organic") {
       // Chips narrow the totals; no selection means all platforms.
       const keys = checkedPlatforms.length ? checkedPlatforms : Object.keys(ORGANIC_PLATFORMS);
@@ -226,7 +270,7 @@ export default function OverviewPage() {
       { label: "CAC", value: `$${Math.round(KPI_BASE.cac)}`, ...cmp("▼ 8%", "down"), sub: "AI-flagged this week" },
       { label: "ROAS", value: `${(selSpend ? selPipeline / selSpend : 0).toFixed(1)}x`, ...cmp("—", "flat"), sub: "vs. planned 4.0x" },
     ];
-  }, [view, mult, comparing, data, checkedPlatforms, checkedChannels]);
+  }, [view, mult, comparing, needsSource, data, checkedPlatforms, checkedChannels]);
 
   /**
    * Both trend charts carry a pill: chart A a growth % over the 6-week series,
@@ -285,6 +329,7 @@ export default function OverviewPage() {
    * everything rather than nothing.
    */
   const sortedCampaigns = useMemo(() => {
+    if (!showMock) return [];   // no campaigns endpoint yet — empty, not invented
     const active = checkedChannels.length ? checkedChannels : CHANNELS.map((c) => String(c.name));
     const rows = CAMPAIGNS.filter((c) => active.includes(c.channel));
     rows.sort((a, b) => {
@@ -293,7 +338,7 @@ export default function OverviewPage() {
       return String(x).localeCompare(String(y)) * sort.dir;
     });
     return rows;
-  }, [sort, checkedChannels]);
+  }, [sort, checkedChannels, showMock]);
 
   function toggleSort(key: SortKey) {
     setSort((s) => ({ key, dir: s.key === key ? ((s.dir * -1) as 1 | -1) : 1 }));
@@ -308,24 +353,26 @@ export default function OverviewPage() {
         body: r.body ?? "",
         suggestedQuestion: r.suggestedQuestion ?? r.label ?? "",
       }))
-    : RECOMMENDATIONS_FALLBACK;
+    : showMock ? RECOMMENDATIONS_FALLBACK : [];
 
   const activityRows = activity.length
     ? activity.map((a, i) => ({ ...a, icon: ACTIVITY_FALLBACK[i % ACTIVITY_FALLBACK.length].icon, color: ACTIVITY_FALLBACK[i % ACTIVITY_FALLBACK.length].color }))
-    : ACTIVITY_FALLBACK;
+    : showMock ? ACTIVITY_FALLBACK : [];
 
-  const funnelMax = LEAD_FUNNEL[0]?.value || 1;
+  // Funnel + budget pacing have no endpoint; zero them out once live.
+  const funnelSteps = showMock ? LEAD_FUNNEL : LEAD_FUNNEL.map((f) => ({ ...f, value: 0 }));
+  const funnelMax = (showMock ? LEAD_FUNNEL[0]?.value : 0) || 1;
 
   /**
    * Per-section mock flags. `true` = this section is showing sample figures and
-   * must render a <MockBadge />. Sections with no endpoint at all are hard-coded
-   * true rather than derived, so they stay stamped until someone wires a real
-   * source and consciously flips them.
+   * must render a <MockBadge />. All of them are now derived from `showMock`,
+   * so nothing can be stamped as sample data on a live workspace.
    */
-  const kpisAreMock = !(data?.kpis?.length);
-  const recoAreMock = recommendations.length === 0;
-  const activityIsMock = activity.length === 0;
-  const NO_SOURCE_YET = true; // health score, brief, glance, charts, funnel, budget, campaigns
+  // Only a mock when we are actually sampling. On a live workspace an empty
+  // KPI list is a real (empty) result, not invented data.
+  const kpisAreMock = showMock && !(data?.kpis?.length);
+  const recoAreMock = showMock && recommendations.length === 0;
+  const activityIsMock = showMock && activity.length === 0;
 
   return (
     <div>
@@ -357,18 +404,22 @@ export default function OverviewPage() {
           {/* Sections carry their own stamp; this banner is the page-level
               summary shown only while the workspace has nothing connected. */}
           <ConnectSourcePrompt open={sampleMode === true} />
-          {/* Channel glance — no per-channel API yet, always sampled. */}
+          {/* Channel glance — no per-channel API yet: sampled when the workspace
+              is empty, zeroed with a Connect source marker once it is live. */}
           <div className="reco-head" style={{ margin: "6px 0 12px" }}>
             <h3>Marketing channels at a glance</h3>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Paid, organic &amp; email — click a card</span>
           </div>
           <div className="grid-3" style={{ marginBottom: 18 }}>
             <GlanceCard color="#6C5CE0" label="Paid Ads" onClick={() => setView("paid")}
+              mock={showMock} needsSource={needsSource}
               metrics={[["Pipeline", `$${glance.paidPipeline}M`], ["ROAS", `${glance.paidRoas}x`]]} />
             <GlanceCard color="#16A34A" label="Organic Social" onClick={() => setView("organic")}
+              mock={showMock} needsSource={needsSource}
               metrics={[["Followers", `${glance.followers}K`], ["Engagement", `${glance.engagement}%`]]} />
             <GlanceCard color="#E8A33D" label="Email Marketing" onClick={() => setView("email")}
-              metrics={[["Emails sent", `${glance.sends}K`], ["Open rate", `${EMAIL_STATS.openRate.toFixed(1)}%`]]} />
+              mock={showMock} needsSource={needsSource}
+              metrics={[["Emails sent", `${glance.sends}K`], ["Open rate", `${emailStats.openRate.toFixed(1)}%`]]} />
           </div>
 
           {/* Email Marketing — the ONE card driven by real connector state even
@@ -386,25 +437,26 @@ export default function OverviewPage() {
                 Live send, open, and click performance from your connected email tool.
               </p>
               <div className="grid-3">
-                <KpiMini label="Emails sent" value={`${(EMAIL_STATS.sends / 1000).toFixed(1)}K`} />
-                <KpiMini label="Open rate" value={`${EMAIL_STATS.openRate.toFixed(1)}%`} />
-                <KpiMini label="Click rate" value={`${EMAIL_STATS.clickRate.toFixed(1)}%`} />
+                <KpiMini label="Emails sent" value={`${(emailStats.sends / 1000).toFixed(1)}K`} />
+                <KpiMini label="Open rate" value={`${emailStats.openRate.toFixed(1)}%`} />
+                <KpiMini label="Click rate" value={`${emailStats.clickRate.toFixed(1)}%`} />
               </div>
             </div>
           ) : (
-            <div className="card mock-wrap" style={{ marginBottom: 18, borderColor: "#E8A33D" }}>
-              <MockBadge />
+            <div className="card mock-wrap" style={{ marginBottom: 18, borderColor: showMock ? "#E8A33D" : "var(--border)" }}>
+              {showMock ? <MockBadge /> : <ConnectSourceBadge />}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                 <h3 style={{ margin: 0, fontSize: 15 }}>Email Marketing</h3>
               </div>
               <p style={{ fontSize: 12.5,  color: "var(--text-secondary)", margin: "2px 0 14px" }}>
-                This is sample data. Connect an email marketing tool to sync real send, open, and
-                click performance automatically.
+                {showMock
+                  ? "This is sample data. Connect an email marketing tool to sync real send, open, and click performance automatically."
+                  : "No email marketing tool connected — connect one to populate these figures."}
               </p>
               <div className="grid-3" style={{ marginBottom: 14 }}>
-                <KpiMini label="Emails sent" value={`${(EMAIL_STATS.sends / 1000).toFixed(1)}K`} />
-                <KpiMini label="Open rate" value={`${EMAIL_STATS.openRate.toFixed(1)}%`} />
-                <KpiMini label="Click rate" value={`${EMAIL_STATS.clickRate.toFixed(1)}%`} />
+                <KpiMini label="Emails sent" value={`${(emailStats.sends / 1000).toFixed(1)}K`} />
+                <KpiMini label="Open rate" value={`${emailStats.openRate.toFixed(1)}%`} />
+                <KpiMini label="Click rate" value={`${emailStats.clickRate.toFixed(1)}%`} />
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {EMAIL_CONNECTOR_IDS.map((id) => {
@@ -427,38 +479,45 @@ export default function OverviewPage() {
 
           {/* DEMO — health score gauge + AI daily brief */}
           <div className="grid-2">
-            <div className={`card gauge-card${NO_SOURCE_YET ? " mock-wrap" : ""}`}>
-              {NO_SOURCE_YET && <MockBadge />}
+            <div className={`card gauge-card${showMock || needsSource ? " mock-wrap" : ""}`}>
+              {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
               <div className="gauge-wrap">
-                <DoughnutGauge value={HEALTH_SCORE.value} />
+                <DoughnutGauge value={showMock ? HEALTH_SCORE.value : 0} />
                 <div className="gauge-center">
-                  <span className="gauge-score">{HEALTH_SCORE.value}</span>
+                  <span className="gauge-score">{showMock ? HEALTH_SCORE.value : 0}</span>
                   <span className="gauge-max">/100</span>
                 </div>
               </div>
               <div>
                 <p className="gauge-label">Marketing health score</p>
-                <p className="gauge-rating">Rated <b>{HEALTH_SCORE.rating}</b></p>
-                <span className="pill pill-green">{HEALTH_SCORE.delta}</span>
+                <p className="gauge-rating">Rated <b>{showMock ? HEALTH_SCORE.rating : "—"}</b></p>
+                {showMock && <span className="pill pill-green">{HEALTH_SCORE.delta}</span>}
               </div>
             </div>
 
             {briefOpen && (
-              <div className={`card brief-card${NO_SOURCE_YET ? " mock-wrap" : ""}`}>
-                {NO_SOURCE_YET && <MockBadge />}
+              <div className={`card brief-card${showMock || needsSource ? " mock-wrap" : ""}`}>
+                {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
                 <div className="brief-head">
                   <span className="brief-icon">✦</span>
                   <span className="brief-label">AI DAILY BRIEF</span>
                   <span className="brief-dot" />
                 </div>
                 <ul className="brief-list">
-                  {DAILY_BRIEF.map((b) => <li key={b}>{b}</li>)}
+                  {showMock
+                    ? DAILY_BRIEF.map((b) => <li key={b}>{b}</li>)
+                    : <li>No brief yet — connect a source and one will be generated here.</li>}
                 </ul>
                 <div className="brief-actions">
-                  <button className="btn btn-primary btn-sm" type="button"
-                    onClick={() => router.push(`/ask-ai?q=${encodeURIComponent(BRIEF_ACTION_QUESTION)}`)}>
-                    Act on brief →
-                  </button>
+                  {/* Only offer to act on a brief that exists. */}
+                  {showMock && (
+                    <button className="btn btn-primary btn-sm" type="button"
+                      onClick={() => router.push(`/ask-ai?q=${encodeURIComponent(BRIEF_ACTION_QUESTION)}`)}>
+                      Act on brief →
+                    </button>
+                  )}
                   <button className="btn btn-sm" type="button" onClick={() => setBriefOpen(false)}>Dismiss</button>
                 </div>
               </div>
@@ -526,8 +585,9 @@ export default function OverviewPage() {
           </div>
 
           <div className="grid-2">
-            <div className={`chart-card${NO_SOURCE_YET ? " mock-wrap" : ""}`}>
-              {NO_SOURCE_YET && <MockBadge />}
+            <div className={`chart-card${showMock || needsSource ? " mock-wrap" : ""}`}>
+              {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
               <div className="chart-head">
                 <h3>{charts.aTitle}</h3>
                 <span className={`pill pill-${charts.aPillTone}`}>{charts.aPill}</span>
@@ -535,8 +595,9 @@ export default function OverviewPage() {
               <p className="chart-sub">{charts.aSub}</p>
               <div style={{ position: "relative", height: 220 }}>{charts.a}</div>
             </div>
-            <div className={`chart-card${NO_SOURCE_YET ? " mock-wrap" : ""}`}>
-              {NO_SOURCE_YET && <MockBadge />}
+            <div className={`chart-card${showMock || needsSource ? " mock-wrap" : ""}`}>
+              {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
               <div className="chart-head">
                 <h3>{charts.bTitle}</h3>
                 <span className={`pill pill-${charts.bPillTone}`}>{charts.bPill}</span>
@@ -568,12 +629,13 @@ export default function OverviewPage() {
 
           {/* Lead funnel + budget pacing — no endpoint yet, always sampled. */}
           <div className="grid-2">
-            <div className={`chart-card${NO_SOURCE_YET ? " mock-wrap" : ""}`}>
-              {NO_SOURCE_YET && <MockBadge />}
+            <div className={`chart-card${showMock || needsSource ? " mock-wrap" : ""}`}>
+              {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
               <div className="chart-head"><h3>Lead funnel</h3></div>
               <p className="chart-sub">This period</p>
               <div>
-                {LEAD_FUNNEL.map((s, i) => {
+                {funnelSteps.map((s, i) => {
                   const shades = ["22", "55", "99", "CC", ""];
                   return (
                     <div className="funnel-row" key={s.label}>
@@ -591,32 +653,34 @@ export default function OverviewPage() {
                 })}
               </div>
             </div>
-            <div className={`chart-card${NO_SOURCE_YET ? " mock-wrap" : ""}`}>
-              {NO_SOURCE_YET && <MockBadge />}
+            <div className={`chart-card${showMock || needsSource ? " mock-wrap" : ""}`}>
+              {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
               <div className="chart-head"><h3>Budget pacing</h3></div>
               <p className="chart-sub">This month</p>
               <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
                 <div style={{ position: "relative", height: 150, width: 150 }}>
-                  <DoughnutGauge value={BUDGET_PACING.percent} trackColor="#DBDAD3" fullRing={false} />
+                  <DoughnutGauge value={showMock ? BUDGET_PACING.percent : 0} trackColor="#DBDAD3" fullRing={false} />
                 </div>
                 <div className="donut-legend">
                   <div className="donut-legend-item">
                     <span className="donut-legend-dot" style={{ background: "var(--accent)" }} />
-                    Spent — {BUDGET_PACING.spent}
+                    Spent — {showMock ? BUDGET_PACING.spent : "$0"}
                   </div>
                   <div className="donut-legend-item">
                     <span className="donut-legend-dot" style={{ background: "var(--bar-gray)" }} />
-                    Remaining — {BUDGET_PACING.remaining}
+                    Remaining — {showMock ? BUDGET_PACING.remaining : "$0"}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{BUDGET_PACING.caption}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{showMock ? BUDGET_PACING.caption : "No budget source connected"}</div>
                 </div>
               </div>
             </div>
           </div>
 
           {/* DEMO — campaigns */}
-          <div className={`chart-card${NO_SOURCE_YET ? " mock-wrap" : ""}`} style={{ marginTop: 16 }}>
-            {NO_SOURCE_YET && <MockBadge />}
+          <div className={`chart-card${showMock || needsSource ? " mock-wrap" : ""}`} style={{ marginTop: 16 }}>
+            {showMock && <MockBadge />}
+              {needsSource && <ConnectSourceBadge />}
             <div className="chart-head">
               <h3>Campaigns</h3>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>click a column to sort</span>
@@ -648,13 +712,13 @@ export default function OverviewPage() {
           {/* DEMO — email campaign table, Email tab only */}
           {view === "email" && (
             <div className="chart-card mock-wrap" style={{ marginTop: 16 }}>
-              <MockBadge />
+              {showMock ? <MockBadge /> : <ConnectSourceBadge />}
               <div className="chart-head"><h3>Email campaign performance</h3></div>
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Campaign</th><th>Sends</th><th>Open rate</th><th>Click rate</th></tr></thead>
                   <tbody>
-                    {EMAIL_CAMPAIGNS.map((e) => (
+                    {(showMock ? EMAIL_CAMPAIGNS : []).map((e) => (
                       <tr key={e.name}>
                         <td>{e.name}</td>
                         <td>{e.sends.toLocaleString()}</td>
@@ -703,19 +767,28 @@ function KpiMini({ label, value }: { label: string; value: string }) {
 }
 
 function GlanceCard({
-  label, color, metrics, badge, onClick, mock = true,
+  label, color, metrics, badge, onClick, mock = false, needsSource = false,
 }: {
   label: string; color: string; metrics: [string, string][]; badge?: string; onClick: () => void;
-  /** Glance totals have no per-channel API yet, so these are sampled. */
+  /** Sample figures (nothing connected anywhere). */
   mock?: boolean;
+  /** Real-but-zero: the workspace is live, this channel has no source yet. */
+  needsSource?: boolean;
 }) {
   return (
     <div
-      className={`card${mock ? " mock-wrap" : ""}`}
+      className={`card${mock || needsSource ? " mock-wrap" : ""}`}
       onClick={onClick}
       style={{ cursor: "pointer", borderTop: `3px solid ${color}` }}
     >
       {mock && <MockBadge />}
+      {/* The card itself navigates to a tab; the badge navigates to
+          /integrations. Stop the click bubbling so it doesn't do both. */}
+      {needsSource && (
+        <span onClick={(e) => e.stopPropagation()}>
+          <ConnectSourceBadge />
+        </span>
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <p style={{ fontWeight: 700, fontSize: 13.5, margin: 0 }}>{label}</p>
         {badge && <span className="pill pill-neutral">{badge}</span>}

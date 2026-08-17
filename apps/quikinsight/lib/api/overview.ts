@@ -52,6 +52,22 @@ export interface OverviewData {
  * form maps to the legacy `?days=` endpoint behaviour — no comparison — so
  * existing callers keep their exact semantics and outbound API cost.
  */
+/**
+ * Representative KPI strip for a workspace with nothing connected.
+ *
+ * The overview route honestly reports `connected: false` with an empty `kpis`
+ * array; without this the generated report renders a blank scorecard. Values
+ * line up with the other samples in lib/mock/platformSamples.ts.
+ */
+export const OVERVIEW_KPIS_SAMPLE: OverviewKpi[] = [
+  { label: "Total Reach",  value: "184K",  delta: "▲ 12.4%", trend: "up",   sub: "vs. previous period", comparison: "available" },
+  { label: "Engagement",   value: "21.6K", delta: "▲ 8.1%",  trend: "up",   sub: "vs. previous period", comparison: "available" },
+  { label: "Web Traffic",  value: "38.2K", delta: "▼ 2.4%",  trend: "down", sub: "vs. previous period", comparison: "available" },
+  { label: "Leads",        value: "412",   delta: "▲ 9.3%",  trend: "up",   sub: "vs. previous period", comparison: "available" },
+  { label: "Pipeline",     value: "$1.3M", delta: "▲ 14.0%", trend: "up",   sub: "vs. previous period", comparison: "available" },
+  { label: "Revenue",      value: "$486K", delta: "▲ 6.2%",  trend: "up",   sub: "vs. previous period", comparison: "available" },
+];
+
 export async function getOverviewData(period: PeriodSpec | number): Promise<OverviewData> {
   const qs =
     typeof period === "number"

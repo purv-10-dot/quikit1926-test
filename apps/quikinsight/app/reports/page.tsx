@@ -1,166 +1,394 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToastStore } from "@/store/useToastStore";
+import { SkeletonCard } from "@/components/ui/Skeleton";
 
 /**
- * Reports — the report LIBRARY, ported from the v15 UI preview.
+ * Reports — a library of saved, shareable reports.
  *
- * The preview reframes Reports from "one generated report" into a library of
- * saved, schedulable reports: a table of every report, then a detail view for
- * one. That is what this page now is.
+ * Backed by QiReport via /api/reports: many reports per org, each with its own
+ * brand (workspace), date range, channel mix, audience and recipient list.
  *
- * The previous page — the live GA4 / Search Console / CRM report with email
- * sending and print/PDF — was NOT deleted. It moved verbatim to
- * /reports/generated and is reachable from the "Marketing performance" row's
- * View button, which is the library's real, data-backed report. Deleting a
- * working feature was not part of the UI update.
+ * NOT the same thing as QiEmailReportSettings, which is the single legacy
+ * per-user schedule the crons read. A report's `frequency` records intent
+ * today; wiring the crons to these rows is the next step, so nothing here
+ * claims a report was emailed unless `lastSentAt` says so.
  *
- * ⚠️ DEMO DATA: the report rows below (except the live one) are the preview's
- * seed data. There is no reports API in this app yet — creating, editing and
- * scheduling are UI-only until one exists, and the buttons say so rather than
- * pretending to have saved something.
+ * Clicking View opens /reports/generated?report=<id> — the live GA4 / Search
+ * Console / CRM document, scoped to that report's saved range, channels and
+ * metrics. There is no summary card in between: creating a report returns here,
+ * and one click shows the real thing.
  */
 
-const REPORT_TYPES: Record<string, string> = {
-  executive: "Executive summary",
-  custom: "Custom",
-};
+const TYPES = [
+  { id: "executive", label: "Executive summary" },
+  { id: "custom", label: "Custom" },
+] as const;
 
-const REPORT_RANGES: Record<string, string> = {
-  "7": "Last 7 days",
-  "30": "Last 30 days",
-  "90": "Last 90 days",
-  "365": "Last 12 months",
-};
+const RANGES = [
+  { id: "7", label: "Last 7 days" },
+  { id: "30", label: "Last 30 days" },
+  { id: "90", label: "Last 90 days" },
+  { id: "365", label: "Last 12 months" },
+] as const;
 
-const FREQUENCY_LABELS: Record<string, string> = {
-  none: "Manual only",
-  daily: "Daily",
-  weekly: "Weekly",
-  monthly: "Monthly",
-};
+const CHANNELS = [
+  { id: "paid", label: "Paid" },
+  { id: "organic", label: "Organic" },
+  { id: "email", label: "Email" },
+  { id: "leads", label: "Leads / CRM" },
+] as const;
 
-interface ReportRow {
+const FREQUENCIES = [
+  { id: "none", label: "Send manually only" },
+  { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
+  { id: "monthly", label: "Monthly" },
+] as const;
+
+/** Metric catalogue for a Custom report, grouped as in the design. */
+const METRICS: ReadonlyArray<{ id: string; label: string; group: string }> = [
+  { id: "paid_pipeline", label: "Paid pipeline", group: "Paid" },
+  { id: "paid_roas", label: "Paid ROAS", group: "Paid" },
+  { id: "paid_spend", label: "Paid spend", group: "Paid" },
+  { id: "organic_followers", label: "Followers", group: "Organic" },
+  { id: "organic_engagement", label: "Engagement rate", group: "Organic" },
+  { id: "organic_reach", label: "Reach", group: "Organic" },
+  { id: "email_sends", label: "Emails sent", group: "Email" },
+  { id: "email_open", label: "Open rate", group: "Email" },
+  { id: "email_click", label: "Click rate", group: "Email" },
+  { id: "leads_total", label: "Total leads", group: "Leads" },
+  { id: "leads_qualified", label: "Qualified leads", group: "Leads" },
+];
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export interface Report {
   id: string;
   name: string;
-  type: keyof typeof REPORT_TYPES | string;
-  brand: string;
-  range: string;
-  audience: "internal" | "client";
-  status: string;
+  type: string;
+  workspaceId: string | null;
+  dateRange: string;
+  channels: string[];
+  audience: string;
+  customSummary: string | null;
+  customMetrics: string[];
   recipients: string[];
   frequency: string;
+  status: string;
+  lastSentAt: string | null;
   createdAt: string;
-  /** Set on the one report backed by real data — its View opens the live page. */
-  href?: string;
-  summary?: string;
 }
 
-const REPORTS: ReportRow[] = [
-  {
-    id: "rep1",
-    name: "Marketing performance — July 2026",
-    type: "executive",
-    brand: "MoreYeahs",
-    range: "30",
-    audience: "internal",
-    status: "Ready",
-    recipients: ["vijay@moreyeahs.co", "jordan.lee@moreyeahs.co"],
-    frequency: "weekly",
-    createdAt: "Jul 28, 2026",
-    // The live, data-backed report.
-    href: "/reports/generated",
-  },
-];
+interface Workspace { id: string; name: string }
+
+const labelOf = (list: ReadonlyArray<{ id: string; label: string }>, id: string) =>
+  list.find((x) => x.id === id)?.label ?? id;
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
+/** Blank draft for a new report — every channel on, nothing scheduled. */
+function emptyDraft(workspaceId: string | null): Report {
+  return {
+    id: "", name: "", type: "executive", workspaceId, dateRange: "30",
+    channels: CHANNELS.map((c) => c.id), audience: "internal",
+    customSummary: "", customMetrics: [], recipients: [], frequency: "none",
+    status: "Ready", lastSentAt: null, createdAt: "",
+  };
+}
 
 export default function ReportsPage() {
   const router = useRouter();
   const showToast = useToastStore((s) => s.show);
-  const [detailId, setDetailId] = useState<string | null>(null);
 
-  const detail = useMemo(() => REPORTS.find((r) => r.id === detailId) ?? null, [detailId]);
+  const [reports, setReports] = useState<Report[] | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWsId, setActiveWsId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  function notImplemented() {
-    showToast("Report scheduling isn't wired up yet — no reports API in this app.");
+  const [draft, setDraft] = useState<Report | null>(null); // non-null = modal open
+  const [saving, setSaving] = useState(false);
+  const [recipientDraft, setRecipientDraft] = useState("");
+
+  const load = useCallback(() => {
+    setLoadError(null);
+    fetch("/api/reports")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success) throw new Error(j?.error ?? "Failed to load reports");
+        setReports(j.data as Report[]);
+      })
+      .catch((e: unknown) => {
+        setReports([]);
+        setLoadError(e instanceof Error ? e.message : "Failed to load reports");
+      });
+  }, []);
+
+  useEffect(load, [load]);
+
+  useEffect(() => {
+    // Same envelope + cookie convention the topbar switcher uses.
+    fetch("/api/workspaces")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success || !Array.isArray(j.data)) return;
+        setWorkspaces(j.data);
+        const cookieId = document.cookie.match(/(?:^|;\s*)qi_active_workspace=([^;]+)/)?.[1];
+        setActiveWsId(
+          (cookieId && j.data.find((w: Workspace) => w.id === cookieId)?.id) || j.data[0]?.id || null,
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  const brandName = useCallback(
+    (id: string | null) => workspaces.find((w) => w.id === id)?.name ?? "—",
+    [workspaces],
+  );
+
+  async function save() {
+    if (!draft) return;
+    if (!draft.name.trim()) { showToast("Give the report a name"); return; }
+    if (draft.frequency !== "none" && draft.recipients.length === 0) {
+      showToast("Add at least one recipient to schedule automatic sending");
+      return;
+    }
+    setSaving(true);
+    try {
+      const editing = Boolean(draft.id);
+      const res = await fetch(editing ? `/api/reports/${draft.id}` : "/api/reports", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const j = await res.json();
+      if (!res.ok || !j?.success) throw new Error(j?.error ?? "Save failed");
+      showToast(editing ? "Report updated" : "Report created");
+      setDraft(null);
+      setRecipientDraft("");
+      load();
+      // Deliberately NOT opening anything: creating a report returns to the
+      // library. The report is one click away on View, which goes straight to
+      // the generated document — no summary card in between.
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  if (detail) {
-    const scheduled = detail.frequency !== "none" && detail.recipients.length > 0;
-    const footer = scheduled
-      ? `Emailed ${FREQUENCY_LABELS[detail.frequency]?.toLowerCase()} to ${detail.recipients.length} recipient${detail.recipients.length > 1 ? "s" : ""} — ${detail.recipients.join(", ")}`
-      : `Generated on ${detail.createdAt} — not scheduled to send automatically`;
+  async function remove(r: Report) {
+    if (!window.confirm(`Delete "${r.name}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/reports/${r.id}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("Report deleted");
+      load();
+    } else {
+      showToast("Could not delete the report");
+    }
+  }
 
-    return (
-      <div>
-        <div className="page-head">
-          <div>
-            <button
-              className="link"
-              type="button"
-              onClick={() => setDetailId(null)}
-              style={{ marginBottom: 8, background: "none", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}
-            >
-              ← Back to reports
-            </button>
-            <div className="page-title">{detail.name}</div>
-            <p className="page-sub">
-              {detail.brand} · {REPORT_RANGES[detail.range] ?? detail.range} · {REPORT_TYPES[detail.type] ?? detail.type}
-              {detail.audience === "client" ? " · Client-facing" : " · Internal"}
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {detail.href && (
-              <button className="btn" type="button" onClick={() => router.push(detail.href!)}>
-                Open live report
-              </button>
-            )}
-            <button className="btn" type="button" onClick={notImplemented}>Edit</button>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => {
-                showToast('Opening print dialog — choose "Save as PDF" to export');
-                setTimeout(() => window.print(), 300);
-              }}
-            >
-              Export PDF
-            </button>
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => {
-                const link = `${window.location.origin}/r/${detail.id}`;
-                navigator.clipboard?.writeText(link).catch(() => {});
-                showToast(`Link copied: ${link}`);
-              }}
-            >
-              Copy link
-            </button>
-          </div>
+  /** Open the generated document for a report, scoped to its saved config. */
+  function openReport(id: string) {
+    router.push(`/reports/generated?report=${encodeURIComponent(id)}`);
+  }
+
+  function addRecipient() {
+    const v = recipientDraft.trim().toLowerCase();
+    if (!v) return;
+    if (!EMAIL_RE.test(v)) { showToast("Enter a valid email address"); return; }
+    setDraft((d) => (d && !d.recipients.includes(v) ? { ...d, recipients: [...d.recipients, v] } : d));
+    setRecipientDraft("");
+  }
+
+  const grouped = useMemo(
+    () =>
+      METRICS.reduce<Record<string, Array<{ id: string; label: string; group: string }>>>((acc, m) => {
+        (acc[m.group] ||= []).push(m);
+        return acc;
+      }, {}),
+    [],
+  );
+
+  const modal = draft && (
+    <div
+      className="modal-overlay open"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => { if (e.target === e.currentTarget) setDraft(null); }}
+    >
+      <div className="modal-box" style={{ maxWidth: 520, maxHeight: "88vh", overflowY: "auto" }}>
+        <p className="modal-title">{draft.id ? "Edit report" : "New report"}</p>
+        <p className="modal-sub">
+          Build a report scoped to a brand, date range, and channel mix — then share or schedule it.
+        </p>
+
+        <div className="modal-field">
+          <label>Report name</label>
+          <input
+            className="ws-new-input" style={{ width: "100%" }}
+            placeholder="e.g. Q3 board update"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
         </div>
 
-        <div className="report-card">
-          <div className="report-eyebrow">
-            {(REPORT_TYPES[detail.type] ?? detail.type).toUpperCase()} · {detail.brand.toUpperCase()} —{" "}
-            {(REPORT_RANGES[detail.range] ?? detail.range).toUpperCase()}
+        <div className="modal-field">
+          <label>Report type</label>
+          <select className="range-select" style={{ width: "100%" }} value={draft.type}
+            onChange={(e) => setDraft({ ...draft, type: e.target.value })}>
+            {TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
+
+        <div className="modal-field">
+          <label>Brand</label>
+          <select className="range-select" style={{ width: "100%" }} value={draft.workspaceId ?? ""}
+            onChange={(e) => setDraft({ ...draft, workspaceId: e.target.value || null })}>
+            {workspaces.length === 0 && <option value="">No workspaces</option>}
+            {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </div>
+
+        <div className="modal-field">
+          <label>Date range</label>
+          <select className="range-select" style={{ width: "100%" }} value={draft.dateRange}
+            onChange={(e) => setDraft({ ...draft, dateRange: e.target.value })}>
+            {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+        </div>
+
+        {/* Channels scope an executive summary. A custom report picks metrics
+            instead, so the channel list is hidden — otherwise a stale "all
+            channels" selection would silently scope a report the user never
+            configured that way. */}
+        {draft.type !== "custom" ? (
+          <div className="modal-field">
+            <label>Channels to include</label>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 2 }}>
+              {CHANNELS.map((c) => (
+                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    checked={draft.channels.includes(c.id)}
+                    onChange={(e) => setDraft({
+                      ...draft,
+                      channels: e.target.checked
+                        ? [...draft.channels, c.id]
+                        : draft.channels.filter((x) => x !== c.id),
+                    })}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
           </div>
-          <h2 style={{ margin: "8px 0 14px" }}>{detail.name}</h2>
-          <p style={{ fontSize: 14.5, lineHeight: 1.75, margin: "0 0 20px" }}>
-            {detail.summary ??
-              "This report is generated from your connected platforms. Open the live report for the full Google Analytics, Search Console and CRM breakdown with current figures."}
-          </p>
-          {detail.href && (
-            <button className="btn btn-primary" type="button" onClick={() => router.push(detail.href!)}>
-              View full report →
-            </button>
+        ) : (
+          <div className="modal-field">
+            <label>Custom summary</label>
+            <textarea
+              className="ws-new-input" rows={3} style={{ width: "100%", resize: "vertical" }}
+              placeholder="Write your own summary paragraph for this report…"
+              value={draft.customSummary ?? ""}
+              onChange={(e) => setDraft({ ...draft, customSummary: e.target.value })}
+            />
+            <label style={{ marginTop: 10 }}>Metrics to include</label>
+            {Object.entries(grouped).map(([group, items]) => (
+              <div key={group}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "8px 0 4px" }}>
+                  {group}
+                </p>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {items.map((m) => (
+                    <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 400 }}>
+                      <input
+                        type="checkbox"
+                        checked={draft.customMetrics.includes(m.id)}
+                        onChange={(e) => setDraft({
+                          ...draft,
+                          customMetrics: e.target.checked
+                            ? [...draft.customMetrics, m.id]
+                            : draft.customMetrics.filter((x) => x !== m.id),
+                        })}
+                      />
+                      {m.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="modal-field">
+          <label>Audience</label>
+          <select className="range-select" style={{ width: "100%" }} value={draft.audience}
+            onChange={(e) => setDraft({ ...draft, audience: e.target.value })}>
+            <option value="internal">Internal</option>
+            <option value="client">Client-facing</option>
+          </select>
+        </div>
+
+        <div className="modal-field">
+          <label>Email recipients</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="ws-new-input" style={{ flex: 1 }} type="email"
+              placeholder="name@company.com"
+              value={recipientDraft}
+              onChange={(e) => setRecipientDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRecipient(); } }}
+            />
+            <button className="btn btn-sm" type="button" onClick={addRecipient}>Add</button>
+          </div>
+          {draft.recipients.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              {draft.recipients.map((r) => (
+                <span key={r} className="pill pill-neutral" style={{ fontSize: 11.5 }}>
+                  {r}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${r}`}
+                    onClick={() => setDraft({ ...draft, recipients: draft.recipients.filter((x) => x !== r) })}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: "0 0 0 4px" }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
           )}
-          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "20px 0 0" }}>{footer}</p>
+        </div>
+
+        <div className="modal-field" style={{ marginBottom: 0 }}>
+          <label>Send frequency</label>
+          <select className="range-select" style={{ width: "100%" }} value={draft.frequency}
+            onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}>
+            {FREQUENCIES.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+          {draft.frequency !== "none" && draft.recipients.length === 0 && (
+            <p style={{ fontSize: 12, color: "var(--red)", margin: "8px 0 0" }}>
+              Add at least one recipient, or keep it manual.
+            </p>
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button className="btn btn-sm" type="button" onClick={() => setDraft(null)} disabled={saving}>Cancel</button>
+          <button className="btn btn-sm btn-primary" type="button" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : draft.id ? "Save changes" : "Create report"}
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
+  // ── Library ───────────────────────────────────────────────────────────────
   return (
     <div>
       <div className="page-head">
@@ -170,73 +398,76 @@ export default function ReportsPage() {
             Build, schedule, and share branded reports per brand — no login required for viewers
           </p>
         </div>
-        <button className="btn btn-primary" type="button" onClick={notImplemented}>
+        <button
+          className="btn btn-primary" type="button"
+          onClick={() => { setDraft(emptyDraft(activeWsId)); setRecipientDraft(""); }}
+        >
           + New report
         </button>
       </div>
 
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Report</th>
-              <th>Brand</th>
-              <th>Type</th>
-              <th>Date range</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {REPORTS.length === 0 ? (
+      {loadError && (
+        <div className="card" style={{ borderColor: "var(--red)", marginBottom: 16 }}>
+          <p style={{ margin: 0, color: "var(--red)", fontSize: 13 }}>{loadError}</p>
+          <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={load} type="button">Retry</button>
+        </div>
+      )}
+
+      {reports === null ? (
+        <SkeletonCard />
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={7} style={{ padding: "28px 0", textAlign: "center", color: "var(--text-muted)" }}>
-                  No reports yet.
-                </td>
+                <th>Report</th><th>Brand</th><th>Type</th><th>Date range</th>
+                <th>Status</th><th>Created</th><th />
               </tr>
-            ) : (
-              REPORTS.map((r) => {
-                const scheduled = r.frequency !== "none" && r.recipients.length > 0;
-                return (
-                  <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => setDetailId(r.id)}>
-                    <td style={{ fontWeight: 600 }}>
-                      {r.name}
-                      {scheduled && (
-                        <span className="pill pill-neutral" style={{ marginLeft: 6, fontSize: 10, padding: "2px 7px" }}>
-                          {FREQUENCY_LABELS[r.frequency]} · {r.recipients.length} recipient
-                          {r.recipients.length > 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </td>
-                    <td>{r.brand}</td>
-                    <td>{REPORT_TYPES[r.type] ?? r.type}</td>
-                    <td>{REPORT_RANGES[r.range] ?? r.range}</td>
-                    <td><span className="pill pill-green" style={{ fontSize: 10.5 }}>{r.status}</span></td>
-                    <td>{r.createdAt}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      <button
-                        className="btn btn-sm"
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setDetailId(r.id); }}
-                      >
-                        View →
-                      </button>{" "}
-                      <button
-                        className="btn btn-sm"
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); notImplemented(); }}
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {reports.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: "28px 0", textAlign: "center", color: "var(--text-muted)" }}>
+                    No reports yet — create one to share performance with your team or a client.
+                  </td>
+                </tr>
+              ) : (
+                reports.map((r) => {
+                  const scheduled = r.frequency !== "none" && r.recipients.length > 0;
+                  return (
+                    <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openReport(r.id)}>
+                      <td style={{ fontWeight: 600 }}>
+                        {r.name}
+                        {scheduled && (
+                          <span className="pill pill-neutral" style={{ marginLeft: 8, fontSize: 10, padding: "2px 7px" }}>
+                            {labelOf(FREQUENCIES, r.frequency)} · {r.recipients.length} recipient
+                            {r.recipients.length === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </td>
+                      <td>{brandName(r.workspaceId)}</td>
+                      <td>{labelOf(TYPES, r.type)}</td>
+                      <td>{labelOf(RANGES, r.dateRange)}</td>
+                      <td><span className="pill pill-green" style={{ fontSize: 10.5 }}>{r.status}</span></td>
+                      <td style={{ whiteSpace: "nowrap" }}>{formatDate(r.createdAt)}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); openReport(r.id); }}>
+                          View →
+                        </button>{" "}
+                        <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); setDraft({ ...r }); setRecipientDraft(""); }}>
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal}
     </div>
   );
 }

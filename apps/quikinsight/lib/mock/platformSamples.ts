@@ -265,3 +265,43 @@ export const INSTANTLY_SAMPLE = {
     { id: "in3", name: "Follow-up — webinar no-shows", status: "PAUSED", sent: 4_100, opened: 1_920, replied: 286, bounced: 74 },
   ],
 };
+
+/**
+ * CRM sample — powers the Pipeline / Deals section of the generated report when
+ * no CRM is connected.
+ *
+ * Internally consistent, so nothing looks fabricated to a careful reader:
+ *   openDeals 96  = the four open stages (38+27+19+12)
+ *   totalDeals 148 = open 96 + won 34 + lost 18
+ *   pipeline 1.284M = the four open stages' value
+ *   winRate 65.4% = 34 / (34 + 18)
+ * The stage list deliberately has no "Closed lost" row (mirroring how CRMs
+ * usually chart a pipeline), so stage counts sum to 130, not totalDeals.
+ */
+export const CRM_SAMPLE = {
+  totalContacts: 4_820,
+  recentContacts: 312,
+  totalDeals: 148,
+  openDeals: 96,
+  wonDeals: 34,
+  lostDeals: 18,
+  pipeline: 1_284_000,
+  revenue: 486_000,
+  leads: 412,
+  winRate: 65.4,
+  stages: [
+    { label: "New",           count: 38, value: 402_000 },
+    { label: "Qualified",     count: 27, value: 386_000 },
+    { label: "Proposal",      count: 19, value: 318_000 },
+    { label: "Negotiation",   count: 12, value: 178_000 },
+    { label: "Closed won",    count: 34, value: 486_000 },
+  ],
+  dealsByMonth: [
+    { month: "Mar", count: 18, value: 168_000 },
+    { month: "Apr", count: 22, value: 214_000 },
+    { month: "May", count: 26, value: 248_000 },
+    { month: "Jun", count: 29, value: 292_000 },
+    { month: "Jul", count: 31, value: 324_000 },
+    { month: "Aug", count: 22, value: 238_000 },
+  ],
+};

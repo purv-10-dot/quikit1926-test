@@ -10,13 +10,16 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { getOverviewData, type OverviewData } from "@/lib/api/overview";
+import { getOverviewData, OVERVIEW_KPIS_SAMPLE, type OverviewData } from "@/lib/api/overview";
 import { getInsights } from "@/lib/api/insights";
 import { getGoogleAnalyticsData, type GoogleAnalyticsData } from "@/lib/api/google-analytics";
 import { getSearchConsoleData, type SearchConsoleData } from "@/lib/api/search-console";
 import { getCrmStats, type CrmStatsData } from "@/lib/api/crm-stats";
 import { useToastStore } from "@/store/useToastStore";
 import NotConnected from "@/components/ui/NotConnected";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
+import MockBadge from "@/components/ui/MockBadge";
+import ConnectSourceBadge from "@/components/ui/ConnectSourceBadge";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 
 type TimesheetRow = {
@@ -106,10 +109,69 @@ function BarRow({ label, value, max, color }: { label: string; value: number; ma
   );
 }
 
+
+/**
+ * A saved report's scope, when this document is opened as one
+ * (/reports/generated?report=<id>). Without the query param the page renders
+ * the full unscoped report exactly as before.
+ */
+interface ReportScope {
+  name: string;
+  type: string;
+  dateRange: string;
+  channels: string[];
+  customSummary: string | null;
+  customMetrics: string[];
+}
+
+/** Which report channel each custom metric belongs to. */
+const METRIC_CHANNEL: Record<string, string> = {
+  paid_pipeline: "paid", paid_roas: "paid", paid_spend: "paid",
+  organic_followers: "organic", organic_engagement: "organic", organic_reach: "organic",
+  email_sends: "email", email_open: "email", email_click: "email",
+  leads_total: "leads", leads_qualified: "leads",
+};
+
+/** KPI labels each custom metric maps onto in the overview KPI strip. */
+const METRIC_KPI_LABELS: Record<string, string[]> = {
+  organic_reach: ["Total Reach", "Reach"],
+  organic_engagement: ["Engagement"],
+  organic_followers: ["Followers"],
+  paid_spend: ["Spend", "Paid spend"],
+  paid_pipeline: ["Pipeline"],
+  paid_roas: ["ROAS"],
+  email_sends: ["Emails sent"],
+  email_open: ["Open rate"],
+  email_click: ["Click rate"],
+  leads_total: ["Leads"],
+  leads_qualified: ["Qualified leads"],
+};
+
 export default function ReportsPage() {
   const showToast = useToastStore((s) => s.show);
   const { data: session } = useSession();
-  const [range, setRange] = useState(30);
+  // Last 7 days by default — the report is a recent-performance snapshot.
+  const [range, setRange] = useState(7);
+  /** Non-null when opened as a saved report. */
+  const [scope, setScope] = useState<ReportScope | null>(null);
+
+  // Load the saved report's config, if this is one. The document then honours
+  // its range, channel mix and — for a custom report — its metric selection,
+  // instead of always rendering every section.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("report");
+    if (!id) return;
+    fetch(`/api/reports/${encodeURIComponent(id)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success) return;
+        const r = j.data as ReportScope;
+        setScope(r);
+        const n = Number(r.dateRange);
+        if (Number.isFinite(n) && n > 0) setRange(n);
+      })
+      .catch(() => { /* fall back to the full report */ });
+  }, []);
   const [data, setData] = useState<OverviewData | null>(null);
   const [ga4, setGa4] = useState<GoogleAnalyticsData | null>(null);
   const [gsc, setGsc] = useState<SearchConsoleData | null>(null);
@@ -132,8 +194,11 @@ export default function ReportsPage() {
     setLoading(true);
     Promise.all([
       getOverviewData(range),
-      getGoogleAnalyticsData(),
-      getSearchConsoleData(),
+      // Pass the selected range so every section covers the same period. These
+      // previously used their route defaults (28 days), so the picker silently
+      // changed only the KPI strip while the sections below stayed on 28 days.
+      getGoogleAnalyticsData(range),
+      getSearchConsoleData(range),
       getInsights(),
       getCrmStats(),
     ])
@@ -193,9 +258,59 @@ export default function ReportsPage() {
 
   const now = new Date();
   const rangeLabel = RANGES.find((r) => r.value === range)?.label ?? `Last ${range} days`;
+
+  // Channels the report actually asked for. A custom report never stores a
+  // channel list — its scope is implied by the metric groups it picked, so
+  // derive it rather than trusting a stale checkbox state.
+  const activeChannels = new Set<string>(
+    !scope
+      ? ["paid", "organic", "email", "leads"]
+      : scope.type === "custom"
+        ? scope.customMetrics.map((m) => METRIC_CHANNEL[m]).filter(Boolean)
+        : scope.channels,
+  );
+  const wants = (channel: string) => activeChannels.has(channel);
   const period = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const generatedAt = now.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
+  // Sampling is all-or-nothing per workspace (see lib/api/sample.ts): with
+  // nothing connected every source hands back a sample; the moment anything is
+  // connected samples stop everywhere. So these flags rise and fall together,
+  // and one of them is enough to decide the page-level banner.
+  const ga4IsMock = Boolean(ga4?.isSampleData);
+  const gscIsMock = Boolean(gsc?.isSampleData);
+  const crmIsMock = Boolean(crm?.isSampleData);
+  const everythingIsMock = ga4IsMock || gscIsMock || crmIsMock;
+
+  // KPI strip only falls back to the sample in that same nothing-connected
+  // state; on a live workspace it shows real totals, zeros included.
+  const allKpis = everythingIsMock ? OVERVIEW_KPIS_SAMPLE : data?.kpis ?? [];
+  // A custom report shows ONLY the KPIs it selected. Anything else would hand
+  // the reader numbers they explicitly did not ask for.
+  const kpis =
+    scope?.type === "custom"
+      ? allKpis.filter((k) =>
+          scope.customMetrics.some((m) =>
+            (METRIC_KPI_LABELS[m] ?? []).some(
+              (label) => label.toLowerCase() === k.label.toLowerCase(),
+            ),
+          ),
+        )
+      : allKpis;
+
+  // Section-level scoping. Each section already renders only when its data is
+  // present, so nulling the data here is all it takes to drop the section.
+  // Sections are gated inline as `wants(channel) && <data> && (...)` so
+  // TypeScript keeps narrowing the data inside each block.
+
+  // On a LIVE workspace an unconnected source shows real zeros plus a "Connect
+  // source" marker — never invented figures sitting beside genuine ones.
+  const ga4NeedsConnect = !everythingIsMock && !ga4?.connected;
+  const gscNeedsConnect = !everythingIsMock && !gsc?.connected;
+  const crmNeedsConnect = !everythingIsMock && !crm?.connected;
+
+  // Sampled sources report connected:true, so this stays truthy with nothing
+  // connected — which is the point: the report always has something to show.
   const connected = data?.connected || ga4?.connected || gsc?.connected || crm?.connected;
   const topChannel = ga4?.channelBreakdown?.slice().sort((a, b) => b.sessions - a.sessions)[0];
   const maxPageViews = Math.max(...(ga4?.topPages?.map((p) => p.views) ?? [1]));
@@ -205,7 +320,11 @@ export default function ReportsPage() {
       <div className="page-head">
         <div>
           <div className="page-title">Reports</div>
-          <p className="page-sub">Performance report generated from your connected platforms</p>
+          <p className="page-sub">
+            {scope
+              ? `${scope.type === "custom" ? "Custom report" : "Executive summary"} · generated from your connected platforms`
+              : "Performance report generated from your connected platforms"}
+          </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <select
@@ -303,13 +422,18 @@ export default function ReportsPage() {
         />
       ) : (
         <div ref={printRef} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Sample figures must never appear unlabelled — see lib/api/sample.ts.
+              Inside printRef so an exported PDF carries the disclosure too. */}
+          {everythingIsMock && <SampleDataBanner platform="a platform" />}
 
           {/* Report header banner */}
           <div className="chart-card" style={{ background: "var(--accent-50, #f0f1ff)", borderColor: "var(--accent-200, #c7d2fe)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent-600, #4f46e5)", textTransform: "uppercase", marginBottom: 4 }}>
-                  Marketing Performance Report
+                  {/* A saved report carries its own title; the standalone
+                      document keeps the generic one. */}
+                  {scope ? scope.name : "Marketing Performance Report"}
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)" }}>{period}</div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>{rangeLabel} · Generated {generatedAt}</div>
@@ -325,12 +449,20 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* KPI scorecard */}
-          {(data?.kpis?.length ?? 0) > 0 && (
+          {/* The author's own summary leads a custom report. */}
+          {scope?.customSummary?.trim() && (
             <div className="chart-card">
+              <p style={{ fontSize: 14.5, lineHeight: 1.75, margin: 0 }}>{scope.customSummary}</p>
+            </div>
+          )}
+
+          {/* KPI scorecard */}
+          {kpis.length > 0 && (
+            <div className={`chart-card${everythingIsMock ? " mock-wrap" : ""}`}>
+              {everythingIsMock && <MockBadge />}
               <SectionHead title="Key Performance Indicators" sub={rangeLabel} />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 12 }}>
-                {data!.kpis.slice(0, 8).map((k) => (
+                {kpis.slice(0, 8).map((k) => (
                   <div key={k.label} style={{ background: "var(--canvas)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{k.label}</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)" }}>{k.value}</div>
@@ -349,8 +481,12 @@ export default function ReportsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
             {/* GA4 web analytics */}
-            {ga4?.connected && (
-              <div className="chart-card">
+            {/* Rendered even when unconnected: the card stays, showing real
+                zeros and a marker, so the report keeps its full shape. */}
+            {wants("organic") && ga4 && (
+              <div className={`chart-card${ga4IsMock || ga4NeedsConnect ? " mock-wrap" : ""}`}>
+                {ga4IsMock && <MockBadge />}
+                {ga4NeedsConnect && <ConnectSourceBadge />}
                 <SectionHead title="Website Analytics" sub="Google Analytics 4" />
                 <MetricRow label="Total Sessions" value={fmt(ga4.totalSessions ?? 0)} />
                 <MetricRow label="Total Users" value={fmt(ga4.totalUsers ?? 0)} />
@@ -376,8 +512,10 @@ export default function ReportsPage() {
             )}
 
             {/* Search Console */}
-            {gsc?.connected && (
-              <div className="chart-card">
+            {wants("organic") && gsc && (
+              <div className={`chart-card${gscIsMock || gscNeedsConnect ? " mock-wrap" : ""}`}>
+                {gscIsMock && <MockBadge />}
+                {gscNeedsConnect && <ConnectSourceBadge />}
                 <SectionHead title="Search Performance" sub="Google Search Console" />
                 <MetricRow label="Total Clicks" value={fmt(gsc.clicks ?? 0)} />
                 <MetricRow label="Total Impressions" value={fmt(gsc.impressions ?? 0)} />
@@ -492,7 +630,7 @@ export default function ReportsPage() {
             )}
 
             {/* Google platform cards (YouTube, etc.) */}
-            {(data?.googlePlatforms?.length ?? 0) > 0 && data!.googlePlatforms.map((gp) => (
+            {wants("organic") && (data?.googlePlatforms?.length ?? 0) > 0 && data!.googlePlatforms.map((gp) => (
               <div className="chart-card" key={gp.id}>
                 <SectionHead title={gp.name} />
                 {gp.metrics.map((m) => (
@@ -503,8 +641,10 @@ export default function ReportsPage() {
           </div>
 
           {/* CRM & Leads */}
-          {crm?.connected && (
-            <div className="chart-card">
+          {wants("leads") && crm && (
+            <div className={`chart-card${crmIsMock || crmNeedsConnect ? " mock-wrap" : ""}`}>
+              {crmIsMock && <MockBadge />}
+              {crmNeedsConnect && <ConnectSourceBadge />}
               <SectionHead title="CRM & Leads" sub="HubSpot" />
               <MetricRow label="Total Contacts" value={fmt(crm.totalContacts ?? 0)} />
               <MetricRow label="New Leads (7d)" value={fmt(crm.leads ?? 0)} />
@@ -556,7 +696,7 @@ export default function ReportsPage() {
           )}
 
           {/* Marketing Team Timesheet — only rendered when data exists */}
-          {(tsLoading || tsRows.length > 0) && (
+          {!scope && (tsLoading || tsRows.length > 0) && (
           <div className="chart-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
