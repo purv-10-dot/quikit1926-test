@@ -10,7 +10,6 @@
 
 import { SignJWT, importPKCS8, importSPKI, exportJWK, type KeyLike } from "jose";
 import crypto from "crypto";
-import { db } from "@/lib/db";
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -243,38 +242,6 @@ export function verifyPKCE(
  */
 export function resolveAppOrigin(app: { slug: string; baseUrl: string }): string {
   return process.env[`${app.slug.toUpperCase()}_URL`] || app.baseUrl;
-}
-
-/**
- * Resolve which App a `resource` indicator (RFC 8707) refers to, by matching
- * its origin against every active app's effective origin (resolveAppOrigin).
- * Shared by /api/oauth/register (when a caller does declare `resource` up
- * front) and /api/oauth/authorize (the fallback for a client that didn't —
- * e.g. Claude Desktop, whose RFC 7591 registration request has no `resource`
- * field, but which does send one here per RFC 8707).
- */
-export async function resolveAppByResource(
-  resource: string,
-): Promise<{ id: string; slug: string; baseUrl: string } | null> {
-  let resourceOrigin: string;
-  try {
-    resourceOrigin = new URL(resource).origin;
-  } catch {
-    return null;
-  }
-  const apps = await db.app.findMany({
-    where: { status: { not: "disabled" } },
-    select: { id: true, slug: true, baseUrl: true },
-  });
-  return (
-    apps.find((a) => {
-      try {
-        return new URL(resolveAppOrigin(a)).origin === resourceOrigin;
-      } catch {
-        return false;
-      }
-    }) ?? null
-  );
 }
 
 /* ── Rate limiting ──────────────────────────────────────────────────────── */
