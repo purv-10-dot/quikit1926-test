@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bot, CheckCircle2, ClipboardList, Lock } from "lucide-react";
+import { Bot, CheckCircle2, ClipboardList, Lock, UserCircle2 } from "lucide-react";
 import { runLifecycle, type RunLifecycle } from "@/lib/test/runLifecycle";
 import { executedTests, passRate, totalTests } from "@/lib/test/statuses";
 import { RunCountChips, RunProgressBar } from "./run-progress-bar";
@@ -45,6 +45,9 @@ export function RunRow({
   const creator = run.createdByUser
     ? `${run.createdByUser.firstName} ${run.createdByUser.lastName}`.trim()
     : null;
+  const owner = run.owner
+    ? `${run.owner.firstName} ${run.owner.lastName}`.trim()
+    : null;
 
   return (
     <div className="flex items-start gap-3 border-b border-gray-100 px-4 py-3 hover:bg-blue-50">
@@ -70,10 +73,20 @@ export function RunRow({
           )}
         </div>
 
-        <p className="mt-0.5 text-[11px] text-gray-500">
-          {creator ? `${creator} · ` : ""}
-          {new Date(run.createdAt).toLocaleDateString()}
-          {run.closedAt && ` · closed ${new Date(run.closedAt).toLocaleDateString()}`}
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-gray-500">
+          {creator && <span>{creator}</span>}
+          <span>{new Date(run.createdAt).toLocaleDateString()}</span>
+          {/* The run's owner, distinct from who created it and from per-test
+              assignees. Shown only when set — "Unassigned" on every row is noise. */}
+          {owner && (
+            <span className="inline-flex items-center gap-1 text-gray-600">
+              <UserCircle2 className="h-3 w-3" />
+              {owner}
+            </span>
+          )}
+          {run.closedAt && (
+            <span>closed {new Date(run.closedAt).toLocaleDateString()}</span>
+          )}
         </p>
 
         <div className="mt-1.5 max-w-xl">

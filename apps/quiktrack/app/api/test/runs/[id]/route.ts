@@ -49,6 +49,12 @@ export const GET = withOrgAuth<Params>(
           suiteId: true,
           planId: true,
           milestoneId: true,
+          // Run owner (QUIKTR-317), shown in the run header. Distinct from
+          // per-test assignment.
+          assigneeId: true,
+          startDate: true,
+          endDate: true,
+          refTickets: true,
         },
       });
       if (!run) {
@@ -80,7 +86,15 @@ export const GET = withOrgAuth<Params>(
         counts[key] = (counts[key] ?? 0) + row._count._all;
       }
 
-      return NextResponse.json({ success: true, data: { ...run, counts } });
+      // Owner name so the header doesn't render a cuid.
+      const owner = run.assigneeId
+        ? await db.user.findUnique({
+            where: { id: run.assigneeId },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : null;
+
+      return NextResponse.json({ success: true, data: { ...run, counts, owner } });
     } catch (error: unknown) {
       return serverError(error);
     }

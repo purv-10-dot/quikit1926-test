@@ -69,6 +69,19 @@ export const APPROVAL_OPTIONS: SelectOption[] = [
  * Priority colours are semantic data states, so they use fixed Tailwind values
  * rather than `accent-*` (root CLAUDE.md rule).
  */
+/**
+ * Priority swatch colours for the custom dropdown, which paints an inline dot and
+ * therefore needs a real colour value rather than a Tailwind class. Same hues as
+ * PRIORITY_CLASS below so the pill and the dot agree.
+ */
+export const PRIORITY_DOT: Record<string, string> = {
+  CRITICAL: "#be123c",
+  HIGH: "#c2410c",
+  MEDIUM: "#1d4ed8",
+  LOW: "#4b5563",
+  LOWEST: "#9ca3af",
+};
+
 export const PRIORITY_CLASS: Record<string, string> = {
   CRITICAL: "text-rose-700 bg-rose-50",
   HIGH: "text-orange-700 bg-orange-50",

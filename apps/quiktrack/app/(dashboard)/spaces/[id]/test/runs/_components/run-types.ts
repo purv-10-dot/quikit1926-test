@@ -16,4 +16,6 @@ export interface RunRow {
   testCount: number;
   counts: StatusCounts;
   createdByUser: { id: string; firstName: string; lastName: string } | null;
+  /** The run's owner (QtTestRun.assigneeId), not a per-test assignee. */
+  owner: { id: string; firstName: string; lastName: string } | null;
 }

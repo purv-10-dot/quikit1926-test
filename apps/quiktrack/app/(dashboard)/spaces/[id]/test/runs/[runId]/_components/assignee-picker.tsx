@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { ChevronDown, User, UserX } from "lucide-react";
+import type { MemberOption as Member } from "../../../_components/use-project-members";
 
 /**
  * Reassign a run-case (QUIKTR-317).
@@ -11,10 +12,8 @@ import { ChevronDown, User, UserX } from "lucide-react";
  * `QtTest.assigneeId` rather than the case's `ownerId`.
  */
 
-export interface MemberOption {
-  userId: string;
-  name: string;
-}
+/** Re-exported for existing importers; defined with the members hook. */
+export type { MemberOption } from "../../../_components/use-project-members";
 
 export function AssigneePicker({
   currentId,
@@ -23,7 +22,7 @@ export function AssigneePicker({
   disabled,
 }: {
   currentId: string | null;
-  members: MemberOption[];
+  members: Member[];
   onChange: (userId: string | null) => Promise<void> | void;
   disabled?: boolean;
 }) {

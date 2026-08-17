@@ -2,15 +2,23 @@
 
 import { useCallback, useMemo } from "react";
 import { useApiData } from "@/lib/hooks/useApiData";
-import type { MemberOption } from "./assignee-picker";
 
 /**
- * Project members for the runner's assignee picker (QUIKTR-317).
+ * Project members, for every QuikTest picker that needs a person.
  *
- * Extracted from `runner-view.tsx` to keep that file under the 300-line ceiling
- * in apps/quiktrack/CLAUDE.md — the runner is the module's densest component and
- * accretes props quickly, so member plumbing lives here rather than inline.
+ * Used by the runner's per-test assignee picker (QUIKTR-317) and by the run
+ * OWNER picker on run creation. Those two are deliberately independent: a lead can
+ * own a run while individual cases are assigned to different testers, and whoever
+ * executes a test need not be its assignee.
+ *
+ * Lives at the `test/_components` level rather than under `runs/[runId]/` so both
+ * surfaces share one cache entry instead of fetching members twice.
  */
+
+export interface MemberOption {
+  userId: string;
+  name: string;
+}
 
 /** Shape returned by /api/projects/{id}/members. */
 interface RawMember {
@@ -30,13 +38,13 @@ function memberDisplayName(m: RawMember): string {
   return full || u.email;
 }
 
-export interface RunMembersApi {
+export interface ProjectMembersApi {
   members: MemberOption[];
-  /** Resolves a user id to a display name for the list's assignee chip. */
+  /** Resolves a user id to a display name for a chip. */
   assigneeName: (userId: string) => string;
 }
 
-export function useRunMembers(projectId: string): RunMembersApi {
+export function useProjectMembers(projectId: string): ProjectMembersApi {
   // Cached longer than run data: membership changes far less often than results.
   const { data } = useApiData<MemberOption[]>(
     ["quiktrack", "project-members", projectId],

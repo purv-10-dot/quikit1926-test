@@ -184,7 +184,12 @@ export async function createTestRun(
             refId: seq,
             caseVersion: c.currentVersion,
             currentStatusId: statusId,
-            assigneeId: input.assigneeId ?? null,
+            // Deliberately NOT the run's assignee. `QtTestRun.assigneeId` is the
+            // run's OWNER; per-test assignment is independent, so a lead can own
+            // the run while individual cases go to different testers (and whoever
+            // executes a test need not be its assignee). Copying the owner down
+            // here made every test look pre-assigned to one person.
+            assigneeId: null,
           });
         }
       }

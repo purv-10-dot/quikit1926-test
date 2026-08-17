@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
-import {
-  RightPanel,
-  RightPanelCancelButton,
-  RightPanelFooter,
-} from "@quikit/ui";
+import { RightPanel } from "@quikit/ui";
+import { PanelFooter } from "@/components/test/panel-footer";
 import { hiddenContentNotice, layoutFor } from "@/lib/test/caseLayout";
 import { caseRef, labelOf, type CaseLabel } from "./case-meta";
+import { parseRefKeys } from "./reference-picker";
 import {
   ApprovalPill,
   DetailRow,
@@ -125,20 +123,28 @@ export function CaseDetailPanel({
       }
       size="lg"
       footer={
-        <RightPanelFooter>
-          <RightPanelCancelButton onClick={onClose} label="Close" />
+        <PanelFooter>
+          {/* Primary action FIRST (left): the panel's bottom-right corner is
+              covered by the floating chat bubble, which was hiding Edit. */}
           {canEdit && (
             <button
               type="button"
               onClick={onEdit}
               disabled={!data}
-              className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-4 py-2 text-xs text-white transition-colors hover:bg-accent-700 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-700 disabled:opacity-50"
             >
               <Pencil className="h-3.5 w-3.5" />
               Edit
             </button>
           )}
-        </RightPanelFooter>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs text-gray-600 transition-colors hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </PanelFooter>
       }
     >
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
@@ -187,7 +193,21 @@ export function CaseDetailPanel({
             <DetailRow label="Labels">
               <LabelChips labels={data.labels} />
             </DetailRow>
-            <DetailRow label="References">{data.refTickets}</DetailRow>
+            <DetailRow label="References">
+              {/* Chips, not the raw comma string — matches how they were picked. */}
+              {data.refTickets ? (
+                <span className="flex flex-wrap gap-1">
+                  {parseRefKeys(data.refTickets).map((k) => (
+                    <span
+                      key={k}
+                      className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700"
+                    >
+                      {k}
+                    </span>
+                  ))}
+                </span>
+              ) : null}
+            </DetailRow>
           </dl>
 
           {data.description && (

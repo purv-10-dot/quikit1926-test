@@ -80,6 +80,8 @@ export interface RunSummaryData {
   build: string | null;
   environment: string | null;
   counts: Record<string, number>;
+  /** Run owner (QUIKTR-317), not a per-test assignee. */
+  owner: { id: string; firstName: string; lastName: string } | null;
 }
 
 /** Display id for a test — the reference UI's `T106`. */

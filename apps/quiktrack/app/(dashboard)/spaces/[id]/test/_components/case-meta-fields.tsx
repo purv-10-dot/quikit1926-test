@@ -1,14 +1,17 @@
 "use client";
 
-import { Field, Input, Select } from "@quikit/ui";
+import { Field, Input } from "@quikit/ui";
+import { SelectMenu } from "@/components/test/select-menu";
 import {
   AUTOMATION_CANDIDATE_OPTIONS,
   AUTOMATION_OPTIONS,
   AUTOMATION_TOOL_OPTIONS,
+  PRIORITY_DOT,
   PRIORITY_OPTIONS,
   TYPE_OPTIONS,
 } from "./case-meta";
-import type { TemplateKind } from "./case-body-fields";
+import { ReferencePicker } from "./reference-picker";
+import type { TemplateKind } from "@/lib/test/caseLayout";
 
 /**
  * The case header/metadata group from the spec's Fig. 1 (QUIKTR-333).
@@ -16,6 +19,9 @@ import type { TemplateKind } from "./case-body-fields";
  * Split out of `case-editor-panel.tsx` to keep that file under the 300-line
  * ceiling in apps/quiktrack/CLAUDE.md — the editor is the file most at risk of
  * becoming another 114 KB `edit-issue-modal.tsx`.
+ *
+ * All dropdowns are `SelectMenu`, not native `<select>`: the OS widget can't be
+ * styled to match the app and can't show colour swatches or per-option hints.
  */
 
 export interface TemplateOption {
@@ -36,31 +42,49 @@ export interface MetaValues {
   refTickets: string;
 }
 
+/** What each template changes about the form, shown under the option. */
+const KIND_HINT: Record<TemplateKind, string> = {
+  STEPS: "Numbered steps, each with its own expected result",
+  TEXT: "One expected result for the whole case",
+  BDD: "Given / When / Then prose",
+  EXPLORATORY: "A charter to explore — no formal expectations",
+};
+
 export function CaseMetaFields({
   values,
   onChange,
   templates,
   estimateError,
+  projectId,
+  disabled,
 }: {
   values: MetaValues;
   onChange: (patch: Partial<MetaValues>) => void;
   templates: TemplateOption[];
   estimateError?: string;
+  projectId: string;
+  disabled?: boolean;
 }) {
   const isAutomated = values.automationStatus === "AUTOMATED";
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="Template"
           hint="Decides whether the case is written as one Expected Result or as per-step expectations."
         >
-          <Select
-            options={templates.map((t) => ({ value: t.id, label: t.name }))}
+          <SelectMenu
             value={values.templateId}
+            options={templates.map((t) => ({
+              value: t.id,
+              label: t.name,
+              hint: KIND_HINT[t.kind],
+            }))}
             placeholder={templates.length ? "Choose a template" : "No templates"}
-            onChange={(e) => onChange({ templateId: e.target.value })}
+            disabled={disabled}
+            ariaLabel="Template"
+            onChange={(v) => onChange({ templateId: v })}
           />
         </Field>
         <Field
@@ -71,36 +95,50 @@ export function CaseMetaFields({
           <Input
             value={values.estimate}
             placeholder="30m"
+            disabled={disabled}
             onChange={(e) => onChange({ estimate: e.target.value })}
           />
         </Field>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Priority">
-          <Select
-            options={PRIORITY_OPTIONS}
+          <SelectMenu
             value={values.priority}
-            onChange={(e) => onChange({ priority: e.target.value })}
+            options={PRIORITY_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+              color: PRIORITY_DOT[o.value],
+            }))}
+            disabled={disabled}
+            ariaLabel="Priority"
+            onChange={(v) => onChange({ priority: v })}
           />
         </Field>
         <Field label="Type">
-          <Select
-            options={TYPE_OPTIONS}
+          <SelectMenu
             value={values.type}
-            onChange={(e) => onChange({ type: e.target.value })}
+            options={TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            disabled={disabled}
+            ariaLabel="Type"
+            onChange={(v) => onChange({ type: v })}
           />
         </Field>
         <Field label="Automation">
-          <Select
-            options={AUTOMATION_OPTIONS}
+          <SelectMenu
             value={values.automationStatus}
-            onChange={(e) => onChange({ automationStatus: e.target.value })}
+            options={AUTOMATION_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+            }))}
+            disabled={disabled}
+            ariaLabel="Automation"
+            onChange={(v) => onChange({ automationStatus: v })}
           />
         </Field>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="Automation ID"
           hint="How CI matches its test to this case, e.g. login.spec.ts::valid_creds. Unique per project."
@@ -108,6 +146,8 @@ export function CaseMetaFields({
           <Input
             value={values.automationId}
             placeholder="login.spec.ts::valid_creds"
+            disabled={disabled}
+            className="font-mono text-xs"
             onChange={(e) => onChange({ automationId: e.target.value })}
           />
         </Field>
@@ -116,23 +156,30 @@ export function CaseMetaFields({
             cases, so the two swap places. */}
         {isAutomated ? (
           <Field label="Automation Type" hint="The harness that runs it.">
-            <Select
-              options={AUTOMATION_TOOL_OPTIONS}
+            <SelectMenu
               value={values.automationTool}
+              options={AUTOMATION_TOOL_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
               placeholder="Choose a tool"
-              onChange={(e) => onChange({ automationTool: e.target.value })}
+              disabled={disabled}
+              ariaLabel="Automation type"
+              onChange={(v) => onChange({ automationTool: v })}
             />
           </Field>
         ) : (
-          <Field
-            label="Automation Candidate"
-            hint="Worth automating later?"
-          >
-            <Select
-              options={AUTOMATION_CANDIDATE_OPTIONS}
+          <Field label="Automation Candidate" hint="Worth automating later?">
+            <SelectMenu
               value={values.automationCandidate}
+              options={AUTOMATION_CANDIDATE_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
               placeholder="Not assessed"
-              onChange={(e) => onChange({ automationCandidate: e.target.value })}
+              disabled={disabled}
+              ariaLabel="Automation candidate"
+              onChange={(v) => onChange({ automationCandidate: v })}
             />
           </Field>
         )}
@@ -140,12 +187,13 @@ export function CaseMetaFields({
 
       <Field
         label="References"
-        hint="Ticket ids in another tracker, e.g. JIRA-3, JIRA-4. For linking work items in QuikTrack, use Coverage below."
+        hint="Work items this case mentions. Search by key or title. For results to appear on a work item, use Coverage below."
       >
-        <Input
+        <ReferencePicker
           value={values.refTickets}
-          placeholder="JIRA-3, JIRA-4"
-          onChange={(e) => onChange({ refTickets: e.target.value })}
+          onChange={(v) => onChange({ refTickets: v })}
+          projectId={projectId}
+          disabled={disabled}
         />
       </Field>
     </>

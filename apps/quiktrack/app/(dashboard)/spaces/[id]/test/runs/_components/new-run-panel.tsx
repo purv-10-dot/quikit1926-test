@@ -2,26 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Checkbox,
-  Field,
-  Input,
-  RightPanel,
-  RightPanelCancelButton,
-  RightPanelFooter,
-  RightPanelSubmitButton,
-  Select,
-} from "@quikit/ui";
+import { Checkbox, Field, Input, RightPanel } from "@quikit/ui";
+import { PanelFooter } from "@/components/test/panel-footer";
+import { SelectMenu } from "@/components/test/select-menu";
 import { useApiData } from "@/lib/hooks/useApiData";
 import type { SectionNode } from "../../_components/case-meta";
+import { useProjectMembers } from "../../_components/use-project-members";
 import { IncludeCasesField, type IncludeMode } from "./include-cases-field";
+import { RunContextFields } from "./run-context-fields";
 
 /**
  * Create a run over a whole suite, or over a hand-picked set of cases
- * (QUIKTR-337).
+ * (QUIKTR-337), with an owner (QUIKTR-317).
  *
  * The API takes `suiteId` OR `caseIds` and rejects both together, so `mode`
  * decides which one goes in the body — never both.
+ *
+ * "Assign to" here sets the RUN's owner (`QtTestRun.assigneeId`). It deliberately
+ * does NOT pre-assign the materialised tests: per-test assignment is independent,
+ * so a lead can own the run while individual cases go to different testers, and
+ * whoever executes a test need not be its assignee.
  */
 
 interface SuiteLite {
@@ -29,7 +29,6 @@ interface SuiteLite {
   name: string;
   sections?: SectionNode[];
 }
-
 
 interface NewRunPanelProps {
   open: boolean;
@@ -49,9 +48,11 @@ export function NewRunPanel({
     ["quiktrack", "test-suites", projectId],
     open ? `/api/test/suites?projectId=${projectId}` : null,
   );
+  const { members } = useProjectMembers(projectId);
 
   const [name, setName] = useState("");
   const [suiteId, setSuiteId] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
   const [mode, setMode] = useState<IncludeMode>("suite");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [build, setBuild] = useState("");
@@ -76,6 +77,7 @@ export function NewRunPanel({
     if (!open) return;
     setError(null);
     setName("");
+    setAssigneeId("");
     setBuild("");
     setEnvironment("");
     setStartDate("");
@@ -127,9 +129,8 @@ export function NewRunPanel({
           // Exactly one of these — the schema rejects both together, and sending
           // suiteId alongside caseIds would silently run the WHOLE suite
           // (suiteId wins in the service's case query).
-          ...(mode === "pick"
-            ? { caseIds: Array.from(picked) }
-            : { suiteId }),
+          ...(mode === "pick" ? { caseIds: Array.from(picked) } : { suiteId }),
+          assigneeId: assigneeId || undefined,
           build: build.trim() || undefined,
           environment: environment.trim() || undefined,
           startDate: startDate || undefined,
@@ -166,20 +167,33 @@ export function NewRunPanel({
       onClose={onClose}
       title="New test run"
       subtitle="Materialises one test per case in the suite"
+      size="lg"
       footer={
-        <RightPanelFooter>
-          <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
+        <PanelFooter>
+          {/* Primary action FIRST (left): the panel's bottom-right corner is
+              covered by the floating chat bubble. */}
+          <button
+            type="button"
             onClick={submit}
             disabled={saving}
-            label={saving ? "Creating…" : "Create run"}
-          />
-        </RightPanelFooter>
+            className="rounded-lg bg-accent-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-700 disabled:opacity-50"
+          >
+            {saving ? "Creating…" : "Create run"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </PanelFooter>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-6">
         {error && (
-          <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -188,18 +202,39 @@ export function NewRunPanel({
           <Input
             value={name}
             placeholder="Sprint 14 regression"
+            disabled={saving}
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
 
-        <Field label="Suite" required>
-          <Select
-            options={(suites ?? []).map((s) => ({ value: s.id, label: s.name }))}
-            value={suiteId}
-            placeholder={suites?.length ? "Choose a suite" : "No suites yet"}
-            onChange={(e) => setSuiteId(e.target.value)}
-          />
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Suite" required>
+            <SelectMenu
+              value={suiteId}
+              options={(suites ?? []).map((s) => ({ value: s.id, label: s.name }))}
+              placeholder={suites?.length ? "Choose a suite" : "No suites yet"}
+              disabled={saving}
+              ariaLabel="Suite"
+              onChange={setSuiteId}
+            />
+          </Field>
+          <Field
+            label="Assign to"
+            hint="Who owns this run. Individual test cases are assigned separately."
+          >
+            <SelectMenu
+              value={assigneeId}
+              options={[
+                { value: "", label: "Unassigned" },
+                ...members.map((m) => ({ value: m.userId, label: m.name })),
+              ]}
+              placeholder={members.length ? "Unassigned" : "No members"}
+              disabled={saving}
+              ariaLabel="Assign to"
+              onChange={setAssigneeId}
+            />
+          </Field>
+        </div>
 
         {/* QUIKTR-337 — whole suite, or a hand-picked subset. */}
         <IncludeCasesField
@@ -214,60 +249,25 @@ export function NewRunPanel({
           disabled={saving}
         />
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Build" hint="Optional. Ties the run to a release build.">
-            <Input
-              value={build}
-              placeholder="1.4.0"
-              onChange={(e) => setBuild(e.target.value)}
-            />
-          </Field>
-          <Field label="Environment">
-            <Input
-              value={environment}
-              placeholder="staging"
-              onChange={(e) => setEnvironment(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        {/* QUIKTR-320 — the planned execution window. Both optional: an ad-hoc
-            or CI run has no planned dates. */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Start date">
-            <Input
-              type="date"
-              value={startDate}
-              // A native date input can't express "before the end date", so the
-              // max is set from the other field — the schema and a DB CHECK both
-              // back it up.
-              max={endDate || undefined}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </Field>
-          <Field label="End date" error={dateError}>
-            <Input
-              type="date"
-              value={endDate}
-              min={startDate || undefined}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <Field
-          label="References"
-          hint="Ticket ids in another tracker, e.g. JIRA-1, JIRA-3."
-        >
-          <Input
-            value={refTickets}
-            placeholder="JIRA-1, JIRA-3"
-            onChange={(e) => setRefTickets(e.target.value)}
-          />
-        </Field>
+        <RunContextFields
+          build={build}
+          onBuild={setBuild}
+          environment={environment}
+          onEnvironment={setEnvironment}
+          startDate={startDate}
+          onStartDate={setStartDate}
+          endDate={endDate}
+          onEndDate={setEndDate}
+          dateError={dateError}
+          refTickets={refTickets}
+          onRefTickets={setRefTickets}
+          projectId={projectId}
+          disabled={saving}
+        />
 
         <Checkbox
           checked={includeDrafts}
+          disabled={saving}
           onChange={(e) => setIncludeDrafts(e.target.checked)}
           label="Include draft cases"
           description={

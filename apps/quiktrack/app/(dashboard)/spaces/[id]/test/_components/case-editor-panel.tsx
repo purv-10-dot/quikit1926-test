@@ -1,20 +1,14 @@
 "use client";
 
-import {
-  Field,
-  Input,
-  RightPanel,
-  RightPanelCancelButton,
-  RightPanelFooter,
-  RightPanelSubmitButton,
-  Textarea,
-} from "@quikit/ui";
+import { Field, Input, RightPanel, Textarea } from "@quikit/ui";
+import { PanelFooter } from "@/components/test/panel-footer";
 import { caseRef } from "./case-meta";
 import { ApprovalControl } from "./approval-control";
 import { CaseBodyFields } from "./case-body-fields";
 import { CaseMetaFields } from "./case-meta-fields";
 import { CoverageLinks } from "./coverage-links";
 import { LabelPicker } from "./label-picker";
+import { FormSection } from "./form-section";
 import { useCaseForm } from "./use-case-form";
 
 /**
@@ -28,7 +22,9 @@ import { useCaseForm } from "./use-case-form";
  * the text-style and step-style expectations are stored on every case, so
  * switching template changes the form, never the content.
  *
- * Form state lives in `use-case-form.ts`; this file is layout.
+ * Form state lives in `use-case-form.ts`; this file is layout. Fields are grouped
+ * into labelled sections rather than one flat column — the flat version made a
+ * 14-field form read as an undifferentiated list.
  */
 
 interface CaseEditorPanelProps {
@@ -72,24 +68,34 @@ export function CaseEditorPanel({
       subtitle={subtitle}
       size="lg"
       footer={
-        <RightPanelFooter>
-          <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
+        <PanelFooter>
+          {/* Primary action FIRST (left): the panel's bottom-right corner is
+              covered by the floating chat bubble. */}
+          <button
+            type="button"
             onClick={submit}
             disabled={f.saving || f.loading}
-            label={
-              f.saving ? "Saving…" : f.isEdit ? "Save new version" : "Create case"
-            }
-          />
-        </RightPanelFooter>
+            className="rounded-lg bg-accent-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-700 disabled:opacity-50"
+          >
+            {f.saving ? "Saving…" : f.isEdit ? "Save new version" : "Create case"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={f.saving}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </PanelFooter>
       }
     >
       {f.loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {f.error && (
-            <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {f.error}
             </p>
           )}
@@ -98,74 +104,77 @@ export function CaseEditorPanel({
             <Input
               value={f.title}
               placeholder="Login with valid credentials redirects to dashboard"
+              disabled={f.saving}
               onChange={(e) => f.setTitle(e.target.value)}
             />
           </Field>
 
-          <CaseMetaFields
-            values={f.meta}
-            onChange={f.patchMeta}
-            templates={f.templateList}
-            estimateError={f.estimateError}
-          />
-
-          <Field label="Description">
-            <Textarea
-              rows={3}
-              value={f.description}
-              onChange={(e) => f.setDescription(e.target.value)}
+          <FormSection title="Details">
+            <CaseMetaFields
+              values={f.meta}
+              onChange={f.patchMeta}
+              templates={f.templateList}
+              estimateError={f.estimateError}
+              projectId={projectId}
+              disabled={f.saving}
             />
-          </Field>
+          </FormSection>
 
-          <CaseBodyFields
-            kind={f.kind}
-            preconditions={f.preconditions}
-            onPreconditions={f.setPreconditions}
-            expectedResult={f.expectedResult}
-            onExpectedResult={f.setExpectedResult}
-            steps={f.steps}
-            onSteps={f.setSteps}
-            disabled={f.saving}
-          />
+          <FormSection title="What to test">
+            <Field label="Description">
+              <Textarea
+                rows={3}
+                value={f.description}
+                disabled={f.saving}
+                onChange={(e) => f.setDescription(e.target.value)}
+              />
+            </Field>
 
-          <div>
-            <p className="mb-1 text-sm font-medium text-gray-700">Labels</p>
-            <p className="mb-2 text-xs text-gray-500">
-              Free-form tags for filtering and reporting, e.g. smoke, checkout,
-              flaky. Saved immediately, not with the case.
-            </p>
+            <CaseBodyFields
+              kind={f.kind}
+              preconditions={f.preconditions}
+              onPreconditions={f.setPreconditions}
+              expectedResult={f.expectedResult}
+              onExpectedResult={f.setExpectedResult}
+              steps={f.steps}
+              onSteps={f.setSteps}
+              disabled={f.saving}
+            />
+          </FormSection>
+
+          <FormSection
+            title="Approval"
+            hint="Only approved cases are pulled into new test runs by default."
+          >
+            <ApprovalControl
+              caseId={caseId}
+              onChanged={onSaved}
+              disabled={f.saving}
+            />
+          </FormSection>
+
+          <FormSection
+            title="Labels"
+            hint="Free-form tags for filtering and reporting. Saved immediately, not with the case."
+          >
             <LabelPicker
               caseId={caseId}
               projectId={projectId}
               disabled={f.saving}
               onChanged={onSaved}
             />
-          </div>
+          </FormSection>
 
-          <div>
-            <p className="mb-1 text-sm font-medium text-gray-700">Approval</p>
-            <p className="mb-2 text-xs text-gray-500">
-              Only approved cases are pulled into new test runs by default.
-            </p>
-            <ApprovalControl
-              caseId={caseId}
-              onChanged={onSaved}
-              disabled={f.saving}
-            />
-          </div>
-
-          <div>
-            <p className="mb-1 text-sm font-medium text-gray-700">Coverage</p>
-            <p className="mb-2 text-xs text-gray-500">
-              Work items this case verifies. Linking one makes this case&apos;s
-              results appear on that item&apos;s QuikTest panel.
-            </p>
+          <FormSection
+            title="Coverage"
+            hint="Work items this case verifies. Linking one makes this case's results appear on that item. Saved immediately."
+          >
             <CoverageLinks
               caseId={caseId}
               projectId={projectId}
               disabled={f.saving}
             />
-          </div>
+          </FormSection>
         </div>
       )}
     </RightPanel>

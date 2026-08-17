@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRunMembers } from "./use-run-members";
+import { useProjectMembers } from "../../../_components/use-project-members";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Lock, Unlock } from "lucide-react";
@@ -78,7 +78,7 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
   );
 
   // Project members for the assignee picker (QUIKTR-317).
-  const { members: memberList, assigneeName } = useRunMembers(projectId);
+  const { members: memberList, assigneeName } = useProjectMembers(projectId);
 
   const reassign = async (userId: string | null) => {
     if (!activeTestId) return;
@@ -225,6 +225,11 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
               {run.source}
               {run.build ? ` · build ${run.build}` : ""}
               {run.environment ? ` · ${run.environment}` : ""}
+              {/* Run owner. Individual tests are assigned separately, so this is
+                  who owns the run, not who executes each case. */}
+              {run.owner
+                ? ` · owner ${`${run.owner.firstName} ${run.owner.lastName}`.trim()}`
+                : ""}
               {run.state === "closed" ? " · closed" : ""}
             </p>
           )}
