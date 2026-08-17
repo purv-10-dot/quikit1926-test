@@ -7,6 +7,18 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { logger } from "@/lib/shared";
 
 /**
+ * The upload PUT's authorization token rides in this request header, not the
+ * URL path. http.sys/IIS (the on-prem reverse proxy in front of this app)
+ * rejects any URL segment over ~260 chars (`UrlSegmentMaxLength`) with a 400
+ * before the request reaches the app; this token alone is ~450 chars. A
+ * custom header (not `Authorization: Bearer`) avoids colliding with IIS
+ * Windows Authentication or edge auth layers that specially interpret
+ * `Authorization`. Query strings were considered and rejected too — they land
+ * in every proxy access log along the way, and this token authorizes a write.
+ */
+export const UPLOAD_TOKEN_HEADER = "X-Upload-Token";
+
+/**
  * The HMAC secret used to sign/verify upload + download tokens — shared by every
  * app-proxied storage driver (local + GCS) so both resolve the same secret from
  * one place. Dev fallback is intentional; production sets `UPLOAD_TOKEN_SECRET`

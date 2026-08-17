@@ -27,15 +27,58 @@ import {
 
 export const QUIKCHAT_APP_SLUG = "quikchat";
 
+/**
+ * Resolved `App.id` for slug `quikchat`. Cached FOREVER once found — a slug's
+ * row id does not change, and this is read on nearly every permission check.
+ */
 let cachedAppId: string | null = null;
+
+/**
+ * Absolute expiry of a cached MISS. Negative caching matters here because the
+ * miss is the expensive case: `cachedAppId` used to be assigned only on success,
+ * so an environment with no `App` row paid a DB round-trip on every `userCan`,
+ * every `loadMyPermissions`, every `extraAdminCheck`, and once more per request
+ * via `ensureUserRole` — the broken deployment was also the slowest one.
+ *
+ * OPERATIONAL NOTE: after someone INSERTS the missing row to fix a deployment,
+ * permission-gated features stay dark for up to MISS_TTL_MS longer in each
+ * running process. That is expected, not a failed fix. Restart the process (or
+ * wait it out) rather than concluding the insert didn't take.
+ */
+let appIdMissUntil = 0;
+const MISS_TTL_MS = 30_000;
+
 async function getQuikChatAppId(): Promise<string | null> {
   if (cachedAppId) return cachedAppId;
+  if (Date.now() < appIdMissUntil) return null;
+
   const app = await db.app.findUnique({
     where: { slug: QUIKCHAT_APP_SLUG },
     select: { id: true },
   });
-  if (app) cachedAppId = app.id;
-  return cachedAppId;
+  if (app) {
+    cachedAppId = app.id;
+    appIdMissUntil = 0;
+    return cachedAppId;
+  }
+  appIdMissUntil = Date.now() + MISS_TTL_MS;
+  return null;
+}
+
+/**
+ * Test hook — drop BOTH the positive and negative caches.
+ *
+ * ⚠️ Required by any test file that exercises both the found and not-found
+ * paths, because this module-level cache makes such a file order-dependent in
+ * BOTH directions: a resolved App id sticks forever (so a later "no App row"
+ * case can never be reached), and now a miss sticks for 30s (so a later "App
+ * found" case sees null). `lib/authz/seed.test.ts` already carries a
+ * "MUST run first" comment for the first half of that; call this in `beforeEach`
+ * instead of relying on declaration order.
+ */
+export function __resetAppIdCacheForTest(): void {
+  cachedAppId = null;
+  appIdMissUntil = 0;
 }
 
 /** True for the protected admin role row (rename/delete guard). NOT a bypass. */
@@ -45,28 +88,21 @@ export function isAdminRole(
   return !!role && role.isSystem && role.name === "admin";
 }
 
-/**
- * True if `userId` holds the system "admin" QcAppRole in this org.
+/*
+ * There is deliberately NO `isOrgAdmin()` here.
  *
- * Unlike `userCan()`, this IGNORES `QcUserPermissionExtra` — per-user extras
- * are additive grants, not a role promotion. Routes that gate strictly on
- * "is this user an admin?" use this instead of `userCan(...)`. The name match
- * is lowercase `"admin"` (canonical, matches the seeded row + the Phase-2
- * `extraAdminCheck` bridge + every assignAppRoles call).
+ * One existed, was called only by its own tests, and was a trap: it answered
+ * "does this user hold the seeded admin QcAppRole", which is NOT the question
+ * the real gate asks. `requireAdmin` admits anyone at ADMIN_TIER_ROLES /
+ * ROLE_HIERARCHY level 5 OR holding the v2 grant — so `isOrgAdmin` returned
+ * FALSE for a platform org_admin who simply had not been bound yet, while
+ * `requireAdmin` correctly returned true for the same request. A helper whose
+ * name promises the general question and delivers a narrower one is worse than
+ * no helper: the next person needing an admin check reaches for it by name.
+ *
+ * Need "is this caller an admin?" → use `requireAdmin` (lib/authz/requireAdmin).
+ * Need "may they do X?" → use `userCan(userId, orgId, resource, action)`.
  */
-export async function isOrgAdmin(userId: string, orgId: string): Promise<boolean> {
-  const appId = await getQuikChatAppId();
-  if (!appId) return false;
-  const hit = await db.qcUserAppRole.findFirst({
-    where: {
-      userId,
-      orgId,
-      role: { appId, isSystem: true, name: "admin" },
-    },
-    select: { id: true },
-  });
-  return !!hit;
-}
 
 /* ───────────────────────── Class-level checks ───────────────────────── */
 

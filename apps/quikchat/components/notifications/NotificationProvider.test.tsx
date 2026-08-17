@@ -1,6 +1,6 @@
 import type { NotificationDto, NotificationRealtimePayload } from "@/lib/shared";
 import { ToastProvider } from "@/components/ui";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -47,7 +47,6 @@ vi.mock("@/lib/notification-sound", () => ({
   notificationSoundSupported: () => true,
 }));
 
-import { NotificationBell } from "./NotificationBell";
 import {
   NotificationProvider,
   useNotifications,
@@ -63,15 +62,22 @@ const fakeClient: NotifRealtimeClient = {
 };
 const opener = vi.fn();
 
-function Harness() {
+// Exposes provider state directly via testids instead of through a consumer
+// UI (the bell popover used to be that UI; it's gone) — assertions here are
+// about NotificationProvider's own state/behavior, not any particular render.
+function Harness({ activeChannel = null }: { activeChannel?: string | null }) {
   const n = useNotifications();
   useEffect(() => {
     n.attachClient(fakeClient);
     n.registerChannelOpener(opener);
   }, [n]);
+  useEffect(() => {
+    n.setActiveChannel(activeChannel);
+  }, [n, activeChannel]);
   return (
     <>
-      <NotificationBell />
+      <span data-testid="unread-count">{n.unreadCount}</span>
+      <span data-testid="feed-previews">{n.feed.map((x) => x.preview ?? "").join("|")}</span>
       {/* Field names only (never values) so this can't collide with the text
           queries other tests run — used to assert the transient alert flags
           don't leak into the stored row. */}
@@ -120,19 +126,14 @@ const SEED: NotificationDto[] = [
   }),
 ];
 
-function renderBell() {
+function renderProvider(activeChannel: string | null = null) {
   return render(
     <ToastProvider>
       <NotificationProvider>
-        <Harness />
+        <Harness activeChannel={activeChannel} />
       </NotificationProvider>
     </ToastProvider>,
   );
-}
-
-async function openPanel() {
-  fireEvent.click(screen.getByLabelText("Notifications"));
-  await screen.findByText("Notifications");
 }
 
 beforeEach(() => {
@@ -155,59 +156,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("NotificationBell feed", () => {
-  it("seeds the badge and renders the grouped feed with per-type summaries", async () => {
-    renderBell();
-    // Badge seeded from the unread count.
-    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
-    await openPanel();
-
-    // Grouped: #design (2) and the DM with Priya (1).
-    expect(screen.getByText(/#design · 2/)).toBeInTheDocument();
-    expect(screen.getByText(/Priya · 1/)).toBeInTheDocument();
-
-    // Summaries per type.
-    expect(screen.getByText("mentioned you")).toBeInTheDocument();
-    expect(screen.getByText("keyword “deploy”")).toBeInTheDocument();
-    expect(screen.getByText("sent you a message")).toBeInTheDocument();
-  });
-
-  it("Unread tab filters out read rows", async () => {
-    renderBell();
-    await openPanel();
-    fireEvent.click(screen.getByRole("tab", { name: "Unread" }));
-    expect(screen.queryByText("sent you a message")).not.toBeInTheDocument(); // id 3 is read
-    expect(screen.getByText("mentioned you")).toBeInTheDocument();
-  });
-
-  it("row click marks read + opens the channel", async () => {
-    renderBell();
-    await openPanel();
-    fireEvent.click(screen.getByText("review the flow"));
-    expect(api.markNotificationsReadApi).toHaveBeenCalledWith(["1"]);
-    expect(opener).toHaveBeenCalledWith("c1", "m1");
-  });
-
-  it("mark all read clears the badge", async () => {
-    renderBell();
-    await openPanel();
-    fireEvent.click(screen.getByText("Mark all read"));
-    expect(api.markAllNotificationsReadApi).toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByText("2")).not.toBeInTheDocument());
-  });
-
-  it("shows the empty state when there are no notifications", async () => {
-    api.fetchNotifications.mockResolvedValue({ items: [], unreadCount: 0 });
-    api.fetchUnreadByChannel.mockResolvedValue({ byChannel: {}, total: 0 });
-    renderBell();
-    await openPanel();
-    expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+describe("NotificationProvider seeding", () => {
+  it("seeds unreadCount and feed from the initial page", async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("2"));
+    expect(screen.getByTestId("feed-previews").textContent).toBe(
+      "review the flow|pushing deploy|still on for 3pm?",
+    );
   });
 });
 
 describe("inbound realtime + toast/OS routing", () => {
-  it("prepends an inbound notification and bumps the badge", async () => {
-    renderBell();
+  it("prepends an inbound notification and bumps the unread count", async () => {
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -218,12 +179,13 @@ describe("inbound realtime + toast/OS routing", () => {
         }) as NotificationRealtimePayload,
       );
     });
-    await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument()); // 2 → 3
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("3")); // 2 → 3
+    expect(screen.getByTestId("feed-previews").textContent).toContain("brand new mention");
   });
 
   it("focused inbound shows a toast; does NOT fire an OS notification", async () => {
     web.focused = true;
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -241,7 +203,7 @@ describe("inbound realtime + toast/OS routing", () => {
   it("unfocused inbound with desktop+granted fires an OS notification, no toast", async () => {
     web.focused = false;
     web.permission = "granted";
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -262,7 +224,7 @@ describe("inbound realtime + toast/OS routing", () => {
   it("forwards channelId to the OS notification separately from tag", async () => {
     web.focused = false;
     web.permission = "granted";
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
 
     await act(async () => {
@@ -284,7 +246,7 @@ describe("inbound realtime + toast/OS routing", () => {
 
   it("desktop:false never fires an OS notification even when unfocused", async () => {
     web.focused = false;
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(dto({ id: "9", desktop: false }) as NotificationRealtimePayload);
@@ -297,7 +259,7 @@ describe("inbound realtime + toast/OS routing", () => {
   // OS notification brings its own.
   it("focused inbound with sound:true plays the chime alongside the toast", async () => {
     web.focused = true;
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -315,7 +277,7 @@ describe("inbound realtime + toast/OS routing", () => {
 
   it("focused inbound with sound:false is silent (toast still shows)", async () => {
     web.focused = true;
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -335,7 +297,7 @@ describe("inbound realtime + toast/OS routing", () => {
   // must still hear the chime.
   it("focused inbound with sound:true + desktop:false still plays", async () => {
     web.focused = true;
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(dto({ id: "9", desktop: false, sound: true }) as NotificationRealtimePayload);
@@ -346,7 +308,7 @@ describe("inbound realtime + toast/OS routing", () => {
   it("unfocused inbound does NOT play — the OS notification carries its own sound", async () => {
     web.focused = false;
     web.permission = "granted";
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(dto({ id: "9", desktop: true, sound: true }) as NotificationRealtimePayload);
@@ -357,7 +319,7 @@ describe("inbound realtime + toast/OS routing", () => {
 
   it("a pre-read (muted) row is silent even if the sound flag is set", async () => {
     web.focused = true;
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -368,7 +330,7 @@ describe("inbound realtime + toast/OS routing", () => {
   });
 
   it("strips the transient desktop/sound flags from the stored row", async () => {
-    renderBell();
+    renderProvider();
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(dto({ id: "9", desktop: true, sound: true }) as NotificationRealtimePayload);
@@ -379,9 +341,9 @@ describe("inbound realtime + toast/OS routing", () => {
     expect(keys).toContain("preview"); // sanity: it IS the inbound row
   });
 
-  it("a muted (isRead) inbound updates the feed but not the badge", async () => {
-    renderBell();
-    await openPanel();
+  it("a muted (isRead) inbound updates the feed but not the unread count", async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("2"));
     await waitFor(() => expect(inbound).not.toBeNull());
     await act(async () => {
       inbound!(
@@ -393,8 +355,58 @@ describe("inbound realtime + toast/OS routing", () => {
         }) as NotificationRealtimePayload,
       );
     });
-    expect(screen.getByText("muted row")).toBeInTheDocument();
-    // Badge stays at the seeded 2 (no bump for a read row).
-    expect(screen.getByLabelText("2 unread")).toBeInTheDocument();
+    expect(screen.getByTestId("feed-previews").textContent).toContain("muted row");
+    // Unread count stays at the seeded 2 (no bump for a read row).
+    expect(screen.getByTestId("unread-count").textContent).toBe("2");
+  });
+});
+
+describe("open-channel suppression", () => {
+  it("focused + open channel: no toast, no unread bump, and syncs the row as read server-side", async () => {
+    web.focused = true;
+    renderProvider("c1"); // c1 is the "open" channel
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("2"));
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", channelId: "c1", preview: "already looking at this" }) as NotificationRealtimePayload,
+      );
+    });
+    // Still lands in the feed (history is preserved)...
+    expect(screen.getByTestId("feed-previews").textContent).toContain("already looking at this");
+    // ...but neither the unread count nor a toast shows for it.
+    expect(screen.getByTestId("unread-count").textContent).toBe("2");
+    expect(screen.queryByText("already looking at this")).not.toBeInTheDocument();
+    // Server row is reconciled so a later full refetch doesn't resurrect it unread.
+    expect(api.markNotificationsReadApi).toHaveBeenCalledWith(["9"]);
+  });
+
+  it("focused + a DIFFERENT channel: toasts and bumps the count as usual", async () => {
+    web.focused = true;
+    renderProvider("some-other-channel");
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("2"));
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", channelId: "c1", preview: "different channel toast" }) as NotificationRealtimePayload,
+      );
+    });
+    expect(await screen.findByText("different channel toast")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("unread-count").textContent).toBe("3"));
+    expect(api.markNotificationsReadApi).not.toHaveBeenCalled();
+  });
+
+  it("unfocused: still fires the OS notification even though the channel is 'open'", async () => {
+    web.focused = false;
+    web.permission = "granted";
+    renderProvider("c1");
+    await waitFor(() => expect(inbound).not.toBeNull());
+    await act(async () => {
+      inbound!(
+        dto({ id: "9", channelId: "c1", desktop: true, preview: "unfocused" }) as NotificationRealtimePayload,
+      );
+    });
+    expect(web.fire).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("unfocused")).not.toBeInTheDocument();
   });
 });

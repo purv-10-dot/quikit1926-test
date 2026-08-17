@@ -6,8 +6,9 @@
 // toggles that share every upstream suppression. Mute / snooze / DND / a
 // below-level reaction must silence both; only the final branch reads the two
 // settings separately.
-import { describe, it, expect, beforeEach, vi } from "vitest";
-// Registers vi.mock for "@/lib/db" + "@quikit/database" (hoisted).
+import { describe, it, expect, beforeEach } from "vitest";
+// Registers vi.mock for "@/lib/db" + "@quikit/database" (hoisted) — the helper
+// owns the vi.mock calls, so nothing in this file touches `vi` directly.
 import { mockDb, resetMockDb } from "../../__tests__/helpers/mockDb";
 
 import { shouldDeliver } from "./notifications.service";

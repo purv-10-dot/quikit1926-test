@@ -24441,6 +24441,8 @@ model QcMeeting {
   organizerId      String
   title            String
   description      String?
+  location         String?
+  allDay           Boolean             @default(false)
   start            DateTime // stored UTC; rendered local client-side
   end              DateTime
   joinUrl          String? // conferencing (Meet) link, if requested
@@ -24463,6 +24465,7 @@ model QcMeetingAttendee {
   userId    String
   email     String
   rsvp      String    @default("needs_action") // needs_action | accepted | declined | tentative
+  optional  Boolean   @default(false) // Graph attendee type: false=required, true=optional
   meeting   QcMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
   @@unique([meetingId, userId])

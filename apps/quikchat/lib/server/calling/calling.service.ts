@@ -272,6 +272,18 @@ export async function endCall(ctx: OrgContext, callId: string): Promise<CallDto>
     include: { participants: true },
   });
 
+  // Release the meeting's claim token (see meeting-call.ts). Hygiene, not
+  // correctness: `getOrStartMeetingCall` re-claims over a stale value anyway,
+  // because other terminal paths (the timeout sweep) don't run through here.
+  // Scoped by `callId` so it can only ever clear ITS OWN claim — never a newer
+  // call's — if this runs late.
+  if (call.meetingId) {
+    await prisma.qcMeeting.updateMany({
+      where: { id: call.meetingId, callId },
+      data: { callId: null },
+    });
+  }
+
   return serializeCall(updated);
 }
 

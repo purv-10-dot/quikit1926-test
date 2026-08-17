@@ -11,28 +11,38 @@ export interface NewGroupModalProps {
   onClose: () => void;
   onCreated: (channel: ChannelListItem) => void;
   /**
-   * DECISION 2 — whether to offer the "public" visibility option. Driven by the
-   * caller's `Channel.Public:create` grant (computed once in ChatWorkspace).
-   * Defaults to `true` so non-gated callers/tests are unaffected. UX only; the
-   * server also enforces the grant on create.
+   * Which thing is being created. The two are one modal because they differ
+   * only in visibility — but the user never chooses between them here, they
+   * chose by which `+` they clicked:
+   *
+   *   "group"   → private, no visibility control at all
+   *   "channel" → public, LOCKED, name required
+   *
+   * Replaces the old `canCreatePublic` boolean, which offered "Public —
+   * discoverable" as a dropdown option and left the choice mid-flow. The
+   * permission now gates the ENTRY POINT (the Channels `+` in the sidebar), so
+   * by the time this renders in channel mode the caller already holds the grant.
+   * The server still enforces it on create.
    */
-  canCreatePublic?: boolean;
+  mode?: "group" | "channel";
 }
 
 export function NewGroupModal({
   open,
   onClose,
   onCreated,
-  canCreatePublic = true,
+  mode = "group",
 }: NewGroupModalProps) {
+  const isChannel = mode === "channel";
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<ChannelVisibility>("private");
   const [members, setMembers] = useState<PublicUser[]>([]);
   const [busy, setBusy] = useState(false);
 
-  // Mirror the server rule for instant feedback: public groups need a name.
-  const nameRequired = visibility === "public";
+  // Visibility is now decided by the entry point, not by the user mid-flow.
+  const visibility: ChannelVisibility = isChannel ? "public" : "private";
+  // Mirror the server rule for instant feedback: public channels need a name.
+  const nameRequired = isChannel;
   const canCreate = !busy && (!nameRequired || name.trim().length > 0);
 
   async function create() {
@@ -57,7 +67,6 @@ export function NewGroupModal({
   function reset() {
     setName("");
     setDescription("");
-    setVisibility("private");
     setMembers([]);
   }
 
@@ -65,14 +74,14 @@ export function NewGroupModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="New group"
+      title={isChannel ? "New channel" : "New group"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" disabled={!canCreate} onClick={create}>
-            Create group
+            {isChannel ? "Create channel" : "Create group"}
           </Button>
         </>
       }
@@ -83,31 +92,25 @@ export function NewGroupModal({
       <Input
         id="group-name"
         placeholder="e.g. design-team"
-        aria-label="Group name"
+        aria-label={isChannel ? "Channel name" : "Group name"}
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
       <div style={{ height: 8 }} />
       <Input
         placeholder="Description (optional)"
-        aria-label="Group description"
+        aria-label={isChannel ? "Channel description" : "Group description"}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
       <div style={{ height: 8 }} />
-      <label className="qc-label" htmlFor="group-visibility">
-        Visibility
-      </label>
-      <select
-        id="group-visibility"
-        className="qc-input"
-        aria-label="Visibility"
-        value={visibility}
-        onChange={(e) => setVisibility(e.target.value as ChannelVisibility)}
-      >
-        <option value="private">Private — invite only</option>
-        {canCreatePublic && <option value="public">Public — discoverable</option>}
-      </select>
+      {/* No visibility control: the entry point already decided. Plain copy so
+          the user still knows who will be able to see this. */}
+      <p className="qc-modal-note">
+        {isChannel
+          ? "Anyone in your organisation can find and join this channel."
+          : "Private — only people you add can see this group."}
+      </p>
       <div style={{ height: 10 }} />
       <label className="qc-label">Members</label>
       <UserPicker multi onChange={setMembers} placeholder="Add people" />

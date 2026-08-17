@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 vi.mock("@quikit/database", async () => await import("./testdb"));
 
-import { createGateway, type Gateway } from "./gateway";
+import { createGateway, PRESENCE_RESYNC_EVERY, type Gateway } from "./gateway";
 import { createMetrics } from "./metrics";
 import { addPresence, FIXTURES, resetStore } from "./testdb";
 
@@ -152,6 +152,34 @@ describe("presence", () => {
     const got = waitForEvent<{ userId: string; status: string }>(b, "presence_status");
     await connectReady(mintToken(alice, orgA));
     expect(await got).toMatchObject({ userId: alice, status: "dnd" });
+  });
+
+  // §2 self-healing. Presence keys expire silently — a TTL lapse broadcasts
+  // nothing — so a client that missed a transition has no way to learn of it.
+  // The heartbeat carries a periodic re-sync; `applySnapshot` replaces the
+  // client's online set wholesale, so it converges without a diff.
+  it("re-sends presence_snapshot every Nth heartbeat, carrying a missed transition", async () => {
+    const a = await connectReady(mintToken(alice, orgA));
+
+    // Drift: bob is online in Redis, but `a` was never told — exactly the state
+    // a silent TTL expiry or a dropped broadcast leaves behind.
+    const bobKey = `presence:${orgA}:${bob}`;
+    await presenceMock.sadd(bobKey, "socket-a-never-heard-about");
+
+    try {
+      const snap = waitForEvent<{ users: SnapshotUser[] }>(a, "presence_snapshot", 3_000);
+      for (let i = 0; i < PRESENCE_RESYNC_EVERY; i++) a.emit("heartbeat");
+      expect((await snap).users.map((u) => u.userId)).toContain(bob);
+    } finally {
+      await presenceMock.del(bobKey);
+    }
+  });
+
+  it("does not re-send the snapshot on every heartbeat", async () => {
+    const a = await connectReady(mintToken(alice, orgA));
+    const quiet = expectNoEvent(a, "presence_snapshot", 300);
+    for (let i = 0; i < PRESENCE_RESYNC_EVERY - 1; i++) a.emit("heartbeat");
+    await quiet;
   });
 
   it("multi-tab: stays online until the LAST socket leaves, then broadcasts offline", async () => {

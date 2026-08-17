@@ -15,6 +15,12 @@ import type {
   OrgContext,
   RsvpStatus,
 } from "@/lib/shared";
+import {
+  allDayDatePart,
+  allDayStartIso,
+  exclusiveEndFor,
+  isMidnightUtc,
+} from "@/lib/all-day";
 import { getActiveProviderId, getCalendarProvider } from "./calendar";
 import { loadMeetingDto } from "./calendar.serialize";
 import { getConnection as getMicrosoftConnection } from "./calendar/microsoft";
@@ -141,6 +147,23 @@ export async function createMeeting(
     throw new HttpError(400, "end must be after start");
   }
 
+  // ── All-day: convert ONCE, here, from the DTO's inclusive form to the
+  // exclusive midnight-UTC instants storage and both providers expect.
+  // `lib/all-day.ts` owns both directions; nothing below may re-apply ±1 day.
+  const allDay = !!input.allDay;
+  let startIso = input.start;
+  let endIso = input.end;
+  if (allDay) {
+    startIso = allDayStartIso(allDayDatePart(input.start));
+    endIso = exclusiveEndFor(allDayDatePart(input.end));
+    // Belt and braces: Graph rejects isAllDay unless both are exactly midnight.
+    // Assert rather than trust the client, so a malformed body fails as a 400
+    // here instead of a 502 from the provider.
+    if (!isMidnightUtc(startIso) || !isMidnightUtc(endIso)) {
+      throw new HttpError(400, "all-day meetings must start and end at midnight UTC");
+    }
+  }
+
   // Organizer is always an attendee (auto-accepted); resolve everyone's email.
   // The assistant bot (S15c) can't be an attendee — drop a leaked bot id so it
   // doesn't 403 the request via the OrgMember assertion.
@@ -148,6 +171,10 @@ export async function createMeeting(
     (id) => id !== ASSISTANT_BOT_USER_ID,
   );
   const emails = await resolveOrgEmails(ctx.orgId, attendeeIds);
+  // The organizer is never optional, whatever the client sends.
+  const optionalIds = new Set(
+    (input.optionalAttendeeUserIds ?? []).filter((id) => id !== ctx.userId),
+  );
 
   // Provider failures (bad token, unreachable API) become a legible 502 the UI
   // can show — never an unhandled 500 (S16).
@@ -159,9 +186,14 @@ export async function createMeeting(
       organizerId: ctx.userId,
       title,
       description: input.description,
-      start: input.start,
-      end: input.end,
-      attendeeEmails: attendeeIds.map((id) => emails.get(id)!),
+      location: input.location?.trim() || undefined,
+      allDay,
+      start: startIso,
+      end: endIso,
+      attendees: attendeeIds.map((id) => ({
+        email: emails.get(id)!,
+        optional: optionalIds.has(id),
+      })),
       conferencing: !!input.conferencing,
     });
   } catch (e) {
@@ -175,8 +207,10 @@ export async function createMeeting(
       organizerId: ctx.userId,
       title,
       description: input.description?.trim() || null,
-      start: new Date(input.start),
-      end: new Date(input.end),
+      location: input.location?.trim() || null,
+      allDay,
+      start: new Date(startIso),
+      end: new Date(endIso),
       joinUrl: result.joinUrl,
       externalEventId: result.externalEventId,
       status: "scheduled",
@@ -186,6 +220,7 @@ export async function createMeeting(
           email: emails.get(id)!,
           // Organizer accepts implicitly; everyone else starts at needs_action.
           rsvp: id === ctx.userId ? "accepted" : "needs_action",
+          optional: optionalIds.has(id),
         })),
       },
     },

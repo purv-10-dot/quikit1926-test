@@ -88,6 +88,26 @@ export interface UnreadDivider {
  * caller rendering `count` can never show a number the position disagrees
  * with.
  */
+/**
+ * KNOWN LIMITATION — the fallback branch below interacts with scroll-back
+ * pagination, and the interaction looks like a bug if you meet it cold.
+ *
+ * When `messages` holds fewer non-self messages than `unreadCount`, this
+ * cannot find the true boundary, so it pins the divider to the OLDEST LOADED
+ * message (`messages[0]`) and reports how many it actually found. Once the
+ * user scrolls up and `prependOlder` adds an older page, that message is no
+ * longer the oldest — so the line now sits at the old load boundary rather
+ * than where the unread run really begins.
+ *
+ * This is not a correctness hazard for the divider itself: resolution happens
+ * exactly once per mount (MessageList's `resolvedRef`) and is frozen as an
+ * ID, so a prepend can never move it, duplicate it, or make it chase new
+ * arrivals. And it cannot be reached before resolution, because resolution is
+ * gated on the first settled render while paging requires a deliberate
+ * scroll-up. Fixing it properly means resolving the boundary server-side from
+ * the read watermark instead of counting client-side — deliberately not done
+ * here.
+ */
 export function findUnreadDivider(
   messages: MessageDto[],
   currentUserId: string,

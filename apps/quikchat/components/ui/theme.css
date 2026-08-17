@@ -63,6 +63,13 @@
   --qc-text-muted: #9a9aa1;
   --qc-bg-hover: #f6f6f5;
 
+  /* Was referenced at three call sites and never defined, so `border-radius:
+     var(--qc-r-sm)` was an invalid declaration and those elements rendered
+     SQUARE. Defining it is therefore a visual change, not bookkeeping. 6px
+     rather than reusing --qc-r-md because every call site is a deliberate
+     step DOWN from md: `.qc-act-rowmenu.qc-iconbtn` overrides the 32px/8px
+     `.qc-iconbtn` base to 24px, and `.qc-cal2-event__more` is 22px. */
+  --qc-r-sm: 6px;
   --qc-r-md: 8px;
   --qc-r-lg: 12px;
   --qc-r-xl: 18px;
@@ -297,13 +304,27 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  /* Rounded square, not a circle — 20% (not a fixed --qc-r-* token) so the
+     roundedness stays proportional across the avatar's many render sizes. */
+  border-radius: 20%;
   overflow: hidden;
 }
-.qc-avatar--group .qc-avatar__inner {
+/* A public CHANNEL is a place, not people: neutral tile with a full-size hash,
+   sized to carry the same visual weight as the initials/photo it replaces.
+   Private groups deliberately do NOT get this — they render like a person,
+   because a group is its members. */
+.qc-avatar--channel .qc-avatar__inner {
   border-radius: var(--qc-r-md);
   background: #d9d9d9 !important;
   color: var(--qc-text-2);
+}
+.qc-avatar__hash {
+  /* 0.4 * size is the initials' font-size (set inline); the hash needs to run
+     larger to read as a glyph rather than a character. Line-height 1 keeps it
+     optically centred at every avatar size. */
+  font-size: 1.5em;
+  line-height: 1;
+  font-weight: 500;
 }
 .qc-avatar img {
   width: 100%;
@@ -582,6 +603,63 @@ body {
 .qc-list-section {
   padding: 10px 12px 4px;
 }
+/* Collapsible section header: title + count on the left, its own `+` on the
+   right. The `+` is rendered conditionally by ChannelList — for Channels it
+   appears only with the Channel.Public:create grant — so this styles the row,
+   never the permission. */
+.qc-list-section--head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-right: 6px;
+}
+.qc-list-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.qc-list-section__chev {
+  display: inline-block;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--qc-text-3);
+  /* Points down when expanded, right when collapsed. */
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+.qc-list-section__chev[data-collapsed="true"] {
+  transform: rotate(0deg);
+}
+.qc-list-section__count {
+  font-size: 11px;
+  color: var(--qc-text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Per-section empty copy. Deliberately quiet — an empty section is a normal
+   state, not a problem to solve. */
+.qc-list-empty {
+  padding: 2px 12px 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qc-text-3);
+}
+/* Plain-copy replacement for the removed visibility dropdown in NewGroupModal. */
+.qc-modal-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qc-text-3);
+}
 .qc-chan-row {
   display: flex;
   align-items: center;
@@ -671,7 +749,7 @@ body {
 .qc-avatar-stack > * {
   margin-left: -6px;
   border: 2px solid var(--qc-surface);
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-pinned-banner {
   display: flex;
@@ -709,7 +787,7 @@ body {
 .qc-typing__avatars > * {
   margin-left: -6px;
   border: 2px solid var(--qc-surface);
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-typing__text {
   display: inline-flex;
@@ -754,6 +832,39 @@ body {
   overflow-y: auto;
   min-height: 0;
   padding: 12px 0;
+  /* Containing block for .qc-msg-load-older below. */
+  position: relative;
+  /* DO NOT REMOVE — this is not a cleanup candidate.
+     MessageList's `decideScroll` "preserve" branch manually restores scrollTop
+     after older history is prepended, and that manual correction is the SINGLE
+     SOURCE OF TRUTH for scroll anchoring here. Chrome/Edge/Firefox also apply
+     their own native CSS scroll anchoring to content inserted above the
+     viewport; with both active the prepend is compensated TWICE and scrollTop
+     clamps to the bottom, throwing the reader to the newest message every time
+     they scroll up. Measured: native moved scrollTop 154 → 2361 on a 2240px
+     prepend, the manual pass added 2240 again, 4601 clamped to maxScroll 3945.
+     Safari implements no scroll anchoring at all, so the manual correction is
+     required regardless — which is why the fix is to disable the native one
+     rather than to drop ours. */
+  overflow-anchor: none;
+}
+/* Scroll-back loading affordance. `position: absolute` is load-bearing, not
+   cosmetic: it keeps this out of flow so it contributes nothing to
+   scrollHeight, which the prepend-anchoring math in MessageList depends on.
+   It sits at the top of the CONTENT (not the viewport), which is precisely
+   where the reader is looking when an older page is being fetched. */
+.qc-msg-load-older {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--qc-text-muted);
 }
 .qc-date-divider {
   display: flex;
@@ -1795,6 +1906,16 @@ body {
 .qc-act-head__actions .qc-link:disabled {
   opacity: 0.45;
   cursor: default;
+}
+.qc-act-head__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qc-act-head__confirm-text {
+  font-size: 13px;
+  color: var(--qc-text-2);
+  white-space: nowrap;
 }
 .qc-act-search {
   position: relative;
@@ -3488,7 +3609,7 @@ body {
   border: none;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 20%;
 }
 .qc-avatar-btn:focus-visible {
   outline: 2px solid var(--qc-accent);
@@ -3634,6 +3755,30 @@ body {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Filter over the channel members already offered as attendee chips. */
+.qc-schedule__attfilter {
+  margin-bottom: 8px;
+}
+.qc-schedule__attempty {
+  font-size: 13px;
+  color: var(--qc-text-muted);
+  padding: 4px 0;
+}
+/* Actionable precondition when the active provider needs a per-user connect. */
+.qc-schedule__connect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--qc-border);
+  border-radius: 8px;
+  background: var(--qc-bg-subtle, var(--qc-bg));
+  font-size: 13px;
+  color: var(--qc-text);
+}
 .qc-att-chip {
   display: inline-flex;
   align-items: center;
@@ -3674,6 +3819,20 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 60%;
+}
+/* Delete affordance (edit mode) pins to the left, same trick as qc-schedule__err. */
+.qc-schedule__actions-left {
+  margin-right: auto;
+}
+.qc-schedule__delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+.qc-schedule__delete-confirm-text {
+  font-size: 13px;
+  color: var(--qc-text-2);
 }
 
 /* --- Free/busy grid --- */
@@ -3904,6 +4063,39 @@ body {
   border-radius: var(--qc-r-pill);
   padding: 6px 14px;
   text-decoration: none;
+}
+/* The Teams fallback. Deliberately de-emphasised against the QuikChat action
+   above it — same affordance, lower visual weight, so the in-product join is
+   the default choice and this is the escape hatch for external guests. */
+.qc-meeting__join--secondary {
+  color: var(--qc-text-muted);
+  background: transparent;
+  border: 1px solid var(--qc-border);
+  font-weight: 500;
+}
+
+/* /meeting/[id]/join — the resolving state and its dead ends. */
+.qc-meeting-join {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 60vh;
+  padding: 24px;
+  text-align: center;
+  color: var(--qc-text);
+}
+.qc-meeting-join__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.qc-meeting-join__body {
+  font-size: 14px;
+  color: var(--qc-text-muted);
+  max-width: 46ch;
+  margin: 0;
 }
 .qc-meeting__attendees {
   display: flex;
@@ -6081,9 +6273,6 @@ body {
   background: var(--qc-surface-2);
   border-left-color: transparent;
 }
-.qc-card .qc-chan-row .qc-avatar__inner {
-  border-radius: 20%;
-}
 .qc-chan-toprow {
   display: flex;
   align-items: center;
@@ -6159,9 +6348,6 @@ body {
   flex: 1;
   min-width: 0;
 }
-.qc-convo-head__id .qc-avatar__inner {
-  border-radius: 20%;
-}
 .qc-card .qc-convo-head__actions .qc-iconbtn {
   border: 0.5px solid var(--qc-border);
   border-radius: var(--qc-r-md);
@@ -6196,9 +6382,6 @@ body {
   padding: 6px 4px 18px;
   margin-bottom: 4px;
   border-bottom: 0.5px solid var(--qc-border);
-}
-.qc-drawer-hero .qc-avatar__inner {
-  border-radius: 20%;
 }
 .qc-drawer-hero__name {
   margin-top: 6px;
@@ -6273,8 +6456,13 @@ body {
   padding-left: 10px;
 }
 
-/* Hidden chrome: the "Reconnecting…" float and the "Markdown supported" hint. */
-.qc-reconnect-float,
+/* Hidden chrome: the "Markdown supported" hint.
+ *
+ * `.qc-reconnect-float` used to be hidden here too. It is back: with the polling
+ * fallback removed there is no degraded mode left, so a dead socket and a live
+ * one look identical and the app just goes quiet. ChatWorkspace only renders it
+ * while disconnected, and only after a short grace period, so a healthy session
+ * still shows nothing. */
 .qc-format-bar__hint {
   display: none;
 }
@@ -6573,4 +6761,47 @@ body {
 
 .qc-hidden {
   display: none !important;
+}
+
+
+/* ── Meeting: location, all-day, optional attendees ─────────────────────── */
+.qc-meeting__location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--qc-text-2);
+}
+/* Shown only when at least one attendee is optional — nothing new renders for
+   the common case where everyone is required. */
+.qc-meeting__att-counts {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--qc-text-3);
+}
+/* Optional attendees sort after required ones; position carries the meaning, so
+   this only softens them rather than adding a competing badge next to the RSVP
+   dot. */
+.qc-meeting__att[data-optional] .qc-avatar {
+  opacity: 0.72;
+}
+.qc-att-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.qc-att-optional {
+  border: 1px solid var(--qc-border);
+  background: transparent;
+  color: var(--qc-text-3);
+  border-radius: var(--qc-r-sm);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.qc-att-optional[data-on] {
+  color: var(--qc-text-2);
+  border-style: dashed;
 }

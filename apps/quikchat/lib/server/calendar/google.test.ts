@@ -129,7 +129,7 @@ describe("GoogleCalendarProvider degradation (S16)", () => {
         title: "x",
         start: "2026-06-20T10:00:00Z",
         end: "2026-06-20T10:30:00Z",
-        attendeeEmails: [],
+        attendees: [],
         conferencing: true,
       }),
     ).rejects.toThrow();
@@ -150,7 +150,7 @@ describe("GoogleCalendarProvider.createMeeting", () => {
       title: "Sync",
       start: "2026-06-20T10:00:00Z",
       end: "2026-06-20T10:30:00Z",
-      attendeeEmails: ["a@x.com"],
+      attendees: [{ email: "a@x.com" }],
       conferencing: true,
     });
     expect(r).toEqual({
@@ -174,7 +174,7 @@ describe("GoogleCalendarProvider.createMeeting", () => {
       title: "No call",
       start: "2026-06-20T10:00:00Z",
       end: "2026-06-20T10:30:00Z",
-      attendeeEmails: [],
+      attendees: [],
       conferencing: false,
     });
     const insert = calls.find((c) => c.method === "POST" && c.url.includes("/events"))!;
@@ -208,5 +208,68 @@ describe("GoogleCalendarProvider.setRsvp / cancel", () => {
     );
     await new GoogleCalendarProvider(cfg).cancel({ orgId: "o", externalEventId: "ev1" });
     expect(calls.some((c) => c.method === "DELETE")).toBe(true);
+  });
+});
+
+describe("GoogleCalendarProvider — location, all-day, optional attendees", () => {
+  async function bodyOfInsert(over: Record<string, unknown>) {
+    const calls = mockFetch((c) =>
+      isToken(c.url)
+        ? { json: { access_token: "at", expires_in: 3600 } }
+        : { json: { id: "ev1", htmlLink: "https://cal/x" } },
+    );
+    await new GoogleCalendarProvider(cfg).createMeeting({
+      orgId: "o",
+      organizerId: "u",
+      title: "Sync",
+      start: "2026-08-14T10:00:00.000Z",
+      end: "2026-08-14T10:30:00.000Z",
+      attendees: [{ email: "a@x.com" }],
+      conferencing: false,
+      ...over,
+    });
+    const insert = calls.find((c) => c.method === "POST" && c.url.includes("/events"))!;
+    // The harness already parses the body (safeJson) — do not re-parse.
+    return insert.body as Record<string, unknown>;
+  }
+
+  it("sends location as a top-level string", async () => {
+    expect(await bodyOfInsert({ location: "Room 4" })).toMatchObject({ location: "Room 4" });
+  });
+
+  it("omits location when absent", async () => {
+    expect(await bodyOfInsert({})).not.toHaveProperty("location");
+  });
+
+  it("marks optional attendees and omits the flag for required ones", async () => {
+    const body = await bodyOfInsert({
+      attendees: [{ email: "req@x.com" }, { email: "opt@x.com", optional: true }],
+    });
+    expect(body.attendees).toEqual([{ email: "req@x.com" }, { email: "opt@x.com", optional: true }]);
+  });
+
+  /**
+   * The one that is NOT a flag passthrough. Google has no `isAllDay`: it takes
+   * `{ date: "YYYY-MM-DD" }` INSTEAD of `{ dateTime }`. Sending a dateTime for
+   * an all-day event silently creates a midnight-to-midnight TIMED event, which
+   * then renders in each viewer's own zone — the day-drift bug this feature
+   * exists to prevent, in an inactive provider nobody would notice until 15b.
+   */
+  it("switches start/end to { date } for all-day, dropping dateTime entirely", async () => {
+    const body = await bodyOfInsert({
+      allDay: true,
+      start: "2026-08-14T00:00:00.000Z",
+      end: "2026-08-15T00:00:00.000Z",
+    });
+    expect(body.start).toEqual({ date: "2026-08-14" });
+    expect(body.end).toEqual({ date: "2026-08-15" }); // exclusive, as Google wants
+    expect(body.start).not.toHaveProperty("dateTime");
+    expect(body.end).not.toHaveProperty("dateTime");
+  });
+
+  it("keeps { dateTime } for a timed meeting", async () => {
+    const body = await bodyOfInsert({});
+    expect(body.start).toEqual({ dateTime: "2026-08-14T10:00:00.000Z" });
+    expect(body.start).not.toHaveProperty("date");
   });
 });

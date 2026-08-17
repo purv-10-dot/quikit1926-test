@@ -69,7 +69,7 @@ describe("StubCalendarProvider", () => {
       title: "Sync",
       start: win.from,
       end: win.to,
-      attendeeEmails: ["a@acme.com"],
+      attendees: [{ email: "a@acme.com" }],
       conferencing: true,
     });
     expect(r).toEqual({ externalEventId: null, joinUrl: null, htmlLink: null });
@@ -82,7 +82,7 @@ describe("StubCalendarProvider", () => {
       title: "No call",
       start: win.from,
       end: win.to,
-      attendeeEmails: [],
+      attendees: [],
       conferencing: false,
     });
     expect(r.joinUrl).toBeNull();

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { getOAuthProvider, isOAuthProvider, redirectUriFor, signState } from "@/lib/connectors";
+import {
+  getOAuthProvider,
+  isOAuthProvider,
+  quikflowBaseUrl,
+  redirectUriFor,
+  signState,
+} from "@/lib/connectors";
 
 export const runtime = "nodejs";
 
@@ -20,7 +26,16 @@ export const GET = withOrgAuth<Params>(
       return NextResponse.json({ success: false, error: "Unknown provider" }, { status: 400 });
     }
     const provider = getOAuthProvider(providerId)!;
-    const base = process.env.QUIKFLOW_URL ?? "http://localhost:3014";
+    // Resolved before the try below: the error-path redirect needs it too, and
+    // in production a missing QUIKFLOW_URL throws. Surface that as a 500 with
+    // the reason rather than redirecting to a URL we cannot build.
+    let base: string;
+    try {
+      base = quikflowBaseUrl();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Configuration error";
+      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    }
     try {
       const state = signState({ orgId, userId, provider: providerId });
       const url = provider.buildAuthUrl(redirectUriFor(providerId), state);
