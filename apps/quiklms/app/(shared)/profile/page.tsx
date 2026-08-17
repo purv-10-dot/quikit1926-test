@@ -94,7 +94,7 @@ export default function ProfileSettingsPage() {
     } catch (err: any) {
       console.error('Failed to load profile:', err);
       // Graceful fallback — 404 in mock auth is expected
-      if (err?.statusCode !== 404) {
+      if (err?.status !== 404) {
         setError('Failed to load profile');
       }
     } finally {

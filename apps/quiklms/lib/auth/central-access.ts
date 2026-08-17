@@ -29,12 +29,12 @@
  * guards, and it does: `requireAuth` (346 files) and `requirePageRoles` (the
  * seven role-gated route groups).
  *
- * SUPER_ADMIN BYPASS, deliberate. The platform operator is a cross-tenant
+ * ADMIN BYPASS, deliberate. The platform operator is a cross-tenant
  * support role whose own org legitimately has no `OrgAppAccess` row for
  * QuikLMS — gating it on org entitlement would lock the operator out of the
  * product they operate. This matches the two bypasses already in the codebase:
- * `tenantWhere()` grants SUPER_ADMIN unscoped data access, and
- * `requirePageRoles` lets SUPER_ADMIN pass every route group.
+ * `tenantWhere()` grants ADMIN unscoped data access, and
+ * `requirePageRoles` lets ADMIN pass every route group.
  */
 import { createGetOrgId } from '@quikit/auth/get-tenant-id';
 import { authOptions } from '@/lib/auth';

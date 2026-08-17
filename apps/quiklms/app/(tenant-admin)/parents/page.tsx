@@ -132,7 +132,7 @@ const ParentsPage = () => {
     try {
       // orgId is resolved SERVER-side from the session for every non-super-admin
       // (`app/api/auth/register/route.ts` uses `actor.orgId` and ignores
-      // `body.orgId` unless the caller is a SUPER_ADMIN). This used to read it
+      // `body.orgId` unless the caller is a ADMIN). This used to read it
       // from `sessionStorage('user')` and HARD-BAIL when absent — but that key is
       // only populated asynchronously by `refreshUser()` in providers, so opening
       // a roster page and submitting before hydration finished blocked the

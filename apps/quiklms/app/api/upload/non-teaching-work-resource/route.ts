@@ -8,7 +8,7 @@ const MAX_BYTES = MAX_NON_TEACHING_BYTES;
 
 /**
  * POST /api/upload/non-teaching-work-resource
- * Roles: TEACHER | TENANT_ADMIN | SUB_ADMIN | SUPER_ADMIN
+ * Roles: TEACHER | TENANT_ADMIN | SUB_ADMIN | ADMIN
  *
  * Accepts multipart (server stores the bytes) or JSON metadata (response
  * carries a presigned PUT for the browser to send them itself).
@@ -21,7 +21,7 @@ const MAX_BYTES = MAX_NON_TEACHING_BYTES;
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
+  requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN']);
   if (!actor.orgId) throw BadRequest('Tenant ID is required');
   const intent = await readUploadIntent(req);
   if (intent.fileSize > MAX_BYTES) throw PayloadTooLarge();

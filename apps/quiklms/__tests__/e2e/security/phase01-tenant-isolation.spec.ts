@@ -11,7 +11,7 @@
  * Every test here uses the PRIMARY tenant's credentials against the VICTIM
  * tenant's resource ids. A 200 is a finding; 403/404 is correct behaviour.
  *
- * Note on SUPER_ADMIN: it is *designed* to cross tenants (`tenantWhere`
+ * Note on ADMIN: it is *designed* to cross tenants (`tenantWhere`
  * returns an unscoped filter for it), so it is deliberately excluded from the
  * leak assertions and asserted separately.
  */
@@ -71,7 +71,7 @@ test.describe("Phase 01 — cross-tenant reads", () => {
     expect(leaked, "LEAK: foreign users present in /api/users").toHaveLength(0);
   });
 
-  test("SUPER_ADMIN is allowed to cross tenants (documents intended behaviour)", async () => {
+  test("ADMIN is allowed to cross tenants (documents intended behaviour)", async () => {
     const api = await apiAs("superAdmin");
     const res = await api.get(`/api/courses/${OTHER_COURSE}`);
     // Not an assertion of correctness so much as a record of the designed

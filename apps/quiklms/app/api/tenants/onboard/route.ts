@@ -29,10 +29,10 @@ const schema = z.object({
   }),
 });
 
-// POST /api/tenants/onboard — SUPER_ADMIN
+// POST /api/tenants/onboard — ADMIN
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const dto = await parseBody(req, schema);
   // Actor comes from the session, never the body — it is an audit field.
   const tenant = await onboardTenant({ ...dto, createdByUserId: actor.id } as OnboardInput);

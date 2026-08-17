@@ -178,8 +178,8 @@ test.describe("Phase 21 — batches: reads", () => {
     const api = await apiAs("tenantAdmin", { timeout: CEIL });
     const res = await GET(api, `/api/batches/${MISSING}`);
     expect(res.status()).toBe(404);
-    const body = (await safeJson(res)) as { statusCode?: number };
-    expect(body.statusCode).toBe(404);
+    const body = (await safeJson(res)) as { success?: boolean };
+    expect(body.success).toBe(false);
     await api.dispose();
   });
 

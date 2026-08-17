@@ -4,10 +4,10 @@ import { requireAuth, requireRoles, assertOrgAccess } from '@/lib/auth/context';
 import { findTenant, updateTenant, removeTenant } from '@/lib/services/tenants-service';
 import { z } from 'zod';
 
-// GET /api/tenants/:id — SUPER_ADMIN
+// GET /api/tenants/:id — ADMIN
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   // `params.id` IS an org id. The role check was the only gate, so a caller holding
   // the role could read, update or DELETE another org's tenant by editing the path.
   await assertOrgAccess(actor, params!.id);
@@ -63,10 +63,10 @@ const updateSchema = z
   })
   .strict();
 
-// PATCH /api/tenants/:id — SUPER_ADMIN
+// PATCH /api/tenants/:id — ADMIN
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   // `params.id` IS an org id. The role check was the only gate, so a caller holding
   // the role could read, update or DELETE another org's tenant by editing the path.
   await assertOrgAccess(actor, params!.id);
@@ -75,10 +75,10 @@ export const PATCH = route(async (req, { params }) => {
   return json({ success: true, data: tenant, message: 'Tenant updated successfully' });
 });
 
-// DELETE /api/tenants/:id — SUPER_ADMIN
+// DELETE /api/tenants/:id — ADMIN
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   // `params.id` IS an org id. The role check was the only gate, so a caller holding
   // the role could read, update or DELETE another org's tenant by editing the path.
   await assertOrgAccess(actor, params!.id);

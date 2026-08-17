@@ -216,27 +216,13 @@ const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({ onClose
       setIsSubmitting(false);
       setProgress(0);
 
-      // The fetch client throws the parsed error BODY, so what axios exposed at
-      // `err.response.data` is simply `err` here. `errors` is checked before
-      // `validationErrors` because the legacy filter used the former; keeping
-      // both is what makes the field-by-field display work against either.
-      const e = err as {
-        errors?: { field: string; message: string }[];
-        validationErrors?: { field: string; message: string }[];
-        message?: string;
-        error?: string;
-      };
-
-      if (e?.errors || e?.validationErrors) {
-        const list = (e.errors || e.validationErrors || [])
-          .map((x) => `• ${x.field}: ${x.message}`)
-          .join('\n');
-        setError(`Validation failed:\n${list}`);
-      } else if (e?.message) {
-        setError(e.message);
-      } else {
-        setError(e?.error || 'Failed to onboard tenant. Please check all fields and try again.');
-      }
+      // The fetch client throws an `ApiClientError`. Zod validation failures
+      // arrive as one joined string (e.g. "officialEmail: Invalid email;
+      // gstNumber: Invalid GST Number format") rather than a structured
+      // per-field list — the platform-standard error shape has no field for
+      // that anymore, so this renders as a single message like any other.
+      const e = err as { message?: string; error?: string };
+      setError(e?.message || e?.error || 'Failed to onboard tenant. Please check all fields and try again.');
     }
   };
 

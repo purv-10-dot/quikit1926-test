@@ -35,7 +35,7 @@ const autoSaveSchema = z.object({
 }).passthrough();
 
 /**
- * POST /api/master-courses/:id/auto-save — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN (200)
+ * POST /api/master-courses/:id/auto-save — ADMIN | TENANT_ADMIN | SUB_ADMIN (200)
  *
  * The ownership guard is a deliberate behavior change (approved 2026-07-17), not
  * parity: `autoSaveDraft` filters only on `{id, isMaster:true}`, so without it any
@@ -43,7 +43,7 @@ const autoSaveSchema = z.object({
  */
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   await svc.assertCanEditMasterCourse(actor, params!.id);
   const draftData = (await parseBody(req, autoSaveSchema)) as Record<string, unknown>;
   const course = await svc.autoSaveDraft(params!.id, draftData);

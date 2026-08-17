@@ -21,7 +21,7 @@ export type TenantKind = 'corporate' | 'school' | null | undefined;
 
 /** Role → landing path, for roles whose destination does not vary by tenant. */
 const FIXED: Record<string, string> = {
-  SUPER_ADMIN: '/dashboard',
+  ADMIN: '/dashboard',
   SUB_ADMIN: '/sub-admin-dashboard',
   MANAGER: '/manager-dashboard',
   TEACHER: '/teacher-dashboard',

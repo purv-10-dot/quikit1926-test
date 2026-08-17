@@ -19,17 +19,17 @@ describe('role-policy — isUserRole', () => {
 });
 
 describe('role-policy — assignableRoles', () => {
-  it('SUPER_ADMIN can assign every role BELOW it but never SUPER_ADMIN', () => {
-    const a = assignableRoles('SUPER_ADMIN');
-    expect(a).not.toContain('SUPER_ADMIN');
+  it('ADMIN can assign every role BELOW it but never ADMIN', () => {
+    const a = assignableRoles('ADMIN');
+    expect(a).not.toContain('ADMIN');
     expect(a).toEqual(
       expect.arrayContaining(['TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'TEACHER', 'PARENT', 'LEARNER']),
     );
   });
 
-  it('TENANT_ADMIN cannot assign TENANT_ADMIN or SUPER_ADMIN (no lateral / upward)', () => {
+  it('TENANT_ADMIN cannot assign TENANT_ADMIN or ADMIN (no lateral / upward)', () => {
     const a = assignableRoles('TENANT_ADMIN');
-    expect(a).not.toContain('SUPER_ADMIN');
+    expect(a).not.toContain('ADMIN');
     expect(a).not.toContain('TENANT_ADMIN');
     expect(a).toEqual(
       expect.arrayContaining(['SUB_ADMIN', 'MANAGER', 'TEACHER', 'PARENT', 'LEARNER']),
@@ -54,17 +54,17 @@ describe('role-policy — assignableRoles', () => {
 describe('role-policy — canAssignRole (privilege-escalation regression)', () => {
   // The exact hole this fix closes: a lower admin minting a higher-privileged
   // account via POST /api/auth/register (role was previously unvalidated).
-  it('TENANT_ADMIN → SUPER_ADMIN is DENIED', () => {
-    expect(canAssignRole('TENANT_ADMIN', 'SUPER_ADMIN')).toBe(false);
+  it('TENANT_ADMIN → ADMIN is DENIED', () => {
+    expect(canAssignRole('TENANT_ADMIN', 'ADMIN')).toBe(false);
   });
 
-  it('SUB_ADMIN → SUPER_ADMIN and SUB_ADMIN → TENANT_ADMIN are DENIED', () => {
-    expect(canAssignRole('SUB_ADMIN', 'SUPER_ADMIN')).toBe(false);
+  it('SUB_ADMIN → ADMIN and SUB_ADMIN → TENANT_ADMIN are DENIED', () => {
+    expect(canAssignRole('SUB_ADMIN', 'ADMIN')).toBe(false);
     expect(canAssignRole('SUB_ADMIN', 'TENANT_ADMIN')).toBe(false);
   });
 
-  it('no role may assign SUPER_ADMIN, including SUPER_ADMIN itself', () => {
-    for (const r of ALL_ROLES) expect(canAssignRole(r, 'SUPER_ADMIN')).toBe(false);
+  it('no role may assign ADMIN, including ADMIN itself', () => {
+    for (const r of ALL_ROLES) expect(canAssignRole(r, 'ADMIN')).toBe(false);
   });
 
   it('no role may assign its own tier (no lateral escalation)', () => {
@@ -77,6 +77,6 @@ describe('role-policy — canAssignRole (privilege-escalation regression)', () =
     expect(canAssignRole('TENANT_ADMIN', 'LEARNER')).toBe(true);
     expect(canAssignRole('TENANT_ADMIN', 'SUB_ADMIN')).toBe(true);
     expect(canAssignRole('SUB_ADMIN', 'LEARNER')).toBe(true);
-    expect(canAssignRole('SUPER_ADMIN', 'TENANT_ADMIN')).toBe(true);
+    expect(canAssignRole('ADMIN', 'TENANT_ADMIN')).toBe(true);
   });
 });

@@ -278,7 +278,7 @@ function MiniStat({ tone, icon: Icon, label, value, delay = 0 }: {
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
-export default function SuperAdminDashboard() {
+export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);

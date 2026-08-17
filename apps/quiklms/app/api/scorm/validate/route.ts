@@ -7,7 +7,7 @@ import { parseScormPackage } from '@/lib/services/scorm-service';
 const MAX_BYTES = 500 * 1024 * 1024;
 
 /**
- * POST /api/scorm/validate — TENANT_ADMIN | SUB_ADMIN | SUPER_ADMIN | TEACHER
+ * POST /api/scorm/validate — TENANT_ADMIN | SUB_ADMIN | ADMIN | TEACHER
  *
  * Port of `ScormController.validatePackage` (`scorm.controller.ts:55-78`).
  *
@@ -21,7 +21,7 @@ const MAX_BYTES = 500 * 1024 * 1024;
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN', 'TEACHER']);
+  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN', 'TEACHER']);
 
   const file = await readUploadedFile(req, 'file', MAX_BYTES);
   if (!file) throw BadRequest('SCORM zip file is required');

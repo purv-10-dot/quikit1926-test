@@ -25,6 +25,18 @@ export interface FeatureSet {
   showAnalytics: boolean;
   showNotifications: boolean;
   showMultiLanguage: boolean;
+  /**
+   * Webcam/face-detection quiz proctoring (`ProctoredQuizWrapper`, the
+   * `/api/quiz-proctoring/*` routes and the tenant-admin review page).
+   *
+   * OFF for corporate tenants: corporate learners take plain quizzes, with no
+   * disclosure screen, fullscreen lock, camera or event capture. School tenants
+   * keep it, and can still opt out per-tenant with `enableQuizProctoring:false`.
+   *
+   * NOTE: this flag does NOT touch exam proctoring (`LmsExam.proctoringLevel`),
+   * which is a separate subsystem.
+   */
+  showQuizProctoring: boolean;
 }
 
 type FeatureConfig = Record<string, boolean | undefined>;
@@ -50,6 +62,9 @@ function corporate(config: FeatureConfig): FeatureSet {
     showAnalytics: config.enableAnalytics !== false,
     showNotifications: true,
     showMultiLanguage: true,
+    // Hard-off for corporate — not `!== false` — so it cannot be switched back
+    // on by a stray featureConfig key. Corporate quizzes are plain quizzes.
+    showQuizProctoring: false,
   };
 }
 
@@ -74,6 +89,7 @@ function school(config: FeatureConfig): FeatureSet {
     showAnalytics: config.enableAnalytics !== false,
     showNotifications: true,
     showMultiLanguage: true,
+    showQuizProctoring: config.enableQuizProctoring !== false,
   };
 }
 

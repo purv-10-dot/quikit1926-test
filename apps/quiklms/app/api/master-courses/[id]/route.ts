@@ -40,10 +40,10 @@ const updateMasterCourseSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
 });
 
-// GET /api/master-courses/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// GET /api/master-courses/:id — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const course = await svc.findOne(params!.id);
   const orgId = actor.orgId ?? undefined;
 
@@ -58,10 +58,10 @@ export const GET = route(async (req, { params }) => {
   return json({ success: true, data: await svc.enrichCourseWithPresignedUrls(course) });
 });
 
-// PUT /api/master-courses/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// PUT /api/master-courses/:id — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = (await parseBody(req, updateMasterCourseSchema)) as Record<string, unknown>;
   const id = params!.id;
   const orgId = actor.orgId ?? undefined;
@@ -119,10 +119,10 @@ export const PUT = route(async (req, { params }) => {
   return json({ success: true, data: course, message: 'Master course updated successfully' });
 });
 
-// DELETE /api/master-courses/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// DELETE /api/master-courses/:id — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   if (svc.isTenantOrSubAdminActor(actor)) {
     const orgId = actor.orgId ?? undefined;
     const existing = await svc.findOne(params!.id);

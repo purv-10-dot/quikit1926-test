@@ -540,14 +540,14 @@ test.describe("Phase 14 — guards", () => {
     await learner.dispose();
   });
 
-  test("evaluate rejects a non-numeric score with a 400 + validationErrors", async () => {
+  test("evaluate rejects a non-numeric score with a 400 naming the field", async () => {
     const teacher = await apiAs("teacher");
     const res = await PATCH(teacher, `/api/exam-sessions/${MISSING}/evaluate`, {
       score: "one hundred",
     });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: unknown[] };
-    expect(Array.isArray(body.validationErrors)).toBe(true);
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("score");
     await teacher.dispose();
   });
 

@@ -23,7 +23,7 @@
  * of 403, which means the handler parsed input or touched the database BEFORE
  * checking authorization.
  *
- * Note SUPER_ADMIN is NOT implicitly allowed anywhere: `requireRoles` is a flat
+ * Note ADMIN is NOT implicitly allowed anywhere: `requireRoles` is a flat
  * membership test (lib/auth/context.ts:123), so a guard listing only
  * TENANT_ADMIN/SUB_ADMIN genuinely 403s the super admin. That is intentional
  * here and the matrix encodes it rather than special-casing it.
@@ -37,7 +37,7 @@ const m = loadManifest();
 
 /** Maps the manifest's role keys to the LmsUserRole strings the guards use. */
 const LMS_ROLE: Record<RoleKey, string> = {
-  superAdmin: "SUPER_ADMIN",
+  superAdmin: "ADMIN",
   tenantAdmin: "TENANT_ADMIN",
   subAdmin: "SUB_ADMIN",
   manager: "MANAGER",
@@ -66,29 +66,27 @@ interface Probe {
  * learner/teacher/manager boundary outright.
  */
 const PROBES: Probe[] = [
-  // --- Tenant administration: SUPER_ADMIN-only surface. A TENANT_ADMIN
+  // --- Tenant administration: ADMIN-only surface. A TENANT_ADMIN
   //     reaching these would be a cross-tenant platform takeover.
-  { label: "GET /api/tenants", method: "GET", url: "/api/tenants", allowed: ["SUPER_ADMIN"] },
-  { label: "POST /api/tenants", method: "POST", url: "/api/tenants", allowed: ["SUPER_ADMIN"], body: {} },
-  { label: "GET /api/tenants/[id]", method: "GET", url: `/api/tenants/${m.orgId}`, allowed: ["SUPER_ADMIN"] },
-  { label: "PATCH /api/tenants/[id]", method: "PATCH", url: `/api/tenants/${m.orgId}`, allowed: ["SUPER_ADMIN"], body: {} },
-  { label: "DELETE /api/tenants/[id]", method: "DELETE", url: `/api/tenants/${NO_SUCH_ID}`, allowed: ["SUPER_ADMIN"] },
-  { label: "POST /api/tenants/onboard", method: "POST", url: "/api/tenants/onboard", allowed: ["SUPER_ADMIN"], body: {} },
-  { label: "POST /api/tenants/create-admin-credentials", method: "POST", url: "/api/tenants/create-admin-credentials", allowed: ["SUPER_ADMIN"], body: {} },
-  { label: "GET /api/tenants/usage", method: "GET", url: "/api/tenants/usage", allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN"] },
-  { label: "GET /api/tenants/storage-check", method: "GET", url: "/api/tenants/storage-check", allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN", "MANAGER"] },
-  { label: "PATCH /api/tenants/[id]/branding", method: "PATCH", url: `/api/tenants/${m.orgId}/branding`, allowed: ["TENANT_ADMIN", "SUB_ADMIN", "SUPER_ADMIN"], body: {} },
-  { label: "GET /api/tenants/[id]/video-config", method: "GET", url: `/api/tenants/${m.orgId}/video-config`, allowed: ["TENANT_ADMIN", "SUB_ADMIN", "SUPER_ADMIN"] },
-  { label: "PATCH /api/tenants/[id]/language-config", method: "PATCH", url: `/api/tenants/${m.orgId}/language-config`, allowed: ["TENANT_ADMIN", "SUB_ADMIN", "SUPER_ADMIN"], body: {} },
+  { label: "GET /api/tenants", method: "GET", url: "/api/tenants", allowed: ["ADMIN"] },
+  { label: "POST /api/tenants", method: "POST", url: "/api/tenants", allowed: ["ADMIN"], body: {} },
+  { label: "GET /api/tenants/[id]", method: "GET", url: `/api/tenants/${m.orgId}`, allowed: ["ADMIN"] },
+  { label: "PATCH /api/tenants/[id]", method: "PATCH", url: `/api/tenants/${m.orgId}`, allowed: ["ADMIN"], body: {} },
+  { label: "DELETE /api/tenants/[id]", method: "DELETE", url: `/api/tenants/${NO_SUCH_ID}`, allowed: ["ADMIN"] },
+  { label: "POST /api/tenants/onboard", method: "POST", url: "/api/tenants/onboard", allowed: ["ADMIN"], body: {} },
+  { label: "POST /api/tenants/create-admin-credentials", method: "POST", url: "/api/tenants/create-admin-credentials", allowed: ["ADMIN"], body: {} },
+  { label: "GET /api/tenants/usage", method: "GET", url: "/api/tenants/usage", allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN"] },
+  { label: "GET /api/tenants/storage-check", method: "GET", url: "/api/tenants/storage-check", allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN", "MANAGER"] },
+  { label: "PATCH /api/tenants/[id]/branding", method: "PATCH", url: `/api/tenants/${m.orgId}/branding`, allowed: ["TENANT_ADMIN", "SUB_ADMIN", "ADMIN"], body: {} },
+  { label: "GET /api/tenants/[id]/video-config", method: "GET", url: `/api/tenants/${m.orgId}/video-config`, allowed: ["TENANT_ADMIN", "SUB_ADMIN", "ADMIN"] },
+  { label: "PATCH /api/tenants/[id]/language-config", method: "PATCH", url: `/api/tenants/${m.orgId}/language-config`, allowed: ["TENANT_ADMIN", "SUB_ADMIN", "ADMIN"], body: {} },
 
   // --- User management. Privilege *granting* endpoints matter most: a
   //     SUB_ADMIN who can promote sub-admins can escalate laterally forever.
-  { label: "GET /api/users", method: "GET", url: "/api/users", allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN"] },
-  { label: "PATCH /api/users/[id]", method: "PATCH", url: `/api/users/${LEARNER_ID}`, allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN"], body: {} },
-  { label: "PATCH /api/users/[id]/toggle-active", method: "PATCH", url: `/api/users/${LEARNER_ID}/toggle-active`, allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN"], body: {} },
-  { label: "PATCH /api/users/[id]/promote-subadmin", method: "PATCH", url: `/api/users/${LEARNER_ID}/promote-subadmin`, allowed: ["SUPER_ADMIN", "TENANT_ADMIN"], body: {} },
-  { label: "PATCH /api/users/[id]/revoke-subadmin", method: "PATCH", url: `/api/users/${LEARNER_ID}/revoke-subadmin`, allowed: ["SUPER_ADMIN", "TENANT_ADMIN"], body: {} },
-  { label: "POST /api/users/by-ids", method: "POST", url: "/api/users/by-ids", allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN", "MANAGER", "TEACHER"], body: { ids: [LEARNER_ID] } },
+  { label: "GET /api/users", method: "GET", url: "/api/users", allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN"] },
+  { label: "PATCH /api/users/[id]", method: "PATCH", url: `/api/users/${LEARNER_ID}`, allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN"], body: {} },
+  { label: "PATCH /api/users/[id]/toggle-active", method: "PATCH", url: `/api/users/${LEARNER_ID}/toggle-active`, allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN"], body: {} },
+  { label: "POST /api/users/by-ids", method: "POST", url: "/api/users/by-ids", allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN", "MANAGER", "TEACHER"], body: { ids: [LEARNER_ID] } },
 
   // --- Exam authoring. A LEARNER who can write here can rewrite the test
   //     they are about to sit.
@@ -116,7 +114,7 @@ const PROBES: Probe[] = [
   // --- Money. Payout approval is the classic segregation-of-duties target:
   //     the TEACHER being paid must not be able to approve their own payout.
   { label: "GET /api/payouts", method: "GET", url: "/api/payouts", allowed: ["TENANT_ADMIN", "SUB_ADMIN"] },
-  { label: "GET /api/payouts/[id]", method: "GET", url: `/api/payouts/${NO_SUCH_ID}`, allowed: ["SUPER_ADMIN", "TENANT_ADMIN", "SUB_ADMIN", "MANAGER", "TEACHER"] },
+  { label: "GET /api/payouts/[id]", method: "GET", url: `/api/payouts/${NO_SUCH_ID}`, allowed: ["ADMIN", "TENANT_ADMIN", "SUB_ADMIN", "MANAGER", "TEACHER"] },
   { label: "GET /api/payouts/teacher (TEACHER-only)", method: "GET", url: "/api/payouts/teacher", allowed: ["TEACHER"] },
   { label: "POST /api/payouts/generate", method: "POST", url: "/api/payouts/generate", allowed: ["TENANT_ADMIN", "SUB_ADMIN"], body: {} },
   { label: "PATCH /api/payouts/[id]/approve", method: "PATCH", url: `/api/payouts/${NO_SUCH_ID}/approve`, allowed: ["TENANT_ADMIN", "SUB_ADMIN"], body: {} },

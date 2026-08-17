@@ -55,7 +55,7 @@ const MESSAGEABLE_ROLES: Record<string, string[]> = {
   LEARNER: ['TEACHER', 'SUB_ADMIN'],
   TENANT_ADMIN: ['TEACHER', 'PARENT', 'LEARNER', 'SUB_ADMIN'],
   SUB_ADMIN: ['TEACHER', 'PARENT', 'LEARNER', 'TENANT_ADMIN'],
-  SUPER_ADMIN: ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER', 'PARENT', 'LEARNER'],
+  ADMIN: ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER', 'PARENT', 'LEARNER'],
 };
 
 export interface CreateConversationInput {
@@ -200,7 +200,7 @@ export async function getMessageableContacts(
     take: 30,
   });
 
-  const safeSenderRoles = ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN'];
+  const safeSenderRoles = ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN'];
   const hideSensitive = !safeSenderRoles.includes(userRole);
 
   return users.map((u) => ({

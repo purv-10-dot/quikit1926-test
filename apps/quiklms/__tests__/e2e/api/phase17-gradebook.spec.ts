@@ -45,8 +45,8 @@ const PATCH = (a: APIRequestContext, p: string, data: unknown) =>
 interface Envelope<T> {
   success?: boolean;
   data?: T;
-  statusCode?: number;
   message?: string;
+  error?: string;
 }
 
 interface GradeRecord {
@@ -345,7 +345,7 @@ test.describe("Phase 17 — guards", () => {
     const admin = await apiAs("tenantAdmin");
     const res = await POST(admin, `/api/gradebook/compute?batchId=${MISSING}`);
     expect(res.status()).toBe(404);
-    expect(((await safeJson(res)) as Envelope<never>).statusCode).toBe(404);
+    expect(((await safeJson(res)) as Envelope<never>).success).toBe(false);
     await admin.dispose();
   });
 

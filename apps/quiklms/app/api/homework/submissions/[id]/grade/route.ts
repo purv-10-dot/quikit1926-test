@@ -3,16 +3,21 @@ import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { gradeSubmission, type GradeSubmissionInput } from '@/lib/services/homework-service';
+import { scoreField } from '@/lib/services/homework-schema';
 
 const rubricScore = z.object({
-  criterion: z.string(),
+  criterion: z.string().min(1, 'criterion is required'),
   maxScore: z.number().min(0),
   score: z.number().min(0),
   comment: z.string().optional(),
 });
 
 const schema = z.object({
-  score: z.number().min(0).max(100),
+  // No 100 ceiling here. The real bound is the homework's own `maxScore`, which
+  // `gradeSubmission` checks against the loaded row — a hardcoded 100 made a
+  // 150-point assignment ungradable while telling the teacher only
+  // "Validation failed".
+  score: scoreField,
   feedback: z.string().optional(),
   correctedFileUrl: z.string().optional(),
   rubricScores: z.array(rubricScore).optional(),
