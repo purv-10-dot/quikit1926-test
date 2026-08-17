@@ -8,9 +8,14 @@
  * build must match these shapes — see docs/RUNTIME.md.
  */
 
-import type { AssistSource, IngestResult, IngestVisibility } from "@/lib/shared";
+import type {
+  AssistApprovalRequest,
+  AssistSource,
+  IngestResult,
+  IngestVisibility,
+} from "@/lib/shared";
 
-export type { AssistSource };
+export type { AssistApprovalRequest, AssistSource };
 
 export interface AssistHistoryItem {
   role: "user" | "assistant";
@@ -62,8 +67,19 @@ export type RuntimeEvent =
   | { type: "delta"; text: string }
   | { type: "done"; text: string; agentRunId: string; sources?: AssistSource[] }
   | { type: "error"; message: string; code?: string }
-  // Reserved for the later actions phase — defined in the vocab, NOT handled in v1.
-  | { type: "approval_needed" };
+  /**
+   * A proposed write the runtime will not perform without human approval.
+   * TERMINAL, like `done` and `error` — one per stream, then it closes.
+   *
+   * Was a payload-less placeholder ("defined in the vocab, NOT handled in v1")
+   * while the client typed the same frame richly — two descriptions of one thing.
+   * Now both sides import `AssistApprovalRequest` from `@/lib/shared`.
+   *
+   * The relay forwards this verbatim (`route.ts` only special-cases `done`), so
+   * it needs no handling here; the client reader is what turns it into a
+   * callback.
+   */
+  | ({ type: "approval_needed" } & AssistApprovalRequest);
 
 /** Ingest one document into the KB (Stage 3). orgId/userId ride the agent JWT. */
 export interface IngestInput {

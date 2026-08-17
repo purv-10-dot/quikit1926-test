@@ -192,6 +192,59 @@ export interface AssistSource {
   snippet: string;
 }
 
+/**
+ * How dangerous the proposed write is, as classified by the runtime.
+ *
+ * ⚠️ **AN UNRECOGNISED VALUE MUST BE TREATED AS THE HIGHEST RISK.** This union
+ * exists for consumer DX and is deliberately **NOT** validated at runtime: the
+ * runtime may add a fourth class before this type learns about it, and rejecting
+ * an entire write proposal because of an unfamiliar label is a worse outcome
+ * than rendering it conservatively. So a value outside this union will reach the
+ * UI — whatever renders the approval card must default unknown to the
+ * most-restrictive treatment (explicit confirmation, no one-click accept), never
+ * to `soft_write`.
+ *
+ * Stated here rather than only in the card's brief, because the card is where
+ * it would be forgotten.
+ */
+export type AssistRiskClass = "soft_write" | "medium_write" | "high_risk";
+
+/**
+ * A write the assistant proposes but will not perform without human approval.
+ *
+ * Arrives on the assist SSE stream as `{ type: "approval_needed", ... }` and is
+ * **terminal** — one per stream, then the stream closes, exactly like `done` and
+ * `error`.
+ *
+ * Single source of truth: both the runtime seam (`lib/server/runtime/types.ts`)
+ * and the client reader (`lib/assist-client.ts`) import this. It previously
+ * existed as a payload-less placeholder on the server and nothing on the client,
+ * which is two descriptions of one frame waiting to drift.
+ *
+ * Field names are frozen camelCase, per the runtime contract.
+ */
+export interface AssistApprovalRequest {
+  /** Runtime-owned id for this pending request. The only field we hard-require. */
+  requestId: string;
+  /** Which app the write targets, e.g. "quiktrack". */
+  appId: string;
+  /** The tool the assistant wants to run, e.g. "create_issue". */
+  toolName: string;
+  riskClass: AssistRiskClass;
+  /**
+   * Human-readable description of the proposed write, composed by the runtime.
+   * Passed through UNTOUCHED — never interpreted, truncated or reformatted.
+   */
+  summary: string;
+  /**
+   * The tool's arguments. Arbitrary by design and typed loosely on purpose: we
+   * relay it, we do not read it.
+   */
+  toolInput: Record<string, unknown>;
+  /** ISO instant after which the request can no longer be approved. */
+  expiresAt: string;
+}
+
 export interface SendMessageInput {
   content: string;
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";

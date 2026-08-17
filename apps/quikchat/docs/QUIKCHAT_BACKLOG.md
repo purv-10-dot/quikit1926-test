@@ -640,6 +640,23 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   one non-excluded test; the 30 remain. Blocked on a decision: re-home to
   Playwright, or add a test database. **CI has no Postgres service**, so
   un-excluding them would pass locally and fail there.
+- **🔴 The vitest 3/4 split is patched only in an untracked `node_modules`, so
+  "the suite passes" is currently a statement about one machine.** Neither
+  QuikChat's nor `services/realtime`'s suite can start after merging
+  `common_setup89` (see the split row): vitest 3.2.4's transitive deps are never
+  placed, and it exits before collecting a single test. Verification was unblocked
+  by installing the missing packages into `apps/quikchat/node_modules` directly —
+  **gitignored, so it evaporates on a fresh clone, in CI, and on anyone else's
+  machine.** No tracked file was changed.
+  **The four packages, recorded so nobody rediscovers them one at a time:**
+  `loupe`, `tinyrainbow`, `strip-literal` (which also needs `js-tokens`), and
+  `tinyspy`. They surfaced sequentially — each one unblocked vitest just far
+  enough to reveal the next — so **expect a fifth** as different test paths get
+  exercised (a jsdom-heavy or coverage run may pull more). Treat the list as
+  known-incomplete.
+  The real fix is upstream and not ours: the conflict is in the `package.json`
+  files, not the lock, so regenerating the lock cannot help. Until it lands,
+  **do not read a green local suite as a green suite.**
 - **CI never builds QuikChat — only quikscale.** `ci.yml` runs lint, typecheck
   and test across all apps via turbo, then builds **one** app
   (`cd apps/quikscale && npm run build`, line 109). `next build` for QuikChat runs
