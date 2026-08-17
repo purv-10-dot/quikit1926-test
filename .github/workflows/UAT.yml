@@ -202,6 +202,15 @@ jobs:
           # connector callbacks ({QUIKFLOW_URL}/api/connections/{gmail|outlook|teams}
           # /callback), which must match what is registered in Google Cloud / Azure AD.
           #
+          # QuikChat: LIVEKIT_URL must be the wss:// form. apps/quikchat/next.config.js
+          # derives the https:// twin from it (ws->http, one-directional) and puts both
+          # into the CSP connect-src at build time. Passing the https:// form instead
+          # yields the https origin twice — deduped to one — leaving the wss origin the
+          # LiveKit client SDK actually dials absent, and calls drop at connect. An
+          # origin missing from the baked CSP can never be added back at runtime.
+          # LIVEKIT_API_KEY/SECRET are NOT build args: they are credentials and are read
+          # from the cluster secret at runtime.
+          #
           # The BullMQ broker (https://bullmq.quikit.ai) is deliberately absent here:
           # its connection string carries credentials, so the quikflow app and worker
           # pods read it from the REDIS_URL Secret in the GitOps repo at runtime. The
@@ -225,6 +234,7 @@ jobs:
             NEXT_PUBLIC_QUIKCHAT_URL=https://uatchat.quikit.ai
             NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
             NEXT_PUBLIC_REALTIME_WS_URL=wss://uatsockets.quikit.ai
+            LIVEKIT_URL=wss://quikchat-s9k9trbr.livekit.cloud
             NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
             NEXT_PUBLIC_QUIKCREDFLOW_URL=https://uatcrmexpress.quikit.ai
             NEXT_PUBLIC_QUIKINSIGHT_URL=https://uatinsights.quikit.ai
