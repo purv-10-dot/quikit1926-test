@@ -1,5 +1,9 @@
+import { withSample } from "./sample";
+import { SEARCH_CONSOLE_SAMPLE } from "@/lib/mock/platformSamples";
 export interface SearchConsoleData {
   connected: boolean;
+  /** Set when these are sample figures, not the workspace's own. */
+  isSampleData?: boolean;
   siteUrl?: string;
   clicks?: number;
   impressions?: number;
@@ -12,5 +16,7 @@ export interface SearchConsoleData {
 export async function getSearchConsoleData(): Promise<SearchConsoleData> {
   const res = await fetch("/api/search-console", { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load Search Console data (${res.status})`);
-  return (await res.json()) as SearchConsoleData;
+  const live = (await res.json()) as SearchConsoleData;
+  // Not connected -> representative sample data + a banner on the page.
+  return withSample<SearchConsoleData>(live, SEARCH_CONSOLE_SAMPLE);
 }

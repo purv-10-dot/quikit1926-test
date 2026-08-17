@@ -1,12 +1,22 @@
-
 {
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem \"c:\\\\workStation_3\\\\QuikIT\\\\packages\\\\database\\\\prisma\" -Filter \"*.prisma\")",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Bash(perl -0pi -e 's{\\\\}, \\\\[view, mult, data\\\\]\\\\\\);}{}, [view, mult, data, sampleMode]\\);}' app/overview/page.tsx)",
+      "Bash(perl -0pi -e 's{          <div className=\"kpi-strip\">\\\\r?\\\\n}{          \\\\{kpis.length > 0 \\\\&\\\\& \\(\\\\n          <div className=\"kpi-strip\">\\\\n}' app/overview/page.tsx)",
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/patch_overview.py\")",
+      "Bash(node -e ' *)",
+      "Bash(echo \"tsc exit=$?\")",
+      "Bash(grep -oE \"^[a-zA-Z0-9_./\\\\[\\\\]-]+\\\\.tsx?\" /tmp/tsc2.txt)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npx tsc *)",
+      "Bash(F=\"/c/Users/saadk/Downloads/quikinsight-ui-preview-v15.html\"; grep -n \"PLATFORM_DETAILS = {\" \"$F\"; sed -n '/PLATFORM_DETAILS = {/,/^};/p' \"$F\" | sed -n '1,40p' | cut -c1-190)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
+      "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",
+      "\\tmp",
+      "C:\\Users\\saadk\\Downloads"
     ]
   },
   "hooks": {
@@ -23,4 +33,3 @@
     ]
   }
 }
- 

@@ -6,6 +6,9 @@ import type {
   WeekOverWeekResult,
 } from "@/lib/connectors/ga4";
 
+import { resolvePeriod, trailingWindow, windowToDays } from "@/lib/period/resolve";
+import type { DateWindow, PeriodSelection } from "@/lib/period/types";
+
 // Re-export so the aggregator can use a single import
 export type { GA4DataResult, WeekOverWeekResult };
 
@@ -92,15 +95,26 @@ async function resolveBestProperty(
 
 // â”€â”€â”€ GA4 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export async function getGA4Data(userId: string, days = 28, workspaceId?: string): Promise<GA4DataResult> {
+export async function getGA4Data(
+  userId: string,
+  range: number | DateWindow = 28,
+  workspaceId?: string,
+): Promise<GA4DataResult> {
+  const days = typeof range === "number" ? range : windowToDays(range);
+  const win = typeof range === "number" ? trailingWindow(range) : range;
   const { oauth2, metadata, connId } = await getClient(userId, "GOOGLE_ANALYTICS", workspaceId);
 
   const analyticsData = google.analyticsdata({ version: "v1beta", auth: oauth2 });
   const propertyId = await resolveBestProperty(analyticsData, metadata, connId);
   if (!propertyId) throw new Error("GA4 property not set");
 
-  const RANGE = { startDate: `${days}daysAgo`, endDate: "today" };
-  const PREV_RANGE = { startDate: `${days * 2}daysAgo`, endDate: `${days + 1}daysAgo` };
+  // Absolute dates, so an explicit comparison window is honoured and every
+  // connector in one aggregation agrees on the period even across midnight UTC.
+  const RANGE = { startDate: win.start, endDate: win.end };
+  const prevWin = resolvePeriod({
+    preset: "custom", customStart: win.start, customEnd: win.end, compare: "previous",
+  }).previous!;
+  const PREV_RANGE = { startDate: prevWin.start, endDate: prevWin.end };
   const property = `properties/${propertyId}`;
   const runReport = (requestBody: object) =>
     analyticsData.properties.runReport({ property, requestBody });
@@ -243,29 +257,96 @@ export async function getGA4Data(userId: string, days = 28, workspaceId?: string
   };
 }
 
-export async function getGA4WeekOverWeek(userId: string, days = 28, workspaceId?: string): Promise<WeekOverWeekResult> {
-  const { oauth2, metadata } = await getClient(userId, "GOOGLE_SEARCH_CONSOLE", workspaceId);
-  if (!metadata.propertyId) throw new Error("GA4 property not set");
+export interface RangeComparison {
+  current: number;
+  previous: number | null;
+}
+
+/**
+ * Compare arbitrary metrics across two windows in ONE GA4 request.
+ *
+ * GA4 is the only connector that can do this for free: passing two named
+ * `dateRanges` returns both periods in a single call, so a comparison costs no
+ * extra quota. Everything else has to be fetched twice.
+ *
+ * RESPONSE SHAPE. With multiple dateRanges the API appends an implicit
+ * `dateRange` dimension and returns ONE ROW PER RANGE, each carrying one
+ * metricValue per requested metric. Rows are therefore keyed by their trailing
+ * dimension value ("date_range_0" / "date_range_1") — NOT by reading
+ * `metricValues[0]` and `metricValues[1]` off a single row, which is what the
+ * previous implementation did and why it always reported a zero delta.
+ */
+export async function getGA4Comparison(
+  userId: string,
+  period: PeriodSelection,
+  workspaceId?: string,
+  metrics: string[] = ["sessions"],
+): Promise<Record<string, RangeComparison>> {
+  const { oauth2, metadata, connId } = await getClient(userId, "GOOGLE_ANALYTICS", workspaceId);
 
   const analyticsData = google.analyticsdata({ version: "v1beta", auth: oauth2 });
-  const half = Math.ceil(days / 2);
+  const propertyId = await resolveBestProperty(analyticsData, metadata, connId);
+  if (!propertyId) throw new Error("GA4 property not set");
+
+  const dateRanges = [
+    { startDate: period.current.start, endDate: period.current.end, name: "current" },
+    ...(period.previous
+      ? [{ startDate: period.previous.start, endDate: period.previous.end, name: "previous" }]
+      : []),
+  ];
 
   const report = await analyticsData.properties.runReport({
-    property: `properties/${metadata.propertyId}`,
-    requestBody: {
-      dateRanges: [
-        { startDate: `${days}daysAgo`,       endDate: `${half}daysAgo`, name: "current"  },
-        { startDate: `${days * 2}daysAgo`,   endDate: `${days + 1}daysAgo`, name: "previous" },
-      ],
-      metrics: [{ name: "sessions" }],
-    },
+    property: `properties/${propertyId}`,
+    requestBody: { dateRanges, metrics: metrics.map((name) => ({ name })) },
   });
 
-  let currentSessions = 0, previousSessions = 0;
+  const headers = (report.data.metricHeaders ?? []).map((h) => h.name ?? "");
+  const totals: Record<string, { current: number; previous: number }> = {};
+  for (const m of metrics) totals[m] = { current: 0, previous: 0 };
+
   for (const row of report.data.rows ?? []) {
-    currentSessions  += Number(row.metricValues?.[0]?.value ?? 0);
-    previousSessions += Number(row.metricValues?.[1]?.value ?? 0);
+    // The dateRange marker is the LAST dimension value on the row.
+    const dims = row.dimensionValues ?? [];
+    const marker = dims[dims.length - 1]?.value ?? "date_range_0";
+    const bucket = marker === "date_range_1" ? "previous" : "current";
+
+    (row.metricValues ?? []).forEach((mv, i) => {
+      const name = headers[i] ?? metrics[i];
+      if (!name || !totals[name]) return;
+      totals[name][bucket] += Number(mv.value ?? 0);
+    });
   }
+
+  const out: Record<string, RangeComparison> = {};
+  for (const m of metrics) {
+    out[m] = {
+      current: totals[m].current,
+      previous: period.previous ? totals[m].previous : null,
+    };
+  }
+  return out;
+}
+
+/**
+ * @deprecated Use getGA4Comparison. Kept so existing callers keep compiling.
+ *
+ * The previous implementation was wrong three ways: it compared the older HALF
+ * of the current window against a FULL prior window, it read both periods off
+ * `metricValues[0]`/`[1]` of one row (so `previousSessions` was always 0 and the
+ * delta always 0), and it opened the GOOGLE_SEARCH_CONSOLE connection to query
+ * GA4. Fixing it makes the Web Traffic KPI show a real number for the first time.
+ */
+export async function getGA4WeekOverWeek(userId: string, days = 28, workspaceId?: string): Promise<WeekOverWeekResult> {
+  const w = trailingWindow(days);
+  const period = resolvePeriod({
+    preset: "custom",
+    customStart: w.start,
+    customEnd: w.end,
+    compare: "previous",
+  });
+  const cmp = await getGA4Comparison(userId, period, workspaceId, ["sessions"]);
+  const currentSessions = cmp.sessions?.current ?? 0;
+  const previousSessions = cmp.sessions?.previous ?? 0;
 
   return {
     currentSessions,
@@ -278,7 +359,12 @@ export async function getGA4WeekOverWeek(userId: string, days = 28, workspaceId?
 
 // â”€â”€â”€ YouTube â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export async function getYouTubeData(userId: string, days = 28, workspaceId?: string) {
+export async function getYouTubeData(
+  userId: string,
+  range: number | DateWindow = 28,
+  workspaceId?: string,
+) {
+  const win = typeof range === "number" ? trailingWindow(range) : range;
   const { oauth2, metadata, connId } = await getClient(userId, "YOUTUBE", workspaceId);
   const yt = google.youtube({ version: "v3", auth: oauth2 });
   const yta = google.youtubeAnalytics({ version: "v2", auth: oauth2 });
@@ -297,12 +383,14 @@ export async function getYouTubeData(userId: string, days = 28, workspaceId?: st
     });
   }
 
-  const now       = Date.now();
-  const endDate   = new Date(now).toISOString().split("T")[0];
-  const startDate = new Date(now - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  // Previous period of same length for delta calculation
-  const prevEndDate   = new Date(now - days * 24 * 60 * 60 * 1000 - 1).toISOString().split("T")[0];
-  const prevStartDate = new Date(now - days * 2 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const startDate = win.start;
+  const endDate   = win.end;
+  // Previous period of the same length, for the built-in delta.
+  const prevWin = resolvePeriod({
+    preset: "custom", customStart: win.start, customEnd: win.end, compare: "previous",
+  }).previous!;
+  const prevStartDate = prevWin.start;
+  const prevEndDate   = prevWin.end;
 
   const _yt = await Promise.allSettled([
     yt.channels.list({ part: ["statistics"], id: [channelId] }),

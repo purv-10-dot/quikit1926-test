@@ -45,7 +45,8 @@
       "Bash(node --check api.js)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('manifest.json','utf8'\\)\\); console.log\\('manifest ok'\\)\")",
       "Bash(node --check upwork.js)",
-      "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:3008/settings/users' -MaximumRedirection 0 -ErrorAction Stop -TimeoutSec 45; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output \"LENGTH: $\\($r.Content.Length\\)\" } catch { $resp = $_.Exception.Response; if \\($resp\\) { Write-Output \"STATUS: $\\([int]$resp.StatusCode\\) $\\($resp.StatusCode\\)\"; Write-Output \"LOCATION: $\\($resp.Headers.Location\\)\" } else { Write-Output \"ERROR: $\\($_.Exception.Message\\)\" } })"
+      "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:3008/settings/users' -MaximumRedirection 0 -ErrorAction Stop -TimeoutSec 45; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output \"LENGTH: $\\($r.Content.Length\\)\" } catch { $resp = $_.Exception.Response; if \\($resp\\) { Write-Output \"STATUS: $\\([int]$resp.StatusCode\\) $\\($resp.StatusCode\\)\"; Write-Output \"LOCATION: $\\($resp.Headers.Location\\)\" } else { Write-Output \"ERROR: $\\($_.Exception.Message\\)\" } })",
+      "Bash(echo \"exit:$?\")"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me",

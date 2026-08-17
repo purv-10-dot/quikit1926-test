@@ -220,7 +220,7 @@ export async function POST(req: Request) {
     generatedAt: new Date().toISOString(),
   }, {
     recipientName: session.user.name ?? null,
-    appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3011",
+    appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3015",
   });
 
   const result = await sendReportEmail({ to: recipients, cc, bcc, subject, html });

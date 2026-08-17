@@ -2,8 +2,19 @@ export interface KPIMetric {
   label: string;
   value: string;
   rawValue: number;
-  delta: number;
-  deltaDirection: "up" | "down";
+  /**
+   * Signed percentage change, or null when no comparison was possible.
+   *
+   * null is NOT interchangeable with 0. Several sources expose only a
+   * point-in-time snapshot and cannot report a past window at all; reporting
+   * those as 0% would fabricate a "no change" finding. Check `comparison`.
+   */
+  delta: number | null;
+  deltaDirection: "up" | "down" | "flat" | null;
+  /** Why delta is what it is. See lib/period/capability.ts. */
+  comparison?: "available" | "unavailable" | "off";
+  /** The baseline figure, so the UI can show "was 1,204". */
+  previousValue?: number | null;
   unit: "number" | "currency" | "shortNumber";
 }
 
@@ -211,6 +222,8 @@ export interface GA4Analytics {
   eventCount: number;
   keyEvents: number;
   avgEngagementTime: number; // seconds per active user
+  /** Session-weighted average across channels, 0–1 (not a percentage). */
+  bounceRate: number;
   dailyTrend: Array<{ date: string; activeUsers: number; eventCount: number; newUsers: number }>;
   prevDailyTrend: Array<{ date: string; activeUsers: number }>;
   topCountries: Array<{ country: string; activeUsers: number }>;
