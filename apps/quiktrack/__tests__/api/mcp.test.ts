@@ -671,6 +671,60 @@ describe("POST /api/mcp", () => {
     );
   });
 
+  it("writes exactly one QtMcpActionLog success entry for create_issue, with after but no before (QUIKTR-121)", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: PROJECT,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      createdAt: new Date(),
+    } as never);
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT, projectKey: "PRJ" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+    mockDb.$transaction.mockImplementation(async (cb: unknown) => {
+      const tx = {
+        qtIssueStatus: { findFirst: () => Promise.resolve({ id: "status_1" }) },
+        qtIssue: {
+          count: () => Promise.resolve(0),
+          create: ({ data }: { data: Record<string, unknown> }) =>
+            Promise.resolve({ id: "issue_1", key: "PRJ-1", ...data }),
+        },
+      };
+      return (cb as (t: unknown) => Promise<unknown>)(tx);
+    });
+
+    const res = await POST(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "create_issue", arguments: { title: "Fix the bug" } },
+        },
+        RAW_TOKEN,
+      ),
+    );
+    await readMcpJsonRpcResponse(res);
+
+    expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledTimes(1);
+    expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tool: "create_issue",
+        action: "CREATE",
+        entityType: "issue",
+        entityId: "issue_1",
+        entityKey: "PRJ-1",
+        result: "success",
+        before: undefined,
+        after: expect.objectContaining({ id: "issue_1" }),
+      }),
+    });
+  });
+
   it("returns an MCP error for create_issue when the caller lacks Issue:create", async () => {
     mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
       id: "pat_1",
@@ -1074,6 +1128,66 @@ describe("POST /api/mcp", () => {
     );
   });
 
+  it("writes a QtMcpActionLog success entry for move_issue whose before/after match what recordIssueChanges also received (QUIKTR-121)", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: PROJECT,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      createdAt: new Date(),
+    } as never);
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+    const before = { id: "issue_1", projectId: PROJECT, key: "PRJ-1", ...HISTORY_SNAPSHOT };
+    const after = {
+      id: "issue_1",
+      key: "PRJ-1",
+      orderInColumn: 2,
+      ...HISTORY_SNAPSHOT,
+      statusId: "status_2",
+      sprintId: "sprint_1",
+    };
+    mockDb.qtIssue.findFirst.mockResolvedValue(before as never);
+    mockDb.qtIssue.update.mockResolvedValue(after as never);
+    mockDb.$transaction.mockImplementation((cb: unknown) =>
+      (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb),
+    );
+
+    const res = await POST(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "move_issue",
+            arguments: { issueId: "issue_1", statusId: "status_2", sprintId: "sprint_1" },
+          },
+        },
+        RAW_TOKEN,
+      ),
+    );
+    await readMcpJsonRpcResponse(res);
+
+    expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledTimes(1);
+    expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tool: "move_issue",
+        action: "MOVE",
+        entityType: "issue",
+        entityId: "issue_1",
+        entityKey: "PRJ-1",
+        result: "success",
+        before,
+        after,
+      }),
+    });
+  });
+
   it("returns an MCP error for move_issue when the caller lacks Issue:update", async () => {
     mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
       id: "pat_1",
@@ -1159,6 +1273,56 @@ describe("POST /api/mcp", () => {
     const body = await readMcpJsonRpcResponse(res);
     expect(body.result.isError).toBe(true);
     expect(mockDb.qtIssue.update).not.toHaveBeenCalled();
+  });
+
+  it("writes exactly one QtMcpActionLog error entry for a forced validation failure, never two rows (QUIKTR-121)", async () => {
+    mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+      id: "pat_1",
+      orgId: ORG,
+      projectId: PROJECT,
+      createdById: CREATED_BY,
+      tokenHash: hashPatToken(RAW_TOKEN),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      revokedAt: null,
+      lastUsedAt: new Date(),
+      createdAt: new Date(),
+    } as never);
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+    mockDb.qtIssue.findFirst.mockResolvedValue({
+      id: "issue_1",
+      projectId: PROJECT,
+      key: "PRJ-1",
+      ...HISTORY_SNAPSHOT,
+    } as never);
+
+    const res = await POST(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "move_issue", arguments: { issueId: "issue_1", orderInColumn: -1 } },
+        },
+        RAW_TOKEN,
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = await readMcpJsonRpcResponse(res);
+
+    expect(body.result.isError).toBe(true);
+    expect(mockDb.qtIssue.update).not.toHaveBeenCalled();
+    expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledTimes(1);
+    expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tool: "move_issue",
+        action: "MOVE",
+        entityType: "issue",
+        entityId: "issue_1",
+        result: "error",
+        errorMessage: expect.any(String),
+      }),
+    });
   });
 
   it("returns an MCP error for move_issue when the issue belongs to another project", async () => {

@@ -9,6 +9,7 @@ import { loadAccessibleProjects, loadProjectAccess, type LoadedProjectAccess } f
 import { userCanInProject } from "@/lib/api/permissions";
 import type { Action, Resource } from "@/lib/api/permissionsRegistry";
 import { logAccessDecision } from "@/lib/mcp/accessLog";
+import { logMcpAction } from "@/lib/mcp/actionLog";
 import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
 import {
   createIssueSchema,
@@ -746,10 +747,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = createIssueInput.safeParse(args);
       if (!parsed.success) {
-        return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
-          isError: true,
-        };
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_issue", action: "CREATE",
+          entityType: "issue", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
       }
 
       const project = await db.qtProject.findFirst({
@@ -757,6 +762,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         select: { projectKey: true },
       });
       if (!project) {
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_issue", action: "CREATE",
+          entityType: "issue", entityId: null, entityKey: null,
+          payload: parsed.data, result: "error", errorMessage: "Not found",
+        });
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
 
@@ -798,6 +809,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         });
       }, { timeout: 20_000, maxWait: 5_000 });
 
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_issue", action: "CREATE",
+        entityType: "issue", entityId: issue.id, entityKey: issue.key,
+        payload: parsed.data, after: issue, result: "success",
+      });
       return { content: [{ type: "text", text: JSON.stringify(issue) }] };
     },
   );
@@ -895,6 +912,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         where: { id: sprintId },
         data: { status: "ACTIVE", startedAt: new Date(), updatedBy: userId },
         select: { id: true, name: true, status: true, startedAt: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "start_sprint", action: "UPDATE",
+        entityType: "sprint", entityId: sprintId, entityKey: null,
+        payload: { sprintId },
+        before: { status: sprint.status }, after: { status: updated.status },
+        result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
@@ -1006,8 +1031,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = moveIssueSchema.safeParse(rest);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "move_issue", action: "MOVE",
+          entityType: "issue", entityId: issue.id, entityKey: issue.key,
+          payload: rest, before: issue, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1039,7 +1071,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           workflowComments = res.comments ?? [];
         } catch (error: unknown) {
           const mapped = await transitionErrorContent(error, { issue: issueSnapshot, userId });
-          if (mapped) return mapped;
+          if (mapped) {
+            void logMcpAction({
+              orgId, userId, actorType, projectId,
+              tool: "move_issue", action: "MOVE",
+              entityType: "issue", entityId: issue.id, entityKey: issue.key,
+              payload: rest, before: issue, result: "error",
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
+            return mapped;
+          }
           throw error;
         }
       }
@@ -1097,6 +1138,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         actorType,
         actingAgentId,
       });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "move_issue", action: "MOVE",
+        entityType: "issue", entityId: issue.id, entityKey: issue.key,
+        payload: rest, before: issue, after: updated, result: "success",
+      });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
   );
@@ -1148,8 +1195,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           : args;
       const parsed = createSprintInput.safeParse(normalizedArgs);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_sprint", action: "CREATE",
+          entityType: "sprint", entityId: null, entityKey: null,
+          payload: normalizedArgs, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1165,6 +1219,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           updatedBy: userId,
         },
         select: { id: true, name: true, goal: true, status: true, startDate: true, endDate: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_sprint", action: "CREATE",
+        entityType: "sprint", entityId: sprint.id, entityKey: null,
+        payload: parsed.data, after: sprint, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(sprint) }] };
     },
@@ -1217,8 +1277,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = createCommentSchema.safeParse(args);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_comment", action: "CREATE",
+          entityType: "comment", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1238,6 +1305,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const author = await db.user.findUnique({
         where: { id: userId },
         select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "add_comment", action: "CREATE",
+        entityType: "comment", entityId: created.id, entityKey: null,
+        payload: { issueId: issue.id, body: parsed.data.body }, after: created, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify({ ...created, user: author }) }] };
     },
@@ -1303,30 +1376,44 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       let authorUserId = userId;
       if (authorId && authorId !== userId) {
         if (!access.isTenantAdmin) {
-          return {
-            content: [{ type: "text", text: "You don't have access to log time on behalf of another user." }],
-            isError: true,
-          };
+          const errorMessage = "You don't have access to log time on behalf of another user.";
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "add_worklog", action: "CREATE",
+            entityType: "worklog", entityId: null, entityKey: null,
+            payload: args, result: "error", errorMessage,
+          });
+          return { content: [{ type: "text", text: errorMessage }], isError: true };
         }
         const authorMember = await db.qtProjectMember.findFirst({
           where: { projectId, userId: authorId, isDeleted: false },
           select: { id: true },
         });
         if (!authorMember) {
-          return { content: [{ type: "text", text: "authorId is not a member of this project." }], isError: true };
+          const errorMessage = "authorId is not a member of this project.";
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "add_worklog", action: "CREATE",
+            entityType: "worklog", entityId: null, entityKey: null,
+            payload: args, result: "error", errorMessage,
+          });
+          return { content: [{ type: "text", text: errorMessage }], isError: true };
         }
         authorUserId = authorId;
       }
 
       const seconds = parseWorklogTimeSpent(timeSpent);
       if (seconds === null) {
+        const errorMessage =
+          'timeSpent must be a duration like "2h 30m", "45m", "1d", or a non-negative number of seconds.';
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_worklog", action: "CREATE",
+          entityType: "worklog", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [
-            {
-              type: "text",
-              text: 'timeSpent must be a duration like "2h 30m", "45m", "1d", or a non-negative number of seconds.',
-            },
-          ],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1338,8 +1425,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         description: comment,
       });
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_worklog", action: "CREATE",
+          entityType: "worklog", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1359,6 +1453,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         });
       } catch (err) {
         if (err instanceof TimesheetFutureDateError) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "add_worklog", action: "CREATE",
+            entityType: "worklog", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: err.message,
+          });
           return { content: [{ type: "text", text: err.message }], isError: true };
         }
         throw err;
@@ -1367,6 +1467,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const author = await db.user.findUnique({
         where: { id: authorUserId },
         select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "add_worklog", action: "CREATE",
+        entityType: "worklog", entityId: entry.id, entityKey: null,
+        payload: parsed.data, after: entry, result: "success",
       });
       return {
         content: [
@@ -1480,7 +1586,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         });
         const doneIds = doneStatuses.map((s) => s.id);
 
-        await tx.qtIssue.updateMany({
+        const moved = await tx.qtIssue.updateMany({
           where: {
             sprintId,
             isDeleted: false,
@@ -1489,13 +1595,23 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           data: { sprintId: null, updatedBy: userId },
         });
 
-        return tx.qtSprint.update({
+        const sprintAfter = await tx.qtSprint.update({
           where: { id: sprintId },
           data: { status: "COMPLETED", completedAt, updatedBy: userId },
           select: { id: true, name: true, status: true, completedAt: true },
         });
+        return { sprintAfter, movedCount: moved.count };
       });
-      return { content: [{ type: "text", text: JSON.stringify(updated) }] };
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "complete_sprint", action: "UPDATE",
+        entityType: "sprint", entityId: sprintId, entityKey: null,
+        payload: { sprintId },
+        before: { status: sprint.status },
+        after: { status: updated.sprintAfter.status, movedIssueCount: updated.movedCount },
+        result: "success",
+      });
+      return { content: [{ type: "text", text: JSON.stringify(updated.sprintAfter) }] };
     },
   );
 
@@ -1704,8 +1820,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = updateIssueInput.safeParse(rest);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "quiktrack_update_issue", action: "UPDATE",
+          entityType: "issue", entityId: issue.id, entityKey: issue.key,
+          payload: rest, before: issue, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1723,11 +1846,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         const validFieldIds = new Set(activeFields.map((f) => f.id));
         const unknownIds = Object.keys(customFields).filter((id) => !validFieldIds.has(id));
         if (unknownIds.length > 0) {
+          const errorMessage = `Unknown custom field id(s): ${unknownIds.join(", ")}. Call list_custom_fields to get valid ids for this project.`;
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "quiktrack_update_issue", action: "UPDATE",
+            entityType: "issue", entityId: issue.id, entityKey: issue.key,
+            payload: parsed.data, before: issue, result: "error", errorMessage,
+          });
           return {
-            content: [{
-              type: "text",
-              text: `Unknown custom field id(s): ${unknownIds.join(", ")}. Call list_custom_fields to get valid ids for this project.`,
-            }],
+            content: [{ type: "text", text: errorMessage }],
             isError: true,
           };
         }
@@ -1739,7 +1866,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           values: customFields,
         });
         if (!valid.ok) {
-          return { content: [{ type: "text", text: valid.errors.join(", ") }], isError: true };
+          const errorMessage = valid.errors.join(", ");
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "quiktrack_update_issue", action: "UPDATE",
+            entityType: "issue", entityId: issue.id, entityKey: issue.key,
+            payload: parsed.data, before: issue, result: "error", errorMessage,
+          });
+          return { content: [{ type: "text", text: errorMessage }], isError: true };
         }
       }
 
@@ -1751,8 +1885,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         issueFields as Record<string, unknown>,
       );
       if (rejected.length > 0 && Object.keys(allowed).length === 0) {
+        const errorMessage = `Field(s) not editable for your role: ${rejected.join(", ")}`;
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "quiktrack_update_issue", action: "UPDATE",
+          entityType: "issue", entityId: issue.id, entityKey: issue.key,
+          payload: parsed.data, before: issue, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: `Field(s) not editable for your role: ${rejected.join(", ")}` }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1788,7 +1929,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           workflowComments = res.comments ?? [];
         } catch (error: unknown) {
           const mapped = await transitionErrorContent(error, { issue: issueSnapshot, userId });
-          if (mapped) return mapped;
+          if (mapped) {
+            void logMcpAction({
+              orgId, userId, actorType, projectId,
+              tool: "quiktrack_update_issue", action: "UPDATE",
+              entityType: "issue", entityId: issue.id, entityKey: issue.key,
+              payload: parsed.data, before: issue, result: "error",
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
+            return mapped;
+          }
           throw error;
         }
       }
@@ -1846,6 +1996,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         actingAgentId,
       });
 
+      let customFieldChanges: { fieldName: string; oldValue: unknown; newValue: unknown }[] = [];
       if (customFields) {
         const res = await writeIssueValues({
           orgId,
@@ -1855,6 +2006,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           values: customFields,
         });
         if (res.ok) {
+          customFieldChanges = res.changes;
           for (const c of res.changes) {
             void recordIssueEvent({
               orgId,
@@ -1870,6 +2022,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           }
         }
       }
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "quiktrack_update_issue", action: "UPDATE",
+        entityType: "issue", entityId: issue.id, entityKey: issue.key,
+        payload: parsed.data, before: issue,
+        after: customFieldChanges.length ? { ...updated, customFieldChanges } : updated,
+        result: "success",
+      });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
   );
@@ -1962,8 +2122,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = addRemoteLinkInput.safeParse(args);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_remote_link", action: "CREATE",
+          entityType: "remote_link", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1978,6 +2145,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           type: parsed.data.type,
         },
         select: { id: true, url: true, title: true, type: true, metadata: true, createdAt: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "add_remote_link", action: "CREATE",
+        entityType: "remote_link", entityId: link.id, entityKey: null,
+        payload: { issueId: issue.id, ...parsed.data }, after: link, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(link) }] };
     },
@@ -2054,15 +2227,29 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       // the same issue named two different ways (e.g. id vs. key), not just
       // an exact literal match on the caller's raw input.
       if (inwardIssueId === outwardIssueId) {
-        return { content: [{ type: "text", text: "Cannot link an issue to itself." }], isError: true };
+        const errorMessage = "Cannot link an issue to itself.";
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "link_issues", action: "CREATE",
+          entityType: "issue_link", entityId: null, entityKey: null,
+          payload: { inwardIssueId, outwardIssueId, linkType }, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
       }
       const linkTypeDef = ISSUE_LINK_TYPES.find((t) => t.type === linkType);
       if (!linkTypeDef) {
+        const errorMessage = `Unknown linkType "${linkType}". Valid types: ${ISSUE_LINK_TYPES.map((t) => t.type).join(", ")}.`;
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "link_issues", action: "CREATE",
+          entityType: "issue_link", entityId: null, entityKey: null,
+          payload: { inwardIssueId, outwardIssueId, linkType }, result: "error", errorMessage,
+        });
         return {
           content: [
             {
               type: "text",
-              text: `Unknown linkType "${linkType}". Valid types: ${ISSUE_LINK_TYPES.map((t) => t.type).join(", ")}.`,
+              text: errorMessage,
             },
           ],
           isError: true,
@@ -2087,6 +2274,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           select: { id: true },
         }));
 
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "link_issues", action: "CREATE",
+        entityType: "issue_link", entityId: link.id, entityKey: null,
+        payload: { inwardIssueId, outwardIssueId, linkType: linkTypeDef.type },
+        after: { id: link.id, alreadyExisted: Boolean(existing) },
+        result: "success",
+      });
       return {
         content: [
           {

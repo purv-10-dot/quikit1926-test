@@ -6813,6 +6813,56 @@ model QtMcpAccessLog {
   @@schema("app_quiktrack")
 }
 
+/// QUIKTR-121 — one row per mutating MCP tool invocation, with the actual
+/// entity/payload/before-after diff/result. Distinct from QtMcpAccessLog
+/// above (QUIKTR-119), which logs permission GATE decisions only (allow/
+/// deny, no entity or diff data) and fires once or twice per call, before
+/// the tool's own work runs. This table fires exactly once per mutating
+/// tool call, from inside the tool handler, after the gates pass. Written
+/// by apps/quiktrack/lib/mcp/server.ts's write tools via
+/// apps/quiktrack/lib/mcp/actionLog.ts's logMcpAction(). See
+/// docs/mcp-action-log-schema.md for the read/write scope decision (reads
+/// stay covered by QtMcpAccessLog only — this table is mutations-only).
+model QtMcpActionLog {
+  id           String   @id @default(cuid())
+  orgId        String
+  userId       String
+  /// "user" | "agent" — always "agent" for MCP calls today; kept generic
+  /// in case a future non-MCP caller reuses this log.
+  actorType    String
+  /// "mcp" today; reserved for a future non-MCP caller of this same table.
+  source       String   @default("mcp")
+  projectId    String?
+  /// MCP tool name, e.g. "create_issue", "move_issue".
+  tool         String
+  /// "CREATE" | "UPDATE" | "MOVE" | "DELETE"
+  action       String
+  /// "issue" | "sprint" | "comment" | "worklog" | "remote_link" | "issue_link"
+  entityType   String
+  entityId     String?
+  /// Human-readable key when one exists, e.g. "QUIKTR-121". Null for
+  /// entities without one (sprint, comment, worklog, remote_link, issue_link).
+  entityKey    String?
+  /// Sanitized request params (see actionLog.ts's sanitize()).
+  payload      Json?
+  /// Field-level snapshot before the mutation. Null for pure creates.
+  before       Json?
+  /// Field-level snapshot after the mutation. Null when result = "error"
+  /// and the mutation never ran.
+  after        Json?
+  /// "success" | "error"
+  result       String
+  /// Present only when result = "error".
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([entityType, entityId])
+  @@schema("app_quiktrack")
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ QuikTrack RBAC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Two role layers sharing the SAME rule tables (QtRolePermission /
 // QtRoleNavigation):
