@@ -38,6 +38,42 @@ interface CaseTableProps {
   onColumns: (next: CaseColumnKey[]) => void;
 }
 
+/**
+ * Shared header for both the populated and empty states.
+ *
+ * Rendered in the empty case too, so an empty folder reads as "this folder is
+ * empty" rather than "the page failed to load" — and so you can still see WHERE
+ * you are while it is empty.
+ */
+function TableHeader({
+  sectionName,
+  total,
+  projectId,
+  columns,
+  onColumns,
+}: {
+  sectionName: string | null;
+  total: number;
+  projectId: string;
+  columns: CaseColumnKey[];
+  onColumns: (next: CaseColumnKey[]) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2.5">
+      <h2 className="min-w-0 truncate text-sm font-semibold text-gray-900">
+        {/* "All cases in this suite" spelled out: the old label said "All cases in
+            suite" while a FOLDER was named "All test cases", and the two read as
+            the same thing. */}
+        {sectionName ?? "All cases in this suite"}
+        <span className="ml-2 font-normal tabular-nums text-gray-400">
+          {total} {total === 1 ? "case" : "cases"}
+        </span>
+      </h2>
+      <ColumnsMenu projectId={projectId} visible={columns} onChange={onColumns} />
+    </div>
+  );
+}
+
 export function CaseTable({
   rows,
   loading,
@@ -74,39 +110,54 @@ export function CaseTable({
   }
 
   if (rows.length === 0) {
+    // Header stays put so the pane reads as "this folder is empty" rather than
+    // "the page failed to load", and so the location is still visible.
     return (
-      <div className="p-8">
-        <EmptyState
-          icon={FileText}
-          title="No test cases here"
-          message={
-            canCreate
-              ? "Add a case to describe what should be tested, then run it from a test run."
-              : "No cases have been added to this folder yet."
-          }
-          action={
-            canCreate ? { label: "New test case", onClick: onCreate } : undefined
-          }
+      <div className="flex h-full flex-col">
+        <TableHeader
+          sectionName={sectionName}
+          total={0}
+          projectId={projectId}
+          columns={columns}
+          onColumns={onColumns}
         />
+        <div className="flex flex-1 items-start justify-center px-6 py-12">
+          <div className="max-w-sm text-center">
+            <FileText className="mx-auto h-8 w-8 text-gray-300" />
+            <h3 className="mt-3 text-sm font-semibold text-gray-800">
+              {sectionName
+                ? `Nothing in “${sectionName}” yet`
+                : "This suite has no test cases yet"}
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-gray-500">
+              A test case describes one thing to check — the steps to follow and
+              what should happen. Once cases exist, you group them into a test run
+              to execute them.
+            </p>
+            {canCreate && (
+              <button
+                type="button"
+                onClick={onCreate}
+                className="mt-4 rounded-lg bg-accent-600 px-3 py-2 text-xs font-medium text-white hover:bg-accent-700"
+              >
+                Create the first test case
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2.5">
-        <h2 className="text-sm font-semibold text-gray-900">
-          {sectionName ?? "All cases in suite"}
-          <span className="ml-2 font-normal text-gray-400">
-            {total} {total === 1 ? "case" : "cases"}
-          </span>
-        </h2>
-        <ColumnsMenu
-          projectId={projectId}
-          visible={columns}
-          onChange={onColumns}
-        />
-      </div>
+      <TableHeader
+        sectionName={sectionName}
+        total={total}
+        projectId={projectId}
+        columns={columns}
+        onColumns={onColumns}
+      />
 
       <div className="flex-1 overflow-auto">
         <table className="w-full text-sm">

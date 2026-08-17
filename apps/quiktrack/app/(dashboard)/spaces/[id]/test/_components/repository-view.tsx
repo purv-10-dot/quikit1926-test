@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Layers, Plus } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
@@ -196,32 +196,35 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold text-gray-900">Test cases</h1>
-          <p className="text-xs text-gray-500">
-            Reusable cases organised in suites and folders. Execute them from a
-            test run.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2.5">
+        {/* Two tabs, not a heading: "Test cases" and "Test runs" are the two halves
+            of QuikTest, and the old header buried the runs link as a secondary
+            button so it read as an action rather than a place. */}
+        <nav className="flex items-center gap-1">
+          <span className="rounded-md bg-accent-50 px-2.5 py-1.5 text-[13px] font-medium text-accent-800">
+            Test cases
+          </span>
           <Link
             href={`/spaces/${projectId}/test/runs`}
-            className="rounded border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            className="rounded-md px-2.5 py-1.5 text-[13px] text-gray-600 hover:bg-gray-50 hover:text-gray-900"
           >
             Test runs
           </Link>
-          {canCreate && treeSuites.length > 0 && (
-            <Button
-              size="sm"
-              className="bg-accent-600 text-white hover:bg-accent-700"
-              onClick={openCreate}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              New test case
-            </Button>
-          )}
-        </div>
+        </nav>
+
+        {/* Only shown when there is somewhere to put a case. With no suite the
+            empty state's own button is the single call to action, so the two no
+            longer compete. */}
+        {canCreate && treeSuites.length > 0 && (
+          <Button
+            size="sm"
+            className="bg-accent-600 text-white hover:bg-accent-700"
+            onClick={openCreate}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            New test case
+          </Button>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -247,8 +250,31 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
         <div className="min-w-0 flex-1">
           {treeSuites.length === 0 && !suitesLoading ? (
-            <div className="p-8 text-sm text-gray-500">
-              Create a suite to start adding test cases.
+            // First-run state. Explains the two concepts in order rather than
+            // leaving one sentence floating in an empty pane.
+            <div className="flex h-full items-start justify-center px-6 py-12">
+              <div className="max-w-md text-center">
+                <Layers className="mx-auto h-8 w-8 text-gray-300" />
+                <h3 className="mt-3 text-sm font-semibold text-gray-800">
+                  Start with a suite
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  A <strong className="font-medium text-gray-700">suite</strong> is
+                  a collection of test cases, like Regression or Smoke. Inside it you
+                  can add <strong className="font-medium text-gray-700">folders</strong>{" "}
+                  to group cases by area, then execute them together as a{" "}
+                  <strong className="font-medium text-gray-700">test run</strong>.
+                </p>
+                {canEditSuite && (
+                  <button
+                    type="button"
+                    onClick={() => setPromptMode({ kind: "suite" })}
+                    className="mt-4 rounded-lg bg-accent-600 px-3 py-2 text-xs font-medium text-white hover:bg-accent-700"
+                  >
+                    Create your first suite
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <CaseTable
