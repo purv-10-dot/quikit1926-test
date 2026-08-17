@@ -115,7 +115,7 @@ test.describe("Phase 22 — scheduling: reads", () => {
     const api = await apiAs("tenantAdmin", { timeout: CEIL });
     const res = await GET(api, `/api/scheduling/classes/${MISSING}`);
     expect(res.status()).toBe(404);
-    expect(((await safeJson(res)) as { statusCode?: number }).statusCode).toBe(404);
+    expect(((await safeJson(res)) as { success?: boolean }).success).toBe(false);
     await api.dispose();
   });
 

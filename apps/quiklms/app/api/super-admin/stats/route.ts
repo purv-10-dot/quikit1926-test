@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
  * EVERY query here is org-scoped unless the caller is the platform OPERATOR.
  *
  * It used to run 14 unconditionally platform-wide queries behind nothing but
- * `requireRoles(actor, ['SUPER_ADMIN'])`. That was correct while SUPER_ADMIN meant
+ * `requireRoles(actor, ['ADMIN'])`. That was correct while ADMIN meant
  * "the operator" and nothing else — but an org's founding admin now resolves to that
  * role (lib/auth/founding-admin.ts), so the check passed for them too and this
  * endpoint answered with every tenant, user, master course and progress row on the
@@ -18,10 +18,54 @@ import { db } from '@/lib/db';
  * `orgScope` returns undefined for the operator — unscoped, byte-for-byte the old
  * behaviour — and the caller's orgId for everyone else. `LmsTenant.id === orgId`, so
  * the tenant filters are PK hits.
+ *
+ * QUERY BUDGET — why this reads as aggregates awaited one at a time.
+ *
+ * This used to be fifteen `count()` / `findMany()` calls in a single `Promise.all`.
+ * On Vercel the Prisma pool is ONE connection (`connection_limit: 1`), so those
+ * fifteen did not run concurrently — fourteen queued on the single connection while
+ * the clock on `pool_timeout` (10s) ran, and the tail of the batch died with
+ *
+ *     P2024 — Timed out fetching a new connection from the connection pool
+ *     (Current connection pool timeout: 10, connection limit: 1)
+ *
+ * which surfaced in the console as "Failed to load dashboard data". It was
+ * intermittent, because whether the batch cleared 10s depended on what else shared
+ * the instance — notably the RBAC seeding `GET /api/me` runs on a cold lambda, which
+ * holds that one connection for several chunked `createMany`s.
+ *
+ * Two changes, both of which matter on a one-connection pool:
+ *   1. The eleven per-status/per-type `count()` calls collapse into four `groupBy`
+ *      aggregates — one round trip per model instead of three or four. Fifteen
+ *      queries become seven.
+ *   2. They are awaited SEQUENTIALLY. Queued time is what `pool_timeout` measures,
+ *      so a query that waits behind six others can breach it however fast the
+ *      database is; issuing them one at a time means each takes the free connection
+ *      immediately and waits ~0. Against a healthy multi-connection pool this costs
+ *      a few hundred ms of wall clock, which is the right trade for a tile grid.
+ *
+ * Raising `connection_limit` on the deployed `DATABASE_URL` is still the systemic
+ * fix — every other fan-out route shares this ceiling. This route no longer depends
+ * on it.
  */
+
+/** Total across every bucket — replaces the standalone `count()` each pair used. */
+function sumCounts(rows: readonly { _count: { _all: number } }[]): number {
+  return rows.reduce((n, r) => n + r._count._all, 0);
+}
+
+/** One bucket's count, 0 when the group is absent (no rows in that state). */
+function bucket<K extends string, T extends string>(
+  rows: readonly ({ _count: { _all: number } } & Record<K, T>)[],
+  key: K,
+  value: T,
+): number {
+  return rows.find((r) => r[key] === value)?._count._all ?? 0;
+}
+
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
 
   // The orgs this caller may see: their own plus every org they onboarded. NOT a single
   // `id === actor.orgId` — `onboardTenant` gives each new tenant its own org id, so that
@@ -45,44 +89,65 @@ export const GET = route(async (req) => {
   ).map((t) => t.id);
   const scopedToTenants = { id: { in: tenantIds } };
 
-  const [
-    tenantTotal, tenantCorporate, tenantSchool,
-    tenantActive, tenantPaused,
-    recentTenants,
-    userTotal, roleGroups, recentUsers,
-    courseTotal, coursePublished, courseDraft,
-    progressTotal, progressCompleted, progressInProgress,
-  ] = await Promise.all([
-    db.lmsTenant.count({ where: tenantFilter }),
-    db.lmsTenant.count({ where: { ...tenantFilter, tenantType: 'corporate' } }),
-    db.lmsTenant.count({ where: { ...tenantFilter, tenantType: 'school' } }),
-    db.org.count({ where: { ...scopedToTenants, status: 'active' } }),
-    db.org.count({ where: { ...scopedToTenants, status: { not: 'active' } } }),
-    db.lmsTenant.findMany({
-      where: tenantFilter,
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: { id: true, name: true, subdomain: true, tenantType: true, officialEmail: true, createdAt: true },
-    }),
-    db.lmsUser.count({ where: { ...orgFilter, role: { not: 'SUPER_ADMIN' } } }),
-    db.lmsUser.groupBy({
-      by: ['role'],
-      where: { ...orgFilter, role: { not: 'SUPER_ADMIN' } },
-      _count: { _all: true },
-    }),
-    db.lmsUser.findMany({
-      where: { ...orgFilter, role: { not: 'SUPER_ADMIN' } },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      select: { id: true, firstName: true, lastName: true, email: true, role: true, createdAt: true },
-    }),
-    db.lmsMasterCourse.count({ where: masterFilter }),
-    db.lmsMasterCourse.count({ where: { ...masterFilter, status: 'Published' } }),
-    db.lmsMasterCourse.count({ where: { ...masterFilter, status: 'Draft' } }),
-    db.lmsProgress.count({ where: orgFilter }),
-    db.lmsProgress.count({ where: { ...orgFilter, status: 'Completed' } }),
-    db.lmsProgress.count({ where: { ...orgFilter, status: 'InProgress' } }),
-  ]);
+  // Sequential on purpose — see the query-budget note above. Every read below is an
+  // indexed aggregate, so the added latency is a few hundred ms at most.
+  const tenantTypeGroups = await db.lmsTenant.groupBy({
+    by: ['tenantType'],
+    where: tenantFilter,
+    _count: { _all: true },
+  });
+  const orgStatusGroups = await db.org.groupBy({
+    by: ['status'],
+    where: scopedToTenants,
+    _count: { _all: true },
+  });
+  const recentTenants = await db.lmsTenant.findMany({
+    where: tenantFilter,
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: { id: true, name: true, subdomain: true, tenantType: true, officialEmail: true, createdAt: true },
+  });
+  const roleGroups = await db.lmsUser.groupBy({
+    by: ['role'],
+    where: { ...orgFilter, role: { not: 'ADMIN' } },
+    _count: { _all: true },
+  });
+  const recentUsers = await db.lmsUser.findMany({
+    where: { ...orgFilter, role: { not: 'ADMIN' } },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+    select: { id: true, firstName: true, lastName: true, email: true, role: true, createdAt: true },
+  });
+  const courseStatusGroups = await db.lmsMasterCourse.groupBy({
+    by: ['status'],
+    where: masterFilter,
+    _count: { _all: true },
+  });
+  const progressStatusGroups = await db.lmsProgress.groupBy({
+    by: ['status'],
+    where: orgFilter,
+    _count: { _all: true },
+  });
+
+  const tenantTotal = sumCounts(tenantTypeGroups);
+  const tenantCorporate = bucket(tenantTypeGroups, 'tenantType', 'corporate');
+  const tenantSchool = bucket(tenantTypeGroups, 'tenantType', 'school');
+
+  // `paused` stays "every status that is not active", exactly as the `{ not: 'active' }`
+  // count it replaces — a third status must keep landing here rather than vanishing.
+  const tenantActive = bucket(orgStatusGroups, 'status', 'active');
+  const tenantPaused = sumCounts(orgStatusGroups) - tenantActive;
+
+  // Same `where` as the groups, so the sum IS the count this used to ask for separately.
+  const userTotal = sumCounts(roleGroups);
+
+  const courseTotal = sumCounts(courseStatusGroups);
+  const coursePublished = bucket(courseStatusGroups, 'status', 'Published');
+  const courseDraft = bucket(courseStatusGroups, 'status', 'Draft');
+
+  const progressTotal = sumCounts(progressStatusGroups);
+  const progressCompleted = bucket(progressStatusGroups, 'status', 'Completed');
+  const progressInProgress = bucket(progressStatusGroups, 'status', 'InProgress');
 
   const completionRate =
     progressTotal > 0 ? Math.round((progressCompleted / progressTotal) * 100) : 0;

@@ -689,10 +689,22 @@ export async function generateCertificateForCompletion(orgId: string, learnerId:
   );
   const active = sorted.find((c) => c.isActive && hasBase64(c)) || sorted.find((c) => c.isActive) || sorted.find((c) => hasBase64(c)) || sorted[0] || null;
 
-  // Pass-criteria snapshot
-  const certScore = typeof progress.scorePercentage === 'number'
-    ? progress.scorePercentage
-    : typeof progress.quizScore === 'number' ? progress.quizScore : undefined;
+  // Pass-criteria snapshot — frozen onto the issued row and re-checked at
+  // download time by `downloadGateBlocked`.
+  //
+  // ONLY `quizScore` may feed it. `scorePercentage` is lesson-COMPLETION
+  // percent — `progress-service.ts:409` writes `courseProgress.percentage`
+  // into it — not a grade, and it is set for every learner who finishes a
+  // course, including courses that have no quiz at all. Reading it here stamped
+  // a real number into `score` while `isPassed` was still at its schema default
+  // (`Boolean @default(false)`, written only by the grader), so `passed` came
+  // out `false` on a certificate the issuance guard above had just decided to
+  // award — and because the snapshot is never recomputed, that certificate was
+  // refused by the download gate permanently.
+  //
+  // `quizScore` is the same field the issuance guard reads (`:644`), so the two
+  // decisions can no longer disagree.
+  const certScore = typeof progress.quizScore === 'number' ? progress.quizScore : undefined;
   let certPassingScore: number | undefined;
   try {
     const latestAttempt = await db.lmsQuizAttempt.findFirst({
@@ -935,12 +947,27 @@ export function toPublicVerification(cert: Record<string, unknown> | null) {
   };
 }
 
-/** Download permission gate result — used by the authenticated download route. */
+/**
+ * Download permission gate result — used by the authenticated download route.
+ *
+ * A block requires a GRADED RESULT to point at. With no `score` on the row the
+ * course carried no assessment, so there is nothing the learner could have
+ * failed and the certificate stands: refusing it would revoke a certificate the
+ * issuer already awarded, and the learner has no way back — the snapshot is
+ * frozen at issue time and no retake rewrites it.
+ *
+ * That `score == null` guard is what makes the gate safe now that the snapshot
+ * only records real quiz results (see `generateCertificateForCompletion`).
+ * Rows written before that fix carry lesson-completion percent in `score` and a
+ * spurious `passed: false`; they are repaired by
+ * `scripts/repair-certificate-pass-snapshot.ts`, not by loosening this gate.
+ */
 export function downloadGateBlocked(issued: { passed: boolean | null; score: number | null; passingScore: number | null } | null): boolean {
   if (!issued) return false;
+  if (typeof issued.score !== 'number') return false;
   return (
     issued.passed === false ||
-    (typeof issued.score === 'number' && typeof issued.passingScore === 'number' && issued.score < issued.passingScore)
+    (typeof issued.passingScore === 'number' && issued.score < issued.passingScore)
   );
 }
 

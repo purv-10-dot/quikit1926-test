@@ -17,6 +17,7 @@ import type { LmsClassStatus as ClassStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { BadRequest, NotFound } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
+import { ensureClassMeeting } from './class-invitations-service';
 
 type ScheduleSlot = { dayOfWeek: number; startTime: string; endTime: string; location?: string };
 
@@ -331,15 +332,47 @@ export async function startClass(orgId: string, classId: string) {
     /* non-blocking — never fail starting a class over escalation bookkeeping */
   }
 
+  /**
+   * Make sure the class HAS a room before announcing it.
+   *
+   * `sendJoinLinkToStudents` opens with `if (!meeting?.joinUrl) return`, and
+   * nothing on the scheduling path had ever created a meeting — one existed only
+   * if a teacher had separately opened the provider picker on this exact class.
+   * So starting a class from anywhere else (the admin console, the auto-start in
+   * the teacher's video flow racing ahead of meeting creation) marked it
+   * `in_progress` and notified nobody, silently. Provisioning it here means the
+   * start transition can no longer produce a live class with no way in.
+   */
+  let live = updated;
+  try {
+    const meeting = await ensureClassMeeting(orgId, updated);
+    if (meeting && updated.meetingId !== meeting.id) live = { ...updated, meetingId: meeting.id };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[scheduling] could not provision a meeting for class', classId, err);
+  }
+
   // Send the meeting join link to every student in the batch — port of
   // `sendJoinLinkToStudents` (`scheduling.service.ts:436-441,469-553`). Kept
   // inline (not deferred): the teacher pressing Start IS the trigger, and
   // without it a student is never told the class went live.
   try {
-    await sendJoinLinkToStudents(updated);
+    await sendJoinLinkToStudents(live);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[scheduling] failed to send join links for class', classId, err);
+  }
+
+  // …and to the teacher. The legacy notified students only, which held while the
+  // teacher was necessarily the one pressing Start from inside the video flow.
+  // An admin can start a class too (and the batch invitation now hands out a link
+  // before anyone opens the app), so the person expected to TEACH it must get the
+  // host link rather than hear about it from a student.
+  try {
+    await sendJoinLinkToTeacher(live);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[scheduling] failed to send the host link for class', classId, err);
   }
 
   // Punctuality scoring (preserved).
@@ -355,7 +388,10 @@ export async function startClass(orgId: string, classId: string) {
     /* non-blocking */
   }
 
-  const [shaped] = await hydrateClasses([updated], false);
+  // Shaped from `live`, not `updated`: the response carries the `meetingId` that
+  // was just provisioned, so the caller's UI can offer the join link without a
+  // second round trip (the teacher's video flow reads it straight back).
+  const [shaped] = await hydrateClasses([live], false);
   return shaped;
 }
 
@@ -459,6 +495,76 @@ async function sendJoinLinkToStudents(cls: {
               </div>
               ${password ? `<p style="font-size: 12px; color: #888; text-align: center;">Meeting Password: <strong>${password}</strong></p>` : ''}
               <p style="font-size: 12px; color: #888; text-align: center;">If the button doesn't work, copy this link: ${joinUrl}</p>
+            </div>
+          </div>
+        `,
+      ),
+    ),
+  );
+}
+
+/**
+ * The same "class is live" notice, sent to the teacher with the HOST link.
+ *
+ * Deliberately separate from `sendJoinLinkToStudents` rather than folded into it:
+ * that function is a documented 1:1 port and its recipients are the legacy's, and
+ * the teacher needs a different link (`hostUrl`, which starts the room rather
+ * than queueing in it) and different wording. Skips silently when the class has
+ * no meeting or the teacher has no address — the same contract as its sibling.
+ */
+async function sendJoinLinkToTeacher(cls: {
+  id: string;
+  batchId: string;
+  teacherId: string;
+  substituteTeacherId?: string | null;
+  title: string;
+  startTime: Date;
+  meetingId: string | null;
+}): Promise<void> {
+  const meeting = cls.meetingId
+    ? await db.lmsMeeting.findUnique({ where: { id: cls.meetingId } })
+    : await db.lmsMeeting.findFirst({ where: { scheduledClassId: cls.id } });
+  if (!meeting?.joinUrl) return;
+
+  // The substitute is the one actually teaching when one is assigned, so they get
+  // the host link too — a substitute with no way into the room is the same bug.
+  const ids = [cls.teacherId, cls.substituteTeacherId].filter(Boolean) as string[];
+  const teachers = await db.lmsUser.findMany({
+    where: { id: { in: ids }, isActive: true },
+    select: { firstName: true, email: true },
+  });
+  if (!teachers.length) return;
+
+  const batch = await db.lmsBatch.findUnique({
+    where: { id: cls.batchId },
+    select: { name: true, subject: true },
+  });
+  const hostUrl = meeting.hostUrl || meeting.joinUrl;
+  const classTime = formatClassTime(cls.startTime);
+
+  await Promise.all(
+    teachers.map((t) =>
+      trySend(
+        t.email,
+        `Your class is live: ${cls.title}`,
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #0ea5e9 0%, #4f46e5 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">Your Class is Live</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px; color: #333;">Hi ${t.firstName || 'there'},</p>
+              <p style="font-size: 14px; color: #555;"><strong>${cls.title}</strong> has started. Your students have been sent the join link.</p>
+              <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #4f46e5;">
+                <p style="margin: 5px 0; color: #555;"><strong>Batch:</strong> ${batch?.name || 'N/A'}</p>
+                <p style="margin: 5px 0; color: #555;"><strong>Subject:</strong> ${batch?.subject || 'N/A'}</p>
+                <p style="margin: 5px 0; color: #555;"><strong>Time:</strong> ${classTime}</p>
+              </div>
+              <div style="text-align: center; margin: 25px 0;">
+                <a href="${hostUrl}" style="background: linear-gradient(135deg, #0ea5e9 0%, #4f46e5 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">Open the classroom</a>
+              </div>
+              ${meeting.password ? `<p style="font-size: 12px; color: #888; text-align: center;">Meeting Password: <strong>${meeting.password}</strong></p>` : ''}
+              <p style="font-size: 12px; color: #888; text-align: center;">Remember to mark attendance once the session ends.</p>
             </div>
           </div>
         `,

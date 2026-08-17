@@ -45,14 +45,14 @@ beforeEach(() => {
 describe('requireAuth — isActive enforcement', () => {
   it('rejects a deactivated LMS user with 403 even though the session is valid', async () => {
     h.getServerSession.mockResolvedValue(session);
-    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', secondaryRole: null, isActive: false });
+    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', isActive: false });
 
     await expect(requireAuth()).rejects.toMatchObject({ statusCode: 403 });
   });
 
   it('allows an active LMS user', async () => {
     h.getServerSession.mockResolvedValue(session);
-    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', secondaryRole: null, isActive: true });
+    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', isActive: true });
 
     const user = await requireAuth();
     expect(user.id).toBe('u1');
@@ -78,7 +78,7 @@ describe('requireAuth — isActive enforcement', () => {
 describe('requireAuth — central entitlement gate', () => {
   beforeEach(() => {
     h.getServerSession.mockResolvedValue(session);
-    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', secondaryRole: null, isActive: true });
+    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', isActive: true });
   });
 
   it('rejects a user with no QuikLMS entitlement, even with a valid session', async () => {
@@ -102,7 +102,7 @@ describe('requireAuth — central entitlement gate', () => {
   });
 
   it('checks isActive BEFORE entitlement — a deactivated user gets the account message', async () => {
-    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', secondaryRole: null, isActive: false });
+    h.userFindUnique.mockResolvedValue({ role: 'LEARNER', isActive: false });
     h.hasCentralAppAccess.mockResolvedValue(false);
 
     await expect(requireAuth()).rejects.toMatchObject({

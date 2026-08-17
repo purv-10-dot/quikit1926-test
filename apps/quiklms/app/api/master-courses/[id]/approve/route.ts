@@ -2,10 +2,10 @@ import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
 
-// POST /api/master-courses/:id/approve — SUPER_ADMIN
+// POST /api/master-courses/:id/approve — ADMIN
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
-  const course = await svc.approve(params!.id, actor.id);
+  requireRoles(actor, ['ADMIN']);
+  const course = await svc.approve(actor, params!.id);
   return json({ success: true, data: course, message: 'Course approved and published successfully' });
 });

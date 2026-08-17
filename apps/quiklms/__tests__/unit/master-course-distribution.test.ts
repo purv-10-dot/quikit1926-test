@@ -41,6 +41,7 @@ vi.mock('@/lib/auth/context', () => ({
   requireAuth: h.requireAuth,
   requireRoles: vi.fn(),
   userHasRole: (u: { role?: string }, r: string) => u?.role === r,
+  isPlatformOperator: (u: { isSuperAdmin?: boolean }) => u?.isSuperAdmin === true,
 }));
 vi.mock('@/lib/db', () => ({
   db: {
@@ -64,6 +65,8 @@ import { POST as publishRoute } from '@/app/api/master-courses/[id]/publish/rout
 const AUTHOR = 'org-author';
 const OTHER = 'org-other';
 const COURSE = { id: 'c1', isMaster: true, modules: [{ id: 'm1', subModules: [] }], submittedByTenantId: AUTHOR };
+/** The platform operator — bypasses the org-ownership check, unrelated to what this suite tests. */
+const OPERATOR = { id: 'su', role: 'ADMIN' as const, orgId: null, isSuperAdmin: true } as never;
 
 /** The org ids actually written to the join table. */
 const distributedTo = (): string[] => {
@@ -80,39 +83,39 @@ beforeEach(() => {
   h.selDeleteMany.mockResolvedValue({ count: 0 });
   h.selCreateMany.mockResolvedValue({ count: 0 });
   h.selFindMany.mockResolvedValue([]);
-  h.requireAuth.mockResolvedValue({ id: 'su', role: 'SUPER_ADMIN', orgId: null });
+  h.requireAuth.mockResolvedValue({ id: 'su', role: 'ADMIN', orgId: null, isSuperAdmin: true });
 });
 
 describe('publish keeps the authoring tenant', () => {
   it('re-adds the author when the caller publishes to an empty list', async () => {
-    await publish('c1', []);
+    await publish(OPERATOR, 'c1', []);
     expect(distributedTo()).toEqual([AUTHOR]);
   });
 
   it('re-adds the author when the caller publishes to OTHER tenants only', async () => {
-    await publish('c1', [OTHER]);
+    await publish(OPERATOR, 'c1', [OTHER]);
     expect(distributedTo()).toEqual([OTHER, AUTHOR]);
   });
 
   it('does not duplicate the author when already present', async () => {
-    await publish('c1', [AUTHOR, OTHER]);
+    await publish(OPERATOR, 'c1', [AUTHOR, OTHER]);
     expect(distributedTo()).toEqual([AUTHOR, OTHER]);
   });
 
   it('de-duplicates a repeated tenant id', async () => {
-    await publish('c1', [OTHER, OTHER]);
+    await publish(OPERATOR, 'c1', [OTHER, OTHER]);
     expect(distributedTo()).toEqual([OTHER, AUTHOR]);
   });
 
   it('leaves a super-admin-authored course (no author tenant) alone', async () => {
     h.masterFindUnique.mockResolvedValue({ submittedByTenantId: null });
-    await publish('c1', [OTHER]);
+    await publish(OPERATOR, 'c1', [OTHER]);
     expect(distributedTo()).toEqual([OTHER]);
   });
 
   it('still refuses to publish a course with no modules', async () => {
     h.masterFindFirst.mockResolvedValue({ ...COURSE, modules: [] });
-    await expect(publish('c1', [OTHER])).rejects.toThrow(/without modules/i);
+    await expect(publish(OPERATOR, 'c1', [OTHER])).rejects.toThrow(/without modules/i);
   });
 });
 

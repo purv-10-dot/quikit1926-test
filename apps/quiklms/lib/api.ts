@@ -13,11 +13,32 @@
 // matches the root exactly — it does not make every route public.
 const PUBLIC_PATHS = ['/', '/login', '/verify-certificate', '/design'];
 
-export interface ApiError {
+/**
+ * Thrown for any non-2xx response. `status` comes from the transport layer's
+ * own `res.status` — never re-derived from the body — which is the one place
+ * this number cannot drift from what the server actually sent.
+ *
+ * `statusCode` is a temporary, IN-MEMORY-ONLY alias (never serialized to the
+ * wire — it's a property on the thrown JS object, not a response body field)
+ * kept so existing `.statusCode` readers migrate on their own schedule.
+ * @deprecated read `.status`, not `.statusCode`. Remove once a repo-wide grep
+ * for `.statusCode` outside `lib/http.ts`'s own internal (caught-error) uses
+ * comes back empty.
+ */
+export class ApiClientError extends Error {
+  status: number;
+  /** Alias of `.message` — kept for call sites that read `.error`. */
+  error: string;
+  /** @deprecated alias of `.status` — see class doc comment. */
   statusCode: number;
-  message: string;
-  error?: string;
-  validationErrors?: { field: string; message: string }[];
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.error = message;
+    this.statusCode = status;
+  }
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -34,7 +55,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const isPublic = PUBLIC_PATHS.some((x) => p === x || p.startsWith(`${x}/`));
     if (!isPublic) {
       // Session expired / revoked → re-authenticate through centralized SSO.
-      localStorage.removeItem('qs_role');
       window.location.href = '/login';
       return null as T;
     }
@@ -42,7 +62,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw data as ApiError;
+  if (!res.ok) {
+    const message = (data && typeof data === 'object' && 'error' in data && typeof data.error === 'string')
+      ? data.error
+      : 'Request failed';
+    throw new ApiClientError(res.status, message);
+  }
   return data as T;
 }
 

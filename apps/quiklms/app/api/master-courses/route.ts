@@ -28,7 +28,7 @@ const createMasterCourseSchema = z.object({
   estimatedDuration: z.number().nullish(),
   modules: z.array(z.unknown()).optional(),
   settings: z.record(z.unknown()).nullish(),
-  // Honoured only on the SUPER_ADMIN path; the tenant branches below overwrite it.
+  // Honoured only on the ADMIN path; the tenant branches below overwrite it.
   status: z.enum([
     'Draft', 'Published', 'Archived', 'PendingTenantApproval',
     'RejectedByTenantAdmin', 'PendingApproval', 'Rejected', 'Resubmitted',
@@ -36,15 +36,15 @@ const createMasterCourseSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
 });
 
-// POST /api/master-courses — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/master-courses — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = (await parseBody(req, createMasterCourseSchema)) as Record<string, unknown>;
   const orgId = actor.orgId ?? undefined;
 
   // Fail CLOSED. A tenant-scoped actor with no orgId used to slip past both
-  // branches below and land on the SUPER_ADMIN path, where `dto.status` is
+  // branches below and land on the ADMIN path, where `dto.status` is
   // honored from the request body as-is and `selectedTenants` is never forced —
   // so a TENANT_ADMIN/SUB_ADMIN could self-publish an unscoped master course.
   // `getAuthContext` currently guarantees a non-null orgId, which makes this
@@ -73,10 +73,10 @@ export const POST = route(async (req) => {
   return json({ success: true, data: course, message });
 });
 
-// GET /api/master-courses — SUPER_ADMIN
+// GET /api/master-courses — ADMIN
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const data = await svc.enrichCoursesWithPresignedUrls(await svc.findAll(orgScope(actor)));
   return json({ success: true, data });
 });

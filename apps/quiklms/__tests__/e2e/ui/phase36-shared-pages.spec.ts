@@ -176,7 +176,7 @@ test.describe("Phase 36 — /login for an already-authenticated user", () => {
    * builds `createMiddleware({ loginRoute: '/login', ... })` without a
    * `postLoginRoute`, and packages/auth/middleware.ts:226 then falls back to a
    * hard-coded `"/dashboard"` for any authenticated request to the login route.
-   * Every role — not just SUPER_ADMIN — is therefore bounced to the super-admin
+   * Every role — not just ADMIN — is therefore bounced to the super-admin
    * dashboard, whose XHRs 403 for everyone else.
    */
   const LANDING: Record<RoleKey, string> = {

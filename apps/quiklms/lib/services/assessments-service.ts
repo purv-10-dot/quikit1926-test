@@ -73,9 +73,9 @@ export function redactAnswerKey(assessment: AnyRec): AnyRec {
 }
 
 /** Staff author and grade, so they keep the key; everyone else must not see it. */
-export function shouldRedactAnswerKey(role: string, secondaryRole?: string | null): boolean {
-  const staff = ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER'];
-  return !staff.includes(role) && !(secondaryRole && staff.includes(secondaryRole));
+export function shouldRedactAnswerKey(role: string): boolean {
+  const staff = ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER'];
+  return !staff.includes(role);
 }
 
 export async function create(orgId: string, dto: AnyRec) {

@@ -14,7 +14,7 @@ import {
 import { optionalEnv } from '@/lib/env';
 
 /**
- * POST /api/transcription/generate-captions — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * POST /api/transcription/generate-captions — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Port of the legacy `TranscriptionService` (`src/transcription/transcription.service.ts`):
  * read the lesson's media out of object storage, run it through OpenAI Whisper
@@ -197,7 +197,7 @@ function findMasterResource(modules: AnyRec[], lessonId: string): AnyRec | null 
 
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, schema);
 
   if (!dto.courseId || !dto.lessonId) throw BadRequest('courseId and lessonId are required');

@@ -176,14 +176,12 @@ describe('error surfacing', () => {
     );
   });
 
-  it('renders field-by-field validationErrors — the shape lib/http.ts actually emits', async () => {
-    // The legacy filter emitted `errors`; this app emits `validationErrors`. The
-    // wizard checks `errors || validationErrors`, and it is that fallback that
-    // keeps the detailed display working here.
-    h.post.mockRejectedValue({
-      message: 'Validation failed',
-      validationErrors: [{ field: 'officialEmail', message: 'Invalid email' }],
-    });
+  it('renders a zod validation failure as the one joined string lib/http.ts emits', async () => {
+    // Platform-standard envelope: `{success:false, error}` — no structured
+    // per-field array anymore. The server joins every offending field into one
+    // string (`"field: message; field2: message2"`), and the wizard just
+    // renders whatever string `.message`/`.error` carries.
+    h.post.mockRejectedValue({ error: 'officialEmail: Invalid email' });
     await completeWizard().catch(() => {});
     await waitFor(() => expect(screen.getByText(/officialEmail: Invalid email/)).toBeTruthy());
   });

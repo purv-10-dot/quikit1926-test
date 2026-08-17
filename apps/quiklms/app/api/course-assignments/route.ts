@@ -3,16 +3,16 @@ import { requireAuth, requireRoles, tenantWhere } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 
 // GET /api/course-assignments — list this tenant's course assignments.
-// Used by the tenant-admin Course Assignments page. SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN.
+// Used by the tenant-admin Course Assignments page. ADMIN | TENANT_ADMIN | SUB_ADMIN.
 // No tenant-wide list helper exists in course-assignments-service, so we query
 // directly here, scoped by tenantWhere(actor), and enrich with course titles +
 // target (user/group) names so the page can render without extra round-trips.
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
 
   // Non-super-admins must be scoped to a tenant.
-  if (user.role !== 'SUPER_ADMIN' && !user.orgId) throw BadRequest('Tenant ID is required');
+  if (user.role !== 'ADMIN' && !user.orgId) throw BadRequest('Tenant ID is required');
 
   const assignments = await db.lmsCourseAssignment.findMany({
     where: tenantWhere(user),

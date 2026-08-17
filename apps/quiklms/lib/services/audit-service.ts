@@ -1,5 +1,5 @@
 /**
- * Audit service — ported from AuditService (Prisma). SUPER_ADMIN / global scope.
+ * Audit service — ported from AuditService (Prisma). ADMIN / global scope.
  *
  * Storage usage is summed from MasterCourse.modules JSON (3-tier nested:
  * modules[].subModules[].resources[].fileSize) — computed in JS after fetching the
@@ -31,7 +31,7 @@ function sumModuleFileSizes(modules: unknown): number {
 /**
  * @param orgIds The orgs this caller may see — pass `await visibleOrgIds(actor)`.
  *   `undefined` is platform-wide and for the operator alone. Unscoped, this told any
- *   holder of the SUPER_ADMIN role the platform's total storage and tenant count.
+ *   holder of the ADMIN role the platform's total storage and tenant count.
  */
 export async function getGlobalStorageUsage(orgIds?: string[]) {
   const courses = await db.lmsMasterCourse.findMany({
@@ -69,7 +69,7 @@ export interface TenantStorageRow {
 /**
  * @param orgIds The orgs this caller may see — pass `await visibleOrgIds(actor)`.
  *   Unscoped, this returned a row per tenant (org name + storage + last activity) to any
- *   holder of the SUPER_ADMIN role, which is a directory of every customer on the platform.
+ *   holder of the ADMIN role, which is a directory of every customer on the platform.
  */
 export async function getTenantStorageBreakdown(orgIds?: string[]): Promise<TenantStorageRow[]> {
   // Per-tenant storage from mastercourses: combine selectedTenants[] and submittedByTenantId.
