@@ -58,10 +58,27 @@ describe("POST /api/oauth/register", () => {
     expect((await res.json()).error).toBe("invalid_redirect_uri");
   });
 
-  it("rejects a missing resource", async () => {
-    const res = await POST(registerReq({ redirect_uris: ["http://localhost:*/callback"] }));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("invalid_client_metadata");
+  it("registers a client with no resource declared (unbound appId) — e.g. Claude Desktop", async () => {
+    mockDb.oAuthClient.create.mockResolvedValue({
+      id: "oc-dyn-unbound",
+      clientId: "mcp-claude-desktop-x",
+      createdAt: new Date(),
+    } as never);
+
+    const res = await POST(
+      registerReq({
+        redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+        client_name: "Claude Desktop",
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.client_id).toBe("mcp-claude-desktop-x");
+    expect(mockDb.app.findMany).not.toHaveBeenCalled();
+
+    const createCall = mockDb.oAuthClient.create.mock.calls[0]?.[0];
+    expect(createCall?.data.appId).toBeNull();
   });
 
   it("rejects a resource that matches no registered app", async () => {
