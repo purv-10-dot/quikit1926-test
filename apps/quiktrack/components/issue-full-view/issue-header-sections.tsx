@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { MentionItem } from "@/components/editor/mention";
+import { IssueTitleEditor } from "@/components/issue-title-editor";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";
 import { ChildWorkItems } from "./child-work-items";
@@ -50,6 +51,18 @@ interface Props {
   onPatch: (data: Record<string, unknown>) => Promise<void>;
   /** People list for `@`-mentions in the description editor. */
   mentions?: MentionItem[];
+  /**
+   * Whether the viewer may edit. Defaults FALSE: the title becomes editable only
+   * when the caller has actually checked, so a page that forgets to pass it stays
+   * read-only rather than silently offering an edit the API will reject.
+   */
+  canUpdate?: boolean;
+  /**
+   * Rendered in the action row under the title — the apps `+` menu. Passed in rather
+   * than built here so this component stays presentational and does not need to know
+   * about localStorage or which apps exist.
+   */
+  appsMenu?: React.ReactNode;
 }
 
 /**
@@ -65,6 +78,8 @@ export function IssueHeaderSections({
   typeIcon: T,
   onPatch,
   mentions,
+  canUpdate = false,
+  appsMenu,
 }: Props) {
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const typeMenuRef = useRef<HTMLDivElement>(null);
@@ -203,10 +218,19 @@ export function IssueHeaderSections({
         <WatchButton issueId={issue.id} />
       </div>
 
-      {/* Title */}
-      <div className="mt-5 mb-5">
-        <h1 className="text-2xl font-semibold text-gray-900 leading-tight">{issue.title}</h1>
+      {/* Title — shared editor, so the ✓/✕ behaviour is identical to the drawer. */}
+      <div className="mt-5">
+        <IssueTitleEditor
+          value={issue.title}
+          canUpdate={canUpdate}
+          onSave={(next) => void onPatch({ title: next })}
+        />
       </div>
+
+      {/* Action row — the apps `+` lives here on the full page too, so the panel can
+          be attached without opening the drawer. */}
+      {appsMenu && <div className="mb-5 mt-2 flex items-center gap-2">{appsMenu}</div>}
+      {!appsMenu && <div className="mb-5" />}
 
       {/* Description (collapsible) */}
       <IssueDescriptionSection

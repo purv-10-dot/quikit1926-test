@@ -48,6 +48,15 @@ import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
+import { QuikTestResultsPanel } from "@/components/issue-full-view/quiktest-results-panel";
+import { IssueTitleEditor } from "@/components/issue-title-editor";
+import {
+  IssueAppsMenu,
+  loadIssueApps,
+  onIssueAppsChanged,
+  saveIssueApps,
+  type IssueApp,
+} from "@/components/issue-apps-menu";
 import { DescriptionAttachments } from "@/components/description-attachments";
 import { RichTextView } from "@/components/rich-text-view";
 import { WorkflowStatusControl } from "@/components/workflow-status-control";
@@ -309,8 +318,10 @@ export function EditIssueModal({
   const [releases, setReleases] = useState<ReleaseOption[]>([]);
   const [issueReleaseIds, setIssueReleaseIds] = useState<string[]>([]);
 
+  // `title` is still tracked because other parts of this component read it (the
+  // header, and the subtask-create flow). The editing FLAG moved into
+  // IssueTitleEditor, which owns its own draft state.
   const [title, setTitle] = useState("");
-  const [titleEditing, setTitleEditing] = useState(false);
   const [description, setDescription] = useState("");
   const [descEditing, setDescEditing] = useState(false);
   const [statusId, setStatusId] = useState("");
@@ -379,6 +390,12 @@ export function EditIssueModal({
   const [loading, setLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [subtasksOpen, setSubtasksOpen] = useState(true);
+
+  // Apps attached to this work item (QuikTest). Read AFTER mount — localStorage is
+  // unavailable during SSR, so seeding state from it directly would hydrate with
+  // different markup than the server rendered.
+  const [issueApps, setIssueApps] = useState<Set<IssueApp>>(new Set());
+  const quikTestAdded = issueApps.has("quiktest");
 
   // Subtasks state — managed independently so we can paginate by scroll.
   interface SubtaskRow {
@@ -506,6 +523,18 @@ export function EditIssueModal({
     void loadSubtasks(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentIssueId]);
+
+  // Attached apps are per work item, and the drawer swaps issues without
+  // remounting — so this reloads on every change rather than only on first open.
+  useEffect(() => {
+    if (!currentIssueId) return;
+    setIssueApps(loadIssueApps(currentIssueId));
+    // Also react to a change made on the full page behind this drawer, or in
+    // another tab.
+    return onIssueAppsChanged(currentIssueId, () =>
+      setIssueApps(loadIssueApps(currentIssueId)),
+    );
+  }, [currentIssueId]);
   // IntersectionObserver-based scroll pagination.
   useEffect(() => {
     const el = subtaskSentinelRef.current;
@@ -1091,40 +1120,17 @@ export function EditIssueModal({
                 );
               })()}
 
-              {/* Title */}
-              {titleEditing ? (
-                <input
-                  autoFocus
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onBlur={() => {
-                    setTitleEditing(false);
-                    if (title.trim() && title !== issue.title) {
-                      void patch({ title: title.trim() });
-                    } else {
-                      setTitle(issue.title);
-                    }
+              {/* Title — shared editor with the full page, so ✓/✕ behave identically. */}
+              <div className="mb-3">
+                <IssueTitleEditor
+                  value={issue.title}
+                  canUpdate={canUpdateIssue}
+                  onSave={(next) => {
+                    setTitle(next);
+                    void patch({ title: next });
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    if (e.key === "Escape") {
-                      setTitle(issue.title);
-                      setTitleEditing(false);
-                    }
-                  }}
-                  className="w-full text-2xl font-semibold text-gray-900 px-2 py-1 -ml-2 border border-blue-500 rounded focus:outline-none"
                 />
-              ) : (
-                <h1
-                  onClick={() => canUpdateIssue && setTitleEditing(true)}
-                  className={`text-2xl font-semibold text-gray-900 mb-3 px-2 py-1 -ml-2 rounded ${
-                    canUpdateIssue ? "cursor-text hover:bg-gray-50" : "cursor-default"
-                  }`}
-                >
-                  {title}
-                </h1>
-              )}
-
+              </div>
               {/* Action toolbar: Add, More, Status, lightning */}
               <div className="flex items-center gap-2 mb-5">
                 {/* <button className="inline-flex items-center justify-center h-7 w-7 rounded border border-gray-300 hover:bg-gray-50 text-gray-600" aria-label="Add">
@@ -1149,6 +1155,17 @@ export function EditIssueModal({
                     onViewWorkflow={() =>
                       window.open(`/spaces/${projectId}/settings/workflows`, "_blank")
                     }
+                  />
+                )}
+
+                {/* Add apps (Jira parity) — attaches the QuikTest panel to this
+                    work item. Not permanently mounted: an item with no tests should
+                    not carry an empty test panel. */}
+                {issue?.id && (
+                  <IssueAppsMenu
+                    issueId={issue.id}
+                    apps={issueApps}
+                    onChange={setIssueApps}
                   />
                 )}
 
@@ -1466,6 +1483,28 @@ export function EditIssueModal({
                   issueId={issue.id}
                   projectId={issue.projectId}
                   onOpenIssue={(id) => setCurrentIssueId(id)}
+                />
+              )}
+
+              {/* QuikTest results — the same panel the full view shows, as a
+                  COLLAPSIBLE section here because the drawer is narrow and this
+                  sits among several others. Only rendered once the app is added to
+                  the item (see the + menu in the header), matching how Jira treats
+                  Zephyr/TestRail panels. */}
+              {issue?.key && issue.projectId && quikTestAdded && (
+                <QuikTestResultsPanel
+                  issueKey={issue.key}
+                  projectId={issue.projectId}
+                  collapsible
+                  defaultOpen={false}
+                  // "Hide" DETACHES the app rather than setting a private flag, so
+                  // the + menu's checkmark and the panel can never disagree.
+                  onHide={() => {
+                    const next = new Set(issueApps);
+                    next.delete("quiktest");
+                    setIssueApps(next);
+                    saveIssueApps(issue.id, next);
+                  }}
                 />
               )}
 
