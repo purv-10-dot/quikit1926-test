@@ -10,8 +10,15 @@
  */
 import { mintRuntimeToken } from "./token";
 import type { IngestResult } from "@/lib/shared";
-import { IngestError } from "./types";
-import type { AssistInput, IngestInput, RuntimeClient, RuntimeEvent } from "./types";
+import { IngestError, ListApprovalsError } from "./types";
+import type {
+  AssistInput,
+  IngestInput,
+  ListApprovalsInput,
+  RuntimeClient,
+  RuntimeEvent,
+} from "./types";
+import type { AssistApprovalListPage } from "@/lib/shared";
 
 // Time-to-first-response guard: covers connection + response headers (Render
 // free-tier cold starts can add 30–50s). Retired the moment the stream is open.
@@ -25,6 +32,18 @@ const IDLE_TIMEOUT_MS = 60_000;
 // no stream to idle-monitor. A large doc can legitimately exceed 60s, so give it
 // a generous single-shot budget rather than an idle window.
 const INGEST_TIMEOUT_MS = 180_000;
+/**
+ * Listing approvals is a plain indexed read — no LLM call, no extract, no
+ * embed — so it gets a TIGHT budget rather than reusing either of the above.
+ * `assist`'s 60s guards a cold start before a stream opens and `ingest`'s 180s
+ * covers server-side document processing; neither is a sane ceiling for a
+ * SELECT behind a paginated endpoint.
+ *
+ * CONSEQUENCE IF IT FIRES: `ListApprovalsError("timeout")`, which the relay must
+ * turn into a retryable error — NEVER an empty page. An empty list and a
+ * timed-out list look identical on screen and mean opposite things.
+ */
+const LIST_APPROVALS_TIMEOUT_MS = 15_000;
 
 export class HttpRuntimeClient implements RuntimeClient {
   constructor(private readonly baseUrl: string) {}
@@ -192,6 +211,68 @@ export class HttpRuntimeClient implements RuntimeClient {
       throw new IngestError(code, res.status);
     }
     return (await res.json()) as IngestResult;
+  }
+
+  /**
+   * `GET /ai/requests?limit=&offset=` — the caller's approval ledger.
+   *
+   * ⚠️ `orgId`/`userId` go into the MINTED TOKEN and never into the query
+   * string. The runtime scopes the result on the token, which is the mechanism
+   * that makes v1's requester-only isolation hold — a query param would let a
+   * caller ask for someone else's ledger.
+   *
+   * Request/response, so it follows `ingest`'s shape, not `assist`'s: one
+   * AbortController, one timeout, a typed throw. None of the stream guards
+   * (connect vs idle) apply — there is no stream to idle-monitor.
+   *
+   * `x-trace-id` is sent unconditionally. `ingest` omits it, which is an
+   * omission rather than a precedent: an approval is the single thing most
+   * likely to need tracing across two systems after the fact.
+   */
+  async listApprovalRequests(input: ListApprovalsInput): Promise<AssistApprovalListPage> {
+    const token = await mintRuntimeToken({
+      orgId: input.orgId,
+      botAgentId: input.botAgentId,
+      userId: input.userId,
+    });
+
+    const qs = new URLSearchParams();
+    if (input.limit != null) qs.set("limit", String(input.limit));
+    if (input.offset != null) qs.set("offset", String(input.offset));
+    const query = qs.toString();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LIST_APPROVALS_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/ai/requests${query ? `?${query}` : ""}`, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: "application/json",
+          ...(input.traceId ? { "x-trace-id": input.traceId } : {}),
+        },
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      // An abort here is the timeout firing; anything else is a network fault.
+      // Both are "we don't know", which is NOT "you have none".
+      throw new ListApprovalsError(
+        (e as { name?: string })?.name === "AbortError" ? "timeout" : "unavailable",
+      );
+    }
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      throw new ListApprovalsError(res.status === 401 ? "bad_jwt" : "unavailable", res.status);
+    }
+
+    // Relayed as-is. `toolInput`/`proposedOutput`/`result` interiors are the
+    // target app's own naming and are never touched; `mode` is carried and
+    // ignored. See AssistApprovalRow.
+    return (await res.json()) as AssistApprovalListPage;
   }
 }
 

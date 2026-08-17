@@ -640,6 +640,25 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   one non-excluded test; the 30 remain. Blocked on a decision: re-home to
   Playwright, or add a test database. **CI has no Postgres service**, so
   un-excluding them would pass locally and fail there.
+- **🔴 RAISE WITH THE RUNTIME TEAM: disabling the assistant module orphans
+  in-flight approval requests, and it is the trace gap arriving through a
+  different door.** `GET /api/ai/requests` is gated on `moduleKey: "assistant"`
+  and 404s when the module is off — correct, since an approval request is an
+  artefact of the assistant and the only rows a disabled tenant could see are
+  historical. But a request already **pending** when the module is switched off
+  becomes unactionable: nobody in that tenant can list it, so nobody can approve
+  or reject it, **the proposed write executes nothing, and it expires silently.**
+  No one in the tenant ever learns it happened.
+  That is precisely the gap the terminal-rows change closed from the other
+  direction — an unactioned write must remain *visible as unactioned* rather than
+  vanishing. Here it vanishes because the surface is gone rather than because the
+  list filtered it out.
+  **Not only ours to fix, and not only to record:** expiry is the runtime's
+  sweep, so the runtime team needs to decide what a disabled consumer means for
+  requests already in their ledger — reject-on-disable, notify the requester, or
+  hold and surface on re-enable. Weakening our module gate to leak the list is
+  the wrong answer; the question belongs upstream. Loosening the gate for
+  *pending rows only* is a possible middle path if they want one.
 - **🔴 The vitest 3/4 split is patched only in an untracked `node_modules`, so
   "the suite passes" is currently a statement about one machine.** Neither
   QuikChat's nor `services/realtime`'s suite can start after merging

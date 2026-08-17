@@ -245,6 +245,80 @@ export interface AssistApprovalRequest {
   expiresAt: string;
 }
 
+/**
+ * One row from the runtime's approval ledger (`GET /ai/requests`).
+ *
+ * ── THREE THINGS THAT ARE EASY TO GET WRONG ────────────────────────────────
+ *
+ * 1. `toolInput` / `proposedOutput` / `result` are **NOT camelCased inside.**
+ *    The KEY is camelCase; the OBJECT is the target app's own argument naming
+ *    (`projectId`, `assigneeId`, whatever QuikTrack calls things). They are
+ *    relayed byte-identical — never normalised, never reshaped — and typed no
+ *    deeper than `Record<string, unknown>` on purpose. Typing the interior would
+ *    be inventing a contract we do not own.
+ *
+ * 2. `mode` is **dead**. It is always `'copilot'` and carries no information.
+ *    Typed so the payload round-trips honestly, and deliberately never surfaced
+ *    or filtered on. Do not build a mode switch on it.
+ *
+ * 3. The list returns **terminal rows, not just pending** — `expired`,
+ *    `rejected`, `executed` and `failed` from the last 24h, alongside all
+ *    pending. Every row carries `status`, so one payload renders live and dead
+ *    cards together. Filtering to `pending` in a consumer would reinstate the
+ *    trace gap this change exists to close: a write that expired unactioned
+ *    would vanish rather than showing as expired.
+ *
+ * `riskClass` reuses `AssistRiskClass` — see its note: an unrecognised value
+ * must be treated as the HIGHEST risk, never as `soft_write`.
+ */
+export interface AssistApprovalRow {
+  id: string;
+  orgId: string;
+  userId: string;
+  appId: string;
+  useCase: string;
+  toolName: string;
+  /** Target app's own argument names. Pass through untouched. */
+  toolInput: Record<string, unknown>;
+  /** Target app's own shape. Pass through untouched. */
+  proposedOutput: Record<string, unknown> | null;
+  riskClass: AssistRiskClass;
+  /** Always "copilot". Dead field — never surface or filter on it. */
+  mode: string;
+  status: AssistApprovalStatus;
+  decisionBy: string | null;
+  decisionAt: string | null;
+  executedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  error: string | null;
+  traceId: string | null;
+  /** Present once executed. Target app's own shape; pass through untouched. */
+  result?: Record<string, unknown> | null;
+}
+
+/**
+ * Lifecycle of an approval request.
+ *
+ * Same leniency rule as `AssistRiskClass`: NOT validated at runtime, because the
+ * runtime may add a state before this type learns about it, and dropping a row
+ * whose status we do not recognise would hide a real parked write. A consumer
+ * seeing an unfamiliar status should render it as non-actionable rather than
+ * discard it.
+ */
+export type AssistApprovalStatus =
+  | "pending"
+  | "expired"
+  | "rejected"
+  | "executed"
+  | "failed";
+
+/** One page of the approval ledger. `total` is the unpaged count. */
+export interface AssistApprovalListPage {
+  requests: AssistApprovalRow[];
+  total: number;
+}
+
 export interface SendMessageInput {
   content: string;
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";

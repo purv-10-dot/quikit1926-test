@@ -9,13 +9,14 @@
  */
 
 import type {
+  AssistApprovalListPage,
   AssistApprovalRequest,
   AssistSource,
   IngestResult,
   IngestVisibility,
 } from "@/lib/shared";
 
-export type { AssistApprovalRequest, AssistSource };
+export type { AssistApprovalListPage, AssistApprovalRequest, AssistSource };
 
 export interface AssistHistoryItem {
   role: "user" | "assistant";
@@ -110,11 +111,53 @@ export class IngestError extends Error {
   }
 }
 
+/**
+ * Read the caller's approval ledger. `orgId`/`userId` ride the minted token and
+ * are NEVER sent as query params — the runtime scopes the result on the token,
+ * which is what makes requester-only isolation hold.
+ */
+export interface ListApprovalsInput {
+  /** From the caller's auth context. Goes into the JWT, not the query string. */
+  orgId: string;
+  userId: string;
+  /** Stable bot agent id — becomes the JWT `sub`, same as assist/ingest. */
+  botAgentId: string;
+  limit?: number;
+  offset?: number;
+  /** Correlates this read with the runtime's own logs. Always sent. */
+  traceId?: string;
+}
+
+export type ListApprovalsErrorCode = "timeout" | "bad_jwt" | "unavailable";
+
+/**
+ * A FAILED list read — never an empty one.
+ *
+ * The distinction is the whole point: `{ requests: [], total: 0 }` means "you
+ * have no approvals", and a timeout means "we don't know". Rendering them the
+ * same way is how a silently-broken surface reads as a clean inbox. Callers must
+ * turn this into a retryable error state, never an empty list.
+ */
+export class ListApprovalsError extends Error {
+  constructor(
+    public readonly code: ListApprovalsErrorCode,
+    public readonly runtimeStatus?: number,
+  ) {
+    super(code);
+    this.name = "ListApprovalsError";
+  }
+}
+
 export interface RuntimeClient {
   /** SSE-shaped stream of runtime events for one assistant turn. */
   assist(input: AssistInput): AsyncIterable<RuntimeEvent>;
   /** Ingest a document into the KB (Stage 3). Sync — resolves once indexed. */
   ingest(input: IngestInput): Promise<IngestResult>;
+  /**
+   * The caller's approval ledger — pending PLUS terminal rows from the last 24h.
+   * Throws `ListApprovalsError`; never resolves to an empty page on failure.
+   */
+  listApprovalRequests(input: ListApprovalsInput): Promise<AssistApprovalListPage>;
 }
 
 export type RuntimeMode = "stub" | "http";
