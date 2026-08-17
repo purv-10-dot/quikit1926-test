@@ -13,6 +13,7 @@ import {
   LIFECYCLE_LABEL,
   LIFECYCLE_ORDER,
 } from "@/lib/test/runLifecycle";
+import { EditRunPanel } from "./edit-run-panel";
 import { NewRunPanel } from "./new-run-panel";
 import { RunRow } from "./run-row";
 import type { RunRow as RunRowData } from "./run-types";
@@ -36,6 +37,8 @@ export function RunListView({ projectId }: { projectId: string }) {
   const canClose = perms.loading || perms.has("TestRun", "update");
 
   const [panelOpen, setPanelOpen] = useState(false);
+  /** The run being edited; null closes the edit panel. */
+  const [editingRun, setEditingRun] = useState<RunRowData | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -151,6 +154,7 @@ export function RunListView({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     canClose={canClose}
                     onClose={closeRun}
+                    onEdit={setEditingRun}
                     closing={closingId === run.id}
                   />
                 ))}
@@ -165,6 +169,16 @@ export function RunListView({ projectId }: { projectId: string }) {
         onClose={() => setPanelOpen(false)}
         projectId={projectId}
         onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: runsKey });
+        }}
+      />
+
+      <EditRunPanel
+        open={editingRun !== null}
+        run={editingRun}
+        projectId={projectId}
+        onClose={() => setEditingRun(null)}
+        onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: runsKey });
         }}
       />

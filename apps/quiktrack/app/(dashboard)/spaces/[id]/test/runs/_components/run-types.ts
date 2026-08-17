@@ -13,6 +13,9 @@ export interface RunRow {
   closedAt: string | null;
   startDate: string | null;
   endDate: string | null;
+  /** Needed by the edit panel so it can prefill rather than blank the field. */
+  description: string | null;
+  refTickets: string | null;
   testCount: number;
   counts: StatusCounts;
   createdByUser: { id: string; firstName: string; lastName: string } | null;

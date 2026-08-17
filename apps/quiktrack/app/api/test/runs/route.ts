@@ -71,6 +71,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           endDate: true,
           // The run's OWNER (QUIKTR-317). Distinct from per-test assignment.
           assigneeId: true,
+          // Prefill for the edit panel — without these it would blank the fields it
+          // does not know about.
+          description: true,
+          refTickets: true,
           _count: { select: { tests: true } },
         },
         orderBy: { createdAt: "desc" },

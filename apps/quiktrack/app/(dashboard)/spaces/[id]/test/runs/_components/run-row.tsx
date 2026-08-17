@@ -29,12 +29,14 @@ export function RunRow({
   projectId,
   canClose,
   onClose,
+  onEdit,
   closing,
 }: {
   run: RunRowData;
   projectId: string;
   canClose: boolean;
   onClose: (runId: string) => void;
+  onEdit: (run: RunRowData) => void;
   closing: boolean;
 }) {
   const phase = runLifecycle(run);
@@ -107,14 +109,26 @@ export function RunRow({
           {executed} / {total} run
         </p>
         {canClose && run.state !== "closed" && (
-          <button
-            type="button"
-            onClick={() => onClose(run.id)}
-            disabled={closing}
-            className="mt-1 text-[11px] text-gray-500 hover:text-gray-800 hover:underline disabled:opacity-50"
-          >
-            {closing ? "Closing…" : "Close run"}
-          </button>
+          <div className="mt-1 flex items-center justify-end gap-2">
+            {/* Edit is offered only on an OPEN run: a closed run's metadata is part
+                of a signed-off record. The server enforces this too. */}
+            <button
+              type="button"
+              onClick={() => onEdit(run)}
+              className="text-[11px] text-gray-500 hover:text-gray-800 hover:underline"
+            >
+              Edit
+            </button>
+            <span className="text-gray-300">·</span>
+            <button
+              type="button"
+              onClick={() => onClose(run.id)}
+              disabled={closing}
+              className="text-[11px] text-gray-500 hover:text-gray-800 hover:underline disabled:opacity-50"
+            >
+              {closing ? "Closing…" : "Close run"}
+            </button>
+          </div>
         )}
       </div>
     </div>
