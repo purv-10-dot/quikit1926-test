@@ -2,12 +2,12 @@ import { route, json, BadRequest } from '@/lib/http';
 import { requireAuth, requireRoles, assertOrgAccess } from '@/lib/auth/context';
 import { sendUpgradeInvoice } from '@/lib/services/audit-service';
 
-// POST /api/audit/upgrade-invoice/:orgId — SUPER_ADMIN
+// POST /api/audit/upgrade-invoice/:orgId — ADMIN
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   // The org is named in the URL and the role check was the only gate — so any
-  // holder of the SUPER_ADMIN role could target another org by editing the path.
+  // holder of the ADMIN role could target another org by editing the path.
   await assertOrgAccess(actor, params!.tenantId);
   try {
     const result = await sendUpgradeInvoice(params!.tenantId);

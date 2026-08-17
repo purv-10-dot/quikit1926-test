@@ -30,6 +30,15 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({
   db: { lmsUser: { findMany: h.findMany, findFirst: h.findFirst, update: h.update } },
 }));
+/**
+ * `users-service` gained a `sendEmail` import (the address-change welcome), and
+ * `lib/email` validates the whole server env at MODULE LOAD — so importing the
+ * service under test threw "Invalid environment configuration" before a single
+ * assertion ran, and this entire file reported zero tests. Mocked rather than
+ * env-stubbed: nothing here exercises mail, and a test suite that needs a live
+ * DATABASE_URL to check a Prisma `where` clause is the wrong dependency.
+ */
+vi.mock('@/lib/email', () => ({ sendEmail: vi.fn().mockResolvedValue({ messageId: 'stub' }) }));
 
 import { searchUsers, findAllUsers, updateUser } from '@/lib/services/users-service';
 
@@ -121,9 +130,10 @@ describe('findAllUsers — the legacy else-if chain is preserved', () => {
     expect(whereOf(0).role).toBe('TEACHER');
   });
 
-  it('SUB_ADMIN matches primary or delegated secondary role', async () => {
+  it('?role=SUB_ADMIN filters on the primary role only (single-role model)', async () => {
     await findAllUsers('org-1', undefined, 'SUB_ADMIN', []);
-    expect(whereOf(0).OR).toEqual([{ role: 'SUB_ADMIN' }, { secondaryRole: 'SUB_ADMIN' }]);
+    expect(whereOf(0).role).toBe('SUB_ADMIN');
+    expect(whereOf(0).OR).toBeUndefined();
   });
 
   it('is not capped — the legacy findAll had no limit', async () => {

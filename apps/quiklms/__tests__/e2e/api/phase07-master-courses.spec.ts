@@ -2,7 +2,7 @@
  * PHASE 07 — Master courses, the approval workflow, and shared content.
  *
  * This is the platform's content-supply chain: a SUB_ADMIN authors a course, a
- * TENANT_ADMIN approves it up to the operator, a SUPER_ADMIN approves and
+ * TENANT_ADMIN approves it up to the operator, a ADMIN approves and
  * publishes it, and `shared-content` clones it down into every tenant. Three
  * privilege tiers touch one row in sequence, so the interesting questions are
  * about *transitions*, not about CRUD.
@@ -128,7 +128,7 @@ test.describe("Phase 07 — approval lifecycle", () => {
     await api.dispose();
   });
 
-  test("SUPER_ADMIN reject moves a pending course to Rejected", async () => {
+  test("ADMIN reject moves a pending course to Rejected", async () => {
     const created = await createAs("superAdmin", "reject", { status: "PendingApproval" });
     expect(created.status).toBe("PendingApproval");
     const api = await apiAs("superAdmin");
@@ -283,13 +283,13 @@ test.describe("Phase 07 — save / auto-save / draft", () => {
     await api.dispose();
   });
 
-  test("reorder-modules requires the moduleIds field (400 + validationErrors)", async () => {
+  test("reorder-modules requires the moduleIds field (400 naming the field)", async () => {
     const created = await createAs("superAdmin", "reorder-bad", { status: "Draft" });
     const api = await apiAs("superAdmin");
     const res = await api.put(`/api/master-courses/${created.id}/reorder-modules`, { data: {} });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors?.map((v) => v.field)).toContain("moduleIds");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("moduleIds");
     await api.dispose();
   });
 });
@@ -313,7 +313,7 @@ test.describe("Phase 07 — role guards", () => {
   }
 
   for (const r of SUPER_ONLY) {
-    test(`SUPER_ADMIN reaches ${r.label}`, async () => {
+    test(`ADMIN reaches ${r.label}`, async () => {
       const api = await apiAs("superAdmin");
       const res = r.method === "get" ? await api.get(r.path) : await api.post(r.path, { data: {} });
       expect(res.status()).toBe(200);
@@ -409,8 +409,8 @@ test.describe("Phase 07 — not-found handling", () => {
               ? await api.put(c.path, { data: { title: "x" } })
               : await api.post(c.path, { data: {} });
       expect(res.status()).toBe(404);
-      const body = (await safeJson(res)) as { statusCode?: number };
-      expect(body.statusCode).toBe(404);
+      const body = (await safeJson(res)) as { success?: boolean };
+      expect(body.success).toBe(false);
       await api.dispose();
     });
   }
@@ -463,7 +463,7 @@ test.describe("Phase 07 — findings", () => {
    * Expected : 403 or 404 — a tenant admin should not be able to name another
    *            tenant's course as the source of a platform-wide distribution.
    * Root cause: app/api/shared-content/push-to-all/[courseId]/route.ts — the
-   *            handler calls `requireRoles(actor, ['SUPER_ADMIN','TENANT_ADMIN',
+   *            handler calls `requireRoles(actor, ['ADMIN','TENANT_ADMIN',
    *            'SUB_ADMIN'])` and then
    *              const result = await pushToAllTenants(params!.courseId);
    *            `actor.orgId` is never read. The service

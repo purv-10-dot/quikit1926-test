@@ -30,6 +30,7 @@ import {
   Award, Clock, AlertCircle, X, ChevronDown, ChevronRight, WifiOff
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useFeatures } from '@/app/providers';
 import QuizTakingComponent from '@/components/learner/QuizTakingComponent';
 import QuizResultsComponent from '@/components/learner/QuizResultsComponent';
 import InteractiveQuizComponent from '@/components/learner/InteractiveQuizComponent';
@@ -75,6 +76,10 @@ interface LessonProgress {
 const LockedCoursePlayer: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const router = useRouter();
+  // Corporate tenants take plain quizzes — no disclosure screen, fullscreen
+  // lock, camera or event capture. `loaded` is waited on deliberately: acting
+  // on the pre-fetch default would start a school learner's quiz unproctored.
+  const { features, loaded: featuresLoaded } = useFeatures();
   const [course, setCourse] = useState<Course | null>(null);
   const [progress, setProgress] = useState<any>(null);
   const [lessonProgress, setLessonProgress] = useState<Record<string, LessonProgress>>({});
@@ -403,21 +408,46 @@ const LockedCoursePlayer: React.FC = () => {
   const currentLesson = currentModule?.lessons[currentLessonIndex];
 
   if (showQuiz && currentLesson?.type === 'Quiz' && currentLesson.assessmentId) {
+    // Hold until the flag is known — see the useFeatures comment above.
+    if (!featuresLoaded) {
+      return (
+        <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-white" />
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gray-900">
-        <ProctoredQuizWrapper
-          assessmentId={currentLesson.assessmentId}
-          courseId={courseId!}
-          lessonId={currentLesson._id || currentLesson.title}
-          quizTitle={currentLesson.title}
-          onComplete={(result) => {
-            handleQuizComplete({
-              passed: result.passed,
-              percentage: result.percentage,
-            });
-          }}
-          onCancel={() => setShowQuiz(false)}
-        />
+        {features.showQuizProctoring ? (
+          <ProctoredQuizWrapper
+            assessmentId={currentLesson.assessmentId}
+            courseId={courseId!}
+            lessonId={currentLesson._id || currentLesson.title}
+            quizTitle={currentLesson.title}
+            onComplete={(result) => {
+              handleQuizComplete({
+                passed: result.passed,
+                percentage: result.percentage,
+              });
+            }}
+            onCancel={() => setShowQuiz(false)}
+          />
+        ) : (
+          // Plain quiz: no `sessionId`, so nothing calls /api/quiz-proctoring/*.
+          <QuizTakingComponent
+            assessmentId={currentLesson.assessmentId}
+            courseId={courseId!}
+            lessonId={currentLesson._id || currentLesson.title}
+            onComplete={(result: { passed: boolean; percentage: number }) => {
+              handleQuizComplete({
+                passed: result.passed,
+                percentage: result.percentage,
+              });
+            }}
+            onCancel={() => setShowQuiz(false)}
+          />
+        )}
       </div>
     );
   }

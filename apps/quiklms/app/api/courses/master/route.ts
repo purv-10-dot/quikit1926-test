@@ -43,10 +43,10 @@ const createMasterCourseSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
 });
 
-// POST /api/courses/master — SUPER_ADMIN (master courses are global, no orgId)
+// POST /api/courses/master — ADMIN (master courses are global, no orgId)
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const body = await parseBody(req, createMasterCourseSchema);
   const course = await createMasterCourse(actor.id, body as Record<string, unknown>);
   return json({ success: true, data: course, message: 'Master course created successfully' });

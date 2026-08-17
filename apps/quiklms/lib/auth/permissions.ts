@@ -134,7 +134,7 @@ const EMPTY_PERMISSIONS: MyPermissions = {
  *
  * QuikLMS has no such endpoint today, which is the other half of the "admin menu
  * over a learner session" problem: the sidebar derives its role from
- * `localStorage.qs_role` and never consults the server.
+ * a client-writable role cookie and never consults the server.
  */
 export async function loadMyPermissions(userId: string, orgId: string): Promise<MyPermissions> {
   const appId = await getQuikLmsAppId();
@@ -196,10 +196,10 @@ export async function loadMyPermissions(userId: string, orgId: string): Promise<
  * Every `${resource}:${action}` this org grants to the AppRole named `roleName`.
  *
  * WHY THIS IS SEPARATE FROM `loadMyPermissions`. That one answers "what may THIS
- * USER do", from their `UserAppRole` assignments — and `ensureUserOnLmsRole` keeps
- * exactly one assignment per user per org, so it structurally cannot describe a
- * user who holds a SECOND role via `LmsUser.secondaryRole`. `requireAuth` unions
- * this in for the role such a user has switched to (see lib/auth/active-role.ts).
+ * USER do", from their `UserAppRole` assignments — which is an empty set for a
+ * user with no assignment row (e.g. the platform operator, who is cross-tenant
+ * and has none by nature). `requireAuth` falls back to this — the grants of the
+ * role they RESOLVED to — for exactly that case.
  *
  * Role-scoped, not user-scoped, so it deliberately ignores `UserPermissionExtra`:
  * per-user GRANT/DENY rows are already applied by `loadMyPermissions`, and a DENY

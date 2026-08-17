@@ -1,7 +1,7 @@
 /**
  * Server-side auth context — the single entry point every LMS API route and
  * service reads through (~335 files). It now derives from the REAL centralized
- * NextAuth session (QuikIT OAuth SSO) instead of the retired `qs_role` dev
+ * NextAuth session (QuikIT OAuth SSO) instead of the retired dev-auth role
  * cookie. The exported surface (getAuthContext / requireAuth / requireRoles /
  * userHasRole / tenantWhere / assertTenantMatch / requireFeature / AuthUser) is
  * intentionally UNCHANGED so no caller needs editing.
@@ -23,8 +23,9 @@ import { loadMyPermissions, loadRoleGrants } from '@/lib/auth/permissions';
 import { actionForMethod, resourceForPath, type Action } from '@/lib/auth/permissions-registry';
 import { mapPlatformRoleToLmsRole } from '@/lib/auth/role-resolution';
 import { getAssignedLmsRole } from '@/lib/auth/app-role';
+import { healLmsRoleAssignment } from '@/lib/auth/heal-role-assignment';
+import { lmsRoleToAppRoleName } from '@/lib/api/seed-lms-app-roles';
 import { resolveCentralMembership } from '@/lib/auth/founding-admin';
-import { heldRoles, readRequestedRole, resolveActiveRole } from '@/lib/auth/active-role';
 import { db } from '@/lib/db';
 import { Forbidden, Unauthorized } from '@/lib/http';
 import { isFeatureEnabled, type FeatureSet } from '@/lib/features';
@@ -32,21 +33,8 @@ import { isFeatureEnabled, type FeatureSet } from '@/lib/features';
 export interface AuthUser {
   id: string;
   email: string;
-  /**
-   * The role this actor is acting as RIGHT NOW — their effective role, or the one
-   * they switched to if they hold more than one (see lib/auth/active-role.ts).
-   * For the ~335 single-role users this is unchanged: with one held role there is
-   * nothing to switch to and the active role IS the effective one.
-   */
+  /** The actor's single role. QuikLMS is single-role-per-user (quikscale parity). */
   role: UserRole;
-  secondaryRole: UserRole | null;
-  /**
-   * Every role this actor may act as, default first — `role` is always one of
-   * these. Additive: nothing that reads `AuthUser.role` needs to change, but the
-   * role switcher needs the set (exposed through `GET /api/me`), and
-   * `requireAuth` needs it to know whether a switch is in effect.
-   */
-  roles: UserRole[];
   /** Platform Org id — the identity AND the scope key for all LMS tables. */
   orgId: string | null;
   tenantType: 'corporate' | 'school' | null;
@@ -78,7 +66,6 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   // Fall back to the coarse platform membership-role mapping when no LMS row
   // exists yet (e.g. org admins who never went through the roster).
   let lmsRole: UserRole | null = null;
-  let secondaryRole: UserRole | null = null;
   let isActive = true;
   let tenantType: 'corporate' | 'school' | null = null;
   // Platform-assigned per-app role (app_quiklms.UserAppRole → AppRole.name),
@@ -92,12 +79,12 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   // property access into the promise, so even a mocked client that omits
   // `tenant` degrades to a rejected settle (tenantType stays null) instead of a
   // synchronous throw. Tenant.id === orgId (orgId-native), so the tenant lookup
-  // is a PK hit; the operator (SUPER_ADMIN) org has no Tenant row → stays null.
+  // is a PK hit; the operator (ADMIN) org has no Tenant row → stays null.
   const [rowRes, tenantRes, assignedRes] = await Promise.allSettled([
     (async () =>
       db.lmsUser.findUnique({
         where: { id: u.id },
-        select: { role: true, secondaryRole: true, isActive: true },
+        select: { role: true, isActive: true },
       }))(),
     (async () =>
       db.lmsTenant.findUnique({
@@ -111,22 +98,20 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
 
   if (rowRes.status === 'fulfilled' && rowRes.value) {
     lmsRole = rowRes.value.role;
-    secondaryRole = rowRes.value.secondaryRole ?? null;
     isActive = rowRes.value.isActive;
   }
+  // Tracked separately from `tenantType`: the question the role fallback asks is
+  // "does this org have a tenant ROW", and a row whose `tenantType` were ever null
+  // would answer that wrongly if inferred from the type alone.
+  let isTenantOrg = false;
   if (tenantRes.status === 'fulfilled' && tenantRes.value) {
     tenantType = tenantRes.value.tenantType;
+    isTenantOrg = true;
   }
   if (assignedRes.status === 'fulfilled' && assignedRes.value) {
     assignedRole = assignedRes.value;
   }
 
-  // The role the database alone says they are, then the one they are acting as.
-  // A second role (today only `LmsUser.secondaryRole`, written by
-  // `promoteToSubAdmin`) is not automatically in force — the actor picks which of
-  // their roles is live, and `resolveActiveRole` refuses anything outside the
-  // held set, so the cookie can never hand out a role the DB did not.
-  //
   // The central-membership lookup is deliberately LAZY — it only runs when neither
   // an assignment nor an LMS row answered, which is exactly the freshly-invited-admin
   // case it exists for. Resolving it inside the settle group above would put two
@@ -141,20 +126,23 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   let effectiveRole = assignedRole ?? lmsRole;
   if (!effectiveRole) {
     const membership = await resolveCentralMembership(u.id, u.orgId);
+    // An `LmsTenant` row is what tells an onboarded tenant apart from a root org —
+    // and therefore a TENANT_ADMIN apart from an ADMIN, since both were stored
+    // centrally as `org_admin`. Already resolved above, so this costs no extra query.
     effectiveRole = mapPlatformRoleToLmsRole(
       membership.role ?? u.membershipRole,
       u.isSuperAdmin,
-      membership.isFounding,
+      isTenantOrg,
     );
-  }
-  const roles = heldRoles(effectiveRole, secondaryRole);
 
+    // Same one-time repair as the page guard: write the assignment we just
+    // derived so `getAssignedLmsRole` answers the next request directly.
+    healLmsRoleAssignment(u.id, u.orgId, effectiveRole, u.isSuperAdmin);
+  }
   return {
     id: u.id,
     email: u.email ?? '',
-    role: resolveActiveRole(roles, readRequestedRole()),
-    secondaryRole,
-    roles,
+    role: effectiveRole,
     orgId: u.orgId,
     // Resolved from the tenant row (school/corporate) so server-side role
     // filtering — e.g. hiding TEACHER/PARENT for corporate tenants in
@@ -206,32 +194,13 @@ export async function requireAuth(req?: NextRequest): Promise<AuthUser> {
       const { permissions } = await loadMyPermissions(user.id, user.orgId);
       const grants = new Set(permissions);
 
-      // …plus the grants of the role they SWITCHED to, when they switched.
-      //
-      // `loadMyPermissions` derives the set from `LmsUserAppRole`, and
-      // `ensureUserOnLmsRole` keeps exactly ONE assignment per user per org. So a
-      // user promoted to a second role (`LmsUser.secondaryRole`) held none of that
-      // role's grants, and every request behind its dashboard 403'd even once the
-      // page guard let them in — the second half of the "can't switch to Sub
-      // Admin" bug. Adding a second `UserAppRole` row instead would have been
-      // wrong: `getAssignedLmsRole` takes the most recent one, so it would have
-      // silently replaced their PRIMARY role.
-      //
-      // This cannot widen anything they are not entitled to — `user.role` is only
-      // ever a member of `user.roles`, which is derived from the database.
-      // Skipped entirely on the common path (no switch in effect), so the ordinary
-      // request still costs one permission query.
-      if (user.roles[0] !== user.role) {
-        for (const grant of await loadRoleGrants(user.orgId, user.role)) grants.add(grant);
-      }
-
       // NO ASSIGNMENT AT ALL → fall back to the grants of the role the actor
       // actually resolved to.
       //
       // `loadMyPermissions` derives everything from `LmsUserAppRole`, so a user with
       // no assignment row gets an empty set and, once grants became the gate, was
       // refused every request. That is not a hypothetical class of user: the platform
-      // SUPER_ADMIN operator has no LMS row and no assignment by nature — grants are
+      // ADMIN operator has no LMS row and no assignment by nature — grants are
       // keyed `(userId, orgId)` and the operator is cross-tenant, so there is no org
       // for one to live in. The observable symptom was the operator being refused
       // `POST /api/tenants/onboard`, which surfaced to the user as "the invitation
@@ -239,13 +208,24 @@ export async function requireAuth(req?: NextRequest): Promise<AuthUser> {
       //
       // This deliberately does NOT bypass on `isSuperAdmin`. A blanket operator
       // bypass would WIDEN access: plenty of routes gate on
-      // `['TENANT_ADMIN','SUB_ADMIN']` and refused a SUPER_ADMIN before this change
+      // `['TENANT_ADMIN','SUB_ADMIN']` and refused a ADMIN before this change
       // too. Reading the resolved role's grants instead reproduces the old decision
       // exactly — role decides — while keeping the POLICY in one place, the grants
       // table. `user.role` comes from `getAuthContext`, i.e. from the database, so
       // nothing here can grant a role the DB did not give them.
+      // `loadRoleGrants` matches on `AppRole.name`, which is NOT the enum value for
+      // the top tier: every writer stores it through `lmsRoleToAppRoleName`, so the
+      // catalogue row is `admin` while `user.role` is `ADMIN` (see the doc on that
+      // function). Passing the raw enum here looked for a row named `ADMIN`, found
+      // none, and handed ADMIN an EMPTY grant set — which, since grants are the gate,
+      // refused the operator every request that reached this fallback. The symptom was
+      // `POST /api/tenants/onboard` failing with "your role (ADMIN) has no such grant"
+      // for a pair the matrix explicitly grants ADMIN. The other six roles were
+      // unaffected because their enum name and catalogue name are identical, which is
+      // why this read as an ADMIN-only fault.
       if (grants.size === 0) {
-        for (const grant of await loadRoleGrants(user.orgId, user.role)) grants.add(grant);
+        const appRoleName = lmsRoleToAppRoleName(user.role);
+        for (const grant of await loadRoleGrants(user.orgId, appRoleName)) grants.add(grant);
       }
 
       grantsForUser.set(user, grants);
@@ -304,8 +284,9 @@ export function actorCan(user: AuthUser, resource: string, action: Action): bool
   return grantsForUser.get(user)?.has(`${resource}:${action}`) === true;
 }
 
+/** Single-role model (quikscale parity) — there is no second held role anymore. */
 export function userHasRole(user: AuthUser, role: UserRole): boolean {
-  return user.role === role || user.secondaryRole === role;
+  return user.role === role;
 }
 
 /**
@@ -388,7 +369,7 @@ export async function requireFeature(
 ): Promise<{ id: string; tenantType: 'corporate' | 'school' } | null> {
   // The platform OPERATOR has no tenant row to read a config from. Keyed on the
   // `isSuperAdmin` claim, not the role: an org's founding admin now resolves to an
-  // LMS role of SUPER_ADMIN (lib/auth/founding-admin.ts) but DOES have a tenant,
+  // LMS role of ADMIN (lib/auth/founding-admin.ts) but DOES have a tenant,
   // and returning null here would silently disable every feature flag for them.
   if (user.isSuperAdmin === true || !user.orgId) return null;
 
@@ -409,18 +390,59 @@ export async function requireFeature(
   return { id: tenant.id, tenantType: tenant.tenantType };
 }
 
+/**
+ * Quiz-proctoring gate — deliberately FAIL-CLOSED, unlike `requireFeature`.
+ *
+ * `requireFeature` returns null (fail OPEN) when the tenant row is missing, so a
+ * feature stays on for an org that has no `LmsTenant`. That is the right default
+ * for capability flags — a half-provisioned org should not lose its product.
+ *
+ * It is the WRONG default here. Orgs provisioned centrally (quikit/admin) get an
+ * `OrgAppAccess` row but no `LmsTenant` row, and those are exactly the corporate
+ * orgs that must NOT get webcam proctoring. Reusing `requireFeature` would leave
+ * proctoring on for precisely the tenants this flag exists to exempt.
+ *
+ * So an absent tenant row resolves to `corporate`, matching the schema's own
+ * `tenantType LmsTenantType @default(corporate)`. A DB error resolves the same
+ * way: the failure mode is a plain unproctored quiz, never a blocked learner.
+ */
+export async function requireQuizProctoring(user: AuthUser): Promise<void> {
+  // Platform operators keep access to the review surfaces they support.
+  if (user.isSuperAdmin === true) return;
+
+  let tenant: { tenantType: 'corporate' | 'school'; featureConfig: unknown } | null = null;
+  if (user.orgId) {
+    try {
+      tenant = await db.lmsTenant.findUnique({
+        where: { id: user.orgId },
+        select: { tenantType: true, featureConfig: true },
+      });
+    } catch {
+      tenant = null;
+    }
+  }
+
+  const enabled = tenant
+    ? isFeatureEnabled(tenant as Parameters<typeof isFeatureEnabled>[0], 'showQuizProctoring')
+    : false;
+
+  if (!enabled) {
+    throw Forbidden('Quiz proctoring is not enabled for your organization.');
+  }
+}
+
 export function tenantWhere<T extends Record<string, unknown>>(
   user: AuthUser,
   extra: T = {} as T,
 ): T & { orgId?: string } {
   // Cross-tenant reads require the PLATFORM FLAG, not the LMS role.
   //
-  // This used to test `user.role === 'SUPER_ADMIN'`, and returning `extra` drops the
+  // This used to test `user.role === 'ADMIN'`, and returning `extra` drops the
   // `orgId` filter entirely — every tenant's rows, from ~324 call sites. Keying that
-  // on the LMS role meant anything that could make `role` resolve to SUPER_ADMIN
+  // on the LMS role meant anything that could make `role` resolve to ADMIN
   // also silently granted cross-tenant read: the `org_admin` inference (49 tenant
   // admins, fixed in lib/auth/role-resolution.ts), an `LmsUser.role` column value, or
-  // a `UserAppRole` assignment to the SUPER_ADMIN AppRole. Three independent paths to
+  // a `UserAppRole` assignment to the ADMIN AppRole. Three independent paths to
   // one org's data leaking into another's.
   //
   // `isSuperAdmin` is the platform operator claim, written only by the launcher's
@@ -430,7 +452,7 @@ export function tenantWhere<T extends Record<string, unknown>>(
   // rather than on a role string.
   //
   // Net effect: the 3 real operators keep cross-tenant access; an LMS role of
-  // SUPER_ADMIN no longer confers it.
+  // ADMIN no longer confers it.
   if (user.isSuperAdmin === true) return extra;
   return { ...extra, orgId: user.orgId ?? '__no_org__' };
 }
@@ -438,11 +460,11 @@ export function tenantWhere<T extends Record<string, unknown>>(
 /**
  * Is this actor the PLATFORM OPERATOR — the one actor entitled to cross-tenant data?
  *
- * The single predicate for that question. `role === 'SUPER_ADMIN'` is NOT it, and
+ * The single predicate for that question. `role === 'ADMIN'` is NOT it, and
  * treating it as such is what leaked one org's data into another's console: an org's
- * founding admin holds the SUPER_ADMIN role (lib/auth/founding-admin.ts) but is a
+ * founding admin holds the ADMIN role (lib/auth/founding-admin.ts) but is a
  * tenant person, and so is anyone whose `LmsUser.role` column or `UserAppRole`
- * assignment says SUPER_ADMIN. Only `isSuperAdmin` — written by apps/quikit's audited
+ * assignment says ADMIN. Only `isSuperAdmin` — written by apps/quikit's audited
  * `/api/super/users` console — identifies the operator.
  *
  * Read as "unscoped?" at every branch that widens data access, so that adding a new
@@ -470,10 +492,10 @@ export function isPlatformOperator(user: Pick<AuthUser, 'isSuperAdmin'>): boolea
  * (`/api/users`, `/api/users/search`, `/api/users/:id`, `…/toggle-active`), and
  * each had written the rule out by hand as:
  *
- *     const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
+ *     const orgId = actor.role === 'ADMIN' ? undefined : actor.orgId ?? undefined;
  *
  * That is the ROLE, and it bypassed `tenantWhere`'s flag check entirely — so every
- * path that can make `role` resolve to SUPER_ADMIN (an `LmsUser.role` value, a
+ * path that can make `role` resolve to ADMIN (an `LmsUser.role` value, a
  * UserAppRole assignment, or the founding-admin mapping in
  * lib/auth/founding-admin.ts) silently listed and mutated every tenant's users.
  * One helper, keyed on the same platform claim `tenantWhere` uses, so the two
@@ -524,7 +546,7 @@ export async function visibleOrgIds(user: AuthUser): Promise<string[] | undefine
  * For the handful of console routes that take an org/tenant id as a PATH or QUERY
  * parameter — `/api/tenants/[id]`, `/api/audit/email-status/[tenantId]`,
  * `/api/audit/upgrade-invoice/[tenantId]`, `/api/audit/activity-logs?orgId=` — where
- * `requireRoles(['SUPER_ADMIN'])` was the only gate, so a caller holding the role
+ * `requireRoles(['ADMIN'])` was the only gate, so a caller holding the role
  * could simply name another org in the URL.
  */
 export async function assertOrgAccess(user: AuthUser, targetOrgId?: string | null): Promise<void> {
@@ -542,8 +564,8 @@ export async function assertOrgAccess(user: AuthUser, targetOrgId?: string | nul
 export function assertTenantMatch(user: AuthUser, resourceOrgId?: string | null): void {
   // Same rule as `tenantWhere` above, and for the same reason: cross-tenant access
   // requires the PLATFORM FLAG, never the LMS role. This tested
-  // `user.role === 'SUPER_ADMIN'`, which left a hole the sibling guard had already
-  // closed — anything that made `role` resolve to SUPER_ADMIN (an `LmsUser.role`
+  // `user.role === 'ADMIN'`, which left a hole the sibling guard had already
+  // closed — anything that made `role` resolve to ADMIN (an `LmsUser.role`
   // column value, a UserAppRole assignment, or the founding-admin mapping added in
   // lib/auth/founding-admin.ts) skipped the org check on every fetch-by-id.
   if (user.isSuperAdmin === true) return;

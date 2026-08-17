@@ -12,10 +12,10 @@ const schema = z.object({
   assessmentId: z.string().optional(),
 });
 
-// POST /api/courses/modules — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/courses/modules — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
   const dto = await parseBody(req, schema);
   const module = await addModule(actor.orgId, dto);

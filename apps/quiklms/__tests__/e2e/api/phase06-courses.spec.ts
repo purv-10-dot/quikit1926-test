@@ -4,7 +4,7 @@
  * Eight endpoints, and the interesting thing about them is how unevenly they are
  * guarded. Three of them (`POST /api/courses`, `/courses/lessons`,
  * `/courses/modules`) carry an explicit
- * `requireRoles(actor, ['SUPER_ADMIN','TENANT_ADMIN','SUB_ADMIN'])`. The other
+ * `requireRoles(actor, ['ADMIN','TENANT_ADMIN','SUB_ADMIN'])`. The other
  * five call `requireAuth` and stop there — which for the two `order` endpoints
  * means any authenticated LEARNER can rewrite a course's structure, and for
  * `player-data` means a hand-written Prisma query with no tenant filter at all.
@@ -79,9 +79,9 @@ test.describe("Phase 06 — reads", () => {
     const api = await apiAs("tenantAdmin", REQ);
     const res = await api.get(`/api/courses/${NONEXISTENT}`);
     expect(res.status()).toBe(404);
-    const body = (await safeJson(res)) as { statusCode?: number; error?: string };
-    expect(body.statusCode).toBe(404);
-    expect(body.error).toBe("Not Found");
+    const body = (await safeJson(res)) as { success?: boolean; error?: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("not found");
     await api.dispose();
   });
 
@@ -234,13 +234,12 @@ test.describe("Phase 06 — mutations persist", () => {
     await api.dispose();
   });
 
-  test("POST /api/courses/modules rejects a body missing courseId with 400 + validationErrors", async () => {
+  test("POST /api/courses/modules rejects a body missing courseId with 400 naming the field", async () => {
     const api = await apiAs("tenantAdmin", REQ);
     const res = await api.post("/api/courses/modules", { data: { title: "no course id" } });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { message?: string; validationErrors?: Array<{ field: string }> };
-    expect(body.message).toBe("Validation failed");
-    expect(body.validationErrors?.map((v) => v.field)).toContain("courseId");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("courseId");
     await api.dispose();
   });
 
@@ -366,7 +365,7 @@ test.describe("Phase 06 — findings", () => {
    * Expected : 403 — reordering curriculum is an authoring action, and the three
    *            sibling write routes in this same feature area
    *            (POST /api/courses, /courses/modules, /courses/lessons) all
-   *            enforce ['SUPER_ADMIN','TENANT_ADMIN','SUB_ADMIN'].
+   *            enforce ['ADMIN','TENANT_ADMIN','SUB_ADMIN'].
    * Root cause: app/api/courses/[id]/modules/order/route.ts:11-13 and
    *            app/api/courses/modules/[moduleId]/lessons/order/route.ts:11-13.
    *            Both call `requireAuth(req)` and then go straight to the service;

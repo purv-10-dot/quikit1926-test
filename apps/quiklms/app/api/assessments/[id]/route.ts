@@ -38,7 +38,7 @@ export const GET = route(async (req, { params }) => {
   // narrows *which* questions are returned; it never removed the answers, so a
   // proctored learner still received `correctAnswerIndex` for the questions they
   // were about to be marked on. Staff keep the key — they author and grade.
-  const redact = shouldRedactAnswerKey(actor.role, actor.secondaryRole);
+  const redact = shouldRedactAnswerKey(actor.role);
 
   const sessionId = new URL(req.url).searchParams.get('sessionId');
   if (sessionId) {
@@ -95,14 +95,14 @@ const updateAssessmentSchema = z.object({
   isMaster: z.boolean().optional(),
 });
 
-// PUT /api/assessments/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN | TEACHER
+// PUT /api/assessments/:id — ADMIN | TENANT_ADMIN | SUB_ADMIN | TEACHER
 //
 // Authoring, not consumption. This was `requireAuth` only, so a LEARNER could
 // rewrite an assessment they were about to sit — including `correctAnswerIndex`
 // and `passingScore` — for every other learner on it.
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
   const updateData = await parseBody(req, updateAssessmentSchema);
   const assessment = await update(params!.id, actor.orgId, updateData as Record<string, unknown>);

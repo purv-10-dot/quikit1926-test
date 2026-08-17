@@ -97,7 +97,7 @@ test.describe("Phase 33 — admin pages surface their seeded tenant data", () =>
    * person does not re-investigate them:
    *
    *  - `/courses` ("Content Library") reads `/api/course-assignments/courses`,
-   *    i.e. MASTER courses a SUPER_ADMIN has assigned down to the org. The seed
+   *    i.e. MASTER courses a ADMIN has assigned down to the org. The seed
    *    creates org-authored courses (`/api/courses` returns both of them) but no
    *    master-course assignment, so "All Courses (0)" is the right answer.
    *  - `/teachers` and `/parents` read `/api/users`, which at

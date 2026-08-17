@@ -251,8 +251,8 @@ test.describe("Phase 15 — exam proctoring", () => {
       action: "warning",
     });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors!.some((v) => v.field === "disposition")).toBe(true);
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("disposition");
   });
 
   test("reviewing with session_voided actually voids the session", async () => {
@@ -640,10 +640,9 @@ test.describe("Phase 15 — quiz proctoring guards", () => {
     const learner = await apiAs("learner");
     const res = await POST(learner, "/api/quiz-proctoring/start", {});
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors!.map((v) => v.field)).toEqual(
-      expect.arrayContaining(["assessmentId", "courseId"]),
-    );
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("assessmentId");
+    expect(body.error).toContain("courseId");
     await learner.dispose();
   });
 

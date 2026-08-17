@@ -7,7 +7,7 @@ import { extractScormFiles } from '@/lib/services/scorm-service';
 const MAX_BYTES = 500 * 1024 * 1024;
 
 /**
- * POST /api/scorm/extract — TENANT_ADMIN | SUB_ADMIN | SUPER_ADMIN | TEACHER
+ * POST /api/scorm/extract — TENANT_ADMIN | SUB_ADMIN | ADMIN | TEACHER
  *
  * Port of `ScormController.extractPackage` (`scorm.controller.ts:38-53`).
  *
@@ -21,7 +21,7 @@ const MAX_BYTES = 500 * 1024 * 1024;
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN', 'TEACHER']);
+  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN', 'TEACHER']);
 
   const { form, file } = await parseMultipart(req, 'file', MAX_BYTES);
   if (!file) throw BadRequest('SCORM zip file is required');

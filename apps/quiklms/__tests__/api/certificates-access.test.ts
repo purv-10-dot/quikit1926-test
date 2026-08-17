@@ -162,7 +162,7 @@ describe('GET /certificates/:id/download — ownership', () => {
     h.requireAuth.mockResolvedValue({ id: 'someone-else', role: 'LEARNER', orgId: 'org-1' });
     const res = await downloadGET(req(), ctx);
     expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toMatchObject({ message: 'Certificate not found' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'Certificate not found' });
   });
 
   it("404s a MANAGER reaching for a team member's certificate", async () => {
@@ -176,13 +176,6 @@ describe('GET /certificates/:id/download — ownership', () => {
   it('lets a TENANT_ADMIN download any certificate in their tenant', async () => {
     h.requireAuth.mockResolvedValue({ id: 'admin', role: 'TENANT_ADMIN', orgId: 'org-1' });
     h.userHasRole.mockImplementation((_u: unknown, r: string) => r === 'TENANT_ADMIN');
-    const res = await downloadGET(req(), ctx);
-    expect(res.status).toBe(200);
-  });
-
-  it('honours a SECONDARY admin role for the exemption', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'x', role: 'MANAGER', secondaryRole: 'SUB_ADMIN', orgId: 'org-1' });
-    h.userHasRole.mockImplementation((_u: unknown, r: string) => r === 'SUB_ADMIN');
     const res = await downloadGET(req(), ctx);
     expect(res.status).toBe(200);
   });

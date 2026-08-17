@@ -8,7 +8,6 @@
  *  2. "The reminder queue is never triggered. Both sides believe the other does
  *     it. Nobody does." — the immediate "course assigned" email.
  *  3. "?tenantId=X is silently ignored" — cross-tenant inspection broke with no error.
- *  4. "Its role check ignores secondaryRole, unlike isTenantOrSubAdminActor."
  *
  * Audit is observability: these tests also pin that a failing audit write can
  * never fail the assignment the user actually asked for.
@@ -151,20 +150,20 @@ describe('audit logging — restored on all four writes', () => {
 });
 
 describe('GET /courses — ?tenantId is no longer silently ignored', () => {
-  it('a SUPER_ADMIN can inspect another tenant with the legacy ?tenantId param', async () => {
-    h.requireAuth.mockResolvedValue({ id: 's1', role: 'SUPER_ADMIN', orgId: 'org-1', email: 's@b.test' });
+  it('a ADMIN can inspect another tenant with the legacy ?tenantId param', async () => {
+    h.requireAuth.mockResolvedValue({ id: 's1', role: 'ADMIN', orgId: 'org-1', email: 's@b.test' });
     await coursesGET(new Request('http://x/api/course-assignments/courses?tenantId=org-9') as never, {});
     expect(h.getAssignedCourses).toHaveBeenCalledWith('org-9');
   });
 
   it('also accepts the new ?orgId name', async () => {
-    h.requireAuth.mockResolvedValue({ id: 's1', role: 'SUPER_ADMIN', orgId: 'org-1', email: 's@b.test' });
+    h.requireAuth.mockResolvedValue({ id: 's1', role: 'ADMIN', orgId: 'org-1', email: 's@b.test' });
     await coursesGET(new Request('http://x/api/course-assignments/courses?orgId=org-9') as never, {});
     expect(h.getAssignedCourses).toHaveBeenCalledWith('org-9');
   });
 
-  it('a SUPER_ADMIN with no org and no param spans every tenant', async () => {
-    h.requireAuth.mockResolvedValue({ id: 's1', role: 'SUPER_ADMIN', orgId: null, email: 's@b.test' });
+  it('a ADMIN with no org and no param spans every tenant', async () => {
+    h.requireAuth.mockResolvedValue({ id: 's1', role: 'ADMIN', orgId: null, email: 's@b.test' });
     await coursesGET(new Request('http://x/api/course-assignments/courses') as never, {});
     expect(h.getAssignedCourses).toHaveBeenCalledWith(null);
   });
@@ -172,17 +171,6 @@ describe('GET /courses — ?tenantId is no longer silently ignored', () => {
   it('a TENANT_ADMIN cannot escape their own org via ?tenantId', async () => {
     await coursesGET(new Request('http://x/api/course-assignments/courses?tenantId=org-9') as never, {});
     expect(h.getAssignedCourses).toHaveBeenCalledWith('org-1');
-  });
-
-  it('honours a delegated SUB_ADMIN secondaryRole in the org guard', async () => {
-    // isTenantOrSubAdminActor parity: a MANAGER with SUB_ADMIN delegated and no
-    // org must hit the guard, not sail past it.
-    h.requireAuth.mockResolvedValue({ id: 'm1', role: 'MANAGER', secondaryRole: 'SUB_ADMIN', orgId: null, email: 'm@b.test' });
-    h.userHasRole.mockImplementation((u: { role: string; secondaryRole?: string }, r: string) => u.role === r || u.secondaryRole === r);
-
-    const res = await coursesGET(new Request('http://x/api/course-assignments/courses') as never, {});
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ message: 'Tenant ID is required' });
   });
 
   it('presigns course thumbnails', async () => {

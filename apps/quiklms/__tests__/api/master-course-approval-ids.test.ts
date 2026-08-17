@@ -36,6 +36,7 @@ vi.mock('@/lib/s3', () => ({
 // PrismaClient at import time. The service only needs `userHasRole` from it.
 vi.mock('@/lib/auth/context', () => ({
   userHasRole: (u: { role?: string }, r: string) => u?.role === r,
+  isPlatformOperator: (u: { isSuperAdmin?: boolean }) => u?.isSuperAdmin === true,
 }));
 vi.mock('@/lib/db', () => ({
   db: {
@@ -148,16 +149,18 @@ describe('the tenant → super-admin state machine, driven by the id the UI rece
     });
   });
 
+  const SUPER = { id: 'super-1', role: 'ADMIN', orgId: null, isSuperAdmin: true } as never;
+
   it('the queue id round-trips into approve() — the hop that was broken', async () => {
     const [item] = await findPendingApprovals();
-    await approve(item._id, 'super-1');
+    await approve(SUPER, item._id);
     // Looked up by the very id the UI was handed, not `undefined`.
     expect(h.courseFindFirst.mock.calls.at(-1)![0].where).toMatchObject({ id: 'course-1' });
   });
 
   it('reproduces the original failure: an undefined id 404s', async () => {
     h.courseFindFirst.mockResolvedValue(null);
-    await expect(approve('undefined', 'super-1')).rejects.toMatchObject({
+    await expect(approve(SUPER, 'undefined')).rejects.toMatchObject({
       statusCode: 404,
       message: 'Master course not found',
     });

@@ -43,7 +43,13 @@ model App {
 
 model OAuthClient {
   id           String   @id @default(cuid())
-  appId        String
+  /// Null = a dynamically-registered client (RFC 7591) that didn't declare
+  /// a `resource` at registration time (e.g. Claude Desktop's MCP OAuth
+  /// client, which has no such field in its registration request). Such a
+  /// client is bound to an app later, per-request, by authorize.ts reading
+  /// the RFC 8707 `resource` indicator it sends there instead — see
+  /// `resolveAppByResource()` in lib/oauth.ts.
+  appId        String?
   /// "first_party" = the app's own SSO client, human-managed via the Super
   /// Admin OAuth panel (at most one per app, enforced in application code —
   /// see apps/quikit/app/api/super/apps/[id]/oauth/route.ts).
@@ -64,7 +70,7 @@ model OAuthClient {
   grantTypes   String[] @default(["authorization_code", "refresh_token"])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  app          App?     @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([appId])
@@ -473,6 +479,10 @@ model User {
   cnUserPermissionExtras  CnUserPermissionExtra[]
   qsUserAppRoles          QsUserAppRole[]
   qcUserAppRoles          QcUserAppRole[]
+  // Back-relations only — Prisma requires both sides of a relation. These are
+  // virtual fields and generate NO SQL; no `auth` table is altered by them.
+  lmsUserAppRoles         LmsUserAppRole[]
+  lmsPermissionExtras     LmsUserPermissionExtra[]
   qcPermissionExtras      QcUserPermissionExtra[]
   cnUserProfiles          CnUserProfile[]
   cnUserProjectAccess     CnUserProjectAccess[]
@@ -6760,6 +6770,38 @@ model QtPersonalAccessToken {
 
   @@unique([tokenHash])
   @@index([orgId, projectId])
+  @@schema("app_quiktrack")
+}
+
+/// QUIKTR-119 — one row per MCP access-control decision (allow/deny), for
+/// audit. Written by the MCP server on every gate check (membership +
+/// project-role), not just denials, so a full request trail exists.
+/// PROPOSED — not yet wired into apps/quiktrack/lib/mcp/server.ts pending
+/// integration-owner review; see docs/mcp-access-log-schema.md.
+model QtMcpAccessLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  /// Null when the call itself failed to resolve a project (e.g. a
+  /// user-scoped token with no projectId argument).
+  projectId String?
+  /// MCP tool name, e.g. "create_issue", "search_issues".
+  tool      String
+  /// The (resource, action) pair checked via userCanInProject, when the
+  /// tool is a write tool. Null for read tools, which only gate on
+  /// project membership (see lib/mcp/server.ts's existing access pattern).
+  resource  String?
+  action    String?
+  /// "allow" | "deny"
+  decision  String
+  /// Short, human-readable reason — e.g. "not a project member",
+  /// "lacks Issue:create", "ok".
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId])
   @@schema("app_quiktrack")
 }
 
@@ -18232,8 +18274,18 @@ model Invitation {
 // ENUMS
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+/// QuikLMS's role tiers. `ADMIN` is the top tier — the org's founding
+/// administrator, who onboards school/corporate tenants; `TENANT_ADMIN` is one
+/// of those tenants' own administrator.
+///
+/// `ADMIN` was named `SUPER_ADMIN` until 2026-07-29. It was renamed because the
+/// name collided with the platform-operator claim `isSuperAdmin` (set only by
+/// apps/quikit's `/api/super/users` console) — which is what actually gates
+/// cross-tenant data access, and which this role never conferred. Renamed via
+/// `ALTER TYPE … RENAME VALUE` so existing rows carried over untouched; see
+/// migrations/20260729120000_quiklms_drop_super_admin.
 enum LmsUserRole {
-  SUPER_ADMIN
+  ADMIN
   TENANT_ADMIN
   SUB_ADMIN
   MANAGER
@@ -19014,8 +19066,10 @@ model LmsUser {
   parents  LmsUserParent[] @relation("UserParents") // rows where this user is the child
 
   // Per-app RBAC (see the QuikLMS RBAC block at the end of this schema).
-  appRoles         LmsUserAppRole[]
-  permissionExtras LmsUserPermissionExtra[]
+  // `appRoles` / `permissionExtras` used to live here. Both now hang off the
+  // central `auth.User` — see the note on `LmsUserAppRole.user`. This model keeps
+  // the DOMAIN record (grade, rate, attendance, parent links); it is no longer the
+  // anchor for authorization.
 
   // Email is unique per tenant. It was previously unconstrained â€” only indexed
   // â€” while every other identity-ish column on this model was constrained, so
@@ -20869,7 +20923,21 @@ model LmsUserAppRole {
   expiresAt  DateTime?
 
   role LmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  user LmsUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Points at the CENTRAL identity, not at `LmsUser`.
+  ///
+  /// A role assignment answers "what may this LOGIN do", so it belongs to the
+  /// login. It used to reference `app_quiklms.users`, which also holds people who
+  /// have NO login (roster entries, `authUserId` NULL) — and that made a role
+  /// impossible to grant until a domain record existed. The launcher creates the
+  /// org's first admin centrally and passes that central id, so the assignment was
+  /// silently skipped and the admin ended up with no role at all.
+  ///
+  /// Matches every other app that enforces this FK (quikscale, quiktrack,
+  /// quikinfra, quiksocial, quikchat). `LmsUser` is unchanged and still holds the
+  /// domain record — grade, rate, attendance — it is just no longer in the way of
+  /// granting a role.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId, roleId])
   @@index([roleId])
@@ -20896,7 +20964,9 @@ model LmsUserPermissionExtra {
   grantedBy String?
   createdAt DateTime               @default(now())
 
-  user LmsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Central identity, for the same reason as `LmsUserAppRole.user` above — a
+  /// per-user permission grant is a statement about a login, not about a roster row.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, userId, resource, action])
   @@index([userId, orgId])

@@ -118,12 +118,12 @@ async function main() {
   });
 
   // ── Users ─────────────────────────────────────────────────────────────────
-  await upsertUser(U.SA,         'superadmin@quikskill.test', 'SUPER_ADMIN', null,      'Super', 'Admin',     hash);
+  await upsertUser(U.SA,         'superadmin@quikskill.test', 'ADMIN', null,      'Super', 'Admin',     hash);
   await upsertUser(U.CORP_ADMIN, 'admin@acme.test',           'TENANT_ADMIN', CORP_ID,   'Aria',  'Admin',     hash);
   await upsertUser(U.CORP_SUB,   'subadmin@acme.test',        'SUB_ADMIN',    CORP_ID,   'Sam',   'SubAdmin',  hash);
   await upsertUser(U.CORP_MGR,   'manager@acme.test',         'MANAGER',      CORP_ID,   'Maya',  'Manager',   hash, { managerId: U.CORP_ADMIN });
   await upsertUser(U.CORP_MGR2,  'nick@acme.test',            'MANAGER',      CORP_ID,   'Nick',  'Manager',   hash, { managerId: U.CORP_ADMIN });
-  await upsertUser(U.CORP_L1,    'learner@acme.test',         'LEARNER',      CORP_ID,   'Leo',   'Learner',   hash, { managerId: U.CORP_MGR,  employeeId: 'EMP-001', secondaryRole: 'SUB_ADMIN' });
+  await upsertUser(U.CORP_L1,    'learner@acme.test',         'LEARNER',      CORP_ID,   'Leo',   'Learner',   hash, { managerId: U.CORP_MGR,  employeeId: 'EMP-001' });
   await upsertUser(U.CORP_L2,    'emma@acme.test',            'LEARNER',      CORP_ID,   'Emma',  'Employee',  hash, { managerId: U.CORP_MGR,  employeeId: 'EMP-002' });
   await upsertUser(U.CORP_L3,    'jake@acme.test',            'LEARNER',      CORP_ID,   'Jake',  'Engineer',  hash, { managerId: U.CORP_MGR2, employeeId: 'EMP-003' });
   await upsertUser(U.SCH_ADMIN,  'admin@bright.test',         'TENANT_ADMIN', SCHOOL_ID, 'Priya', 'Principal', hash);

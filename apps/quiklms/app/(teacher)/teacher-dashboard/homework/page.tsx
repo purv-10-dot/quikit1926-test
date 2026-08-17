@@ -32,8 +32,14 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { uploadFile } from '@/lib/upload-client';
+import { MAX_HOMEWORK_BYTES, formatMaxSize } from '@/lib/constants/uploads';
+import FilePreviewModal from '@/components/FilePreviewModal';
 import { useBranding } from '@/app/providers';
 import toast, { Toaster } from 'react-hot-toast';
+
+/** The real message off a thrown API error / upload failure, never a stand-in. */
+const errorText = (err: unknown, fallback: string) =>
+  (err as { message?: string })?.message || fallback;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -205,6 +211,13 @@ const HomeworkPage = () => {
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
 
+  // Corrected-file upload, on the grading form
+  const [uploadingCorrected, setUploadingCorrected] = useState(false);
+  const [gradeError, setGradeError] = useState('');
+
+  // In-app file preview — the file the teacher is currently looking at
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   // ── Data Fetching ──────────────────────────────────────────────────────────
 
   const fetchHomework = async () => {
@@ -284,15 +297,37 @@ const HomeworkPage = () => {
     setShowModal(true);
   };
 
+  /**
+   * Attach a file to the homework being composed.
+   *
+   * Two things this deliberately does that it did not before:
+   *
+   *  1. CHECKS THE SIZE FIRST, against the same constant the route enforces
+   *     (`MAX_HOMEWORK_BYTES`). Without it an over-limit file was uploaded in
+   *     full and then refused with a 413 — the pattern `ResourceUploader` already
+   *     avoids for course resources.
+   *  2. SHOWS THE REAL ERROR. `catch { setUploadError('File upload failed.') }`
+   *     threw the diagnosis away, so a 413, a 403, an unsupported type and a
+   *     blocked cross-origin PUT were one indistinguishable message — which is
+   *     why "the upload is broken" had no lead to follow. `uploadFileWithPreview`
+   *     already classifies the bucket-CORS case into a sentence naming the cause;
+   *     that sentence has to reach the screen.
+   */
   const handleFileUpload = async (file: File) => {
-    setUploadingFile(true);
     setUploadError('');
+    if (file.size > MAX_HOMEWORK_BYTES) {
+      setUploadError(
+        `"${file.name}" is ${formatMaxSize(file.size)} — the limit is ${formatMaxSize(MAX_HOMEWORK_BYTES)}.`,
+      );
+      return;
+    }
+    setUploadingFile(true);
     try {
       const fileUrl = await uploadFile(file, '/upload/homework-resource');
-      if (!fileUrl) throw new Error('No URL returned');
+      if (!fileUrl) throw new Error('Upload completed but no file URL came back.');
       setFormData((prev) => ({ ...prev, attachmentUrls: [...prev.attachmentUrls, fileUrl] }));
-    } catch {
-      setUploadError('File upload failed. Please try again.');
+    } catch (err: unknown) {
+      setUploadError(errorText(err, 'File upload failed. Please try again.'));
     } finally {
       setUploadingFile(false);
     }
@@ -333,6 +368,20 @@ const HomeworkPage = () => {
     }
     if (!formData.batchId) {
       setFormError('Please select a batch');
+      return;
+    }
+    /**
+     * Due date is REQUIRED and was not checked here.
+     *
+     * `<input type="date">` submits `''` when untouched, the create schema's
+     * `z.string()` accepted it, and the handler reached Prisma with
+     * `new Date('')` — an Invalid Date. The teacher got "Invalid or incomplete
+     * request body" with nothing pointing at the date, which is what made
+     * homework creation look completely broken. `dateField` now refuses it
+     * server-side too; this is the half that says which field.
+     */
+    if (!formData.dueDate) {
+      setFormError('Please pick a due date');
       return;
     }
     try {
@@ -428,25 +477,68 @@ const HomeworkPage = () => {
     setGradeFeedback(sub.feedback || '');
     setCorrectedFileUrl((sub as any).correctedFileUrl || '');
     setRichFeedback((sub as any).richFeedback || '');
+    setGradeError('');
+  };
+
+  /**
+   * Upload the teacher's marked-up copy of the student's work.
+   *
+   * `correctedFileUrl` was a bare text input asking the teacher to paste a URL
+   * from somewhere else — there was no way to attach an actual file, even though
+   * `POST /api/upload/homework-resource` already admits TEACHER precisely for
+   * this. Pasting an external link still works; it is no longer the only option.
+   */
+  const handleCorrectedFileUpload = async (file: File) => {
+    setGradeError('');
+    if (file.size > MAX_HOMEWORK_BYTES) {
+      setGradeError(
+        `"${file.name}" is ${formatMaxSize(file.size)} — the limit is ${formatMaxSize(MAX_HOMEWORK_BYTES)}.`,
+      );
+      return;
+    }
+    setUploadingCorrected(true);
+    try {
+      const url = await uploadFile(file, '/upload/homework-resource');
+      if (!url) throw new Error('Upload completed but no file URL came back.');
+      setCorrectedFileUrl(url);
+    } catch (err: unknown) {
+      setGradeError(errorText(err, 'Upload failed. Please try again.'));
+    } finally {
+      setUploadingCorrected(false);
+    }
   };
 
   const submitGrade = async () => {
     if (!gradingSubmissionId) return;
+    const max = selectedHomework?.totalPoints;
+    // Caught here as well as server-side so the teacher sees which number is
+    // wrong instead of a generic validation failure.
+    if (max != null && gradeScore > max) {
+      setGradeError(`Score cannot exceed ${max}.`);
+      return;
+    }
+    if (gradeScore < 0) {
+      setGradeError('Score cannot be negative.');
+      return;
+    }
     try {
       setGradingSubmitting(true);
+      setGradeError('');
       await api.patch<any>(`/homework/submissions/${gradingSubmissionId}/grade`, {
         score: gradeScore,
         feedback: gradeFeedback,
         correctedFileUrl: correctedFileUrl || undefined,
         richFeedback: richFeedback || undefined,
       });
+      toast.success('Grade saved');
       if (selectedHomework) {
         openDetail(selectedHomework);
       }
       setGradingSubmissionId(null);
     } catch (err: unknown) {
-      const e = err as any;
-      toast.error(e?.message || 'Failed to grade');
+      const message = errorText(err, 'Failed to grade');
+      setGradeError(message);
+      toast.error(message);
     } finally {
       setGradingSubmitting(false);
     }
@@ -607,23 +699,32 @@ const HomeworkPage = () => {
                       <Eye className="w-3.5 h-3.5" />
                       View
                     </button>
+                    {/*
+                      Edit is offered for draft AND published homework.
+                      `create()` publishes immediately (that is what makes it
+                      visible to the batch), so gating Edit on `status === 'draft'`
+                      meant nothing a teacher created could ever be edited — the
+                      button existed but was unreachable, even though
+                      `PATCH /api/homework/:id` accepts the edit. Closed homework
+                      stays read-only: its submissions are already graded.
+                    */}
+                    {hw.status !== 'closed' && (
+                      <button
+                        onClick={() => openEdit(hw)}
+                        className="flex items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 transition px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        Edit
+                      </button>
+                    )}
                     {hw.status === 'draft' && (
-                      <>
-                        <button
-                          onClick={() => openEdit(hw)}
-                          className="flex items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 transition px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handlePublish(hw._id)}
-                          className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition px-3 py-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ml-auto"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          Publish
-                        </button>
-                      </>
+                      <button
+                        onClick={() => handlePublish(hw._id)}
+                        className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition px-3 py-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ml-auto"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Publish
+                      </button>
                     )}
                     {hw.status === 'published' && (
                       <button
@@ -725,7 +826,9 @@ const HomeworkPage = () => {
               {/* Due Date & Total Points */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Due Date</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                    Due Date <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="date"
                     value={formData.dueDate}
@@ -770,7 +873,7 @@ const HomeworkPage = () => {
                     {uploadingFile ? (
                       <><Loader2 className="w-4 h-4 animate-spin text-indigo-500" /><span className="text-sm text-gray-500">Uploading...</span></>
                     ) : (
-                      <><Upload className="w-4 h-4 text-gray-400" /><span className="text-sm text-gray-500 dark:text-gray-400">Click to upload PDF, DOC, Image...</span></>
+                      <><Upload className="w-4 h-4 text-gray-400" /><span className="text-sm text-gray-500 dark:text-gray-400">Click to upload PDF, DOC, Image... (max {formatMaxSize(MAX_HOMEWORK_BYTES)})</span></>
                     )}
                     <input type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp4,.zip"
                       onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); e.target.value = ''; }}
@@ -938,12 +1041,21 @@ const HomeworkPage = () => {
                   {selectedHomework.attachmentUrls && selectedHomework.attachmentUrls.length > 0 && (
                     <div className="space-y-2">
                       {selectedHomework.attachmentUrls.map((url, i) => (
-                        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-100 dark:border-gray-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition">
+                        <div key={i} className="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-100 dark:border-gray-600">
                           <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
-                          <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">{getFileNameFromUrl(url)}</span>
-                          <Download className="w-4 h-4 text-gray-400 shrink-0" />
-                        </a>
+                          <button type="button" onClick={() => setPreviewUrl(url)}
+                            className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 text-left hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition">
+                            {getFileNameFromUrl(url)}
+                          </button>
+                          <button type="button" onClick={() => setPreviewUrl(url)} title="Preview in app"
+                            className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition shrink-0">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <a href={url} download={getFileNameFromUrl(url)} title="Download"
+                            className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition shrink-0">
+                            <Download className="w-4 h-4" />
+                          </a>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1075,18 +1187,22 @@ const HomeworkPage = () => {
                                 {sub.attachmentUrls && sub.attachmentUrls.length > 0 && (
                                   <div>
                                     <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Attachments</p>
+                                    {/*
+                                      Opens IN the app. These were `target="_blank"`
+                                      links, so reviewing a class meant leaving the
+                                      grading screen once per submission.
+                                    */}
                                     <div className="flex flex-wrap gap-2">
                                       {sub.attachmentUrls.map((url, idx) => (
-                                        <a
+                                        <button
                                           key={idx}
-                                          href={url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
+                                          type="button"
+                                          onClick={() => setPreviewUrl(url)}
                                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-medium rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition border border-indigo-200 dark:border-indigo-700"
                                         >
-                                          <FileText className="w-3.5 h-3.5" />
+                                          <Eye className="w-3.5 h-3.5" />
                                           {getFileNameFromUrl(url)}
-                                        </a>
+                                        </button>
                                       ))}
                                     </div>
                                   </div>
@@ -1125,13 +1241,30 @@ const HomeworkPage = () => {
                                 {/* Enhanced Grading Fields */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Corrected File URL (optional)</label>
-                                    <input
-                                      value={correctedFileUrl}
-                                      onChange={(e) => setCorrectedFileUrl(e.target.value)}
-                                      placeholder="Link to corrected version..."
-                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition"
-                                    />
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Corrected File (optional)</label>
+                                    {correctedFileUrl ? (
+                                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
+                                        <FileText className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                        <button type="button" onClick={() => setPreviewUrl(correctedFileUrl)}
+                                          className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1 text-left hover:underline">
+                                          {getFileNameFromUrl(correctedFileUrl)}
+                                        </button>
+                                        <button type="button" onClick={() => setCorrectedFileUrl('')} title="Remove"
+                                          className="text-red-400 hover:text-red-600 transition shrink-0">
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 cursor-pointer hover:border-indigo-400 transition">
+                                        {uploadingCorrected ? (
+                                          <><Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" /><span className="text-xs text-gray-500">Uploading...</span></>
+                                        ) : (
+                                          <><Upload className="w-3.5 h-3.5 text-gray-400" /><span className="text-xs text-gray-500 dark:text-gray-400">Upload marked-up file</span></>
+                                        )}
+                                        <input type="file" className="hidden" disabled={uploadingCorrected}
+                                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCorrectedFileUpload(f); e.target.value = ''; }} />
+                                      </label>
+                                    )}
                                   </div>
                                   <div>
                                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Rich Feedback (optional)</label>
@@ -1144,6 +1277,12 @@ const HomeworkPage = () => {
                                     />
                                   </div>
                                 </div>
+                                {gradeError && (
+                                  <p className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                    {gradeError}
+                                  </p>
+                                )}
                                 <div className="flex items-center gap-2 justify-end">
                                   <button
                                     onClick={() => setGradingSubmissionId(null)}
@@ -1164,12 +1303,21 @@ const HomeworkPage = () => {
                             )}
 
                             {/* Show feedback if graded */}
-                            {sub.status === 'graded' && sub.feedback && gradingSubmissionId !== sub._id && (
-                              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-                                <div className="flex items-start gap-1.5">
-                                  <MessageSquare className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">{sub.feedback}</p>
-                                </div>
+                            {sub.status === 'graded' && (sub.feedback || sub.correctedFileUrl) && gradingSubmissionId !== sub._id && (
+                              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 space-y-1.5">
+                                {sub.feedback && (
+                                  <div className="flex items-start gap-1.5">
+                                    <MessageSquare className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">{sub.feedback}</p>
+                                  </div>
+                                )}
+                                {sub.correctedFileUrl && (
+                                  <button type="button" onClick={() => setPreviewUrl(sub.correctedFileUrl!)}
+                                    className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                                    <Eye className="w-3.5 h-3.5" />
+                                    Corrected file: {getFileNameFromUrl(sub.correctedFileUrl)}
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1183,6 +1331,12 @@ const HomeworkPage = () => {
           </div>
         </div>
       )}
+
+      {/*
+        Rendered last and above both modals (z-[110]) so a submitted file opens on
+        top of the detail modal the teacher is grading in, rather than replacing it.
+      */}
+      {previewUrl && <FilePreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />}
     </div>
   );
 };
