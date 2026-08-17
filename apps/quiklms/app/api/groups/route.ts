@@ -14,20 +14,20 @@ const createSchema = z.object({
   memberIds: z.array(z.string()).max(10_000).optional(),
 });
 
-// POST /api/groups — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/groups — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   if (!user.orgId) throw BadRequest('Tenant ID is required');
   const dto = await parseBody(req, createSchema);
   const group = await create(user.orgId, user.id, dto);
   return json({ success: true, data: group });
 });
 
-// GET /api/groups — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// GET /api/groups — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   if (!user.orgId) throw BadRequest('Tenant ID is required');
   return json({ success: true, data: await findAll(user.orgId) });
 });

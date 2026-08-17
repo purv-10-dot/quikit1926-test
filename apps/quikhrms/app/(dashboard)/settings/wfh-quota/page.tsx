@@ -601,7 +601,7 @@ function WfhAssignModal({ groupId, groupName, onClose, onAssigned }: {
 
   const { data: empData } = useQuery({
     queryKey: ["employees", "wfh-assign"],
-    queryFn: () => api.get<AssignEmp[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    queryFn: () => api.get<AssignEmp[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
   });
   const { data: roleData } = useQuery({
     queryKey: ["roles", "wfh-assign"],

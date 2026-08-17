@@ -7,10 +7,10 @@ import { applyTeacherPrivacy } from '@/lib/privacy';
 
 const schema = z.object({ isActive: z.boolean() });
 
-// PATCH /api/users/:id/toggle-active — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// PATCH /api/users/:id/toggle-active — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const { isActive } = await parseBody(req, schema);
   const orgId = orgScope(actor);
   const data = await toggleActive(params!.id, orgId, isActive);

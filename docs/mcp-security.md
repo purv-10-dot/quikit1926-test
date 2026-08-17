@@ -1,4 +1,4 @@
-# MCP server security — no-delete guardrail (QUIKTR-118)
+# MCP server security — no-delete guardrail (QUIKTR-118) & access control (QUIKTR-119)
 
 The QuikTrack MCP server (`apps/quiktrack/lib/mcp/server.ts`, mounted at
 `apps/quiktrack/app/api/mcp/route.ts`) must never be able to delete any
@@ -137,3 +137,95 @@ destructive tool name like `"delete_issue"` is unreachable via the real
   entity) — never a hard delete of an issue, comment, sprint, project,
   attachment, or user/member record.
 - Add the new tool to the audit list at the top of this document.
+- Gate every new tool through `checkProjectMembership` (reads) and, for
+  writes, `checkWritePermission` too (see the QUIKTR-119 section below) —
+  don't call `loadProjectAccess`/`userCanInProject` directly, or the tool
+  won't get an audit-log entry.
+- If the new tool takes a `projectId` or `issueId` argument, don't look it
+  up by a raw `id` filter alone — resolve it via `checkProjectMembership`'s
+  resolved `access.projectId` (for a project) or `resolveIssueIdOrKey()`
+  (`lib/mcp/resolveIssue.ts`, for an issue) first, so it also accepts the
+  human-readable key (e.g. `"QUIKTR"` / `"QUIKTR-119"`), not just the cuid.
+
+# Access control (QUIKTR-119)
+
+The MCP server enforces the **authenticated caller's own QuikTrack
+permissions** on every request — a user can only see and act on the
+projects and data they already have access to in QuikTrack itself. This
+was largely already true by construction (every tool already resolved a
+project and checked membership before touching data), but this ticket:
+(1) closed two real cross-project disclosure gaps found during audit,
+(2) added an audit-decision log, and (3) documents the actual permission
+precedence model, since the ticket's framing of it didn't match reality.
+
+## What was already correct (confirmed by audit, not changed)
+
+Every one of the 25 tools resolves a `projectId` and checks the caller's
+membership in it (`loadProjectAccess`) before returning or mutating any
+data; all 10 write tools additionally check a specific `(resource, action)`
+grant (`userCanInProject`). `list_projects` already scopes to the caller's
+own project memberships for a non-admin caller (an org/app admin correctly
+sees every project — that's their role, not a bypass). None of this needed
+to change; see `apps/quiktrack/lib/mcp/server.ts`'s `checkProjectMembership`
+/ `checkWritePermission` helpers, which every tool now routes through.
+
+## Two disclosure gaps closed
+
+1. **`link_issues`** only checked project access for the *outward* issue.
+   The *inward* issue's own project was never access-checked, so a caller
+   could confirm an issue id exists in a project they aren't a member of
+   just by attempting to link to it. Fixed: the inward issue's project now
+   goes through the same `checkProjectMembership` gate.
+2. **`get_issue` / `list_issue_links`** (via the shared `loadIssueLinks`
+   helper) could surface a linked issue's key/title/status even when that
+   issue lived in a project the caller can't see (cross-project links are
+   an intentional feature — see QUIKTR-116). Fixed: `loadIssueLinks` now
+   filters out any linked issue whose own project the caller doesn't have
+   access to, rather than exposing it.
+
+## Permission precedence — documented as implemented, not changed
+
+The ticket describes "project-level grants refine org-level defaults;
+most-restrictive wins unless an explicit higher grant exists." **That is
+not what `userCanInProject` (`apps/quiktrack/lib/api/permissions.ts`)
+actually does, and this was a deliberate choice not to change it**: it's a
+core, repo-wide RBAC function used by REST routes too, not something to
+redefine as a side effect of an MCP-specific ticket. The actual, documented
+behavior:
+
+1. **App-admin bypasses everything.** A restrictive project role can never
+   lock an admin out.
+2. **A project-specific role, if assigned, is the entire story.** It does
+   **not** merge with the caller's org-wide role — the org-wide role isn't
+   consulted at all once a project role exists. This is intentional (see
+   the comment at `permissions.ts`'s `userCanInProject`): it lets revoking
+   a permission at the project level genuinely deny it, even when the
+   org-wide role would otherwise grant it.
+3. **No project role assigned** → the org-wide role's grants apply.
+
+MCP enforces exactly this — the same `userCanInProject` call REST routes
+use — so the MCP surface and the web app can never disagree about what a
+given user is allowed to do.
+
+## Audit log
+
+Every `checkProjectMembership` / `checkWritePermission` decision — allow
+**and** deny, not just denials — is written to `QtMcpAccessLog`
+(`apps/quiktrack/lib/mcp/accessLog.ts`, schema proposed in
+`docs/mcp-access-log-schema.md`): who, which org/project, which tool,
+which `(resource, action)` for write tools, and a short human-readable
+reason. A logging failure (e.g. the migration not yet applied) never
+breaks the actual tool call — it falls back to a structured console line.
+
+## Tests
+
+- `apps/quiktrack/__tests__/unit/mcp-access-log.test.ts` — `logAccessDecision`
+  writes the right fields and never throws.
+- `apps/quiktrack/__tests__/api/mcp.test.ts`, `describe("QUIKTR-119 — access
+  decision audit log")` — allow/deny logging end-to-end, and a role-ladder
+  case proving a project role that actually holds the `Issue:create` grant
+  succeeds (not just the org-admin bypass every other permission test uses).
+- `describe("QUIKTR-119 — cross-project leakage fixes")` — both disclosure
+  fixes above, verified directly.
+- `describe("list_projects")` (already existing) — a non-admin's user-scoped
+  token returns only their own project memberships, not every org project.

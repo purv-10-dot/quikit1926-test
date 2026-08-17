@@ -20,6 +20,7 @@ import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
+import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 // CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
 // so 5–6 digit nonsense values can't be entered.
@@ -123,6 +124,9 @@ export default function CandidatesPage() {
   const [applyTarget, setApplyTarget] = useState<CandidateItem | null>(null);
   const [applyReqId, setApplyReqId] = useState("");
   const [showBulk, setShowBulk] = useState(false);
+  const [showSmartAdd, setShowSmartAdd] = useState(false);
+  const [smartResumeUrl, setSmartResumeUrl] = useState("");
+  const [smartParsing, setSmartParsing] = useState(false);
   const [resumeTarget, setResumeTarget] = useState<CandidateItem | null>(null);
   const [resumeCtx, setResumeCtx] = useState<{ requisitionTitle: string; heldStage: string; stages: string[] } | null>(null);
   const [resumeStage, setResumeStage] = useState("");
@@ -139,6 +143,51 @@ export default function CandidatesPage() {
   };
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Partial<Record<keyof typeof emptyForm, string>>>({});
+
+  // "Smart Add" — upload a resume, auto-fill the Add Candidate wizard from it.
+  // Never blocks: any parse failure just opens the wizard with the resume
+  // attached and everything else blank, same as filling it in by hand.
+  const handleSmartParse = async () => {
+    if (!smartResumeUrl) return;
+    setSmartParsing(true);
+    try {
+      const res = await api.post<{
+        firstName: string; lastName: string; email: string; phone: string;
+        currentCompany: string; currentDesignation: string;
+        experienceMonths: number | null; skills: string[];
+        linkedinUrl: string; location: string;
+      }>("/api/v1/hrms/recruit/candidates/parse-resume", { resumeUrl: smartResumeUrl });
+      const p = res.data;
+      setForm({
+        ...emptyForm,
+        resumeUrl: smartResumeUrl,
+        firstName: p.firstName || "",
+        lastName: p.lastName || "",
+        email: p.email || "",
+        phone: p.phone || "",
+        currentCompany: p.currentCompany || "",
+        currentDesignation: p.currentDesignation || "",
+        location: p.location || "",
+        totalExperience: p.experienceMonths ?? null,
+        linkedinUrl: p.linkedinUrl || "",
+        skills: Array.isArray(p.skills) ? p.skills.join(", ") : "",
+      });
+      if (!p.firstName && !p.email) {
+        toast.info("Couldn't find much in this resume", "Fields are blank — please fill them in manually.");
+      } else {
+        toast.success("Resume read", "Review the pre-filled details before saving.");
+      }
+    } catch {
+      setForm({ ...emptyForm, resumeUrl: smartResumeUrl });
+      toast.error("Couldn't auto-fill from resume", "Please fill the details in manually.");
+    } finally {
+      setSmartParsing(false);
+      setErrors({});
+      setShowSmartAdd(false);
+      setSmartResumeUrl("");
+      setShowCreate(true);
+    }
+  };
 
   const isIndiaLocation = /\bindia\b|bengaluru|bangalore|mumbai|delhi|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram|ahmedabad|indore|bhopal|jaipur|lucknow|kanpur|surat|kochi/i
     .test(form.location);
@@ -491,6 +540,10 @@ export default function CandidatesPage() {
             className="flex items-center gap-2 btn bg-white ring-1 ring-gray-200 text-gray-700 hover:bg-gray-50">
             <Upload size={13} /> Bulk Add
           </button>
+          <button onClick={() => { setSmartResumeUrl(""); setShowSmartAdd(true); }}
+            className="flex items-center gap-2 btn bg-white ring-1 ring-green-200 text-green-700 hover:bg-green-50">
+            <Sparkles size={13} /> Smart Add
+          </button>
           <button onClick={() => { setForm(emptyForm); setErrors({}); setShowCreate(true); }}
             className="flex items-center gap-2 btn bg-green-600 hover:bg-green-700 text-white">
             <Plus size={13} /> Add Candidate
@@ -731,6 +784,27 @@ export default function CandidatesPage() {
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal open={showSmartAdd} onClose={() => { setShowSmartAdd(false); setSmartResumeUrl(""); }}
+        title="Smart Add" subtitle="Upload a resume — we'll auto-fill the candidate form from it." size="md"
+        headerIcon={<Sparkles size={18} />}>
+        <div className="space-y-4">
+          <FileUploadInput value={smartResumeUrl} onChange={setSmartResumeUrl}
+            accept="application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            label="Resume" placeholder="Upload resume (PDF / DOCX, max 5MB)" />
+          <p className="text-xs text-gray-500">We'll read the resume and pre-fill name, contact info, current role, experience, skills and LinkedIn — you can review and edit everything before saving.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => { setShowSmartAdd(false); setSmartResumeUrl(""); }}
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="button" onClick={handleSmartParse} disabled={!smartResumeUrl || smartParsing}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
+              <Sparkles size={13} /> {smartParsing ? "Reading resume..." : "Parse & Continue"}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }}
@@ -1497,7 +1571,13 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
                   onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} className={inp(!!errors.phone)} />
               </Field>
               <Field label="Location" icon={<MapPin size={12} />}>
-                <input type="text" placeholder="Bengaluru" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={inputClass} />
+                <Select
+                  value={form.location}
+                  onChange={(v) => setForm({ ...form, location: v })}
+                  searchable
+                  placeholder="Search city…"
+                  options={INDIAN_CITIES.map((c) => ({ value: c, label: c }))}
+                />
               </Field>
               <Field label="Source">
                 <SourceSelect value={form.source} onChange={(v) => setForm({ ...form, source: v })} />

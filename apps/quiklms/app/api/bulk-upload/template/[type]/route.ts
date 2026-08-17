@@ -3,10 +3,10 @@ import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { getTemplate } from '@/lib/services/bulk-upload-service';
 
-// GET /api/bulk-upload/template/:type — TENANT_ADMIN | SUB_ADMIN | SUPER_ADMIN
+// GET /api/bulk-upload/template/:type — TENANT_ADMIN | SUB_ADMIN | ADMIN
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
+  requireRoles(user, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN']);
   const type = params!.type as 'teachers' | 'students' | 'parents';
   const csv = getTemplate(type);
   if (!csv) return json({ success: false, message: 'Unknown template type' }, 400);

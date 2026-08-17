@@ -168,6 +168,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         data: {
           status: "AppHired",
           currentStage: "Hired",
+          ...(application.status !== "AppHired" && { hiredAt: new Date() }),
           updatedBy: userId,
         },
       });

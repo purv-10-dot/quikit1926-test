@@ -23,7 +23,11 @@ function valueCondition(f: CustomFilter): Prisma.QtIssueFieldValueWhereInput | n
     case "contains":
       return { valueText: { contains: String(v), mode: "insensitive" } };
     case "equals":
-      return { valueText: String(v) };
+      // Case-insensitive on purpose: `equals` is only offered on the typed text
+      // types (SHORT_TEXT / LONG_TEXT / URL — see registry.ts), so the operand is
+      // whatever the user typed. `is`/`in`/`has_*` below stay exact because their
+      // operands are ids / picked option values, not free text.
+      return { valueText: { equals: String(v), mode: "insensitive" } };
     case "eq":
       return { valueNumber: Number(v) };
     case "neq":

@@ -2,7 +2,7 @@
  * PHASE 20 — Page-level role gating.
  *
  * The auth map claims every route-group layout renders chrome and enforces
- * nothing: `(super-admin)/layout.tsx` is `<AppShell role="SUPER_ADMIN">` with
+ * nothing: `(super-admin)/layout.tsx` is `<AppShell role="ADMIN">` with
  * no session read, no requireRoles, no redirect. If true, a LEARNER can load
  * the super-admin dashboard and only the XHRs it fires will 403.
  *
@@ -98,13 +98,13 @@ test.describe("Phase 20 — client-trusted role signal", () => {
     const state = await storageStateFor("learner", BASE);
     await page.context().addCookies(state.cookies);
     await page.goto("/profile", { waitUntil: "domcontentloaded" });
-    await page.evaluate(() => localStorage.setItem("qs_role", "SUPER_ADMIN"));
+    await page.evaluate(() => localStorage.setItem("qs_role", "ADMIN"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
 
     const body = await page.content();
     console.log(
-      `[INFO] After forcing localStorage.qs_role=SUPER_ADMIN as a LEARNER, ` +
+      `[INFO] After forcing localStorage.qs_role=ADMIN as a LEARNER, ` +
         `super-admin nav present=${/master library|platform analytics|system health/i.test(body)}`,
     );
 

@@ -68,10 +68,34 @@ export function isOAuthProvider(id: string): id is OAuthProviderId {
   return id in OAUTH_PROVIDERS;
 }
 
+/**
+ * This app's own public origin (UAT: https://uatflow.quikit.ai).
+ *
+ * Resolved per-call, never at module scope, so `next build` can import this
+ * module while collecting page data without a live env.
+ *
+ * In production a missing QUIKFLOW_URL is fatal rather than a silent
+ * localhost fallback: the value ends up in OAuth redirect URIs, and
+ * "http://localhost:3014/api/connections/gmail/callback" does not match the
+ * registered console URI — the consent screen fails with a redirect_uri_mismatch
+ * that looks like a provider misconfiguration instead of a missing env var.
+ * See docs/engineering/prod-safety-rules.md.
+ */
+export function quikflowBaseUrl(): string {
+  const base = process.env.QUIKFLOW_URL;
+  if (base) return base.replace(/\/$/, "");
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "QUIKFLOW_URL is not set. It is required in production to build OAuth " +
+        "redirect URIs (e.g. https://uatflow.quikit.ai).",
+    );
+  }
+  return "http://localhost:3014"; // prod-safety-allow: dev-only, guarded above
+}
+
 /** The OAuth redirect URI for a provider (must match the console registration). */
 export function redirectUriFor(provider: string): string {
-  const base = process.env.QUIKFLOW_URL ?? "http://localhost:3014";
-  return `${base}/api/connections/${provider}/callback`;
+  return `${quikflowBaseUrl()}/api/connections/${provider}/callback`;
 }
 
 /** A row from WfConnection with the columns the facade reads. */

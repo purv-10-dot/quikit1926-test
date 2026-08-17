@@ -8,7 +8,7 @@ import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/number-input";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { clsx } from "clsx";
-import { Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy, Eye } from "lucide-react";
+import { Video, Phone, Users, Calendar, Link2, MapPin, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy, Eye } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
@@ -213,7 +213,7 @@ export default function InterviewsPage() {
 
   const { data: empData } = useQuery({
     queryKey: ["interviewer-employees"],
-    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=200"),
+    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=200&picker=1"),
     enabled: showCreate,
   });
 
@@ -995,14 +995,6 @@ export default function InterviewsPage() {
                         <>
                           {new Date(i.scheduledAt).getTime() < Date.now() && (
                             <>
-                              <Tooltip content="Submit feedback">
-                                <button
-                                  onClick={() => { setFeedback({ overallRating: 7, recommendation: "Hire", strengths: "", concerns: "", overallComments: "" }); setFeedbackTarget(i); }}
-                                  className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
-                                >
-                                  <Star size={12} />
-                                </button>
-                              </Tooltip>
                               <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
                                 <button
                                   onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
@@ -1061,14 +1053,6 @@ export default function InterviewsPage() {
                           <>
                             {!i.scorecard && (
                               <>
-                                <Tooltip content="Submit feedback">
-                                  <button
-                                    onClick={() => { setFeedback({ overallRating: 7, recommendation: "Hire", strengths: "", concerns: "", overallComments: "" }); setFeedbackTarget(i); }}
-                                    className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
-                                  >
-                                    <Star size={12} />
-                                  </button>
-                                </Tooltip>
                                 <Tooltip content={i.feedbackRequestSentAt ? `Send feedback reminder (sent ${i.reminderCount ?? 0}x)` : "Send feedback request"}>
                                   <button
                                     onClick={() => toast.promise(remindMut.mutateAsync({ id: i.id }), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}

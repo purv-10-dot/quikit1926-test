@@ -8,16 +8,19 @@
  * RBAC v2 reproduce today's authorisation rather than a policy someone invented.
  * QuikLMS had 0 rows in this table against quikscale's 1,922.
  *
- * Role names in the matrix are the seven `LmsUserRole` values, and
- * `seedLmsAppRoles` already creates one `AppRole` per org under exactly those
- * names, so a grant maps to a role row by name with no translation table.
+ * Role names in the matrix are the seven `LmsUserRole` values and
+ * `seedLmsAppRoles` creates one `AppRole` per org, but the two vocabularies differ
+ * on the top tier: the enum says `ADMIN`, the catalogue row is the platform-standard
+ * `admin`. `lmsRoleToAppRoleName` bridges that one case; the other six map straight
+ * through.
  *
  * Idempotent: `createMany` + `skipDuplicates` against
  * `@@unique([roleId, resource, action])`. Safe to re-run after regenerating the
  * matrix or adding a role.
  */
+import type { LmsUserRole } from '@prisma/client';
 import { db } from '@/lib/db';
-import { seedLmsAppRoles } from '@/lib/api/seed-lms-app-roles';
+import { seedLmsAppRoles, lmsRoleToAppRoleName } from '@/lib/api/seed-lms-app-roles';
 import { PERMISSION_MATRIX } from '@/lib/auth/permission-matrix.generated';
 import { isAction } from '@/lib/auth/permissions-registry';
 
@@ -81,21 +84,54 @@ export async function seedLmsPermissions(orgId: string): Promise<SeedPermissions
   if (roleIdByName.size === 0) return result;
 
   const rows: Array<{ roleId: string; resource: string; action: string }> = [];
+  const staged = new Set<string>(); // `${roleId}:${resource}:${action}` — de-dupes admin's double grant below.
   const unknown = new Set<string>();
+  const everyPair = new Set<string>(); // `${resource}:${action}`, across every role in the matrix.
+
+  const stage = (roleId: string, resource: string, action: string) => {
+    const key = `${roleId}:${resource}:${action}`;
+    if (staged.has(key)) return;
+    staged.add(key);
+    rows.push({ roleId, resource, action });
+    result.intended += 1;
+  };
 
   for (const [resource, actions] of Object.entries(PERMISSION_MATRIX)) {
     for (const [action, roles] of Object.entries(actions)) {
       if (!isAction(action) || !roles) continue;
+      everyPair.add(`${resource}:${action}`);
 
       for (const roleName of roles) {
-        const roleId = roleIdByName.get(roleName);
+        // Matrix keys are `LmsUserRole` values; `roleIdByName` is keyed by CATALOGUE
+        // name. Six of the seven agree, but the top tier is `ADMIN` in the enum and
+        // `admin` in the catalogue — so a raw lookup misses every one of its ~228
+        // grants and buries them in `unknownRoles`, leaving the org's most
+        // privileged role with no authority at all. Translate before looking up.
+        const roleId = roleIdByName.get(lmsRoleToAppRoleName(roleName as LmsUserRole));
         if (!roleId) {
           unknown.add(roleName);
           continue;
         }
-        rows.push({ roleId, resource, action });
-        result.intended += 1;
+        stage(roleId, resource, action);
       }
+    }
+  }
+
+  // `admin` gets EVERY (resource, action) pair the matrix knows about,
+  // unconditionally — quikscale parity. `permissions.ts`'s `userCan` doc
+  // comment already says "admin passes because its seeded grants say so,
+  // exactly as in quikscale" — quikscale's `seedAdminAppRole` grants every
+  // `RolePermission` pair, full stop, not just the ones its route guards
+  // happen to literally name `ADMIN` in their `requireRoles(...)` call. Without
+  // this, ADMIN was missing every grant exclusive to TENANT_ADMIN/SUB_ADMIN/
+  // etc. — attendance, batches, homework, exams, payouts, credits, scheduling
+  // and more — despite sitting at the top of the role hierarchy (added
+  // 2026-08-04, alongside making every invited org_admin resolve to ADMIN).
+  const adminRoleId = roleIdByName.get(lmsRoleToAppRoleName('ADMIN'));
+  if (adminRoleId) {
+    for (const pair of everyPair) {
+      const sep = pair.indexOf(':');
+      stage(adminRoleId, pair.slice(0, sep), pair.slice(sep + 1));
     }
   }
 

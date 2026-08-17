@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles, userHasRole } from '@/lib/auth/context';
+import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { createTemplate, findAll, removeDuplicateIssuedCertificates } from '@/lib/services/certificates-service';
 
-function isTenantOrSubAdmin(role: string, secondaryRole: string | null) {
-  return ['TENANT_ADMIN', 'SUB_ADMIN'].includes(role) || ['TENANT_ADMIN', 'SUB_ADMIN'].includes(secondaryRole || '');
+function isTenantOrSubAdmin(role: string) {
+  return ['TENANT_ADMIN', 'SUB_ADMIN'].includes(role);
 }
 
 /**
@@ -37,7 +37,7 @@ const createTemplateSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
   // Remainder of `TEMPLATE_WRITABLE`. The handler overwrites `approvalStatus`,
   // `isActive`, `orgId`, `submittedBy` and `submittedByTenantId` for a
-  // TENANT_ADMIN/SUB_ADMIN caller; they are declared so a SUPER_ADMIN creating
+  // TENANT_ADMIN/SUB_ADMIN caller; they are declared so a ADMIN creating
   // a global template keeps the reach it has today.
   orgId: z.string().nullish(),
   submittedBy: z.string().nullish(),
@@ -48,10 +48,10 @@ const createTemplateSchema = z.object({
   rejectionReason: z.string().nullish(),
 });
 
-// POST /api/certificates — create template. SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/certificates — create template. ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const orgId = user.orgId;
 
   // Scoped to this tenant — unscoped it swept every issued certificate in every
@@ -61,14 +61,14 @@ export const POST = route(async (req) => {
   const body = (await parseBody(req, createTemplateSchema)) as Record<string, unknown>;
 
   let approvalEnabled = true;
-  if (isTenantOrSubAdmin(user.role, user.secondaryRole) && orgId) {
+  if (isTenantOrSubAdmin(user.role) && orgId) {
     try {
       const tenant = await db.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
       approvalEnabled = (tenant?.featureConfig as Record<string, unknown>)?.approvalWorkflowEnabled !== false;
     } catch { /* default */ }
   }
 
-  if (isTenantOrSubAdmin(user.role, user.secondaryRole)) {
+  if (isTenantOrSubAdmin(user.role)) {
     if (approvalEnabled) { body.approvalStatus = 'pending_approval'; body.isActive = false; }
     else { body.approvalStatus = 'approved'; body.isActive = true; }
     body.orgId = orgId;
@@ -83,17 +83,16 @@ export const POST = route(async (req) => {
   const certificate = await createTemplate(body);
   return json({
     success: true, data: certificate,
-    message: isTenantOrSubAdmin(user.role, user.secondaryRole) && approvalEnabled
+    message: isTenantOrSubAdmin(user.role) && approvalEnabled
       ? 'Certificate template submitted for approval'
       : 'Certificate template created successfully',
   });
 });
 
-// GET /api/certificates — list templates. SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER | LEARNER
+// GET /api/certificates — list templates. ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER | LEARNER
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
-  void userHasRole;
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
   const certificates = await findAll(user.orgId ?? undefined);
   return json({ success: true, data: certificates });
 });

@@ -152,6 +152,28 @@ const StudentSchedulePage = () => {
     }
   };
 
+  /**
+   * Open a class's room, whichever shape `meetingId` arrived in.
+   *
+   * `/scheduling/student/classes` returns the class's own scalar columns, so
+   * `meetingId` is a plain id here; the populated `{_id, joinUrl}` form comes from
+   * other endpoints. Both were already handled inline — pulled out so the
+   * `scheduled` and `in_progress` buttons cannot drift apart.
+   */
+  const openClassMeeting = async (cls: ScheduledClass) => {
+    if (typeof cls.meetingId === 'object' && cls.meetingId?.joinUrl) {
+      await joinAndOpenMeeting(cls.meetingId._id, cls.meetingId.joinUrl);
+      return;
+    }
+    const id = typeof cls.meetingId === 'string' ? cls.meetingId : cls.meetingId?._id;
+    if (!id) return;
+    // Log the join first, then resolve the URL — `fetchMeetingLink` is what opens
+    // the window, so doing it the other way round loses the popup to the browser's
+    // user-gesture rule on slow networks.
+    await joinAndOpenMeeting(id, undefined);
+    await fetchMeetingLink(id);
+  };
+
   const daysWithClasses = useMemo(() => {
     return weekDates.filter((d) =>
       classes.some((c) => new Date(c.startTime).toDateString() === d.toDateString()),
@@ -400,32 +422,27 @@ const StudentSchedulePage = () => {
                               </div>
                             </div>
                             <div className="flex sm:flex-col gap-2 sm:items-end flex-shrink-0">
-                              {cls.status === 'in_progress' && cls.meetingId && (
+                              {/*
+                                A `scheduled` class with a room is JOINABLE, not just
+                                "ready". It used to render a dead badge, so a student who
+                                arrived on time — before the teacher pressed Start — had
+                                the link sitting in front of them and no way to open it,
+                                while the invitation email for the same session did work.
+                              */}
+                              {(cls.status === 'in_progress' || cls.status === 'scheduled') && cls.meetingId && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    if (typeof cls.meetingId === 'object' && cls.meetingId?.joinUrl) {
-                                      joinAndOpenMeeting(cls.meetingId._id, cls.meetingId.joinUrl);
-                                    } else {
-                                      const id = typeof cls.meetingId === 'string' ? cls.meetingId : cls.meetingId?._id;
-                                      if (id) {
-                                        fetchMeetingLink(id);
-                                        joinAndOpenMeeting(id, undefined);
-                                      }
-                                    }
-                                  }}
-                                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm transition w-full sm:w-auto"
+                                  onClick={() => openClassMeeting(cls)}
+                                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition w-full sm:w-auto ${
+                                    cls.status === 'in_progress'
+                                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                                      : 'bg-sky-600 hover:bg-sky-700'
+                                  }`}
                                 >
                                   <Video className="w-4 h-4" />
-                                  Join class
+                                  {cls.status === 'in_progress' ? 'Join class' : 'Join when ready'}
                                   <ExternalLink className="w-3.5 h-3.5 opacity-90" />
                                 </button>
-                              )}
-                              {cls.status === 'scheduled' && cls.meetingId && (
-                                <span className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-sky-50 text-sky-800 text-xs font-semibold border border-sky-200">
-                                  <Video className="w-4 h-4" />
-                                  Link ready
-                                </span>
                               )}
                             </div>
                           </div>

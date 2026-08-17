@@ -78,7 +78,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   const docName = String(form?.get("docName") ?? "");
   if (!file || !(file instanceof File) || file.size === 0) return err("NO_FILE", "Please choose a file.", 400);
   if (!ALLOWED.has(file.type)) return err("BAD_TYPE", `Unsupported file type: ${file.type}`, 400);
-  if (file.size > 10 * MB) return err("TOO_BIG", "File exceeds 10MB.", 400);
+  // Vercel's serverless functions hard-reject any request body over ~4.5MB
+  // BEFORE this route runs, returning its own HTML error page (not JSON) — so
+  // the app-level cap must stay under that ceiling (see uploads/route.ts's
+  // MAX_DOC_BYTES for the same reasoning) or the client's `.json()` crashes.
+  if (file.size > 4 * MB) return err("TOO_BIG", "File exceeds 4MB.", 400);
 
   const config = (task.config ?? {}) as Record<string, unknown>;
   const documents = Array.isArray(config.documents) ? (config.documents as string[]).filter(Boolean) : [];

@@ -58,7 +58,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     });
     return successResponse(c);
   } catch (error) { console.error("PATCH /recruit/candidates/:id error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"], anyPermission: true });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -67,4 +67,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     await prisma.candidate.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     return successResponse({ deleted: true });
   } catch (error) { console.error("DELETE /recruit/candidates/:id error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"], anyPermission: true });

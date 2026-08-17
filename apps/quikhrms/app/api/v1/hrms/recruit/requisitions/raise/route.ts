@@ -6,6 +6,7 @@ import { successResponse, validationError, internalError, notFound, errorRespons
 import { ErrorCode } from "@/lib/types/api";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionApprovalRequest } from "@/lib/services/requisition-approval-service";
+import { notifyRequisitionNextApprover } from "@/lib/services/requisition-notifications";
 import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
 
 const schema = z.object({
@@ -13,13 +14,16 @@ const schema = z.object({
   departmentId: z.string().optional(),
   pipelineId: z.string().optional(),
   jobOpeningName: z.string().optional(),
-  positions: z.number().int().min(1).max(999).default(1),
+  positions: z.number().int().min(1).max(100).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
   employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
   reportingToId: z.string().optional(),
   hiringManagerId: z.string().optional(),
   recruiterId: z.string().optional(),
+  jobLevelId: z.string().optional(),
+  customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
+  customSlaReason: z.string().max(1000).optional(),
   interviewPanelIds: z.array(z.string()).optional(),
   experienceMin: z.number().optional(),
   experienceMax: z.number().optional(),
@@ -96,6 +100,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         reportingToId: data.reportingToId,
         hiringManagerId: data.hiringManagerId,
         recruiterId: data.recruiterId,
+        jobLevelId: data.jobLevelId,
+        customSlaDays: data.customSlaDays,
+        customSlaReason: data.customSlaReason,
         interviewPanel: data.interviewPanelIds ? JSON.parse(JSON.stringify(data.interviewPanelIds)) : undefined,
         positions: data.positions,
         type: data.type,
@@ -137,6 +144,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       },
     });
 
+    if (data.recruiterId) {
+      await prisma.requisitionRecruiter.create({
+        data: {
+          orgId, requisitionId: requisition.id, employeeId: data.recruiterId,
+          positionsAssigned: data.positions, createdBy: userId, updatedBy: userId,
+        },
+      });
+    }
+
     // One approval row per resolved chain level. Stamp the legacy DeptHead/HR
     // role the approvals UI keys off (HR Edit button, budget banner, per-role
     // counters): the FINAL level is "HR" (publishes to the board), every earlier
@@ -148,7 +164,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       })),
     });
 
-    // Mail only the level-1 approver. Later levels are mailed as each one approves.
+    // Mail + notify only the level-1 approver. Later levels are alerted as each one approves.
     const first = chain.levels[0];
     const firstApprover = await prisma.employee.findFirst({
       where: { id: first.approverId, orgId },
@@ -163,10 +179,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         raiserName: `${raiser.firstName} ${raiser.lastName}`.trim(),
       }).catch((e) => console.error("[requisition] approver mail failed:", e));
     }
+    void notifyRequisitionNextApprover(orgId, { requisitionId: requisition.id, title: requisition.title, approverId: first.approverId });
 
     return successResponse({ requisition }, undefined, 201);
   } catch (e) {
     console.error("POST /requisitions/raise", e);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.requisition.write"], anyPermission: true });

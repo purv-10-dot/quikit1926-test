@@ -78,6 +78,7 @@ export function EmployeeSelect({
     queryKey: ["employees", "select", endpoint, search, departmentId ?? "", accessibleOnly],
     queryFn: () => {
       const params = new URLSearchParams({ limit: "100" });
+      if (endpoint === "/api/v1/hrms/employees") params.set("picker", "1");
       if (search) params.set("search", search);
       if (departmentId) params.set("department", departmentId);
       if (accessibleOnly) params.set("accessible", "true");

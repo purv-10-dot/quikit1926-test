@@ -129,6 +129,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissio
       where: { id: instance.employeeId, orgId, deletedAt: null },
       select: {
         id: true, firstName: true, lastName: true, employeeCode: true, jobTitle: true, dateOfJoining: true,
+        workEmail: true, personalEmail: true,
         department: { select: { name: true } },
         designation: { select: { title: true } },
         reportingManager: { select: { firstName: true, lastName: true } },

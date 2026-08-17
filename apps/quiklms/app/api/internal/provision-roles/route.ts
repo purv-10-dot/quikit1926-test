@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import type { LmsUserRole } from '@prisma/client';
 import { seedLmsAppRoles, ensureUserOnLmsRole } from '@/lib/api/seed-lms-app-roles';
 import { ensureLmsRbacSeeded } from '@/lib/api/seed-lms-permissions';
-import { getFoundingAdminUserId } from '@/lib/auth/founding-admin';
+import { ensureLmsUserForCentralId } from '@/lib/services/identity-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,17 +10,19 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/internal/provision-roles — service-to-service only.
  *
- * Eagerly seeds this org's default QuikLMS AppRole rows (the seven LmsUserRole
- * roles) so the Admin Portal's role dropdown shows them immediately instead of
- * "No roles available", and the central assignAppRoles() flow can resolve a
- * role by name. Mirrors apps/quikscale + apps/quiktrack's endpoint of the same
+ * Eagerly seeds this org's default QuikLMS AppRole rows (`admin` plus the six
+ * lower LmsUserRole tiers) so the Admin Portal's role dropdown shows them
+ * immediately instead of "No roles available", and the central assignAppRoles()
+ * flow can resolve a role by name. Mirrors apps/quikscale + apps/quiktrack's endpoint of the same
  * path; called by the launcher's super-admin "grant app access" flow
  * (apps/quikit/lib/provisionAppRoles.ts) the moment QuikLMS is enabled for an org.
  *
- * Optionally accepts `adminUserIds: string[]` — the org's founding admin is
- * assigned SUPER_ADMIN (the top tier) and any other id in the payload gets
- * TENANT_ADMIN, so a freshly-invited org admin has their role the moment they
- * accept, with no lazy-seed gap.
+ * Optionally accepts `adminUserIds: string[]` — every id in the payload gets
+ * ADMIN, so a freshly-invited org admin has their role the moment they accept,
+ * with no lazy-seed gap. (Previously only the org's "founding" admin — the
+ * earliest admin-tier OrgMember row — got ADMIN and later ones got
+ * TENANT_ADMIN; that distinction was removed 2026-08-04 for quikscale parity —
+ * see lib/auth/role-resolution.ts.)
  *
  * Auth: shared INTERNAL_SECRET via `x-internal-secret` (mirrors the reference
  * apps + verify-token-remote). Not a user session — no auth guard.
@@ -60,27 +61,31 @@ export async function POST(req: NextRequest) {
     // calls this endpoint, and returning 500 made the caller record a total failure
     // for a request that had done most of its job.
     const skipped: string[] = [];
-    // The org's FOUNDING admin gets SUPER_ADMIN — the top tier, landing on
-    // `/dashboard` — and every other admin in the payload gets TENANT_ADMIN. The
-    // launcher cannot make this distinction for us: QuikIT's invite form only ever
-    // sends `org_admin`, so "the first invitation into a new org" has to be derived
-    // here (and again at login, for the common case where the invitee has no LMS
-    // row yet and the assignment below is skipped). See lib/auth/founding-admin.ts.
-    //
-    // A failed lookup returns null, so nobody matches and everyone gets
-    // TENANT_ADMIN. That is the deliberate direction: an under-privileged admin is
-    // repairable from the super-admin console, a wrongly-minted top-tier admin off
-    // a failed read is not.
-    const foundingAdminId = await getFoundingAdminUserId(orgId);
+    // Every id in the payload gets ADMIN — quikscale parity: `org_admin` is
+    // the top LMS tier, first invite or fifth. See lib/auth/role-resolution.ts.
     for (const userId of adminUserIds) {
-      const roleName: LmsUserRole = userId === foundingAdminId ? 'SUPER_ADMIN' : 'TENANT_ADMIN';
       try {
-        await ensureUserOnLmsRole(userId, orgId, roleName);
+        // These are CENTRAL user ids. QuikLMS's assignment table keys on its own
+        // `app_quiklms.users`, so the local row has to exist before a role can be
+        // attached to it — the launcher creates the person centrally and has no way
+        // to create the LMS side. Without this the assignment silently no-opped and
+        // the org's first admin was left with no role at all; see
+        // `ensureLmsUserForCentralId` for the full account.
+        const provisioned = await ensureLmsUserForCentralId(userId, orgId, 'ADMIN');
+        const assigned = provisioned && (await ensureUserOnLmsRole(userId, orgId, 'ADMIN'));
+        if (!assigned) {
+          skipped.push(userId);
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[provision-roles] could not assign ADMIN to ${userId} in ${orgId}: ` +
+              (provisioned ? 'role catalogue missing' : 'no central user, or the email is taken by another LMS row'),
+          );
+        }
       } catch (err) {
         skipped.push(userId);
         // eslint-disable-next-line no-console
         console.warn(
-          `[provision-roles] could not assign ${roleName} to ${userId} in ${orgId}:`,
+          `[provision-roles] could not assign ADMIN to ${userId} in ${orgId}:`,
           err instanceof Error ? err.message : err,
         );
       }

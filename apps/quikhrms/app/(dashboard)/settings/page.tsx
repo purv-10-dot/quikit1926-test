@@ -8,7 +8,7 @@ import {
   Briefcase, MapPin, Network, GitBranch, CalendarDays,
   FileText, ClipboardList, LayoutGrid, Link2, RotateCcw, ShieldAlert,
   Home, Mail, Clock, Receipt,
-  ShieldCheck, CalendarClock,
+  ShieldCheck, CalendarClock, Layers,
   LifeBuoy, ExternalLink,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -47,6 +47,7 @@ const CATEGORIES: CategoryDef[] = [
       { label: "Departments", href: "/settings/departments", icon: <Network size={14} />, perms: ["hrms.org.read", "hrms.org.write"], checklistKey: "departments" },
       { label: "Designations", href: "/settings/designations", icon: <Briefcase size={14} />, perms: ["hrms.org.read", "hrms.org.write"] },
       { label: "Work Locations", href: "/settings/locations", icon: <MapPin size={14} />, perms: ["hrms.org.read", "hrms.org.write"], checklistKey: "workLocations" },
+      { label: "Job Levels", href: "/settings/job-levels", icon: <Layers size={14} />, perms: ["hrms.settings.read", "hrms.settings.write"] },
       // "Teams", "Grades" and "Legal Entities" hidden from Settings — nothing
       // else was removed, the pages/APIs/data models are all untouched, so any
       // of them can be brought back by re-adding its one line here.
@@ -97,7 +98,18 @@ const CATEGORIES: CategoryDef[] = [
       { label: "Joining Letter Branding", href: "/settings/joining-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Resignation Acceptance Letter", href: "/settings/resignation-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Exit Letters (Relieving / Experience)", href: "/settings/exit-letters", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
+      { label: "Appraisal Letter", href: "/settings/appraisal-letter", icon: <FileText size={14} />, perms: ["hrms.settings.write"] },
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"] },
+    ],
+  },
+  {
+    key: "integrations",
+    title: "Integrations",
+    description: "Connect other QuikIT apps to this org's data",
+    accent: "blue",
+    icon: <Link2 size={18} />,
+    items: [
+      { label: "Directory API", href: "/settings/integrations/department-api", icon: <Network size={14} />, perms: ["hrms.settings.read", "hrms.settings.write"] },
     ],
   },
   {
@@ -283,11 +295,9 @@ export default function SettingsPage() {
 }
 
 function SettingRow({ item, needsSetup }: { item: Item; needsSetup: boolean }) {
+  const className = "group flex items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:text-[#16a34a] hover:bg-gray-50 transition rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bbf7d0] w-full text-left";
   return (
-    <Link
-      href={item.href}
-      className="group flex items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:text-[#16a34a] hover:bg-gray-50 transition rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#bbf7d0]"
-    >
+    <Link href={item.href} className={className}>
       <span className="text-gray-400 group-hover:text-[#22c55e] transition shrink-0">{item.icon}</span>
       <span className="truncate flex-1 min-w-0">{item.label}</span>
       {needsSetup && (

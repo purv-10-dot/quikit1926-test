@@ -54,8 +54,8 @@ const EXAM = {
   ],
 };
 
-const learner = { id: 'u1', role: 'LEARNER', secondaryRole: null, orgId: 'org-1' } as never;
-const teacher = { id: 't1', role: 'TEACHER', secondaryRole: null, orgId: 'org-1' } as never;
+const learner = { id: 'u1', role: 'LEARNER', orgId: 'org-1' } as never;
+const teacher = { id: 't1', role: 'TEACHER', orgId: 'org-1' } as never;
 
 beforeEach(() => {
   h.findFirst.mockReset();
@@ -110,12 +110,7 @@ describe('staff keep the full view', () => {
   });
 
   it('a TENANT_ADMIN keeps it too', async () => {
-    const admin = { id: 'a1', role: 'TENANT_ADMIN', secondaryRole: null, orgId: 'org-1' } as never;
+    const admin = { id: 'a1', role: 'TENANT_ADMIN', orgId: 'org-1' } as never;
     expect(firstQuestion(await findOneExam(admin, 'e1')).correctAnswer).toBe('4');
-  });
-
-  it('honours a staff SECONDARY role', async () => {
-    const dual = { id: 'd1', role: 'LEARNER', secondaryRole: 'TEACHER', orgId: 'org-1' } as never;
-    expect(firstQuestion(await findOneExam(dual, 'e1')).correctAnswer).toBe('4');
   });
 });

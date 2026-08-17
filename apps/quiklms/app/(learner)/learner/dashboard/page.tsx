@@ -9,6 +9,7 @@ import {
   X, CheckCircle2, XCircle, BarChart2, Building2, MapPin, Mail, HardDrive, CreditCard, Pencil, Pause, ExternalLink
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { downloadCertificatePdf, certificateFilename } from '@/lib/certificate-download';
 import { useFeatures } from '@/app/providers';
 import { useBranding } from '@/app/providers';
 import ReadMoreText from '@/components/ReadMoreText';
@@ -305,7 +306,7 @@ const LearnerDashboardPage = () => {
       } catch (error: any) {
         console.error('Failed to load dashboard data:', error);
         if (isMounted) {
-          if (error?.statusCode === 401) {
+          if (error?.status === 401) {
             setError('Session expired. Please login again.');
             sessionStorage.removeItem('access_token');
             sessionStorage.removeItem('user');
@@ -828,19 +829,14 @@ const LearnerDashboardPage = () => {
                     onClick={async (e) => {
                       e.stopPropagation();
                       try {
-                        const r = await fetch(`/api/certificates/${cert._id}/download`, { credentials: 'include' });
-                        const blob = await r.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
                         const certName = cert.courseId?.title || 'Certificate';
-                        link.download = `${certName.replace(/[^a-zA-Z0-9\s-]/g, '')}_Certificate.pdf`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        window.URL.revokeObjectURL(url);
-                      } catch (err: any) {
+                        // Throws (with the server's own message) rather than
+                        // saving an error body as a .pdf — see
+                        // lib/certificate-download.ts.
+                        await downloadCertificatePdf(cert._id, certificateFilename(certName));
+                      } catch (err: unknown) {
                         console.error('Certificate download failed:', err);
+                        alert(err instanceof Error ? err.message : 'Failed to download certificate. Please try again.');
                       }
                     }}
                     className="w-full bg-amber-500 hover:bg-amber-400 text-white font-bold py-3 rounded-2xl transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"

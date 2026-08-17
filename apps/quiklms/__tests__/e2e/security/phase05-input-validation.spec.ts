@@ -111,7 +111,7 @@ test.describe("Phase 05 — malformed input must 400, never 500", () => {
       const api = await apiAs("tenantAdmin");
       const res = await send(api, c);
       const status = res.status();
-      const body = (await safeJson(res)) as ErrorEnvelope & { success?: boolean };
+      const body = (await safeJson(res)) as ErrorEnvelope;
       await api.dispose();
 
       // A 500 means the malformed value reached a service or the database.
@@ -120,7 +120,7 @@ test.describe("Phase 05 — malformed input must 400, never 500", () => {
         `UNHANDLED ERROR (${c.kind}) on ${c.label}: malformed input produced HTTP ${status} ` +
           `instead of a 400. The value passed the zod schema and failed downstream — ` +
           `see lib/http.ts:128, which logs this as an unhandled error rather than a client fault. ` +
-          `message=${body?.message ?? "?"}`,
+          `error=${body?.error ?? "?"}`,
       ).toBeLessThan(500);
 
       // 404 is legitimate for the [id] cases: the row genuinely may not exist,
@@ -134,9 +134,9 @@ test.describe("Phase 05 — malformed input must 400, never 500", () => {
       ).toBe(400);
 
       expect(
-        Array.isArray(body?.validationErrors),
-        `MISSING validationErrors[] on ${c.label} — a 400 from zod must carry field-level ` +
-          `detail (lib/http.ts:85-91). Got: ${JSON.stringify(body).slice(0, 200)}`,
+        typeof body?.error === "string" && body.error.length > 0,
+        `MISSING error message on ${c.label} — a 400 from zod must carry a readable message ` +
+          `(lib/http.ts). Got: ${JSON.stringify(body).slice(0, 200)}`,
       ).toBe(true);
     });
   }

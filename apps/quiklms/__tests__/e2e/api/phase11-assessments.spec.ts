@@ -118,13 +118,12 @@ test.describe("Phase 11 — CRUD", () => {
     await api.dispose();
   });
 
-  test("POST /api/assessments requires moduleId (400 + validationErrors)", async () => {
+  test("POST /api/assessments requires moduleId (400 naming the field)", async () => {
     const api = await apiAs("tenantAdmin");
     const res = await api.post("/api/assessments", { data: { title: "no module" } });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { message?: string; validationErrors?: Array<{ field: string }> };
-    expect(body.message).toBe("Validation failed");
-    expect(body.validationErrors?.map((v) => v.field)).toContain("moduleId");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("moduleId");
     await api.dispose();
   });
 
@@ -162,9 +161,9 @@ test.describe("Phase 11 — CRUD", () => {
     const api = await apiAs("learner");
     const res = await api.get(`/api/assessments/${NONEXISTENT}`);
     expect(res.status()).toBe(404);
-    const body = (await safeJson(res)) as { statusCode?: number; message?: string };
-    expect(body.statusCode).toBe(404);
-    expect(body.message).toContain("not found");
+    const body = (await safeJson(res)) as { success?: boolean; error?: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("not found");
     await api.dispose();
   });
 
@@ -323,14 +322,13 @@ test.describe("Phase 11 — grading", () => {
     await api.dispose();
   });
 
-  test("submit requires assessmentId and courseId (400 + validationErrors)", async () => {
+  test("submit requires assessmentId and courseId (400 naming the fields)", async () => {
     const api = await apiAs("learner");
     const res = await api.post("/api/assessments/submit", { data: { answers: [] } });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    const fields = body.validationErrors?.map((v) => v.field) ?? [];
-    expect(fields).toContain("assessmentId");
-    expect(fields).toContain("courseId");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("assessmentId");
+    expect(body.error).toContain("courseId");
     await api.dispose();
   });
 });
@@ -444,7 +442,7 @@ test.describe("Phase 11 — findings", () => {
    * Expected : 403 — authoring belongs to the roles that author courses. The
    *            adjacent content routes (`POST /api/courses`,
    *            `/api/courses/modules`, `/api/courses/lessons`) all enforce
-   *            ['SUPER_ADMIN','TENANT_ADMIN','SUB_ADMIN'].
+   *            ['ADMIN','TENANT_ADMIN','SUB_ADMIN'].
    * Root cause: app/api/assessments/route.ts and app/api/assessments/[id]/route.ts
    *            call `requireAuth(req)` and check only `actor.orgId`; neither
    *            imports `requireRoles`. This is the same class of gap as the

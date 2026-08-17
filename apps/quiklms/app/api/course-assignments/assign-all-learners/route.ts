@@ -7,10 +7,10 @@ import { tryCreateLog } from '@/lib/services/tenant-audit-service';
 
 const schema = z.object({ courseId: z.string(), dueDate: z.string().optional(), isMandatory: z.boolean().optional() });
 
-// POST /api/course-assignments/assign-all-learners — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/course-assignments/assign-all-learners — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const orgId = user.orgId;
   if (!orgId) throw BadRequest('Tenant ID is required');
 
