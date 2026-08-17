@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { caseRef, labelOf } from "../../../_components/case-meta";
+import { ResultHistory } from "./result-history";
 import { testRef, type TestDetail } from "./runner-types";
 
 /**
@@ -126,6 +127,11 @@ export function CaseDetailPane({ detail, loading }: CaseDetailPaneProps) {
           </ol>
         )}
       </div>
+
+      {/* QUIKTR-340 — the execution record for this run-case. Beneath the steps
+          rather than in the entry pane: it is context for deciding an outcome, not
+          part of entering one. */}
+      <ResultHistory testId={detail.id} />
     </div>
   );
 }

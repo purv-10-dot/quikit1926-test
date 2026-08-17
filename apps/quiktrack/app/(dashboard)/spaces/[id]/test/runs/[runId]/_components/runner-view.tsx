@@ -1,15 +1,18 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRunMembers } from "./use-run-members";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Lock, Unlock } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { RunSummary } from "@/components/test/run-summary";
-import { CaseDetailPane } from "./case-detail-pane";
-import { ResultEntryPane } from "./result-entry-pane";
-import { TestListPane, type RunnerFilter } from "./test-list-pane";
+import { RunTabPanels } from "./run-tab-panels";
+import { RunTabs, type RunTab } from "./run-tabs";
+import { useRunnerKeys } from "./use-runner-keys";
+import { type RunnerFilter } from "./test-list-pane";
+import type { RunActivity } from "./run-activity-types";
 import {
   runRef,
   type RunSummaryData,
@@ -39,11 +42,13 @@ const FILTER_STATUS: Record<RunnerFilter, string | null> = {
   mine: null,
 };
 
+
 export function RunnerView({ projectId, runId }: RunnerViewProps) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<RunnerFilter>("all");
   const [activeTestId, setActiveTestId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [tab, setTab] = useState<RunTab>("tests");
 
   const testsQuery = useMemo(() => {
     const params = new URLSearchParams({ pageSize: "500" });
@@ -71,6 +76,26 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
     "/api/test/statuses",
     { staleTime: 5 * 60_000 },
   );
+
+  // Project members for the assignee picker (QUIKTR-317).
+  const { members: memberList, assigneeName } = useRunMembers(projectId);
+
+  const reassign = async (userId: string | null) => {
+    if (!activeTestId) return;
+    await fetch(`/api/test/tests/${activeTestId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigneeId: userId }),
+    });
+    // The list shows the assignee chip and the detail pane shows the picker, so
+    // both caches are stale after a reassignment.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["quiktrack", "run-tests", runId] }),
+      queryClient.invalidateQueries({
+        queryKey: ["quiktrack", "test-detail", activeTestId],
+      }),
+    ]);
+  };
 
   // Memoised because `?? []` yields a fresh array on every render, which would
   // re-run the selection effect and rebuild the navigation callbacks each pass.
@@ -132,6 +157,16 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
         queryClient.invalidateQueries({
           queryKey: ["quiktrack", "test-detail", activeTestId],
         }),
+        // The result just recorded is a new activity event and may have added a
+        // defect, so the trail and the Defects badge are both stale.
+        queryClient.invalidateQueries({
+          queryKey: ["quiktrack", "run-activity", runId],
+        }),
+        // And it is a new entry in this test's own history (QUIKTR-340) — without
+        // this the pane would still show the PREVIOUS result marked "current".
+        queryClient.invalidateQueries({
+          queryKey: ["quiktrack", "test-results", activeTestId],
+        }),
       ]);
       return true;
     } catch {
@@ -141,50 +176,25 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
     }
   };
 
-  const primaryStatusByIndex = useMemo(() => {
-    const order = ["passed", "failed", "blocked", "retest", "skipped"];
-    return order
-      .map((key) => statuses?.find((s) => s.key === key))
-      .filter((s): s is TestStatusLite => Boolean(s));
-  }, [statuses]);
+  // Activity and Defects share one endpoint. Fetched for every tab rather than
+  // lazily, because the Defects tab carries a count badge that must be right
+  // while the user is still on Tests — a badge that only appears after you click
+  // the tab is worse than no badge.
+  const { data: activity, isLoading: activityLoading } = useApiData<RunActivity>(
+    ["quiktrack", "run-activity", runId],
+    `/api/test/runs/${runId}/activity`,
+    { staleTime: 0 },
+  );
 
-  // Keyboard: 1-5 record an outcome, j/k move. Ignored while typing so a comment
-  // containing "1" doesn't fire a result.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (submitting || run?.state === "closed") return;
-
-      if (e.key === "j") {
-        step(1);
-        return;
-      }
-      if (e.key === "k") {
-        step(-1);
-        return;
-      }
-
-      const n = Number.parseInt(e.key, 10);
-      if (Number.isInteger(n) && n >= 1 && n <= primaryStatusByIndex.length) {
-        const status = primaryStatusByIndex[n - 1];
-        void submitResult({ statusId: status.id }).then((saved) => {
-          if (saved) advance();
-        });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primaryStatusByIndex, submitting, run?.state, step, advance, activeTestId]);
+  useRunnerKeys({
+    statuses,
+    // Disabled on a closed run and on every tab except Tests.
+    enabled: tab === "tests" && run?.state !== "closed",
+    submitting,
+    step,
+    advance,
+    submitResult,
+  });
 
   const toggleRunState = async () => {
     if (!run) return;
@@ -248,30 +258,45 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
-        <TestListPane
-          tests={tests}
-          total={testsData?.total ?? 0}
-          activeTestId={activeTestId}
-          onSelect={setActiveTestId}
-          filter={filter}
-          onFilterChange={setFilter}
-          loading={testsLoading}
-        />
-        <CaseDetailPane detail={detail ?? null} loading={detailLoading} />
-        <ResultEntryPane
-          detail={detail ?? null}
-          statuses={statuses ?? []}
-          onSubmit={submitResult}
-          submitting={submitting}
-          onAdvance={advance}
-        />
-      </div>
+      {/* QUIKTR-339 — tabs rather than routes: the header above stays put across
+          all four, and routing would remount it and lose the selected test on
+          every switch. */}
+      <RunTabs
+        active={tab}
+        onChange={setTab}
+        defectCount={activity?.defects.length}
+      />
 
-      <div className="border-t border-gray-200 px-4 py-1.5 text-[11px] text-gray-400">
-        Shortcuts: 1 Passed · 2 Failed · 3 Blocked · 4 Retest · 5 Skipped · j/k to
-        move
-      </div>
+      <RunTabPanels
+        tab={tab}
+        projectId={projectId}
+        run={run}
+        tests={tests}
+        testsTotal={testsData?.total ?? 0}
+        testsLoading={testsLoading}
+        activeTestId={activeTestId}
+        onSelectTest={setActiveTestId}
+        filter={filter}
+        onFilterChange={setFilter}
+        assigneeName={assigneeName}
+        detail={detail ?? null}
+        detailLoading={detailLoading}
+        statuses={statuses ?? []}
+        onSubmit={submitResult}
+        submitting={submitting}
+        onAdvance={advance}
+        members={memberList}
+        onReassign={reassign}
+        activity={activity}
+        activityLoading={activityLoading}
+      />
+
+      {tab === "tests" && (
+        <div className="border-t border-gray-200 px-4 py-1.5 text-[11px] text-gray-400">
+          Shortcuts: 1 Passed · 2 Failed · 3 Blocked · 4 Retest · 5 Skipped · j/k
+          to move
+        </div>
+      )}
     </div>
   );
 }

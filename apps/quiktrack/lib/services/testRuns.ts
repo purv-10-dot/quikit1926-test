@@ -95,10 +95,29 @@ export async function createTestRun(
   });
 
   if (cases.length === 0) {
+    if (input.includeDrafts) {
+      throw new TestRunError(
+        "No test cases matched that selection.",
+        400,
+        "EMPTY_SELECTION",
+      );
+    }
+    // Distinguish "nothing here at all" from "everything here is still draft".
+    // The second is the common case while a suite is being written, and saying
+    // so points at the fix (approve them, or tick the box) instead of leaving
+    // the user to guess why an apparently full suite produced an empty run.
+    //
+    // `approvalState` is destructured out rather than set to undefined: Prisma
+    // treats an explicit `undefined` as "omit this filter" only for top-level
+    // keys, and relying on that is easy to get subtly wrong — removing the key
+    // is unambiguous.
+    const { approvalState: _excluded, ...withoutApproval } = caseWhere;
+    const draftCount = await db.qtTestCase.count({ where: withoutApproval });
     throw new TestRunError(
-      input.includeDrafts
-        ? "No test cases matched that selection."
-        : "No approved test cases matched that selection. Draft cases are excluded unless you include them.",
+      draftCount > 0
+        ? `All ${draftCount} matching case${draftCount === 1 ? " is" : "s are"} still in Draft or In Review. ` +
+            "Approve them on the case, or tick “Include draft cases”."
+        : "No test cases matched that selection.",
       400,
       "EMPTY_SELECTION",
     );
@@ -126,6 +145,11 @@ export async function createTestRun(
           build: input.build ?? null,
           environment: input.environment ?? null,
           assigneeId: input.assigneeId ?? null,
+          // Date-only strings from the form; stored as timestamps. The DB also
+          // enforces endDate >= startDate.
+          startDate: input.startDate ? new Date(input.startDate) : null,
+          endDate: input.endDate ? new Date(input.endDate) : null,
+          refTickets: input.refTickets ?? null,
           planId: input.planId ?? null,
           suiteId: input.suiteId ?? null,
           milestoneId: input.milestoneId ?? null,

@@ -13,19 +13,23 @@ import {
   Select,
 } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
+import type { SectionNode } from "../../_components/case-meta";
+import { IncludeCasesField, type IncludeMode } from "./include-cases-field";
 
 /**
- * Create a run over a whole suite.
+ * Create a run over a whole suite, or over a hand-picked set of cases
+ * (QUIKTR-337).
  *
- * Suite-scoped only for now — a case-level picker is the separate "select cases"
- * modal (#21 in the inventory). The API already accepts `caseIds`, so that
- * lands without touching the endpoint.
+ * The API takes `suiteId` OR `caseIds` and rejects both together, so `mode`
+ * decides which one goes in the body — never both.
  */
 
 interface SuiteLite {
   id: string;
   name: string;
+  sections?: SectionNode[];
 }
+
 
 interface NewRunPanelProps {
   open: boolean;
@@ -48,11 +52,25 @@ export function NewRunPanel({
 
   const [name, setName] = useState("");
   const [suiteId, setSuiteId] = useState("");
+  const [mode, setMode] = useState<IncludeMode>("suite");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [build, setBuild] = useState("");
   const [environment, setEnvironment] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [refTickets, setRefTickets] = useState("");
   const [includeDrafts, setIncludeDrafts] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const activeSuite = (suites ?? []).find((s) => s.id === suiteId);
+
+  // Shown inline on the End date field rather than only as a save error, so the
+  // problem is visible where it was made.
+  const dateError =
+    startDate && endDate && endDate < startDate
+      ? "End date cannot be before the start date."
+      : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -60,8 +78,19 @@ export function NewRunPanel({
     setName("");
     setBuild("");
     setEnvironment("");
+    setStartDate("");
+    setEndDate("");
+    setRefTickets("");
     setIncludeDrafts(false);
+    setMode("suite");
+    setPicked(new Set());
   }, [open]);
+
+  // Switching suite invalidates the selection — those case ids belong to the
+  // suite that was open when they were ticked.
+  useEffect(() => {
+    setPicked(new Set());
+  }, [suiteId]);
 
   // Preselect the only suite so the common case is one click.
   useEffect(() => {
@@ -77,6 +106,14 @@ export function NewRunPanel({
       setError("Choose a suite to run.");
       return;
     }
+    if (mode === "pick" && picked.size === 0) {
+      setError("Select at least one test case, or run the whole suite.");
+      return;
+    }
+    if (dateError) {
+      setError(dateError);
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -87,9 +124,17 @@ export function NewRunPanel({
         body: JSON.stringify({
           projectId,
           name: name.trim(),
-          suiteId,
+          // Exactly one of these — the schema rejects both together, and sending
+          // suiteId alongside caseIds would silently run the WHOLE suite
+          // (suiteId wins in the service's case query).
+          ...(mode === "pick"
+            ? { caseIds: Array.from(picked) }
+            : { suiteId }),
           build: build.trim() || undefined,
           environment: environment.trim() || undefined,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          refTickets: refTickets.trim() || undefined,
           source: "manual",
           includeDrafts,
         }),
@@ -156,6 +201,19 @@ export function NewRunPanel({
           />
         </Field>
 
+        {/* QUIKTR-337 — whole suite, or a hand-picked subset. */}
+        <IncludeCasesField
+          open={open}
+          projectId={projectId}
+          suiteId={suiteId}
+          sections={activeSuite?.sections ?? []}
+          mode={mode}
+          onMode={setMode}
+          selected={picked}
+          onSelected={setPicked}
+          disabled={saving}
+        />
+
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Build" hint="Optional. Ties the run to a release build.">
             <Input
@@ -173,11 +231,50 @@ export function NewRunPanel({
           </Field>
         </div>
 
+        {/* QUIKTR-320 — the planned execution window. Both optional: an ad-hoc
+            or CI run has no planned dates. */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Start date">
+            <Input
+              type="date"
+              value={startDate}
+              // A native date input can't express "before the end date", so the
+              // max is set from the other field — the schema and a DB CHECK both
+              // back it up.
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </Field>
+          <Field label="End date" error={dateError}>
+            <Input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <Field
+          label="References"
+          hint="Ticket ids in another tracker, e.g. JIRA-1, JIRA-3."
+        >
+          <Input
+            value={refTickets}
+            placeholder="JIRA-1, JIRA-3"
+            onChange={(e) => setRefTickets(e.target.value)}
+          />
+        </Field>
+
         <Checkbox
           checked={includeDrafts}
           onChange={(e) => setIncludeDrafts(e.target.checked)}
           label="Include draft cases"
-          description="Draft cases are excluded by default, so a run only covers cases that have been reviewed."
+          description={
+            mode === "pick"
+              ? "A run normally covers only approved cases. Cases marked Draft above are skipped unless you tick this — even when selected."
+              : "A run normally covers only approved cases. Tick this to include cases still in Draft or In Review — useful while a suite is being written."
+          }
         />
       </div>
     </RightPanel>

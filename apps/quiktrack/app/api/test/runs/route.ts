@@ -64,6 +64,11 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           createdAt: true,
           closedAt: true,
           milestoneId: true,
+          // QUIKTR-338 — the spec's row shows "created by / date" and the planned
+          // window alongside the progress bar.
+          createdBy: true,
+          startDate: true,
+          endDate: true,
           _count: { select: { tests: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -97,6 +102,18 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       countsByRun.set(row.runId, bucket);
     }
 
+    // Creator names in ONE query for the whole page rather than per row. `User` is
+    // a global model (no orgId column); these ids come from rows already scoped to
+    // this org and project, so no membership is being disclosed.
+    const creatorIds = [...new Set(runs.map((r) => r.createdBy).filter(Boolean))];
+    const creators = creatorIds.length
+      ? await db.user.findMany({
+          where: { id: { in: creatorIds as string[] } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const creatorById = new Map(creators.map((u) => [u.id, u]));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -104,6 +121,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           ...r,
           testCount: r._count.tests,
           counts: countsByRun.get(r.id) ?? {},
+          createdByUser: r.createdBy ? creatorById.get(r.createdBy) ?? null : null,
         })),
         total,
         page: q.page,

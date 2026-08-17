@@ -41,6 +41,9 @@ export interface TestDetail {
   id: string;
   refId: number;
   caseVersion: number;
+  /** Per-execution owner (QUIKTR-317) — a case can have a different tester in
+   *  each run, which is why this is on the test, not the case. */
+  assigneeId: string | null;
   currentStatus: TestStatusLite;
   config: { id: string; name: string } | null;
   run: {

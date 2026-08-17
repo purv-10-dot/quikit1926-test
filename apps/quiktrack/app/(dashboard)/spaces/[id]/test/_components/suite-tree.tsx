@@ -117,8 +117,23 @@ export function SuiteTree({
               {node.name}
             </button>
 
-            {typeof node.caseCount === "number" && node.caseCount > 0 && (
-              <span className="shrink-0 text-[11px] text-gray-400">{node.caseCount}</span>
+            {/* QUIKTR-332 — always rendered, INCLUDING 0. Hiding the badge on an
+                empty folder makes it look identical to one whose count simply
+                hasn't loaded, and an empty folder is exactly the thing a QA lead
+                needs to spot. */}
+            {typeof node.caseCount === "number" && (
+              <span
+                className={`shrink-0 rounded px-1.5 text-[11px] ${
+                  node.caseCount === 0
+                    ? "text-gray-300"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+                title={`${node.caseCount} ${
+                  node.caseCount === 1 ? "case" : "cases"
+                } in this folder`}
+              >
+                {node.caseCount}
+              </span>
             )}
 
             {canEdit && (
@@ -126,8 +141,8 @@ export function SuiteTree({
                 type="button"
                 onClick={() => onAddSection(node.id)}
                 className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:text-gray-700 group-hover:opacity-100"
-                aria-label={`Add a folder inside ${node.name}`}
-                title="Add nested folder"
+                aria-label={`Add a subsection inside ${node.name}`}
+                title="Add subsection"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -209,14 +224,34 @@ export function SuiteTree({
             {renderLevel(null, 0)}
 
             {canEdit && (
-              <button
-                type="button"
-                onClick={() => onAddSection(null)}
-                className="mt-2 flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-                Add folder
-              </button>
+              <div className="mt-2 border-t border-gray-100 pt-2">
+                <button
+                  type="button"
+                  onClick={() => onAddSection(null)}
+                  className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  Add folder
+                </button>
+
+                {/* QUIKTR-332 — an explicit, always-visible subsection action.
+                    The per-row `+` only appears on hover, which is undiscoverable
+                    on a touch device and easy to miss on a long tree. */}
+                <button
+                  type="button"
+                  disabled={activeSectionId === null}
+                  onClick={() => onAddSection(activeSectionId)}
+                  title={
+                    activeSectionId === null
+                      ? "Select a folder first to add a subsection inside it"
+                      : undefined
+                  }
+                  className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add subsection
+                </button>
+              </div>
             )}
           </div>
         </>

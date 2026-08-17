@@ -34,6 +34,30 @@ export const AUTOMATION_OPTIONS: SelectOption[] = [
   { value: "AUTOMATED", label: "Automated" },
 ];
 
+/**
+ * Harnesses offered for an automated case. The column is free text, so this is a
+ * convenience list rather than a constraint — a team using something else can
+ * still have it stored, it just isn't in the dropdown.
+ */
+export const AUTOMATION_TOOL_OPTIONS: SelectOption[] = [
+  { value: "Playwright", label: "Playwright" },
+  { value: "Cypress", label: "Cypress" },
+  { value: "Selenium", label: "Selenium" },
+  { value: "Pytest", label: "Pytest" },
+  { value: "JUnit", label: "JUnit" },
+  { value: "TestNG", label: "TestNG" },
+  { value: "JMeter", label: "JMeter" },
+  { value: "Kiuwan", label: "Kiuwan" },
+  { value: "Other", label: "Other" },
+];
+
+/** Is a manual case worth automating? Distinct from what IS automated. */
+export const AUTOMATION_CANDIDATE_OPTIONS: SelectOption[] = [
+  { value: "YES", label: "Yes" },
+  { value: "NO", label: "No" },
+  { value: "NONE", label: "Not assessed" },
+];
+
 export const APPROVAL_OPTIONS: SelectOption[] = [
   { value: "DRAFT", label: "Draft" },
   { value: "IN_REVIEW", label: "In review" },
@@ -78,6 +102,12 @@ export function caseRef(refId: number): string {
   return `TC-${refId}`;
 }
 
+export interface CaseLabel {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export interface TestCaseRow {
   id: string;
   refId: number;
@@ -91,7 +121,38 @@ export interface TestCaseRow {
   ownerId: string | null;
   sectionId: string;
   updatedAt: string;
+  /** QUIKTR-335 optional columns. */
+  estimateMs: number | null;
+  refTickets: string | null;
+  labels: CaseLabel[];
 }
+
+/**
+ * Columns the case list can show (QUIKTR-335).
+ *
+ * ID and Title are deliberately absent: they are structural (the row's identity
+ * and its click target), so they are always rendered and cannot be switched off.
+ * Everything here is optional and user-toggleable.
+ */
+export const CASE_COLUMNS = [
+  { key: "priority", label: "Priority", default: true },
+  { key: "type", label: "Type", default: true },
+  { key: "automation", label: "Automation", default: true },
+  { key: "approval", label: "Status", default: true },
+  { key: "estimate", label: "Estimate", default: false },
+  { key: "forecast", label: "Forecast", default: false },
+  // On by default: labels are now authorable, and a label you just added should
+  // be visible in the list without first hunting through the Columns menu.
+  { key: "labels", label: "Labels", default: true },
+  { key: "references", label: "References", default: false },
+  { key: "updated", label: "Updated", default: false },
+] as const;
+
+export type CaseColumnKey = (typeof CASE_COLUMNS)[number]["key"];
+
+export const DEFAULT_CASE_COLUMNS: CaseColumnKey[] = CASE_COLUMNS.filter(
+  (c) => c.default,
+).map((c) => c.key);
 
 export interface SuiteNode {
   id: string;

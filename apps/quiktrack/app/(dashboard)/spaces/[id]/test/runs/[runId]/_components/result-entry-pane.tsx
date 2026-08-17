@@ -3,6 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Lock, Pause, Play, RotateCcw } from "lucide-react";
 import { Button, Textarea } from "@quikit/ui";
+import { AssigneePicker, type MemberOption } from "./assignee-picker";
+
+/** Current-status pill (QUIKTR-318). Semantic data states → fixed colours. */
+const CURRENT_PILL: Record<string, string> = {
+  passed: "bg-green-100 text-green-800",
+  automation_passed: "bg-green-100 text-green-900",
+  failed: "bg-rose-100 text-rose-800",
+  automation_failed: "bg-red-100 text-red-900",
+  automation_error: "bg-gray-200 text-gray-700",
+  blocked: "bg-gray-200 text-gray-800",
+  skipped: "bg-yellow-100 text-yellow-800",
+  retest: "bg-blue-100 text-blue-800",
+  untested: "bg-gray-100 text-gray-600",
+};
 import {
   formatElapsed,
   type TestDetail,
@@ -34,6 +48,9 @@ interface ResultEntryPaneProps {
   submitting: boolean;
   /** Advance to the next test after a successful save. */
   onAdvance: () => void;
+  /** Project members available to execute this run-case (QUIKTR-317). */
+  members: MemberOption[];
+  onReassign: (userId: string | null) => Promise<void> | void;
 }
 
 /** The primary outcomes, in the order a tester reaches for them. */
@@ -53,6 +70,8 @@ export function ResultEntryPane({
   onSubmit,
   submitting,
   onAdvance,
+  members,
+  onReassign,
 }: ResultEntryPaneProps) {
   const [comment, setComment] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -118,9 +137,29 @@ export function ResultEntryPane({
     <div className="flex w-80 shrink-0 flex-col border-l border-gray-200">
       <div className="border-b border-gray-200 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-gray-900">Result</h3>
-        <p className="text-[11px] text-gray-400">
-          Current: {detail.currentStatus.label}
+        {/* QUIKTR-318 — the current outcome stated plainly, not just a glyph. */}
+        <p className="mt-1">
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+              CURRENT_PILL[detail.currentStatus.key] ?? "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {detail.currentStatus.label}
+          </span>
         </p>
+      </div>
+
+      {/* QUIKTR-317 — assignment is run administration, so it stays available
+          even on a closed run's pane header... except the API refuses it, so the
+          picker is disabled there to match. */}
+      <div className="border-b border-gray-200 px-4 py-2.5">
+        <p className="mb-1 text-xs font-medium text-gray-600">Assigned to</p>
+        <AssigneePicker
+          currentId={detail.assigneeId ?? null}
+          members={members}
+          onChange={onReassign}
+          disabled={submitting || closed}
+        />
       </div>
 
       {closed ? (

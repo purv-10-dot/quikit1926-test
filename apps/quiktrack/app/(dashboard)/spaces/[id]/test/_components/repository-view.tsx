@@ -7,11 +7,18 @@ import { Plus } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { CaseDetailPanel } from "./case-detail-panel";
 import { CaseEditorPanel } from "./case-editor-panel";
 import { CaseTable } from "./case-table";
+import { loadColumns } from "./columns-menu";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
-import type { TestCaseRow } from "./case-meta";
+import { useCasePanels } from "./use-case-panels";
+import {
+  DEFAULT_CASE_COLUMNS,
+  type CaseColumnKey,
+  type TestCaseRow,
+} from "./case-meta";
 
 /**
  * The test case repository — suite tree on the left, case list on the right,
@@ -47,8 +54,17 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
   const [activeSuiteId, setActiveSuiteId] = useState<string | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
+  // Read → Edit → back handoff lives in the hook; see use-case-panels.ts.
+  const panels = useCasePanels();
+
+  // Visible columns (QUIKTR-335). Starts at the defaults and reads the stored
+  // preference AFTER mount — localStorage is unavailable during SSR, so seeding
+  // state from it directly would hydrate with different markup than the server
+  // rendered.
+  const [columns, setColumns] = useState<CaseColumnKey[]>(DEFAULT_CASE_COLUMNS);
+  useEffect(() => {
+    setColumns(loadColumns(projectId));
+  }, [projectId]);
 
   const suitesKey = ["quiktrack", "test-suites", projectId] as const;
   const { data: suites, isLoading: suitesLoading } = useApiData<SuiteResponse[]>(
@@ -171,10 +187,7 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   const activeSectionName =
     activeSuite?.sections.find((s) => s.id === activeSectionId)?.name ?? null;
 
-  const openCreate = () => {
-    setEditingCaseId(null);
-    setEditorOpen(true);
-  };
+  const openCreate = panels.openCreate;
 
   // Creating needs a destination folder. Fall back to the first section of the
   // active suite so the button works straight after suite creation.
@@ -243,21 +256,33 @@ export function RepositoryView({ projectId }: { projectId: string }) {
               total={cases?.total ?? 0}
               loading={casesLoading}
               sectionName={activeSectionName}
+              projectId={projectId}
+              columns={columns}
+              onColumns={setColumns}
               canCreate={canCreate}
               onCreate={openCreate}
-              onOpen={(id) => {
-                setEditingCaseId(id);
-                setEditorOpen(true);
-              }}
+              // QUIKTR-336 — a row click now READS the case. Editing is an
+              // explicit action from the detail panel: opening the editor to look
+              // at a case invited a pointless version bump, since every save mints
+              // a new version.
+              onOpen={panels.openDetail}
             />
           )}
         </div>
       </div>
 
+      <CaseDetailPanel
+        open={panels.detailOpen}
+        caseId={panels.caseId}
+        canEdit={canCreate}
+        onClose={panels.closeDetail}
+        onEdit={panels.editFromDetail}
+      />
+
       <CaseEditorPanel
-        open={editorOpen}
-        onClose={() => setEditorOpen(false)}
-        caseId={editingCaseId}
+        open={panels.editorOpen}
+        onClose={panels.closeEditor}
+        caseId={panels.caseId}
         sectionId={targetSectionId}
         projectId={projectId}
         onSaved={refresh}

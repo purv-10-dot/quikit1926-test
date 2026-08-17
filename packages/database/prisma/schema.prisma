@@ -11297,11 +11297,31 @@ model QtTestCase {
   type             String                 @default("FUNCTIONAL")
   /// MANUAL | AUTOMATED — the intent, independent of whether a run was automated.
   automationStatus String                 @default("MANUAL")
+  /// Case-level expected outcome — the "Test Case (Text)" template's single
+  /// Expected Result field. Coexists with per-step `QtTestCaseStep.expected`:
+  /// the case's template `kind` decides which the editor surfaces, so a case can
+  /// switch template without losing either. Never both authored at once in the
+  /// UI, but both are preserved if a template changes.
+  expectedResult   String?
+  /// Tooling when automated: Cypress / Selenium / Playwright / JMeter / Kiuwan.
+  /// Free text rather than an enum so a team's own harness fits without a
+  /// migration.
+  automationTool   String?
+  /// YES | NO | NONE — flags a manual case worth automating later. Distinct from
+  /// `automationStatus`, which records what IS automated today.
+  automationCandidate String?
   /// Stable external id CI maps to, e.g. "checkout.spec.ts::guest_can_pay".
   /// Unique per project where NOT NULL (partial index, in the SQL migration).
   automationId     String?
   ownerId          String?
   estimateMs       Int?
+  /// Free-text linked ticket ids from the spec's "References" field, e.g.
+  /// "JIRA-3, JIRA-4". Deliberately NOT a relation: structured requirement
+  /// linking already exists as QtTestCaseIssueLink (coverage). This is the
+  /// parity/import field for references that live in another tracker.
+  /// Named `refTickets`, not `references` — the latter is a Postgres reserved
+  /// word and would need quoting in every hand-written query.
+  refTickets       String?
   templateId       String?
   /// DRAFT | IN_REVIEW | APPROVED | DEPRECATED. Draft cases are excluded from
   /// run creation by default.
@@ -11316,6 +11336,7 @@ model QtTestCase {
   section          QtTestSection          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   template         QtTestTemplate?        @relation(fields: [templateId], references: [id])
   steps            QtTestCaseStep[]
+  attachments      QtTestCaseAttachment[]
   versions         QtTestCaseVersion[]
   approvals        QtTestCaseApproval[]
   params           QtTestCaseParam[]
@@ -11329,6 +11350,28 @@ model QtTestCase {
   @@index([orgId])
   @@index([sectionId, isDeleted])
   @@index([projectId, automationId])
+  @@schema("app_quiktrack")
+}
+
+/// Files attached to a CASE (the spec's "Add File" on the authoring form) —
+/// reference screenshots, sample data, spec extracts. Distinct from
+/// QtTestResultAttachment, which is evidence captured during an execution:
+/// a case attachment describes how to test, a result attachment records what
+/// happened. Mirrors QtIssueAttachment's shape (an S3 key, never a blob).
+model QtTestCaseAttachment {
+  id         String     @id @default(cuid())
+  orgId      String
+  caseId     String
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  s3Key      String
+  uploadedBy String?
+  createdAt  DateTime   @default(now())
+  case       QtTestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([caseId])
   @@schema("app_quiktrack")
 }
 
@@ -11426,8 +11469,21 @@ model QtTestTemplate {
   orgId     String
   projectId String?
   name      String
-  /// Ordered QtCustomField ids composing the template.
+  /// Which BODY LAYOUT this template drives — what decides whether a case is
+  /// authored as ONE Expected Result or as PER-STEP expectations:
+  ///   "TEXT"        → single `expectedResult`  (TestRail "Test Case (Text)")
+  ///   "STEPS"       → ordered QtTestCaseStep rows, each with its own expected
+  ///   "BDD"         → Given/When/Then in `expectedResult`, steps hidden
+  ///   "EXPLORATORY" → charter + free-form notes, no formal expectations
+  /// Both storage shapes always exist on QtTestCase, so switching a case's
+  /// template never destroys already-authored content — the editor just shows a
+  /// different subset. See QUIKTEST_TESTRAIL_PARITY_PLAN.md §3a.
+  kind      String       @default("STEPS")
+  /// Ordered QtCustomField ids composing the template. Independent of `kind`,
+  /// which governs only the built-in body layout.
   fieldIds  Json?
+  /// Exactly one template per org is pre-selected in the case editor.
+  isDefault Boolean      @default(false)
   isDeleted Boolean      @default(false)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
@@ -11606,6 +11662,12 @@ model QtTestRun {
   build       String?
   environment String?
   assigneeId  String?
+  /// Planned execution window (QUIKTR-320). Nullable: an ad-hoc or CI run has no
+  /// planned dates. QtTestPlan already carries these; runs did not.
+  startDate   DateTime?
+  endDate     DateTime?
+  /// Free-text linked tickets for the run, mirroring QtTestCase.refTickets.
+  refTickets  String?
   isDeleted   Boolean                       @default(false)
   createdAt   DateTime                      @default(now())
   updatedAt   DateTime                      @updatedAt

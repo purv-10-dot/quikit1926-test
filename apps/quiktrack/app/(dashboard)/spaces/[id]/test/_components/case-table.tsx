@@ -1,14 +1,17 @@
 "use client";
 
+import { useMemo } from "react";
 import { EmptyState, TableSkeleton } from "@quikit/ui";
 import { FileText } from "lucide-react";
+import { forecastMs, formatEstimate } from "@/lib/test/estimate";
 import {
-  APPROVAL_CLASS,
-  PRIORITY_CLASS,
+  CASE_COLUMNS,
   caseRef,
-  labelOf,
+  type CaseColumnKey,
   type TestCaseRow,
 } from "./case-meta";
+import { CaseCell } from "./case-row-cells";
+import { ColumnsMenu } from "./columns-menu";
 
 /**
  * Right pane: the case list for the selected folder.
@@ -16,6 +19,9 @@ import {
  * Table chrome follows the repo's locked convention — `bg-accent-50` headers,
  * neutral row ids, `hover:bg-blue-50` rows — so it reads like every other table
  * in the app rather than a bespoke surface.
+ *
+ * Which optional columns show is a per-person, per-project preference owned by
+ * `ColumnsMenu` (QUIKTR-335). ID and Title are structural and always rendered.
  */
 
 interface CaseTableProps {
@@ -27,6 +33,9 @@ interface CaseTableProps {
   canCreate: boolean;
   /** Null when viewing the whole suite. */
   sectionName: string | null;
+  projectId: string;
+  columns: CaseColumnKey[];
+  onColumns: (next: CaseColumnKey[]) => void;
 }
 
 export function CaseTable({
@@ -37,7 +46,25 @@ export function CaseTable({
   onCreate,
   canCreate,
   sectionName,
+  projectId,
+  columns,
+  onColumns,
 }: CaseTableProps) {
+  // Forecast over the rows on screen. Stated as such in the footer: it covers
+  // this page, not the whole suite, and saying "suite forecast" over a paginated
+  // list would be a plain lie.
+  const forecast = useMemo(
+    () => forecastMs(rows.map((r) => r.estimateMs)),
+    [rows],
+  );
+  const meanMs =
+    forecast.knownCount > 0
+      ? rows.reduce((s, r) => s + (r.estimateMs && r.estimateMs > 0 ? r.estimateMs : 0), 0) /
+        forecast.knownCount
+      : null;
+
+  const shown = CASE_COLUMNS.filter((c) => columns.includes(c.key));
+
   if (loading) {
     return (
       <div className="p-4">
@@ -74,6 +101,11 @@ export function CaseTable({
             {total} {total === 1 ? "case" : "cases"}
           </span>
         </h2>
+        <ColumnsMenu
+          projectId={projectId}
+          visible={columns}
+          onChange={onColumns}
+        />
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -82,10 +114,14 @@ export function CaseTable({
             <tr className="text-left">
               <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">ID</th>
               <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Title</th>
-              <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Priority</th>
-              <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Type</th>
-              <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Automation</th>
-              <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Status</th>
+              {shown.map((c) => (
+                <th
+                  key={c.key}
+                  className="bg-accent-50 px-4 py-2 font-medium text-gray-700"
+                >
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -106,41 +142,37 @@ export function CaseTable({
                     </span>
                   )}
                 </td>
-                <td className="whitespace-nowrap px-4 py-2">
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                      PRIORITY_CLASS[row.priority] ?? "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {labelOf(row.priority)}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-gray-500">
-                  {labelOf(row.type)}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-gray-500">
-                  {row.automationStatus === "AUTOMATED" ? (
-                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                      Automated
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">Manual</span>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      APPROVAL_CLASS[row.approvalState] ?? "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {labelOf(row.approvalState)}
-                  </span>
-                </td>
+                {shown.map((c) => (
+                  <CaseCell key={c.key} column={c.key} row={row} meanMs={meanMs} />
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {columns.includes("forecast") && (
+        <div className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500">
+          {forecast.estimated ? (
+            <>
+              Forecast for these {rows.length}{" "}
+              {rows.length === 1 ? "case" : "cases"}:{" "}
+              <span className="font-medium text-gray-700">
+                {formatEstimate(forecast.totalMs)}
+              </span>
+              {forecast.extrapolated && (
+                <>
+                  {" "}
+                  — {forecast.unknownCount} without an estimate, filled in from
+                  the average of the {forecast.knownCount} that have one.
+                </>
+              )}
+            </>
+          ) : (
+            <>No case here has an estimate, so there is nothing to forecast from.</>
+          )}
+        </div>
+      )}
     </div>
   );
 }
