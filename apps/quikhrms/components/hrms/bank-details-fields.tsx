@@ -125,7 +125,7 @@ export function BankDetailsFields({ value, onChange, inputCls = inputClsBase, ma
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-4">
         <Field label="IFSC Code" required={markRequired} hint={ifscState === "ok" ? "Bank + branch auto-filled" : ifscState === "invalid" ? "Invalid IFSC — fill bank manually" : undefined} hintColor={ifscState === "ok" ? "text-emerald-600" : "text-amber-600"}>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10">

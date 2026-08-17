@@ -55,7 +55,9 @@ export const PERMISSIONS: PermissionDef[] = [
 
   // ── Recruit ──
   { code: "hrms.recruit.read", category: "Recruit", name: "View Recruitment", description: "View requisitions, candidates, applications" },
-  { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates" },
+  { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates (legacy — grants both of the two below)" },
+  { code: "hrms.recruit.requisition.write", category: "Recruit", name: "Manage Job Requisitions", description: "Create/update/close job requisitions" },
+  { code: "hrms.recruit.candidate.write", category: "Recruit", name: "Manage Candidates", description: "Create/update candidates" },
   { code: "hrms.recruit.offer", category: "Recruit", name: "Manage Offers", description: "Send/withdraw offers" },
   { code: "hrms.recruit.interview", category: "Recruit", name: "Manage Interviews", description: "Schedule and score interviews" },
   { code: "hrms.recruit.approve", category: "Recruit", name: "Approve Requisitions", description: "Approve/reject raised requisitions" },

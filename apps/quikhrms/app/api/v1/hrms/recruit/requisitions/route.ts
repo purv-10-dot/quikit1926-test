@@ -148,4 +148,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(req_, undefined, 201);
   } catch (error) { console.error("POST /recruit/requisitions error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.requisition.write"], anyPermission: true });

@@ -18,7 +18,7 @@ export function hashExternalApiKey(raw: string): string {
 
 /** One resource name per external route. Add a new entry here whenever a new
  *  external/* route is introduced, and pick it in the Settings key-creation form. */
-export const EXTERNAL_API_SCOPES = ["departments", "employees"] as const;
+export const EXTERNAL_API_SCOPES = ["departments", "employees", "jobRequisitions"] as const;
 export type ExternalApiScope = (typeof EXTERNAL_API_SCOPES)[number];
 
 interface KeyRow { orgId: string; scope: string }

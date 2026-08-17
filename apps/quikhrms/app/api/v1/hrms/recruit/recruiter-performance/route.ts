@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, forbidden, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { countBusinessDays, computeRequisitionSla, getHolidayDateSet, median } from "@/lib/recruit/sla";
 
 /**
  * GET /api/v1/hrms/recruit/recruiter-performance — Phase 1 MVP.
@@ -29,10 +30,6 @@ function startOfWeek(d: Date): Date {
   x.setHours(0, 0, 0, 0);
   return x;
 }
-function daysBetween(a: Date, b: Date): number {
-  return Math.max(0, (b.getTime() - a.getTime()) / 86_400_000);
-}
-
 interface RecruiterRow {
   employeeId: string;
   name: string;
@@ -43,7 +40,9 @@ interface RecruiterRow {
   offersSentThisWeek: number;
   hiresThisMonth: number;
   avgTimeToFillDays: number | null;
+  medianTimeToFillDays: number | null;
   avgTimeToHireDays: number | null;
+  medianTimeToHireDays: number | null;
   slaOnTrack: number;
   slaAging: number;
   slaOverdue: number;
@@ -73,14 +72,22 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         where: { orgId, deletedAt: null },
         select: {
           id: true, title: true, requisitionNumber: true, status: true,
-          positions: true, filledPositions: true, createdAt: true, closedDate: true,
+          positions: true, filledPositions: true, createdAt: true, actualClosedAt: true,
           recruiterId: true, jobLevelId: true, customSlaDays: true,
+          slaPausedAt: true, slaPausedDays: true,
           recruiterSplits: { where: { deletedAt: null }, select: { employeeId: true, positionsAssigned: true } },
         },
       }),
       prisma.jobLevel.findMany({ where: { orgId, deletedAt: null }, select: { id: true, slaDays: true } }),
     ]);
     const slaDaysByLevel = new Map(jobLevels.map((l) => [l.id, l.slaDays]));
+
+    // Org holidays, bounded from the earliest requisition on record to now —
+    // every SLA/TAT business-day calculation below excludes weekends + these.
+    const earliestCreatedAt = requisitions.length
+      ? requisitions.reduce((min, r) => (r.createdAt < min ? r.createdAt : min), requisitions[0].createdAt)
+      : now;
+    const holidayDates = await getHolidayDateSet(orgId, earliestCreatedAt, now);
 
     // Per-requisition: its recruiter split (or a single-row fallback from the
     // legacy scalar) + a "primary" recruiter for candidate-level attribution.
@@ -103,7 +110,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       : [...allRecruiterIds];
 
     if (recruiterIds.length === 0) {
-      return successResponse({ recruiters: [], orgAverage: null, funnel: [], scope: canSeeAll ? "all" : "self" });
+      return successResponse({ recruiters: [], orgAverage: null, funnel: [], stageTat: [], monthlyTrends: [], scope: canSeeAll ? "all" : "self" });
     }
 
     const recruiterEmployees = await prisma.employee.findMany({
@@ -118,7 +125,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
           where: { orgId, deletedAt: null, requisitionId: { in: requisitionIds } },
           select: {
             id: true, requisitionId: true, status: true, currentStage: true, appliedDate: true,
-            offerStatus: true, offerSentAt: true, updatedAt: true,
+            offerStatus: true, offerSentAt: true, updatedAt: true, hiredAt: true, stageHistory: true,
           },
         })
       : [];
@@ -136,13 +143,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const recruiterOfApp = new Map<string, string | null>();
     for (const a of applications) recruiterOfApp.set(a.id, primaryByReq.get(a.requisitionId) ?? null);
 
-    function computeSla(r: (typeof requisitions)[number]): "green" | "amber" | "red" | null {
-      const slaDays = r.customSlaDays ?? (r.jobLevelId ? slaDaysByLevel.get(r.jobLevelId) : null);
-      if (!slaDays) return null;
-      const age = daysBetween(r.createdAt, now);
-      const utilization = age / slaDays;
-      return utilization <= 0.66 ? "green" : utilization <= 1 ? "amber" : "red";
-    }
+    const computeSla = (r: (typeof requisitions)[number]) => computeRequisitionSla(r, slaDaysByLevel, holidayDates, now);
 
     function buildRow(employeeId: string): RecruiterRow {
       const myReqs = requisitions.filter((r) => (splitsByReq.get(r.id) ?? []).some((s) => s.employeeId === employeeId));
@@ -158,19 +159,24 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       const activeCandidates = myApps.filter((a) => ACTIVE_APP_STATUSES.has(a.status)).length;
       const interviewsThisWeek = interviews.filter((iv) => myAppIds.includes(iv.applicationId)).length;
       const offersSentThisWeek = myApps.filter((a) => a.offerStatus && a.offerSentAt && a.offerSentAt >= weekStart && a.offerSentAt < weekEnd).length;
-      const hiresThisMonth = myApps.filter((a) => a.status === "AppHired" && a.updatedAt >= monthStart).length;
+      const hiresThisMonth = myApps.filter((a) => a.status === "AppHired" && a.hiredAt && a.hiredAt >= monthStart).length;
 
-      // Time-to-Fill: closed requisitions, Requisition created → closed.
-      const filledReqs = myReqs.filter((r) => r.status === "ReqClosed" && r.closedDate);
-      const avgTimeToFillDays = filledReqs.length
-        ? Math.round(filledReqs.reduce((s, r) => s + daysBetween(r.createdAt, r.closedDate!), 0) / filledReqs.length)
-        : null;
+      // Time-to-Fill: closed requisitions, Requisition created → actually
+      // closed (actualClosedAt — never the editable "Timeline to Close"
+      // target, so revising that target doesn't skew an already-closed req),
+      // in business days (weekends + org holidays excluded).
+      const filledReqs = myReqs.filter((r) => r.status === "ReqClosed" && r.actualClosedAt);
+      const fillDays = filledReqs.map((r) => countBusinessDays(r.createdAt, r.actualClosedAt!, holidayDates));
+      const avgTimeToFillDays = fillDays.length ? Math.round(fillDays.reduce((s, d) => s + d, 0) / fillDays.length) : null;
+      const medianTimeToFillDays = median(fillDays);
 
-      // Time-to-Hire: hired applications, Applied → Hired (updatedAt proxy).
-      const hiredApps = myApps.filter((a) => a.status === "AppHired");
-      const avgTimeToHireDays = hiredApps.length
-        ? Math.round(hiredApps.reduce((s, a) => s + daysBetween(a.appliedDate, a.updatedAt), 0) / hiredApps.length)
-        : null;
+      // Time-to-Hire: hired applications, Applied → Hired (hiredAt — stamped
+      // once on the AppHired transition, never moved by later unrelated edits),
+      // in business days.
+      const hiredApps = myApps.filter((a) => a.status === "AppHired" && a.hiredAt);
+      const hireDays = hiredApps.map((a) => countBusinessDays(a.appliedDate, a.hiredAt!, holidayDates));
+      const avgTimeToHireDays = hireDays.length ? Math.round(hireDays.reduce((s, d) => s + d, 0) / hireDays.length) : null;
+      const medianTimeToHireDays = median(hireDays);
 
       let slaOnTrack = 0, slaAging = 0, slaOverdue = 0;
       for (const r of myOpenReqs) {
@@ -186,7 +192,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         employeeId, name: nameById.get(employeeId) ?? "Unknown",
         activeRequisitions: myOpenReqs.length, positionsAssigned, activeCandidates,
         interviewsThisWeek, offersSentThisWeek, hiresThisMonth,
-        avgTimeToFillDays, avgTimeToHireDays,
+        avgTimeToFillDays, medianTimeToFillDays, avgTimeToHireDays, medianTimeToHireDays,
         slaOnTrack, slaAging, slaOverdue, slaCompliancePct,
       };
     }
@@ -195,11 +201,15 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
 
     // Org-wide averages — a simple peer benchmark line shown alongside each
     // recruiter's own numbers (full per-Job-Level cohort breakdown is Phase 2).
-    const allFilled = requisitions.filter((r) => r.status === "ReqClosed" && r.closedDate);
-    const allHired = applications.filter((a) => a.status === "AppHired");
+    const allFilled = requisitions.filter((r) => r.status === "ReqClosed" && r.actualClosedAt);
+    const allHired = applications.filter((a) => a.status === "AppHired" && a.hiredAt);
+    const allFillDays = allFilled.map((r) => countBusinessDays(r.createdAt, r.actualClosedAt!, holidayDates));
+    const allHireDays = allHired.map((a) => countBusinessDays(a.appliedDate, a.hiredAt!, holidayDates));
     const orgAverage = {
-      avgTimeToFillDays: allFilled.length ? Math.round(allFilled.reduce((s, r) => s + daysBetween(r.createdAt, r.closedDate!), 0) / allFilled.length) : null,
-      avgTimeToHireDays: allHired.length ? Math.round(allHired.reduce((s, a) => s + daysBetween(a.appliedDate, a.updatedAt), 0) / allHired.length) : null,
+      avgTimeToFillDays: allFillDays.length ? Math.round(allFillDays.reduce((s, d) => s + d, 0) / allFillDays.length) : null,
+      medianTimeToFillDays: median(allFillDays),
+      avgTimeToHireDays: allHireDays.length ? Math.round(allHireDays.reduce((s, d) => s + d, 0) / allHireDays.length) : null,
+      medianTimeToHireDays: median(allHireDays),
     };
 
     // Funnel — stage counts across whatever's in scope (all applications for
@@ -212,7 +222,60 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     }
     const funnel = [...funnelCounts.entries()].map(([stage, count]) => ({ stage, count }));
 
-    return successResponse({ recruiters, orgAverage, funnel, scope: canSeeAll ? "all" : "self" });
+    // Stage-level TAT (turn-around-time) — average days spent IN each stage,
+    // computed from stageHistory's own {stage, date} trail: the gap between
+    // one entry and the next is exactly how long the candidate sat in the
+    // earlier entry's stage. The candidate's current (still-open) stage has
+    // no "next" entry yet, so it's excluded from the average on purpose —
+    // it hasn't finished, averaging it in would understate real TAT.
+    const stageDurations = new Map<string, number[]>();
+    for (const a of applications) {
+      if (!inScopeAppIds.has(a.id)) continue;
+      const history = Array.isArray(a.stageHistory) ? (a.stageHistory as unknown[]) : [];
+      const points = history
+        .map((h) => (h && typeof h === "object" ? h as { stage?: unknown; date?: unknown } : null))
+        .filter((h): h is { stage: string; date: string } => !!h && typeof h.stage === "string" && typeof h.date === "string")
+        .map((h) => ({ stage: h.stage, at: new Date(h.date) }))
+        .sort((x, y) => x.at.getTime() - y.at.getTime());
+      for (let i = 0; i < points.length - 1; i++) {
+        const days = countBusinessDays(points[i].at, points[i + 1].at, holidayDates);
+        if (!stageDurations.has(points[i].stage)) stageDurations.set(points[i].stage, []);
+        stageDurations.get(points[i].stage)!.push(days);
+      }
+    }
+    const stageTat = [...stageDurations.entries()]
+      .map(([stage, days]) => ({
+        stage,
+        avgDays: Math.round((days.reduce((s, d) => s + d, 0) / days.length) * 10) / 10,
+        count: days.length,
+      }))
+      .sort((a, b) => b.avgDays - a.avgDays);
+
+    // Monthly trends — last 6 calendar months (oldest → newest), scoped to
+    // whatever's in scope (all recruiters, or the filtered one). Only metrics
+    // with a real stored event timestamp can be shown retrospectively —
+    // hires (hiredAt) and closures/Time-to-Fill (actualClosedAt). SLA
+    // compliance can't be reconstructed for past months since it's a
+    // point-in-time snapshot, not an event with a timestamp.
+    const inScopeReqIds = new Set(requisitions.filter((r) => (splitsByReq.get(r.id) ?? []).some((s) => recruiterIds.includes(s.employeeId))).map((r) => r.id));
+    const monthlyTrends: { month: string; hires: number; closedRequisitions: number; avgTimeToFillDays: number | null }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const bucketStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const bucketEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const monthLabel = bucketStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+
+      const hires = applications.filter((a) => inScopeAppIds.has(a.id) && a.hiredAt && a.hiredAt >= bucketStart && a.hiredAt < bucketEnd).length;
+      const closedInBucket = requisitions.filter((r) => inScopeReqIds.has(r.id) && r.status === "ReqClosed" && r.actualClosedAt && r.actualClosedAt >= bucketStart && r.actualClosedAt < bucketEnd);
+      const closedFillDays = closedInBucket.map((r) => countBusinessDays(r.createdAt, r.actualClosedAt!, holidayDates));
+      monthlyTrends.push({
+        month: monthLabel,
+        hires,
+        closedRequisitions: closedInBucket.length,
+        avgTimeToFillDays: closedFillDays.length ? Math.round(closedFillDays.reduce((s, d) => s + d, 0) / closedFillDays.length) : null,
+      });
+    }
+
+    return successResponse({ recruiters, orgAverage, funnel, stageTat, monthlyTrends, scope: canSeeAll ? "all" : "self" });
   } catch (error) {
     console.error("GET /recruit/recruiter-performance error:", error);
     return internalError();

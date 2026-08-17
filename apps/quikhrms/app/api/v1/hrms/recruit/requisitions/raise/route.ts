@@ -14,7 +14,7 @@ const schema = z.object({
   departmentId: z.string().optional(),
   pipelineId: z.string().optional(),
   jobOpeningName: z.string().optional(),
-  positions: z.number().int().min(1).max(999).default(1),
+  positions: z.number().int().min(1).max(100).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
   employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
@@ -186,4 +186,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /requisitions/raise", e);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.requisition.write"], anyPermission: true });

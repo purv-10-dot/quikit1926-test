@@ -28,7 +28,7 @@ const requisitionBaseObject = z.object({
   pipelineId: z.string().min(1, "Pipeline required"),
   departmentId: z.string().min(1, "Department required"),
   reportingToId: z.string().optional(),
-  positions: z.number().int().min(1).max(500).default(1),
+  positions: z.number().int().min(1).max(100).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
   employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelance"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
@@ -127,7 +127,8 @@ function requisitionCrossFieldChecks(
   }
 }
 
-export const createRequisitionSchema = requisitionBaseObject.superRefine(requisitionCrossFieldChecks);
+export const createRequisitionSchema = requisitionBaseObject
+  .superRefine(requisitionCrossFieldChecks);
 
 export const updateRequisitionSchema = requisitionBaseObject.partial().extend({
   status: z.enum(["ReqDraft", "PendingApproval", "ReqApproved", "ReqOpen", "ReqOnHold", "ReqClosed", "ReqCancelled"]).optional(),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
@@ -13,7 +14,7 @@ import { clsx } from "clsx";
 import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
   ArrowLeft, ArrowRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star,
   FileText, ClipboardList, ThumbsUp, Gem, HelpCircle, CalendarClock, History, Building2, User, MapPin, Clock, Video,
-  Flag, Circle, Calendar, AlignLeft } from "lucide-react";
+  Flag, Circle, Calendar, AlignLeft, MoreVertical } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
@@ -196,6 +197,82 @@ function ActionBtn({
   );
 }
 
+interface MenuAction { label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean }
+
+// "More" button + portaled dropdown — used instead of a row of icon buttons
+// when there are several conditional actions. Portaled to <body> so the
+// table's `overflow-hidden` card can't clip it near the bottom row.
+function RowActionsMenu({ actions }: { actions: MenuAction[] }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; right: number } | null>(null);
+
+  const reposition = () => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    reposition();
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onScrollResize = () => reposition();
+    document.addEventListener("mousedown", onClick);
+    window.addEventListener("resize", onScrollResize);
+    window.addEventListener("scroll", onScrollResize, true);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
+    };
+  }, [open]);
+
+  if (actions.length === 0) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        onClick={() => setOpen((v) => !v)}
+        aria-label="More actions"
+        className="inline-flex items-center gap-1 h-9 px-2.5 rounded-xl border border-gray-200 bg-white text-gray-600 text-xs font-medium hover:bg-gray-50 transition"
+      >
+        More <MoreVertical size={13} />
+      </button>
+      {open && rect && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: rect.top, right: rect.right, width: 200 }}
+          className="z-50 bg-white rounded-xl border border-gray-200 shadow-lg py-1.5"
+        >
+          {actions.map((a, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => { setOpen(false); a.onClick(); }}
+              className={clsx(
+                "w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-left transition",
+                a.danger ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-gray-50",
+              )}
+            >
+              {a.icon} {a.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 export default function RequisitionsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
@@ -203,7 +280,7 @@ export default function RequisitionsPage() {
   const { hasPermission } = useDashboardConfig();
   // Creating / editing / deleting requisitions requires recruit write (also
   // enforced by the API). Viewers reach this page via the dashboard "View All".
-  const canManage = hasPermission("hrms.recruit.write");
+  const canManage = hasPermission("hrms.recruit.write") || hasPermission("hrms.recruit.requisition.write");
   const dialog = useDialog();
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -476,6 +553,7 @@ export default function RequisitionsPage() {
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Priority</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Posted On</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">End Date</th>
                 <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
             </thead>
@@ -525,63 +603,74 @@ export default function RequisitionsPage() {
                   <td className="px-4 py-2.5 text-xs text-gray-700">
                     {(() => { const d = r.raisedAt ?? r.createdAt; return d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"; })()}
                   </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">
+                    {r.targetJoiningDate ? new Date(r.targetJoiningDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                  </td>
                   <td className="px-4 py-2.5 text-right">
-                    <div className="inline-flex items-center gap-1.5 justify-end">
-                      <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => { setOpenSec(null); setShowAllHistory(false); setViewReq(r); }} />
-                      {canManage && (<>
-                      {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn title="Revise Date" variant="amber" icon={<CalendarClock size={12} />} onClick={() => {
-                          setReviseForm({
-                            startDate: r.closedDate ? r.closedDate.slice(0, 10) : "",
-                            endDate: r.targetJoiningDate ? r.targetJoiningDate.slice(0, 10) : "",
-                            reason: "",
+                    {(() => {
+                      const isActiveStatus = r.status !== "ReqCancelled" && r.status !== "ReqClosed";
+                      const menuActions: MenuAction[] = [];
+                      if (canManage) {
+                        if (isActiveStatus) {
+                          menuActions.push({
+                            label: "Revise Date", icon: <CalendarClock size={13} />, onClick: () => {
+                              setReviseForm({
+                                startDate: r.closedDate ? r.closedDate.slice(0, 10) : "",
+                                endDate: r.targetJoiningDate ? r.targetJoiningDate.slice(0, 10) : "",
+                                reason: "",
+                              });
+                              setReviseTarget(r);
+                            },
                           });
-                          setReviseTarget(r);
-                        }} />
-                      )}
-                      {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn title="Edit" variant="green" icon={<Pencil size={12} />} onClick={() => {
-                          setForm(reqToForm(r));
-                          setEditId(r.id);
-                          setShowCreate(true);
-                        }} />
-                      )}
-                      {r.status === "ReqDraft" && (
-                        <ActionBtn title="Open" variant="green" icon={<Check size={12} />}
-                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })} />
-                      )}
-                      {r.status === "ReqOpen" && (
-                        <ActionBtn title="Close" variant="slate" icon={<XCircle size={12} />}
-                          onClick={async () => {
-                            const ok = await dialog.confirm({
-                              title: "Close this requisition?",
-                              description: "Hiring for this role will stop. You can reopen it later.",
-                              confirmLabel: "Close",
-                            });
-                            if (ok) updateMut.mutate({ id: r.id, status: "ReqClosed" });
-                          }} />
-                      )}
-                      {(r.status === "ReqOpen" || r.status === "ReqApproved" || r.status === "ReqDraft") && (
-                        <ActionBtn title="On Hold" variant="amber" icon={<Pause size={12} />}
-                          onClick={async () => {
-                            const ok = await dialog.confirm({
-                              title: "Put this requisition on hold?",
-                              description: "Applications pause until you resume it. Candidates stay in the pipeline.",
-                              confirmLabel: "Put on hold",
-                            });
-                            if (ok) updateMut.mutate({ id: r.id, status: "ReqOnHold" });
-                          }} />
-                      )}
-                      {r.status === "ReqOnHold" && (
-                        <ActionBtn title="Resume" variant="blue" icon={<Play size={12} />}
-                          onClick={() => { setDecisions({}); setOpenFeedback(new Set()); setReviewTarget(r); }} />
-                      )}
-                      {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn title="Cancel" variant="red" icon={<XCircle size={12} />}
-                          onClick={() => setCancelTarget(r)} />
-                      )}
-                      </>)}
-                    </div>
+                          menuActions.push({
+                            label: "Edit Requisition", icon: <Pencil size={13} />, onClick: () => {
+                              setForm(reqToForm(r));
+                              setEditId(r.id);
+                              setShowCreate(true);
+                            },
+                          });
+                        }
+                        if (r.status === "ReqDraft") {
+                          menuActions.push({ label: "Open", icon: <Check size={13} />, onClick: () => updateMut.mutate({ id: r.id, status: "ReqOpen" }) });
+                        }
+                        if (r.status === "ReqOpen") {
+                          menuActions.push({
+                            label: "Close Requisition", icon: <XCircle size={13} />, onClick: async () => {
+                              const ok = await dialog.confirm({
+                                title: "Close this requisition?",
+                                description: "Hiring for this role will stop. You can reopen it later.",
+                                confirmLabel: "Close",
+                              });
+                              if (ok) updateMut.mutate({ id: r.id, status: "ReqClosed" });
+                            },
+                          });
+                        }
+                        if (r.status === "ReqOpen" || r.status === "ReqApproved" || r.status === "ReqDraft") {
+                          menuActions.push({
+                            label: "On Hold", icon: <Pause size={13} />, onClick: async () => {
+                              const ok = await dialog.confirm({
+                                title: "Put this requisition on hold?",
+                                description: "Applications pause until you resume it. Candidates stay in the pipeline.",
+                                confirmLabel: "Put on hold",
+                              });
+                              if (ok) updateMut.mutate({ id: r.id, status: "ReqOnHold" });
+                            },
+                          });
+                        }
+                        if (r.status === "ReqOnHold") {
+                          menuActions.push({ label: "Resume", icon: <Play size={13} />, onClick: () => { setDecisions({}); setOpenFeedback(new Set()); setReviewTarget(r); } });
+                        }
+                        if (isActiveStatus) {
+                          menuActions.push({ label: "Cancel Requisition", icon: <XCircle size={13} />, danger: true, onClick: () => setCancelTarget(r) });
+                        }
+                      }
+                      return (
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => { setOpenSec(null); setShowAllHistory(false); setViewReq(r); }} />
+                          <RowActionsMenu actions={menuActions} />
+                        </div>
+                      );
+                    })()}
                   </td>
                 </tr>
                 );
@@ -596,7 +685,7 @@ export default function RequisitionsPage() {
       )}
 
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }}
-        title={editId ? "Edit Job Requisition" : "New Job Requisition"} size="3xl">
+        title={editId ? "Edit Job Requisition" : "New Job Requisition"} size="3xl" maxWidthClass="max-w-6xl">
         <RequisitionWizard
           form={form}
           setForm={setForm}

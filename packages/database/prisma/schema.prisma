@@ -14104,6 +14104,12 @@ model JobRequisition {
 
   closedDate    DateTime? @db.Date
   closureReason String?
+  // Stamped automatically the moment status flips to ReqClosed — the TRUE
+  // closure timestamp, kept separate from `closedDate` (which is HR's
+  // editable "Timeline to Close" target and gets revised during planning).
+  // Recruiter Performance's Time-to-Fill uses this, not closedDate, so
+  // revising the target doesn't retroactively skew an already-closed req.
+  actualClosedAt DateTime?
 
   // Extended requisition metadata (job posting + hiring plan). These columns
   // already exist in the DB; kept in sync here so the generated client accepts them.
@@ -14121,6 +14127,17 @@ model JobRequisition {
   jobLevelId      String?
   customSlaDays   Int?
   customSlaReason String?
+  // SLA-pause tracking: while status is ReqOnHold, the elapsed calendar time
+  // must not count against the requisition's SLA — a hold is a business
+  // decision, not the recruiter's delay. slaPausedAt is set the moment a
+  // requisition enters ReqOnHold and cleared (its duration folded into
+  // slaPausedDays) the moment it leaves ReqOnHold, for any reason.
+  slaPausedAt   DateTime?
+  slaPausedDays Float     @default(0)
+  // Last SLA severity level the recruiter/HR were notified about ("amber" |
+  // "red" | null). Prevents the daily SLA-check cron from re-notifying every
+  // day for an unchanged breach — only a fresh threshold crossing re-alerts.
+  lastSlaAlertLevel String?
 
   createdBy String?
   updatedBy String?
@@ -14309,6 +14326,11 @@ model JobApplication {
   screeningAnswers Json?
 
   status ApplicationStatus @default(AppActive)
+  // Stable timestamp of the AppHired transition — Time-to-Hire and "hires
+  // this month" read from this, never from `updatedAt` (which any later
+  // unrelated edit would move, silently corrupting both metrics). Cleared
+  // if a hire is later reversed (rejected/declined/withdrawn post-hire).
+  hiredAt DateTime?
 
   aiMatchScore    Decimal? @db.Decimal(5, 2)
   aiMatchAnalysis Json?

@@ -8,8 +8,9 @@ import { EmptyState } from "@/components/hrms/empty-state";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Select } from "@/components/hrms/select";
+import { LineChartView } from "@/components/hrms/charts";
 import { clsx } from "clsx";
-import { Briefcase, Users, Calendar, Send, Award, Clock, Target, ShieldCheck } from "lucide-react";
+import { Briefcase, Users, Calendar, Send, Award, Clock, Target, ShieldCheck, TrendingUp } from "lucide-react";
 
 interface RecruiterRow {
   employeeId: string;
@@ -21,7 +22,9 @@ interface RecruiterRow {
   offersSentThisWeek: number;
   hiresThisMonth: number;
   avgTimeToFillDays: number | null;
+  medianTimeToFillDays: number | null;
   avgTimeToHireDays: number | null;
+  medianTimeToHireDays: number | null;
   slaOnTrack: number;
   slaAging: number;
   slaOverdue: number;
@@ -29,8 +32,10 @@ interface RecruiterRow {
 }
 interface PerfData {
   recruiters: RecruiterRow[];
-  orgAverage: { avgTimeToFillDays: number | null; avgTimeToHireDays: number | null } | null;
+  orgAverage: { avgTimeToFillDays: number | null; medianTimeToFillDays: number | null; avgTimeToHireDays: number | null; medianTimeToHireDays: number | null } | null;
   funnel: { stage: string; count: number }[];
+  stageTat: { stage: string; avgDays: number; count: number }[];
+  monthlyTrends: { month: string; hires: number; closedRequisitions: number; avgTimeToFillDays: number | null }[];
   scope: "all" | "self";
 }
 
@@ -132,8 +137,8 @@ export default function RecruiterPerformancePage() {
           {d.orgAverage && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3.5 flex items-center gap-6 text-xs text-gray-600">
               <span className="font-semibold text-gray-700">Org average:</span>
-              <span className="flex items-center gap-1.5"><Clock size={13} className="text-gray-400" /> Time-to-Fill: <b>{d.orgAverage.avgTimeToFillDays ?? "—"}d</b></span>
-              <span className="flex items-center gap-1.5"><Calendar size={13} className="text-gray-400" /> Time-to-Hire: <b>{d.orgAverage.avgTimeToHireDays ?? "—"}d</b></span>
+              <span className="flex items-center gap-1.5"><Clock size={13} className="text-gray-400" /> Time-to-Fill: <b>{d.orgAverage.avgTimeToFillDays ?? "—"}d</b> <span className="text-gray-400">(median {d.orgAverage.medianTimeToFillDays ?? "—"}d)</span></span>
+              <span className="flex items-center gap-1.5"><Calendar size={13} className="text-gray-400" /> Time-to-Hire: <b>{d.orgAverage.avgTimeToHireDays ?? "—"}d</b> <span className="text-gray-400">(median {d.orgAverage.medianTimeToHireDays ?? "—"}d)</span></span>
             </div>
           )}
 
@@ -163,8 +168,14 @@ export default function RecruiterPerformancePage() {
                     <td className="px-3 py-2 text-right">{r.interviewsThisWeek}</td>
                     <td className="px-3 py-2 text-right">{r.offersSentThisWeek}</td>
                     <td className="px-3 py-2 text-right">{r.hiresThisMonth}</td>
-                    <td className="px-3 py-2 text-right">{r.avgTimeToFillDays != null ? `${r.avgTimeToFillDays}d` : "—"}</td>
-                    <td className="px-3 py-2 text-right">{r.avgTimeToHireDays != null ? `${r.avgTimeToHireDays}d` : "—"}</td>
+                    <td className="px-3 py-2 text-right">
+                      {r.avgTimeToFillDays != null ? `${r.avgTimeToFillDays}d` : "—"}
+                      {r.medianTimeToFillDays != null && <div className="text-[10px] text-gray-400">med {r.medianTimeToFillDays}d</div>}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {r.avgTimeToHireDays != null ? `${r.avgTimeToHireDays}d` : "—"}
+                      {r.medianTimeToHireDays != null && <div className="text-[10px] text-gray-400">med {r.medianTimeToHireDays}d</div>}
+                    </td>
                     <td className="px-3 py-2 text-right">{slaBadge(r)}</td>
                   </tr>
                 ))}
@@ -172,19 +183,51 @@ export default function RecruiterPerformancePage() {
             </table>
           </div>
 
-          {d.funnel.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <h2 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-1.5"><ShieldCheck size={14} className="text-green-600" /> Candidate Funnel</h2>
-              <div className="space-y-2">
-                {d.funnel.map((f, i) => (
-                  <div key={f.stage} className="flex items-center gap-3">
-                    <span className="w-32 text-[11px] text-gray-600 shrink-0">{prettyStage(f.stage)}</span>
-                    <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
-                      <div className="h-full rounded" style={{ width: `${(f.count / funnelMax) * 100}%`, background: FUNNEL_COLORS[i % FUNNEL_COLORS.length] }} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {d.funnel.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <h2 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-1.5"><ShieldCheck size={14} className="text-green-600" /> Candidate Funnel</h2>
+                <div className="space-y-2">
+                  {d.funnel.map((f, i) => (
+                    <div key={f.stage} className="flex items-center gap-3">
+                      <span className="w-32 text-[11px] text-gray-600 shrink-0">{prettyStage(f.stage)}</span>
+                      <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
+                        <div className="h-full rounded" style={{ width: `${(f.count / funnelMax) * 100}%`, background: FUNNEL_COLORS[i % FUNNEL_COLORS.length] }} />
+                      </div>
+                      <span className="w-8 text-right text-[11px] font-semibold text-gray-700">{f.count}</span>
                     </div>
-                    <span className="w-8 text-right text-[11px] font-semibold text-gray-700">{f.count}</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {d.stageTat.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <h2 className="text-[13px] font-semibold text-gray-900 mb-1 flex items-center gap-1.5"><Clock size={14} className="text-green-600" /> Turn-Around-Time per Stage</h2>
+                <p className="text-[11px] text-gray-400 mb-3">Average days candidates spend in each stage before moving on.</p>
+                <div className="space-y-2">
+                  {d.stageTat.map((t) => (
+                    <div key={t.stage} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-600">{prettyStage(t.stage)}</span>
+                      <span className="font-semibold text-gray-900">{t.avgDays}d <span className="text-gray-400 font-normal">({t.count})</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {d.monthlyTrends.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <h2 className="text-[13px] font-semibold text-gray-900 mb-1 flex items-center gap-1.5"><TrendingUp size={14} className="text-green-600" /> Hires per Month</h2>
+                <p className="text-[11px] text-gray-400 mb-2">Last 6 months.</p>
+                <LineChartView data={d.monthlyTrends.map((t) => ({ name: t.month, value: t.hires }))} height={200} color="#16a34a" />
+              </div>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <h2 className="text-[13px] font-semibold text-gray-900 mb-1 flex items-center gap-1.5"><Clock size={14} className="text-green-600" /> Avg Time-to-Fill per Month</h2>
+                <p className="text-[11px] text-gray-400 mb-2">Business days, requisitions closed that month.</p>
+                <LineChartView data={d.monthlyTrends.map((t) => ({ name: t.month, value: t.avgTimeToFillDays ?? 0 }))} height={200} color="#ef4444" yLabel="days" />
               </div>
             </div>
           )}

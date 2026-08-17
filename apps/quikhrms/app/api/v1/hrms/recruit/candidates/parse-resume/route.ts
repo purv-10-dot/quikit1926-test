@@ -150,7 +150,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
     return internalError();
   }
 }, {
-  requiredPermissions: ["hrms.recruit.write"],
+  requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"],
+  anyPermission: true,
   rateLimit: [
     { max: 10, windowSec: 60, by: "user", scope: "ai" },
     { max: 200, windowSec: 24 * 60 * 60, by: "tenant", scope: "ai.daily" },
