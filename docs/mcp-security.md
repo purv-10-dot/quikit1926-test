@@ -141,6 +141,11 @@ destructive tool name like `"delete_issue"` is unreachable via the real
   writes, `checkWritePermission` too (see the QUIKTR-119 section below) —
   don't call `loadProjectAccess`/`userCanInProject` directly, or the tool
   won't get an audit-log entry.
+- If the new tool takes a `projectId` or `issueId` argument, don't look it
+  up by a raw `id` filter alone — resolve it via `checkProjectMembership`'s
+  resolved `access.projectId` (for a project) or `resolveIssueIdOrKey()`
+  (`lib/mcp/resolveIssue.ts`, for an issue) first, so it also accepts the
+  human-readable key (e.g. `"QUIKTR"` / `"QUIKTR-119"`), not just the cuid.
 
 # Access control (QUIKTR-119)
 
