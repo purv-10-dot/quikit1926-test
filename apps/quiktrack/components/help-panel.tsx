@@ -384,7 +384,7 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
     return ARTICLES.filter((a) => {
       if (a.title.toLowerCase().includes(q)) return true;
       if (a.excerpt.toLowerCase().includes(q)) return true;
-      if (a.tags.some((t) => t.includes(q))) return true;
+      if (a.tags.some((t) => t.toLowerCase().includes(q))) return true;
       return false;
     });
   }, [query]);

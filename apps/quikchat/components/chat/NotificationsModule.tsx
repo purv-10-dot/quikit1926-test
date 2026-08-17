@@ -15,7 +15,9 @@ import {
   AtSign,
   Avatar,
   Bell,
+  Button,
   Check,
+  EyeOff,
   Heart,
   IconButton,
   Menu,
@@ -83,17 +85,32 @@ function lastMessageOf(dto: MessageDto) {
 export function NotificationsModule({ currentUserId, onOpenSettings }: NotificationsModuleProps) {
   const qc = useQueryClient();
   const toast = useToast();
-  const { feed, hasMore, loading, osPermission, markRead, loadMore, requestOsPermission } =
-    useNotifications();
+  const {
+    feed,
+    unreadCount,
+    hasMore,
+    loading,
+    osPermission,
+    markRead,
+    markAllRead,
+    clearAll,
+    loadMore,
+    requestOsPermission,
+  } = useNotifications();
 
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  // Session-local hide only — there is no per-notification delete endpoint
+  // server-side (only bulk clear-all). A real delete is a backlog item.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
 
-  const removeOne = (id: string) => {
-    setRemovedIds((prev) => {
+  const hideOne = (id: string) => {
+    setHiddenIds((prev) => {
       const next = new Set(prev);
       next.add(id);
       return next;
@@ -101,10 +118,20 @@ export function NotificationsModule({ currentUserId, onOpenSettings }: Notificat
     setSelectedId((cur) => (cur === id ? null : cur));
   };
 
+  const handleClearAll = async () => {
+    setClearing(true);
+    try {
+      await clearAll();
+    } finally {
+      setClearing(false);
+      setConfirmingClear(false);
+    }
+  };
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return feed.filter((n) => {
-      if (removedIds.has(n.id)) return false;
+      if (hiddenIds.has(n.id)) return false;
       if (filter === "unread" && n.isRead) return false;
       if (filter === "mention" && n.type !== "mention") return false;
       if (q) {
@@ -114,7 +141,7 @@ export function NotificationsModule({ currentUserId, onOpenSettings }: Notificat
       }
       return true;
     });
-  }, [feed, filter, query, removedIds]);
+  }, [feed, filter, query, hiddenIds]);
 
   const selected = useMemo(
     () => visible.find((n) => n.id === selectedId) ?? feed.find((n) => n.id === selectedId) ?? null,
@@ -205,11 +232,64 @@ export function NotificationsModule({ currentUserId, onOpenSettings }: Notificat
         <aside className="qc-pane-list qc-act-list">
           <div className="qc-act-head">
             <h1 className="qc-act-title">Activity</h1>
-            <div className="qc-act-head__actions">
-              <IconButton label="Notification settings" onClick={() => onOpenSettings?.()}>
-                <Settings size={16} />
-              </IconButton>
-            </div>
+            {confirmingClear ? (
+              <div className="qc-act-head__confirm">
+                <span className="qc-act-head__confirm-text">Clear all notifications?</span>
+                <Button
+                  variant="ghost"
+                  onClick={() => setConfirmingClear(false)}
+                  disabled={clearing}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => void handleClearAll()}
+                  disabled={clearing}
+                  data-testid="confirm-clear-all"
+                >
+                  {clearing ? "Clearing…" : "Confirm"}
+                </Button>
+              </div>
+            ) : (
+              <div className="qc-act-head__actions">
+                <button
+                  type="button"
+                  className="qc-link"
+                  disabled={unreadCount === 0}
+                  onClick={() => void markAllRead()}
+                >
+                  Mark all read
+                </button>
+                <Popover
+                  open={headerMenuOpen}
+                  onOpenChange={setHeaderMenuOpen}
+                  placement="bottom"
+                  label="More activity actions"
+                  trigger={
+                    <IconButton label="More activity actions" className="qc-act-headmenu">
+                      <MoreHorizontal size={16} />
+                    </IconButton>
+                  }
+                >
+                  <Menu label="Activity actions">
+                    <MenuItem
+                      icon={<Trash2 size={14} />}
+                      danger
+                      onSelect={() => {
+                        setHeaderMenuOpen(false);
+                        setConfirmingClear(true);
+                      }}
+                    >
+                      Clear all
+                    </MenuItem>
+                  </Menu>
+                </Popover>
+                <IconButton label="Notification settings" onClick={() => onOpenSettings?.()}>
+                  <Settings size={16} />
+                </IconButton>
+              </div>
+            )}
           </div>
 
           <div className="qc-act-search">
@@ -325,13 +405,13 @@ export function NotificationsModule({ currentUserId, onOpenSettings }: Notificat
                               Mark as read
                             </MenuItem>
                             <MenuItem
-                              icon={<Trash2 size={14} />}
+                              icon={<EyeOff size={14} />}
                               onSelect={() => {
-                                removeOne(n.id);
+                                hideOne(n.id);
                                 setMenuOpenId(null);
                               }}
                             >
-                              Remove
+                              Hide
                             </MenuItem>
                           </Menu>
                         </Popover>

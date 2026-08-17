@@ -80,6 +80,19 @@ interface Lookups {
   labelFieldIds: string[];
 }
 
+/** Normalize a user-supplied name/key for case-insensitive lookup-map keys. */
+function fold(value: string): string {
+  return value.toLowerCase();
+}
+
+/**
+ * Case-insensitive stand-in for `{ column: { in: values } }`. Prisma's `in`
+ * ignores `mode`, so the batch resolve fans out to one ILIKE-equality per value.
+ */
+function insensitiveIn(column: string, values: string[]): WhereFragment[] {
+  return values.map((v) => ({ [column]: { equals: v, mode: "insensitive" } }));
+}
+
 function collectFieldValues(node: QqlNode, field: string): string[] {
   const out: string[] = [];
   const walk = (n: QqlNode): void => {
@@ -102,24 +115,28 @@ async function resolveLookups(node: QqlNode, ctx: QqlBuildContext): Promise<Look
 
   const [statuses, sprints, epics, customFields] = await Promise.all([
     statusNames.length
-      ? db.qtIssueStatus.findMany({ where: { projectId: ctx.projectId, name: { in: statusNames } }, select: { id: true, name: true } })
+      ? db.qtIssueStatus.findMany({ where: { projectId: ctx.projectId, OR: insensitiveIn("name", statusNames) }, select: { id: true, name: true } })
       : Promise.resolve([]),
     sprintNames.length
-      ? db.qtSprint.findMany({ where: { projectId: ctx.projectId, name: { in: sprintNames } }, select: { id: true, name: true } })
+      ? db.qtSprint.findMany({ where: { projectId: ctx.projectId, OR: insensitiveIn("name", sprintNames) }, select: { id: true, name: true } })
       : Promise.resolve([]),
     epicKeys.length
       ? db.qtIssue.findMany({
-          where: { projectId: ctx.projectId, key: { in: epicKeys }, isDeleted: false },
+          where: { projectId: ctx.projectId, OR: insensitiveIn("key", epicKeys), isDeleted: false },
           select: { id: true, key: true },
         })
       : Promise.resolve([]),
     needsLabelFields ? getActiveFieldsForProject(ctx.orgId, ctx.projectId) : Promise.resolve([]),
   ]);
 
+  // Keyed by the folded name/key so `status = "in progress"` resolves the stored
+  // "In Progress" (and `epic = quiktr-12` the stored "QUIKTR-12"). Two rows that
+  // differ only in case would collapse to one entry, but the DB already treats
+  // those as the same search term, so either id is an equally valid answer.
   return {
-    statusIdByName: new Map(statuses.map((s) => [s.name, s.id] as const)),
-    sprintIdByName: new Map(sprints.map((s) => [s.name, s.id] as const)),
-    epicIdByKey: new Map(epics.map((e) => [e.key, e.id] as const)),
+    statusIdByName: new Map(statuses.map((s) => [fold(s.name), s.id] as const)),
+    sprintIdByName: new Map(sprints.map((s) => [fold(s.name), s.id] as const)),
+    epicIdByKey: new Map(epics.map((e) => [fold(e.key), e.id] as const)),
     labelFieldIds: customFields.filter((f) => f.type === "LABELS").map((f) => f.id),
   };
 }
@@ -149,17 +166,17 @@ function resolveEqualityValue(field: string, value: string, ctx: QqlBuildContext
       return parsed.data;
     }
     case "status": {
-      const id = lookups.statusIdByName.get(value);
+      const id = lookups.statusIdByName.get(fold(value));
       if (!id) throw new QqlParseError(`Unknown status "${value}".`, pos);
       return id;
     }
     case "sprint": {
-      const id = lookups.sprintIdByName.get(value);
+      const id = lookups.sprintIdByName.get(fold(value));
       if (!id) throw new QqlParseError(`Unknown sprint "${value}".`, pos);
       return id;
     }
     case "epic": {
-      const id = lookups.epicIdByKey.get(value);
+      const id = lookups.epicIdByKey.get(fold(value));
       if (!id) throw new QqlParseError(`Unknown epic "${value}".`, pos);
       return id;
     }

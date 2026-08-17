@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchKbDocs, ingestDocument } from "./api";
+import { fetchKbDocs, ingestDocument, leaveChannel } from "./api";
 
 function jsonResponse(data: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => data } as unknown as Response;
@@ -57,6 +57,33 @@ describe("ingestDocument", () => {
       messageId: "msg-1",
     });
     expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string).messageId).toBe("msg-1");
+  });
+});
+
+describe("leaveChannel", () => {
+  it("DELETEs the channel and returns whether it was deleted", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      jsonResponse({ deleted: false }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await leaveChannel("c1");
+    expect(result).toEqual({ deleted: false });
+    const [url, opts] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/channels/c1");
+    expect(opts!.method).toBe("DELETE");
+  });
+
+  // Regression: a generic send() would report "DELETE ... → 400" and hide the
+  // server's real reason — this must surface `body.error` instead.
+  it("surfaces the server's real error message on a refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ error: "Not a member of this channel" }, false, 403)),
+    );
+    await expect(leaveChannel("c1")).rejects.toMatchObject({
+      message: "Not a member of this channel",
+    });
   });
 });
 

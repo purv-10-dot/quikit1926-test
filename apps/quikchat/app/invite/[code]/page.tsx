@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { InvitePreview } from "@/lib/shared";
 import { Button, Spinner } from "@/components/ui";
 import { previewInvite } from "@/lib/api";
+import { inviteErrorMessage } from "@/lib/invite-error";
 
 type State =
   | { status: "loading" }
@@ -25,7 +26,7 @@ export default function InvitePage({ params }: { params: { code: string } }) {
   useEffect(() => {
     previewInvite(code)
       .then((preview) => setState({ status: "ok", preview }))
-      .catch(() => setState({ status: "error", message: "This invite isn’t available." }));
+      .catch(() => setState({ status: "error", message: "This invite link isn’t valid." }));
   }, [code]);
 
   async function accept() {
@@ -39,8 +40,11 @@ export default function InvitePage({ params }: { params: { code: string } }) {
       return;
     }
     if (!res.ok) {
-      // 404 (cross-org / not found) or 410 (revoked / expired / maxed).
-      setState({ status: "error", message: "This invite isn’t available." });
+      // 403 (no QuikChat access / different org), 404 (no such code) or 410
+      // (revoked / expired / limit reached / channel gone). The server names
+      // which one; surface that rather than guessing.
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      setState({ status: "error", message: inviteErrorMessage(res.status, body?.error) });
       setAccepting(false);
       return;
     }
@@ -56,7 +60,7 @@ export default function InvitePage({ params }: { params: { code: string } }) {
         <>
           <h1>Invite unavailable</h1>
           <p style={{ color: "var(--qc-text-3)" }}>
-            {state.message} It may have expired, been revoked, or reached its limit.
+            {state.message}
           </p>
           <Button variant="ghost" onClick={() => router.push("/dashboard")}>
             Go to QuikChat

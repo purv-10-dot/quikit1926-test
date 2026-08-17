@@ -75,6 +75,25 @@ const nextConfig = {
     // (avoids hydration mismatches). Mirrors quikcrm/quikscale/quikinfra.
     optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
   },
+  // Inline `.yaml` imports as raw strings at BUILD time (webpack `asset/source`).
+  //
+  // This exists for docs/openapi.yaml, which /api-docs serves. The obvious
+  // alternative — `fs.readFile` at runtime — silently breaks in the container:
+  // apps/quikchat/Dockerfile copies only `.next/standalone`, `.next/static` and
+  // `public/`, so `docs/` never ships, and Next's file tracer can't statically
+  // resolve a `process.cwd()`-joined read to include it either. That's green in
+  // dev and a 500 in production — the same failure mode the uploads routes hit.
+  //
+  // `experimental.outputFileTracingIncludes` would also work, but fails the same
+  // quiet way if its route key stops matching. An import cannot: if the file
+  // moves, `next build` fails loudly instead of shipping a broken image.
+  webpack(config) {
+    config.module.rules.push({
+      test: /\.ya?ml$/,
+      type: "asset/source",
+    });
+    return config;
+  },
   async headers() {
     // 'self' + the QuikIT launcher origin + the realtime gateway origin.
     // Both origin helpers return "" when their env var is unset (scaffold),

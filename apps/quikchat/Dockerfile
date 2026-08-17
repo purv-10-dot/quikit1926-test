@@ -9,6 +9,13 @@
 #   docker build -f apps/quikchat/Dockerfile -t quikchat:latest .
 # Build with custom DATABASE_URL (optional — defaults pass build-time Prisma init):
 #   docker build --build-arg DATABASE_URL="postgresql://..." -f apps/quikchat/Dockerfile -t quikchat:latest .
+#
+# For UAT/prod, the origin-bearing args below MUST be passed — next.config.js
+# reads them at build time to assemble the CSP connect-src, and an origin that
+# is missing at build time can never be added at runtime:
+#   --build-arg LIVEKIT_URL="wss://<project>.livekit.cloud"
+#   --build-arg QUIKIT_URL="https://<idp-host>"
+#   --build-arg NEXT_PUBLIC_REALTIME_WS_URL="wss://<gateway-host>"
 
 FROM node:20-alpine AS base
 # ─────────────────────────────────────────────────────────────────────────
@@ -53,7 +60,25 @@ ARG NEXT_PUBLIC_QUIKCHAT_URL="https://placeholder.com"
 # realtime gateway).
 ARG NEXT_PUBLIC_REALTIME_WS_URL="wss://placeholder.com"
 ARG NEXT_PUBLIC_SENTRY_DSN
-ARG QUIKIT_URL="https://dummy-quikit.local"
+# The LiveKit SFU's WebSocket origin (group + 1:1 calls). Server-only — NOT
+# NEXT_PUBLIC_*: the browser gets the URL from /api/calls/[id]/token's response
+# body, never from the client bundle. next.config.js reads it at build time to
+# whitelist both the wss:// and derived https:// origins in the CSP connect-src.
+#
+# Deliberately defaulted to EMPTY, unlike the NEXT_PUBLIC_* placeholders above.
+# next.config.js drops empty origins from connect-src, so a forgotten build-arg
+# yields no CSP entry — a loud failure at call time. A non-empty placeholder
+# would instead whitelist a third-party origin AND, via the .env.production
+# write below, mask selectSFUMode()'s "LIVEKIT_URL missing" warning at runtime.
+ARG LIVEKIT_URL=""
+# Also empty-by-default, and for the same reason. This previously defaulted to
+# "https://dummy-quikit.local", which is what baked that origin into the CSP of
+# every image: next.config.js reads `QUIKIT_URL || NEXT_PUBLIC_QUIKIT_URL`, so a
+# non-empty dummy always won and the correctly-wired NEXT_PUBLIC_ fallback could
+# never fire. Empty restores that fallback, so a forgotten build-arg self-heals.
+# Safe at build time: lib/auth.ts only builds the OIDC provider when this is
+# truthy, and createOAuthClientOptions() interpolates the URL without parsing it.
+ARG QUIKIT_URL=""
 ARG QUIKIT_CLIENT_ID="dummy-client-id"
 ARG QUIKIT_CLIENT_SECRET="dummy-client-secret"
 
@@ -64,6 +89,7 @@ ENV NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL
 ENV NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL
 ENV NEXT_PUBLIC_QUIKCHAT_URL=$NEXT_PUBLIC_QUIKCHAT_URL
 ENV NEXT_PUBLIC_REALTIME_WS_URL=$NEXT_PUBLIC_REALTIME_WS_URL
+ENV LIVEKIT_URL=$LIVEKIT_URL
 ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
 ENV QUIKIT_URL=$QUIKIT_URL
 ENV QUIKIT_CLIENT_ID=$QUIKIT_CLIENT_ID
@@ -86,6 +112,8 @@ RUN echo "[next-env-bake]" \
       "QUIKCHAT=$NEXT_PUBLIC_QUIKCHAT_URL" \
       "REALTIME=$NEXT_PUBLIC_REALTIME_WS_URL" \
       "NEXTAUTH=$NEXTAUTH_URL" \
+      "LIVEKIT=$LIVEKIT_URL" \
+      "QUIKIT_SERVER=$QUIKIT_URL" \
       > /tmp/.next-env-bake.txt && cat /tmp/.next-env-bake.txt
 
 # QuikChat runs on the single shared central Prisma client (packages/database).
@@ -100,12 +128,21 @@ RUN mkdir -p apps/quikchat/.next/static
 # (the previous failure mode: shell ENV was set but didn't reach
 # Next's process.env during next build, leaving client bundles
 # with undefined NEXT_PUBLIC_* values).
+#
+# LIVEKIT_URL is here because turbo@2 defaults to strict env mode and
+# turbo.json's build.env does NOT list it, so the ENV above alone would be
+# stripped before `next build` ever runs. QUIKIT_URL is deliberately absent:
+# build.env DOES list it, so it arrives through the normal ENV path, and
+# writing an empty value here would be worse than redundant — lib/auth.ts
+# reads `QUIKIT_URL ?? QUIKIT_ISSUER_URL`, and an empty string is not nullish,
+# so it would defeat the alias fallback for deployments that set only the alias.
 RUN printf '%s\n' \
   "NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL" \
   "NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL" \
   "NEXT_PUBLIC_QUIKCHAT_URL=$NEXT_PUBLIC_QUIKCHAT_URL" \
   "NEXT_PUBLIC_REALTIME_WS_URL=$NEXT_PUBLIC_REALTIME_WS_URL" \
   "NEXTAUTH_URL=$NEXTAUTH_URL" \
+  "LIVEKIT_URL=$LIVEKIT_URL" \
   > apps/quikchat/.env.production && cat apps/quikchat/.env.production
 
 RUN npx turbo build --filter=quikchat

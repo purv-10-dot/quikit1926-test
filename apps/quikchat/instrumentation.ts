@@ -13,6 +13,21 @@
  * @google-cloud/storage) reaches for Node's `https`, which the edge runtime
  * can't resolve — so it must never enter the edge bundle.
  *
+ * ⚠️ "INSIDE THE BLOCK" MEANS LEXICALLY INSIDE IT — NOT "called from it".
+ * This file must keep NO module-level imports and NO exported function whose
+ * body imports anything heavyweight. DCE removes the CALL; it cannot remove an
+ * exported declaration, so a `await import(…)` in that function's body survives
+ * into the edge bundle even though nothing on edge can reach it. That is not
+ * hypothetical: the App-row assertion was added here as an exported function
+ * importing `@/lib/shared`, the edge bundler followed it to ioredis, and
+ * `next build` failed with "Can't resolve 'net'/'stream'". Dev only logged the
+ * error and reached Ready, so it read as cosmetic — it was deploy-blocking.
+ * It now lives in `lib/server/assert-app-registered.ts`.
+ *
+ * The safe shape for anything new: put it in its own module and `await import`
+ * it from inside the guard, exactly like the two below. `assertProductionSecrets`
+ * may stay in this file only because it reads env vars and imports nothing.
+ *
  * Also guarded on DATABASE_URL: importing the sweep constructs the shared
  * Prisma client at module load, which throws if DATABASE_URL is unset. Skipping
  * when it's absent lets a DB-less local run (e.g. a UI-only smoke-test) boot
@@ -24,6 +39,14 @@ export async function register() {
     assertProductionSecrets();
 
     if (!process.env.DATABASE_URL) return;
+    // Dynamic import, INSIDE the guard, for the same reason as the sweep below:
+    // it reaches Prisma and the logger, neither of which may enter the edge
+    // bundle. It briefly lived inline in this file as an exported function and
+    // broke `next build` — see that module's docblock.
+    const { assertQuikChatAppRegistered } = await import(
+      "@/lib/server/assert-app-registered"
+    );
+    await assertQuikChatAppRegistered();
     const { startCallTimeoutSweep } = await import("@/lib/server/calling/timeout-sweep");
     startCallTimeoutSweep();
   }

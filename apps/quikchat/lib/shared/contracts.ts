@@ -325,6 +325,8 @@ export interface MeetingAttendeeDto {
   user: PublicUser;
   email: string;
   rsvp: AttendeeRsvp;
+  /** Optional attendees are invited but not required (Graph `type: "optional"`). */
+  optional: boolean;
 }
 
 /**
@@ -338,7 +340,21 @@ export interface MeetingDto {
   organizerId: string;
   title: string;
   description: string | null;
+  location: string | null;
+  /** Calendar-date event: `start`/`end` denote whole days, not instants. */
+  allDay: boolean;
   start: string;
+  /**
+   * ⚠️ INCLUSIVE — the last moment (timed) or last DAY (all-day) the meeting
+   * covers. This DIVERGES from storage and from both calendar providers, which
+   * use an EXCLUSIVE all-day end: a one-day event on the 14th is stored and
+   * sent as 14th 00:00Z → 15th 00:00Z, but arrives here as 14th → 14th.
+   *
+   * Deliberate. The DTO is our contract, not Graph's, and the alternative makes
+   * every renderer responsible for knowing the convention — with a silent
+   * failure mode (a one-day event drawn across two days). The single conversion
+   * lives in `lib/all-day.ts`; never apply the ±1 day by hand.
+   */
   end: string;
   joinUrl: string | null;
   status: MeetingStatus;
@@ -349,9 +365,19 @@ export interface MeetingDto {
 export interface CreateMeetingInput {
   title: string;
   description?: string;
+  /** Free text — a room, an address, anything. Graph: `location.displayName`. */
+  location?: string;
+  /**
+   * When true, `start`/`end` are CALENDAR DATES (`YYYY-MM-DD`), not instants,
+   * and `end` is INCLUSIVE — the last day covered. The server converts to the
+   * stored/provider form via `lib/all-day.ts`.
+   */
+  allDay?: boolean;
   start: string;
   end: string;
   attendeeUserIds: string[];
+  /** Subset of `attendeeUserIds` invited as optional rather than required. */
+  optionalAttendeeUserIds?: string[];
   conferencing: boolean;
   /** Idempotent send id for the announcing Meeting message. */
   clientMessageId?: string;

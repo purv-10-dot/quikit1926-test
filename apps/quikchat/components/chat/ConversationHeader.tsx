@@ -14,6 +14,7 @@ import {
 import { useProfile } from "@/components/profile/ProfileProvider";
 import { formatLastSeen } from "@/lib/format";
 import type { EffectiveStatus } from "@/lib/presence-store";
+import { avatarVariantFor } from "./ChannelList";
 
 export interface ConversationHeaderProps {
   channel: ChannelListItem;
@@ -80,7 +81,7 @@ export function ConversationHeader({
           name={channel.name ?? "Direct message"}
           id={channel.channelId}
           avatarUrl={channel.avatarUrl}
-          group={isGroup}
+          variant={avatarVariantFor(channel)}
           size={38}
         />
         <div className="qc-min0">

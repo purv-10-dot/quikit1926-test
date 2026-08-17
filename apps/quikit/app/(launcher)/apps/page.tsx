@@ -13,7 +13,7 @@
  * mint, impersonation) is unchanged from the previous implementation.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import {
   Rocket,
@@ -204,6 +204,13 @@ export default function AppLauncherPage() {
   const [selectedOrg, setSelectedOrg] = useState<OrgInfo | null>(null);
   const [loadingApps, setLoadingApps] = useState(true);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
+  // True once /api/apps/launcher has actually answered. Distinct from
+  // !loadingApps, which is briefly true with an empty catalog — see the
+  // ?handoff= effect below, which depends on the difference.
+  const [appsLoaded, setAppsLoaded] = useState(false);
+  // Set when a ?handoff= auto-launch has been kicked off, so a re-render can't
+  // mint a second launch token for the same deep link.
+  const handoffStartedRef = useRef(false);
   const [search, setSearch] = useState("");
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   // When an app launch is blocked because the org was suspended (the
@@ -343,6 +350,9 @@ export default function AppLauncherPage() {
         setApps(j.data ?? []);
         setAvailable(j.available ?? []);
         setIsOrgAdmin(Boolean(j.isOrgAdmin));
+        // The catalog is now real, not just "not loading". The ?handoff=
+        // auto-launch below waits on THIS, never on the loading flags.
+        setAppsLoaded(true);
       }
     } catch {
       // best-effort
@@ -361,8 +371,22 @@ export default function AppLauncherPage() {
   }, [selectedOrg?.orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Deep-link handoff: ?handoff=<slug>&to=<path> auto-launches once loaded.
+  //
+  // Gate on `appsLoaded` — NOT on the loading flags. `loadingApps` starts true
+  // but the org effect above flips it to false on the very first render (when
+  // `selectedOrg` is still null), so there is a window where
+  // `loadingApps === false` while `apps` is still []. If the memberships fetch
+  // settles into that same commit, this effect used to run against an empty
+  // catalog, take the `!target` branch, and `replaceState` the deep-link params
+  // out of the URL — permanently. The catalog then arrived, the effect re-ran,
+  // found no `?handoff=` left to act on, and the user sat on a bare /apps grid.
+  // That is why an emailed work-item link dropped people on the launcher
+  // instead of the ticket. Waiting for a real catalog fetch removes the race;
+  // until one lands we leave the URL untouched so the params survive (e.g.
+  // through org selection, which triggers the fetch).
   useEffect(() => {
-    if (loadingOrgs || loadingApps) return;
+    if (!appsLoaded) return;
+    if (handoffStartedRef.current) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const slug = params.get("handoff");
@@ -373,8 +397,11 @@ export default function AppLauncherPage() {
       window.history.replaceState({}, "", "/apps");
       return;
     }
+    // handleLaunch navigates away; the ref stops a re-render from minting a
+    // second launch token for the same deep link while that is in flight.
+    handoffStartedRef.current = true;
     void handleLaunch(target, to);
-  }, [loadingOrgs, loadingApps, apps]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [appsLoaded, apps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function selectOrgInSession(orgId: string, role: string) {
     try {

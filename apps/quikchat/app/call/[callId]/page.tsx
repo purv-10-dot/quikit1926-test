@@ -116,7 +116,8 @@ function CallPageInner() {
       const { io } = await import("socket.io-client");
       const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || window.location.origin;
       const socket = io(realtimeUrl, {
-        transports: ["polling", "websocket"],
+        // WebSocket-only — see lib/realtime-client.ts for why.
+        transports: ["websocket"],
         auth: async (cb: (auth: { token: string }) => void) => {
           try {
             const res = await fetch("/api/realtime/token", { credentials: "include" });
@@ -297,6 +298,10 @@ function CallPageInner() {
         localUserId={myUserId || "local"}
         callType={callType}
         isHost={tokenData.isHost}
+        // `?name=` is the window title the opener passes (the channel name for
+        // a group call) — reused so a removed participant is told WHICH call
+        // they were removed from.
+        channelName={remoteName}
         onEndCall={handleEndCall}
       />
     );
