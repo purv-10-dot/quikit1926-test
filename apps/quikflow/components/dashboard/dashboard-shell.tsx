@@ -19,6 +19,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface NavItem {
   label: string;
@@ -61,6 +62,11 @@ export function DashboardShell({
   const pathname = usePathname();
   const router = useRouter();
   const quikitUrl = process.env.NEXT_PUBLIC_QUIKIT_URL ?? "";
+  // Mounted on every dashboard page — fires GET /api/me/permissions, whose
+  // side effect seeds this org's "admin"/"Member" AppRole rows on first
+  // visit (see useMyPermissions doc comment). Not yet used to gate nav here;
+  // future permission-based sidebar filtering builds on this same call.
+  useMyPermissions();
 
   function NavLink({ item }: { item: NavItem }) {
     const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

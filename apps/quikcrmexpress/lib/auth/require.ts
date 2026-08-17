@@ -18,6 +18,7 @@ import { getOrSet } from "@quikit/auth/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { SessionUser } from "@/types/permission";
+import { crmRoleForMembershipRole } from "@/lib/auth/role-grants";
 
 /**
  * Map QuikIT/Membership role strings to the legacy CRM role enum the ported
@@ -25,34 +26,11 @@ import type { SessionUser } from "@/types/permission";
  * `MarketingUser`, `FinanceUser`). Anything admin-shaped at the platform
  * level becomes `Administrator` in CRM so existing role checks work.
  */
-function mapRole(membershipRole: string | undefined): string {
-  if (!membershipRole) return "SalesUser";
-  const r = membershipRole.toLowerCase();
-  // Admin tier mirrors ADMIN_TIER_ROLES in @quikit/shared
-  // ({super_admin, org_admin, admin}) plus the two local synonyms.
-  //
-  // `app_admin` is deliberately NOT here. The platform ranks it BELOW admin in
-  // ROLE_HIERARCHY and excludes it from ADMIN_TIER_ROLES, but this map used to
-  // promote it to "Administrator" — which grants every (module, action) pair
-  // and short-circuits assertModule entirely. That let an app_admin who is not
-  // an org admin reach admin-only surfaces, including permission-template
-  // management. It now falls through to the SalesUser default like any other
-  // non-admin role.
-  if (
-    r === "admin" ||
-    r === "owner" ||
-    r === "super_admin" ||
-    r === "administrator" ||
-    r === "org_admin"
-  ) {
-    return "Administrator";
-  }
-  if (r === "manager" || r === "sales_manager" || r === "salesmanager") return "SalesManager";
-  if (r === "marketing" || r === "marketing_user" || r === "marketinguser") return "MarketingUser";
-  if (r === "finance" || r === "finance_user" || r === "financeuser") return "FinanceUser";
-  // member / user / anything else → SalesUser (the broad CRM default).
-  return "SalesUser";
-}
+// The mapping body now lives in `lib/auth/role-grants.ts` (including the
+// `app_admin` exclusion rationale) so the RBAC backfill script can resolve the
+// same role without importing next-auth through this module. Kept as a local
+// alias so the ported call sites below read unchanged.
+const mapRole = crmRoleForMembershipRole;
 
 async function readSession(): Promise<SessionUser | null> {
   const s = await getServerSession(authOptions);

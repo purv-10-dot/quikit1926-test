@@ -1,8 +1,14 @@
 /**
  * Local storage driver — the active default until QuikIT GCS credentials land.
  * It mirrors the direct-to-storage flow so the client is identical: the "signed
- * URL" is an app endpoint (`/api/uploads/local/{token}`) guarded by an HMAC
- * token. INTERIM ONLY: on ephemeral hosts files don't survive a redeploy.
+ * URL" is an app endpoint guarded by an HMAC token. Upload PUTs go to the fixed
+ * `/api/uploads/local` with the token in the `X-Upload-Token` header (see
+ * UPLOAD_TOKEN_HEADER); downloads still carry their token as a path segment
+ * (`/api/uploads/local/{token}`) since they're consumed by plain `<img>`/`<a>`/
+ * `<video>` src/href, which can't attach custom headers — a download token
+ * long enough to hit the same proxy 260-char limit is a latent risk, not fixed
+ * here (would need those call sites reworked to fetch+blob-URL). INTERIM ONLY:
+ * on ephemeral hosts files don't survive a redeploy.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
@@ -14,7 +20,7 @@ import {
   type UploadTarget,
   type UploadTargetInput,
 } from "./types";
-import { signToken, uploadTokenSecret } from "./tokens";
+import { signToken, uploadTokenSecret, UPLOAD_TOKEN_HEADER } from "./tokens";
 
 const UPLOAD_TTL_MS = 5 * 60_000; // 5 min
 const DOWNLOAD_TTL_MS = 10 * 60_000; // 10 min
@@ -63,9 +69,9 @@ export class LocalDriver implements StorageDriver {
       secret(),
     );
     return {
-      uploadUrl: `/api/uploads/local/${token}`,
+      uploadUrl: `/api/uploads/local`,
       method: "PUT",
-      headers: { "Content-Type": input.contentType },
+      headers: { "Content-Type": input.contentType, [UPLOAD_TOKEN_HEADER]: token },
       objectPath,
       maxBytes: input.size,
       expiresAt: new Date(exp).toISOString(),

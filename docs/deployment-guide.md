@@ -519,7 +519,14 @@ The manifest filenames don't all match the app names — use this map (from
 | quiksupport | `support-deployment.yaml` |
 | quikasset | `asset-deployment.yaml` |
 | quikchat | `chat-deployment.yaml` |
+| quikflow | `flow-deployment.yaml` |
+| quikflow-worker | `flow-worker-deployment.yaml` |
 | realtime | `socket-deployment.yaml` |
+
+> ⚠️ The two `quikflow*` filenames were added from this repo's naming convention
+> and have **not** been verified against the GitOps repo. Confirm them before the
+> first QuikFlow UAT push — `UAT.yml` now hard-fails if the manifest is missing
+> rather than letting `yq` create a junk file.
 
 ### 11.3 Useful inspection commands
 
@@ -542,16 +549,67 @@ curl -s http://localhost:9100/health
 ### 11.4 Companion worker processes
 
 Some apps ship a **second long-running process** beyond the web server that
-needs its own deployment/scaling (built from the same app image, different
-command):
+needs its own deployment/scaling:
+
+> ⚠️ **Correction (verified 2026-08-14).** This section used to say these
+> workers run "from the same app image, different command". That is **not true
+> today.** `apps/quikcrm/Dockerfile`'s runner stage copies only
+> `.next/standalone`, static, public and the Prisma engines — it contains
+> neither `tsx` nor `lib/queue/worker.ts`, so `npm run worker` (`tsx
+> lib/queue/worker.ts`) cannot execute in that image. `quiksupport` has no
+> `worker` script in its `package.json` at all. Treat the quikcrm/quiksupport
+> rows below as **known gaps**, not as a working pattern to copy.
+>
+> The only proven pattern for a long-running non-Next process is the one
+> `services/realtime` and `apps/quikflow` use: esbuild-bundle the entrypoint to
+> `dist/`, ship a dedicated image, and run `node dist/*.js` with no `tsx` at
+> runtime.
 
 | App | Worker | Purpose |
 |---|---|---|
 | quikcrm | `npm run worker` (BullMQ) | Imports, SLA checks, notification crons — requires `REDIS_URL` |
 | quiksupport | email worker (`workers/email-worker.ts`) | Async ticket email; without it, email is a no-op (ticket still saves) |
+| quikflow | **separate image** — `apps/quikflow/Dockerfile.worker` | Workflow execution + 60s scheduler tick (mail / Fathom / date scans). Without it, workflows queue but never run |
 
 When deploying these apps, confirm the worker Deployment exists and points at
 the same image tag as the web Deployment.
+
+**QuikFlow is the exception**: its worker is a *different image*, not the same
+image with a different command. `UAT.yml` builds `quikflow-worker` as its own
+matrix entry from `Dockerfile.worker`, pushing
+`ghcr.io/<owner>/quikflow-worker-runtime`. Notes for whoever wires the manifest:
+
+- It serves **no application traffic**, but it does expose `GET /health` on
+  `$PORT` (default `9101`, alongside the realtime gateway's `9100`) so k8s has a
+  real HTTP liveness/readiness target — same contract as `services/realtime`.
+  It returns 200 while Redis is connected and 503 once the connection drops, so
+  a dead broker restarts the pod instead of leaving a silently idle consumer.
+  Point `bullmq.quikit.ai` at this port if you want queue health reachable; do
+  not route user traffic to it.
+- It needs `REDIS_URL` (the BullMQ broker, `https://bullmq.quikit.ai` in UAT),
+  `DATABASE_URL` + `DATABASE_URL_DIRECT`, `WF_CONNECTION_ENC_KEY` (decrypts
+  stored connector tokens), `QUIKFLOW_URL`, and the `QUIKFLOW_GOOGLE_*` /
+  `QUIKFLOW_MS_*` / `QUIKFLOW_TEAMS_*` / `FATHOM_*` connector credentials.
+- Keep it at **one replica** unless you have verified the scheduler tick is safe
+  to run concurrently — it fans out due `WfSchedule` rows on a repeatable job.
+
+#### QuikFlow's consumers need runtime env too
+
+`QUIKFLOW_URL` is read **server-side at request time** by three other apps, so it
+is a pod env var, not a Docker build arg — setting it in `UAT.yml` does nothing
+for these. Add it to each pod's Secret/ConfigMap in the GitOps repo:
+
+| Pod | Needs | Consequence if unset |
+|---|---|---|
+| quikit (launcher) | `QUIKFLOW_URL` | Launcher tile falls back to the DB `baseUrl`, then to nothing — the tile silently reloads `/apps` |
+| admin | `QUIKFLOW_URL` | Same, for the app switcher |
+| quikscale | `QUIKFLOW_URL`, `QUIKFLOW_EVENTS_ENABLED=true`, `INTERNAL_SECRET` | Client Meetings calendar + transcript automation report `connected: false` **with no error logged** |
+
+That last row is the one that bites: every QuikScale → QuikFlow call site
+(`lib/services/workflowEvents.ts`, `app/api/client-meetings/*`) is deliberately
+fire-and-forget and degrades to a no-op. A missing var looks exactly like "the
+user hasn't connected their calendar yet". `INTERNAL_SECRET` must be
+byte-identical on both sides.
 
 > 📸 _Screenshot placeholder: `kubectl get pods` output for the UAT namespace,
 > all pods `Running`._
@@ -829,7 +887,14 @@ platform owner.
 | quiksupport | `quiksupport-runtime` | `support-deployment.yaml` | `uatsupport.quikit.ai` | `support.quikit.ai` |
 | quikasset | `quikasset-runtime` | `asset-deployment.yaml` | `uatasset.quikit.ai` | `asset.quikit.ai` |
 | quikchat | `quikchat-runtime` | `chat-deployment.yaml` | `uatchat.quikit.ai` | _(UAT only today)_ |
+| quikflow (Builder UI) | `quikflow-runtime` | `flow-deployment.yaml` | `uatflow.quikit.ai` | _(UAT only today)_ |
+| quikflow (execution worker) | `quikflow-worker-runtime` | `flow-worker-deployment.yaml` | _(no ingress — headless)_ | _(UAT only today)_ |
 | realtime (WS gateway) | `realtime-runtime` | `socket-deployment.yaml` | `uatsockets.quikit.ai` | _(UAT only today)_ |
+
+QuikFlow's BullMQ broker is reached at `bullmq.quikit.ai`. It is **infrastructure,
+not an app image** — no GHCR image and no GitOps deployment file of its own. The
+quikflow web and worker pods consume it via the `REDIS_URL` Secret; it is
+deliberately not a build arg, because the connection string carries credentials.
 
 ---
 

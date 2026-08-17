@@ -3,7 +3,7 @@
  * (users.messages.send, users.messages.list/get). No `googleapis` dependency:
  * everything is a plain fetch, matching the lean engine.
  *
- * Env: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (OAuth 2.0 Web client).
+ * Env: QUIKFLOW_GOOGLE_CLIENT_ID / QUIKFLOW_GOOGLE_CLIENT_SECRET (OAuth 2.0 Web client).
  * Inbound watermark (`cursor`) = the newest message's internalDate in epoch
  * SECONDS, which Gmail search accepts directly via `after:<unix>`.
  */
@@ -20,13 +20,13 @@ const SCOPES = [
 const MAX_MESSAGES_PER_POLL = 25;
 
 function clientId(): string {
-  const v = process.env.GOOGLE_CLIENT_ID;
-  if (!v) throw new Error("GOOGLE_CLIENT_ID is not set.");
+  const v = process.env.QUIKFLOW_GOOGLE_CLIENT_ID;
+  if (!v) throw new Error("QUIKFLOW_GOOGLE_CLIENT_ID is not set.");
   return v;
 }
 function clientSecret(): string {
-  const v = process.env.GOOGLE_CLIENT_SECRET;
-  if (!v) throw new Error("GOOGLE_CLIENT_SECRET is not set.");
+  const v = process.env.QUIKFLOW_GOOGLE_CLIENT_SECRET;
+  if (!v) throw new Error("QUIKFLOW_GOOGLE_CLIENT_SECRET is not set.");
   return v;
 }
 

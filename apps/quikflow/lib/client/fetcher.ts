@@ -14,10 +14,10 @@ export async function apiGet<T>(url: string): Promise<T> {
   return json.data;
 }
 
-/** POST/PATCH/DELETE helper with a JSON body. */
+/** POST/PATCH/PUT/DELETE helper with a JSON body. */
 export async function apiSend<T>(
   url: string,
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
   body?: unknown,
 ): Promise<T> {
   const res = await fetch(url, {

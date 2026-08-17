@@ -172,7 +172,7 @@ describe("MicrosoftCalendarProvider.createMeeting", () => {
       title: "Sync",
       start: "2026-06-20T10:00:00Z",
       end: "2026-06-20T10:30:00Z",
-      attendeeEmails: ["bob@x.com"],
+      attendees: [{ email: "bob@x.com" }],
       conferencing: true,
     });
     expect(r).toEqual({
@@ -193,7 +193,7 @@ describe("MicrosoftCalendarProvider.createMeeting", () => {
         title: "x",
         start: "2026-06-20T10:00:00Z",
         end: "2026-06-20T10:30:00Z",
-        attendeeEmails: [],
+        attendees: [],
         conferencing: true,
       }),
     ).rejects.toThrow(/connected a Microsoft calendar/);

@@ -161,6 +161,21 @@ export function parseDurationToHours(input: string): number | null {
   return matched ? total : null;
 }
 
+/**
+ * Parses the MCP `add_worklog` tool's `timeSpent` field into seconds.
+ * Accepts either a raw number of seconds, or a duration string using the
+ * same `w/d/h/m` grammar as {@link parseDurationToHours} (reused, not
+ * forked) — e.g. "2h 30m", "45m", "1d". Returns null for a negative number
+ * or a string that doesn't match the grammar.
+ */
+export function parseWorklogTimeSpent(input: string | number): number | null {
+  if (typeof input === "number") {
+    return Number.isFinite(input) && input >= 0 ? Math.round(input) : null;
+  }
+  const hours = parseDurationToHours(input);
+  return hours === null ? null : Math.round(hours * 3600);
+}
+
 export function isWeekend(d: Date): boolean {
   const dow = d.getDay();
   return dow === 0 || dow === 6;

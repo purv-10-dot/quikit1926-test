@@ -1,10 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MeetingDto, PublicUser } from "@/lib/shared";
 import { Avatar, Button, Modal, Segmented, Switch, TimeInput, Video } from "@/components/ui";
-import { createMeetingApi, fetchFreeBusy } from "@/lib/api";
+import {
+  MICROSOFT_CONNECT_URL,
+  createMeetingApi,
+  fetchCalendarConnection,
+  fetchFreeBusy,
+} from "@/lib/api";
 import { FreeBusyGrid } from "./FreeBusyGrid";
 
 // Mirror of `ASSISTANT_BOT_USER_ID` in @quikit/shared. Defined locally (not
@@ -62,9 +67,57 @@ export function SchedulingModal({
   const [date, setDate] = useState(todayLocal());
   const [time, setTime] = useState("10:00");
   const [duration, setDuration] = useState("30");
+  const [location, setLocation] = useState("");
+  const [allDay, setAllDay] = useState(false);
+  // All-day spans whole days, so "start time + duration" is meaningless — the
+  // form swaps to an end DATE. Inclusive: same value as `date` means one day.
+  const [endDate, setEndDate] = useState(todayLocal());
+  // Attendee ids invited as optional. Organizer is never in here.
+  const [optionalIds, setOptionalIds] = useState<ReadonlySet<string>>(new Set());
+  const toggleOptional = (id: string) =>
+    setOptionalIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [conferencing, setConferencing] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Free-text filter over the candidate attendees passed in via `members`. */
+  const [attendeeQuery, setAttendeeQuery] = useState("");
+  const qc = useQueryClient();
+
+  /**
+   * Whether THIS user still needs to connect a calendar before a meeting can be
+   * created. Only Microsoft requires it (`requiresUserConnect`); the stub and
+   * Google never do.
+   *
+   * Without this, switching the deployment to CALENDAR_MODE=microsoft made every
+   * unconnected organizer's submit fail with a raw provider string relayed as a
+   * 502 ("Calendar provider couldn't create the meeting: Organizer has not
+   * connected a Microsoft calendar") — technically accurate, and useless as an
+   * instruction. Under the stub this could never fire, so it arrived as a
+   * regression the moment the mode changed.
+   *
+   * NOT a pre-flight request per modal open: `["calendar-connection"]` is the
+   * same key CalendarsSettings uses, and it is invalidated there on connect and
+   * disconnect — the only two ways this answer can change. So a long staleTime
+   * is correct rather than merely cheap, and repeat opens are served from cache.
+   *
+   * `retry: false` and a fail-open read: this endpoint is module-gated
+   * (`moduleKey: "calendar"`) and 403s when the calendar module is off for the
+   * org. A failed probe must never block scheduling or assert "not connected" —
+   * it just means no banner, and the submit path below is still the backstop.
+   */
+  const connection = useQuery({
+    queryKey: ["calendar-connection"],
+    queryFn: fetchCalendarConnection,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const needsCalendarConnect =
+    connection.data?.requiresUserConnect === true && connection.data.connected === false;
 
   // Organizer is always an attendee; others are toggleable. Exclude the
   // assistant bot (S15c) — it has no calendar and can't be scheduled.
@@ -94,6 +147,19 @@ export function SchedulingModal({
     enabled: attendeeIds.length > 0,
   });
 
+  /**
+   * The candidates actually rendered as chips. Filtering is a VIEW concern only:
+   * `selected` stays keyed by user id, so someone who is selected and then
+   * filtered out of view remains selected, remains in `attendeeUsers`, and
+   * remains on the free/busy grid. Anything that derived attendees from the
+   * rendered list instead would silently drop people as the user types.
+   */
+  const visibleOthers = useMemo(() => {
+    const q = attendeeQuery.trim().toLowerCase();
+    if (!q) return others;
+    return others.filter((m) => m.displayName.toLowerCase().includes(q));
+  }, [others, attendeeQuery]);
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -111,14 +177,23 @@ export function SchedulingModal({
     setSubmitting(true);
     setError(null);
     try {
-      const start = toIso(date, time);
-      const end = new Date(new Date(start).getTime() + durMin * 60_000).toISOString();
+      // All-day sends CALENDAR DATES with an INCLUSIVE end; the server converts
+      // to the exclusive midnight-UTC instants storage and the providers want
+      // (lib/all-day.ts). Timed sends instants, as before.
+      const start = allDay ? date : toIso(date, time);
+      const end = allDay
+        ? endDate
+        : new Date(new Date(toIso(date, time)).getTime() + durMin * 60_000).toISOString();
+      const chosen = others.filter((m) => selected.has(m.id)).map((m) => m.id);
       const { meeting } = await createMeetingApi(channelId, {
         title: t,
         description: description.trim() || undefined,
+        location: location.trim() || undefined,
+        allDay,
         start,
         end,
-        attendeeUserIds: others.filter((m) => selected.has(m.id)).map((m) => m.id),
+        attendeeUserIds: chosen,
+        optionalAttendeeUserIds: chosen.filter((id) => optionalIds.has(id)),
         conferencing,
         clientMessageId: crypto.randomUUID(),
       });
@@ -128,6 +203,12 @@ export function SchedulingModal({
       // Surface the real reason (S15c) instead of a blank generic failure.
       setError(e instanceof Error ? e.message : "Could not schedule the meeting");
       setSubmitting(false);
+      // The banner above is a cached answer, and a connection can be revoked
+      // (or expire) between that read and this submit. Re-ask the server rather
+      // than pattern-matching the provider's error string, so a revoked
+      // connection surfaces the Connect action here too. Deliberately not
+      // awaited — the error is already shown; this only upgrades it.
+      void qc.invalidateQueries({ queryKey: ["calendar-connection"] });
     }
   }
 
@@ -155,6 +236,26 @@ export function SchedulingModal({
       }
     >
       <div className="qc-schedule" data-testid="scheduling-modal">
+        {/* Actionable precondition, shown INSTEAD of letting the submit fail with
+            a provider error string. Non-blocking on purpose: the answer is
+            cached and can be stale, so a user whose connection this read missed
+            must still be able to try. */}
+        {needsCalendarConnect ? (
+          <div className="qc-schedule__connect" role="status" data-testid="calendar-connect-cta">
+            <span>
+              Connect your Microsoft calendar to schedule meetings and see attendee availability.
+            </span>
+            <Button
+              variant="primary"
+              onClick={() => {
+                window.location.href = MICROSOFT_CONNECT_URL;
+              }}
+            >
+              Connect your Microsoft calendar
+            </Button>
+          </div>
+        ) : null}
+
         {/* Fixed top: the essentials never scroll out of reach. */}
         <div className="qc-schedule__top">
           <label className="qc-field">
@@ -169,16 +270,36 @@ export function SchedulingModal({
             />
           </label>
 
+          {/* ONE name for this field. It previously read "Description" as the
+              label, "Agenda (optional)" as the placeholder and "Meeting
+              description" to a screen reader — three names for the single
+              `QcMeeting.description` column, which is why QA reported "agenda"
+              as a missing field. "Agenda" is the word users and QA reach for;
+              the column name stays `description`. Keep this in step with the
+              identical field in CalendarModule. */}
           <label className="qc-field">
-            <span className="qc-field__label">Description</span>
+            <span className="qc-field__label">Agenda</span>
             <input
               className="qc-input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Agenda (optional)"
-              aria-label="Meeting description"
+              placeholder="What to cover (optional)"
+              aria-label="Meeting agenda"
             />
           </label>
+
+          <label className="qc-field">
+            <span className="qc-field__label">Location</span>
+            <input
+              className="qc-input"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Room, address or link (optional)"
+              aria-label="Meeting location"
+            />
+          </label>
+
+          <Switch checked={allDay} onChange={setAllDay} label="All day" />
 
           <div className="qc-schedule__when">
             <label className="qc-field">
@@ -187,15 +308,35 @@ export function SchedulingModal({
                 type="date"
                 className="qc-input"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  // Never leave the end before the start.
+                  if (e.target.value > endDate) setEndDate(e.target.value);
+                }}
                 aria-label="Meeting date"
               />
             </label>
-            <TimeInput value={time} onChange={setTime} label="Start" />
-            <div className="qc-field">
-              <span className="qc-field__label">Duration</span>
-              <Segmented options={DURATIONS} value={duration} onChange={setDuration} />
-            </div>
+            {allDay ? (
+              <label className="qc-field">
+                <span className="qc-field__label">End date</span>
+                <input
+                  type="date"
+                  className="qc-input"
+                  value={endDate}
+                  min={date}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  aria-label="Meeting end date"
+                />
+              </label>
+            ) : (
+              <>
+                <TimeInput value={time} onChange={setTime} label="Start" />
+                <div className="qc-field">
+                  <span className="qc-field__label">Duration</span>
+                  <Segmented options={DURATIONS} value={duration} onChange={setDuration} />
+                </div>
+              </>
+            )}
           </div>
 
           <Switch
@@ -209,6 +350,19 @@ export function SchedulingModal({
         <div className="qc-schedule__scroll">
           <div className="qc-field">
             <span className="qc-field__label">Attendees</span>
+            {/* Filters ONLY the candidates already passed in via `members` (the
+                channel's own members). Deliberately not org-wide search:
+                UserPicker does that against a `q` endpoint and is the obvious
+                reuse, but switching to it changes WHO can be invited, which is
+                a product decision tangled with RBAC Phase 3. Follow-up, not
+                this change. */}
+            <input
+              className="qc-input qc-schedule__attfilter"
+              value={attendeeQuery}
+              onChange={(e) => setAttendeeQuery(e.target.value)}
+              placeholder="Filter attendees"
+              aria-label="Filter attendees"
+            />
             <div className="qc-schedule__attendees">
               <span className="qc-att-chip qc-att-chip--fixed">
                 <Avatar
@@ -219,18 +373,43 @@ export function SchedulingModal({
                 />
                 {organizer.displayName} (you)
               </span>
-              {others.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className="qc-att-chip"
-                  aria-pressed={selected.has(m.id)}
-                  data-selected={selected.has(m.id)}
-                  onClick={() => toggle(m.id)}
-                >
-                  <Avatar name={m.displayName} id={m.id} avatarUrl={m.avatarUrl} size={20} />
-                  {m.displayName}
-                </button>
+              {visibleOthers.length === 0 ? (
+                <span className="qc-schedule__attempty" data-testid="attendee-no-match">
+                  No members match “{attendeeQuery}”
+                </span>
+              ) : null}
+              {visibleOthers.map((m) => (
+                <span key={m.id} className="qc-att-chip-wrap">
+                  <button
+                    type="button"
+                    className="qc-att-chip"
+                    aria-pressed={selected.has(m.id)}
+                    data-selected={selected.has(m.id)}
+                    onClick={() => toggle(m.id)}
+                  >
+                    <Avatar name={m.displayName} id={m.id} avatarUrl={m.avatarUrl} size={20} />
+                    {m.displayName}
+                  </button>
+                  {/* Only offered once they are actually invited — an optional
+                      toggle on someone who is not attending means nothing.
+                      Default required, matching the column default and what
+                      microsoft.ts hardcoded before this. */}
+                  {selected.has(m.id) ? (
+                    <button
+                      type="button"
+                      className="qc-att-optional"
+                      aria-pressed={optionalIds.has(m.id)}
+                      data-on={optionalIds.has(m.id) || undefined}
+                      aria-label={`${m.displayName} — ${
+                        optionalIds.has(m.id) ? "optional" : "required"
+                      }. Toggle.`}
+                      title={optionalIds.has(m.id) ? "Optional attendee" : "Required attendee"}
+                      onClick={() => toggleOptional(m.id)}
+                    >
+                      {optionalIds.has(m.id) ? "Optional" : "Required"}
+                    </button>
+                  ) : null}
+                </span>
               ))}
             </div>
           </div>

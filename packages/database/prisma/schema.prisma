@@ -30,6 +30,7 @@ model App {
   cnAppRoles       CnAppRole[]
   qsAppRoles       QsAppRole[]
   qcAppRoles       QcAppRole[]
+  wfAppRoles       WfAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClients     OAuthClient[]
@@ -269,6 +270,8 @@ model Org {
   qcAppRoles               QcAppRole[]
   qcUserAppRoles           QcUserAppRole[]
   qcUserPermissionExtras   QcUserPermissionExtra[]
+  wfAppRoles               WfAppRole[]
+  wfUserAppRoles           WfUserAppRole[]
   vcApplications           VCApplication[]
   vcAuditLogs              VCAuditLog[]
   vcCapitalCalls           VCCapitalCall[]
@@ -474,6 +477,7 @@ model User {
   qsUserAppRoles          QsUserAppRole[]
   qcUserAppRoles          QcUserAppRole[]
   qcPermissionExtras      QcUserPermissionExtra[]
+  wfUserAppRoles          WfUserAppRole[]
   cnUserProfiles          CnUserProfile[]
   cnUserProjectAccess     CnUserProjectAccess[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -24124,291 +24128,62 @@ model WfTemplate {
   @@schema("app_quikflow")
 }
 
-// ============================================================================
-// QuikFlow — no-code workflow automation (schema "app_quikflow")
-// See QUIKFLOW_ARCHITECTURE.md §6 and QuikFlow-PRD.docx §11 (data model).
-// Every row is orgId-scoped (tenant isolation, NFR-1); cuid() ids.
-// v1 executes a linear Trigger → Condition → Action; the fork/join +
-// version models are present for the roadmap but unused in v1.
-// ============================================================================
-
-enum WfStatus {
-  Draft
-  Active
-  Paused
-  Archived
-
-  @@schema("app_quikflow")
-}
-
-enum WfRunStatus {
-  running
-  waiting
-  success
-  failed
-  cancelled
-
-  @@schema("app_quikflow")
-}
-
-enum WfStepStatus {
-  ok
-  waiting
-  failed
-  skipped
-
-  @@schema("app_quikflow")
-}
-
-enum WfScope {
-  org
-  personal
-
-  @@schema("app_quikflow")
-}
-
-enum WfProvider {
-  quikscale
-  quikcrm
-  quikhrms
-  quikinfra
-  quiktrack
-  outlook
-  teams
-  gmail
-  slack
-  sheets
-  webhook
-  fathom
-
-  @@schema("app_quikflow")
-}
-
-enum WfApprovalStatus {
-  pending
-  approved
-  rejected
-
-  @@schema("app_quikflow")
-}
-
-/// A workflow definition — one automation. Org-wide (admin) or personal
-/// (member), per PRD §10. `trigger`/`graphNodes`/`graphEdges` are serializable
-/// JSON so the engine treats a workflow as data, not code.
-model WfWorkflow {
-  id         String        @id @default(cuid())
-  orgId      String
-  app        String // target app slug, e.g. "quikscale"
-  name       String
-  scope      WfScope       @default(personal)
-  ownerId    String // creating user
-  status     WfStatus      @default(Draft)
-  trigger    Json // { type: "event" | "cron" | "webhook", ... }
-  graphNodes Json          @default("[]") // ordered steps (trigger/condition/action/...)
-  graphEdges Json          @default("[]") // edges incl. branch labels
-  version    Int           @default(1)
-  lastRunAt  DateTime?
-  createdBy  String
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  runs       WfRun[]
-  versions   WfVersion[]
-  schedules  WfSchedule[]
-  approvals  WfApproval[]
-
-  @@index([orgId, status])
-  @@index([orgId, app])
-  @@index([orgId, scope])
-  @@index([orgId, ownerId])
-  @@schema("app_quikflow")
-}
-
-/// Immutable published snapshot for rollback + run-pinning (roadmap P2).
-model WfVersion {
-  id          String     @id @default(cuid())
+/// App-wide role for QuikFlow RBAC v2 (Roles & Permissions). Org-scoped;
+/// "admin" is seeded as isSystem so it can't be renamed/deleted.
+model WfAppRole {
+  id          String             @id @default(cuid())
   orgId       String
-  workflowId  String
-  version     Int
-  graphNodes  Json
-  graphEdges  Json
-  publishedBy String
-  publishedAt DateTime   @default(now())
-  workflow    WfWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  @@unique([workflowId, version])
-  @@index([orgId])
-  @@schema("app_quikflow")
-}
-
-/// One execution instance of a workflow. `dedupeKey` gives at-least-once
-/// idempotency (NFR-3): a duplicate trigger with the same key is skipped.
-model WfRun {
-  id              String       @id @default(cuid())
-  orgId           String
-  workflowId      String
-  workflowVersion Int          @default(1)
-  status          WfRunStatus  @default(running)
-  triggerData     Json         @default("{}")
-  dedupeKey       String
-  durationMs      Int?
-  error           String?
-  startedAt       DateTime     @default(now())
-  finishedAt      DateTime?
-  steps           WfStepLog[]
-  workflow        WfWorkflow   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, dedupeKey])
-  @@index([orgId, workflowId, startedAt])
-  @@index([orgId, status])
-  @@schema("app_quikflow")
-}
-
-/// Per-node execution record — audit trail + resume point.
-model WfStepLog {
-  id        String       @id @default(cuid())
-  orgId     String
-  runId     String
-  nodeId    String
-  kind      String // trigger | condition | action | wait | ...
-  label     String?
-  status    WfStepStatus @default(ok)
-  resumeAt  DateTime? // set for wait nodes
-  jobId     String? // ties row to its queue job (GroupMQ/BullMQ)
-  input     Json?
-  output    Json?
-  error     String?
-  createdAt DateTime     @default(now())
-  run       WfRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, runId])
-  @@schema("app_quikflow")
-}
-
-/// Barrier counter for parallel branch-merge (fork/join, roadmap P4).
-model WfJoinState {
-  id         String   @id @default(cuid())
-  orgId      String
-  runId      String
-  joinNodeId String
-  expected   Int
-  arrived    Int      @default(0)
-  createdAt  DateTime @default(now())
-
-  @@unique([runId, joinNodeId])
-  @@index([orgId])
-  @@schema("app_quikflow")
-}
-
-/// Cron / scheduled trigger registration.
-model WfSchedule {
-  id         String     @id @default(cuid())
-  orgId      String
-  workflowId String
-  cron       String // "0 6 * * *" | "FISCAL_Q_END" | ...
-  nextRunAt  DateTime?
-  workflow   WfWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, nextRunAt])
-  @@schema("app_quikflow")
-}
-
-/// Third-party / cross-app OAuth credentials, per org. Tokens encrypted at
-/// rest (PRD FR-F2). `status` drives the Connections page pills.
-model WfConnection {
-  id           String     @id @default(cuid())
-  orgId        String
-  provider     WfProvider
-  label        String
-  status       String     @default("connected") // connected | expired | error
-  accessToken  String? // encrypted at rest
-  refreshToken String? // encrypted at rest
-  scopes       String[]
-  expiresAt    DateTime?
-  /// Per-connection config, e.g. { notetakerEmail } on a Teams calendar
-  /// connection — invited as an attendee on every online meeting it creates
-  /// so Fathom's bot auto-joins and records. Provider-specific; no fixed shape.
-  settings     Json?
-  createdBy    String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-  @@unique([orgId, provider, label])
-  @@index([orgId, provider])
-  @@schema("app_quikflow")
-}
-
-/// Maps a source-app record (e.g. a Client Master row) + kind (daily/weekly) to
-/// the external calendar event a workflow created for it. Gives the calendar
-/// action idempotency — a re-run or edit UPDATES the existing event instead of
-/// creating a duplicate — and lets a calendar view map events back to records.
-model WfCalendarLink {
-  id              String     @id @default(cuid())
-  orgId           String
-  provider        WfProvider
-  connectionId    String
-  refType         String // source record type, e.g. "clientMaster"
-  refId           String // source record id, e.g. the Client id
-  kind            String     @default("") // "daily" | "weekly" | "" (single)
-  externalEventId String
-  webLink         String?
-  joinUrl         String?
-  createdBy       String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  @@unique([orgId, refType, refId, kind])
-  @@index([orgId, provider])
-  @@schema("app_quikflow")
-}
-
-/// A pending human approval raised by an approval step. Drives the Approvals
-/// inbox. Approving/rejecting resumes/stops the paused run.
-model WfApproval {
-  id         String           @id @default(cuid())
-  orgId      String
-  workflowId String
-  runId      String?
-  title      String
-  detail     String?
-  status     WfApprovalStatus @default(pending)
-  requestedFor String? // user/role expected to act
-  decidedBy  String?
-  decidedAt  DateTime?
-  createdAt  DateTime         @default(now())
-  workflow   WfWorkflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, status])
-  @@schema("app_quikflow")
-}
-
-/// Per-org "run as" service identity (RBAC). Explicit, auditable scopes the
-/// automation runs with when calling app action APIs.
-model WfAutomationPrincipal {
-  id        String   @id @default(cuid())
-  orgId     String   @unique
-  name      String   @default("QuikFlow Automation")
-  scopes    String[]
-  createdAt DateTime @default(now())
-
-  @@schema("app_quikflow")
-}
-
-/// Global gallery starting points (no orgId) — the Templates page.
-model WfTemplate {
-  id          String  @id @default(cuid())
-  app         String
+  appId       String
   name        String
-  category    String?
   description String?
-  triggerLabel String?
-  actionLabel  String?
-  graphNodes  Json    @default("[]")
-  graphEdges  Json    @default("[]")
-  isTested    Boolean  @default(false)
-  lastTestedAt DateTime?
+  isSystem    Boolean            @default(false)
+  isDefault   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdBy   String?
+  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions WfRolePermission[]
+  members     WfUserAppRole[]
 
-  @@index([app])
-  @@index([category])
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikflow")
+}
+
+/// User → WfAppRole assignment. One role per user per org (per app).
+model WfUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       WfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikflow")
+}
+
+/// (resource, action) grant on a WfAppRole. `resource` is a dot-namespaced
+/// key from permissionsRegistry.ts's PERMISSION_TREE (e.g. "Workflows",
+/// "Connections", "Approvals"); `action` is one of view/create/update/delete.
+model WfRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     WfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
   @@schema("app_quikflow")
 }
 
@@ -24691,6 +24466,8 @@ model QcMeeting {
   organizerId      String
   title            String
   description      String?
+  location         String?
+  allDay           Boolean             @default(false)
   start            DateTime // stored UTC; rendered local client-side
   end              DateTime
   joinUrl          String? // conferencing (Meet) link, if requested
@@ -24713,6 +24490,7 @@ model QcMeetingAttendee {
   userId    String
   email     String
   rsvp      String    @default("needs_action") // needs_action | accepted | declined | tentative
+  optional  Boolean   @default(false) // Graph attendee type: false=required, true=optional
   meeting   QcMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
   @@unique([meetingId, userId])
