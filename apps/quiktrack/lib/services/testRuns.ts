@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { assertResolvedProjectId } from "@/lib/test/projectId";
+import { ensureTestStatusesQuietly } from "./testStatusProvisioning";
 import type { CreateTestRunInput, RecordResultInput } from "@/lib/validation/testRun";
 
 /**
@@ -34,10 +35,14 @@ async function defaultStatusId(
     select: { id: true },
   });
   if (!row) {
-    // The migration seeds this for every org, so a miss means the seed did not
-    // run for a newer org — surface it rather than silently picking a status.
+    // Callers provision via `ensureTestStatuses` before opening the transaction, so
+    // reaching this means the catalogue exists but NO row is flagged default — an
+    // org has soft-deleted or unset its Untested status. Picking one arbitrarily
+    // would put every new test into a status nobody chose, so this still refuses,
+    // but the message now points at the fix instead of blaming the seed.
     throw new TestRunError(
-      "No default test status is configured for this organisation.",
+      "This organisation has no default test status. Open Settings → Test statuses " +
+        "and restore the missing defaults.",
       500,
       "NO_DEFAULT_STATUS",
     );
@@ -127,6 +132,20 @@ export async function createTestRun(
   // no configs, a single null-config test per case.
   const configIds: Array<string | null> =
     input.configIds && input.configIds.length > 0 ? input.configIds : [null];
+
+  // Backstop provisioning, BEFORE the transaction opens.
+  //
+  // The migration seeded statuses with a CROSS JOIN over orgs existing at the
+  // time, so any org created later had none and this call failed with
+  // "No default test status is configured for this organisation." Project creation
+  // now provisions them, but an org whose projects all predate that change would
+  // still be broken — this covers it, and makes the error unreachable.
+  //
+  // Outside the transaction on purpose: creating rows inside it and re-reading them
+  // works, but a unique violation from a concurrent call would then abort the whole
+  // run creation. Here a race is absorbed by skipDuplicates and the read below
+  // simply finds the winner's rows.
+  await ensureTestStatusesQuietly(orgId);
 
   try {
     return await db.$transaction(async (tx) => {

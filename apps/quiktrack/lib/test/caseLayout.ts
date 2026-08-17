@@ -9,6 +9,35 @@
 
 export type TemplateKind = "TEXT" | "STEPS" | "BDD" | "EXPLORATORY";
 
+/**
+ * The four org-wide templates every org must have, and the ONLY definition of them.
+ *
+ * Mirrors the seed in `20260807140000_quiktest_testrail_parity/migration.sql`
+ * exactly. Kept here because that seed was a `CROSS JOIN quikit."Org"` — a one-shot
+ * over orgs existing when the migration ran — so any org created afterwards had NO
+ * templates and the case editor's Template dropdown showed "No options". That
+ * degrades quietly rather than erroring: `useCaseForm` falls back to STEPS, so every
+ * case is implicitly step-based and the TEXT / BDD / Exploratory layouts are
+ * unreachable.
+ *
+ * `ensureTestTemplates()` provisions from this list. Same failure class as the test
+ * statuses — see `lib/services/testStatusProvisioning.ts`.
+ */
+export interface TestTemplateSeed {
+  name: string;
+  kind: TemplateKind;
+  isDefault: boolean;
+}
+
+export const TEST_TEMPLATE_SEED: readonly TestTemplateSeed[] = [
+  // STEPS is the default because it is what every case authored so far uses —
+  // making TEXT the default would change how existing cases render.
+  { name: "Test Case (Steps)", kind: "STEPS", isDefault: true },
+  { name: "Test Case (Text)", kind: "TEXT", isDefault: false },
+  { name: "BDD / Gherkin", kind: "BDD", isDefault: false },
+  { name: "Exploratory Session", kind: "EXPLORATORY", isDefault: false },
+];
+
 /** Unknown/missing template falls back to STEPS, matching the seeded default. */
 export function normaliseKind(kind: string | null | undefined): TemplateKind {
   return kind === "TEXT" || kind === "BDD" || kind === "EXPLORATORY"

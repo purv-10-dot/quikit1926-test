@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Lock,
   Braces,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
@@ -96,6 +97,14 @@ const SECTIONS: PopoverSection[] = [
         description: "Configure custom fields for work items across all spaces",
         icon: ListChecks,
         href: "/settings/work-items/fields",
+      },
+      {
+        key: "test-statuses",
+        label: "QuikTest",
+        description:
+          "Test statuses and case templates, shared by every space in this org",
+        icon: FlaskConical,
+        href: "/settings/test-statuses",
       },
       {
         key: "api-docs",
