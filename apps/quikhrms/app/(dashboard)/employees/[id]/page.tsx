@@ -601,9 +601,12 @@ function EmployeeProfilePageInner() {
           </div>
         </div>
       ) : tab === "documents" ? (
-        <DetailCard title="Documents" icon={<FileText size={16} />}>
-          <EmployeeDocuments employeeId={emp.id} />
-        </DetailCard>
+        <div className="space-y-4">
+          {hasPermission("hrms.performance.appraise") && <AppraisalLetterCard employeeId={emp.id} />}
+          <DetailCard title="Documents" icon={<FileText size={16} />}>
+            <EmployeeDocuments employeeId={emp.id} />
+          </DetailCard>
+        </div>
       ) : tab === "leave" ? (
         <DetailCard title="Leave Balances" icon={<Palmtree size={16} />}>
           {leaveBalances.length === 0 ? (
@@ -779,6 +782,44 @@ function EmployeeDocuments({ employeeId }: { employeeId: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+interface CompletedAppraisal { id: string; cycle: { name: string } }
+
+/** HR-only: pick a Completed appraisal and download its salary-revision letter. */
+function AppraisalLetterCard({ employeeId }: { employeeId: string }) {
+  const api = useApiClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["employee-completed-appraisals", employeeId],
+    queryFn: () => api.get<CompletedAppraisal[]>(`/api/v1/hrms/performance/appraisals/employee?employeeId=${employeeId}&status=Completed&limit=20`).catch(() => ({ data: [] as CompletedAppraisal[] })),
+  });
+  const appraisals = data?.data ?? [];
+  const [selected, setSelected] = useState("");
+  const appraisalId = selected || appraisals[0]?.id || "";
+
+  if (isLoading) return null;
+  if (appraisals.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center gap-3">
+      <div className="min-w-0">
+        <div className="text-[13px] font-semibold text-gray-900">Appraisal Letter</div>
+        <div className="text-[11px] text-gray-500">Salary-revision letter for a completed appraisal cycle.</div>
+      </div>
+      <div className="min-w-[200px]">
+        <Select value={appraisalId} onChange={setSelected} size="sm"
+          options={appraisals.map((a) => ({ value: a.id, label: a.cycle.name }))} />
+      </div>
+      <button
+        type="button"
+        disabled={!appraisalId}
+        onClick={() => window.open(withBasePath(`/api/v1/hrms/performance/appraisals/employee/${appraisalId}/letter?download=1`), "_blank", "noopener")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+      >
+        <FileText size={13} /> Generate Letter
+      </button>
+    </div>
   );
 }
 

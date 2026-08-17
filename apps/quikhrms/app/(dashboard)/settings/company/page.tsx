@@ -399,29 +399,29 @@ function CompanySettingsPageInner() {
 
           <div className="mt-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              TDS Circle / AO Code <span className="text-red-500">*</span>
+              TDS Circle / AO Code
             </label>
             <div className="grid grid-cols-4 gap-2 max-w-md">
               <input
-                placeholder="AAA" maxLength={3} required
+                placeholder="AAA" maxLength={3}
                 value={form.tdsCircleCodeArea ?? ""}
                 onChange={(e) => setForm({ ...form, tdsCircleCodeArea: e.target.value.toUpperCase() })}
                 className={clsx(inputCls, "font-mono tracking-wider uppercase")}
               />
               <input
-                placeholder="AA" maxLength={2} required
+                placeholder="AA" maxLength={2}
                 value={form.tdsCircleCodeType ?? ""}
                 onChange={(e) => setForm({ ...form, tdsCircleCodeType: e.target.value.toUpperCase() })}
                 className={clsx(inputCls, "font-mono tracking-wider uppercase")}
               />
               <input
-                placeholder="000" maxLength={3} required
+                placeholder="000" maxLength={3}
                 value={form.tdsCircleNumber ?? ""}
                 onChange={(e) => setForm({ ...form, tdsCircleNumber: e.target.value })}
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
               <input
-                placeholder="00" maxLength={2} required
+                placeholder="00" maxLength={2}
                 value={form.tdsCircleSubNumber ?? ""}
                 onChange={(e) => setForm({ ...form, tdsCircleSubNumber: e.target.value })}
                 className={clsx(inputCls, "font-mono tracking-wider")}

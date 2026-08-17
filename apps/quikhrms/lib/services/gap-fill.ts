@@ -412,14 +412,16 @@ export async function processBulkEmployees(
       // instead of blocked; HR fills them in later via Edit Employee. Format is
       // still enforced when a value IS present (zPanOptional/zAadhaarOptional/
       // zBankAccountOptional/zIfscOptional in bulkEmployeeRowSchema).
+      // Department and Employment Type were required here too, but both have a
+      // safe blank/default path downstream (departmentId stays null; employmentType
+      // falls back to "FullTime" via normalizeEnum below) — so a missing source
+      // column no longer blocks the whole row; HR fills them in later via Edit Employee.
       const missingRequired: string[] = [];
       if (!clean(r.workEmail)) missingRequired.push("Work Email");
       if (!clean(r.personalPhone)) missingRequired.push("Personal Phone");
       if (!clean(r.gender)) missingRequired.push("Gender");
       if (!clean(r.dateOfBirth)) missingRequired.push("Date of Birth");
       if (!clean(r.designation)) missingRequired.push("Designation");
-      if (!clean(r.departmentName) && !clean(r.departmentCode)) missingRequired.push("Department");
-      if (!clean(r.employmentType)) missingRequired.push("Employment Type");
       if (!clean(r.dateOfJoining)) missingRequired.push("Date of Joining");
       if (missingRequired.length > 0) {
         errors.push({ row: i + 1, error: `Missing required field(s): ${missingRequired.join(", ")}` });
@@ -810,7 +812,15 @@ export async function processBulkEmployees(
       }
       success += 1;
     } catch (e) {
-      errors.push({ row: i + 1, error: e instanceof Error ? e.message : "Unknown error" });
+      // Row numbers alone aren't enough to find the offending row — blank and
+      // email-less rows are filtered out upstream before numbering, so "Row 29"
+      // here doesn't line up with Excel's row 29. Prefix name/email so the user
+      // can just search their file instead of counting rows.
+      const who = [clean(r.firstName), clean(r.lastName)].filter(Boolean).join(" ");
+      const email = cleanEmail(r.workEmail) ?? cleanEmail(r.personalEmail);
+      const identity = [who, email].filter(Boolean).join(" — ");
+      const message = e instanceof Error ? e.message : "Unknown error";
+      errors.push({ row: i + 1, error: identity ? `${identity}: ${message}` : message });
     }
   }
 

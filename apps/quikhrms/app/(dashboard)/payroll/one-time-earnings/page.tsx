@@ -121,7 +121,7 @@ export default function OneTimeEarningsPage() {
 
   const { data: empRes } = useQuery({
     queryKey: ["payroll", "one-time", "employees"],
-    queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=500"),
+    queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=500&picker=1"),
   });
   const employees = empRes?.data ?? [];
 

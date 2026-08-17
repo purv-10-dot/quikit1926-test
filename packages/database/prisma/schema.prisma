@@ -12750,6 +12750,7 @@ model Employee {
   requisitionsManaged     JobRequisition[]      @relation("HiringManager")
   requisitionsRecruited   JobRequisition[]      @relation("Recruiter")
   requisitionsRaised      JobRequisition[]      @relation("RequisitionRaiser")
+  requisitionRecruiterSplits RequisitionRecruiter[]
   requisitionApprovals    RequisitionApproval[] @relation("RequisitionApprover")
   interviewsAsInterviewer Interview[]           @relation("Interviewer")
   candidateReferrals      Candidate[]           @relation("CandidateReferrer")
@@ -14145,6 +14146,12 @@ model JobRequisition {
 
   closedDate    DateTime? @db.Date
   closureReason String?
+  // Stamped automatically the moment status flips to ReqClosed — the TRUE
+  // closure timestamp, kept separate from `closedDate` (which is HR's
+  // editable "Timeline to Close" target and gets revised during planning).
+  // Recruiter Performance's Time-to-Fill uses this, not closedDate, so
+  // revising the target doesn't retroactively skew an already-closed req.
+  actualClosedAt DateTime?
 
   // Extended requisition metadata (job posting + hiring plan). These columns
   // already exist in the DB; kept in sync here so the generated client accepts them.
@@ -14157,6 +14164,23 @@ model JobRequisition {
   jobGrade          String?
   costCenter        String?
 
+  // Recruiter Performance Dashboard — Job Level drives the default hiring SLA;
+  // HR can override it per requisition with a reason (Approved Custom ETA).
+  jobLevelId      String?
+  customSlaDays   Int?
+  customSlaReason String?
+  // SLA-pause tracking: while status is ReqOnHold, the elapsed calendar time
+  // must not count against the requisition's SLA — a hold is a business
+  // decision, not the recruiter's delay. slaPausedAt is set the moment a
+  // requisition enters ReqOnHold and cleared (its duration folded into
+  // slaPausedDays) the moment it leaves ReqOnHold, for any reason.
+  slaPausedAt   DateTime?
+  slaPausedDays Float     @default(0)
+  // Last SLA severity level the recruiter/HR were notified about ("amber" |
+  // "red" | null). Prevents the daily SLA-check cron from re-notifying every
+  // day for an unchanged breach — only a fresh threshold crossing re-alerts.
+  lastSlaAlertLevel String?
+
   createdBy String?
   updatedBy String?
   createdAt DateTime  @default(now())
@@ -14168,15 +14192,76 @@ model JobRequisition {
   hiringManager Employee?             @relation("HiringManager", fields: [hiringManagerId], references: [id])
   recruiter     Employee?             @relation("Recruiter", fields: [recruiterId], references: [id])
   raiser        Employee?             @relation("RequisitionRaiser", fields: [raisedById], references: [id])
+  jobLevel      JobLevel?             @relation(fields: [jobLevelId], references: [id])
   approvals     RequisitionApproval[]
   pipeline      HiringPipeline?       @relation(fields: [pipelineId], references: [id])
   applications  JobApplication[]
+  recruiterSplits RequisitionRecruiter[]
 
   @@unique([orgId, requisitionNumber])
   @@index([orgId])
   @@index([orgId, deletedAt])
   @@index([orgId, status])
   @@index([orgId, pipelineId])
+  @@index([orgId, jobLevelId])
+  @@schema("app_quikhrms")
+}
+
+// Configurable seniority/complexity level for a requisition (L1-L4, SP1, SP2
+// by default) — drives the default hiring SLA used by the Recruiter
+// Performance Dashboard. HR/Admin manage these under Settings; org-specific,
+// so two tenants can define different levels/SLAs.
+model JobLevel {
+  id    String @id @default(cuid())
+  orgId String
+
+  code      String // e.g. "L1", "SP2" — short label shown everywhere
+  name      String // e.g. "Entry / Junior"
+  slaDays   Int // standard hiring SLA in days for this level
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  requisitions JobRequisition[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@schema("app_quikhrms")
+}
+
+// Optional position split when a requisition has more than one recruiter —
+// e.g. "10 openings: 4 to Recruiter A, 3 to Recruiter B, 3 to Recruiter C."
+// Feeds the Recruiter Performance Dashboard's workload/quota tracking.
+// A requisition with only one recruiter doesn't need a row here — the
+// existing JobRequisition.recruiterId keeps working unchanged; this table
+// only matters once HR explicitly splits a requisition across recruiters.
+model RequisitionRecruiter {
+  id            String @id @default(cuid())
+  orgId         String
+  requisitionId String
+  employeeId    String
+
+  positionsAssigned Int @default(1)
+
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  requisition JobRequisition @relation(fields: [requisitionId], references: [id])
+  employee    Employee       @relation(fields: [employeeId], references: [id])
+
+  @@unique([orgId, requisitionId, employeeId])
+  @@index([orgId])
+  @@index([orgId, requisitionId])
+  @@index([orgId, employeeId])
   @@schema("app_quikhrms")
 }
 
@@ -14283,6 +14368,11 @@ model JobApplication {
   screeningAnswers Json?
 
   status ApplicationStatus @default(AppActive)
+  // Stable timestamp of the AppHired transition — Time-to-Hire and "hires
+  // this month" read from this, never from `updatedAt` (which any later
+  // unrelated edit would move, silently corrupting both metrics). Cleared
+  // if a hire is later reversed (rejected/declined/withdrawn post-hire).
+  hiredAt DateTime?
 
   aiMatchScore    Decimal? @db.Decimal(5, 2)
   aiMatchAnalysis Json?
@@ -14947,6 +15037,21 @@ model CompanySettings {
   // fields, see lib/offboarding/exit-letter-fields.ts). Read/written via raw SQL.
   relievingLetterBody  String?
   experienceLetterBody String?
+  // Editable appraisal-letter body template ({{dynamic}} fields, see
+  // lib/performance/appraisal-letter-fields.ts). Read/written via raw SQL.
+  appraisalLetterBody  String?
+
+  // Public "Career Page" (Phase 1) — a no-login job-listing + apply page at
+  // /careers/{Org.slug}. Off by default so a fresh org doesn't accidentally
+  // expose an empty page before HR configures it.
+  careerPageEnabled Boolean @default(false)
+  careerPageIntro   String?
+  // Optional custom URL slug for the career page, editable by HR — an
+  // ADDITIONAL alias alongside the default /careers/{Org.slug} link (which
+  // always keeps working; Org.slug itself is immutable and used elsewhere,
+  // so this never touches it). Globally unique across orgs since it's
+  // resolved with no other scoping key. Null = no custom slug set.
+  careerPageSlug String? @unique
 
   // First-run org setup gate (admin onboarding). Latched true once Departments,
   // Locations, a complete Approval chain, and Payroll setup are all done â€” after
@@ -14958,6 +15063,35 @@ model CompanySettings {
   updatedBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@schema("app_quikhrms")
+}
+
+// Per-org API keys for read-only external integrations (e.g. quikscale reading
+// this org's Department list). Self-service — the org's own Settings admin
+// generates/revokes these; QuikIT engineering doesn't need to be involved per
+// customer. Only the SHA-256 hash of the raw key is ever stored (same pattern
+// as invite tokens, see lib/auth/invite-token.ts) — a DB leak never exposes a
+// usable key. Read/written via raw SQL until `prisma generate` picks this up.
+model ExternalApiKey {
+  id    String @id @default(cuid())
+  orgId String
+
+  label     String
+  keyHash   String  @unique
+  keyPrefix String
+  isActive  Boolean @default(true)
+  // Comma-separated resource scope this key may read — e.g. "departments" or
+  // "departments,employees". A key generated for one app/purpose must NOT be
+  // usable against a resource it wasn't granted — each external route checks
+  // its own name is present here before returning data.
+  scope     String  @default("all")
+
+  createdBy  String?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
 
   @@index([orgId])
   @@schema("app_quikhrms")

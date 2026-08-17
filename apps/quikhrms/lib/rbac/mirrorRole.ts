@@ -18,7 +18,7 @@ const QUIKHRMS_APP_SLUG = "quikhrms";
 
 let cachedCentralAppId: string | null = null;
 
-async function getCentralAppId(): Promise<string | null> {
+export async function getCentralAppId(): Promise<string | null> {
   if (cachedCentralAppId) return cachedCentralAppId;
   const app = await prisma.app.findUnique({
     where: { slug: QUIKHRMS_APP_SLUG },
@@ -26,6 +26,25 @@ async function getCentralAppId(): Promise<string | null> {
   });
   cachedCentralAppId = app?.id ?? null;
   return cachedCentralAppId;
+}
+
+/**
+ * Read the role the Admin Portal's Members Invite/Edit flow has assigned this
+ * central user for HRMS (`quikit.UserAppAccess.role`), if any. Used as a
+ * first-login signal during JIT provisioning (see provisioning.ts) so an
+ * admin-chosen "Role in QuikHRMS" isn't silently dropped in favor of the
+ * coarse org-membership-based default. Returns null if no central access row
+ * exists yet for this user+app (nothing assigned, or not synced — see the
+ * module doc comment above about the two systems' different keys).
+ */
+export async function getCentralHrmsRole(orgId: string, authUserId: string): Promise<string | null> {
+  const appId = await getCentralAppId();
+  if (!appId) return null;
+  const access = await prisma.userAppAccess.findFirst({
+    where: { orgId, userId: authUserId, appId },
+    select: { role: true },
+  });
+  return access?.role ?? null;
 }
 
 /**

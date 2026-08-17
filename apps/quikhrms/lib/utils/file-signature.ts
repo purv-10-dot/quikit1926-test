@@ -20,6 +20,8 @@ export function sniffMime(buf: Buffer): string | null {
   if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return "image/heic";     // ....ftyp (HEIC/HEIF/MP4-family)
   if (b[0] === 0x50 && b[1] === 0x4b && (b[2] === 0x03 || b[2] === 0x05 || b[2] === 0x07)) return "application/zip"; // PK.. (docx/xlsx/pptx)
   if (b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) return "application/x-ole-storage";        // legacy .doc/.xls
+  // AutoCAD DWG — every version tag (AC1006 through AC1032) starts "AC10".
+  if (b[0] === 0x41 && b[1] === 0x43 && b[2] === 0x31 && b[3] === 0x30) return "application/acad";                // AC10.. (DWG)
   return null;
 }
 
@@ -33,5 +35,8 @@ export function contentMatchesClaim(buf: Buffer, claimedMime: string): boolean {
   if (sniffed === "image/heic" && (claim === "image/heic" || claim === "image/heif")) return true;
   if (sniffed === "application/zip" && claim === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return true;
   if (sniffed === "application/x-ole-storage" && claim === "application/msword") return true;
+  // Browsers report wildly inconsistent (or no) MIME for .dwg — accept the
+  // common variants, plus the generic/empty fallback browsers send instead.
+  if (sniffed === "application/acad" && ["application/acad", "application/x-dwg", "application/x-autocad", "image/vnd.dwg", "application/dwg", "application/octet-stream", ""].includes(claim)) return true;
   return false;
 }
