@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { MeetingReportPanel } from "./MeetingReportPanel";
 import { UploadTranscriptModal } from "./UploadTranscriptModal";
+import { WeeklyRollupPanel } from "./WeeklyRollupPanel";
 
 interface ClientOpt { id: string; name: string }
 
@@ -94,6 +95,8 @@ export function ExportTranscriptModal({
   const [downloading, setDownloading] = useState(false);
   const [viewerTab, setViewerTab] = useState<"transcript" | "report">("transcript");
   const [uploadOpen, setUploadOpen] = useState(false);
+  /** Weekly tab: browse Weekly Meeting transcripts, or roll up the week's Daily Huddles. */
+  const [weeklyView, setWeeklyView] = useState<"meeting" | "rollup">("meeting");
 
   const { data: sessionData } = useSession();
   const currentUserId = (sessionData?.user as { id?: string } | undefined)?.id ?? "";
@@ -208,17 +211,9 @@ export function ExportTranscriptModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h2 className="text-base font-semibold text-gray-800">Export Transcript</h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setUploadOpen(true)}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-            >
-              Upload Transcript
-            </button>
-            <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
-              ✕
-            </button>
-          </div>
+          <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
+            ✕
+          </button>
         </div>
 
         {/* Controls */}
@@ -262,6 +257,25 @@ export function ExportTranscriptModal({
               Week {weekBounds(date).from} → {weekBounds(date).to}
             </span>
           )}
+          {scope === "weekly" && (
+            <>
+              <span className="mx-1 h-5 w-px self-center bg-gray-200" />
+              <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 text-xs">
+                {([
+                  ["meeting", "Weekly Meeting"],
+                  ["rollup", "Rollup: Daily Huddles"],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setWeeklyView(id)}
+                    className={`px-3 py-1.5 font-medium ${weeklyView === id ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {scope === "month" && (
             <>
               <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs">
@@ -278,21 +292,26 @@ export function ExportTranscriptModal({
           )}
         </div>
 
-        {/* Body: list + viewer */}
+        {/* Body: the week rollup, or the transcript list + viewer */}
+        {scope === "weekly" && weeklyView === "rollup" ? (
+          <WeeklyRollupPanel clientId={clientId} weekStart={weekBounds(date).from} />
+        ) : (
         <div className="flex min-h-0 flex-1">
           {/* List */}
-          <div className="w-64 shrink-0 overflow-y-auto border-r border-gray-200">
+          <div className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-gray-200">
+            <div className="border-b border-gray-200 p-2">
+              <button
+                onClick={() => setUploadOpen(true)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Upload Transcript
+              </button>
+            </div>
             {loading ? (
               <p className="p-4 text-xs text-gray-400">Loading…</p>
             ) : rows.length === 0 ? (
               <div className="p-4">
                 <p className="text-xs text-gray-400">No transcripts for this selection.</p>
-                <button
-                  onClick={() => setUploadOpen(true)}
-                  className="mt-2 text-xs font-medium text-accent-600 hover:underline"
-                >
-                  Upload a transcript instead
-                </button>
               </div>
             ) : (
               <ul>
@@ -404,6 +423,7 @@ export function ExportTranscriptModal({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
 

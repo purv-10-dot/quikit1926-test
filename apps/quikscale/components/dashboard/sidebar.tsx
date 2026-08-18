@@ -94,7 +94,7 @@ const navigation: SidebarEntry[] = [
     { label: "Client Master",  href: "/client-meetings/clients",        icon: Users,           moduleKey: "clientMeetings.clients" },
     { label: "Client Members", href: "/client-meetings/members",        icon: User,            moduleKey: "clientMeetings.members" },
     { label: "Daily Huddle",   href: "/client-meetings/daily-huddle",   icon: Clock,           moduleKey: "clientMeetings.dailyHuddle" },
-    { label: "Weekly Meeting", href: "/client-meetings/weekly-meeting", icon: CalendarDays,    moduleKey: "clientMeetings.weeklyMeeting" },
+    { label: "Weekly Meeting", href: "/client-meetings/weekly-meeting", icon: CalendarDays,    moduleKey: "clientMeetings.weeklyMeeting" },
   ]},
   { label: "Analytics", icon: TrendingUp, moduleKey: "analytics", children: [
     { label: "Scorecard",  href: "/performance/scorecard",  icon: BarChart2, moduleKey: "analytics.scorecard" },

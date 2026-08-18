@@ -1,0 +1,301 @@
+import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { userCan } from "@/lib/api/permissions";
+import { GeminiUnavailableError } from "@/lib/ai/geminiKeyPool";
+import {
+  generateMeetingReport,
+  MeetingReportError,
+  type ReportTranscriptInput,
+  type StoredMeetingReport,
+} from "@/lib/ai/meetingReport";
+import {
+  generateWeeklyReportProse,
+  WeeklyReportError,
+  type ParticipantDayNote,
+} from "@/lib/ai/weeklyHuddleReport";
+import { buildMetricsSnapshot, composeWeeklyReport, computeDeterministicWeek } from "@/lib/ai/weeklyHuddleCompose";
+import { validateWeeklyReport } from "@/lib/ai/weeklyReportValidation";
+import { loadWeekContext, toWeekStart, weekLabel } from "@/lib/services/weeklyHuddleData";
+
+export const runtime = "nodejs";
+// Up to five daily generations plus the weekly pass — well beyond the default.
+export const maxDuration = 300;
+
+const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** Hard ceiling on daily reports generated in one request. */
+const MAX_BACKFILL = 7;
+
+const bodySchema = z.object({
+  clientId: z.string().min(1),
+  weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "weekStart must be yyyy-mm-dd"),
+  /**
+   * The user's checklist selection, as yyyy-mm-dd dates. Omitted ⇒ every day
+   * in the week. Keyed by date rather than huddle id because a day known only
+   * from a transcript has no huddle record to reference.
+   */
+  dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  /** Generate reports for days that don't have one yet. Default true. */
+  backfillMissing: z.boolean().optional(),
+});
+
+/**
+ * POST /api/client-meetings/reports/weekly/generate
+ *
+ * Build and persist the Daily Huddle Weekly Report for one client-week.
+ *
+ * Pipeline:
+ *   1. Load the week's huddles, roster and saved daily reports.
+ *   2. Backfill: for selected days with a transcript but no saved report,
+ *      generate one. It is PERSISTED when the caller also holds
+ *      `ClientMeetings.Report` update; otherwise it is used in-memory only and
+ *      reported in `notes` — generating is never silently destructive.
+ *   3. Compute §4.1–§4.5A deterministically (no AI).
+ *   4. One AI pass for prose only, over the computed tables.
+ *   5. Validate, compose, and upsert.
+ *
+ * Responses (all 200 unless noted):
+ *   { report, metrics, validation, … } — success
+ *   { aiUnavailable: true }            — every Gemini key failed
+ *   { reportError: string }            — model output unparseable
+ *   { noData: true, sources }          — nothing to aggregate
+ */
+export const POST = auth.view(async ({ orgId, userId }, req) => {
+  const body = await req.json().catch(() => null);
+  const parsed = bodySchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" },
+      { status: 400 },
+    );
+  }
+  const { clientId, dates, backfillMissing = true } = parsed.data;
+  const weekStart = toWeekStart(new Date(`${parsed.data.weekStart}T00:00:00.000Z`));
+
+  const initial = await loadWeekContext(orgId, clientId, weekStart, { includeDates: dates });
+  if (!initial) {
+    return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+  }
+  if (!initial.days.length) {
+    return NextResponse.json({
+      success: true,
+      data: { noData: true, sources: initial.sources },
+    });
+  }
+
+  const notes: string[] = [];
+  const canSaveDaily = await userCan(userId, orgId, "ClientMeetings.Report", "update");
+
+  // --- 2. Backfill missing daily reports ------------------------------------
+  const overrideReports = new Map<string, StoredMeetingReport>();
+  if (backfillMissing) {
+    const selected = dates?.length ? new Set(dates) : null;
+    const missing = initial.sources.filter(
+      (s) => s.transcriptId && !s.hasReport && (!selected || selected.has(s.date)),
+    );
+
+    if (missing.length > MAX_BACKFILL) {
+      notes.push(`Only the first ${MAX_BACKFILL} missing daily reports were generated.`);
+    }
+
+    for (const source of missing.slice(0, MAX_BACKFILL)) {
+      const t = await db.clientMeetingTranscript.findFirst({
+        where: { id: source.transcriptId!, orgId, deletedAt: null },
+        select: {
+          type: true,
+          title: true,
+          meetingDate: true,
+          durationMinutes: true,
+          attendees: true,
+          summary: true,
+          actionItems: true,
+          rawText: true,
+          client: { select: { name: true } },
+        },
+      });
+      if (!t) continue;
+
+      const input: ReportTranscriptInput = {
+        type: t.type ?? "DAILY",
+        title: t.title,
+        clientName: t.client?.name ?? null,
+        meetingDate: t.meetingDate ? new Date(t.meetingDate).toISOString().slice(0, 10) : null,
+        durationMinutes: t.durationMinutes,
+        attendees: (t.attendees as ReportTranscriptInput["attendees"]) ?? [],
+        summary: t.summary,
+        actionItems: (t.actionItems as ReportTranscriptInput["actionItems"]) ?? [],
+        rawText: t.rawText,
+      };
+
+      try {
+        const generated = (await generateMeetingReport(input)) as StoredMeetingReport;
+        overrideReports.set(source.transcriptId!, generated);
+
+        if (canSaveDaily) {
+          const now = new Date();
+          await db.clientMeetingTranscript.update({
+            where: { id: source.transcriptId! },
+            data: {
+              report: generated as unknown as Prisma.InputJsonValue,
+              reportConfidence: generated.overallConfidence,
+              reportGeneratedAt: now,
+              reportGeneratedBy: userId,
+            },
+          });
+        }
+      } catch (err) {
+        if (err instanceof GeminiUnavailableError) {
+          return NextResponse.json({ success: true, data: { aiUnavailable: true } });
+        }
+        if (err instanceof MeetingReportError) {
+          // One bad day must not sink the week — carry on without it.
+          notes.push(`Could not generate the daily report for ${source.date}: ${err.message}`);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (missing.length && !canSaveDaily) {
+      notes.push(
+        "Missing daily reports were generated for this rollup but not saved — that needs the Edit Report permission.",
+      );
+    }
+  }
+
+  // Re-load so the backfilled reports feed the aggregation.
+  const context = overrideReports.size
+    ? await loadWeekContext(orgId, clientId, weekStart, { includeDates: dates, overrideReports })
+    : initial;
+  if (!context) {
+    return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+  }
+
+  const daysWithoutReport = context.sources.filter((s) => !s.hasReport && !overrideReports.has(s.transcriptId ?? ""));
+  if (daysWithoutReport.length) {
+    notes.push(
+      `${daysWithoutReport.length} huddle(s) had no transcript report and contributed attendance only: ${daysWithoutReport
+        .map((s) => s.date)
+        .join(", ")}.`,
+    );
+  }
+
+  // --- 3. Deterministic layer ----------------------------------------------
+  const deterministic = computeDeterministicWeek({
+    config: context.client,
+    roster: context.roster,
+    days: context.days,
+    weekStart,
+  });
+
+  // --- 4. AI prose layer ----------------------------------------------------
+  const label = weekLabel(context.weekStart, context.weekEnd);
+  const aiInput = {
+    clientName: context.client.name,
+    weekLabel: label,
+    weekStart: context.weekStart.toISOString().slice(0, 10),
+    weekEnd: context.weekEnd.toISOString().slice(0, 10),
+    metrics: deterministic.metrics,
+    agendaAdherence: deterministic.heatMap.teamAverage,
+    attendance: deterministic.attendance,
+    heatMap: deterministic.heatMap,
+    blockers: deterministic.blockers,
+    notes: context.notes as ParticipantDayNote[],
+    unrecognized: deterministic.heatMap.unrecognized,
+  };
+
+  let ai;
+  try {
+    ai = await generateWeeklyReportProse(aiInput);
+  } catch (err) {
+    if (err instanceof GeminiUnavailableError) {
+      return NextResponse.json({ success: true, data: { aiUnavailable: true } });
+    }
+    if (err instanceof WeeklyReportError) {
+      return NextResponse.json({ success: true, data: { reportError: err.message } });
+    }
+    throw err;
+  }
+
+  // --- 5. Validate, compose, persist ---------------------------------------
+  const validation = validateWeeklyReport({
+    roster: context.roster,
+    weekStart: aiInput.weekStart,
+    weekEnd: aiInput.weekEnd,
+    metrics: deterministic.metrics,
+    attendance: deterministic.attendance,
+    heatMap: deterministic.heatMap,
+    blockers: deterministic.blockers,
+    unrecognized: deterministic.heatMap.unrecognized,
+    ai,
+  });
+
+  const report = composeWeeklyReport({
+    config: context.client,
+    roster: context.roster,
+    weekStart: context.weekStart,
+    weekEnd: context.weekEnd,
+    weekLabel: label,
+    deterministic,
+    ai,
+    sourceDays: context.sources.map((s) => ({
+      date: s.date,
+      huddleId: s.huddleId,
+      transcriptId: s.transcriptId,
+      hasReport: s.hasReport || overrideReports.has(s.transcriptId ?? ""),
+    })),
+  });
+
+  const metrics = buildMetricsSnapshot(report, validation);
+  const now = new Date();
+
+  // Regenerating replaces the week's row — the unique index makes this an
+  // upsert rather than an accumulating history.
+  await db.clientDailyHuddleWeeklyReport.upsert({
+    where: { orgId_clientId_weekStart: { orgId, clientId, weekStart } },
+    create: {
+      orgId,
+      clientId,
+      weekStart,
+      weekEnd: context.weekEnd,
+      report: report as unknown as Prisma.InputJsonValue,
+      metrics: metrics as unknown as Prisma.InputJsonValue,
+      validation: validation as unknown as Prisma.InputJsonValue,
+      reportConfidence: report.overallConfidence,
+      // Only real huddle rows — a transcript-only day carries a transcript id
+      // in `day.id`, which must not be recorded as a huddle reference.
+      sourceHuddleIds: context.sources.map((s) => s.huddleId).filter((id): id is string => Boolean(id)),
+      sourceTranscriptIds: context.days.map((d) => d.transcriptId).filter((id): id is string => Boolean(id)),
+      generatedAt: now,
+      generatedBy: userId,
+      updatedBy: userId,
+    },
+    update: {
+      weekEnd: context.weekEnd,
+      report: report as unknown as Prisma.InputJsonValue,
+      metrics: metrics as unknown as Prisma.InputJsonValue,
+      validation: validation as unknown as Prisma.InputJsonValue,
+      reportConfidence: report.overallConfidence,
+      // Only real huddle rows — a transcript-only day carries a transcript id
+      // in `day.id`, which must not be recorded as a huddle reference.
+      sourceHuddleIds: context.sources.map((s) => s.huddleId).filter((id): id is string => Boolean(id)),
+      sourceTranscriptIds: context.days.map((d) => d.transcriptId).filter((id): id is string => Boolean(id)),
+      generatedAt: now,
+      generatedBy: userId,
+      updatedBy: userId,
+      // A regenerated report is unreviewed again — sign-off must be re-earned.
+      validatedAt: null,
+      validatedBy: null,
+    },
+  });
+
+  const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
+
+  return NextResponse.json({
+    success: true,
+    data: { report, metrics, validation, notes, generatedAt: now, canEdit },
+  });
+});

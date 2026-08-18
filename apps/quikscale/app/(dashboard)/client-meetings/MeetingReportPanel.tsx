@@ -334,9 +334,16 @@ export function MeetingReportPanel({
         </section>
       ) : null}
 
-      {/* Extracted items */}
-      <ExtractedGroup title="KPIs" kind="kpis" items={report.extractedItems.kpis} editing={editing} getLabel={(k) => k.name ?? ""} onToggle={(i, v) => patchItem("kpis", i, { accepted: v })} onRename={(i, v) => patchItem("kpis", i, { name: v })} />
-      <ExtractedGroup title="Priorities" kind="priorities" items={report.extractedItems.priorities} editing={editing} getLabel={(p) => p.name ?? ""} onToggle={(i, v) => patchItem("priorities", i, { accepted: v })} onRename={(i, v) => patchItem("priorities", i, { name: v })} />
+      {/* Extracted items. Daily Huddles are WWW-only — a stand-up never creates
+          a KPI or Priority, so those groups are suppressed for DAILY reports
+          (the generator already returns them empty; this keeps older saved
+          DAILY reports, generated before that rule, consistent too). */}
+      {report.reportType === "DAILY" ? null : (
+        <>
+          <ExtractedGroup title="KPIs" kind="kpis" items={report.extractedItems.kpis} editing={editing} getLabel={(k) => k.name ?? ""} onToggle={(i, v) => patchItem("kpis", i, { accepted: v })} onRename={(i, v) => patchItem("kpis", i, { name: v })} />
+          <ExtractedGroup title="Priorities" kind="priorities" items={report.extractedItems.priorities} editing={editing} getLabel={(p) => p.name ?? ""} onToggle={(i, v) => patchItem("priorities", i, { accepted: v })} onRename={(i, v) => patchItem("priorities", i, { name: v })} />
+        </>
+      )}
       <ExtractedGroup title="WWW (action items)" kind="wwws" items={report.extractedItems.wwws} editing={editing} getLabel={(w) => w.what ?? ""} onToggle={(i, v) => patchItem("wwws", i, { accepted: v })} onRename={(i, v) => patchItem("wwws", i, { what: v })} />
     </div>
   );

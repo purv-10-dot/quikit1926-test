@@ -27,8 +27,16 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-/** Model id — overridable via env so we can bump it without a code change. */
-export const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+/**
+ * Model id — overridable via env so we can bump it without a code change.
+ *
+ * Google retires model ids on a rolling basis: `gemini-2.5-flash` still shows
+ * up in the models list but returns 404 "no longer available to new users"
+ * for accounts created after its cutoff, which reaches the user as the
+ * unhelpful "AI is temporarily unavailable". If that recurs, set GEMINI_MODEL
+ * in the environment rather than waiting on a deploy.
+ */
+export const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
 
 /**
  * Thrown when no key could service the request (none configured, or all of

@@ -299,7 +299,7 @@ export const NAV_RESOURCE: Record<string, string> = {
   "clientMeetings.clients": "ClientMaster",
   "clientMeetings.members": "ClientMember",
   "clientMeetings.dailyHuddle": "DailyHuddle",
-  "clientMeetings.weeklyMeeting": "WeeklyMeeting",
+  "clientMeetings.weeklyMeeting": "WeeklyMeeting",
   "opsp.create": "OPSP.Create",
   "opsp.history": "OPSP.History",
   "opsp.review": "OPSP.Review",

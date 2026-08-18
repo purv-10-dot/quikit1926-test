@@ -222,6 +222,7 @@ model Org {
   clientMembers            ClientMember[]
   clientWeeklyMeetings     ClientWeeklyMeeting[]
   clientMeetingTranscripts ClientMeetingTranscript[]
+  clientHuddleWeeklyReports ClientDailyHuddleWeeklyReport[]
   feedbackEntries          FeedbackEntry[]
   goals                    Goal[]
   habits                   HabitAssessment[]
@@ -1456,6 +1457,7 @@ model Client {
   teamMembers     ClientTeamMember[]
   weeklyMeetings  ClientWeeklyMeeting[]
   meetingTranscripts ClientMeetingTranscript[]
+  huddleWeeklyReports ClientDailyHuddleWeeklyReport[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position        Float?
@@ -2376,6 +2378,56 @@ model ClientMeetingTranscript {
   @@index([orgId])
   @@index([orgId, clientId, type, meetingDate])
   @@index([orgId, matchStatus])
+  @@index([clientId])
+  @@index([deletedAt])
+  @@schema("app_quikscale")
+}
+
+/// Daily Huddle Weekly Report — one persisted rollup per client per ISO week.
+///
+/// Section numbering follows the client's reference format (§4.1 Meeting
+/// Details … §4.6 Facilitator Observations). Deterministic sections are
+/// computed from `ClientDailyHuddle` + each day's saved transcript report; the
+/// AI contributes prose only. See `lib/ai/weeklyHuddleAggregate.ts`.
+///
+/// `metrics` is deliberately a FLAT numeric snapshot (not nested inside
+/// `report`) so the future Monthly Report can trend four weeks with a cheap
+/// row read instead of parsing the full report JSON — the requirement doc
+/// mandates storing weekly results in a structured, comparable form.
+model ClientDailyHuddleWeeklyReport {
+  id                  String    @id @default(cuid())
+  orgId               String
+  clientId            String
+  /// ISO week bounds (Monday..Sunday, UTC midnight).
+  weekStart           DateTime
+  weekEnd             DateTime
+  /// Full structured report — see `StoredWeeklyHuddleReport`.
+  report              Json
+  /// Flat numeric snapshot for cross-week trending (Monthly Report).
+  metrics             Json
+  /// Result of the post-generation validation checks.
+  validation          Json?
+  reportConfidence    Float?
+  /// Huddles and transcripts this rollup was built from, for traceability.
+  sourceHuddleIds     String[]  @default([])
+  sourceTranscriptIds String[]  @default([])
+  /// Human sign-off gate — the report reads as Draft until this is set.
+  validatedAt         DateTime?
+  validatedBy         String?
+  generatedAt         DateTime  @default(now())
+  generatedBy         String
+  updatedAt           DateTime  @updatedAt
+  updatedBy           String?
+  deletedAt           DateTime?
+  isDemoData          Boolean   @default(false)
+  client              Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  org                 Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// Regenerating a week replaces its row rather than accumulating duplicates.
+  @@unique([orgId, clientId, weekStart])
+  @@index([orgId])
+  @@index([orgId, clientId, weekStart])
+  @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([deletedAt])
   @@schema("app_quikscale")
@@ -24678,8 +24730,6 @@ model QcMeeting {
   description      String?
   location         String?
   allDay           Boolean             @default(false)
-  location         String?
-  allDay           Boolean             @default(false)
   start            DateTime // stored UTC; rendered local client-side
   end              DateTime
   joinUrl          String? // conferencing (Meet) link, if requested
@@ -24702,7 +24752,6 @@ model QcMeetingAttendee {
   userId    String
   email     String
   rsvp      String    @default("needs_action") // needs_action | accepted | declined | tentative
-  optional  Boolean   @default(false) // Graph attendee type: false=required, true=optional
   optional  Boolean   @default(false) // Graph attendee type: false=required, true=optional
   meeting   QcMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
