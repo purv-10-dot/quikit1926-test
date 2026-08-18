@@ -25,6 +25,10 @@ const ALLOWED = new Set([
   "application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp",
   "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/zip", "application/x-zip-compressed",
+  // AutoCAD .dwg — browsers report this inconsistently (often a generic/empty
+  // type), so several variants are allow-listed here; contentMatchesClaim's
+  // magic-byte check (not this MIME check) is the real gate against spoofing.
+  "application/acad", "application/x-dwg", "application/x-autocad", "image/vnd.dwg", "application/dwg", "application/octet-stream",
 ]);
 
 interface Row {
@@ -173,7 +177,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if (file) {
     const claim = file.type === "application/x-zip-compressed" ? "application/zip" : file.type;
     if (!ALLOWED.has(file.type)) return err("BAD_TYPE", `Unsupported file type: ${file.type}`, 400);
-    if (file.size > 10 * MB) return err("TOO_BIG", "File exceeds 10MB.", 400);
+    // Vercel's serverless functions hard-reject any request body over ~4.5MB
+    // before this route runs (HTML error page, not JSON) — same reasoning as
+    // uploads/route.ts and onboarding/doc-upload/[token]/route.ts.
+    if (file.size > 4 * MB) return err("TOO_BIG", "File exceeds 4MB.", 400);
     const buf = Buffer.from(await file.arrayBuffer());
     if (!contentMatchesClaim(buf, claim)) {
       return err("BAD_CONTENT", "File content doesn't match its type. Upload a genuine PDF, image, document, or zip.", 400);

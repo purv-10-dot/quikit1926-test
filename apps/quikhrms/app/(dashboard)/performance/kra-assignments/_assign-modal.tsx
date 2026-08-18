@@ -62,7 +62,7 @@ export function AssignKraModal({
   const { data: empData, isLoading } = useQuery({
     queryKey: ["assign-employees", lockedDesignationId, lockedDepartmentId],
     queryFn: () => {
-      const params = new URLSearchParams({ limit: "500" });
+      const params = new URLSearchParams({ limit: "500", picker: "1" });
       if (lockedDesignationId) params.set("designationId", lockedDesignationId);
       if (lockedDepartmentId) params.set("departmentId", lockedDepartmentId);
       return api.get<Employee[]>(`/api/v1/hrms/employees?${params.toString()}`);

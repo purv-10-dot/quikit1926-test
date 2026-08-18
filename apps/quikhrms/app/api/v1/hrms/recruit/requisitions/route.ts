@@ -35,7 +35,11 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
             department: { select: { id: true, name: true } },
             hiringManager: { select: { id: true, firstName: true, lastName: true } },
             recruiter: { select: { id: true, firstName: true, lastName: true } },
+            raiser: { select: { id: true, firstName: true, lastName: true } },
+            creator: { select: { id: true, firstName: true, lastName: true } },
             pipeline: { select: { id: true, name: true, isDefault: true } },
+            jobLevel: { select: { id: true, code: true, name: true, slaDays: true } },
+            recruiterSplits: { where: { deletedAt: null }, select: { employeeId: true, positionsAssigned: true } },
             _count: { select: { applications: true } },
           },
         }),
@@ -63,6 +67,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       where: { id: data.pipelineId, orgId, deletedAt: null },
     });
     if (!pipeline) return validationError("Selected pipeline not found");
+
+    if (data.jobLevelId) {
+      const level = await prisma.jobLevel.findFirst({ where: { id: data.jobLevelId, orgId, deletedAt: null } });
+      if (!level) return validationError("Selected job level not found");
+    }
+    if (data.recruiterAssignments?.length) {
+      const ids = data.recruiterAssignments.map((a) => a.employeeId);
+      const found = await prisma.employee.findMany({ where: { id: { in: ids }, orgId, deletedAt: null }, select: { id: true } });
+      if (found.length !== new Set(ids).size) return validationError("One or more assigned recruiters are not in your organization.");
+    }
 
     const req_ = await prisma.jobRequisition.create({
       data: {
@@ -103,10 +117,29 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         createdById: creatorEmpId, hiringManagerId: data.hiringManagerId, recruiterId: data.recruiterId,
+        jobLevelId: data.jobLevelId, customSlaDays: data.customSlaDays, customSlaReason: data.customSlaReason,
         createdBy: userId, updatedBy: userId,
       },
       include: { department: { select: { id: true, name: true } } },
     });
+
+    // Multi-recruiter position split — optional. If HR didn't split explicitly
+    // but did pick a single recruiter, still record one row for that recruiter
+    // covering every position, so the Recruiter Performance Dashboard has one
+    // consistent source of truth (no special-casing "single recruiter" later).
+    const splits = data.recruiterAssignments?.length
+      ? data.recruiterAssignments
+      : data.recruiterId
+        ? [{ employeeId: data.recruiterId, positionsAssigned: data.positions }]
+        : [];
+    if (splits.length) {
+      await prisma.requisitionRecruiter.createMany({
+        data: splits.map((s) => ({
+          orgId, requisitionId: req_.id, employeeId: s.employeeId,
+          positionsAssigned: s.positionsAssigned, createdBy: userId, updatedBy: userId,
+        })),
+      });
+    }
 
     void fireWorkflow({
       orgId, event: "recruit.requisition.created",
@@ -115,4 +148,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(req_, undefined, 201);
   } catch (error) { console.error("POST /recruit/requisitions error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.requisition.write"], anyPermission: true });

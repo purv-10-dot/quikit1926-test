@@ -57,10 +57,14 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 //   quikit → 3000   auth → 3001   admin → 3002   quikscale → 3003
 //   quiktrack → 3004   quikvc → 3005   quikinfra → 3006   quiksocial → 3007
 //   quikcrm → 3008   quikhrms → 3009   quiksupport → 3010  quikasset → 3012
-//   quikfinance → 3013   quiklms → 3014   quikcrmexpress → 3017
-// quiklms was folded in from the standalone quikskill_lms app; it now binds
-// 3014 to sit next to the contiguous block. `apps/quiklms/package.json`
-// (`next dev -p 3014`) is the source of truth and its .env.local agrees.
+//   quikfinance → 3013   quikflow → 3014   quiklms → 3016
+// quiklms was folded in from the standalone quikskill_lms app. It originally
+// bound 3014, which collided with quikflow (moved there from 3011 on
+// 2026-08-07 to escape quikchat on 3011). Both apps answering `next dev -p
+// 3014` meant whichever booted first won the port, so opening QuikLMS from the
+// launcher actually loaded QuikFlow. quiklms now binds 3016 and quikflow keeps
+// 3014 — `apps/quiklms/package.json` (`next dev -p 3016`) is the source of
+// truth and its .env.local agrees. See docs/13-app-ports-and-env.md.
 // In production these URLs MUST be passed via env vars (resolveAppUrl throws
 // when NODE_ENV=production and the env var is unset).
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -71,10 +75,11 @@ const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007")
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRMEXPRESS_BASE = resolveAppUrl("QUIKCRMEXPRESS_URL", "http://localhost:3017"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3016"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSUPPORT_BASE = resolveAppUrl("QUIKSUPPORT_URL", "http://localhost:3010"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKFLOW_BASE = resolveAppUrl("QUIKFLOW_URL", "http://localhost:3014"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -94,6 +99,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKSCALE_OAUTH_CLIENT_SECRET", "quikscale-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKSCALE_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikflow",
+    name: "QuikFlow",
+    description: "No-code workflow automation across every QuikIT app — Trigger → Condition → Action.",
+    baseUrl: QUIKFLOW_BASE,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikflow.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikflow",
+      clientSecretPlain: resolveClientSecret("QUIKFLOW_OAUTH_CLIENT_SECRET", "quikflow-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKFLOW_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

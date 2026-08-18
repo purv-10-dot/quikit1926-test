@@ -35,12 +35,29 @@ export async function globalSignOut(finalRedirect?: string): Promise<void> {
   // happens to be. Both signout-global endpoints validate `callbackUrl` against
   // an allow-list and silently fall back to their OWN root when it does not
   // match — that is what stops them being open redirectors.
-  // `quikskill.vercel.app` is on that list; a per-deployment host like
-  // `quikskill-macck3n1x-rajkumar13.vercel.app` is not. So signing out from a
-  // deployment URL used to dump the user on the QuikIT launcher instead of our
-  // own landing page. Anchoring to NEXT_PUBLIC_QUIKLMS_URL makes the
-  // destination independent of how the app was reached; window.location.origin
-  // stays the local-dev fallback, where localhost IS allow-listed.
+  // QuikLMS has two deployed origins: `https://quiklms.vercel.app` (Vercel prod)
+  // and `https://uatlms.quikit.ai` (UAT). NEITHER is usable out of the box:
+  //   - `quiklms.vercel.app` is in NO allow-list, on any branch.
+  //   - `uatlms.quikit.ai` was added by commit ec092e52, which is on this feature
+  //     branch but on neither `UAT` nor `main`.
+  // So the auth + launcher hosts currently serving UAT/prod have NO QuikLMS
+  // origin in `DEFAULT_ALLOWED_ORIGINS`, and swallow our callbackUrl no matter
+  // what this file sends — the user lands on the QuikIT launcher instead.
+  // Fix is `AUTH_ALLOWED_RETURN_ORIGINS` on the auth + quikit deployments (see
+  // below); nothing in this app can work around it. A per-deployment host
+  // like `quikskill-macck3n1x-rajkumar13.vercel.app` is not, and neither is a
+  // bare `quikskill.vercel.app` — signing out from either dumps the user on the
+  // QuikIT launcher instead of our own landing page. Anchoring to
+  // NEXT_PUBLIC_QUIKLMS_URL makes the destination independent of how the app was
+  // reached; window.location.origin stays the local-dev fallback, where
+  // localhost IS allow-listed.
+  //
+  // So this env var MUST be set to an allow-listed origin in every deployed
+  // environment or the final hop is silently swallowed. To land on any origin
+  // other than uatlms.quikit.ai, that origin has to be added to the two
+  // signout-global hosts' `AUTH_ALLOWED_RETURN_ORIGINS` env var (both endpoints
+  // merge it into their allow-list) — those files are outside apps/quiklms and
+  // are an integration-owner change, not one this app can make.
   const canonical = (process.env.NEXT_PUBLIC_QUIKLMS_URL ?? '').replace(/\/+$/, '');
   const base = canonical || window.location.origin;
 

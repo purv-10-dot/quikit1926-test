@@ -449,7 +449,7 @@ function WeekOffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
   const { data: empResp, isLoading } = useQuery({
     queryKey: ["roster", "weekoff-employees"],
-    queryFn: () => api.get<WeekOffEmp[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    queryFn: () => api.get<WeekOffEmp[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
     staleTime: 60_000,
   });
   const allEmps = useMemo(() => empResp?.data ?? [], [empResp]);

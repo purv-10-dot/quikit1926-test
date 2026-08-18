@@ -66,7 +66,7 @@ describe('sidebar — Course Assignments target', () => {
   // The per-course analytics route is still reachable — from the dashboard, with
   // an id. Nothing in the nav should link to the id-less base path.
   it('no menu item links to the id-less /course-analytics', () => {
-    for (const role of ['TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'TEACHER', 'LEARNER', 'PARENT', 'SUPER_ADMIN']) {
+    for (const role of ['TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'TEACHER', 'LEARNER', 'PARENT', 'ADMIN']) {
       for (const tenantType of ['corporate', 'school'] as const) {
         const paths = getNavGroups(role, tenantType).flatMap((g) => g.items).map((i) => i.path);
         expect(paths).not.toContain('/course-analytics');

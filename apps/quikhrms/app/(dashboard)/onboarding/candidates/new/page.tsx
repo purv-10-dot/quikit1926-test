@@ -143,7 +143,7 @@ export default function NewCandidatePage() {
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Manager[]>("/api/v1/hrms/employees?limit=100") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Manager[]>("/api/v1/hrms/employees?limit=100&picker=1") });
   const { data: roles } = useRoles();
   const { data: salaryTemplates } = useSalaryTemplates();
   const { data: templates } = useQuery({ queryKey: ["onboarding-templates"], queryFn: () => api.get<{ id: string; name: string; tasks: unknown[] }[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=50") });

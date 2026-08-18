@@ -51,7 +51,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST /recruit/candidates/:id/blacklist error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"], anyPermission: true });
 
 export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -83,4 +83,4 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     console.error("DELETE /recruit/candidates/:id/blacklist error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"], anyPermission: true });

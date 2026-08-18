@@ -19,7 +19,6 @@ export interface RegisterUserInput {
   phone?: string;
   studentId?: string;
   guardianContact?: string;
-  secondaryRole?: string;
   // Teacher fields
   subjects?: string[];
   ratePerClass?: number;
@@ -73,7 +72,6 @@ export async function registerUser(input: RegisterUserInput): Promise<{ data: { 
       guardianContact: input.guardianContact ?? null,
       grade: input.grade ?? null,
       section: input.section ?? null,
-      secondaryRole: (input.secondaryRole as never) ?? null,
       isActive: true,
     },
   });

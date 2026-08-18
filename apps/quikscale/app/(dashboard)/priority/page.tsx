@@ -25,6 +25,8 @@ import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreAct
 import { runExport } from "@/lib/export/xlsx";
 import { notify } from "@/lib/utils/notify";
 import { STATUS_FILTER_OPTIONS, ALL_STATUS_LABEL, ITEM_STATUS_ORDER } from "@/lib/constants/status";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
 
 /**
  * Default status selection — every status, i.e. nothing filtered out. Mirrors
@@ -195,6 +197,11 @@ export default function PriorityPage() {
   const fiscalWeek = useCurrentWeek(year, realQuarter);
   const fiscalWeekRange = useWeekDateRange(year, realQuarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (statusNarrows ? 1 : 0) + (filterOwner.length ? 1 : 0);
+  const activeFilterLabel = useMemo(() => buildFilterSummaryLabel([
+    { label: "Team", values: filterTeam ? [teams.find(t => t.id === filterTeam)?.name].filter((n): n is string => Boolean(n)) : [] },
+    { label: "Owner", values: selectedOwnerOptions.map(o => o.label) },
+    { label: "Status", values: statusNarrows ? filterStatus.map(s => STATUS_FILTER_OPTIONS.find(o => o.value === s)?.label).filter((l): l is string => Boolean(l)) : [] },
+  ]), [filterTeam, teams, selectedOwnerOptions, statusNarrows, filterStatus]);
 
   const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
     const columns = priorityColumns
@@ -350,15 +357,12 @@ export default function PriorityPage() {
 
           {/* Filter */}
           <div className="relative" ref={filterRef}>
-            <button
+            <FilterSummaryButton
+              label={activeFilterLabel}
+              active={activeFilterCount > 0}
+              open={showFilter}
               onClick={() => setShowFilter(o => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-              </svg>
-              {activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter"}
-            </button>
+            />
 
             {showFilter && (
               <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">

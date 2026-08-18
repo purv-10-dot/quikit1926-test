@@ -64,10 +64,12 @@ jobs:
               - 'apps/quiklms/**'
             quikinsight:
               - 'apps/quikinsight/**'
-            quikcrmexpress:
-              - 'apps/quikcrmexpress/**'
             realtime:
               - 'services/realtime/**'
+            quikcrmexpress:
+              - 'apps/quikcrmexpress/**'
+            quikflow:
+              - 'apps/quikflow/**'
 
       - name: Generate matrix
         id: set-matrix
@@ -79,7 +81,13 @@ jobs:
           # external GitOps repo and `exit 1`s on an unknown app. Add
           # "quikcrmexpress" here only together with its case branch in that
           # step, once the GitOps deployment filename is confirmed.
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime)
+          #
+          # quikflow ships TWO images from one app directory: the Next.js
+          # Builder UI (apps/quikflow/Dockerfile → uatflow.quikit.ai) and the
+          # standalone BullMQ consumer (apps/quikflow/Dockerfile.worker). They
+          # are separate matrix entries because they need separate Deployments
+          # — the worker has no HTTP listener and scales independently.
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset quikchat quiklms quikinsight realtime quikcrmexpress quikflow quikflow-worker)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -97,6 +105,9 @@ jobs:
             [ "${{ steps.filter.outputs.quikchat }}" = "true" ] && APPS+=("quikchat")
             [ "${{ steps.filter.outputs.quiklms }}" = "true" ] && APPS+=("quiklms")
             [ "${{ steps.filter.outputs.quikinsight }}" = "true" ] && APPS+=("quikinsight")
+            [ "${{ steps.filter.outputs.quikcrmexpress }}" = "true" ] && APPS+=("quikcrmexpress")
+            # One filter, two images — see the ALL= note above.
+            [ "${{ steps.filter.outputs.quikflow }}" = "true" ] && APPS+=("quikflow" "quikflow-worker")
             [ "${{ steps.filter.outputs.realtime }}" = "true" ] && APPS+=("realtime")
           fi
 
@@ -144,12 +155,20 @@ jobs:
         shell: bash
         run: |
           # The realtime gateway is a service (not an app) — its Dockerfile
-          # lives under services/, not apps/. Everything else follows apps/<app>/.
-          if [ "${{ matrix.app }}" = "realtime" ]; then
-            echo "path=services/realtime/Dockerfile" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=apps/${{ matrix.app }}/Dockerfile" >> "$GITHUB_OUTPUT"
-          fi
+          # lives under services/, not apps/. quikflow-worker is a second image
+          # built from the quikflow app directory via a differently-named
+          # Dockerfile. Everything else follows apps/<app>/Dockerfile.
+          case "${{ matrix.app }}" in
+            realtime)
+              echo "path=services/realtime/Dockerfile" >> "$GITHUB_OUTPUT"
+              ;;
+            quikflow-worker)
+              echo "path=apps/quikflow/Dockerfile.worker" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "path=apps/${{ matrix.app }}/Dockerfile" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Compute image metadata
         id: meta
@@ -171,6 +190,31 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
           platforms: linux/amd64
+          # NOTE: this is a literal block scalar — every non-empty line is passed
+          # to docker as a build arg. Do NOT put `#` comments inside it; a line
+          # without `=` fails the build. Keep explanations out here.
+          #
+          # QuikFlow: NEXT_PUBLIC_QUIKFLOW_URL is baked into the client bundle AND
+          # read by apps/quikflow/next.config.js at build time to add the deployed
+          # host to serverActions.allowedOrigins — a host missing at build time can
+          # never be added at runtime, and every Server Action behind the ingress
+          # would 403. QUIKFLOW_URL is the server-side twin used to build the OAuth
+          # connector callbacks ({QUIKFLOW_URL}/api/connections/{gmail|outlook|teams}
+          # /callback), which must match what is registered in Google Cloud / Azure AD.
+          #
+          # QuikChat: LIVEKIT_URL must be the wss:// form. apps/quikchat/next.config.js
+          # derives the https:// twin from it (ws->http, one-directional) and puts both
+          # into the CSP connect-src at build time. Passing the https:// form instead
+          # yields the https origin twice — deduped to one — leaving the wss origin the
+          # LiveKit client SDK actually dials absent, and calls drop at connect. An
+          # origin missing from the baked CSP can never be added back at runtime.
+          # LIVEKIT_API_KEY/SECRET are NOT build args: they are credentials and are read
+          # from the cluster secret at runtime.
+          #
+          # The BullMQ broker (https://bullmq.quikit.ai) is deliberately absent here:
+          # its connection string carries credentials, so the quikflow app and worker
+          # pods read it from the REDIS_URL Secret in the GitOps repo at runtime. The
+          # worker image takes no build args at all (see Dockerfile.worker).
           build-args: |
             NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
             NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
@@ -190,8 +234,12 @@ jobs:
             NEXT_PUBLIC_QUIKCHAT_URL=https://uatchat.quikit.ai
             NEXT_PUBLIC_QUIKLMS_URL=https://uatlms.quikit.ai
             NEXT_PUBLIC_REALTIME_WS_URL=wss://uatsockets.quikit.ai
+            LIVEKIT_URL=wss://quikchat-s9k9trbr.livekit.cloud
             NEXT_PUBLIC_QUIKTRACK_URL=https://uattrack.quikit.ai
+            NEXT_PUBLIC_QUIKCREDFLOW_URL=https://uatcrmexpress.quikit.ai
             NEXT_PUBLIC_QUIKINSIGHT_URL=https://uatinsights.quikit.ai
+            NEXT_PUBLIC_QUIKFLOW_URL=https://uatflow.quikit.ai
+            QUIKFLOW_URL=https://uatflow.quikit.ai
   update-gitops:
     name: Update GitOps Repository
     needs:
@@ -272,15 +320,42 @@ jobs:
                 FILE="lms-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quiklms-runtime:${TAG}"
                 ;;
+              quikcrmexpress)
+                FILE="crmexpress-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikcrmexpress-runtime:${TAG}"
+                ;;
               realtime)
                 FILE="socket-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/realtime-runtime:${TAG}"
+                ;;
+              # QuikFlow = two Deployments from one app dir: the Next.js Builder
+              # UI (uatflow.quikit.ai) and the headless BullMQ consumer.
+              # ⚠ CONFIRM these two filenames exist in akhileshgandhi/uat-k8s-infra-quikit
+              # under quikit/ before the first UAT push — the names follow the
+              # short-name convention (uatcrm→crm-deployment, uatchat→chat-deployment),
+              # but they were not verifiable from this repo. A wrong name makes
+              # `yq` create a junk file instead of updating the real Deployment.
+              quikflow)
+                FILE="flow-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikflow-runtime:${TAG}"
+                ;;
+              quikflow-worker)
+                FILE="flow-worker-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikflow-worker-runtime:${TAG}"
                 ;;
               *)
                 echo "Unknown app: $APP"
                 exit 1
                 ;;
             esac
+            # yq -i CREATES the file when it is missing, so a stale or mistyped
+            # mapping above would silently commit a junk manifest that ArgoCD
+            # never applies — and the deploy would look green. Fail loudly.
+            if [ ! -f "$FILE" ]; then
+              echo "::error::No such deployment manifest: quikit/$FILE (app: $APP)."
+              echo "Fix the app→file mapping in .github/workflows/UAT.yml, or add the manifest to the GitOps repo."
+              exit 1
+            fi
             echo "Updating $FILE"
             export IMAGE
             yq -i '.spec.template.spec.containers[0].image = env(IMAGE)' "$FILE"

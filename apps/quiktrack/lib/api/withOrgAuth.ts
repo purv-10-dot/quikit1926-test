@@ -8,13 +8,28 @@ import { db } from "@/lib/db";
 import { verifyApiToken, bearerFromHeader } from "@/lib/api/apiToken";
 import { resolvePatAuth } from "@/lib/api/withPatAuth";
 import { verifyAgentJwt } from "@/lib/api/agentJwt";
+import { looksLikeOAuthAccessToken, verifyOAuthAccessToken } from "@/lib/api/oauthToken";
+
+/** Absolute URL of the RFC 9728 Protected Resource Metadata document, for the
+ * `resource_metadata` param on a 401's `www-authenticate` header — this is
+ * what lets an OAuth-capable MCP client (e.g. Claude Desktop) discover it
+ * should authenticate via the QuikIT launcher instead of just failing. */
+function protectedResourceMetadataUrl(req: NextRequest): string {
+  // req.nextUrl.origin is unreliable behind a reverse proxy/tunnel (picks up
+  // X-Forwarded-Proto but not X-Forwarded-Host) — see the same override in
+  // app/.well-known/oauth-protected-resource/route.ts.
+  const selfUrl = process.env.NEXT_PUBLIC_QUIKTRACK_URL || req.nextUrl.origin;
+  return `${selfUrl}/.well-known/oauth-protected-resource`;
+}
 
 export interface OrgAuthContext {
   session: Session;
   userId: string;
   orgId: string;
-  /** Only set when resolved via a PAT (see `WithOrgAuthOptions.allowPat`) — the single project that PAT is scoped to. */
-  projectId?: string;
+  /** Only set when resolved via a PAT (see `WithOrgAuthOptions.allowPat`).
+   * `null` for a user-scoped PAT; a project id for a legacy project-scoped
+   * one; `undefined` for a session/API-token caller (no PAT involved at all). */
+  projectId?: string | null;
   /** "agent" for PAT-resolved and agent-JWT-resolved identities; "user" for every session/API-token caller. */
   actorType: "user" | "agent";
   /**
@@ -32,10 +47,11 @@ export interface WithOrgAuthOptions {
   fallbackErrorMessage?: string;
   moduleKey?: string;
   /**
-   * Opt-in: also accept a project-scoped Personal Access Token
-   * (`lib/api/withPatAuth.ts`) as an identity source, in addition to
-   * session/API-token. Off by default — a PAT must stay unable to reach any
-   * route that doesn't explicitly ask for it. Only `/api/mcp` sets this.
+   * Opt-in: also accept a Personal Access Token (`lib/api/withPatAuth.ts`) or
+   * a launcher-IdP OAuth access token (`lib/api/oauthToken.ts`) as an
+   * identity source, in addition to session/API-token. Off by default — a
+   * PAT/OAuth token must stay unable to reach any route that doesn't
+   * explicitly ask for it. Only `/api/mcp` sets this.
    */
   allowPat?: boolean;
   /**
@@ -52,22 +68,57 @@ interface ResolvedIdentity {
   userId: string;
   orgId: string;
   session: Session;
-  projectId?: string;
+  projectId?: string | null;
   actorType: "user" | "agent";
   actingAgentId?: string;
 }
 
 /**
- * PAT-only identity resolution for routes that opt into `allowPat`. Never
- * falls back to a session cookie — preserves the pre-existing PAT-only
- * contract for MCP clients exactly, including the Bearer-specific error
- * shape they already depend on (RFC 6750 `www-authenticate` / `retry-after`),
- * which is deliberately NOT the generic `{success:false,error}` shape every
- * other route uses.
+ * Bearer-only identity resolution for routes that opt into `allowPat` —
+ * tries, in order, an OAuth access token from the QuikIT launcher IdP, a
+ * QuikTrack API token, then a Personal Access Token. Never falls back to a
+ * session cookie — preserves the pre-existing Bearer-only contract for MCP
+ * clients exactly, including the Bearer-specific error shape they already
+ * depend on (RFC 6750 `www-authenticate` / `retry-after`, plus RFC 9728
+ * `resource_metadata` so an OAuth-capable client can discover where to
+ * authenticate), which is deliberately NOT the generic `{success:false,error}`
+ * shape every other route uses.
  */
 async function resolvePatIdentity(req: NextRequest): Promise<ResolvedIdentity | NextResponse> {
   const bearer = bearerFromHeader(req.headers.get("authorization"));
   if (bearer) {
+    // OAuth access tokens issued by the QuikIT launcher IdP (apps/quikit)
+    // have a distinct `qk_` prefix, so this can be checked cheaply before
+    // trying either of the other two token formats. Resolved the same way a
+    // user-scoped PAT is (no bound project, actorType "agent") — every MCP
+    // tool's per-call projectId handling and audit-stamping already covers
+    // this shape unchanged.
+    if (looksLikeOAuthAccessToken(bearer)) {
+      const oauthClaims = await verifyOAuthAccessToken(bearer);
+      if (oauthClaims) {
+        const membership = await db.orgMember.findFirst({
+          where: { userId: oauthClaims.userId, orgId: oauthClaims.orgId, status: "active", org: { status: "active" } },
+          select: { id: true },
+        });
+        if (membership) {
+          const session = {
+            user: { id: oauthClaims.userId, email: oauthClaims.email, orgId: oauthClaims.orgId },
+            expires: "",
+          } as unknown as Session;
+          return { userId: oauthClaims.userId, orgId: oauthClaims.orgId, projectId: null, actorType: "agent", session };
+        }
+      }
+      return NextResponse.json(
+        { error: "invalid_token" },
+        {
+          status: 401,
+          headers: {
+            "www-authenticate": `Bearer error="invalid_token", resource_metadata="${protectedResourceMetadataUrl(req)}"`,
+          },
+        },
+      );
+    }
+
     const claims = await verifyApiToken(bearer);
     if (claims) {
       const membership = await db.orgMember.findFirst({
@@ -107,7 +158,12 @@ async function resolvePatIdentity(req: NextRequest): Promise<ResolvedIdentity | 
   }
   return NextResponse.json(
     { error: "invalid_token" },
-    { status: 401, headers: { "www-authenticate": 'Bearer error="invalid_token"' } },
+     {
+      status: 401,
+      headers: {
+        "www-authenticate": `Bearer error="invalid_token", resource_metadata="${protectedResourceMetadataUrl(req)}"`,
+      },
+    },
   );
 }
 

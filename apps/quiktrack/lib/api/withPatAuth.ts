@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { toErrorMessage } from "@/lib/api/errors";
 import { hashPatToken, isPatValid } from "@/lib/api/patToken";
-import { loadProjectAccess } from "@/lib/api/withProjectAccess";
+import { isActiveOrgMember, loadProjectAccess } from "@/lib/api/withProjectAccess";
 import { rateLimitAsync } from "@quikit/shared/rateLimit";
 
 export interface PatAuthContext {
   userId: string;
   orgId: string;
-  projectId: string;
+  /** Null for a user-scoped token (resolves to {userId, orgId} only). Non-null
+   * only for a legacy project-scoped token issued before user-scoped tokens
+   * existed. */
+  projectId: string | null;
   /** Every PAT-authenticated caller is an automated tool, never a human at a keyboard. */
   actorType: "agent";
   /** The PAT's own user-supplied name (e.g. "Claude Code — laptop") — identifies which tool/token acted, for the same rows that carry actorType. */
@@ -38,6 +41,8 @@ function rateLimited(retryAfterSeconds: number): NextResponse {
 const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
 /** Bounds how hard a single PAT (leaked or misbehaving) can hammer the API. */
 const PAT_RATE_LIMIT = { limit: 60, windowMs: 60 * 1000 };
+/** Consecutive failed live access-rechecks required before auto-revoking a PAT. */
+const REVOKE_AFTER_CONSECUTIVE_FAILURES = 3;
 
 function touchLastUsedAt(id: string, lastUsedAt: Date | null, now: Date): void {
   const isStale = !lastUsedAt || now.getTime() - lastUsedAt.getTime() > LAST_USED_THROTTLE_MS;
@@ -139,31 +144,40 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
       revokedAt: true,
       lastUsedAt: true,
       name: true,
+      failedAccessChecks: true,
     },
   });
   const now = new Date();
   if (!pat || !isPatValid(pat, now)) return { ok: false, status: 401 };
 
   // The token's own expiry/revocation is fine, but its creator may have since
-  // lost access (removed from the org or the project) — recheck live access
-  // on every call, mirroring withOrgAuth's Bearer-token recheck. A token
-  // whose creator no longer qualifies is auto-revoked so it also stops
-  // appearing as active in the PAT settings UI, not just at the API layer.
-  //
-  // Retried, and NOT the same thing as a genuine "no access" answer — see
-  // recheckProjectAccess's doc comment. Only `hasAccess: false` (the check
-  // actually ran and came back negative) revokes. A recheck that errors on
-  // every attempt (`ok: false`) fails this one request but leaves the PAT's
-  // revokedAt untouched, so a DB blip can never permanently burn a token.
-  const recheck = await recheckProjectAccess(pat.orgId, pat.createdById, pat.projectId);
-  if (!recheck.ok) {
-    return { ok: false, status: 401 };
-  }
-  if (!recheck.hasAccess) {
+  // lost access (removed from the org, or — for a legacy project-scoped
+  // token — from that specific project) — recheck live access on every call,
+  // mirroring withOrgAuth's Bearer-token recheck. A single failed recheck can
+  // be a transient read rather than genuine lost access, so we only
+  // auto-revoke after several consecutive failures — that still gets a token
+  // whose creator truly lost access flagged revoked in the PAT settings UI,
+  // without one flaky read permanently killing a live token.
+  const accessOk = pat.projectId
+    ? Boolean(await loadProjectAccess(pat.orgId, pat.createdById, pat.projectId))
+    : await isActiveOrgMember(pat.orgId, pat.createdById);
+  if (!accessOk) {
+    const failedAccessChecks = pat.failedAccessChecks + 1;
     await db.qtPersonalAccessToken
-      .update({ where: { id: pat.id }, data: { revokedAt: now } })
+      .update({
+        where: { id: pat.id },
+        data:
+          failedAccessChecks >= REVOKE_AFTER_CONSECUTIVE_FAILURES
+            ? { revokedAt: now, failedAccessChecks }
+            : { failedAccessChecks },
+      })
       .catch(() => undefined);
     return { ok: false, status: 401 };
+  }
+  if (pat.failedAccessChecks > 0) {
+    await db.qtPersonalAccessToken
+      .update({ where: { id: pat.id }, data: { failedAccessChecks: 0 } })
+      .catch(() => undefined);
   }
 
   touchLastUsedAt(pat.id, pat.lastUsedAt, now);

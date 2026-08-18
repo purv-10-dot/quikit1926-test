@@ -16,237 +16,212 @@
  */
 
 /** Roles granted to a handler that carries no role gate of its own. */
-export const UNGATED_ROLES = ["SUPER_ADMIN","TENANT_ADMIN","SUB_ADMIN","MANAGER","TEACHER","PARENT","LEARNER"] as const;
+export const UNGATED_ROLES = ["ADMIN","TENANT_ADMIN","SUB_ADMIN","MANAGER","TEACHER","PARENT","LEARNER"] as const;
 
 export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' | 'update' | 'delete', string[]>>> =
 {
   "academic-calendar.current-term": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "academic-calendar": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "academic-calendar.holidays": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "academic-calendar.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "academic-calendar.terms": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "academic-config.sections": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "academic-config.subjects": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.arr": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.attendance-trend": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.batch.item": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.batch-utilization": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.comparison": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.corporate.course.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.corporate.learner-courses": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.corporate.learner-courses.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.corporate": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.engagement": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.export.csv": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.export": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.financial": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.school": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.student.item": {
@@ -254,8 +229,7 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
       "PARENT",
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.teacher-dashboard": {
@@ -266,223 +240,198 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "analytics.teacher-performance": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "analytics.track": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "assessments": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "assessments.submit": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "assessments.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "attendance.batch.report": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "attendance.class.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "attendance.mark": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "attendance.student.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "attendance.item": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "audit.activity-logs": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "audit.email-status.item": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "audit.storage.global": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "audit.storage.tenants": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "audit.upgrade-invoice.preview.item": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "audit.upgrade-invoice.item": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "auth.change-password": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "auth.profile": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "auth.profile.upload-photo": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "auth.register": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches.statistics": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches.student.my-batches": {
@@ -498,552 +447,485 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "batches.permanent": {
     "delete": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches.students": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches.students.item": {
     "delete": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "batches.unarchive": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "bulk-upload.parents": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "bulk-upload.students": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "bulk-upload.teachers": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "bulk-upload.template.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.all-approval-items": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "certificates.bulk.delete-all": {
     "delete": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "certificates.cleanup-duplicates": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "certificates.generate": {
     "create": [
+      "ADMIN",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.my-certificates": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.my-submissions": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.pending-approvals": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "certificates": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.tenant.issued-certificates": {
     "view": [
+      "ADMIN",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.track-download": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.upload-background": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.upload-logo": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.upload-signature": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.approve": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "certificates.download": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.download-url": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "certificates.reject": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "certificates.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "compliance.analytics": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "compliance.nudge-all": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "compliance.nudge-users": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "consent.check.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "consent.grant": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "consent.pending": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "consent.revoke": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "consent.student.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.assign": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.assign-all-learners": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.assign-by-batch": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.bulk-assign": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.courses": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.courses.assignments": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.courses.check-prerequisites": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.my-assignments": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.users.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "course-assignments.item": {
     "delete": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.enrolled": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.lessons": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.master.all": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "courses.master": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "courses.master.item": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "update": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "delete": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "courses.modules": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.modules.lessons.order": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.modules.order": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.player-data": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "courses.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.allocate": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.balance.item": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.my-balance": {
@@ -1060,97 +942,83 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   },
   "credits.packages": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.packages.item": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.refund": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.student.balance": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "credits.student.transactions": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "demo-analytics.convert.item": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "demo-analytics": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "demo-analytics.student-journey.item": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "demo-analytics.teacher-performance": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "email-templates.item": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "escalations.admin": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "escalations.teacher": {
@@ -1162,8 +1030,7 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exam-sessions.exam.my-session": {
@@ -1175,8 +1042,7 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exam-sessions.student.results": {
@@ -1184,16 +1050,14 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
       "PARENT",
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exam-sessions.evaluate": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exam-sessions.result": {
@@ -1225,22 +1089,19 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exams": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exams.student": {
@@ -1252,16 +1113,14 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exams.publish-results": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "exams.item": {
@@ -1269,117 +1128,103 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
       "LEARNER",
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "gradebook.batch.rankings": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "gradebook.compute": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "gradebook.student.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "gradebook.student.transcript": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "groups": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "groups.members": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "groups.members.item": {
     "delete": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "groups.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.student.submissions": {
@@ -1392,72 +1237,63 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.teacher": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.close": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.publish": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.stats": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.submissions": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "homework.submit": {
@@ -1467,98 +1303,90 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   },
   "learner.assessments.attempts": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "learner.complete-resource": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "learner.file-proxy": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "learner.resume.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "learner.submit-quiz": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "learner.sync-audio": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "learner.sync-progress": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "logs.client-error": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "manager.approve-cert.item": {
@@ -1658,605 +1486,541 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   },
   "master-courses.all-approval-items": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.my-submissions": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.pending-approvals": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.sub-admin-submissions": {
     "view": [
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.approve": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.archive": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.auto-save": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.draft": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.duplicate": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.modules.reorder-submodules": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.publish": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.reject": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "master-courses.reorder-modules": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.item": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.save": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.tenant-approve": {
     "create": [
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "master-courses.tenant-reject": {
     "create": [
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "me": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.instant": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.live-status.item": {
     "view": [
       "PARENT",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.recordings": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.webhook.zoom": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.attendance": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.cancel": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.end": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.join": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.leave": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.recording": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "meetings.start": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.contacts": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.archived": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.archive": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.block.item": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.group": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.messages": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.mute": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.participants": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.participants.admin": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.participants.item": {
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.read": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.unarchive": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.conversations.unmute": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.msg.forward": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.msg.react": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.msg.item": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.socket-token": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "messages.report": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "non-teaching-work.admin": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "non-teaching-work": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "non-teaching-work.teacher": {
@@ -2267,8 +2031,7 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "non-teaching-work.approve": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "non-teaching-work.complete": {
@@ -2279,46 +2042,41 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "non-teaching-work.reject": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "org.invitations": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "org.memberships": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.generate": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.teacher": {
@@ -2329,78 +2087,69 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "payouts.adjustment": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.approve": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.pay": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.reject": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.item": {
     "view": [
+      "ADMIN",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "payouts.submit": {
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "player.sync": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "player.xapi-statements": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "proctoring.exam.incidents": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "proctoring.event": {
@@ -2412,198 +2161,178 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "proctoring.log": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "progress.generate-missing-certificates": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "progress.my": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "progress": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "progress.sync-progress": {
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "progress.lesson.complete": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "progress.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank.bulk": {
     "create": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank.count": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank.subjects": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank.tags": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank.topics": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "question-bank.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "delete": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "quiz-proctoring.assessment.incidents": {
     "view": [
       "MANAGER",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "quiz-proctoring.incidents.all": {
     "view": [
       "MANAGER",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "quiz-proctoring.session.item": {
@@ -2620,8 +2349,7 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "create": [
       "MANAGER",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "quiz-proctoring.complete": {
@@ -2638,74 +2366,65 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "update": [
       "MANAGER",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "quiz-proctoring.log": {
     "view": [
       "MANAGER",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.admin.session-join-timestamps": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.classes.generate": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.classes.cancel": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.classes.complete": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.classes.reschedule": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.classes.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.classes.start": {
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.student.classes": {
@@ -2713,71 +2432,63 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
       "LEARNER",
       "PARENT",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scheduling.teacher.classes": {
     "view": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scorm.extract": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scorm.parse": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "scorm.validate": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "shared-content.push-to-all.item": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "shared-content.tenant": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "student-reminders.admin": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "student-reminders.teacher": {
@@ -2787,15 +2498,13 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   },
   "super-admin.stats": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "teacher-availability.all": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "teacher-availability.me": {
@@ -2809,20 +2518,17 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "teacher-availability.item": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "teacher-levels.all": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "teacher-levels.me": {
@@ -2833,172 +2539,149 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   "teacher-levels.recalculate": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "teacher-levels.recalculate.item": {
     "create": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenant-audit.export-pdf": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenant-audit.logs": {
     "view": [
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.branding.public": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.create-admin-credentials": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "tenants.current.features": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.current": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.onboard": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "tenants": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "tenants.storage-check": {
     "view": [
+      "ADMIN",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.usage": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.branding": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.language-config": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tenants.item": {
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "update": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "delete": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "tenants.video-config": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ],
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "transcription.generate-captions": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tutoring-requests.admin": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tutoring-requests.available-teachers": {
     "view": [
       "LEARNER",
       "SUB_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tutoring-requests": {
@@ -3025,8 +2708,7 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
     "update": [
       "SUB_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "tutoring-requests.reject": {
@@ -3036,207 +2718,172 @@ export const PERMISSION_MATRIX: Record<string, Partial<Record<'view' | 'create' 
   },
   "upload.course-resource": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.course-thumbnail": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.generate-thumbnail": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.homework-resource": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.non-teaching-work-resource": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.presigned-url": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.scorm": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.tus": {
     "create": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "upload.welcome-kit": {
     "create": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ],
     "view": [
-      "SUPER_ADMIN",
-      "admin"
+      "ADMIN"
     ]
   },
   "users.batch-users": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.by-ids": {
     "create": [
+      "ADMIN",
       "MANAGER",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users": {
     "view": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.search": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.link-parent": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.link-student": {
     "create": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
-    ]
-  },
-  "users.promote-subadmin": {
-    "update": [
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
-    ]
-  },
-  "users.revoke-subadmin": {
-    "update": [
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.item": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.toggle-active": {
     "update": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "users.unlink-student.item": {
     "delete": [
+      "ADMIN",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "verify-certificate.download": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   },
   "verify-certificate.item": {
     "view": [
+      "ADMIN",
       "LEARNER",
       "MANAGER",
       "PARENT",
       "SUB_ADMIN",
-      "SUPER_ADMIN",
       "TEACHER",
-      "TENANT_ADMIN",
-      "admin"
+      "TENANT_ADMIN"
     ]
   }
 };

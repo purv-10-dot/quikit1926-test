@@ -6,6 +6,7 @@ import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
+import { emitClientCreated } from "@/lib/services/workflowEvents";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, activeBooleanFromSearch, commaTokens } from "@/lib/api/listSearch";
@@ -150,6 +151,9 @@ export const GET = auth.view(async ({ orgId }, request) => {
       startDate: r.startDate?.toISOString() ?? null,
       weeklyStartTime: r.weeklyStartTime, weeklyEndTime: r.weeklyEndTime,
       dailyStartTime: r.dailyStartTime,   dailyEndTime: r.dailyEndTime,
+      weeklyDay: r.weeklyDay,
+      dailyDays: r.dailyDays,
+      meetingUntil: r.meetingUntil ? r.meetingUntil.toISOString().slice(0, 10) : null,
       teamMembers: r.teamMembers
         .filter(tm => !tm.member.deletedAt)
         .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
@@ -216,6 +220,9 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         weeklyEndTime:   d.weeklyEndTime ?? null,
         dailyStartTime:  d.dailyStartTime ?? null,
         dailyEndTime:    d.dailyEndTime ?? null,
+        weeklyDay:       d.weeklyDay ?? null,
+        dailyDays:       d.dailyDays ?? [],
+        meetingUntil:    d.meetingUntil ? new Date(d.meetingUntil) : null,
         createdBy: userId,
         teamMembers: {
           create: d.teamMemberIds.map(cmId => ({ orgId, clientMemberId: cmId })),
@@ -253,6 +260,34 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         teamMemberIds: d.teamMemberIds,
       },
       ...requestContext(request),
+    });
+
+    // Fire-and-forget QuikFlow event (gated by QUIKFLOW_EVENTS_ENABLED). Carry
+    // the meeting windows + team-member emails so a calendar workflow can create
+    // Teams events (times are also record-loadable; emails are a relation and
+    // must ride the payload as {{trigger.teamMemberEmails}}).
+    const memberEmails = d.teamMemberIds.length
+      ? (await db.clientMember.findMany({
+          where: { id: { in: d.teamMemberIds }, orgId },
+          select: { email: true },
+        }))
+          .map((m) => m.email)
+          .filter(Boolean)
+          .join(", ")
+      : "";
+    emitClientCreated({
+      orgId,
+      clientId: created.id,
+      name: created.name,
+      dailyStartTime: created.dailyStartTime,
+      dailyEndTime: created.dailyEndTime,
+      weeklyStartTime: created.weeklyStartTime,
+      weeklyEndTime: created.weeklyEndTime,
+      teamMemberEmails: memberEmails,
+      weeklyDay: created.weeklyDay,
+      dailyDays: created.dailyDays,
+      meetingUntil: created.meetingUntil ? created.meetingUntil.toISOString().slice(0, 10) : "",
+      startDate: created.startDate ? created.startDate.toISOString().slice(0, 10) : "",
     });
 
     return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });

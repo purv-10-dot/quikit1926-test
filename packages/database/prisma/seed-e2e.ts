@@ -38,13 +38,15 @@ async function wipeExistingE2ETenant() {
   // Cascade-style cleanup: remove the E2E tenant and its owned rows.
   // Order matters when relations have Restrict cascade rules.
   await prisma.kPIWeeklyValue.deleteMany({
-    where: { kpi: { tenantId: existing.id } },
+    where: { kpi: { orgId: existing.id } },
   });
-  await prisma.kPILog.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.kPINote.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.kPI.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.orgMember.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.team.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.kPILog.deleteMany({ where: { orgId: existing.id } });
+  await prisma.kPINote.deleteMany({ where: { orgId: existing.id } });
+  await prisma.kPI.deleteMany({ where: { orgId: existing.id } });
+  await prisma.orgMember.deleteMany({ where: { orgId: existing.id } });
+  await prisma.userTeam.deleteMany({ where: { orgId: existing.id } });
+  await prisma.orgAppAccess.deleteMany({ where: { orgId: existing.id } });
+  await prisma.team.deleteMany({ where: { orgId: existing.id } });
   await prisma.org.delete({ where: { id: existing.id } });
 
   // Delete the E2E users if they have no remaining memberships
@@ -119,7 +121,7 @@ async function main() {
 
   const team = await prisma.team.create({
     data: {
-      tenantId: tenant.id,
+      orgId: tenant.id,
       name: "E2E Test Team",
       slug: "e2e-test-team",
       headId: head.id,
@@ -129,7 +131,7 @@ async function main() {
   await prisma.orgMember.create({
     data: {
       userId: admin.id,
-      tenantId: tenant.id,
+      orgId: tenant.id,
       role: "admin",
       status: "active",
     },
@@ -137,8 +139,7 @@ async function main() {
   await prisma.orgMember.create({
     data: {
       userId: head.id,
-      tenantId: tenant.id,
-      teamId: team.id,
+      orgId: tenant.id,
       role: "manager",
       status: "active",
     },
@@ -146,11 +147,29 @@ async function main() {
   await prisma.orgMember.create({
     data: {
       userId: member.id,
-      tenantId: tenant.id,
-      teamId: team.id,
+      orgId: tenant.id,
       role: "employee",
       status: "active",
     },
+  });
+
+  // OrgMember.teamId points at QuikScale's own QsTeam table, not this Team
+  // row — team membership for everyone else goes through UserTeam.
+  await prisma.userTeam.create({ data: { orgId: tenant.id, userId: head.id, teamId: team.id } });
+  await prisma.userTeam.create({ data: { orgId: tenant.id, userId: member.id, teamId: team.id } });
+
+  // Every app's (dashboard) layout gates on requireAppAccess(), which reads
+  // OrgAppAccess — org membership + role alone are NOT enough. Without this,
+  // every protected page 307s to "/?reason=no_app_access" regardless of a
+  // valid session. Grant the org access to every app this repo's e2e specs
+  // exercise; extend this list as new apps grow a Playwright suite.
+  const apps = await prisma.app.findMany({
+    where: { slug: { in: ["quikscale", "quikflow"] } },
+    select: { id: true, slug: true },
+  });
+  await prisma.orgAppAccess.createMany({
+    data: apps.map((a) => ({ orgId: tenant.id, appId: a.id, enabled: true })),
+    skipDuplicates: true,
   });
 
   // Super admin user — used by quikit super-admin Playwright specs. Lives

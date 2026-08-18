@@ -44,7 +44,21 @@ import { uploadTeachers, uploadStudents, uploadParents } from '@/lib/services/bu
 
 const TEACHER_CSV = [
   'email,firstName,lastName,phone,subjects,ratePerClass,rateType,qualification,monthlyPayout,availability',
-  'ada@t.test,Ada,Lovelace,555,Maths;Physics,500,per_class,MSc,20000,1:09:00-17:00;2:10:00-12:00',
+  'ada@t.test,Ada,Lovelace,555,Maths;Physics,500,per_class,PGT,20000,1:09:00-17:00;2:10:00-12:00',
+].join('\n');
+
+/**
+ * `qualification` used to read `MSc` here, which is not a member of the
+ * `LmsUserQualification` enum (PGT/TGT/PRT/NTT/Other). Under Postgres that value
+ * makes Prisma reject the profile update — so in production this row lost the
+ * teacher's subjects, rates, payout AND availability, and `uploadTeachers`
+ * reported the whole row as failed for an account it had already provisioned.
+ * Out-of-enum values are now dropped field-by-field (see the case below), so this
+ * fixture uses a real member and the drop is asserted explicitly.
+ */
+const TEACHER_CSV_BAD_QUALIFICATION = [
+  'email,firstName,lastName,phone,subjects,ratePerClass,rateType,qualification,monthlyPayout,availability',
+  'ada@t.test,Ada,Lovelace,555,Maths;Physics,500,per_class,MSc,20000,1:09:00-17:00',
 ].join('\n');
 
 beforeEach(() => {
@@ -70,9 +84,21 @@ describe('teachers — profile fields and availability are persisted', () => {
       subjects: ['Maths', 'Physics'],
       ratePerClass: 500,
       rateType: 'per_class',
-      qualification: 'MSc',
+      qualification: 'PGT',
       monthlyPayout: 20000,
     });
+  });
+
+  it('imports the row anyway when the qualification column is not an enum member', async () => {
+    const out = await uploadTeachers('org-1', TEACHER_CSV_BAD_QUALIFICATION);
+
+    expect(out.failed).toEqual([]);
+    const profileWrite = h.userUpdate.mock.calls.find((c) => c[0].data.subjects);
+    expect(profileWrite![0].data.qualification).toBeUndefined();
+    // Everything around the bad column still lands, and so does the availability
+    // — which is what makes the imported teacher schedulable into a batch.
+    expect(profileWrite![0].data).toMatchObject({ subjects: ['Maths', 'Physics'], ratePerClass: 500 });
+    expect(h.slotCreateMany).toHaveBeenCalled();
   });
 
   it('creates the availability slots parsed from the CSV', async () => {

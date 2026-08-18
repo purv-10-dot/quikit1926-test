@@ -130,6 +130,44 @@ export function roleBaselineMatrix(role: string): PermissionMatrix {
   }));
 }
 
+/**
+ * Map a QuikIT/Membership role string to the legacy CRM role enum this app
+ * reasons about (`Administrator`, `SalesManager`, `SalesUser`, `MarketingUser`,
+ * `FinanceUser`). Anything admin-shaped at the platform level becomes
+ * `Administrator` so existing role checks work.
+ *
+ * `app_admin` is deliberately NOT admin-tier. The platform ranks it BELOW admin
+ * in ROLE_HIERARCHY and excludes it from ADMIN_TIER_ROLES; promoting it here
+ * would grant every (module, action) pair and short-circuit `assertModule`,
+ * letting an app_admin who is not an org admin reach admin-only surfaces
+ * including permission-template management. It falls through to the SalesUser
+ * default like any other non-admin role.
+ *
+ * Lives here rather than in `lib/auth/require.ts` so callers outside the
+ * request path — the RBAC backfill script in particular — can resolve the same
+ * role without pulling in next-auth. `require.ts#mapRole` delegates to this.
+ */
+export function crmRoleForMembershipRole(membershipRole: string | undefined): string {
+  if (!membershipRole) return SALES_USER_ROLE;
+  const r = membershipRole.toLowerCase();
+  // Admin tier mirrors ADMIN_TIER_ROLES in @quikit/shared
+  // ({super_admin, org_admin, admin}) plus the two local synonyms.
+  if (
+    r === "admin" ||
+    r === "owner" ||
+    r === "super_admin" ||
+    r === "administrator" ||
+    r === "org_admin"
+  ) {
+    return ADMIN_ROLE;
+  }
+  if (r === "manager" || r === "sales_manager" || r === "salesmanager") return SALES_MANAGER_ROLE;
+  if (r === "marketing" || r === "marketing_user" || r === "marketinguser") return MARKETING_USER_ROLE;
+  if (r === "finance" || r === "finance_user" || r === "financeuser") return FINANCE_USER_ROLE;
+  // member / user / anything else → SalesUser (the broad CRM default).
+  return SALES_USER_ROLE;
+}
+
 const ADMIN_ROLE_ALIASES = new Set([ADMIN_ROLE.toLowerCase()]);
 
 /** True for the mapped CRM Administrator role. */

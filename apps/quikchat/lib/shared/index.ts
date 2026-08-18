@@ -22,5 +22,5 @@ export {
   type IndexOp,
 } from "./index-events";
 export { rateLimit, __resetRateLimitForTest, type RateLimitResult } from "./rate-limit";
-export { logger, requestId, redactSecrets, pathOf } from "./logger";
+export { logger, requestId, redactSecrets, pathOf, errorFields } from "./logger";
 export { captureError, __resetErrorTrackingForTest } from "./error-tracking";

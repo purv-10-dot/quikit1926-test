@@ -22,7 +22,13 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { uploadFile } from '@/lib/upload-client';
+import { MAX_HOMEWORK_BYTES, formatMaxSize } from '@/lib/constants/uploads';
+import FilePreviewModal from '@/components/FilePreviewModal';
 import { useBranding } from '@/app/providers';
+
+/** The real message off a thrown API error / upload failure, never a stand-in. */
+const errorText = (err: unknown, fallback: string) =>
+  (err as { message?: string })?.message || fallback;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -47,7 +53,12 @@ interface Submission {
   homeworkId: HomeworkItem | string;
   status: 'submitted' | 'graded' | 'returned';
   score?: number;
+  /** Score after any late penalty — what actually counts. */
+  finalScore?: number;
+  latePenaltyApplied?: number;
   feedback?: string;
+  /** The teacher's marked-up copy, presigned by the read path. */
+  correctedFileUrl?: string;
   textResponse?: string;
   attachmentUrls?: string[];
   submittedAt?: string;
@@ -119,6 +130,9 @@ const LearnerHomeworkPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
+  // In-app file preview — the file the student is currently looking at
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   // ── Data Fetching ──────────────────────────────────────────────────────────
 
   const fetchData = async () => {
@@ -155,15 +169,30 @@ const LearnerHomeworkPage = () => {
     setSubmitModalOpen(true);
   };
 
+  /**
+   * Attach a file to the submission.
+   *
+   * Same two fixes as the teacher-side picker: check the size against the
+   * constant the ROUTE enforces before spending the upload, and show the real
+   * failure. `catch { setSubmitError('File upload failed.') }` collapsed a 413,
+   * a 403 and a blocked cross-origin PUT into one message with no lead — the
+   * reason "the upload is broken" was undiagnosable from the student's side too.
+   */
   const handleFileUpload = async (file: File) => {
-    setUploadingFile(true);
     setSubmitError('');
+    if (file.size > MAX_HOMEWORK_BYTES) {
+      setSubmitError(
+        `"${file.name}" is ${formatMaxSize(file.size)} — the limit is ${formatMaxSize(MAX_HOMEWORK_BYTES)}.`,
+      );
+      return;
+    }
+    setUploadingFile(true);
     try {
       const fileUrl = await uploadFile(file, '/upload/homework-resource');
-      if (!fileUrl) throw new Error('No URL returned');
+      if (!fileUrl) throw new Error('Upload completed but no file URL came back.');
       setUploadedFiles((prev) => [...prev, fileUrl]);
-    } catch {
-      setSubmitError('File upload failed. Please try again.');
+    } catch (err: unknown) {
+      setSubmitError(errorText(err, 'File upload failed. Please try again.'));
     } finally {
       setUploadingFile(false);
     }
@@ -171,7 +200,25 @@ const LearnerHomeworkPage = () => {
 
   const handleSubmit = async () => {
     if (!submitTarget) return;
-    const allAttachments = [...uploadedFiles, ...(attachmentUrl.trim() ? [attachmentUrl.trim()] : [])];
+    // First: a file still in flight would otherwise be dropped, and the checks
+    // below would blame the student for an empty submission.
+    if (uploadingFile) {
+      setSubmitError('Please wait for the file upload to finish.');
+      return;
+    }
+    const pasted = attachmentUrl.trim();
+    // A pasted link is free text. Unvalidated, `''`-adjacent junk was stored in
+    // `attachmentUrls` and rendered to the teacher as a dead anchor. The teacher
+    // form already validates its links this way.
+    if (pasted) {
+      try {
+        new URL(pasted);
+      } catch {
+        setSubmitError('That link is not a valid URL (include https://).');
+        return;
+      }
+    }
+    const allAttachments = [...uploadedFiles, ...(pasted ? [pasted] : [])];
     if (!textResponse.trim() && allAttachments.length === 0) {
       setSubmitError('Please provide a text response or upload/attach a file.');
       return;
@@ -184,9 +231,12 @@ const LearnerHomeworkPage = () => {
       if (allAttachments.length > 0) payload.attachmentUrls = allAttachments;
       await api.post<any>(`/homework/${submitTarget._id}/submit`, payload);
       setSubmitModalOpen(false);
+      // Land on the tab that now holds the work, so the student can see it
+      // persisted rather than wondering whether the submit took.
+      setActiveTab('submissions');
       fetchData();
-    } catch (err: any) {
-      setSubmitError(err?.message || 'Submission failed');
+    } catch (err: unknown) {
+      setSubmitError(errorText(err, 'Submission failed'));
     } finally {
       setSubmitting(false);
     }
@@ -401,16 +451,15 @@ const LearnerHomeworkPage = () => {
                             <h4 className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1">Attached Files</h4>
                             <div className="space-y-1.5">
                               {hw.attachmentUrls.map((url, i) => (
-                                <a
+                                <button
                                   key={i}
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
+                                  type="button"
+                                  onClick={() => setPreviewUrl(url)}
+                                  className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
                                 >
                                   <FileText className="w-3.5 h-3.5 shrink-0" />
                                   {getFileName(url, `Attachment ${i + 1}`)}
-                                </a>
+                                </button>
                               ))}
                             </div>
                           </div>
@@ -537,28 +586,51 @@ const LearnerHomeworkPage = () => {
                           <div>
                             <h4 className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1">Attachments</h4>
                             {sub.attachmentUrls.map((url, i) => (
-                              <a
+                              <button
                                 key={i}
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 text-sm text-indigo-400 hover:underline py-0.5"
+                                type="button"
+                                onClick={() => setPreviewUrl(url)}
+                                className="flex items-center gap-2 text-sm text-indigo-600 hover:underline py-0.5"
                               >
                                 <FileText className="w-3.5 h-3.5 shrink-0" />
                                 {getFileName(url, `Attachment ${i + 1}`)}
-                              </a>
+                              </button>
                             ))}
                           </div>
                         )}
-                        {sub.status === 'graded' && sub.feedback && (
-                          <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20">
-                            <div className="flex items-start gap-2">
-                              <MessageSquare className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-                              <div>
-                                <h4 className="text-xs font-semibold text-black/70 uppercase tracking-wider mb-1">Teacher Feedback</h4>
-                                <p className="text-sm text-black/85">{sub.feedback}</p>
+                        {/*
+                          The graded result. `feedback` alone used to gate this
+                          block, so a teacher who scored the work and attached a
+                          corrected file without typing a comment left the student
+                          with nothing to look at.
+                        */}
+                        {sub.status === 'graded' && (sub.feedback || sub.correctedFileUrl || sub.latePenaltyApplied) && (
+                          <div className="bg-emerald-500/10 rounded-xl p-3 border border-emerald-500/20 space-y-2">
+                            {sub.feedback && (
+                              <div className="flex items-start gap-2">
+                                <MessageSquare className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                                <div>
+                                  <h4 className="text-xs font-semibold text-black/70 uppercase tracking-wider mb-1">Teacher Feedback</h4>
+                                  <p className="text-sm text-black/85">{sub.feedback}</p>
+                                </div>
                               </div>
-                            </div>
+                            )}
+                            {!!sub.latePenaltyApplied && (
+                              <p className="text-xs text-amber-600">
+                                Late penalty applied: −{sub.latePenaltyApplied}
+                                {sub.finalScore != null ? ` (final score ${sub.finalScore})` : ''}
+                              </p>
+                            )}
+                            {sub.correctedFileUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewUrl(sub.correctedFileUrl!)}
+                                className="flex items-center gap-2 text-sm text-indigo-600 hover:underline"
+                              >
+                                <FileText className="w-3.5 h-3.5 shrink-0" />
+                                Corrected file: {getFileName(sub.correctedFileUrl, 'Corrected file')}
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -600,16 +672,15 @@ const LearnerHomeworkPage = () => {
                     <h4 className="text-xs font-semibold text-black/60 uppercase tracking-wider mb-1.5">Attached Files</h4>
                     <div className="space-y-1.5">
                       {submitTarget.attachmentUrls.map((url, i) => (
-                        <a
+                        <button
                           key={i}
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
+                          type="button"
+                          onClick={() => setPreviewUrl(url)}
+                          className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
                         >
                           <FileText className="w-3.5 h-3.5 shrink-0" />
                           {getFileName(url, `Attachment ${i + 1}`)}
-                        </a>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -666,7 +737,9 @@ const LearnerHomeworkPage = () => {
                     ) : (
                       <FileText className="w-4 h-4 text-indigo-300" />
                     )}
-                    <span className="text-black/70">{uploadingFile ? 'Uploading...' : 'Click to upload a file'}</span>
+                    <span className="text-black/70">
+                      {uploadingFile ? 'Uploading...' : `Click to upload a file (max ${formatMaxSize(MAX_HOMEWORK_BYTES)})`}
+                    </span>
                     <input
                       type="file"
                       className="hidden"
@@ -684,7 +757,10 @@ const LearnerHomeworkPage = () => {
                           className="flex items-center gap-2 text-sm text-indigo-400 bg-white/5 rounded-lg px-3 py-2"
                         >
                           <FileText className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate flex-1">{getFileName(url, `File ${i + 1}`)}</span>
+                          <button type="button" onClick={() => setPreviewUrl(url)}
+                            className="truncate flex-1 text-left hover:underline">
+                            {getFileName(url, `File ${i + 1}`)}
+                          </button>
                           <button
                             onClick={() => setUploadedFiles((prev) => prev.filter((_, idx) => idx !== i))}
                             className="text-black/50 hover:text-red-400 transition"
@@ -724,7 +800,7 @@ const LearnerHomeworkPage = () => {
                 </button>
                 <button
                   onClick={handleSubmit}
-                  disabled={submitting}
+                  disabled={submitting || uploadingFile}
                   className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 text-white font-medium px-5 py-2.5 rounded-xl shadow-lg transition-all text-sm flex items-center gap-2"
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -734,6 +810,10 @@ const LearnerHomeworkPage = () => {
             </div>
           </div>
         )}
+
+        {/* Above the submit modal (z-[110] vs z-[100]) so a teacher's attached
+            brief can be read without closing the submission form. */}
+        {previewUrl && <FilePreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />}
       </div>
     </>
   );

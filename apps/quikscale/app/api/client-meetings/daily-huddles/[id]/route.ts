@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { updateDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { emitDailyHuddleStatusChanged } from "@/lib/services/workflowEvents";
 import {
   audit,
   requestContext,
@@ -44,7 +45,7 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, request
 
   const existing = await db.clientDailyHuddle.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
-    include: { absentMembers: true, absentTeamMembers: true },
+    include: { absentMembers: true, absentTeamMembers: true, client: { select: { name: true } } },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Huddle not found" }, { status: 404 });
 
@@ -159,6 +160,15 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, request
     changes: auditChanges,
     skipIfNoChanges: true,
     ...requestContext(request),
+  });
+
+  emitDailyHuddleStatusChanged({
+    orgId,
+    meetingId: params.id,
+    clientId: existing.clientId,
+    clientName: existing.client?.name ?? null,
+    before: before.callStatus,
+    after: after.callStatus,
   });
 
   return NextResponse.json({ success: true });

@@ -15,11 +15,11 @@ import { MAX_COURSE_RESOURCE_BYTES } from '@/lib/constants/uploads';
 const MAX_BYTES = MAX_COURSE_RESOURCE_BYTES;
 
 /**
- * POST /api/upload/course-resource — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * POST /api/upload/course-resource — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Accepts either shape (see `readUploadIntent`): multipart, and the server
  * stores the bytes; or JSON metadata, and the response carries a presigned PUT
- * for the browser to send them itself. SUPER_ADMIN without a tenant uploads to
+ * for the browser to send them itself. ADMIN without a tenant uploads to
  * the master-courses prefix.
  *
  * `fileSize` is capped at 50MB (see MAX_BYTES). Over-limit surfaces the way the
@@ -32,12 +32,12 @@ const MAX_BYTES = MAX_COURSE_RESOURCE_BYTES;
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const intent = await readUploadIntent(req);
   if (intent.fileSize > MAX_BYTES) throw PayloadTooLarge();
 
   const orgId = actor.orgId;
-  const isMasterCourse = !orgId && actor.role === 'SUPER_ADMIN';
+  const isMasterCourse = !orgId && actor.role === 'ADMIN';
   if (!isMasterCourse && !orgId) throw BadRequest('Tenant ID is required for tenant-specific courses');
 
   const prefix = isMasterCourse

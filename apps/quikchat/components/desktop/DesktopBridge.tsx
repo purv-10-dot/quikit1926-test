@@ -16,13 +16,15 @@ import { useNotifications } from "@/components/notifications/NotificationProvide
  *  - route `quikchat://…` deep links to the right channel / invite
  */
 export function DesktopBridge() {
-  const { unreadCount, openChannel } = useNotifications();
+  const { unreadCount, openChannel, openNewChat } = useNotifications();
 
   // Keep the deep-link effect mount-once: it reads the latest `openChannel`
   // through this ref instead of listing it in deps (which would resubscribe
   // on every render).
   const openChannelRef = useRef(openChannel);
   openChannelRef.current = openChannel;
+  const openNewChatRef = useRef(openNewChat);
+  openNewChatRef.current = openNewChat;
 
   // Badge sync: push the authoritative unread count to the shell whenever it
   // changes. Guarded so it is a no-op on web.
@@ -47,8 +49,10 @@ export function DesktopBridge() {
         if (verb === "open" && rest) {
           openChannelRef.current(decodeURIComponent(rest));
         } else if (verb === "new-chat") {
-          // TODO: open composer — the "new chat" trigger currently lives in
-          // ChatWorkspace local state and is not reachable from here. Safe no-op.
+          // ChatWorkspace registers the opener (its `newChatOpen` state is
+          // local); this is a no-op if the workspace isn't mounted, which is
+          // the same contract as `openChannel` above.
+          openNewChatRef.current();
         } else if (verb === "invite" && rest) {
           window.location.assign("/invite/" + encodeURIComponent(decodeURIComponent(rest)));
         }

@@ -1,19 +1,38 @@
 import { createMcpHandler, fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
-import { db } from "@/lib/db";
-import { loadProjectAccess } from "@/lib/api/withProjectAccess";
+import type { Prisma } from "@prisma/client";
+// QUIKTR-118: every Prisma call in this file must go through the guarded
+// client — it throws before any delete or deleteMany call reaches the
+// database. See docs/mcp-security.md.
+import { mcpDb as db } from "@/lib/mcp/guardedDb";
+import { buildQqlOrderBy, buildQqlWhere, parseQql, QqlParseError } from "@/lib/services/qql";
+import { loadAccessibleProjects, loadProjectAccess, type LoadedProjectAccess } from "@/lib/api/withProjectAccess";
 import { userCanInProject } from "@/lib/api/permissions";
-import { createIssueSchema, moveIssueSchema, updateIssueSchema } from "@/lib/validation/issue";
+import type { Action, Resource } from "@/lib/api/permissionsRegistry";
+import { logAccessDecision } from "@/lib/mcp/accessLog";
+import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
+import {
+  createIssueSchema,
+  issuePriorityEnum,
+  issueTypeEnum,
+  moveIssueSchema,
+  updateIssueSchema,
+} from "@/lib/validation/issue";
+import { ISSUE_LINK_TYPES } from "@/lib/services/issueLinkTypes";
 import { createSprintSchema } from "@/lib/validation/sprint";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recordIssueChanges, recordIssueEvent, selectIssueHistorySnapshot } from "@/lib/services/issueHistory";
 import { createCommentSchema } from "@/lib/validation/comment";
 import { addRemoteLinkSchema as addRemoteLinkInput } from "@/lib/validation/remoteLink";
+import { createTimesheetSchema } from "@/lib/validation/timesheet";
+import { parseWorklogTimeSpent } from "@/lib/utils/timesheetPeriod";
+import { createTimesheetEntry, listWorklogsForIssue, TimesheetFutureDateError } from "@/lib/services/timesheet";
 import { renderCfValue } from "@/lib/customFields/render";
 import { filterUpdatePayload } from "@/lib/api/fieldLevels";
 import { getActiveFieldsForProject, validateIssueValues, writeIssueValues } from "@/lib/services/customFieldValues";
 import type { FieldValue } from "@/lib/customFields/registry";
 import {
   executeTransition,
+  listAvailableTransitionsForIssue,
   TransitionNotAllowedError,
   ConditionsFailedError,
   ValidationFailedError,
@@ -25,6 +44,34 @@ const createIssueInput = createIssueSchema.omit({ projectId: true });
 const createSprintInput = createSprintSchema.omit({ projectId: true });
 const updateIssueInput = updateIssueSchema;
 
+/**
+ * Built-in create_issue fields (QUIKTR-115), hand-mirrored from
+ * createIssueSchema field-by-field — Zod has no runtime "required + enum
+ * values" reflection API, so this is kept in sync by hand. Update this list
+ * if createIssueSchema (lib/validation/issue.ts) gains/changes a field.
+ */
+const BUILTIN_CREATE_FIELDS: {
+  key: string;
+  label: string;
+  required: boolean;
+  dataType: "string" | "number" | "datetime" | "enum";
+  allowedValues?: string[];
+}[] = [
+    { key: "title", label: "Title", required: true, dataType: "string" },
+    { key: "type", label: "Type", required: false, dataType: "enum", allowedValues: [...issueTypeEnum.options] },
+    { key: "priority", label: "Priority", required: false, dataType: "enum", allowedValues: [...issuePriorityEnum.options] },
+    { key: "description", label: "Description", required: false, dataType: "string" },
+    { key: "statusId", label: "Status", required: false, dataType: "string" },
+    { key: "parentId", label: "Parent issue", required: false, dataType: "string" },
+    { key: "epicId", label: "Epic", required: false, dataType: "string" },
+    { key: "sprintId", label: "Sprint", required: false, dataType: "string" },
+    { key: "assigneeId", label: "Assignee", required: false, dataType: "string" },
+    { key: "startDate", label: "Start date", required: false, dataType: "datetime" },
+    { key: "dueDate", label: "Due date", required: false, dataType: "datetime" },
+    { key: "eta", label: "Estimate (hours)", required: false, dataType: "number" },
+    { key: "storyPoints", label: "Story points", required: false, dataType: "number" },
+  ];
+
 // createSprintSchema requires a full ISO 8601 datetime, but callers (LLMs in
 // particular) naturally send a bare date like "2026-08-03". Widen just the
 // MCP entrypoint to accept that shorthand rather than loosen the shared
@@ -33,11 +80,70 @@ function normalizeDateOnly(value: unknown): unknown {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value;
 }
 
+/** Minimal issue shape the workflow engine needs (see RuleIssueSnapshot). */
+type TransitionIssueSnapshot = {
+  id: string;
+  orgId: string;
+  projectId: string;
+  type: string;
+  statusId: string;
+  assigneeId: string | null;
+  resolutionId: string | null;
+  priority: string | null;
+};
+
+type LegalTransitionTarget = { toStatusId: string; toStatusName: string; category: string };
+
+/**
+ * Legal next statuses for an issue, tagged with name/category (QUIKTR-114).
+ * Uses the published workflow graph when the project/issue-type has one.
+ * Falls back to every other project status when ungated (v1 behavior per the
+ * ticket spec — the tool's response shape doesn't change when a real
+ * workflow graph is added for a currently-ungated project).
+ */
+async function legalTransitionTargets(params: {
+  issue: TransitionIssueSnapshot;
+  userId: string;
+}): Promise<LegalTransitionTarget[]> {
+  const { issue, userId } = params;
+  const { gated, transitions } = await listAvailableTransitionsForIssue({ issue, userId });
+
+  if (gated) {
+    const statuses = await db.qtIssueStatus.findMany({
+      where: { id: { in: transitions.map((t) => t.toStatusId) } },
+      select: { id: true, name: true, category: true },
+    });
+    const byId = new Map(statuses.map((s) => [s.id, s] as const));
+    const out: LegalTransitionTarget[] = [];
+    for (const t of transitions) {
+      const s = byId.get(t.toStatusId);
+      if (s) out.push({ toStatusId: s.id, toStatusName: s.name, category: s.category });
+    }
+    return out;
+  }
+
+  const statuses = await db.qtIssueStatus.findMany({
+    where: { projectId: issue.projectId, isDeleted: false, id: { not: issue.statusId } },
+    orderBy: { orderIndex: "asc" },
+    select: { id: true, name: true, category: true },
+  });
+  return statuses.map((s) => ({ toStatusId: s.id, toStatusName: s.name, category: s.category }));
+}
+
 /** Maps a workflow-transition error to an MCP tool error result, or `null`
- *  if `error` isn't one of the three transition errors. */
-function transitionErrorContent(error: unknown): { content: [{ type: "text"; text: string }]; isError: true } | null {
+ *  if `error` isn't one of the three transition errors. A rejected status
+ *  move (TransitionNotAllowedError) enumerates the legal targets so the
+ *  caller isn't left guessing (QUIKTR-114). */
+async function transitionErrorContent(
+  error: unknown,
+  ctx: { issue: TransitionIssueSnapshot; userId: string },
+): Promise<{ content: [{ type: "text"; text: string }]; isError: true } | null> {
   if (error instanceof TransitionNotAllowedError) {
-    return { content: [{ type: "text", text: error.message }], isError: true };
+    const targets = await legalTransitionTargets(ctx);
+    const legalText = targets.length
+      ? targets.map((t) => `${t.toStatusName} (${t.toStatusId})`).join(", ")
+      : "none — this issue has no outgoing transitions from its current status";
+    return { content: [{ type: "text", text: `${error.message}. Legal targets: ${legalText}` }], isError: true };
   }
   if (error instanceof ConditionsFailedError) {
     return { content: [{ type: "text", text: error.message }], isError: true };
@@ -51,36 +157,275 @@ function transitionErrorContent(error: unknown): { content: [{ type: "text"; tex
   return null;
 }
 
+const ISSUE_LINK_SELECT = {
+  id: true,
+  key: true,
+  title: true,
+  statusId: true,
+  status: { select: { id: true, name: true, color: true, category: true } },
+} as const;
+
+type LinkedIssue = {
+  id: string;
+  key: string;
+  title: string;
+  statusId: string;
+  status: { id: string; name: string; color: string; category: string } | null;
+};
+
+type IssueLinkEntry = { id: string; type: string; relationship: string; issue: LinkedIssue };
+
+/**
+ * An issue's internal links in both directions (QUIKTR-116) — shared by
+ * `list_issue_links` and `get_issue` so the two never drift. Outward: this
+ * issue is the source, relationship uses the type's outward label (e.g.
+ * "blocks"). Inward: this issue is the target, relationship uses the type's
+ * inward label (e.g. "is blocked by").
+ *
+ * QUIKTR-119: a linked issue can live in a DIFFERENT project than the one
+ * being viewed (cross-project links are allowed — see link_issues). Linked
+ * issues whose own project the caller can't see are filtered out here,
+ * rather than surfaced — otherwise this call would leak another project's
+ * issue key/title/status to someone who isn't a member of it, the same
+ * disclosure link_issues' inward-issue check now closes.
+ */
+async function loadIssueLinks(
+  orgId: string,
+  userId: string,
+  issueId: string,
+): Promise<{ outward: IssueLinkEntry[]; inward: IssueLinkEntry[] }> {
+  const linkSelectWithProject = { ...ISSUE_LINK_SELECT, projectId: true } as const;
+  const [outwardRows, inwardRows] = await Promise.all([
+    db.qtIssueLink.findMany({
+      where: { orgId, sourceIssueId: issueId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, type: true, targetIssue: { select: linkSelectWithProject } },
+    }),
+    db.qtIssueLink.findMany({
+      where: { orgId, targetIssueId: issueId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, type: true, sourceIssue: { select: linkSelectWithProject } },
+    }),
+  ]);
+
+  const linkedProjectIds = new Set<string>([
+    ...outwardRows.map((r) => r.targetIssue.projectId),
+    ...inwardRows.map((r) => r.sourceIssue.projectId),
+  ]);
+  const accessible = new Map<string, boolean>();
+  await Promise.all(
+    Array.from(linkedProjectIds).map(async (pid) => {
+      accessible.set(pid, (await loadProjectAccess(orgId, userId, pid)) !== null);
+    }),
+  );
+
+  const labelFor = (type: string) => ISSUE_LINK_TYPES.find((t) => t.type === type);
+  const stripProject = <T extends { projectId: string }>(issue: T): Omit<T, "projectId"> => {
+    const { projectId: _projectId, ...rest } = issue;
+    return rest;
+  };
+
+  return {
+    outward: outwardRows
+      .filter((r) => accessible.get(r.targetIssue.projectId))
+      .map((r) => ({
+        id: r.id,
+        type: r.type,
+        relationship: labelFor(r.type)?.outward ?? r.type,
+        issue: stripProject(r.targetIssue),
+      })),
+    inward: inwardRows
+      .filter((r) => accessible.get(r.sourceIssue.projectId))
+      .map((r) => ({
+        id: r.id,
+        type: r.type,
+        relationship: labelFor(r.type)?.inward ?? r.type,
+        issue: stripProject(r.sourceIssue),
+      })),
+  };
+}
+
 export interface McpAuthExtra {
   orgId: string;
-  projectId: string;
+  /** The PAT's own bound project, if any — null for a user-scoped token.
+   * Not the project for any given tool call; see `resolveRequestedProjectId`. */
+  projectId: string | null;
   userId: string;
   /** Always "agent" — every MCP caller is a PAT-authenticated tool, never a human session. */
   actorType: "user" | "agent";
+
   /** The PAT's own name — identifies which tool/token acted. */
   actingAgentId: string;
 }
 
+/**
+ * Reconciles the PAT's own bound project (if it's a legacy project-scoped
+ * token) with the `projectId` a tool call optionally supplies. Picks which
+ * raw identifier (id or human-readable projectKey — see checkProjectMembership,
+ * which resolves either) the rest of the call should use: the caller's own
+ * arg when given, else the token's bound project. Whether a project-scoped
+ * token is allowed to use that identifier at all — i.e. whether it resolves
+ * to the SAME project the token is bound to — is checked later, once
+ * resolved to a real id, by checkProjectMembership's `tokenProjectId` param.
+ * That's deferred rather than done here because a raw string equality check
+ * would wrongly reject a token's own project when named by its key instead
+ * of its id. A user-scoped token (no bound project) has no default and must
+ * be told which project to act on.
+ */
+function resolveRequestedProjectId(
+  tokenProjectId: string | null,
+  argsProjectId?: string,
+): { ok: true; projectId: string } | { ok: false; error: string } {
+  if (argsProjectId) {
+    return { ok: true, projectId: argsProjectId };
+  }
+  if (tokenProjectId) {
+    return { ok: true, projectId: tokenProjectId };
+  }
+  return {
+    ok: false,
+    error: "This token isn't scoped to a single project — pass a projectId (see list_projects).",
+  };
+}
+
+type ToolErrorResult = { content: [{ type: "text"; text: string }]; isError: true };
+
+/**
+ * QUIKTR-119 — the project-membership gate every tool runs before touching
+ * data, wrapped to also write an allow/deny row to QtMcpAccessLog (audit
+ * trail — every decision, not just denials, so the log can answer "did
+ * this even run a check" for an allowed call too). Drop-in replacement for
+ * the old `loadProjectAccess` + null-check pattern: same "Not found"
+ * response shape on denial, so no caller-visible behavior changes.
+ *
+ * `loadProjectAccess` accepts either the project's cuid or its human-readable
+ * `projectKey` and returns the resolved cuid as `access.projectId` — callers
+ * should reassign their local `projectId` to that value afterward so every
+ * later query uses the real id, never a possibly-unresolved key.
+ *
+ * `tokenProjectId`, if given, is the calling PAT's own bound project (see
+ * `resolveRequestedProjectId`). It's compared against the RESOLVED id here
+ * (not the raw arg) so a project-scoped token naming its own project by key
+ * isn't wrongly rejected as "a different project."
+ */
+async function checkProjectMembership(params: {
+  orgId: string;
+  userId: string;
+  projectId: string;
+  tokenProjectId?: string | null;
+  tool: string;
+}): Promise<{ ok: true; access: LoadedProjectAccess } | { ok: false; result: ToolErrorResult }> {
+  const { orgId, userId, projectId, tokenProjectId, tool } = params;
+  const access = await loadProjectAccess(orgId, userId, projectId);
+  if (!access) {
+    await logAccessDecision({ orgId, userId, projectId, tool, decision: "deny", reason: "not a project member" });
+    return { ok: false, result: { content: [{ type: "text", text: "Not found" }], isError: true } };
+  }
+  if (tokenProjectId && access.projectId !== tokenProjectId) {
+    await logAccessDecision({
+      orgId,
+      userId,
+      projectId: access.projectId,
+      tool,
+      decision: "deny",
+      reason: "token is scoped to a different project",
+    });
+    return {
+      ok: false,
+      result: {
+        content: [{ type: "text", text: "This token is scoped to a single project and cannot act on a different one." }],
+        isError: true,
+      },
+    };
+  }
+  await logAccessDecision({
+    orgId,
+    userId,
+    projectId: access.projectId,
+    tool,
+    decision: "allow",
+    reason: access.isTenantAdmin ? "tenant/app admin" : "project member",
+  });
+  return { ok: true, access };
+}
+
+/**
+ * QUIKTR-119 — the (resource, action) write-permission gate, wrapped the
+ * same way as checkProjectMembership above. Same "You don't have access to
+ * this." response shape on denial as the old inline check.
+ */
+async function checkWritePermission(params: {
+  orgId: string;
+  userId: string;
+  projectId: string;
+  tool: string;
+  access: LoadedProjectAccess;
+  resource: Resource;
+  action: Action;
+}): Promise<{ ok: true } | { ok: false; result: ToolErrorResult }> {
+  const { orgId, userId, projectId, tool, access, resource, action } = params;
+  const allowed = access.isTenantAdmin || (await userCanInProject(userId, orgId, projectId, resource, action));
+  await logAccessDecision({
+    orgId,
+    userId,
+    projectId,
+    tool,
+    resource,
+    action,
+    decision: allowed ? "allow" : "deny",
+    reason: allowed ? `${resource}:${action}` : `lacks ${resource}:${action}`,
+  });
+  if (!allowed) {
+    return { ok: false, result: { content: [{ type: "text", text: "You don't have access to this." }], isError: true } };
+  }
+  return { ok: true };
+}
+
 export const mcpHandler = createMcpHandler(({ authInfo }) => {
-  const { orgId, projectId, userId, actorType, actingAgentId } = authInfo?.extra as unknown as McpAuthExtra;
+  const { orgId, projectId: tokenProjectId, userId, actorType, actingAgentId } = authInfo?.extra as unknown as McpAuthExtra;
   const server = new McpServer({ name: "quiktrack", version: "1.0.0" });
+
+  server.registerTool(
+    "list_projects",
+    {
+      description:
+        "List the projects this token can act on. A user-scoped token has no default project, so call this first to find a valid projectId to pass to every other tool.",
+      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+    },
+    async () => {
+      const projects = tokenProjectId
+        ? await db.qtProject.findMany({
+          where: { id: tokenProjectId, orgId, isDeleted: false },
+          select: { id: true, projectKey: true, name: true },
+        })
+        : await loadAccessibleProjects(orgId, userId);
+      return { content: [{ type: "text", text: JSON.stringify(projects) }] };
+    },
+  );
 
   server.registerTool(
     "get_issue",
     {
-      description: "Get a QuikTrack issue by id, scoped to the PAT's project",
+      description: "Get a QuikTrack issue by id. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { issueId: { type: "string" } },
+        properties: { issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "get_issue" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: {
@@ -97,21 +442,30 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      return { content: [{ type: "text", text: JSON.stringify(issue) }] };
+      const links = await loadIssueLinks(orgId, userId, issue.id);
+      return { content: [{ type: "text", text: JSON.stringify({ ...issue, links }) }] };
     },
   );
 
   server.registerTool(
     "get_project",
     {
-      description: "Get the QuikTrack project the PAT is scoped to",
-      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+      description: "Get a QuikTrack project's details. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
+      }),
     },
-    async () => {
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "get_project" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
       const project = await db.qtProject.findFirst({
         where: { id: projectId, orgId, isDeleted: false },
         select: {
@@ -137,35 +491,154 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
     "list_custom_fields",
     {
       description:
-        "List the custom field definitions available on the PAT's scoped project. Use a field's `id` as the key in quiktrack_update_issue's customFields.",
-      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+        "List the custom field definitions available on a project. Use a field's `id` as the key in quiktrack_update_issue's customFields. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
+      }),
     },
-    async () => {
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_custom_fields" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
       const fields = await getActiveFieldsForProject(orgId, projectId);
       return { content: [{ type: "text", text: JSON.stringify(fields) }] };
     },
   );
 
   server.registerTool(
-    "get_member",
+    "list_issue_types",
     {
-      description: "Get a project member's profile by userId, scoped to the PAT's project",
+      description:
+        "List the issue types available in a project (id, name, isSubtask). Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { userId: { type: "string" } },
+        properties: { projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
+      }),
+    },
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_issue_types" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const rows = await db.qtIssueType.findMany({
+        where: { projectId, isDeleted: false },
+        orderBy: { orderIndex: "asc" },
+        select: { id: true, name: true },
+      });
+      // QtIssueType.name is stored Title Case ("Task", "Bug"), but QtIssue.type
+      // and every other MCP tool (get_issue, create_issue, search_issues) use
+      // uppercase codes ("TASK", "BUG") — surface the form callers actually need.
+      const types = rows.map((r) => {
+        const name = r.name.trim().toUpperCase();
+        return { id: r.id, name, isSubtask: name === "SUBTASK" };
+      });
+      return { content: [{ type: "text", text: JSON.stringify(types) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_create_field_metadata",
+    {
+      description:
+        "Fields available when creating an issue of a given type: key, label, required flag, data type, and allowed values for enum/dropdown fields. Read this before calling create_issue. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." }, type: { type: "string" } },
+        required: ["type"],
+      }),
+    },
+    async (args: unknown) => {
+      const { type: rawType, projectId: rawProjectId } = args as { type: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "get_create_field_metadata" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const typeParsed = issueTypeEnum.safeParse(String(rawType ?? "").toUpperCase());
+      if (!typeParsed.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Unknown type "${rawType}". create_issue only supports: ${issueTypeEnum.options.join(", ")}.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const customFields = await getActiveFieldsForProject(orgId, projectId);
+      const customFieldEntries = customFields.map((f) => ({
+        key: f.id,
+        label: f.name,
+        required: f.isRequired,
+        dataType: f.type,
+        ...((f.type === "DROPDOWN_SINGLE" || f.type === "DROPDOWN_MULTI") && {
+          allowedValues: f.options.map((o) => o.value),
+        }),
+      }));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              type: typeParsed.data,
+              fields: [...BUILTIN_CREATE_FIELDS, ...customFieldEntries],
+            }),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "list_link_types",
+    {
+      description:
+        "List the internal issue-link types (e.g. blocks/is blocked by, relates to, duplicates/is duplicated by) usable with link_issues.",
+      inputSchema: fromJsonSchema({ type: "object", properties: {} }),
+    },
+    async () => {
+      return { content: [{ type: "text", text: JSON.stringify(ISSUE_LINK_TYPES) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_member",
+    {
+      description: "Get a project member's profile by userId. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { userId: { type: "string" }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
         required: ["userId"],
       }),
     },
     async (args: unknown) => {
-      const { userId: targetUserId } = args as { userId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const { userId: targetUserId, projectId: rawProjectId } = args as { userId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "get_member" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
       const member = await db.qtProjectMember.findFirst({
         where: { projectId, userId: targetUserId, isDeleted: false },
         select: { id: true, userId: true, role: true },
@@ -184,18 +657,22 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "search_users",
     {
-      description: "Find project members to assign an issue to, scoped to the PAT's project",
+      description: "Find project members to assign an issue to. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { query: { type: "string" } },
+        properties: { query: { type: "string" }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
       }),
     },
     async (args: unknown) => {
-      const { query } = args as { query?: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const { query, projectId: rawProjectId } = args as { query?: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "search_users" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
       const members = await db.qtProjectMember.findMany({
         where: { projectId, isDeleted: false },
         select: { userId: true },
@@ -210,12 +687,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           id: { in: memberUserIds },
           ...(trimmedQuery
             ? {
-                OR: [
-                  { email: { contains: trimmedQuery, mode: "insensitive" } },
-                  { firstName: { contains: trimmedQuery, mode: "insensitive" } },
-                  { lastName: { contains: trimmedQuery, mode: "insensitive" } },
-                ],
-              }
+              OR: [
+                { email: { contains: trimmedQuery, mode: "insensitive" } },
+                { firstName: { contains: trimmedQuery, mode: "insensitive" } },
+                { lastName: { contains: trimmedQuery, mode: "insensitive" } },
+              ],
+            }
             : {}),
         },
         take: 50,
@@ -228,7 +705,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "create_issue",
     {
-      description: "Create a QuikTrack issue in the PAT's scoped project",
+      description: "Create a QuikTrack issue. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -241,18 +718,31 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           epicId: { type: "string" },
           sprintId: { type: "string" },
           assigneeId: { type: "string" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
         required: ["title"],
       }),
     },
     async (args: unknown) => {
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "create"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "create_issue" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "create_issue",
+        access: membership.access,
+        resource: "Issue",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = createIssueInput.safeParse(args);
       if (!parsed.success) {
@@ -315,19 +805,26 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "list_comments",
     {
-      description: "List an issue's comments, oldest first, scoped to the PAT's project",
+      description: "List an issue's comments, oldest first. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { issueId: { type: "string" } },
+        properties: { issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_comments" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -343,9 +840,9 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const commentUserIds = Array.from(new Set(comments.map((c) => c.userId)));
       const users = commentUserIds.length
         ? await db.user.findMany({
-            where: { id: { in: commentUserIds } },
-            select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
-          })
+          where: { id: { in: commentUserIds } },
+          select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+        })
         : [];
       const userById = new Map(users.map((u) => [u.id, u] as const));
       const data = comments.map((c) => ({ ...c, user: userById.get(c.userId) ?? null }));
@@ -356,19 +853,23 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "start_sprint",
     {
-      description: "Transition a PLANNING sprint to ACTIVE, scoped to the PAT's project",
+      description: "Transition a PLANNING sprint to ACTIVE. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { sprintId: { type: "string" } },
+        properties: { sprintId: { type: "string" }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
         required: ["sprintId"],
       }),
     },
     async (args: unknown) => {
-      const { sprintId } = args as { sprintId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const { sprintId, projectId: rawProjectId } = args as { sprintId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "start_sprint" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
       const sprint = await db.qtSprint.findFirst({
         where: { id: sprintId, projectId, isDeleted: false },
         select: { id: true, status: true },
@@ -379,9 +880,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (sprint.status !== "PLANNING") {
         return { content: [{ type: "text", text: `Sprint already ${sprint.status}` }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Sprint", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "start_sprint",
+        access: membership.access,
+        resource: "Sprint",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const updated = await db.qtSprint.update({
         where: { id: sprintId },
@@ -393,27 +901,91 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   );
 
   server.registerTool(
+    "list_transitions",
+    {
+      description:
+        "List the legal next statuses for an issue from its current status, honoring the project's workflow rules (not just every status in the project). Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
+        required: ["issueId"],
+      }),
+    },
+    async (args: unknown) => {
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_transitions" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
+      const issue = await db.qtIssue.findFirst({
+        where: { id: issueId, orgId, projectId, isDeleted: false },
+        select: { id: true, statusId: true, type: true, assigneeId: true, resolutionId: true, priority: true },
+      });
+      if (!issue) {
+        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      }
+
+      const transitions = await legalTransitionTargets({
+        issue: {
+          id: issue.id,
+          orgId,
+          projectId,
+          type: issue.type ?? "TASK",
+          statusId: issue.statusId as string,
+          assigneeId: issue.assigneeId ?? null,
+          resolutionId: issue.resolutionId ?? null,
+          priority: issue.priority ?? null,
+        },
+        userId,
+      });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify({ fromStatusId: issue.statusId, transitions }) }],
+      };
+    },
+  );
+
+  server.registerTool(
     "move_issue",
     {
-      description: "Transition an issue between status/sprint/parent/column position, scoped to the PAT's project",
+      description: "Transition an issue between status/sprint/parent/column position. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
-          issueId: { type: "string" },
+          issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
           statusId: { type: "string" },
           sprintId: { type: ["string", "null"] },
           parentId: { type: ["string", "null"] },
           orderInColumn: { type: "number" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId, ...rest } = args as { issueId: string; [key: string]: unknown };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId, ...rest } = args as {
+        issueId: string;
+        projectId?: string;
+        [key: string]: unknown;
+      };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "move_issue" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true, key: true, resolutionId: true, ...selectIssueHistorySnapshot },
@@ -421,9 +993,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "move_issue",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = moveIssueSchema.safeParse(rest);
       if (!parsed.success) {
@@ -440,25 +1019,26 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       let workflowPatch: ExecuteResult["patch"] = {};
       let workflowComments: string[] = [];
       if (isStatusChange) {
+        const issueSnapshot: TransitionIssueSnapshot = {
+          id: issue.id,
+          orgId,
+          projectId,
+          type: issue.type ?? "TASK",
+          statusId: issue.statusId as string,
+          assigneeId: issue.assigneeId ?? null,
+          resolutionId: issue.resolutionId ?? null,
+          priority: issue.priority ?? null,
+        };
         try {
           const res = await executeTransition({
-            issue: {
-              id: issue.id,
-              orgId,
-              projectId,
-              type: issue.type ?? "TASK",
-              statusId: issue.statusId as string,
-              assigneeId: issue.assigneeId ?? null,
-              resolutionId: issue.resolutionId ?? null,
-              priority: issue.priority ?? null,
-            },
+            issue: issueSnapshot,
             toStatusId: parsed.data.statusId as string,
             userId,
           });
           workflowPatch = res.patch ?? {};
           workflowComments = res.comments ?? [];
         } catch (error: unknown) {
-          const mapped = transitionErrorContent(error);
+          const mapped = await transitionErrorContent(error, { issue: issueSnapshot, userId });
           if (mapped) return mapped;
           throw error;
         }
@@ -524,7 +1104,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "create_sprint",
     {
-      description: "Create a sprint in the PAT's scoped project",
+      description: "Create a sprint. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -532,26 +1112,39 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           goal: { type: "string" },
           startDate: { type: "string", description: "ISO 8601 date (2026-08-03) or datetime (2026-08-03T00:00:00.000Z)" },
           endDate: { type: "string", description: "ISO 8601 date (2026-08-17) or datetime (2026-08-17T00:00:00.000Z)" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
         required: ["name"],
       }),
     },
     async (args: unknown) => {
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Sprint", "create"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "create_sprint" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "create_sprint",
+        access: membership.access,
+        resource: "Sprint",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const normalizedArgs =
         args && typeof args === "object"
           ? {
-              ...(args as Record<string, unknown>),
-              startDate: normalizeDateOnly((args as Record<string, unknown>).startDate),
-              endDate: normalizeDateOnly((args as Record<string, unknown>).endDate),
-            }
+            ...(args as Record<string, unknown>),
+            startDate: normalizeDateOnly((args as Record<string, unknown>).startDate),
+            endDate: normalizeDateOnly((args as Record<string, unknown>).endDate),
+          }
           : args;
       const parsed = createSprintInput.safeParse(normalizedArgs);
       if (!parsed.success) {
@@ -580,22 +1173,30 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "add_comment",
     {
-      description: "Add a comment to an issue, scoped to the PAT's project",
+      description: "Add a comment to an issue. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
-          issueId: { type: "string" },
+          issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
           body: { type: "string" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
         required: ["issueId", "body"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "add_comment" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -603,12 +1204,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (
-        !access.isTenantAdmin &&
-        !(await userCanInProject(userId, orgId, projectId, "IssueComment", "create"))
-      ) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "add_comment",
+        access: membership.access,
+        resource: "IssueComment",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = createCommentSchema.safeParse(args);
       if (!parsed.success) {
@@ -639,22 +1244,205 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   );
 
   server.registerTool(
+    "add_worklog",
+    {
+      description:
+        'Log time spent on an issue into Timesheets. timeSpent accepts a duration string ("2h 30m", "45m", "1d") or a raw number of seconds; started defaults to now. Pass projectId if this token isn\'t scoped to a single project.',
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: {
+          issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
+          timeSpent: { oneOf: [{ type: "string" }, { type: "number" }] },
+          started: { type: "string" },
+          comment: { type: "string" },
+          authorId: { type: "string" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
+        },
+        required: ["issueId", "timeSpent"],
+      }),
+    },
+    async (args: unknown) => {
+      let { issueId, timeSpent, started, comment, authorId, projectId: rawProjectId } = args as {
+        issueId: string;
+        timeSpent: string | number;
+        started?: string;
+        comment?: string;
+        authorId?: string;
+        projectId?: string;
+      };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "add_worklog" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const { access } = membership;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
+      const issue = await db.qtIssue.findFirst({
+        where: { id: issueId, orgId, projectId, isDeleted: false },
+        select: { id: true, parentId: true },
+      });
+      if (!issue) {
+        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "add_worklog",
+        access,
+        resource: "Timesheet",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
+
+      let authorUserId = userId;
+      if (authorId && authorId !== userId) {
+        if (!access.isTenantAdmin) {
+          return {
+            content: [{ type: "text", text: "You don't have access to log time on behalf of another user." }],
+            isError: true,
+          };
+        }
+        const authorMember = await db.qtProjectMember.findFirst({
+          where: { projectId, userId: authorId, isDeleted: false },
+          select: { id: true },
+        });
+        if (!authorMember) {
+          return { content: [{ type: "text", text: "authorId is not a member of this project." }], isError: true };
+        }
+        authorUserId = authorId;
+      }
+
+      const seconds = parseWorklogTimeSpent(timeSpent);
+      if (seconds === null) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: 'timeSpent must be a duration like "2h 30m", "45m", "1d", or a non-negative number of seconds.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const parsed = createTimesheetSchema.safeParse({
+        issueId,
+        entryDate: started ?? new Date().toISOString(),
+        hours: seconds / 3600,
+        description: comment,
+      });
+      if (!parsed.success) {
+        return {
+          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          isError: true,
+        };
+      }
+
+      let entry;
+      try {
+        entry = await createTimesheetEntry({
+          orgId,
+          userId: authorUserId,
+          projectId,
+          issueId: issue.id,
+          parentIssueId: issue.parentId,
+          entryDate: new Date(parsed.data.entryDate),
+          hours: parsed.data.hours,
+          description: parsed.data.description,
+          createdBy: userId,
+        });
+      } catch (err) {
+        if (err instanceof TimesheetFutureDateError) {
+          return { content: [{ type: "text", text: err.message }], isError: true };
+        }
+        throw err;
+      }
+
+      const author = await db.user.findUnique({
+        where: { id: authorUserId },
+        select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              id: entry.id,
+              issueId: entry.issueId,
+              author,
+              timeSpentSeconds: Math.round(entry.hours * 3600),
+              started: entry.entryDate,
+              comment: entry.description ?? null,
+            }),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "list_worklogs",
+    {
+      description:
+        "List an issue's worklog entries, chronologically. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
+        required: ["issueId"],
+      }),
+    },
+    async (args: unknown) => {
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_worklogs" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
+      const issue = await db.qtIssue.findFirst({
+        where: { id: issueId, orgId, projectId, isDeleted: false },
+        select: { id: true },
+      });
+      if (!issue) {
+        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      }
+      const worklogs = await listWorklogsForIssue({ orgId, projectId, issueId: issue.id });
+      return { content: [{ type: "text", text: JSON.stringify({ worklogs }) }] };
+    },
+  );
+
+  server.registerTool(
     "complete_sprint",
     {
       description:
-        "Complete an ACTIVE sprint and move its open issues to the backlog, scoped to the PAT's project",
+        "Complete an ACTIVE sprint and move its open issues to the backlog. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { sprintId: { type: "string" } },
+        properties: { sprintId: { type: "string" }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
         required: ["sprintId"],
       }),
     },
     async (args: unknown) => {
-      const { sprintId } = args as { sprintId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const { sprintId, projectId: rawProjectId } = args as { sprintId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "complete_sprint" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
       const sprint = await db.qtSprint.findFirst({
         where: { id: sprintId, projectId, isDeleted: false },
         select: { id: true, status: true },
@@ -668,9 +1456,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           isError: true,
         };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Sprint", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "complete_sprint",
+        access: membership.access,
+        resource: "Sprint",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const completedAt = new Date();
       const updated = await db.$transaction(async (tx) => {
@@ -707,7 +1502,8 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "search_issues",
     {
-      description: "Search issues by common filters, scoped to the PAT's project",
+      description:
+        'Search issues by common filters, or pass `query` for advanced QQL (QuikTrack Query Language) — e.g. \'status IN ("To Do","In Progress") AND assignee = "acct:123" AND updated >= -7d ORDER BY updated DESC\'. Fields: project, type, status, priority, assignee, reporter, sprint, epic, labels, created, updated, text. Operators: =, !=, IN, NOT IN, >, <, >=, <=, ~ (contains), AND/OR, parens. When `query` is given, pagination is limit+offset (not cursor) since a custom ORDER BY is incompatible with cursor pagination. Pass projectId if this token isn\'t scoped to a single project.',
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
@@ -720,8 +1516,11 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           parentId: { type: ["string", "null"] },
           epicId: { type: ["string", "null"] },
           search: { type: "string" },
+          query: { type: "string" },
           limit: { type: "number" },
+          offset: { type: "number" },
           cursor: { type: "string" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
       }),
     },
@@ -736,16 +1535,23 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         parentId?: string | null;
         epicId?: string | null;
         search?: string;
+        query?: string;
         limit?: number;
+        offset?: number;
         cursor?: string;
+        projectId?: string;
       };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      const resolved = resolveRequestedProjectId(tokenProjectId, a.projectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "search_issues" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
 
       const limit = a.limit && a.limit > 0 ? Math.min(100, a.limit) : 25;
-      const where = {
+      const simpleWhere = {
         orgId,
         projectId,
         isDeleted: false,
@@ -759,42 +1565,77 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         ...(a.epicId === undefined ? {} : { epicId: a.epicId }),
         ...(a.search
           ? {
-              OR: [
-                { title: { contains: a.search, mode: "insensitive" as const } },
-                { description: { contains: a.search, mode: "insensitive" as const } },
-                { key: { contains: a.search, mode: "insensitive" as const } },
-              ],
-            }
+            OR: [
+              { title: { contains: a.search, mode: "insensitive" as const } },
+              { description: { contains: a.search, mode: "insensitive" as const } },
+              { key: { contains: a.search, mode: "insensitive" as const } },
+            ],
+          }
           : {}),
       };
+      const select = {
+        id: true,
+        key: true,
+        title: true,
+        type: true,
+        priority: true,
+        statusId: true,
+        assigneeId: true,
+        sprintId: true,
+        parentId: true,
+        epicId: true,
+      } as const;
 
-      const issues = await db.qtIssue.findMany({
-        where,
-        orderBy: [{ orderInColumn: "asc" }, { createdAt: "desc" }, { id: "asc" }],
-        take: limit + 1,
-        ...(a.cursor ? { cursor: { id: a.cursor }, skip: 1 } : {}),
-        select: {
-          id: true,
-          key: true,
-          title: true,
-          type: true,
-          priority: true,
-          statusId: true,
-          assigneeId: true,
-          sprintId: true,
-          parentId: true,
-          epicId: true,
-        },
-      });
-
-      let nextCursor: string | null = null;
-      let pageIssues = issues;
-      if (issues.length > limit) {
-        pageIssues = issues.slice(0, limit);
-        nextCursor = pageIssues[pageIssues.length - 1]?.id ?? null;
+      // Legacy simple params keep their own where clause untouched (QUIKTR-117
+      // ANDs a QQL fragment on top rather than re-encoding them into QQL, so
+      // existing callers get byte-identical behavior).
+      if (!a.query) {
+        const total = await db.qtIssue.count({ where: simpleWhere as Prisma.QtIssueWhereInput });
+        const issues = await db.qtIssue.findMany({
+          where: simpleWhere as Prisma.QtIssueWhereInput,
+          orderBy: [{ orderInColumn: "asc" }, { createdAt: "desc" }, { id: "asc" }],
+          take: limit + 1,
+          ...(a.cursor ? { cursor: { id: a.cursor }, skip: 1 } : {}),
+          select,
+        });
+        let nextCursor: string | null = null;
+        let pageIssues = issues;
+        if (issues.length > limit) {
+          pageIssues = issues.slice(0, limit);
+          nextCursor = pageIssues[pageIssues.length - 1]?.id ?? null;
+        }
+        return { content: [{ type: "text", text: JSON.stringify({ issues: pageIssues, nextCursor, total }) }] };
       }
 
-      return { content: [{ type: "text", text: JSON.stringify({ issues: pageIssues, nextCursor }) }] };
+      let where: Prisma.QtIssueWhereInput;
+      let orderBy: Prisma.QtIssueOrderByWithRelationInput[];
+      try {
+        const parsedQuery = parseQql(a.query);
+        const qqlWhere = parsedQuery.where ? await buildQqlWhere(parsedQuery.where, { orgId, projectId, userId }) : {};
+        // buildQqlWhere assembles a dynamically-shaped JSON where fragment
+        // (see qql/buildWhere.ts) — cast once here, at the boundary, rather
+        // than typing the whole recursive builder against Prisma's types.
+        where = { AND: [simpleWhere, qqlWhere as unknown as Prisma.QtIssueWhereInput] };
+        orderBy = parsedQuery.orderBy
+          ? [buildQqlOrderBy(parsedQuery.orderBy) as unknown as Prisma.QtIssueOrderByWithRelationInput, { id: "asc" }]
+          : [{ orderInColumn: "asc" }, { createdAt: "desc" }, { id: "asc" }];
+      } catch (error) {
+        if (error instanceof QqlParseError) {
+          return {
+            content: [{ type: "text", text: `Parse error at position ${error.position}: ${error.message}` }],
+            isError: true,
+          };
+        }
+        throw error;
+      }
+
+      const offset = a.offset && a.offset > 0 ? a.offset : 0;
+      const [total, issues] = await Promise.all([
+        db.qtIssue.count({ where }),
+        db.qtIssue.findMany({ where, orderBy, skip: offset, take: limit, select }),
+      ]);
+
+      return { content: [{ type: "text", text: JSON.stringify({ issues, total, offset, limit }) }] };
     },
   );
 
@@ -802,11 +1643,11 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
     "quiktrack_update_issue",
     {
       description:
-        "Update an issue's fields (title, description, type, priority, status, assignee, parent, epic, sprint, dates, eta, storyPoints), scoped to the PAT's project",
+        "Update an issue's fields (title, description, type, priority, status, assignee, parent, epic, sprint, dates, eta, storyPoints). Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
-          issueId: { type: "string" },
+          issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
           title: { type: "string" },
           description: { type: "string" },
           type: { type: "string", enum: ["EPIC", "TASK", "STORY", "BUG", "SUBTASK"] },
@@ -821,16 +1662,28 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           eta: { type: "number" },
           storyPoints: { type: "number" },
           customFields: { type: "object" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId, ...rest } = args as { issueId: string; [key: string]: unknown };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId, ...rest } = args as {
+        issueId: string;
+        projectId?: string;
+        [key: string]: unknown;
+      };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "quiktrack_update_issue" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true, key: true, resolutionId: true, ...selectIssueHistorySnapshot },
@@ -838,9 +1691,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "quiktrack_update_issue",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = updateIssueInput.safeParse(rest);
       if (!parsed.success) {
@@ -908,25 +1768,26 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       let workflowPatch: ExecuteResult["patch"] = {};
       let workflowComments: string[] = [];
       if (isStatusChange) {
+        const issueSnapshot: TransitionIssueSnapshot = {
+          id: issue.id,
+          orgId,
+          projectId,
+          type: issue.type ?? "TASK",
+          statusId: issue.statusId as string,
+          assigneeId: issue.assigneeId ?? null,
+          resolutionId: issue.resolutionId ?? null,
+          priority: issue.priority ?? null,
+        };
         try {
           const res = await executeTransition({
-            issue: {
-              id: issue.id,
-              orgId,
-              projectId,
-              type: issue.type ?? "TASK",
-              statusId: issue.statusId as string,
-              assigneeId: issue.assigneeId ?? null,
-              resolutionId: issue.resolutionId ?? null,
-              priority: issue.priority ?? null,
-            },
+            issue: issueSnapshot,
             toStatusId: allowedFields.statusId as string,
             userId,
           });
           workflowPatch = res.patch ?? {};
           workflowComments = res.comments ?? [];
         } catch (error: unknown) {
-          const mapped = transitionErrorContent(error);
+          const mapped = await transitionErrorContent(error, { issue: issueSnapshot, userId });
           if (mapped) return mapped;
           throw error;
         }
@@ -1016,19 +1877,26 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "list_remote_links",
     {
-      description: "List an issue's remote links (e.g. attached PRs), oldest first, scoped to the PAT's project",
+      description: "List an issue's remote links (e.g. attached PRs), oldest first. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
-        properties: { issueId: { type: "string" } },
+        properties: { issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
         required: ["issueId"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_remote_links" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1048,24 +1916,32 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
   server.registerTool(
     "add_remote_link",
     {
-      description: "Attach an external URL (e.g. a PR) to an issue, scoped to the PAT's project",
+      description: "Attach an external URL (e.g. a PR) to an issue. Pass projectId if this token isn't scoped to a single project.",
       inputSchema: fromJsonSchema({
         type: "object",
         properties: {
-          issueId: { type: "string" },
+          issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
           url: { type: "string" },
           title: { type: "string" },
           type: { type: "string" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
         },
         required: ["issueId", "url", "title", "type"],
       }),
     },
     async (args: unknown) => {
-      const { issueId } = args as { issueId: string };
-      const access = await loadProjectAccess(orgId, userId, projectId);
-      if (!access) {
-        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
       }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "add_remote_link" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
       const issue = await db.qtIssue.findFirst({
         where: { id: issueId, orgId, projectId, isDeleted: false },
         select: { id: true },
@@ -1073,9 +1949,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       if (!issue) {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
-      if (!access.isTenantAdmin && !(await userCanInProject(userId, orgId, projectId, "Issue", "update"))) {
-        return { content: [{ type: "text", text: "You don't have access to this." }], isError: true };
-      }
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "add_remote_link",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
 
       const parsed = addRemoteLinkInput.safeParse(args);
       if (!parsed.success) {
@@ -1097,6 +1980,164 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         select: { id: true, url: true, title: true, type: true, metadata: true, createdAt: true },
       });
       return { content: [{ type: "text", text: JSON.stringify(link) }] };
+    },
+  );
+
+  server.registerTool(
+    "link_issues",
+    {
+      description:
+        'Create a directional link between two issues (e.g. "blocks"/"is blocked by", "relates to", "duplicates"/"is duplicated by"). linkType must be one of list_link_types\' `type` values — for "blocks", outwardIssueId blocks inwardIssueId. Creating the same link twice is a no-op. Pass projectId if this token isn\'t scoped to a single project.',
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: {
+          inwardIssueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
+          outwardIssueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." },
+          linkType: { type: "string" },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
+        },
+        required: ["inwardIssueId", "outwardIssueId", "linkType"],
+      }),
+    },
+    async (args: unknown) => {
+      let {
+        inwardIssueId,
+        outwardIssueId,
+        linkType,
+        projectId: rawProjectId,
+      } = args as { inwardIssueId: string; outwardIssueId: string; linkType: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "link_issues" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const outwardIssue = await resolveIssueIdOrKey(orgId, outwardIssueId, projectId);
+      if (!outwardIssue) {
+        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      }
+      outwardIssueId = outwardIssue.id;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "link_issues",
+        access: membership.access,
+        resource: "Issue",
+        action: "update",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
+
+      // Cross-project links are allowed (mirrors app/api/issues/[id]/links) —
+      // but the caller must still be able to see the inward issue's own
+      // project (QUIKTR-119): without this, a caller could confirm an issue
+      // id exists in a project they aren't a member of just by attempting to
+      // link to it, using only the outward side's access as cover. Resolved
+      // with no projectId constraint since a cross-project inward issue is
+      // exactly what this is meant to allow.
+      const inwardIssue = await resolveIssueIdOrKey(orgId, inwardIssueId);
+      if (!inwardIssue) {
+        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      }
+      inwardIssueId = inwardIssue.id;
+      const inwardMembership = await checkProjectMembership({
+        orgId,
+        userId,
+        projectId: inwardIssue.projectId,
+        tool: "link_issues",
+      });
+      if (!inwardMembership.ok) return inwardMembership.result;
+
+      // Compared as resolved ids (both sides above), so this also catches
+      // the same issue named two different ways (e.g. id vs. key), not just
+      // an exact literal match on the caller's raw input.
+      if (inwardIssueId === outwardIssueId) {
+        return { content: [{ type: "text", text: "Cannot link an issue to itself." }], isError: true };
+      }
+      const linkTypeDef = ISSUE_LINK_TYPES.find((t) => t.type === linkType);
+      if (!linkTypeDef) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Unknown linkType "${linkType}". Valid types: ${ISSUE_LINK_TYPES.map((t) => t.type).join(", ")}.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const existing = await db.qtIssueLink.findFirst({
+        where: { sourceIssueId: outwardIssue.id, targetIssueId: inwardIssue.id, type: linkTypeDef.type },
+        select: { id: true },
+      });
+      const link =
+        existing ??
+        (await db.qtIssueLink.create({
+          data: {
+            orgId,
+            projectId: outwardIssue.projectId,
+            sourceIssueId: outwardIssue.id,
+            targetIssueId: inwardIssue.id,
+            type: linkTypeDef.type,
+            createdBy: userId,
+          },
+          select: { id: true },
+        }));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              id: link.id,
+              linkType: linkTypeDef.type,
+              outwardIssueId: outwardIssue.id,
+              inwardIssueId: inwardIssue.id,
+              outwardRelationship: linkTypeDef.outward,
+              inwardRelationship: linkTypeDef.inward,
+            }),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "list_issue_links",
+    {
+      description:
+        "List an issue's internal links in both directions, each with the related issue's key/title/status and a human-readable relationship name. Pass projectId if this token isn't scoped to a single project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: { issueId: { type: "string", description: "Issue id or its human-readable key (e.g. \"QUIKTR-119\")." }, projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." } },
+        required: ["issueId"],
+      }),
+    },
+    async (args: unknown) => {
+      let { issueId, projectId: rawProjectId } = args as { issueId: string; projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "list_issue_links" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+      if (!issueRef) return { content: [{ type: "text", text: "Not found" }], isError: true };
+      issueId = issueRef.id;
+      const issue = await db.qtIssue.findFirst({
+        where: { id: issueId, orgId, projectId, isDeleted: false },
+        select: { id: true },
+      });
+      if (!issue) {
+        return { content: [{ type: "text", text: "Not found" }], isError: true };
+      }
+      const links = await loadIssueLinks(orgId, userId, issue.id);
+      return { content: [{ type: "text", text: JSON.stringify(links) }] };
     },
   );
 

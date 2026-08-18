@@ -14,10 +14,10 @@ const schema = z.object({
   skipPrerequisiteCheck: z.boolean().optional(),
 });
 
-// POST /api/course-assignments/assign — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/course-assignments/assign — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const orgId = user.orgId;
   if (!orgId) throw BadRequest('Tenant ID is required');
 

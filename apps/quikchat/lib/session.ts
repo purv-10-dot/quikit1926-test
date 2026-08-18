@@ -25,6 +25,53 @@ export async function getRawSession(): Promise<OrgContext | null> {
 }
 
 /**
+ * The identity fields an app-access check needs. Strictly a superset of
+ * `OrgContext` — see `getSessionPrincipal`.
+ */
+export interface SessionPrincipal {
+  userId: string;
+  orgId: string;
+  isSuperAdmin: boolean;
+  membershipRole: string | undefined;
+}
+
+/**
+ * Same session read as `getRawSession`, projected wide enough to answer "may
+ * this user open QuikChat" via `getAppAccess` from `@quikit/auth/app-access`.
+ *
+ * Exists because `getRawSession`'s deliberate `{ userId, orgId }` projection
+ * drops `membershipRole`, and `getAppAccess` rule 3 grants org admins access on
+ * org-level entitlement alone. Passing `memberRole: undefined` would silently
+ * DENY an org admin who has org access but no explicit `UserAppAccess` row —
+ * so the role has to survive the projection, not be filled in with a default.
+ *
+ * Additive on purpose: `getRawSession` keeps its signature and every existing
+ * caller. Use that one when you only need the org boundary; use this one when
+ * you need entitlement.
+ *
+ * Note on `isSuperAdmin`: QuikChat is an OAuth-client app, so
+ * `createOAuthClientOptions` hardcodes it false and org admins pass via
+ * `membershipRole` instead. Read here regardless, to mirror the argument set
+ * `(dashboard)/layout.tsx` passes rather than encode a QuikChat-only shortcut.
+ */
+export async function getSessionPrincipal(): Promise<SessionPrincipal | null> {
+  const session = await getServerSession(authOptions);
+  // Local cast for the same reason as above.
+  const user = session?.user as
+    | { id?: string; orgId?: string; isSuperAdmin?: boolean; membershipRole?: string }
+    | undefined;
+  const userId = user?.id;
+  const orgId = user?.orgId;
+  if (!userId || !orgId) return null;
+  return {
+    userId,
+    orgId,
+    isSuperAdmin: user?.isSuperAdmin === true,
+    membershipRole: user?.membershipRole,
+  };
+}
+
+/**
  * Platform contract aliases. `auth()` / `getSession()` return the raw session
  * WITHOUT re-checking entitlement — use `getOrgId()` / `withOrgAuth()` when you
  * need the org boundary enforced.

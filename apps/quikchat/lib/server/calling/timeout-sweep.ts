@@ -1,4 +1,5 @@
 import { db as prisma } from "@quikit/database";
+import { errorFields, logger } from "@/lib/shared";
 import * as calling from "./calling.service";
 
 let started = false;
@@ -41,7 +42,10 @@ export async function runCallTimeoutSweep(): Promise<void> {
       } catch (e) {
         // Best-effort: a race (another participant ended/accepted the call) or a
         // transient DB error should not stop the sweep.
-        console.error("[call-timeout-sweep] failed for ringing call", call.id, e);
+        logger.error(
+          { ...errorFields(e), callId: call.id, orgId: call.orgId },
+          "call timeout sweep: failed to mark ringing call missed",
+        );
       }
     }
 
@@ -71,11 +75,14 @@ export async function runCallTimeoutSweep(): Promise<void> {
         await calling.endCall(ctx, call.id);
         await calling.postCallSummary(ctx, call.id);
       } catch (e) {
-        console.error("[call-timeout-sweep] failed for active call", call.id, e);
+        logger.error(
+          { ...errorFields(e), callId: call.id, orgId: call.orgId },
+          "call timeout sweep: failed to end stale active call",
+        );
       }
     }
   } catch (e) {
-    console.error("[call-timeout-sweep] query failed", e);
+    logger.error({ ...errorFields(e) }, "call timeout sweep: query failed");
   }
 }
 

@@ -5,6 +5,7 @@ import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
 import { weekEditState, isWeeklyWriteAllowed, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
+import { emitPriorityWeeklyStatusChanged } from "@/lib/services/workflowEvents";
 const withOrgAuth = withOrgAuthForModule("priority");
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
@@ -12,7 +13,7 @@ export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
     const priority = await db.priority.findFirst({
       where: { id: params.id, orgId },
-      select: { quarter: true, year: true, teamId: true },
+      select: { quarter: true, year: true, teamId: true, name: true, owner: true },
     });
     if (!priority) {
       return NextResponse.json(
@@ -119,6 +120,23 @@ export const POST = withOrgAuth<{ id: string }>(
           kind: "status",
         },
         ...requestContext(request),
+      });
+    }
+
+    // QuikFlow: fire priority.weekly.status.changed on a real weekly transition
+    // (fire-and-forget; never blocks the save). No-op saves are already filtered.
+    if (statusChanged) {
+      emitPriorityWeeklyStatusChanged({
+        orgId,
+        priorityId: params.id,
+        name: priority.name,
+        owner: priority.owner,
+        teamId: priority.teamId,
+        quarter: priority.quarter,
+        year: priority.year,
+        weekNumber,
+        weekStatus: newStatus,
+        previousWeekStatus: previousStatus,
       });
     }
 

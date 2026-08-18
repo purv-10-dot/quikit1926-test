@@ -37,6 +37,7 @@ import { CallsModule } from "./CallsModule";
 import { ChatWorkspace } from "./ChatWorkspace";
 import { NotificationsModule } from "./NotificationsModule";
 import { SettingsModule } from "./SettingsModule";
+import { DEFAULT_ACCENT, STORAGE_KEY } from "@/lib/accent-theme";
 
 export interface ChatShellProps {
   currentUserId: string;
@@ -202,10 +203,12 @@ function ShellInner({
       : view;
 
   // Apply the saved accent color theme on load (defaults to Mist Blue).
+  // Reads STORAGE_KEY, not the literal it used to duplicate — SettingsModule
+  // writes through the same constant, so a rename can only ever move both.
   useEffect(() => {
-    let saved = "mist";
+    let saved: string = DEFAULT_ACCENT;
     try {
-      saved = localStorage.getItem("qc-accent") || "mist";
+      saved = localStorage.getItem(STORAGE_KEY) || DEFAULT_ACCENT;
     } catch {
       // ignore
     }
@@ -363,7 +366,6 @@ function ShellInner({
         <ChatWorkspace
           currentUserId={currentUserId}
           currentUserName={displayName}
-          workspaceName={workspaceName}
           realtimeUrl={realtimeUrl}
           initialChannelId={initialChannelId}
         />

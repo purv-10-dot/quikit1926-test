@@ -14,7 +14,7 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import type { LmsMasterCourse as MasterCourse, LmsMasterCourseStatus as MasterCourseStatus, LmsCourseLevel as CourseLevel } from '@prisma/client';
 import { db } from '@/lib/db';
-import { BadRequest, NotFound } from '@/lib/http';
+import { BadRequest, Forbidden, NotFound } from '@/lib/http';
 import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
 import { userHasRole, isPlatformOperator, type AuthUser } from '@/lib/auth/context';
 
@@ -452,9 +452,10 @@ export async function discardDraft(courseId: string) {
   });
 }
 
-export async function publish(id: string, tenantIds: string[]) {
+export async function publish(actor: AuthUser, id: string, tenantIds: string[]) {
   const course = await db.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
+  assertCanActOnGlobalCourse(actor, course);
   const modules = (course.modules as unknown as AnyRec[]) || [];
   if (modules.length === 0) throw BadRequest('Cannot publish course without modules');
   const updated = await db.lmsMasterCourse.update({ where: { id }, data: { status: 'Published' } });
@@ -462,8 +463,10 @@ export async function publish(id: string, tenantIds: string[]) {
   return withSelectedTenants(updated);
 }
 
-export async function archive(id: string) {
-  await findOne(id);
+export async function archive(actor: AuthUser, id: string) {
+  const course = await db.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
+  if (!course) throw NotFound('Master course not found');
+  assertCanActOnGlobalCourse(actor, course);
   const updated = await db.lmsMasterCourse.update({ where: { id }, data: { status: 'Archived' } });
   return withSelectedTenants(updated);
 }
@@ -473,9 +476,11 @@ export async function remove(id: string) {
   await db.lmsMasterCourse.delete({ where: { id } });
 }
 
-export async function duplicate(id: string, authorId: string) {
+export async function duplicate(actor: AuthUser, id: string) {
   const original = await db.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!original) throw NotFound('Master course not found');
+  assertCanActOnGlobalCourse(actor, original);
+  const authorId = actor.id;
   const modules = ((original.modules as unknown as AnyRec[]) || []).map((module) => ({
     ...module,
     id: randomUUID(),
@@ -631,9 +636,34 @@ export async function tenantReject(id: string, _tenantAdminUserId: string, orgId
   return withSelectedTenants(updated);
 }
 
-export async function approve(id: string, approvedById: string) {
+/**
+ * Throw unless `actor` may act on the shared catalog's FINAL approval stage
+ * for this course (approve/reject/publish/archive/duplicate).
+ *
+ * The platform operator (`isSuperAdmin`) curates the shared catalog across
+ * every org — that is the point of the role. Every other ADMIN is now
+ * potentially more than one person per org (any `org_admin` quikit invites,
+ * not just the founding one — see lib/auth/role-resolution.ts), so without
+ * this check any org's ADMIN could approve, reject, archive, publish or
+ * duplicate a COMPLETELY DIFFERENT org's submitted course. `orgId` is `null`
+ * for a not-yet-submitted master course template — those are catalog-owned,
+ * not org-owned, and the operator-only branch above already covers them.
+ */
+function assertCanActOnGlobalCourse(
+  actor: AuthUser,
+  course: { submittedByTenantId?: string | null },
+): void {
+  if (isPlatformOperator(actor)) return;
+  if (!course.submittedByTenantId || course.submittedByTenantId !== actor.orgId) {
+    throw Forbidden('You can only act on master courses submitted by your own organization');
+  }
+}
+
+export async function approve(actor: AuthUser, id: string) {
   const course = await db.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
+  assertCanActOnGlobalCourse(actor, course);
+  const approvedById = actor.id;
   if (course.status !== 'PendingApproval' && course.status !== 'Resubmitted') {
     throw BadRequest('Only pending or resubmitted courses can be approved');
   }
@@ -677,15 +707,16 @@ export async function approve(id: string, approvedById: string) {
   return withSelectedTenants(updated);
 }
 
-export async function reject(id: string, rejectedById: string, reason: string) {
+export async function reject(actor: AuthUser, id: string, reason: string) {
   const course = await db.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
+  assertCanActOnGlobalCourse(actor, course);
   if (course.status !== 'PendingApproval' && course.status !== 'Resubmitted') {
     throw BadRequest('Only pending or resubmitted courses can be rejected');
   }
   const updated = await db.lmsMasterCourse.update({
     where: { id },
-    data: { status: 'Rejected', approvedBy: rejectedById, approvalDate: new Date(), rejectionReason: reason },
+    data: { status: 'Rejected', approvedBy: actor.id, approvalDate: new Date(), rejectionReason: reason },
   });
   return withSelectedTenants(updated);
 }
@@ -693,28 +724,21 @@ export async function reject(id: string, rejectedById: string, reason: string) {
 // ── controller-side ownership check (canTenantAdminEditCourse) ────────────────
 /**
  * Actor predicates — 1:1 ports of `src/auth/utils/role-access.util.ts`, built on
- * the existing `userHasRole` auth helper (which checks role AND secondaryRole).
+ * the shared `userHasRole` auth helper rather than re-declared locally.
  *
  * They live here, beside `canTenantAdminEditCourse`, because they answer the same
  * question: who is allowed to touch this course. Several master-course routes
- * previously declared their own local copies, and those copies drifted:
- *
- *     // local copy — WRONG
- *     u.role === 'TENANT_ADMIN' || u.role === 'SUB_ADMIN' || u.secondaryRole === 'SUB_ADMIN'
- *
- * That misses `secondaryRole === 'TENANT_ADMIN'`, so a delegated tenant admin was
- * not recognised as a tenant actor and skipped the ownership check entirely,
- * falling through to the SUPER_ADMIN path. The legacy helper used `userHasRole`
- * for BOTH roles (`role-access.util.ts:24-32`).
+ * previously declared their own local role-check copies, and those copies
+ * drifted from this one and from each other. Routing every check through
+ * `userHasRole` keeps them from drifting again.
  */
 
-/** Primary or delegated Sub Admin (secondary SUB_ADMIN on a learner). */
 export const isSubAdminActor = (u: AuthUser) => userHasRole(u, 'SUB_ADMIN');
 
 /**
  * Full tenant admin — primary role only, NOT delegated (`role-access.util.ts:19-21`).
  *
- * A SUPER_ADMIN who is NOT the platform operator counts. That is an org's founding
+ * A ADMIN who is NOT the platform operator counts. That is an org's founding
  * admin (lib/auth/founding-admin.ts): a tenant person holding the top role. Without
  * this they fell through every tenant branch onto the operator path — where
  * `POST /master-courses` honours `dto.status` verbatim and never forces
@@ -723,12 +747,12 @@ export const isSubAdminActor = (u: AuthUser) => userHasRole(u, 'SUB_ADMIN');
  * stop for TENANT_ADMIN/SUB_ADMIN.
  */
 export const isPrimaryTenantAdmin = (u: AuthUser) =>
-  u.role === 'TENANT_ADMIN' || (u.role === 'SUPER_ADMIN' && !isPlatformOperator(u));
+  u.role === 'TENANT_ADMIN' || (u.role === 'ADMIN' && !isPlatformOperator(u));
 
 /**
  * Tenant Admin or Sub Admin in any form — used for tenant-scoped admin APIs.
  *
- * Includes a non-operator SUPER_ADMIN for the reason above. This is also what makes
+ * Includes a non-operator ADMIN for the reason above. This is also what makes
  * `assertCanEditMasterCourse` below actually scope them: it returns early — fully
  * unscoped — for anyone this predicate rejects, so a founding admin could otherwise
  * read, overwrite and restructure ANY tenant's master course drafts.
@@ -736,10 +760,10 @@ export const isPrimaryTenantAdmin = (u: AuthUser) =>
 export const isTenantOrSubAdminActor = (u: AuthUser) =>
   userHasRole(u, 'TENANT_ADMIN') ||
   userHasRole(u, 'SUB_ADMIN') ||
-  (u.role === 'SUPER_ADMIN' && !isPlatformOperator(u));
+  (u.role === 'ADMIN' && !isPlatformOperator(u));
 
 /**
- * Throw unless `actor` may act on `courseId`. SUPER_ADMIN is unscoped and passes
+ * Throw unless `actor` may act on `courseId`. ADMIN is unscoped and passes
  * through, exactly as on the sibling `PUT`/`DELETE /master-courses/:id` routes.
  *
  * This closes the five cross-tenant holes GAP_REPORT §3.2 recorded on `auto-save`,
@@ -757,7 +781,7 @@ export const isTenantOrSubAdminActor = (u: AuthUser) =>
  * sibling routes already return for this exact condition.
  */
 export async function assertCanEditMasterCourse(actor: AuthUser, courseId: string): Promise<void> {
-  if (!isTenantOrSubAdminActor(actor)) return; // SUPER_ADMIN — unscoped.
+  if (!isTenantOrSubAdminActor(actor)) return; // ADMIN — unscoped.
   const existing = await findOne(courseId);
   if (!canTenantAdminEditCourse(existing, String(actor.orgId ?? undefined))) {
     throw BadRequest('You can only edit your own courses');

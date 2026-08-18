@@ -104,6 +104,97 @@ function presenceRedis(): Redis {
   return redis;
 }
 
+/**
+ * Seed `count` messages into a channel, oldest first, one minute apart, all from
+ * `sender`. Returns the ids in ascending order (oldest → newest).
+ *
+ * For scroll-back: the app pages 30 at a time, so a meaningful test needs at
+ * least ~3 pages, which the shared dev seed does not provide for any channel.
+ *
+ * These rows are tagged in `content` with the returned marker so `purgeSeeded`
+ * can remove exactly them — the shared dev workspace is used by hand and must
+ * not accumulate test noise.
+ *
+ * NOTE: two of these deliberately share an exact `createdAt`. That is the case
+ * the (createdAt, id) keyset cursor exists for — with the old createdAt-only
+ * cursor, one of the pair is silently skipped when a page boundary falls
+ * between them.
+ */
+export async function seedChannelHistory(
+  channelId: string,
+  orgId: string,
+  senderId: string,
+  count: number,
+  marker: string,
+): Promise<string[]> {
+  const base = Date.UTC(2026, 0, 1, 9, 0, 0);
+  const rows = Array.from({ length: count }, (_, i) => ({
+    orgId,
+    channelId,
+    senderId,
+    type: "Text",
+    // Index `1` shares index `0`'s timestamp — the tie case.
+    createdAt: new Date(base + (i === 1 ? 0 : i) * 60_000),
+    content: `${marker} #${i}`,
+  }));
+  await db().qcMessage.createMany({ data: rows });
+  const saved = await db().qcMessage.findMany({
+    where: { channelId, content: { startsWith: marker } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  return saved.map((r) => r.id);
+}
+
+/** Remove every row `seedChannelHistory` created under `marker`. */
+export async function purgeSeededHistory(marker: string): Promise<void> {
+  await db().qcMessage.deleteMany({ where: { content: { startsWith: marker } } });
+}
+
+/**
+ * Read a member's unread watermark, so a test can put it back afterwards.
+ * `undefined` means there is no membership row (caller should fail loudly).
+ */
+export async function getLastReadAt(
+  channelId: string,
+  identity: Identity,
+): Promise<Date | null | undefined> {
+  const row = await db().qcChannelMember.findUnique({
+    where: {
+      orgId_channelId_userId: {
+        orgId: identity.orgId,
+        channelId,
+        userId: identity.userId,
+      },
+    },
+    select: { lastReadAt: true },
+  });
+  return row === null ? undefined : row.lastReadAt;
+}
+
+/**
+ * Force a member's unread watermark. `unreadCount` in the channel list is
+ * "messages from others newer than lastReadAt", so winding this back is the
+ * only way to create a deterministic unread block in the shared dev workspace.
+ * MUTATES shared data — always restore in `afterAll`.
+ */
+export async function setLastReadAt(
+  channelId: string,
+  identity: Identity,
+  value: Date | null,
+): Promise<void> {
+  await db().qcChannelMember.update({
+    where: {
+      orgId_channelId_userId: {
+        orgId: identity.orgId,
+        channelId,
+        userId: identity.userId,
+      },
+    },
+    data: { lastReadAt: value },
+  });
+}
+
 /** Release the pool + Redis — call from `test.afterAll` or the run hangs on exit. */
 export async function closeDb(): Promise<void> {
   if (prisma) {

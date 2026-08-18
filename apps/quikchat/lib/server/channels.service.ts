@@ -169,6 +169,38 @@ async function emitSystemMessage(ctx: OrgContext, channelId: string, text: strin
   });
 }
 
+/**
+ * Tell a channel's remaining members that its ROSTER changed (someone left, was
+ * removed, or had their role changed).
+ *
+ * Deliberately reuses `channel_updated` rather than minting a roster-specific
+ * event. The gateway already relays `channel_updated` to the channel room, and
+ * `applyChannelUpdated` guards every field with `!== undefined`, so a payload of
+ * just `{ channelId }` is a no-op on the cached channel row and carries only the
+ * "re-read this channel" signal. A new event type would mean editing BOTH copies
+ * of the fan-out contract (`lib/shared/publish.ts` and the gateway's
+ * byte-for-byte duplicate `fanout-contract.ts`), the dispatcher, and the client
+ * — for an identical result.
+ *
+ * The client side of this is load-bearing: `onChannelUpdated` in ChatWorkspace
+ * must invalidate `["members", channelId]` and `["channels"]`, not just
+ * `["channel-detail"]`. Without that, this publish changes nothing on screen —
+ * the roster lives in a different query from the channel row.
+ *
+ * Why it matters: `leave()` posts a "left the chat" system message, which IS
+ * fanned out, so remaining members watched someone announce their departure
+ * while the member list kept showing them. The two visibly disagreed until a
+ * refetch.
+ */
+async function publishRosterChanged(orgId: string, channelId: string): Promise<void> {
+  await publishFanout({
+    orgId,
+    channelId,
+    event: "channel_updated",
+    payload: { channelId },
+  });
+}
+
 // ============================================================================
 // Create / discover / join
 // ============================================================================
@@ -484,7 +516,26 @@ export async function previewInvite(code: string): Promise<InvitePreview> {
 export async function acceptInvite(ctx: OrgContext, code: string): Promise<ChannelListItem> {
   const result = await prisma.$transaction(async (tx) => {
     const invite = await tx.qcInvite.findUnique({ where: { code } });
-    if (!invite || invite.orgId !== ctx.orgId) throw new HttpError(404, "Invite not found");
+    if (!invite) throw new HttpError(404, "Invite not found");
+    // Cross-org: a DISTINCT error, not a 404.
+    //
+    // This used to collapse into "Invite not found" to avoid leaking the
+    // invite's existence to another tenant. That rationale does not survive
+    // contact with the neighbouring endpoint: `GET /api/invites/[code]`
+    // (previewInvite) has no org check at all and returns the channel's name,
+    // description, visibility, member count, expiry and remaining uses to
+    // anyone holding the code. The caller here has already loaded that preview
+    // — it is what the landing page renders before they click Accept. Saying
+    // "different organisation" therefore discloses strictly less than the page
+    // in front of them, while a 404 tells a legitimate person their link is
+    // broken when it is not.
+    //
+    // Whether the PREVIEW should be that open is a real question and a separate
+    // decision — filed in QUIKCHAT_BACKLOG.md. Until it is answered, honesty
+    // here costs nothing that is not already given away.
+    if (invite.orgId !== ctx.orgId) {
+      throw new HttpError(403, "This invite belongs to a different organisation");
+    }
     assertInviteUsable(invite);
 
     const channel = await tx.qcChannel.findFirst({
@@ -832,6 +883,7 @@ export async function removeMember(
     displayNameOf(targetUserId),
   ]);
   await emitSystemMessage(ctx, channelId, `${actor} removed ${removed} from the chat`);
+  await publishRosterChanged(ctx.orgId, channelId);
   return { removed: true };
 }
 
@@ -856,6 +908,7 @@ export async function updateMemberRole(
     if (adminCount <= 1) throw new HttpError(400, "Cannot demote the last admin");
   }
   await prisma.qcChannelMember.update({ where: { id: target.id }, data: { role } });
+  await publishRosterChanged(ctx.orgId, channelId);
   return { role };
 }
 
@@ -964,6 +1017,14 @@ export async function deleteChannel(
 /**
  * Caller leaves. If they were the last member, the channel and its messages are
  * deleted. Otherwise a "left the chat" system message is posted (groups only).
+ *
+ * No last-admin guard: unlike `updateMemberRole`, this lets the sole admin
+ * leave a group with members still in it, orphaning it (no one left who can
+ * add members, change roles, or delete it). Deliberately not blocked here — a
+ * hard block would trap that admin permanently if no one else can be promoted
+ * first. Backlog: either auto-promote the longest-tenured remaining member
+ * (WhatsApp-style) or require assigning a new owner before leave succeeds
+ * (Teams-style).
  */
 export async function leave(ctx: OrgContext, channelId: string): Promise<{ deleted: boolean }> {
   const member = await prisma.qcChannelMember.findUnique({
@@ -996,5 +1057,6 @@ export async function leave(ctx: OrgContext, channelId: string): Promise<{ delet
   if (channel?.type === "group") {
     await emitSystemMessage(ctx, channelId, `${await displayNameOf(ctx.userId)} left the chat`);
   }
+  await publishRosterChanged(ctx.orgId, channelId);
   return { deleted: false };
 }

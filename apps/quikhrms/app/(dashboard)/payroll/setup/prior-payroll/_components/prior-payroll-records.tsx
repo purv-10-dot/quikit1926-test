@@ -68,7 +68,7 @@ export function PriorPayrollRecords() {
   // dedupe via the cache key, so this doesn't double-fetch.
   const { data: empData } = useQuery({
     queryKey: ["employees", "lite-for-prior-payroll"],
-    queryFn: () => api.get<EmployeeLite[]>("/api/v1/hrms/employees?limit=500"),
+    queryFn: () => api.get<EmployeeLite[]>("/api/v1/hrms/employees?limit=500&picker=1"),
   });
   const empById = useMemo(() => {
     const m = new Map<string, EmployeeLite>();

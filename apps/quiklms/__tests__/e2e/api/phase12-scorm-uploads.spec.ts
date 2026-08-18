@@ -18,15 +18,15 @@
  * here with small in-memory buffers.
  *
  * Guard summary, verified against source:
- *   /api/scorm/{validate,parse,extract}      TENANT_ADMIN|SUB_ADMIN|SUPER_ADMIN|TEACHER
- *   /api/upload/course-thumbnail             SUPER_ADMIN|TENANT_ADMIN|SUB_ADMIN
- *   /api/upload/course-resource              SUPER_ADMIN|TENANT_ADMIN|SUB_ADMIN
- *   /api/upload/scorm                        SUPER_ADMIN|TENANT_ADMIN|SUB_ADMIN
+ *   /api/scorm/{validate,parse,extract}      TENANT_ADMIN|SUB_ADMIN|ADMIN|TEACHER
+ *   /api/upload/course-thumbnail             ADMIN|TENANT_ADMIN|SUB_ADMIN
+ *   /api/upload/course-resource              ADMIN|TENANT_ADMIN|SUB_ADMIN
+ *   /api/upload/scorm                        ADMIN|TENANT_ADMIN|SUB_ADMIN
  *   /api/upload/homework-resource            + TEACHER, LEARNER
  *   /api/upload/non-teaching-work-resource   + TEACHER (no LEARNER)
- *   /api/upload/welcome-kit                  SUPER_ADMIN only (POST and GET)
+ *   /api/upload/welcome-kit                  ADMIN only (POST and GET)
  *   /api/upload/presigned-url                requireAuth only (metadata via HEADERS)
- *   /api/upload/generate-thumbnail           SUPER_ADMIN|TENANT_ADMIN|SUB_ADMIN (stub, always fails)
+ *   /api/upload/generate-thumbnail           ADMIN|TENANT_ADMIN|SUB_ADMIN (stub, always fails)
  *   /api/upload/tus                          requireAuth only (stub, always 201)
  */
 
@@ -50,10 +50,8 @@ function zipUpload(buffer: Buffer = NOT_A_ZIP, name = "package.zip") {
 const STORAGE_BUDGET_MS = 20_000;
 
 interface ErrEnvelope {
-  statusCode?: number;
-  message?: string;
+  success?: boolean;
   error?: string;
-  requestId?: string;
 }
 
 test.describe("Phase 12 — SCORM processing", () => {
@@ -62,7 +60,7 @@ test.describe("Phase 12 — SCORM processing", () => {
     const res = await api.post("/api/scorm/parse", { multipart: {} });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("SCORM zip file is required");
+    expect(body.error).toContain("SCORM zip file is required");
     await api.dispose();
   });
 
@@ -73,7 +71,7 @@ test.describe("Phase 12 — SCORM processing", () => {
     });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("File must be a .zip SCORM package");
+    expect(body.error).toContain("File must be a .zip SCORM package");
     await api.dispose();
   });
 
@@ -82,8 +80,8 @@ test.describe("Phase 12 — SCORM processing", () => {
     const res = await api.post("/api/scorm/parse", { multipart: zipUpload() });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.statusCode).toBe(400);
-    expect(body.message).toContain("Failed to parse SCORM package");
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Failed to parse SCORM package");
     await api.dispose();
   });
 
@@ -150,7 +148,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("Only image files are allowed");
+    expect(body.error).toContain("Only image files are allowed");
     await api.dispose();
   });
 
@@ -161,7 +159,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("File size must be less than 5MB");
+    expect(body.error).toContain("File size must be less than 5MB");
     await api.dispose();
   });
 
@@ -169,11 +167,9 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     const api = await apiAs("tenantAdmin");
     const res = await api.post("/api/upload/course-thumbnail", { data: { fileName: "a.png" } });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { message?: string; validationErrors?: Array<{ field: string }> };
-    expect(body.message).toBe("Validation failed");
-    const fields = body.validationErrors?.map((v) => v.field) ?? [];
-    expect(fields).toContain("fileType");
-    expect(fields).toContain("fileSize");
+    const body = (await safeJson(res)) as ErrEnvelope;
+    expect(body.error).toContain("fileType");
+    expect(body.error).toContain("fileSize");
     await api.dispose();
   });
 
@@ -186,8 +182,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     });
     expect(res.status()).toBe(413);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toBe("File too large");
-    expect(body.error).toBe("Payload Too Large");
+    expect(body.error).toBe("File too large");
     await api.dispose();
   });
 
@@ -205,7 +200,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     const res = await api.post("/api/upload/welcome-kit", { data: { fileType: "image/png", fileSize: 1024 } });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("Only PDF files are allowed");
+    expect(body.error).toContain("Only PDF files are allowed");
     await api.dispose();
   });
 
@@ -216,7 +211,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     const res = await api.post("/api/upload/presigned-url", { data: {} });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("x-file-name and x-file-type headers are required");
+    expect(body.error).toContain("x-file-name and x-file-type headers are required");
     await api.dispose();
   });
 
@@ -225,7 +220,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     const res = await api.post("/api/upload/generate-thumbnail", { data: { courseTitle: "Anything" } });
     expect(res.status()).toBe(501);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("not available in this build");
+    expect(body.error).toContain("not available in this build");
     await api.dispose();
   });
 
@@ -236,7 +231,7 @@ test.describe("Phase 12 — upload validation (before storage)", () => {
     });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("coming soon");
+    expect(body.error).toContain("coming soon");
     await api.dispose();
   });
 
@@ -319,7 +314,7 @@ test.describe("Phase 12 — upload role guards", () => {
     });
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.message).toContain("Only ZIP files are allowed");
+    expect(body.error).toContain("Only ZIP files are allowed");
     await api.dispose();
   });
 });
@@ -369,8 +364,8 @@ test.describe("Phase 12 — degradation with storage unavailable", () => {
       expect(res.status(), "must be a definite refusal, not a success").toBeGreaterThanOrEqual(400);
       const body = (await safeJson(res)) as ErrEnvelope & { __nonJson?: boolean };
       expect(body.__nonJson, "the response must be JSON, not an HTML crash page").toBeUndefined();
-      expect(body.statusCode, "standard error envelope from lib/http.ts").toBe(res.status());
-      expect(body.requestId, "envelope must carry a requestId for correlation").toBeTruthy();
+      expect(body.success, "standard error envelope from lib/http.ts").toBe(false);
+      expect(res.headers()["x-request-id"], "response must carry an X-Request-Id header for correlation").toBeTruthy();
       expect(elapsed, `took ${elapsed}ms — a credential lookup must not block`).toBeLessThan(STORAGE_BUDGET_MS);
       await api.dispose();
     });
@@ -383,7 +378,7 @@ test.describe("Phase 12 — degradation with storage unavailable", () => {
     const elapsed = Date.now() - started;
     expect(res.status()).toBeGreaterThanOrEqual(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.statusCode).toBe(res.status());
+    expect(body.success).toBe(false);
     expect(elapsed).toBeLessThan(STORAGE_BUDGET_MS);
     await api.dispose();
   });
@@ -395,7 +390,7 @@ test.describe("Phase 12 — degradation with storage unavailable", () => {
     const elapsed = Date.now() - started;
     expect(res.status()).toBe(400);
     const body = (await safeJson(res)) as ErrEnvelope;
-    expect(body.statusCode).toBe(400);
+    expect(body.success).toBe(false);
     expect(elapsed).toBeLessThan(STORAGE_BUDGET_MS);
     await api.dispose();
   });
@@ -425,7 +420,7 @@ test.describe("Phase 12 — degradation with storage unavailable", () => {
     });
     const body = (await safeJson(res)) as ErrEnvelope;
     console.log(
-      `[INFO] storage-unconfigured response: ${res.status()} "${body.message}" ` +
+      `[INFO] storage-unconfigured response: ${res.status()} "${body.error}" ` +
         `— cause ('GCS_BUCKET is not configured') is console-only`,
     );
     expect([400, 500, 503]).toContain(res.status());
@@ -458,7 +453,7 @@ test.describe("Phase 12 — findings", () => {
    *            no try/catch, so the raw error reaches lib/http.ts's catch-all.
    *
    * Severity Medium: unauthenticated users cannot reach it (the route requires
-   * TENANT_ADMIN|SUB_ADMIN|SUPER_ADMIN|TEACHER), and nothing is written to disk
+   * TENANT_ADMIN|SUB_ADMIN|ADMIN|TEACHER), and nothing is written to disk
    * — `extractScormFiles` only lists entry names. But any authoring user can
    * drive 5xx by uploading a truncated or corrupt file, which is an ordinary
    * accident rather than an attack, and it pollutes error budgets and alerting
@@ -472,7 +467,7 @@ test.describe("Phase 12 — findings", () => {
     const body = (await safeJson(res)) as ErrEnvelope;
     expect(
       res.status(),
-      `corrupt zip → ${res.status()} "${body.message}"; the same buffer on /api/scorm/parse → 400. ` +
+      `corrupt zip → ${res.status()} "${body.error}"; the same buffer on /api/scorm/parse → 400. ` +
         `extractScormFiles (scorm-service.ts) does not wrap readEntries the way parseScormPackage does`,
     ).toBe(400);
     await api.dispose();

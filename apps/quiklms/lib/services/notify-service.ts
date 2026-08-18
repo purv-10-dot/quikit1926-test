@@ -19,7 +19,7 @@ import type { LmsTenantActionType as TenantActionType } from '@prisma/client';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 
-const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
+const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3016';
 
 /** Escape text destined for email HTML. */
 function escapeHtml(s: string): string {

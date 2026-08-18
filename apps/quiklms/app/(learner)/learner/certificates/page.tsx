@@ -7,6 +7,7 @@ import {
   ExternalLink, Share2, Trophy, FileText, AlertCircle, X, RefreshCw
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { downloadCertificatePdf, certificateFilename } from '@/lib/certificate-download';
 import { useBranding } from '@/app/providers';
 import { useFeatures } from '@/app/providers';
 import { useCurrentUser } from '@/app/providers';
@@ -107,16 +108,22 @@ const parseDateInput = (value: string | null | undefined, endOfDay: boolean): Da
   return endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d, 0, 0, 0, 0);
 };
 
+/**
+ * Client mirror of `downloadGateBlocked` (lib/services/certificates-service.ts).
+ * Keep the two in step — this one greys the button out, that one returns the
+ * 403, and a learner seeing an enabled button that then fails is worse than
+ * either.
+ *
+ * A lock needs a real graded score to point at: with no `score` the course had
+ * no assessment, so there is nothing the learner could have failed.
+ */
 const isCertificateLocked = (certificate: Certificate): boolean => {
+  if (typeof certificate.score !== 'number') return false;
   if (certificate.passed === false) return true;
-  if (
-    typeof certificate.score === 'number' &&
+  return (
     typeof certificate.passingScore === 'number' &&
     certificate.score < certificate.passingScore
-  ) {
-    return true;
-  }
-  return false;
+  );
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -206,18 +213,18 @@ const CertificatesPage = () => {
     } catch (err: any) {
       console.error('[CertificatesPage] Failed to load certificates:', {
         message: err.message,
-        status: err?.statusCode,
+        status: err?.status,
         data: err,
       });
 
-      if (err?.statusCode === 401) {
+      if (err?.status === 401) {
         setError('Session expired. Please login again.');
         sessionStorage.removeItem('user');
         setTimeout(() => router.push('/login'), 2000);
         return;
       }
 
-      if (err?.statusCode === 403) {
+      if (err?.status === 403) {
         setError('You do not have permission to view certificates. Please contact your administrator.');
       } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network Error')) {
         setError('Unable to connect to server. Please check your internet connection.');
@@ -276,22 +283,12 @@ const CertificatesPage = () => {
 
     try {
       const courseName = certificate.courseId?.title || 'Certificate';
-      const filename = `${courseName.replace(/[^a-zA-Z0-9\s-]/g, '')}_Certificate.pdf`;
 
       console.log('[CertificatesPage] Downloading certificate via direct endpoint:', certificate._id);
 
-      // Use raw fetch for blob download (not api.get)
-      const r = await fetch(`/api/certificates/${certificate._id}/download`, { credentials: 'include' });
-      const blob = await r.blob();
-
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
+      // Throws (with the server's own message) rather than saving an error body
+      // as a .pdf — see lib/certificate-download.ts.
+      await downloadCertificatePdf(certificate._id, certificateFilename(courseName));
 
       toast.success(`Downloading certificate for ${courseName}...`);
 
@@ -302,9 +299,9 @@ const CertificatesPage = () => {
         format: 'pdf',
       }).catch(() => { /* silent */ });
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CertificatesPage] Download failed:', err);
-      toast.error('Failed to download certificate. Please try again.');
+      toast.error(err instanceof Error ? err.message : 'Failed to download certificate. Please try again.');
     } finally {
       setDownloading(prev => ({ ...prev, [certificate._id]: false }));
     }

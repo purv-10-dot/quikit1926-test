@@ -88,8 +88,8 @@ const addCandidateSchema = z.object({
   reportingManagerId: z.string().min(1, "Reporting manager required"),
   roleId: z.string().min(1, "Role required"),
 
-  salaryTemplateId: z.string().min(1, "Salary template required"),
-  ctcLpa: z.number().positive("CTC (LPA) required"),
+  salaryTemplateId: z.string().optional(),
+  ctcLpa: z.number().positive("CTC (LPA) required").optional(),
   offerLetterUrl: z.string().optional().nullable(),
   tentativeJoiningDate: z.string().optional().nullable(),
   dateOfJoining: z.string().optional().nullable(),
@@ -102,6 +102,9 @@ const addCandidateSchema = z.object({
 
   templateId: z.string().optional().nullable(),
   saveDraft: z.boolean().optional(),
+}).refine((d) => !d.salaryTemplateId || (d.ctcLpa != null && d.ctcLpa > 0), {
+  message: "CTC (LPA) is required when a salary template is selected",
+  path: ["ctcLpa"],
 });
 
 type TaskTpl = {
@@ -317,11 +320,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     // Validate salary structure + onboarding template BEFORE creating anything,
     // so a validation failure can never leave an orphan employee behind (the
     // create steps below are not a single transaction).
-    const structure = await prisma.salaryStructure.findFirst({
-      where: { id: d.salaryTemplateId, orgId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!structure) return validationError("Salary template not found");
+    // Optional on create — skipped when no template is picked yet (HR assigns
+    // salary later via Payroll → Employee Salaries, same as Add Employee).
+    const structure = d.salaryTemplateId
+      ? await prisma.salaryStructure.findFirst({
+          where: { id: d.salaryTemplateId, orgId, deletedAt: null },
+          select: { id: true },
+        })
+      : null;
+    if (d.salaryTemplateId && !structure) return validationError("Salary template not found");
 
     let templateTasks: TaskTpl[] = [];
     let resolvedTemplateId: string | null = null;
@@ -391,20 +398,22 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
       });
     }
 
-    // Salary assignment — always created (required on submit). Structure was
-    // validated up-front.
-    await prisma.employeeSalary.create({
-      data: {
-        orgId,
-        employeeId: employee.id,
-        structureId: structure.id,
-        ctc: d.ctcLpa * 100000,
-        effectiveFrom: startDate,
-        isActive: true,
-        createdBy: userId,
-        updatedBy: userId,
-      },
-    });
+    // Salary assignment — optional on create. Skipped when no template was
+    // picked (HR assigns it later via Payroll → Employee Salaries).
+    if (structure && d.ctcLpa != null) {
+      await prisma.employeeSalary.create({
+        data: {
+          orgId,
+          employeeId: employee.id,
+          structureId: structure.id,
+          ctc: d.ctcLpa * 100000,
+          effectiveFrom: startDate,
+          isActive: true,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+    }
 
     if (!d.saveDraft) {
       const instance = await prisma.onboardingInstance.create({

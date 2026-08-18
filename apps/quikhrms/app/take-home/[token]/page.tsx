@@ -164,7 +164,7 @@ export default function TakeHomeTaskPage({ params }: { params: { token: string }
 
         <div>
           <label className="block text-sm font-semibold text-gray-800 mb-1.5">Upload a file <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input ref={fileInput} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.zip" className="hidden"
+          <input ref={fileInput} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.zip,.dwg" className="hidden"
             onChange={(e) => { setFile(e.target.files?.[0] ?? null); }} />
           <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={() => fileInput.current?.click()}
@@ -173,7 +173,7 @@ export default function TakeHomeTaskPage({ params }: { params: { token: string }
             </button>
             {file
               ? <span className="text-xs text-gray-600 inline-flex items-center gap-1"><FileCheck2 size={13} className="text-blue-600" /> {file.name}<button type="button" onClick={() => { setFile(null); if (fileInput.current) fileInput.current.value = ""; }} className="ml-1 text-gray-400 hover:text-red-500">✕</button></span>
-              : <span className="text-[11px] text-gray-400">PDF, image, DOC/DOCX or ZIP · max 10MB</span>}
+              : <span className="text-[11px] text-gray-400">PDF, image, DOC/DOCX, ZIP or DWG · max 4MB</span>}
           </div>
         </div>
 

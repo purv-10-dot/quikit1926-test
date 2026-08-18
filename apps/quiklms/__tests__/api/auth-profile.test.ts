@@ -88,7 +88,7 @@ describe('PATCH /auth/profile validates types', () => {
 
   it('rejects unknown keys rather than silently dropping them', async () => {
     // .strict() — a client sending `role` should be told, not ignored.
-    expect((await PATCH(patch({ role: 'SUPER_ADMIN' }), {})).status).toBe(400);
+    expect((await PATCH(patch({ role: 'ADMIN' }), {})).status).toBe(400);
     expect(h.userUpdate).not.toHaveBeenCalled();
   });
 

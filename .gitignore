@@ -13,6 +13,7 @@ coverage
 playwright-report
 test-results
 .playwright-cache
+__tests__/e2e/.auth
 .DS_Store
 
 # ── Vercel (CLI link, build output, deploy artifacts) ───────────────────────
@@ -53,13 +54,11 @@ graphify-out/
 # Markdown files — local-only docs, analyses, scratch notes; never committed.
 *.md
 
-# ...except the shippable tiers. Without these negations the blanket `*.md`
-# above silently swallows every NEW markdown file, including /docs/ — which the
-# tier comment above defines as "Category A: shippable, versioned, part of
-# platform contract". Existing docs/*.md are tracked only because they predate
-# the `*.md` rule (gitignore does not affect already-tracked files), which is
-# what made the gap invisible: `git status` stays clean and the file never ships.
-# Same failure mode as the quikchat `/api/uploads/` routes (810e7b2e).
-!/docs/**/*.md
-!README.md
-!CLAUDE.md
+# ────────────────────────────────────────────────────────────────────────────
+# QuikLMS migrations — applied by hand per environment (dev/uat/prod), so the
+# SQL is not carried in git. Only matches *_quiklms_* / *app_quiklms* names;
+# every other app's migrations stay tracked. Already-committed files are
+# unaffected — .gitignore only applies to untracked paths.
+# ────────────────────────────────────────────────────────────────────────────
+packages/database/prisma/migrations/*_quiklms_*/
+packages/database/prisma/manual-migrations/*app_quiklms*

@@ -31,9 +31,11 @@ import {
 } from "@/components/ui";
 import {
   createCalendarEvent,
+  deleteCalendarEvent,
   fetchCalendarEvents,
   fetchFreeBusy,
   fetchOrgUsers,
+  updateCalendarEvent,
 } from "@/lib/api";
 import { toMonthEvents, toWeekEvents, type WeekEvent } from "@/lib/calendar-transform";
 import { loadIndiaHolidays, type IndiaHoliday } from "@/lib/india-holidays";
@@ -97,7 +99,14 @@ function timeLabel(h: number): string {
   return `${h12}.${String(min).padStart(2, "0")}${suffix}`;
 }
 
-/** Schedule/edit modal pre-filled from a calendar event (demo, no persistence). */
+/**
+ * Schedule-or-edit modal for a personal calendar event (`QcCalendarEvent`).
+ * Create when `event.id` is unset; edit-in-place (via `updateCalendarEvent`)
+ * when it's a real, editable event id. Entry points (below) only ever pass an
+ * id for editable personal events — a meeting overlay (`editable: false`)
+ * never reaches here, since editing it here would silently create an
+ * unrelated duplicate rather than touching the real meeting.
+ */
 function EventScheduleModal({
   event,
   date,
@@ -112,6 +121,7 @@ function EventScheduleModal({
   currentUserId: string;
 }) {
   const toast = useToast();
+  const isEditing = !!event.id;
   const [title, setTitle] = useState(event.title === "(no title)" ? "" : event.title);
   const [description, setDescription] = useState("");
   const [dateStr, setDateStr] = useState(dateInput(date));
@@ -122,6 +132,9 @@ function EventScheduleModal({
     nearestDuration(Math.round((event.end - event.start) * 60)),
   );
   const [conferencing, setConferencing] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [orgUsers, setOrgUsers] = useState<PublicUser[]>([]);
   const [fb, setFb] = useState<{ busy: Record<string, FreeBusyInterval[]>; unknown: string[] }>({
@@ -191,48 +204,114 @@ function EventScheduleModal({
       return next;
     });
 
+  async function handleSubmit() {
+    const t = title.trim();
+    if (!t) {
+      toast.error({ title: "Add a title" });
+      return;
+    }
+    const start = new Date(`${dateStr}T${pad2(hh)}:${pad2(mm)}:00`);
+    const end = new Date(start.getTime() + durMin * 60000);
+    setSubmitting(true);
+    try {
+      if (isEditing) {
+        await updateCalendarEvent(event.id!, {
+          title: t,
+          description: description.trim() || undefined,
+          start: start.toISOString(),
+          end: end.toISOString(),
+        });
+        toast.success({ title: `Saved “${t}”` });
+      } else {
+        await createCalendarEvent({
+          title: t,
+          description: description.trim() || undefined,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: false,
+          joinUrl: conferencing ? "https://meet.quikchat.dev/new" : undefined,
+        });
+        toast.success({ title: `Scheduled “${t}”` });
+      }
+      onScheduled();
+      onClose();
+    } catch (e) {
+      toast.error({
+        title: isEditing ? "Couldn't save changes" : "Couldn't schedule",
+        body: e instanceof Error ? e.message : "Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteCalendarEvent(event.id!);
+      toast.success({ title: "Event deleted" });
+      onScheduled();
+      onClose();
+    } catch (e) {
+      toast.error({
+        title: "Couldn't delete",
+        body: e instanceof Error ? e.message : "Please try again.",
+      });
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
+
   return (
     <Modal
       open
       onClose={onClose}
-      title="Schedule meeting"
+      title={isEditing ? "Edit event" : "Schedule meeting"}
       footer={
         <div className="qc-schedule__actions">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={async () => {
-              const t = title.trim();
-              if (!t) {
-                toast.error({ title: "Add a title" });
-                return;
-              }
-              const start = new Date(`${dateStr}T${pad2(hh)}:${pad2(mm)}:00`);
-              const end = new Date(start.getTime() + durMin * 60000);
-              try {
-                await createCalendarEvent({
-                  title: t,
-                  description: description.trim() || undefined,
-                  start: start.toISOString(),
-                  end: end.toISOString(),
-                  allDay: false,
-                  joinUrl: conferencing ? "https://meet.quikchat.dev/new" : undefined,
-                });
-                toast.success({ title: `Scheduled “${t}”` });
-                onScheduled();
-                onClose();
-              } catch (e) {
-                toast.error({
-                  title: "Couldn't schedule",
-                  body: e instanceof Error ? e.message : "Please try again.",
-                });
-              }
-            }}
-          >
-            <Video size={16} aria-hidden /> Schedule
-          </Button>
+          {isEditing ? (
+            confirmingDelete ? (
+              <div className="qc-schedule__delete-confirm">
+                <span className="qc-schedule__delete-confirm-text">Delete this event?</span>
+                <Button
+                  variant="ghost"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  data-testid="confirm-delete-event"
+                >
+                  {deleting ? "Deleting…" : "Confirm delete"}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                className="qc-schedule__actions-left"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={submitting}
+                data-testid="delete-event"
+              >
+                Delete
+              </Button>
+            )
+          ) : null}
+          {!confirmingDelete ? (
+            <>
+              <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
+                <Video size={16} aria-hidden />{" "}
+                {submitting ? (isEditing ? "Saving…" : "Scheduling…") : isEditing ? "Save changes" : "Schedule"}
+              </Button>
+            </>
+          ) : null}
         </div>
       }
     >
@@ -250,14 +329,18 @@ function EventScheduleModal({
             />
           </label>
 
+          {/* Same field, same name as SchedulingModal — see the note there.
+              Keep the two in step; they are the only two editors of this
+              field and they used to disagree with each other and with
+              themselves. */}
           <label className="qc-field">
-            <span className="qc-field__label">Description</span>
+            <span className="qc-field__label">Agenda</span>
             <input
               className="qc-input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Agenda (optional)"
-              aria-label="Meeting description"
+              placeholder="What to cover (optional)"
+              aria-label="Meeting agenda"
             />
           </label>
 
@@ -279,11 +362,18 @@ function EventScheduleModal({
             </div>
           </div>
 
-          <Switch
-            checked={conferencing}
-            onChange={setConferencing}
-            label="Add a video conferencing link"
-          />
+          {/* Not shown when editing: it only ever sets a fabricated join link on
+              create, has no wiring into updateCalendarEvent, and the modal has
+              no way to reflect the event's real joinUrl state — showing it
+              here would be exactly the kind of control-with-no-effect this
+              feature is meant to eliminate, not add another one. */}
+          {!isEditing ? (
+            <Switch
+              checked={conferencing}
+              onChange={setConferencing}
+              label="Add a video conferencing link"
+            />
+          ) : null}
         </div>
 
         <div className="qc-schedule__scroll">
@@ -689,30 +779,47 @@ export function CalendarModule({ currentUserId }: CalendarModuleProps) {
                     >
                       <div className="qc-cal2-mdate">{format(day, "d")}</div>
                       <div className="qc-cal2-mcell__events">
-                        {dayEvents.map((e, k) => (
-                          <button
-                            key={k}
-                            type="button"
-                            className="qc-cal2-mev"
-                            title={`${e.title} · ${e.time}`}
-                            onClick={() =>
-                              setScheduleTarget({
-                                event: {
-                                  day: day.getDay(),
-                                  start: e.start,
-                                  end: e.end,
-                                  title: e.title,
-                                  color: C.blue,
-                                },
-                                date: day,
-                              })
-                            }
-                          >
-                            <span className="qc-cal2-mev__dot" aria-hidden />
-                            <span className="qc-cal2-mev__title">{e.title}</span>
-                            <span className="qc-cal2-mev__time">{e.time}</span>
-                          </button>
-                        ))}
+                        {dayEvents.map((e, k) =>
+                          // Meeting overlays (editable: false) aren't rendered
+                          // interactive here — they have no personal-event id to
+                          // edit, and opening this modal against one used to
+                          // silently create an unrelated duplicate. They're
+                          // already served by the real MeetingCard/RSVP flow.
+                          e.editable ? (
+                            <button
+                              key={k}
+                              type="button"
+                              className="qc-cal2-mev"
+                              title={`${e.title} · ${e.time}`}
+                              onClick={() =>
+                                setScheduleTarget({
+                                  event: {
+                                    id: e.id,
+                                    day: day.getDay(),
+                                    start: e.start,
+                                    end: e.end,
+                                    title: e.title,
+                                    color: C.blue,
+                                    source: e.source,
+                                    editable: e.editable,
+                                    calendarId: e.calendarId,
+                                  },
+                                  date: day,
+                                })
+                              }
+                            >
+                              <span className="qc-cal2-mev__dot" aria-hidden />
+                              <span className="qc-cal2-mev__title">{e.title}</span>
+                              <span className="qc-cal2-mev__time">{e.time}</span>
+                            </button>
+                          ) : (
+                            <div key={k} className="qc-cal2-mev qc-cal2-mev--meeting" title={`${e.title} · ${e.time}`}>
+                              <span className="qc-cal2-mev__dot" aria-hidden />
+                              <span className="qc-cal2-mev__title">{e.title}</span>
+                              <span className="qc-cal2-mev__time">{e.time}</span>
+                            </div>
+                          ),
+                        )}
                         {dayHolidays.map((h) => (
                           <div
                             key={h.id}
@@ -805,17 +912,24 @@ export function CalendarModule({ currentUserId }: CalendarModuleProps) {
                               <span className="qc-cal2-event__time">
                                 {timeLabel(e.start)} - {timeLabel(e.end)}
                               </span>
-                              <button
-                                type="button"
-                                className="qc-cal2-event__more"
-                                aria-label="Event actions"
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  setScheduleTarget({ event: e, date: day });
-                                }}
-                              >
-                                <MoreHorizontal size={14} />
-                              </button>
+                              {/* Meeting overlays (editable: false) get no edit
+                                  affordance here — they're already served by
+                                  the real MeetingCard/RSVP flow, and opening
+                                  this modal against one used to silently
+                                  create an unrelated duplicate personal event. */}
+                              {e.editable ? (
+                                <button
+                                  type="button"
+                                  className="qc-cal2-event__more"
+                                  aria-label="Event actions"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    setScheduleTarget({ event: e, date: day });
+                                  }}
+                                >
+                                  <MoreHorizontal size={14} />
+                                </button>
+                              ) : null}
                             </div>
                           ))}
                       </div>

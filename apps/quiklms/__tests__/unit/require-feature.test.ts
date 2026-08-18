@@ -32,7 +32,6 @@ const actor = (over: Partial<AuthUser> = {}): AuthUser =>
     id: 'u1',
     email: 'a@b.com',
     role: 'TENANT_ADMIN',
-    secondaryRole: null,
     orgId: 'org-1',
     tenantType: 'school',
     firstName: 'A',
@@ -97,18 +96,18 @@ describe('requireFeature — deliberate fail-open paths', () => {
     // Keyed on the `isSuperAdmin` claim, not the LMS role: the operator's own org
     // has no tenant row to read a feature config from.
     await expect(
-      requireFeature(actor({ role: 'SUPER_ADMIN', isSuperAdmin: true }), 'showBatches'),
+      requireFeature(actor({ role: 'ADMIN', isSuperAdmin: true }), 'showBatches'),
     ).resolves.toBeNull();
     expect(h.tenantFindUnique).not.toHaveBeenCalled();
   });
 
-  it('still reads the tenant row for a founding admin whose ROLE is SUPER_ADMIN', async () => {
-    // Regression: an org's founding admin resolves to an LMS role of SUPER_ADMIN
+  it('still reads the tenant row for a founding admin whose ROLE is ADMIN', async () => {
+    // Regression: an org's founding admin resolves to an LMS role of ADMIN
     // (lib/auth/founding-admin.ts) but HAS a tenant. Short-circuiting on the role
     // returned null here, which silently disabled every feature flag for them.
     h.tenantFindUnique.mockResolvedValue({ id: 'org-1', tenantType: 'school', featureConfig: {} });
     await expect(
-      requireFeature(actor({ role: 'SUPER_ADMIN', isSuperAdmin: false }), 'showBatches'),
+      requireFeature(actor({ role: 'ADMIN', isSuperAdmin: false }), 'showBatches'),
     ).resolves.toEqual({ id: 'org-1', tenantType: 'school' });
     expect(h.tenantFindUnique).toHaveBeenCalled();
   });

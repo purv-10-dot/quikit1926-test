@@ -98,8 +98,11 @@ export function SendOfferWizard({ app, onClose, onSent }: { app: SendOfferApp; o
   const [employmentType, setEmploymentType] = useState("Full Time");
   const [compensationType, setCompensationType] = useState("Paid");
   const [salaryStructureId, setSalaryStructureId] = useState("");
+  // latestOffer.offeredCTC is already absolute rupees; candidate.expectedCTC is
+  // captured in LPA (see candidates/page.tsx), so it needs ×100,000 to match —
+  // without this, a 7 LPA candidate prefilled ₹7 instead of ₹7,00,000.
   const [annualCTC, setAnnualCTC] = useState<number>(
-    app.latestOffer ? Number(app.latestOffer.offeredCTC) || 0 : app.candidate.expectedCTC ? Number(app.candidate.expectedCTC) : 0,
+    app.latestOffer ? Number(app.latestOffer.offeredCTC) || 0 : app.candidate.expectedCTC ? Number(app.candidate.expectedCTC) * 100000 : 0,
   );
   const [joiningBonus, setJoiningBonus] = useState(0);
   const [relocationBonus, setRelocationBonus] = useState(0);

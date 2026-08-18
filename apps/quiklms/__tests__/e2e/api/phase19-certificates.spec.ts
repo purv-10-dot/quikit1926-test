@@ -5,14 +5,14 @@
  * Templates (authoring + approval workflow)
  *   POST|GET            /api/certificates
  *   GET|PUT|DELETE      /api/certificates/[id]
- *   POST                /api/certificates/[id]/approve        (SUPER_ADMIN)
- *   POST                /api/certificates/[id]/reject         (SUPER_ADMIN)
- *   GET                 /api/certificates/pending-approvals   (SUPER_ADMIN)
- *   GET                 /api/certificates/all-approval-items  (SUPER_ADMIN)
+ *   POST                /api/certificates/[id]/approve        (ADMIN)
+ *   POST                /api/certificates/[id]/reject         (ADMIN)
+ *   GET                 /api/certificates/pending-approvals   (ADMIN)
+ *   GET                 /api/certificates/all-approval-items  (ADMIN)
  *   GET                 /api/certificates/my-submissions      (TENANT_ADMIN|SUB_ADMIN)
  *   POST                /api/certificates/upload-{background,logo,signature}
- *   DELETE              /api/certificates/bulk/delete-all     (SUPER_ADMIN)
- *   POST                /api/certificates/cleanup-duplicates  (SUPER_ADMIN)
+ *   DELETE              /api/certificates/bulk/delete-all     (ADMIN)
+ *   POST                /api/certificates/cleanup-duplicates  (ADMIN)
  *
  * Issuance + delivery
  *   POST                /api/certificates/generate
@@ -40,7 +40,7 @@ import { apiAs, apiAnon, safeJson } from "../fixtures/api";
 import { loadManifest, mintSessionToken } from "../fixtures/auth";
 
 const m = loadManifest();
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 const MISSING = "00000000-0000-0000-0000-000000000000";
 const RUN = `AUDIT19-${Date.now()}`;
 const LEARNER_B_EMAIL = "e2e-learner-b@quiklms.test";
@@ -607,7 +607,7 @@ test.describe("Phase 19 — a learner cannot download another learner's certific
 test.describe("Phase 19 — guards", () => {
   test.setTimeout(150_000);
 
-  test("only a SUPER_ADMIN may approve or reject", async () => {
+  test("only a ADMIN may approve or reject", async () => {
     for (const role of ["tenantAdmin", "subAdmin", "manager", "teacher", "learner"] as const) {
       const api = await apiAs(role);
       expect(
@@ -622,7 +622,7 @@ test.describe("Phase 19 — guards", () => {
     }
   });
 
-  test("only a SUPER_ADMIN may read the approval queues", async () => {
+  test("only a ADMIN may read the approval queues", async () => {
     for (const role of ["tenantAdmin", "manager", "learner"] as const) {
       const api = await apiAs(role);
       expect((await GET(api, "/api/certificates/pending-approvals")).status()).toBe(403);
@@ -631,7 +631,7 @@ test.describe("Phase 19 — guards", () => {
     }
   });
 
-  test("the unfiltered bulk delete is refused to everyone below SUPER_ADMIN", async () => {
+  test("the unfiltered bulk delete is refused to everyone below ADMIN", async () => {
     // The success path is NOT exercised — `deleteAllTemplates` is
     // `deleteMany({})` across every tenant (certificates-service.ts:490-493).
     // This asserts the gate that stands between that call and a tenant admin.
@@ -643,7 +643,7 @@ test.describe("Phase 19 — guards", () => {
     }
   });
 
-  test("cleanup-duplicates is refused below SUPER_ADMIN", async () => {
+  test("cleanup-duplicates is refused below ADMIN", async () => {
     for (const role of ["tenantAdmin", "manager", "learner"] as const) {
       const api = await apiAs(role);
       expect((await POST(api, "/api/certificates/cleanup-duplicates")).status()).toBe(403);

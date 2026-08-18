@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createTimesheetSchema } from "@/lib/validation/timesheet";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
+import { createTimesheetEntry, TimesheetFutureDateError } from "@/lib/services/timesheet";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -78,12 +79,6 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     );
   }
   const entryDate = new Date(parsed.data.entryDate);
-  if (entryDate.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
-    return NextResponse.json(
-      { success: false, error: "Cannot log time in the future" },
-      { status: 400 },
-    );
-  }
 
   const issue = await db.qtIssue.findFirst({
     where: { id: parsed.data.issueId, orgId: orgId, isDeleted: false },
@@ -104,9 +99,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return forbidden();
   }
 
-  const entry = await db.qtTimesheetEntry.create({
-    data: {
-      orgId: orgId,
+  let entry;
+  try {
+    entry = await createTimesheetEntry({
+      orgId,
       userId,
       projectId: issue.projectId,
       issueId: issue.id,
@@ -115,40 +111,12 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       hours: parsed.data.hours,
       description: parsed.data.description,
       createdBy: userId,
-      updatedBy: userId,
-    },
-  });
-
-  // Roll-up weekly summary (best-effort, non-blocking would be a future improvement).
-  const startOfYear = new Date(entryDate.getFullYear(), 0, 1);
-  const week = Math.ceil(
-    (((entryDate.getTime() - startOfYear.getTime()) / 86_400_000) + startOfYear.getDay() + 1) / 7,
-  );
-  const summary = await db.qtTimesheetWeeklySummary.findFirst({
-    where: {
-      issueId: issue.id,
-      userId,
-      year: entryDate.getFullYear(),
-      weekNumber: week,
-    },
-    select: { id: true, totalHours: true },
-  });
-  if (summary) {
-    await db.qtTimesheetWeeklySummary.update({
-      where: { id: summary.id },
-      data: { totalHours: summary.totalHours + parsed.data.hours },
     });
-  } else {
-    await db.qtTimesheetWeeklySummary.create({
-      data: {
-        orgId: orgId,
-        issueId: issue.id,
-        userId,
-        year: entryDate.getFullYear(),
-        weekNumber: week,
-        totalHours: parsed.data.hours,
-      },
-    });
+  } catch (err) {
+    if (err instanceof TimesheetFutureDateError) {
+      return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+    }
+    throw err;
   }
 
   return NextResponse.json({ success: true, data: entry }, { status: 201 });
