@@ -1,6 +1,8 @@
 ﻿import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import type { GoogleMetadata } from "@/lib/types/connections";
+import { trailingWindow } from "@/lib/period/resolve";
+import type { DateWindow } from "@/lib/period/types";
 
 async function getGSCClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "GOOGLE_SEARCH_CONSOLE", ...(workspaceId ? { workspaceId } : {}) },
@@ -36,14 +38,24 @@ async function getGSCClient(userId: string, workspaceId?: string) {
   };
 }
 
-export async function getSearchConsoleData(userId: string, days = 28, workspaceId?: string) {
+/**
+ * @param range Either a trailing day count (legacy) or an explicit window.
+ *   An explicit window is what makes period comparison possible — a trailing
+ *   count can only ever describe a window ending today.
+ */
+export async function getSearchConsoleData(
+  userId: string,
+  range: number | DateWindow = 28,
+  workspaceId?: string,
+) {
   const { oauth2, metadata } = await getGSCClient(userId, workspaceId);
   if (!metadata.siteUrl) throw new Error("Search Console site not set");
 
   const webmasters = google.webmasters({ version: "v3", auth: oauth2 });
 
-  const endDate   = new Date().toISOString().split("T")[0];
-  const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const w = typeof range === "number" ? trailingWindow(range) : range;
+  const startDate = w.start;
+  const endDate   = w.end;
 
   const base = { siteUrl: metadata.siteUrl, requestBody: { startDate, endDate } };
 

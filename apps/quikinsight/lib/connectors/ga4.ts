@@ -18,6 +18,11 @@ export type GA4DataResult = {
   eventCount: number;
   keyEvents: number;
   avgEngagementTime: number; // seconds per active user
+  /**
+   * Session-weighted average across channels, 0–1 (not a percentage).
+   * null when there were no sessions to weight — render an em-dash, not 0%.
+   */
+  bounceRate: number | null;
 
   // Daily trend for current + previous comparison period
   dailyTrend: GA4DailyPoint[];

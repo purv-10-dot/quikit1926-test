@@ -29,11 +29,14 @@ export async function GET(req: NextRequest) {
 
         const connections = await prisma.platformConnection.findMany({
           where: { userId, status: "CONNECTED" },
+          // orgId is required on QiDataSync; the connection is the tenant source.
+          select: { id: true, platform: true, orgId: true },
         });
 
         await prisma.dataSync.createMany({
-          data: connections.map((conn: { id: string; platform: string }) => ({
+          data: connections.map((conn: { id: string; platform: string; orgId: string }) => ({
             userId,
+            orgId:        conn.orgId,
             connectionId: conn.id,
             platform:     conn.platform as never,
             syncType:     "incremental",
@@ -48,10 +51,13 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         const connections = await prisma.platformConnection.findMany({
           where: { userId, status: "CONNECTED" },
+          // orgId is required on QiDataSync; the connection is the tenant source.
+          select: { id: true, platform: true, orgId: true },
         });
         await prisma.dataSync.createMany({
-          data: connections.map((conn: { id: string; platform: string }) => ({
+          data: connections.map((conn: { id: string; platform: string; orgId: string }) => ({
             userId,
+            orgId:        conn.orgId,
             connectionId: conn.id,
             platform:     conn.platform as never,
             syncType:     "incremental",

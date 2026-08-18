@@ -7,6 +7,35 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import ConfigureModal from "@/components/connections/ConfigureModal";
 import type { Connector, ConnectorCategory } from "@/types";
 
+
+/**
+ * Sibling QuikIT products, shown above the OAuth connectors.
+ *
+ * These are NOT connectors in this app: there is no /api/oauth flow, no token,
+ * and no connection row. The card is a cross-sell into the product's own page,
+ * so its button is a link out rather than a Connect action — labelling it
+ * "Connected"/"Disconnect" would claim a connection state QuikInsight neither
+ * owns nor can verify.
+ */
+const QUIKIT_FAMILY = [
+  {
+    id: "quikprojects",
+    name: "QuikProjects",
+    initials: "QP",
+    color: "#6C5CE0",
+    description: "Manage marketing tasks and campaigns in one place — no extra login needed.",
+    href: "https://quikit.ai/products/quiktrack",
+  },
+  {
+    id: "quikcrm",
+    name: "QuikCRM",
+    initials: "QC",
+    color: "#16A34A",
+    description: "Track leads and pipeline alongside the marketing that created them.",
+    href: "https://quikit.ai/products/quikcrm",
+  },
+] as const;
+
 function IntegrationsInner() {
   const showToast = useToastStore((s) => s.show);
   const params = useSearchParams();
@@ -95,7 +124,10 @@ function IntegrationsInner() {
         <div>
           <div className="page-title">Integrations</div>
           <p className="page-sub">
-            {connectedCount} connected · connect the platforms your team runs marketing on
+            {/* Matches the preview's phrasing: "N of M connectors connected".
+                The QuikIT family cards are excluded from both numbers — they
+                are not connectors and have no connection state. */}
+            {connectedCount} of {connectors.length} connectors connected
           </p>
         </div>
         <button className="btn" onClick={() => showToast("Connector requests are noted for the roadmap")} type="button">
@@ -109,6 +141,45 @@ function IntegrationsInner() {
           <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={load} type="button">Retry</button>
         </div>
       )}
+
+      {/* QuikIT family — cross-sell cards, not OAuth connectors. */}
+      <div className="int-category-label">QuikIT family</div>
+      <div className="connector-grid">
+        {QUIKIT_FAMILY.map((p) => (
+          <div
+            className="connector-card"
+            key={p.id}
+            style={{ borderColor: "var(--accent)", background: "var(--accent-soft)" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="connector-icon" style={{ background: p.color }}>{p.initials}</div>
+              <div>
+                <p className="connector-name">
+                  {p.name}
+                  <span
+                    style={{
+                      fontSize: 9.5, fontWeight: 700, color: "var(--accent-ink)", background: "#fff",
+                      padding: "1px 6px", borderRadius: 8, marginLeft: 6,
+                    }}
+                  >
+                    QUIKIT
+                  </span>
+                </p>
+              </div>
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--accent-ink)", margin: 0 }}>{p.description}</p>
+            <a
+              className="btn btn-sm btn-primary"
+              href={p.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textAlign: "center" }}
+            >
+              Explore {p.name} →
+            </a>
+          </div>
+        ))}
+      </div>
 
       {categories.map((cat) => {
         const catConnectors = connectors.filter((c) => c.category === cat);

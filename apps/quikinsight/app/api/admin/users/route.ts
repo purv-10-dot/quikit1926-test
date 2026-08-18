@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/withAuth";
-import { isOrgAdmin } from "@/lib/rbac";
+import { sessionRole, isOrgAdmin } from "@/lib/rbac";
 
 // GET /api/admin/users — all users with their role assignments and team names.
 // Restricted to org admins (SUPER_ADMIN) via isOrgAdmin.
 export const GET = withAuth(async (req) => {
-  if (!isOrgAdmin(req.session.user.role)) {
+  if (!isOrgAdmin(sessionRole(req.session))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

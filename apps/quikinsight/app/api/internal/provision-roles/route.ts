@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * launcher's grant-app-access flow (apps/quikit/lib/provisionAppRoles.ts) the
  * moment QuikInsight is enabled for an org.
  *
- * Optionally accepts `adminUserIds: string[]` — each is put on ADMIN, the
+ * Optionally accepts `adminUserIds: string[]` — each is put on `admin`, the
  * only QuikInsight role that can manage org-wide roles (see lib/rbac.ts), so a
  * freshly-invited org admin can administer the app the moment they accept.
  *
@@ -54,12 +54,12 @@ export async function POST(req: NextRequest) {
     const skipped: string[] = [];
     for (const userId of adminUserIds) {
       try {
-        await ensureUserOnRole(userId, orgId, "ADMIN");
+        await ensureUserOnRole(userId, orgId, "admin");
       } catch (err) {
         skipped.push(userId);
         // eslint-disable-next-line no-console
         console.warn(
-          `[provision-roles] could not assign ADMIN to ${userId} in ${orgId}:`,
+          `[provision-roles] could not assign admin to ${userId} in ${orgId}:`,
           err instanceof Error ? err.message : err,
         );
       }

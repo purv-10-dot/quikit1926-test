@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getAggregatedDashboard } from "@/lib/data/aggregator";
 import { getAggCache } from "@/lib/dashboardCache";
+import { periodCacheKey, trailingWindow } from "@/lib/period/resolve";
 import { getActiveWorkspaceId } from "@/lib/workspace";
 import { estimateTokens, hasSufficientTokens, recordUsage } from "@/lib/tokens/service";
 
@@ -69,7 +70,10 @@ export async function POST(req: Request) {
   let context = "No metrics available.";
   try {
     const workspaceId = await getActiveWorkspaceId(userId, orgId);
-    const cached = getAggCache(userId, 28, workspaceId);
+    // Must be the exact key getAggregatedDashboard(userId, 28, …) writes below,
+    // or this probe always misses and every Ask AI call forces a fresh aggregation.
+    const cacheKey = periodCacheKey({ mode: "none", current: trailingWindow(28), previous: null });
+    const cached = getAggCache(userId, cacheKey, workspaceId);
     const data = cached ?? await Promise.race([
       getAggregatedDashboard(userId, 28, workspaceId),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),

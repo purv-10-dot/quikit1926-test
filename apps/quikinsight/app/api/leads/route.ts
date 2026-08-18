@@ -8,7 +8,9 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 // Always-complete empty shape so the Leads page never crashes on missing data.
+// `connected: false` is what the client wrapper keys on to substitute samples.
 const EMPTY = {
+  connected: false,
   leads: [] as unknown[],
   leadsBySource: {} as Record<string, number>,
   leadTrend: [0, 0, 0, 0, 0, 0],
@@ -41,7 +43,7 @@ export async function GET() {
 
   try {
     const data = await getHubSpotLeads(session.user.id, workspaceId);
-    return NextResponse.json(data);
+    return NextResponse.json({ connected: true, ...data });
   } catch (err) {
     console.error("[api/leads] hubspot fetch failed:", err);
     return NextResponse.json(EMPTY);

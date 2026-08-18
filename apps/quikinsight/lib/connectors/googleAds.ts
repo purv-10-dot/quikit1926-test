@@ -1,5 +1,7 @@
 ﻿// Google Ads connector â€” fetches campaign stats via GOOGLE_ADS connection
 import { prisma } from "@/lib/prisma";
+import { trailingWindow } from "@/lib/period/resolve";
+import type { DateWindow } from "@/lib/period/types";
 
 async function listAccessibleCustomers(accessToken: string): Promise<string[]> {
   const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? "";
@@ -73,7 +75,7 @@ async function gaqlQuery(customerId: string, accessToken: string, query: string)
   return rows;
 }
 
-export async function getGoogleAdsStats(userId: string, workspaceId?: string) {
+export async function getGoogleAdsStats(userId: string, workspaceId?: string, window?: DateWindow) {
   const conn = await getGoogleAdsConn(userId, workspaceId);
   let accessToken = conn.accessToken;
 
@@ -96,11 +98,18 @@ export async function getGoogleAdsStats(userId: string, workspaceId?: string) {
       where: { userId, platform: "GOOGLE_ADS" as never },
       data: { metadata: { customerId: customers[0] } },
     });
-    return getGoogleAdsStats(userId); // retry with persisted customerId
+    // Retry with the persisted customerId — keeping workspace and window, which
+    // this call previously dropped (so a retry silently reverted to the default
+    // workspace and a trailing 30-day window).
+    return getGoogleAdsStats(userId, workspaceId, window);
   }
 
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const until = new Date().toISOString().slice(0, 10);
+  // GAQL takes an explicit inclusive range, so an arbitrary comparison window
+  // costs nothing beyond the extra request. Defaults to the trailing 30 days it
+  // has always used when no window is supplied.
+  const w = window ?? trailingWindow(30);
+  const since = w.start;
+  const until = w.end;
 
   // Account-level totals
   let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalConversions = 0, totalConvValue = 0;

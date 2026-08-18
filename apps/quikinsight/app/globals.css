@@ -46,7 +46,7 @@
   .hamburger{display:none; width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:var(--surface); align-items:center; justify-content:center;}
 
   .topbar-body{flex:1; display:flex; align-items:center; gap:14px; padding:0 22px; min-width:0;}
-  .global-search{position:relative; flex:1; max-width:420px; min-width:0;}
+  .global-search{position:relative; flex:1; max-width:420px; min-width:0; width:100%;}
   .global-search-box{display:flex; align-items:center; gap:9px; background:var(--canvas); border:1px solid var(--border); border-radius:10px; padding:8px 12px;}
   .global-search-box input{flex:1; border:none; background:none; font-size:13.5px; outline:none; color:var(--text-primary);}
   .global-search-box svg{opacity:0.55; flex-shrink:0;}
@@ -125,6 +125,51 @@
   .nav-item.active::before{content:''; position:absolute; left:-4px; top:8px; bottom:8px; width:3px; border-radius:3px; background:var(--ink);}
   .nav-item.active svg{opacity:1;}
   .nav-badge{background:#E8A33D; color:#15161C; font-size:10px; font-weight:700; border-radius:10px; padding:1px 6px; margin-left:auto;}
+  /* Platform row inside the Organic / Paid / Email sections — a nav-item with
+     tighter spacing, since its "icon" is a 6px status dot rather than a 17px
+     glyph and would otherwise sit in a gap sized for the larger one. */
+  .nav-item-platform{gap:9px; padding-left:12px;}
+  .nav-item-platform .platform-dot{flex-shrink:0;}
+
+  /* ── "Mock" stamp ─────────────────────────────────────────────────────
+     Marks a card/section whose data source is not connected. Amber, not the
+     accent colour, so it reads as a warning rather than as branding — and it
+     must stay legible against every card background, hence the solid fill. */
+  .mock-wrap{position:relative;}
+  .mock-badge{
+    position:absolute; top:10px; right:12px; z-index:2;
+    background:#E8A33D; color:#15161C;
+    font-size:10px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase;
+    border-radius:5px; padding:2px 7px; line-height:1.5;
+    box-shadow:0 1px 3px rgba(20,22,43,0.18); pointer-events:auto; cursor:help;
+  }
+  /* Inline variant for a page header, where absolute positioning would collide
+     with the title block. */
+  .mock-badge-inline{position:static; margin-left:8px; vertical-align:middle;}
+
+  /* Sibling of .mock-badge, and never shown at the same time: amber "Mock"
+     means invented figures, this neutral one means real-but-empty. Deliberately
+     quieter — an unconnected source on a live workspace is a to-do, not a
+     warning about the data's truthfulness. */
+  .connect-badge{
+    position:absolute; top:10px; right:12px; z-index:2;
+    background:var(--canvas); color:var(--text-secondary);
+    border:1px solid var(--border);
+    font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+    border-radius:5px; padding:2px 7px; line-height:1.5;
+    text-decoration:none; cursor:pointer;
+  }
+  .connect-badge:hover{color:var(--accent-ink); border-color:var(--accent-soft); background:var(--accent-soft);}
+
+  /* ── Modal (ported from the v15 preview) ─────────────────────────────── */
+  .modal-overlay{display:none; position:fixed; inset:0; background:rgba(18,20,43,0.45); z-index:60; align-items:center; justify-content:center; padding:20px;}
+  .modal-overlay.open{display:flex;}
+  .modal-box{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:24px; width:440px; max-width:100%; box-shadow:0 20px 60px rgba(20,22,43,0.3); max-height:86vh; overflow-y:auto;}
+  .modal-title{font-size:17px; font-weight:700; margin:0 0 4px;}
+  .modal-sub{font-size:13px; color:var(--text-secondary); margin:0 0 18px; line-height:1.5;}
+  .modal-field{margin-bottom:12px;}
+  .modal-field label{display:block; font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:5px;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
 
   .plan-card{margin-top:auto; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px; margin-bottom:6px;}
   .plan-title{font-size:13px; font-weight:600; margin:0 0 4px;}
@@ -292,6 +337,10 @@
 
   .report-card{border:1px solid var(--border); border-radius:var(--radius-lg); padding:28px; background:var(--surface);}
   .report-eyebrow{font-size:11.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-weight:600;}
+  .report-field-label{font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.04em; margin:0 0 8px;}
+  .recipient-tag{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; background:var(--accent-soft); color:var(--accent-ink); border-radius:20px; padding:4px 10px;}
+  .recipient-tag button{background:none; border:none; padding:0; cursor:pointer; color:inherit; font-size:11px; line-height:1; opacity:0.7;}
+  .recipient-tag button:hover{opacity:1;}
 
   .integration-row{display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius); margin-bottom:8px;}
   .integration-row.warn{border-color:#E7B9B7; background:var(--red-soft);}
@@ -315,9 +364,9 @@
   .fab-chat:hover{opacity:0.9;}
 
   /* team page */
-  .team-banner{display:flex; align-items:center; justify-content:space-between; gap:14px; background:var(--accent-soft); border:1px solid var(--accent-soft); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:18px;}
-  .team-banner-text{font-size:13.5px; color:var(--accent-ink); line-height:1.5;}
-  .team-banner-chips{display:flex; gap:6px; flex-shrink:0;}
+  .team-banner{display:flex; align-items:center; justify-content:space-between; gap:14px; background:var(--accent-soft); border:1px solid var(--accent-soft); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:18px; flex-wrap:wrap;}
+  .team-banner-text{font-size:13.5px; color:var(--accent-ink); line-height:1.5; flex:1 1 260px; min-width:0;}
+  .team-banner-chips{display:flex; gap:6px; flex-shrink:0; flex-wrap:wrap; align-items:center;}
   .team-synced-pill{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--green); font-weight:600;}
   .team-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-bottom:18px;}
   .team-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:18px;}
@@ -353,6 +402,16 @@
   .lead-status-customer{background:var(--green-soft); color:var(--green);}
   .lead-score-track{width:60px; height:6px; border-radius:6px; background:var(--border); display:inline-block; overflow:hidden; vertical-align:middle; margin-right:6px;}
   .lead-score-fill{height:100%; border-radius:6px; background:var(--accent);}
+  .lead-avatar{width:26px; height:26px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:700; color:#fff; margin-right:8px; vertical-align:middle; flex-shrink:0;}
+
+  /* period + comparison picker */
+  .period-picker{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto;}
+  /* select.range-select carries margin-left:auto to push itself right when used
+     alone in the filter row. Inside the picker the wrapper owns that, so the
+     children must not each claim it or they'd spread apart. */
+  .period-picker select.range-select{margin-left:0;}
+  .date-input{border:1px solid var(--border); background:var(--surface); border-radius:20px; padding:6px 13px; font-size:12.5px; color:var(--text-primary); font-family:inherit;}
+  .period-picker-sep{font-size:12.5px; color:var(--text-muted);}
 
   @media (max-width:960px){
     .grid-2, .kpi-strip, .grid-3, .connector-grid, .team-grid{grid-template-columns:1fr;}
@@ -432,3 +491,28 @@
   .skeleton::after{content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 65%, transparent), transparent); animation:skeleton-shimmer 1.4s ease-in-out infinite;}
   @keyframes skeleton-shimmer{100%{transform:translateX(100%);}}
   @media (prefers-reduced-motion: reduce){ .skeleton::after{animation:none;} }
+
+  /* ── Parity with the v15 UI preview ──────────────────────────────────
+     Rules present in the preview stylesheet but absent here, added
+     verbatim so the two match. Kept in one block rather than scattered
+     so the next preview diff is a single comparison.
+     ------------------------------------------------------------------ */
+  .activity-icon{width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; color:#fff; flex-shrink:0;}
+  .app.sidebar-collapsed .sidebar{width:76px;}
+  .app.sidebar-collapsed .main{margin-left:76px;}
+  .app.sidebar-collapsed .nav-item.active::before{left:0;}
+  .app.sidebar-collapsed .collapse-btn{transform:rotate(180deg);}
+  .toggle-switch{width:38px; height:22px; border-radius:20px; background:var(--border); border:none; position:relative; flex-shrink:0; padding:0;}
+  .toggle-switch .toggle-knob{position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .15s;}
+  .toggle-switch.on{background:var(--accent);}
+  .toggle-switch.on .toggle-knob{left:18px;}
+  .app.sidebar-collapsed .nav-label, .app.sidebar-collapsed .side-section-label, .app.sidebar-collapsed .plan-card, .app.sidebar-collapsed .nav-badge{display:none;}
+  .app.sidebar-collapsed .nav-item, .app.sidebar-collapsed .nav-item-platform{justify-content:center; padding-left:0; padding-right:0; gap:0;}
+  .modal-field input, .modal-field select, .modal-field textarea{width:100%; border:1px solid var(--border); border-radius:9px; padding:9px 12px; font-size:13px; background:var(--surface); color:var(--text-primary); font-family:var(--font-body);}
+
+  /* Print styles, verbatim from the preview. */
+  @media print{
+    body *{visibility:hidden;}
+    .report-card, .report-card *{visibility:visible;}
+    .report-card{position:absolute; top:0; left:0; width:100%; border:none; padding:0;}
+  }
