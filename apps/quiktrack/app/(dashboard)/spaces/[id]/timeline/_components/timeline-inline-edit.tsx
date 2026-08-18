@@ -30,18 +30,28 @@ function anchorBelow(el: HTMLElement): PanelAnchor {
   return anchorFromRect(el.getBoundingClientRect());
 }
 
-/** Close on outside click or any scroll (the fixed menu can't follow scroll). */
+/**
+ * Close on outside click, or when the PAGE scrolls (the fixed menu can't follow
+ * it). Scrolls that originate INSIDE the menu (its own people list) must NOT
+ * close it — the scroll listener is in capture mode so it also sees descendant
+ * scrolls; ignore those.
+ */
 function useDismiss(open: boolean, onClose: () => void) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest("[data-timeline-menu]")) onClose();
     };
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      if (t instanceof Element && t.closest("[data-timeline-menu]")) return; // scrolling inside the menu
+      onClose();
+    };
     document.addEventListener("mousedown", onDown);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open, onClose]);
 }
@@ -93,8 +103,18 @@ export function AssigneeEditor({
   const [query, setQuery] = useState("");
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const menuStyle = useAnchoredPanel(menuRef, pos, { width: 208 });
   useDismiss(pos !== null, () => setPos(null));
+
+  // Focus the search box as soon as the menu opens so the user can type
+  // immediately (React's autoFocus is unreliable for a portaled node that
+  // mounts on click). rAF waits for the portal to be in the DOM.
+  useEffect(() => {
+    if (pos === null) return;
+    const id = requestAnimationFrame(() => searchRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [pos]);
 
   const current = value ? members.find((m) => m.userId === value) ?? null : null;
   const q = query.trim().toLowerCase();
@@ -140,6 +160,7 @@ export function AssigneeEditor({
           >
             <div className="px-2 pb-1">
               <input
+                ref={searchRef}
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
