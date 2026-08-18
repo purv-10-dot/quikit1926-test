@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MoreHorizontal } from "lucide-react";
 import { Skeleton } from "@quikit/ui";
+import { QuikTestPanelHeader } from "./quiktest-panel-header";
 import { RunSummary } from "@/components/test/run-summary";
 import type { StatusCounts } from "@/lib/test/statuses";
 import {
@@ -95,23 +95,43 @@ async function fetchPanel(
 export function QuikTestResultsPanel({
   issueKey,
   projectId,
+  collapsible = false,
+  defaultOpen = true,
+  onHide,
 }: {
   issueKey: string;
   projectId: string;
+  /**
+   * Render the heading as an accordion toggle. Used in the edit drawer, where
+   * vertical space is scarce and this section sits among several others.
+   */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  /**
+   * "Hide" from the panel's ⋯ menu. The PARENT owns this, deliberately.
+   *
+   * This used to be local `hidden` state, which created two sources of truth for
+   * one fact: the + menu's checkmark read the attached-apps set while Hide flipped
+   * a private flag, so hiding the panel left the menu still ticked for something
+   * that was gone. Hiding IS detaching the app — one state, both surfaces agree.
+   *
+   * Omit to make the panel unhideable (no ⋯ action rendered).
+   */
+  onHide?: () => void;
 }) {
-  const [hidden, setHidden] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [tab, setTab] = useState<TabKey>("all");
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // A collapsed section skips the fetch entirely — the drawer renders several
+  // sections and there is no point paying for results nobody has opened.
   const { data, isLoading, isError } = useQuery({
     queryKey: ["quiktrack", "issue-test-results", issueKey, tab, page],
     queryFn: () => fetchPanel(issueKey, tab, page),
     staleTime: 30_000,
+    enabled: !collapsible || open,
   });
-
-  if (hidden) return null;
 
   const projectHref = `/spaces/${projectId}`;
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
@@ -125,40 +145,19 @@ export function QuikTestResultsPanel({
 
   return (
     <div className="mb-5">
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          QuikTest: Results
-        </h3>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700"
-            aria-label="Panel actions"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 z-10 mt-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
-              <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                Actions
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setHidden(true);
-                  setMenuOpen(false);
-                }}
-                className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-              >
-                Hide QuikTest: Results
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <QuikTestPanelHeader
+        collapsible={collapsible}
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        total={data?.total ?? null}
+        onHide={onHide}
+      />
 
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+      <div
+        className={`rounded-lg border border-gray-200 dark:border-gray-700 ${
+          collapsible && !open ? "hidden" : ""
+        }`}
+      >
         <div className="flex flex-wrap items-center justify-end gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-700">
           {TABS.map((t) => (
             <button

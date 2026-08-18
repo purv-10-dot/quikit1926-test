@@ -30,7 +30,13 @@ beforeEach(() => {
 /** Open the menu with the trigger placed at `top` on screen. */
 function openAt(top: number) {
   render(
-    <StatusEditor value="s1" statuses={STATUSES} onSelect={vi.fn()} />,
+    <StatusEditor
+      issueId="issue_1"
+      projectId="proj_1"
+      value="s1"
+      statuses={STATUSES}
+      onSelect={vi.fn()}
+    />,
   );
   const trigger = screen.getByRole("button", { name: /to do/i });
   trigger.getBoundingClientRect = () =>

@@ -109,6 +109,7 @@ interface SpaceItem {
    */
   projectType?: string;
   templateKey?: string;
+  starred?: boolean;
 }
 
 export function Sidebar() {
@@ -143,17 +144,21 @@ export function Sidebar() {
       return next;
     });
 
+  // Full space list (used for both the Recent slice AND the Starred group —
+  // a starred space might sit past the recent top-8).
+  const [allSpaces, setAllSpaces] = useState<SpaceItem[]>([]);
+
   useEffect(() => {
     let alive = true;
     // Sort by most-recently-updated so the "Recent" list actually reflects
     // recent activity (the API defaults to name-asc, which buried spaces like
     // late-alphabet discovery projects past the top-8 slice).
-    fetch("/api/projects?sort=updatedAt&order=desc")
-      .then((r) => r.json())
-      .then((j) => {
-        if (!alive || !j?.success) return;
-        setRecentSpaces(
-          (j.data ?? []).slice(0, 8).map((p: SpaceItem) => ({
+    function load() {
+      fetch("/api/projects?sort=updatedAt&order=desc&pageSize=100")
+        .then((r) => r.json())
+        .then((j) => {
+          if (!alive || !j?.success) return;
+          const items: SpaceItem[] = (j.data ?? []).map((p: SpaceItem) => ({
             id: p.id,
             name: p.name,
             icon: p.icon,
@@ -161,14 +166,95 @@ export function Sidebar() {
             projectKey: p.projectKey,
             projectType: p.projectType,
             templateKey: p.templateKey,
-          })),
-        );
-      })
-      .catch(() => undefined);
+            starred: p.starred,
+          }));
+          setAllSpaces(items);
+          setRecentSpaces(items.slice(0, 8));
+        })
+        .catch(() => undefined);
+    }
+    load();
+    // Re-pull when a star is toggled anywhere (Projects list / space header) so
+    // the Starred group stays in sync without a page reload.
+    window.addEventListener("quiktrack:stars-changed", load);
     return () => {
       alive = false;
+      window.removeEventListener("quiktrack:stars-changed", load);
     };
   }, []);
+
+  const starredSpaces = allSpaces.filter((s) => s.starred);
+
+  // Renders one space row (flat link, or a discovery space that expands to its
+  // nested "All ideas"). Shared by the Starred + Recent groups so they behave
+  // identically. `keyPrefix` keeps React keys unique across the two groups.
+  function renderSpaceRow(s: SpaceItem, keyPrefix: string) {
+    const isCurrent = s.id === activeSpaceId;
+    const isDiscovery = s.templateKey === "discovery" || s.projectType === "discovery";
+    const seg = s.projectKey ?? s.id;
+    const spaceHref = `/spaces/${seg}/${isDiscovery ? "ideas" : "backlog"}`;
+    const rowClass = `qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${
+      isCurrent
+        ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
+        : "text-gray-700 hover:bg-gray-100"
+    }`;
+    if (!isDiscovery) {
+      return (
+        <Link key={`${keyPrefix}-${s.id}`} href={spaceHref} className={rowClass}>
+          <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
+          <span className="flex-1 truncate">{s.name}</span>
+        </Link>
+      );
+    }
+    const open = openSpaceIds.has(s.id);
+    const ideasHref = `/spaces/${seg}/ideas`;
+    const ideasActive = pathname === ideasHref;
+    const parentActive = isCurrent && !ideasActive;
+    const parentRowClass = `qt-nav-row group flex items-center gap-2 px-3 h-8 text-sm rounded ${
+      parentActive
+        ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
+        : "text-gray-700 hover:bg-gray-100"
+    }`;
+    return (
+      <div key={`${keyPrefix}-${s.id}`}>
+        <div className={parentRowClass}>
+          <button
+            type="button"
+            onClick={() => toggleSpaceOpen(s.id)}
+            className="relative h-5 w-5 shrink-0"
+            aria-label={open ? "Collapse" : "Expand"}
+          >
+            <span
+              className={`absolute inset-0 flex items-center justify-center transition-opacity ${open ? "opacity-0" : "opacity-100 group-hover:opacity-0"}`}
+            >
+              <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
+            </span>
+            <span
+              className={`absolute inset-0 flex items-center justify-center rounded hover:bg-gray-200 transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            >
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+            </span>
+          </button>
+          <Link href={spaceHref} className="flex items-center flex-1 min-w-0">
+            <span className="flex-1 truncate">{s.name}</span>
+          </Link>
+        </div>
+        {open && (
+          <Link
+            href={ideasHref}
+            className={`qt-nav-row flex items-center gap-2 pl-9 pr-3 h-7 text-sm rounded ${
+              ideasActive
+                ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            <span aria-hidden>👋</span>
+            <span className="flex-1 truncate">All ideas</span>
+          </Link>
+        )}
+      </div>
+    );
+  }
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -281,92 +367,25 @@ export function Sidebar() {
           </button>
           {spacesOpen && (
             <>
+              {/* Starred group — the user's favourite spaces, pinned above
+                  Recent (Jira-style). Populated from the per-user star flag. */}
+              {starredSpaces.length > 0 && (
+                <div className="pt-1 pb-1">
+                  <div className="px-3 pb-1 text-[11px] font-medium text-gray-500 uppercase">
+                    Starred
+                  </div>
+                  <div className="space-y-0.5">
+                    {starredSpaces.map((s) => renderSpaceRow(s, "starred"))}
+                  </div>
+                </div>
+              )}
               {orderedRecentSpaces.length > 0 && (
                 <div className="pt-1 pb-1">
                   <div className="px-3 pb-1 text-[11px] font-medium text-gray-500 uppercase">
                     Recent
                   </div>
                   <div className="space-y-0.5">
-                    {orderedRecentSpaces.slice(0, 5).map((s) => {
-                      const isCurrent = s.id === activeSpaceId;
-                      const isDiscovery =
-                        s.templateKey === "discovery" || s.projectType === "discovery";
-                      // Prefer the readable project key in the URL; fall back
-                      // to the id (server resolves both).
-                      const seg = s.projectKey ?? s.id;
-                      // Discovery spaces land on Ideas, not Backlog.
-                      const spaceHref = `/spaces/${seg}/${isDiscovery ? "ideas" : "backlog"}`;
-                      const rowClass = `qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
-                          ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
-                          : "text-gray-700 hover:bg-gray-100"
-                        }`;
-
-                      // Non-discovery spaces stay a single flat link.
-                      if (!isDiscovery) {
-                        return (
-                          <Link key={`recent-${s.id}`} href={spaceHref} className={rowClass}>
-                            <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
-                            <span className="flex-1 truncate">{s.name}</span>
-                          </Link>
-                        );
-                      }
-
-                      // Discovery spaces expand to reveal a nested "All ideas" row.
-                      const open = openSpaceIds.has(s.id);
-                      const ideasHref = `/spaces/${seg}/ideas`;
-                      const ideasActive = pathname === ideasHref;
-                      // The child "All ideas" row owns the highlight while you're on
-                      // the ideas view; the parent only highlights for the space's
-                      // other views (settings, etc.).
-                      const parentActive = isCurrent && !ideasActive;
-                      const parentRowClass = `qt-nav-row group flex items-center gap-2 px-3 h-8 text-sm rounded ${parentActive
-                          ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
-                          : "text-gray-700 hover:bg-gray-100"
-                        }`;
-                      return (
-                        <div key={`recent-${s.id}`}>
-                          <div className={parentRowClass}>
-                            {/* Left slot: the space icon by default; on hover (or
-                                when expanded) the expand/collapse chevron takes
-                                its place — JPD-style. */}
-                            <button
-                              type="button"
-                              onClick={() => toggleSpaceOpen(s.id)}
-                              className="relative h-5 w-5 shrink-0"
-                              aria-label={open ? "Collapse" : "Expand"}
-                            >
-                              <span
-                                className={`absolute inset-0 flex items-center justify-center transition-opacity ${open ? "opacity-0" : "opacity-100 group-hover:opacity-0"}`}
-                              >
-                                <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
-                              </span>
-                              <span
-                                className={`absolute inset-0 flex items-center justify-center rounded hover:bg-gray-200 transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                              >
-                                <ChevronRight
-                                  className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`}
-                                />
-                              </span>
-                            </button>
-                            <Link href={spaceHref} className="flex items-center flex-1 min-w-0">
-                              <span className="flex-1 truncate">{s.name}</span>
-                            </Link>
-                          </div>
-                          {open && (
-                            <Link
-                              href={ideasHref}
-                              className={`qt-nav-row flex items-center gap-2 pl-9 pr-3 h-7 text-sm rounded ${ideasActive
-                                  ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
-                                  : "text-gray-600 hover:bg-gray-100"
-                                }`}
-                            >
-                              <span aria-hidden>👋</span>
-                              <span className="flex-1 truncate">All ideas</span>
-                            </Link>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {orderedRecentSpaces.slice(0, 5).map((s) => renderSpaceRow(s, "recent"))}
                   </div>
                 </div>
               )}

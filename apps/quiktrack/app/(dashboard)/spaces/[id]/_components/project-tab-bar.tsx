@@ -87,7 +87,14 @@ export function ProjectTabBar({
   }, [customizeOpen]);
 
   const activeTab =
-    PROJECT_TABS.find((t) => pathname?.endsWith(`/${t.path}`))?.path ?? "board";
+    PROJECT_TABS.find((t) => {
+      if (!pathname) return false;
+      const marker = `/${t.path}`;
+      const i = pathname.indexOf(marker);
+      if (i === -1) return false;
+      const after = pathname.slice(i + marker.length);
+      return after === "" || after.startsWith("/");
+    })?.path ?? "board";
 
   // Tabs valid for this project's template (drops discovery-only tabs like
   // "Ideas" on a non-discovery space, even if a stale tabConfig still lists it).

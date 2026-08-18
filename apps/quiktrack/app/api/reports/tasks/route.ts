@@ -14,6 +14,11 @@ import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
  *   assigneeId   – filter by assignee
  *   from / to    – startDate range (ISO)
  *   month        – YYYY-MM convenience filter on startDate
+ *   dueBefore    – ISO date/datetime; keeps only tasks with dueDate < this
+ *                  (added for the AI Runtime's task.overdue_brief use case —
+ *                  the caller passes "now" to get everything overdue). Tasks
+ *                  with no dueDate are excluded, same as any other filter on
+ *                  a nullable column.
  */
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -103,6 +108,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       })()
     : null;
 
+  const dueBeforeStr = url.searchParams.get("dueBefore");
+  const dueBefore = dueBeforeStr ? new Date(dueBeforeStr) : null;
+  const dueBeforeValid = dueBefore && !Number.isNaN(dueBefore.getTime()) ? dueBefore : null;
+
   const where = {
     orgId,
     isDeleted: false,
@@ -123,6 +132,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
         }
       : {}),
     ...(startDateRange ? { startDate: startDateRange } : {}),
+    ...(dueBeforeValid ? { dueDate: { lt: dueBeforeValid } } : {}),
   };
 
   // Scope for the filter dropdowns ("facets"). Intentionally independent of

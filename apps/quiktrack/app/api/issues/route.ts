@@ -8,6 +8,7 @@ import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
 import { emailIssueAssigned } from "@/lib/email/sendEmail";
+import { isEmailEnabled } from "@/lib/notifications/notify";
 import { validateIssueValues, writeIssueValues } from "@/lib/services/customFieldValues";
 import type { FieldValue } from "@/lib/customFields/registry";
 import { customFiltersToWhere, parseCustomFilters } from "@/lib/customFields/filterQuery";
@@ -71,6 +72,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterSprintId = url.searchParams.get("sprintId");
   const filterParentId = url.searchParams.get("parentId");
   const filterEpicId = url.searchParams.get("epicId");
+  // Releases (Fix Versions) are a many-to-many join (QtIssueRelease), unlike
+  // sprint/epic which are direct columns — resolve to an id-IN filter instead
+  // of a where-clause spread.
+  const filterReleaseId = url.searchParams.get("releaseId");
   const filterAssigneeId = url.searchParams.get("assigneeId");
   const filterPriority = url.searchParams.get("priority");
   // When set, also return a To Do / In Progress / Done breakdown for the
@@ -164,10 +169,23 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     }
   }
 
+  // Resolve the release's linked issue ids ONCE (outside the where object) so
+  // an empty result set short-circuits to `{ id: { in: [] } }` instead of
+  // silently matching every issue.
+  let releaseIssueIds: string[] | null = null;
+  if (filterReleaseId) {
+    const links = await db.qtIssueRelease.findMany({
+      where: { releaseId: filterReleaseId },
+      select: { issueId: true },
+    });
+    releaseIssueIds = links.map((l) => l.issueId);
+  }
+
   const where = {
     orgId: orgId,
     projectId,
     isDeleted: false,
+    ...(releaseIssueIds ? { id: { in: releaseIssueIds } } : {}),
     ...typeWhere,
     ...(filterStatusIds.length > 0
       ? { statusId: { in: filterStatusIds } }
@@ -538,6 +556,21 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     void recalcParentRollup(issue.parentId, orgId);
   }
 
+  // Auto-watch: the reporter (always the creator) and the initial assignee
+  // (if different) start watching, matching Jira's default. Manual unwatch
+  // still works afterwards — this only seeds the initial watcher set.
+  void db.qtIssueWatcher
+    .createMany({
+      data: [
+        { orgId, issueId: issue.id, userId, source: "AUTO" },
+        ...(issue.assigneeId && issue.assigneeId !== userId
+          ? [{ orgId, issueId: issue.id, userId: issue.assigneeId, source: "AUTO" }]
+          : []),
+      ],
+      skipDuplicates: true,
+    })
+    .catch((e) => console.error("[watch] auto-watch on create failed:", e));
+
   // Email anyone @-mentioned in the new issue's description.
   if (issue.description) {
     void notifyMentions({
@@ -570,7 +603,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
             select: { email: true, firstName: true, lastName: true },
           }),
         ]);
-        if (assignee?.email) {
+        if (assignee?.email && (await isEmailEnabled(assigneeId))) {
           await emailIssueAssigned({
             to: assignee.email,
             assigneeName:

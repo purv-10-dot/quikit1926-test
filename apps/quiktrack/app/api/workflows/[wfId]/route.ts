@@ -134,3 +134,68 @@ export const PUT = withOrgAuth<{ wfId: string }>(
     return NextResponse.json({ success: true, data: { saved: true } });
   },
 );
+
+/**
+ * PATCH /api/workflows/[wfId]
+ * Update a workflow's name and/or description (metadata, not the graph). Applies
+ * immediately to the live row — this isn't part of the publishable draft. Name is
+ * unique per (org, project), so a clash returns a friendly 409.
+ */
+export const PATCH = withOrgAuth<{ wfId: string }>(
+  async ({ orgId, userId }, req, { params }) => {
+    const wf = await loadOwnedWorkflow(orgId, params.wfId);
+    if (!wf) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    if (!(await canEditWorkflow(userId, orgId, wf.projectId))) {
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    }
+    if (!wf.projectId) {
+      return NextResponse.json(
+        { success: false, error: "Org-shared templates cannot be edited here." },
+        { status: 400 },
+      );
+    }
+
+    const body = (await req.json()) as { name?: unknown; description?: unknown };
+    const name = typeof body.name === "string" ? body.name.trim() : undefined;
+    const description =
+      body.description === null
+        ? null
+        : typeof body.description === "string"
+          ? body.description.trim()
+          : undefined;
+
+    if (name !== undefined && name.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Workflow name can't be empty." },
+        { status: 400 },
+      );
+    }
+
+    // Guard the (orgId, projectId, name) unique constraint with a friendly message.
+    if (name !== undefined && name !== wf.name) {
+      const clash = await db.qtWorkflow.findFirst({
+        where: { orgId, projectId: wf.projectId, name, isDeleted: false, NOT: { id: wf.id } },
+        select: { id: true },
+      });
+      if (clash) {
+        return NextResponse.json(
+          { success: false, error: `A workflow named "${name}" already exists in this space.` },
+          { status: 409 },
+        );
+      }
+    }
+
+    const data: { name?: string; description?: string | null; updatedBy: string } = { updatedBy: userId };
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+
+    const updated = await db.qtWorkflow.update({
+      where: { id: wf.id },
+      data,
+      select: { id: true, name: true, description: true },
+    });
+    return NextResponse.json({ success: true, data: updated });
+  },
+);

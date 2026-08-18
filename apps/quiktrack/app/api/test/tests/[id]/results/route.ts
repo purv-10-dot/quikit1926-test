@@ -118,7 +118,25 @@ export const GET = withOrgAuth<Params>(
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
 
-      return NextResponse.json({ success: true, data: results });
+      // Resolve actor names for the history view (QUIKTR-340) in one query rather
+      // than per result. `User` is global (no orgId column); these ids come from
+      // rows already scoped to a project the caller was just gated on.
+      const actorIds = [...new Set(results.map((r) => r.executedBy).filter(Boolean))];
+      const actors = actorIds.length
+        ? await db.user.findMany({
+            where: { id: { in: actorIds as string[] } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+      const actorById = new Map(actors.map((u) => [u.id, u]));
+
+      return NextResponse.json({
+        success: true,
+        data: results.map((r) => ({
+          ...r,
+          actor: r.executedBy ? actorById.get(r.executedBy) ?? null : null,
+        })),
+      });
     } catch (error: unknown) {
       return serverError(error);
     }

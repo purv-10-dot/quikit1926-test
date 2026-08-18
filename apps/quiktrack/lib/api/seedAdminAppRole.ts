@@ -337,6 +337,31 @@ async function backfillNavToView(orgId: string): Promise<void> {
  * `GroupedKanban:view` grant — app-wide AND project roles. Idempotent
  * (skipDuplicates); `Board` rows are left intact (Board still gates its own tab).
  */
+/**
+ * One-time migration: `Team:create` is a new registry leaf (replacing the
+ * inline hasAdminAccess check in POST /api/teams). Every org's admin role was
+ * seeded before this leaf existed, and seedAdminAppRole only inserts grants
+ * once (grantCount === 0), so it never retroactively grants a leaf added
+ * after the role already has rows. Without this backfill, swapping the route
+ * to userCan(...,"Team","create") would silently lock every existing tenant
+ * admin out of creating teams. Idempotent (skipDuplicates).
+ */
+async function backfillTeamCreateGrant(orgId: string): Promise<void> {
+  const appId = await getQuikTrackAppId();
+  if (!appId) return;
+
+  const adminRole = await db.qtAppRole.findFirst({
+    where: { orgId, appId, name: "admin" },
+    select: { id: true },
+  });
+  if (!adminRole) return;
+
+  await db.qtRolePermission.createMany({
+    data: [{ roleId: adminRole.id, resource: "Team", action: "create" }],
+    skipDuplicates: true,
+  });
+}
+
 async function backfillGroupedKanban(orgId: string): Promise<void> {
   const appId = await getQuikTrackAppId();
   if (!appId) return;
@@ -431,6 +456,7 @@ export async function seedAllDefaultRoles(
   await backfillLegacyResources(orgId);
   await backfillNavToView(orgId);
   await backfillGroupedKanban(orgId);
+  await backfillTeamCreateGrant(orgId);
 
   seededOrgs.set(orgId, now);
   return { adminRoleId, userRoleId, spaceCreatorRoleId };

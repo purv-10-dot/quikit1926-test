@@ -1,7 +1,36 @@
 "use client";
 
-import { Check, Minus, X } from "lucide-react";
+import { Check, Minus, User, X } from "lucide-react";
 import { testRef, type RunnerTest } from "./runner-types";
+
+/**
+ * Outcome in words (QUIKTR-318). The glyph alone cannot separate Blocked from
+ * Skipped, and automation results from manual ones — this can. Colours are
+ * semantic data states, so they are fixed rather than `accent-*`.
+ */
+const PILL_CLASS: Record<string, string> = {
+  passed: "bg-green-100 text-green-800",
+  automation_passed: "bg-green-100 text-green-900",
+  failed: "bg-rose-100 text-rose-800",
+  automation_failed: "bg-red-100 text-red-900",
+  automation_error: "bg-gray-200 text-gray-700",
+  blocked: "bg-gray-200 text-gray-800",
+  skipped: "bg-yellow-100 text-yellow-800",
+  retest: "bg-blue-100 text-blue-800",
+  untested: "bg-gray-100 text-gray-600",
+};
+
+function StatusPill({ statusKey, label }: { statusKey: string; label: string }) {
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+        PILL_CLASS[statusKey] ?? "bg-gray-100 text-gray-600"
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
 
 /**
  * Left pane — the run's work list.
@@ -21,6 +50,8 @@ interface TestListPaneProps {
   onFilterChange: (f: RunnerFilter) => void;
   loading: boolean;
   total: number;
+  /** Resolves a user id to a display name for the assignee chip. */
+  assigneeName: (userId: string) => string;
 }
 
 /** Compact status glyph. Colours are semantic data states, so hardcoded. */
@@ -65,6 +96,7 @@ export function TestListPane({
   onFilterChange,
   loading,
   total,
+  assigneeName,
 }: TestListPaneProps) {
   return (
     <div className="flex h-full w-72 shrink-0 flex-col border-r border-gray-200">
@@ -117,9 +149,26 @@ export function TestListPane({
                 >
                   {t.case.title}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-gray-400">
-                  {testRef(t.refId)}
-                  {t.config ? ` · ${t.config.name}` : ""}
+                <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-gray-400">
+                    {testRef(t.refId)}
+                    {t.config ? ` · ${t.config.name}` : ""}
+                  </span>
+                  {/* QUIKTR-318 — the outcome in words, not only a glyph. A
+                      symbol alone cannot distinguish Blocked from Skipped, and
+                      "did this pass?" is the question this screen exists to
+                      answer. */}
+                  <StatusPill
+                    statusKey={t.currentStatus.key}
+                    label={t.currentStatus.label}
+                  />
+                  {/* QUIKTR-317 — who is executing this one. */}
+                  {t.assigneeId && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+                      <User className="h-3 w-3" />
+                      {assigneeName(t.assigneeId)}
+                    </span>
+                  )}
                 </span>
               </span>
             </button>

@@ -45,7 +45,7 @@ export function CoverageLinks({
 
   const load = () => {
     if (!caseId) return;
-    fetch(`/api/test/cases/${caseId}/coverage`)
+    fetch(`/api/test/cases/${caseId}/work-item-coverage`)
       .then((r) => r.json())
       .then((j: { success: boolean; data?: CoverageLink[] }) => {
         if (j.success && j.data) setLinks(j.data);
@@ -80,7 +80,7 @@ export function CoverageLinks({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/test/cases/${caseId}/coverage`, {
+      const res = await fetch(`/api/test/cases/${caseId}/work-item-coverage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId, type: "covers" }),
@@ -103,7 +103,7 @@ export function CoverageLinks({
     if (!caseId) return;
     setBusy(true);
     try {
-      await fetch(`/api/test/cases/${caseId}/coverage?linkId=${linkId}`, {
+      await fetch(`/api/test/cases/${caseId}/work-item-coverage?linkId=${linkId}`, {
         method: "DELETE",
       });
       load();

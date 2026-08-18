@@ -75,6 +75,9 @@ const FIELD_TO_PATCH: Record<string, { key: PatchKey; kind: "text" | "number" | 
   reporter: { key: "reporterId", kind: "ref" },
   resolution: { key: "resolutionId", kind: "ref" },
   title: { key: "title", kind: "text" },
+  // "Summary" is the workflow UI's (Jira) label for the work item's name; the
+  // column is `title`. Without this alias a Summary→X copy rule silently no-ops.
+  summary: { key: "title", kind: "text" },
   description: { key: "description", kind: "text" },
   storyPoints: { key: "storyPoints", kind: "number" },
   eta: { key: "eta", kind: "number" },

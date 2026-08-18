@@ -3,15 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Layers, Plus, Upload } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { CaseDetailPanel } from "./case-detail-panel";
 import { CaseEditorPanel } from "./case-editor-panel";
 import { CaseTable } from "./case-table";
+import { loadColumns } from "./columns-menu";
+import { ImportCasesPanel } from "./import-cases-panel";
+import { RepositoryHeader } from "./repository-header";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
-import type { TestCaseRow } from "./case-meta";
+import { useCasePanels } from "./use-case-panels";
+import {
+  DEFAULT_CASE_COLUMNS,
+  type CaseColumnKey,
+  type TestCaseRow,
+} from "./case-meta";
 
 /**
  * The test case repository — suite tree on the left, case list on the right,
@@ -47,8 +56,18 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
   const [activeSuiteId, setActiveSuiteId] = useState<string | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
+  // Read → Edit → back handoff lives in the hook; see use-case-panels.ts.
+  const panels = useCasePanels();
+  const [importOpen, setImportOpen] = useState(false);
+
+  // Visible columns (QUIKTR-335). Starts at the defaults and reads the stored
+  // preference AFTER mount — localStorage is unavailable during SSR, so seeding
+  // state from it directly would hydrate with different markup than the server
+  // rendered.
+  const [columns, setColumns] = useState<CaseColumnKey[]>(DEFAULT_CASE_COLUMNS);
+  useEffect(() => {
+    setColumns(loadColumns(projectId));
+  }, [projectId]);
 
   const suitesKey = ["quiktrack", "test-suites", projectId] as const;
   const { data: suites, isLoading: suitesLoading } = useApiData<SuiteResponse[]>(
@@ -171,10 +190,7 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   const activeSectionName =
     activeSuite?.sections.find((s) => s.id === activeSectionId)?.name ?? null;
 
-  const openCreate = () => {
-    setEditingCaseId(null);
-    setEditorOpen(true);
-  };
+  const openCreate = panels.openCreate;
 
   // Creating needs a destination folder. Fall back to the first section of the
   // active suite so the button works straight after suite creation.
@@ -183,33 +199,13 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold text-gray-900">Test cases</h1>
-          <p className="text-xs text-gray-500">
-            Reusable cases organised in suites and folders. Execute them from a
-            test run.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/spaces/${projectId}/test/runs`}
-            className="rounded border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Test runs
-          </Link>
-          {canCreate && treeSuites.length > 0 && (
-            <Button
-              size="sm"
-              className="bg-accent-600 text-white hover:bg-accent-700"
-              onClick={openCreate}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              New test case
-            </Button>
-          )}
-        </div>
-      </div>
+      <RepositoryHeader
+        projectId={projectId}
+        canCreate={canCreate}
+        hasSuites={treeSuites.length > 0}
+        onCreate={openCreate}
+        onImport={() => setImportOpen(true)}
+      />
 
       <div className="flex min-h-0 flex-1">
         {suitesLoading ? (
@@ -234,8 +230,31 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
         <div className="min-w-0 flex-1">
           {treeSuites.length === 0 && !suitesLoading ? (
-            <div className="p-8 text-sm text-gray-500">
-              Create a suite to start adding test cases.
+            // First-run state. Explains the two concepts in order rather than
+            // leaving one sentence floating in an empty pane.
+            <div className="flex h-full items-start justify-center px-6 py-12">
+              <div className="max-w-md text-center">
+                <Layers className="mx-auto h-8 w-8 text-gray-300" />
+                <h3 className="mt-3 text-sm font-semibold text-gray-800">
+                  Start with a suite
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  A <strong className="font-medium text-gray-700">suite</strong> is
+                  a collection of test cases, like Regression or Smoke. Inside it you
+                  can add <strong className="font-medium text-gray-700">folders</strong>{" "}
+                  to group cases by area, then execute them together as a{" "}
+                  <strong className="font-medium text-gray-700">test run</strong>.
+                </p>
+                {canEditSuite && (
+                  <button
+                    type="button"
+                    onClick={() => setPromptMode({ kind: "suite" })}
+                    className="mt-4 rounded-lg bg-accent-600 px-3 py-2 text-xs font-medium text-white hover:bg-accent-700"
+                  >
+                    Create your first suite
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <CaseTable
@@ -243,21 +262,46 @@ export function RepositoryView({ projectId }: { projectId: string }) {
               total={cases?.total ?? 0}
               loading={casesLoading}
               sectionName={activeSectionName}
+              projectId={projectId}
+              columns={columns}
+              onColumns={setColumns}
               canCreate={canCreate}
               onCreate={openCreate}
-              onOpen={(id) => {
-                setEditingCaseId(id);
-                setEditorOpen(true);
-              }}
+              // QUIKTR-336 — a row click now READS the case. Editing is an
+              // explicit action from the detail panel: opening the editor to look
+              // at a case invited a pointless version bump, since every save mints
+              // a new version.
+              onOpen={panels.openDetail}
             />
           )}
         </div>
       </div>
 
+      <ImportCasesPanel
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        projectId={projectId}
+        suiteId={activeSuiteId}
+        suiteName={activeSuite?.name ?? null}
+        // The folder the user is looking at. Null means "All cases in this suite", in
+        // which case the server falls back to the suite's first folder.
+        sectionId={activeSectionId}
+        sectionName={activeSectionName}
+        onImported={refresh}
+      />
+
+      <CaseDetailPanel
+        open={panels.detailOpen}
+        caseId={panels.caseId}
+        canEdit={canCreate}
+        onClose={panels.closeDetail}
+        onEdit={panels.editFromDetail}
+      />
+
       <CaseEditorPanel
-        open={editorOpen}
-        onClose={() => setEditorOpen(false)}
-        caseId={editingCaseId}
+        open={panels.editorOpen}
+        onClose={panels.closeEditor}
+        caseId={panels.caseId}
         sectionId={targetSectionId}
         projectId={projectId}
         onSaved={refresh}

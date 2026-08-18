@@ -18,8 +18,8 @@ export interface DropdownOption {
  * the modal instead of being clipped by it. Values are chosen — never typed.
  */
 export function PortalDropdown({
-  options,
-  selected,
+  options: optionsProp,
+  selected: selectedProp,
   onChange,
   multiple,
   placeholder = "Select option",
@@ -36,6 +36,11 @@ export function PortalDropdown({
   /** When true, the trigger is greyed out and won't open the menu. */
   disabled?: boolean;
 }) {
+  // Defensive: a caller passing an undefined config field (e.g. a brand-new rule
+  // whose config keys aren't set yet) must not crash the whole editor on
+  // `selected.length` / `options.length`. Treat missing arrays as empty.
+  const options = optionsProp ?? [];
+  const selected = selectedProp ?? [];
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
