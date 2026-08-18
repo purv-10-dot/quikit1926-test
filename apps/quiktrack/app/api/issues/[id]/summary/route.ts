@@ -19,6 +19,7 @@ import manifest from "@/manifest";
  * after the lookup, so withProjectAccess's path-param resolution doesn't
  * apply here).
  */
+// AI Runtime: agent-JWT opt-in (manifest read op `summarize_issue`).
 export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const issue = await db.qtIssue.findFirst({
     where: { id: params.id, orgId, isDeleted: false },
@@ -124,4 +125,4 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, {
       url: `${process.env.NEXT_PUBLIC_QUIKIT_URL ?? ""}${manifest.routePrefix}/spaces/${issue.projectId}/issues/${issue.key}`,
     },
   });
-});
+}, { allowAgentJwt: true });

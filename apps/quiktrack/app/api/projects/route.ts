@@ -25,6 +25,8 @@ const KANBAN_HIDDEN_TABS = ["epics", "list", "task-table"];
 const PROJECT_VIEWS = ["active", "archived", "trash"] as const;
 type ProjectView = (typeof PROJECT_VIEWS)[number];
 
+// AI Runtime: agent-JWT opt-in (manifest read op `list_projects`). Reads only —
+// the POST below deliberately stays session/API-token.
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const search = url.searchParams.get("search")?.trim() || "";
@@ -185,7 +187,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     // Restore, the Trash tab). The server still enforces every action.
     isAdmin,
   });
-});
+}, { allowAgentJwt: true });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   if (!(await userCan(userId, orgId, "Project", "create"))) return forbidden();

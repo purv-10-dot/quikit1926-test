@@ -104,6 +104,9 @@ export const GET = withOrgAuth<{ id: string }>(
       },
     });
   },
+  // AI Runtime: agent-JWT opt-in (manifest read op `get_issue`). Reads only —
+  // the PATCH/DELETE below deliberately stay session/API-token.
+  { allowAgentJwt: true },
 );
 
 export const PATCH = withOrgAuth<{ id: string }>(

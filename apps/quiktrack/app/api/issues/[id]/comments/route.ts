@@ -61,6 +61,9 @@ export const GET = withOrgAuth<{ id: string }>(
     }));
     return NextResponse.json({ success: true, data });
   },
+  // AI Runtime: agent-JWT opt-in (manifest read op `list_issue_comments`).
+  // Reads only — the POST below deliberately stays session/API-token.
+  { allowAgentJwt: true },
 );
 
 export const POST = withOrgAuth<{ id: string }>(

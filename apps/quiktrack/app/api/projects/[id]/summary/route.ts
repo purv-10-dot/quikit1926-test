@@ -338,5 +338,6 @@ export const GET = withProjectAccess<{ id: string }>(
       },
     });
   },
-  { paramKey: "id" },
+  // AI Runtime: agent-JWT opt-in (manifest read op `summarize_project`).
+  { paramKey: "id", allowAgentJwt: true },
 );
