@@ -2,7 +2,7 @@
  * Roster enrichment — the LMS-side writes that `registerUser` does not make.
  *
  * `registerUser` writes a FIXED column subset (name, email, role, orgId, phone,
- * studentId, guardianContact, grade, section, secondaryRole). Everything else a
+ * studentId, guardianContact, grade, section). Everything else a
  * roster form collects — a teacher's subjects, pay rate, qualification and
  * weekly availability, and the per-tenant roll number — has to be written
  * afterwards, against LMS tables only, so the off-limits auth/identity path is
@@ -81,6 +81,30 @@ export interface TeacherProfileFields {
   availableSlots?: AvailabilitySlotInput[];
 }
 
+/**
+ * `rateType` and `qualification` are Postgres ENUMS, not free text.
+ *
+ * Mongo took whatever string arrived. Prisma rejects an unknown member, and the
+ * rejection lands on the SINGLE `lmsUser.update` that also carries `subjects` —
+ * so one stale option value from an older client ("M.Sc" in the qualification
+ * select, "weekly" as a rate type) threw away the whole teacher profile, and
+ * `enrichRosterUser`'s best-effort catch turned it into a silent no-op. An
+ * unrecognised value is dropped so the fields around it still persist.
+ */
+const RATE_TYPES = ['per_class', 'per_hour', 'monthly', 'hybrid'] as const;
+const QUALIFICATIONS = ['PGT', 'TGT', 'PRT', 'NTT', 'Other'] as const;
+
+function asEnum<T extends readonly string[]>(value: unknown, allowed: T): T[number] | undefined {
+  const v = asString(value);
+  if (!v) return undefined;
+  const hit = allowed.find((a) => a.toLowerCase() === v.toLowerCase());
+  if (!hit) {
+    // eslint-disable-next-line no-console
+    console.warn(`[roster] dropped out-of-enum value "${v}" (expected one of ${allowed.join(', ')})`);
+  }
+  return hit;
+}
+
 /** Mint and persist the per-tenant roll number (SCH-T-0001 / SCH-S-0001 / SCH-P-0001). */
 export async function assignGeneratedId(
   userId: string,
@@ -110,24 +134,62 @@ export async function applyTeacherProfile(userId: string, fields: TeacherProfile
   const data: Record<string, unknown> = {};
   if (fields.subjects?.length) data.subjects = fields.subjects;
   if (fields.ratePerClass !== undefined && !Number.isNaN(fields.ratePerClass)) data.ratePerClass = fields.ratePerClass;
-  if (fields.rateType) data.rateType = fields.rateType;
-  if (fields.qualification) data.qualification = fields.qualification;
+  const rateType = asEnum(fields.rateType, RATE_TYPES);
+  if (rateType) data.rateType = rateType;
+  const qualification = asEnum(fields.qualification, QUALIFICATIONS);
+  if (qualification) data.qualification = qualification;
   if (fields.monthlyPayout !== undefined && !Number.isNaN(fields.monthlyPayout)) data.monthlyPayout = fields.monthlyPayout;
 
+  /**
+   * The two writes are INDEPENDENTLY fault-isolated, and that is the point.
+   *
+   * They used to run as one `await` pair under `enrichRosterUser`'s single
+   * best-effort catch, so a failure on the scalar update skipped the
+   * availability insert entirely — the admin filled in subjects AND a weekly
+   * schedule, and both vanished with only a server-side console line to show it.
+   * Availability is the one that breaks a whole flow: `validateTeacherSchedule`
+   * refuses a teacher with zero slots, so the batch form then rejects the
+   * teacher it had just offered.
+   *
+   * Each half is retried by nobody, so each half gets to succeed on its own. The
+   * error is re-thrown only if BOTH halves failed, which is the one case where
+   * the caller learns nothing by continuing.
+   */
+  const failures: unknown[] = [];
+  let attempted = 0;
+
   if (Object.keys(data).length) {
-    await db.lmsUser.update({ where: { id: userId }, data });
+    attempted++;
+    try {
+      await db.lmsUser.update({ where: { id: userId }, data });
+    } catch (err) {
+      failures.push(err);
+      // eslint-disable-next-line no-console
+      console.error(`[roster] teacher scalar profile write failed for ${userId}:`, err);
+    }
   }
+
   if (fields.availableSlots?.length) {
-    await db.lmsUserAvailabilitySlot.createMany({
-      data: fields.availableSlots.map((s) => ({
-        userId,
-        dayOfWeek: s.dayOfWeek,
-        startTime: s.startTime,
-        endTime: s.endTime,
-      })),
-      skipDuplicates: true,
-    });
+    attempted++;
+    try {
+      await db.lmsUserAvailabilitySlot.createMany({
+        data: fields.availableSlots.map((s) => ({
+          userId,
+          dayOfWeek: s.dayOfWeek,
+          startTime: s.startTime,
+          endTime: s.endTime,
+        })),
+        skipDuplicates: true,
+      });
+    } catch (err) {
+      failures.push(err);
+      // eslint-disable-next-line no-console
+      console.error(`[roster] teacher availability write failed for ${userId}:`, err);
+    }
   }
+
+  // Nothing landed — surface it so the caller's own logging says which user.
+  if (attempted > 0 && failures.length === attempted) throw failures[0];
 }
 
 /** The roll-number kind for an LMS role, or null for roles that do not get one. */

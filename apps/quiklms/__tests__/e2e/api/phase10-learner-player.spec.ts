@@ -133,9 +133,8 @@ test.describe("Phase 10 — progress sync", () => {
     // `verb.id` is the one field the schema actually requires.
     const res = await api.post("/api/player/xapi-statements", { data: { statements: [{ verb: {} }] } });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { message?: string; validationErrors?: Array<{ field: string }> };
-    expect(body.message).toBe("Validation failed");
-    expect(body.validationErrors?.length).toBeGreaterThan(0);
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error?.length).toBeGreaterThan(0);
     await api.dispose();
   });
 });
@@ -203,7 +202,7 @@ test.describe("Phase 10 — resume, attempts, file proxy", () => {
 
   test("GET /api/learner/file-proxy refuses a loopback SSRF target", async () => {
     const api = await apiAs("learner");
-    const res = await api.get(`/api/learner/file-proxy?url=${encodeURIComponent("http://127.0.0.1:3014/api/health")}`);
+    const res = await api.get(`/api/learner/file-proxy?url=${encodeURIComponent("http://127.0.0.1:3016/api/health")}`);
     expect(res.status(), "SSRF guard must reject loopback").toBe(400);
     await api.dispose();
   });
@@ -261,10 +260,9 @@ test.describe("Phase 10 — submit-quiz", () => {
     const api = await apiAs("learner");
     const res = await api.post("/api/learner/submit-quiz", { data: { answers: [] } });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    const fields = body.validationErrors?.map((v) => v.field) ?? [];
-    expect(fields).toContain("assessmentId");
-    expect(fields).toContain("courseId");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("assessmentId");
+    expect(body.error).toContain("courseId");
     await api.dispose();
   });
 });

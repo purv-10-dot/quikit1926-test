@@ -28,8 +28,8 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **quikchat** | `3011` | `3011` | [apps/quikchat/package.json](../apps/quikchat/package.json) | QuikChat — team messaging (channels, DMs, calls, notifications, calendar). |
 | **quikasset** | `3012` | `3012` | [apps/quikasset/package.json](../apps/quikasset/package.json) | QuikAsset — asset/inventory management. |
 | **quikfinance** | `3013` | `3013` | [apps/quikfinance/package.json](../apps/quikfinance/package.json) | QuikFinance — finance module. |
-| **quiklms** | `3014` | `3014` | [apps/quiklms/package.json](../apps/quiklms/package.json) | QuikLMS — learning management (folded in from standalone quikskill_lms). **`dev` script disabled locally (2026-08-07)** — shares port `3014` with quikflow; run `npm run dev:manual` instead of `turbo dev` to start it standalone. |
-| **quikflow** | `3014` | `3014` | [apps/quikflow/package.json](../apps/quikflow/package.json) | QuikFlow — no-code workflow automation (Zapier/n8n analog). Has a separate BullMQ `worker` process (`npm run worker`) shipped as its **own image** (`Dockerfile.worker`). Moved from `3011` (2026-08-07) to resolve a collision with quikchat; now shares `3014` with quiklms instead — see quiklms row. UAT: `uatflow.quikit.ai`; queue broker `bullmq.quikit.ai`. |
+| **quikflow** | `3014` | `3014` | [apps/quikflow/package.json](../apps/quikflow/package.json) | QuikFlow — no-code workflow automation (Zapier/n8n analog). Has a separate BullMQ `worker` process (`npm run worker`) shipped as its **own image** (`Dockerfile.worker`). Moved from `3011` (2026-08-07) to resolve a collision with quikchat. Its Gmail/Outlook/Teams OAuth redirect URIs are registered against `3014` in the Google Cloud and Azure consoles — **do not move this port** without re-registering all three. e2e preview build binds `3018`. UAT: `uatflow.quikit.ai`; queue broker `bullmq.quikit.ai`. |
+| **quiklms** | `3016` | `3016` | [apps/quiklms/package.json](../apps/quiklms/package.json) | QuikLMS — learning management (folded in from standalone quikskill_lms). **Moved from `3014` → `3016` (2026-08-17)**: it shared `3014` with quikflow, so whichever dev server booted first won the port and the launcher's "Open app" for QuikLMS silently loaded QuikFlow instead. quiklms was the safe one to move (its `GOOGLE_*`/`MICROSOFT_*` client IDs are unset, so no external redirect URIs were registered). |
 
 ### Startup flow
 
@@ -304,4 +304,4 @@ LOG_LEVEL="info"
 
 ---
 
-*Last updated: 2026-07-02 — port table reconciled against every app's `package.json` `dev` script (quikit 3000 / auth 3001 swap from the pre-2026-05-29 layout; quikvc 3005, quikinfra 3006, quiksocial 3007; quikcrm 3008 and quikhrms 3009 added). When you change a port or add an env var, update this file in the same PR.*
+*Last updated: 2026-08-17 — quiklms moved `3014` → `3016` to end the shared-port collision with quikflow (quikflow keeps `3014`; its e2e preview moved `3016` → `3018` to stay clear of quiklms's new dev port). Previously: 2026-07-02 — port table reconciled against every app's `package.json` `dev` script (quikit 3000 / auth 3001 swap from the pre-2026-05-29 layout; quikvc 3005, quikinfra 3006, quiksocial 3007; quikcrm 3008 and quikhrms 3009 added). When you change a port or add an env var, update this file in the same PR.*

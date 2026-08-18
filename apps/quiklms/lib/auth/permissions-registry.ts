@@ -12,7 +12,7 @@
  *
  * That granularity is load-bearing, not cosmetic. Collapsing on ONE segment makes
  * 47 of 135 resource:action pairs internally contradictory — `certificates:view`
- * alone spans five different role lists, from a SUPER_ADMIN-only approval queue
+ * alone spans five different role lists, from a ADMIN-only approval queue
  * (`certificates/pending-approvals`) to a learner's own list
  * (`certificates/my-certificates`). One grant cannot serve both, and seeding from
  * the union would hand learners the approval queue. Two segments reduces that to 6

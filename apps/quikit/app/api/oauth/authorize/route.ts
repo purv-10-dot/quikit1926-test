@@ -4,7 +4,7 @@ import { getToken } from "next-auth/jwt";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { generateAuthCode, redirectUriMatches, resolveAppOrigin } from "@/lib/oauth";
+import { generateAuthCode, redirectUriMatches, resolveAppOrigin, resolveAppByResource } from "@/lib/oauth";
 import { publicBaseUrl } from "@quikit/auth/public-url";
 
 // Reads runtime session + env-backed OAuth keys — never prerender.
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   // Look up the OAuth client
   const client = await db.oAuthClient.findUnique({
     where: { clientId },
-    select: { redirectUris: true, scopes: true, clientSecret: true },
+    select: { appId: true, redirectUris: true, scopes: true, clientSecret: true },
   });
   if (!client) {
     return NextResponse.json(
@@ -114,11 +114,20 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Verify user has access to this app
-  const app = await db.app.findFirst({
-    where: { oauthClients: { some: { clientId } } },
-    select: { id: true, slug: true, baseUrl: true },
-  });
+  // Verify user has access to this app. Prefer the client's own bound appId
+  // (set at registration when it declared `resource` there) — never let a
+  // caller-supplied `resource` override an already-bound client's app. Only
+  // an unbound dynamic client (registered without `resource`, e.g. Claude
+  // Desktop) falls back to resolving the app from the `resource` query
+  // param it sends here instead (RFC 8707's actual intended location for
+  // it) — see resolveAppByResource() in lib/oauth.ts.
+  let app = client.appId
+    ? await db.app.findUnique({ where: { id: client.appId }, select: { id: true, slug: true, baseUrl: true } })
+    : null;
+  if (!app && !client.appId) {
+    const resourceParam = params.get("resource");
+    if (resourceParam) app = await resolveAppByResource(resourceParam);
+  }
   if (app) {
     const access = await db.userAppAccess.findFirst({
       where: { userId, orgId, appId: app.id },

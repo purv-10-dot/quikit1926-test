@@ -6,7 +6,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
 import { PageBackground } from "@/components/hrms/page-background";
-import { Plus, ShieldCheck, AlertCircle, X } from "lucide-react";
+import { Plus, ShieldCheck, AlertCircle, X, Upload } from "lucide-react";
+import { InsuranceBulkImport } from "@/components/hrms/insurance-bulk-import";
 import { useToast } from "@/components/hrms/toast";
 import { clsx } from "clsx";
 import { DocumentSourcePicker } from "@/components/hrms/document-source-picker";
@@ -33,6 +34,7 @@ export default function InsuranceDocumentsPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [showUpload, setShowUpload] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const emptyForm = {
     title: "", description: "", fileUrl: "", fileType: "application/pdf", fileSize: 0,
     startDate: "", expiryDate: "", notifyDaysBefore: 30, vendorName: "",
@@ -49,7 +51,7 @@ export default function InsuranceDocumentsPage() {
   // Active employees, for the "Notify (multiple)" recipient picker below.
   const { data: empData } = useQuery({
     queryKey: ["employees-active-list"],
-    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?status=Active&limit=200"),
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?status=Active&limit=200&picker=1"),
     staleTime: 5 * 60_000,
   });
   const employees = empData?.data ?? [];
@@ -76,10 +78,21 @@ export default function InsuranceDocumentsPage() {
           <ShieldCheck size={28} className="text-[#166534] mt-1.5" />
           <h1 className="text-page-title text-gray-900">Insurance</h1>
         </div>
-        <button onClick={openUpload} className="btn btn-primary">
-          <Plus size={14} /> Add Insurance Policy
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowBulkImport(true)} className="btn bg-white ring-1 ring-gray-200 text-gray-700 hover:bg-gray-50">
+            <Upload size={14} /> Bulk Add
+          </button>
+          <button onClick={openUpload} className="btn btn-primary">
+            <Plus size={14} /> Add Insurance Policy
+          </button>
+        </div>
       </div>
+
+      <InsuranceBulkImport
+        open={showBulkImport}
+        onClose={() => setShowBulkImport(false)}
+        onDone={() => qc.invalidateQueries({ queryKey: ["documents", "insurance"] })}
+      />
 
       {expiringSoon.length > 0 && (
         <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2 text-sm text-yellow-800">

@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { getOrCreateCompanySettings } from "@/lib/services/settings";
-import { computeSetupProgress } from "@/lib/services/payroll";
 
 /**
  * First-run org-setup gate for HRMS admins.
@@ -15,7 +14,6 @@ import { computeSetupProgress } from "@/lib/services/payroll";
 export type HrmsSetupItemKey =
   | "departments"
   | "locations"
-  | "payroll"
   | "roles"
   | "leaveTypes"
   | "leaveGroups"
@@ -47,8 +45,8 @@ export interface HrmsSetupItem {
  * the small "Setup" badge shown next to a settings row until that required
  * thing is done. Non-mandatory rows never get the badge, so they simply
  * have no key here (departments/locations/leaveTypes/coreApprovalChains are
- * the blocking keys in ITEM_META; payroll and leaveGroups are also blocking
- * but aren't surfaced as a row on this page).
+ * the blocking keys in ITEM_META; leaveGroups is also blocking but isn't
+ * surfaced as a row on this page).
  */
 export interface HrmsSettingsChecklist {
   departments: boolean;
@@ -88,12 +86,6 @@ const ITEM_META: Record<
     title: "Approval chains for every module",
     description: "Activate an approval chain for Leave, Requisition, Engagement, Feedback, Expense, WFH, Offboarding and Payroll.",
     href: "/settings/approval-chains",
-    blocking: true,
-  },
-  payroll: {
-    title: "Complete payroll setup",
-    description: "Finish the payroll setup so you can run payroll.",
-    href: "/payroll/setup",
     blocking: true,
   },
   roles: {
@@ -186,7 +178,7 @@ export async function computeHrmsSetupProgress(
   }
 
   const [
-    departmentCount, locationCount, activeChains, payrollProgress, roleCount, leaveTypeCount, holidayCount,
+    departmentCount, locationCount, activeChains, roleCount, leaveTypeCount, holidayCount,
     onboardingTemplateCount, preOnboardingTemplateCount, offboardingTemplateCount, emailTemplateCount,
   ] = await Promise.all([
     prisma.department.count({ where: { orgId, deletedAt: null } }),
@@ -195,7 +187,6 @@ export async function computeHrmsSetupProgress(
       where: { orgId, deletedAt: null, isActive: true },
       select: { module: true, levels: true },
     }),
-    computeSetupProgress(orgId),
     prisma.hrmsAppRole.count({ where: { orgId } }),
     prisma.leaveType.count({ where: { orgId, deletedAt: null } }),
     prisma.companyHoliday.count({ where: { orgId, deletedAt: null } }),
@@ -280,7 +271,6 @@ export async function computeHrmsSetupProgress(
   const states: Record<HrmsSetupItemKey, boolean> = {
     departments: departmentCount > 0,
     locations: locationCount > 0,
-    payroll: payrollProgress.setupCompleted,
     roles: roleCount > 0,
     leaveTypes: leaveTypeCount > 0,
     leaveGroups: unassignedActive.length === 0,
@@ -293,7 +283,6 @@ export async function computeHrmsSetupProgress(
 
   const chainModulesDone = CORE_CHAIN_MODULES.filter((m) => chainHasLevels(m)).length;
   const items = buildItems(states, {
-    payroll: { done: payrollProgress.completedSteps, total: payrollProgress.totalSteps },
     coreApprovalChains: { done: chainModulesDone, total: CORE_CHAIN_MODULES.length },
     onboardingTemplate: { done: templatesDone, total: templatesTotal },
   });

@@ -278,6 +278,7 @@ export default function OrgChartPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permsLoading, topTab, showDirectory, showOrgChart]);
   const [directoryView, setDirectoryView] = useState<"list" | "grid">("list");
+  const [directorySort, setDirectorySort] = useState<string>("name-asc");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [exporting, setExporting] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("chain");
@@ -819,7 +820,24 @@ export default function OrgChartPage() {
           )}
 
           {topTab === "directory" && (
-            <div className="ml-auto flex border border-[var(--border)] rounded-lg overflow-hidden shrink-0">
+            <div className="min-w-[150px] ml-auto">
+              <Select
+                value={directorySort}
+                onChange={setDirectorySort}
+                size="sm"
+                options={[
+                  { value: "name-asc", label: "Name (A–Z)" },
+                  { value: "name-desc", label: "Name (Z–A)" },
+                  { value: "code-asc", label: "Employee Code" },
+                  { value: "department-asc", label: "Department" },
+                  { value: "designation-asc", label: "Designation" },
+                ]}
+              />
+            </div>
+          )}
+
+          {topTab === "directory" && (
+            <div className="flex border border-[var(--border)] rounded-lg overflow-hidden shrink-0">
               <button
                 onClick={() => setDirectoryView("list")}
                 title="List view"
@@ -846,6 +864,7 @@ export default function OrgChartPage() {
           matchesFilters={matchesFilters}
           roleById={roleById}
           view={directoryView}
+          sortBy={directorySort}
         />
       ) : (
       <div className="relative bg-gradient-to-b from-gray-50 to-white rounded-lg shadow-sm border border-gray-200 overflow-hidden org-chart-container">
@@ -1098,12 +1117,13 @@ export default function OrgChartPage() {
   );
 }
 
-function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, view }: {
+function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, view, sortBy }: {
   employees: OrgEmployee[];
   hasActiveFilter: boolean;
   matchesFilters: (e: OrgEmployee) => boolean;
   roleById: Map<string, RoleOption>;
   view: "list" | "grid";
+  sortBy: string;
 }) {
   const api = useApiClient();
   const qc = useQueryClient();
@@ -1189,7 +1209,22 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
     });
   };
 
-  const shown = hasActiveFilter ? employees.filter(matchesFilters) : employees;
+  const filtered = hasActiveFilter ? employees.filter(matchesFilters) : employees;
+  const shown = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "name-desc":
+        return `${b.firstName} ${b.lastName}`.localeCompare(`${a.firstName} ${a.lastName}`);
+      case "code-asc":
+        return a.employeeCode.localeCompare(b.employeeCode);
+      case "department-asc":
+        return (a.department?.name ?? "").localeCompare(b.department?.name ?? "");
+      case "designation-asc":
+        return (a.designation?.title ?? "").localeCompare(b.designation?.title ?? "");
+      case "name-asc":
+      default:
+        return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
+    }
+  });
   const byId = new Map(employees.map((e) => [e.id, e]));
 
   // ─── Pagination ────────────────────────────────────

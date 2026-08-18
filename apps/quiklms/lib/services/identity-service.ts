@@ -33,7 +33,7 @@ import { roleDisplayNameFor } from '@/lib/email-templates';
 const QUIKLMS_SLUG = 'quiklms';
 
 /** The tenant login entry point — SSO handoff bounces through here. */
-const LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').replace(/\/$/, '')}/login`;
+const LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3016').replace(/\/$/, '')}/login`;
 
 /**
  * Invitation lifetime. Mirrors INVITATION_TTL_MS in
@@ -148,16 +148,40 @@ async function sendInvitation(params: {
   }
 }
 
-/** LMS role → platform membership role (coarse org-level tier). */
-function toMembershipRole(lmsRole: string): string {
+/**
+ * LMS role → platform membership role (coarse org-level tier).
+ *
+ * ONLY `ADMIN` IS `org_admin`. A TENANT_ADMIN used to map here too, which made the
+ * tenant's own administrator an admin of the PLATFORM org as well — able to manage
+ * that org in quikit, and carried into `ADMIN_TIER_ROLES`, whose app-access rule
+ * (`createGetOrgId`) skips the per-user `UserAppAccess` check for anyone in it.
+ * Product decision (2026-08-11): a tenant admin administers their tenant, not the
+ * platform, and cannot become a provider themselves.
+ *
+ * `member` is safe here even though it is also what a LEARNER maps to, because the
+ * two are never told apart by THIS value: a tenant admin's authority comes from
+ * `app_quiklms.UserAppRole` (TENANT_ADMIN), and their app access from the
+ * `UserAppAccess` row `createCentralIdentity` writes in the same transaction as the
+ * membership — so losing admin-tier costs them nothing.
+ *
+ * The one behaviour that does change is the LAST-RESORT fallback in
+ * `mapPlatformRoleToLmsRole`, which reads this value when BOTH in-app rows are
+ * missing: a tenant admin now resolves to LEARNER rather than ADMIN. That is the
+ * safe direction — it locks someone out of their own admin screens instead of
+ * handing them the top tier and the shared-catalog approve/reject powers.
+ *
+ * NOT RETROACTIVE. Tenant admins provisioned before this change keep `org_admin`;
+ * the `isTenantOrg` argument to `mapPlatformRoleToLmsRole` is what keeps THEM from
+ * resolving to ADMIN. Changing the stored rows needs a backfill.
+ */
+export function toMembershipRole(lmsRole: string): string {
   switch (lmsRole) {
-    case 'SUPER_ADMIN':
-    case 'TENANT_ADMIN':
+    case 'ADMIN':
       return 'org_admin';
     case 'SUB_ADMIN':
       return 'app_admin';
     default:
-      return 'member'; // MANAGER / TEACHER / PARENT / LEARNER
+      return 'member'; // TENANT_ADMIN / MANAGER / TEACHER / PARENT / LEARNER
   }
 }
 
@@ -610,7 +634,7 @@ export interface ProvisionLmsUserResult extends CreateCentralIdentityResult {
 }
 
 /** LMS roles that carry organisation-administrator authority. */
-const ADMIN_TIER_ROLES = new Set(['SUPER_ADMIN', 'TENANT_ADMIN', LMS_SYSTEM_ADMIN_ROLE]);
+const ADMIN_TIER_ROLES = new Set(['ADMIN', 'TENANT_ADMIN', LMS_SYSTEM_ADMIN_ROLE]);
 
 /**
  * The first person provisioned into an org becomes its administrator.
@@ -655,6 +679,84 @@ async function roleForNewMember(orgId: string, requested: string): Promise<strin
       `TENANT_ADMIN instead of ${requested} so the org is not left unadministrable.`,
   );
   return 'TENANT_ADMIN';
+}
+
+/**
+ * Materialise the LMS row for someone who ALREADY holds a central identity.
+ *
+ * WHY THIS EXISTS. `app_quiklms.UserAppRole.userId` is a foreign key to
+ * `app_quiklms.users(id)` — a LOCAL table. QuikScale's equivalent points straight
+ * at the central `auth.User`, so its `/api/internal/provision-roles` can assign a
+ * role to a freshly-invited org admin the moment the launcher calls it. QuikLMS
+ * cannot: without a local row the insert raises `UserAppRole_userId_fkey`, so
+ * `ensureUserOnLmsRole` bails out instead.
+ *
+ * That bail-out is what left the org's FIRST admin — the person quikit invites
+ * when it creates the org — with no assignment at all. `POST /api/super/orgs`
+ * writes `User` + `OrgMember` centrally and then calls provision-roles with that
+ * CENTRAL id; nothing has created an LMS row for them at that point, and nothing
+ * ever would, because `provisionLmsUser` (the only writer) runs for people the LMS
+ * itself invites. The visible damage was not just the missing row:
+ *
+ *   - `isOrgAdmin()` reads assignments, so it answered false for the org's admin.
+ *   - `roleForNewMember` counts assignments to decide whether an org still has an
+ *     administrator. With zero, the FIRST person that admin invited was silently
+ *     promoted to TENANT_ADMIN whatever role was actually chosen.
+ *   - The central `UserAppAccess` mirror sits AFTER the bail-out in
+ *     `ensureUserOnLmsRole`, so the Admin Portal's "Roles per Application" column
+ *     stayed blank for them too.
+ *
+ * Fixing the foreign key itself would mean editing the shared Prisma schema, which
+ * is out of bounds for this app — so the LMS row is created here instead.
+ *
+ * Returns whether an LMS row now exists, so callers can report a real outcome
+ * rather than assuming success. Never throws: this runs inside a best-effort
+ * provisioning path, and a failure here must not discard the role/grant seeding
+ * that already succeeded.
+ */
+export async function ensureLmsUserForCentralId(
+  userId: string,
+  orgId: string,
+  lmsRole: LmsUserRole,
+): Promise<boolean> {
+  if (!userId || !orgId) return false;
+
+  try {
+    // Idempotent — `id` still doubles as the central id for provisioned rows.
+    const existing = await db.lmsUser.findUnique({ where: { id: userId }, select: { id: true } });
+    if (existing) return true;
+
+    const central = await orgDb.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true, lastName: true },
+    });
+    // No central row means the caller passed an id this platform does not know.
+    // Inventing an LMS person for it would be worse than reporting the skip.
+    if (!central?.email) return false;
+
+    // ONE LmsUser row per email today: `id` doubles as the central user id, so the
+    // per-org uniqueness that would allow the same person in two orgs is not live
+    // yet (see the `authUserId` note on the model). A collision here means this
+    // email already belongs to a different LMS row — `registerUser` would throw, and
+    // stealing the row would be worse. Report the skip and let a human look.
+    const emailTaken = await db.lmsUser.findFirst({
+      where: { email: central.email.toLowerCase().trim() },
+      select: { id: true },
+    });
+    if (emailTaken) return false;
+
+    await registerUser({
+      id: userId,
+      email: central.email,
+      firstName: central.firstName ?? '',
+      lastName: central.lastName ?? '',
+      role: lmsRole,
+      orgId,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function provisionLmsUser(

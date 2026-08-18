@@ -29,7 +29,7 @@ import { apiAs, apiAnon, safeJson } from "../fixtures/api";
 import { loadManifest, mintSessionToken } from "../fixtures/auth";
 
 const m = loadManifest();
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 const MISSING = "00000000-0000-0000-0000-000000000000";
 const RUN = `AUDIT17-${Date.now()}`;
 const LEARNER_B_EMAIL = "e2e-learner-b@quiklms.test";
@@ -45,8 +45,8 @@ const PATCH = (a: APIRequestContext, p: string, data: unknown) =>
 interface Envelope<T> {
   success?: boolean;
   data?: T;
-  statusCode?: number;
   message?: string;
+  error?: string;
 }
 
 interface GradeRecord {
@@ -345,7 +345,7 @@ test.describe("Phase 17 — guards", () => {
     const admin = await apiAs("tenantAdmin");
     const res = await POST(admin, `/api/gradebook/compute?batchId=${MISSING}`);
     expect(res.status()).toBe(404);
-    expect(((await safeJson(res)) as Envelope<never>).statusCode).toBe(404);
+    expect(((await safeJson(res)) as Envelope<never>).success).toBe(false);
     await admin.dispose();
   });
 

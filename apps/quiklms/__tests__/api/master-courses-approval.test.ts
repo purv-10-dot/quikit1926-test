@@ -38,8 +38,7 @@ vi.mock('@/lib/auth/context', () => ({
   // Real implementation — `userHasRole` is a pure predicate that
   // master-course-service builds its actor checks on. Stubbing it would silently
   // disable the very ownership guards these tests exist to protect.
-  userHasRole: (u: { role?: string; secondaryRole?: string | null }, role: string) =>
-    u?.role === role || u?.secondaryRole === role,
+  userHasRole: (u: { role?: string }, role: string) => u?.role === role,
   // Likewise real: the tenant/operator split is exactly what decides whether the
   // create path forces `selectedTenants` + the approval workflow.
   isPlatformOperator: (u: { isSuperAdmin?: boolean }) => u?.isSuperAdmin === true,
@@ -83,7 +82,7 @@ function body(payload: unknown, method = 'POST') {
   }) as never;
 }
 
-const subAdmin = { id: 'u-sub', role: 'SUB_ADMIN', secondaryRole: null, orgId: 'org-1', isActive: true };
+const subAdmin = { id: 'u-sub', role: 'SUB_ADMIN', orgId: 'org-1', isActive: true };
 
 /** A published master course owned by org-1 — the §2.5 trigger condition. */
 const publishedCourse = {
@@ -206,30 +205,21 @@ describe('§2.5 — PUT /api/master-courses/:id', () => {
   });
 });
 
-describe('a SUB_ADMIN by secondaryRole is treated identically', () => {
-  it('still forces PendingTenantApproval', async () => {
-    h.requireAuth.mockResolvedValue({ ...subAdmin, role: 'TEACHER', secondaryRole: 'SUB_ADMIN' });
-    setApprovalWorkflow(false);
-    await savePOST(body({ title: 'Edited' }), ctx);
-    expect(h.create.mock.calls[0][0].data.status).toBe('PendingTenantApproval');
-  });
-});
-
 describe('POST /api/master-courses — fail closed without an orgId', () => {
-  it('400s a TENANT_ADMIN with no orgId instead of using the SUPER_ADMIN path', async () => {
-    // Previously fell through both branches to the SUPER_ADMIN path, where
+  it('400s a TENANT_ADMIN with no orgId instead of using the ADMIN path', async () => {
+    // Previously fell through both branches to the ADMIN path, where
     // dto.status is honored as-is and selectedTenants is never forced.
-    h.requireAuth.mockResolvedValue({ id: 'u-ta', role: 'TENANT_ADMIN', secondaryRole: null, orgId: null, isActive: true });
+    h.requireAuth.mockResolvedValue({ id: 'u-ta', role: 'TENANT_ADMIN', orgId: null, isActive: true });
 
     const res = await createPOST(body({ title: 'X', status: 'Published' }), {});
 
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Tenant ID is required');
+    expect((await res.json()).error).toBe('Tenant ID is required');
     expect(h.create).not.toHaveBeenCalled();
   });
 
   it('400s a SUB_ADMIN with no orgId', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'u-sa', role: 'SUB_ADMIN', secondaryRole: null, orgId: null, isActive: true });
+    h.requireAuth.mockResolvedValue({ id: 'u-sa', role: 'SUB_ADMIN', orgId: null, isActive: true });
     const res = await createPOST(body({ title: 'X', status: 'Published' }), {});
     expect(res.status).toBe(400);
     expect(h.create).not.toHaveBeenCalled();
@@ -238,25 +228,25 @@ describe('POST /api/master-courses — fail closed without an orgId', () => {
   it('still lets the platform OPERATOR create without a tenant', async () => {
     // `isSuperAdmin: true` — the operator authors the shared catalogue and has no
     // tenant of their own, so the fail-closed guard must not catch them.
-    h.requireAuth.mockResolvedValue({ id: 'u-su', role: 'SUPER_ADMIN', secondaryRole: null, orgId: null, isActive: true, isSuperAdmin: true });
+    h.requireAuth.mockResolvedValue({ id: 'u-su', role: 'ADMIN', orgId: null, isActive: true, isSuperAdmin: true });
     const res = await createPOST(body({ title: 'X' }), {});
     expect(res.status).toBe(200);
     expect(h.create).toHaveBeenCalled();
   });
 
-  it('400s a founding admin (SUPER_ADMIN role) with no orgId', async () => {
-    // Regression: a non-operator SUPER_ADMIN is a tenant actor, so the same
+  it('400s a founding admin (ADMIN role) with no orgId', async () => {
+    // Regression: a non-operator ADMIN is a tenant actor, so the same
     // fail-closed guard applies. Previously they fell through onto the operator path,
     // where `dto.status` is honoured verbatim and `selectedTenants` is never forced —
     // letting them publish an unscoped master course visible to every tenant.
-    h.requireAuth.mockResolvedValue({ id: 'u-fa', role: 'SUPER_ADMIN', secondaryRole: null, orgId: null, isActive: true, isSuperAdmin: false });
+    h.requireAuth.mockResolvedValue({ id: 'u-fa', role: 'ADMIN', orgId: null, isActive: true, isSuperAdmin: false });
     const res = await createPOST(body({ title: 'X', status: 'Published' }), {});
     expect(res.status).toBe(400);
     expect(h.create).not.toHaveBeenCalled();
   });
 
   it('forces a founding admin’s course into their own org, not the whole platform', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'u-fa', role: 'SUPER_ADMIN', secondaryRole: null, orgId: 'org-mine', isActive: true, isSuperAdmin: false });
+    h.requireAuth.mockResolvedValue({ id: 'u-fa', role: 'ADMIN', orgId: 'org-mine', isActive: true, isSuperAdmin: false });
     await createPOST(body({ title: 'X', status: 'Published', selectedTenants: ['org-other'] }), {});
     expect(h.create).toHaveBeenCalled();
     // Prisma-level mock, same as the sibling assertions above.

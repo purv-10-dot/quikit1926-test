@@ -4,12 +4,12 @@ import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles, visibleOrgIds } from '@/lib/auth/context';
 import { createTenant, findAllTenants } from '@/lib/services/tenants-service';
 
-// GET /api/tenants — SUPER_ADMIN. Scoped to the orgs this caller may see: their own
+// GET /api/tenants — ADMIN. Scoped to the orgs this caller may see: their own
 // plus every org they onboarded (see lib/auth/context.ts `visibleOrgIds`). The platform
 // operator gets all of them.
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   return json({ success: true, data: await findAllTenants(await visibleOrgIds(actor)) });
 });
 
@@ -66,16 +66,16 @@ const createSchema = z
   })
   .strict();
 
-// POST /api/tenants — SUPER_ADMIN
+// POST /api/tenants — ADMIN
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const dto = await parseBody(req, createSchema);
   const tenant = await createTenant(dto);
   // App's own public origin. NEXTAUTH_URL is the platform-standard self-origin
   // var and is ALWAYS set in prod (NextAuth cannot boot without it), so the
   // localhost fallback only ever applies in local dev — a prod deploy can never
   // hand a tenant a localhost clientUrl.
-  const base = process.env.NEXTAUTH_URL || 'http://localhost:3014';
+  const base = process.env.NEXTAUTH_URL || 'http://localhost:3016';
   return json({ success: true, data: tenant, message: 'Tenant created successfully', clientUrl: `${base}/${tenant.subdomain}` }, 201);
 });

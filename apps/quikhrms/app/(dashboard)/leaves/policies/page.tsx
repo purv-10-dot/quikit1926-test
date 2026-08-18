@@ -1120,7 +1120,7 @@ function AssignmentEditor({ group, onClose }: { group: LeaveGroup; onClose: () =
 
   const { data: empsData } = useQuery({
     queryKey: ["employees", "for-group-assign"],
-    queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=200"),
+    queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=200&picker=1"),
     enabled: mode === "Employee",
   });
 

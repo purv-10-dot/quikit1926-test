@@ -94,7 +94,7 @@ const VideoClassPage = () => {
       const res = await api.get<any>(`/meetings/${meetingId}`);
       setMeeting(res?.meeting ?? res);
     } catch (err: any) {
-      setError(err?.statusCode === 404 ? 'Meeting not found' : (err?.message || 'Failed to load meeting details'));
+      setError(err?.status === 404 ? 'Meeting not found' : (err?.message || 'Failed to load meeting details'));
     } finally {
       setLoading(false);
     }
@@ -119,11 +119,35 @@ const VideoClassPage = () => {
     return () => { if (attendanceInterval.current) { clearInterval(attendanceInterval.current); attendanceInterval.current = null; } };
   }, [isHost, isTeacher, meeting?.status, fetchAttendance, meeting]);
 
+  /**
+   * START / END / CANCEL are POST, not PATCH.
+   *
+   * These three used to send PATCH while every route under `/api/meetings/[id]/*`
+   * exports POST — so the classroom's Start, End and Cancel buttons returned 405
+   * and did nothing but pop an alert. The Jitsi/Zoom room still opened from the
+   * join URL, which is why it looked like the class "worked": what silently never
+   * happened was the MEETING STATE TRANSITION.
+   *
+   * That transition is load-bearing well beyond this page:
+   *   · `getLiveClassStatus` computes `isLive: meeting.status === 'started'` and
+   *     only then hands out `joinUrl` — so the parent Live Classes view could
+   *     never show a class as live.
+   *   · `endMeeting` is what calls `calculateAttendanceDurations`, so every
+   *     `LmsMeetingAttendance.durationMinutes` stayed null and the join/leave
+   *     analytics were permanently empty.
+   *
+   * The verb is POST in the reference backend too (`meetings.controller.ts`
+   * `@Post(':id/start')`, `@Post(':id/end')`, `@Post(':id/cancel')`); the
+   * reference FRONTEND sends PATCH, so it carries the identical bug
+   * (`pages/shared/VideoClassPage.tsx:212,236,250`) and QuikLMS inherited it in
+   * the port. Fixed on the client, so the call matches the contract both apps
+   * declare on the server.
+   */
   const startMeeting = async () => {
     if (!meetingId) return;
     try {
       setActionLoading('start');
-      await api.patch<any>(`/meetings/${meetingId}/start`);
+      await api.post<any>(`/meetings/${meetingId}/start`);
       await fetchMeeting();
     } catch (err: any) { alert(err?.message || 'Failed to start meeting'); }
     finally { setActionLoading(null); }
@@ -132,14 +156,14 @@ const VideoClassPage = () => {
 
   const endMeeting = async () => {
     if (!meetingId) return;
-    try { setActionLoading('end'); await api.patch<any>(`/meetings/${meetingId}/end`); await fetchMeeting(); }
+    try { setActionLoading('end'); await api.post<any>(`/meetings/${meetingId}/end`); await fetchMeeting(); }
     catch (err: any) { alert(err?.message || 'Failed to end meeting'); }
     finally { setActionLoading(null); }
   };
 
   const cancelMeeting = async () => {
     if (!meetingId || !confirm('Are you sure you want to cancel this meeting?')) return;
-    try { setActionLoading('cancel'); await api.patch<any>(`/meetings/${meetingId}/cancel`); await fetchMeeting(); }
+    try { setActionLoading('cancel'); await api.post<any>(`/meetings/${meetingId}/cancel`); await fetchMeeting(); }
     catch (err: any) { alert(err?.message || 'Failed to cancel meeting'); }
     finally { setActionLoading(null); }
   };

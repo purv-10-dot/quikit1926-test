@@ -56,7 +56,7 @@ function formReq(url: string, name: string, type: string, bytes = 3) {
   return new Request(url, { method: 'POST', body: form }) as never;
 }
 
-const actor = { id: 'u1', role: 'SUPER_ADMIN', orgId: 'org-1', isActive: true };
+const actor = { id: 'u1', role: 'ADMIN', orgId: 'org-1', isActive: true };
 
 beforeEach(() => {
   Object.values(h).forEach((fn) => fn.mockReset());
@@ -92,7 +92,7 @@ describe('GET /api/upload/welcome-kit', () => {
     h.getObjectBuffer.mockRejectedValue(new Error('NoSuchKey'));
     const res = await welcomeKitGET(req('http://x/api/upload/welcome-kit'), {});
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Welcome Kit PDF not found');
+    expect((await res.json()).error).toBe('Welcome Kit PDF not found');
   });
 
   it('401s when unauthenticated', async () => {
@@ -118,7 +118,7 @@ describe('POST /api/upload/welcome-kit', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Only PDF files are allowed');
+    expect((await res.json()).error).toBe('Only PDF files are allowed');
   });
 
   it('400s over the legacy 10MB cap', async () => {
@@ -127,14 +127,16 @@ describe('POST /api/upload/welcome-kit', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('File size must be less than 10MB');
+    expect((await res.json()).error).toBe('File size must be less than 10MB');
   });
 
   it('rejects a body that omits fileType/fileSize instead of skipping both checks', async () => {
     // Previously these were optional, so `{}` sailed past the PDF and size checks.
     const res = await welcomeKitPOST(req('http://x/api/upload/welcome-kit', {}), {});
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Validation failed');
+    const body = await res.json();
+    expect(body.error).toContain('fileType');
+    expect(body.error).toContain('fileSize');
   });
 });
 
@@ -153,7 +155,7 @@ describe('POST /api/upload/course-thumbnail', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Only image files are allowed');
+    expect((await res.json()).error).toBe('Only image files are allowed');
   });
 
   it('400s over the legacy 5MB cap (manual check → 400, not 413)', async () => {
@@ -162,7 +164,7 @@ describe('POST /api/upload/course-thumbnail', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('File size must be less than 5MB');
+    expect((await res.json()).error).toBe('File size must be less than 5MB');
   });
 
   it('checks type before size, matching the legacy handler order', async () => {
@@ -170,7 +172,7 @@ describe('POST /api/upload/course-thumbnail', () => {
       req('http://x/api/upload/course-thumbnail', { fileName: 'a.pdf', fileType: 'application/pdf', fileSize: 99 * MB }),
       {},
     );
-    expect((await res.json()).message).toBe('Only image files are allowed');
+    expect((await res.json()).error).toBe('Only image files are allowed');
   });
 });
 
@@ -197,14 +199,14 @@ describe('multer-limit endpoints return 413, not 400', () => {
       const res = await fn(req(url, { fileName: 'a.bin', fileType: 'application/octet-stream', fileSize: max + 1 }), {});
       expect(res.status).toBe(413);
       const body = await res.json();
-      expect(body.message).toBe('File too large');
+      expect(body.error).toBe('File too large');
       expect(body.error).toBe('Payload Too Large');
     });
 
     it(`${name} requires fileSize`, async () => {
       const res = await fn(req(url, { fileName: 'a.bin', fileType: 'application/octet-stream' }), {});
       expect(res.status).toBe(400);
-      expect((await res.json()).message).toBe('Validation failed');
+      expect((await res.json()).error).toContain('fileSize');
     });
   }
 });
@@ -313,7 +315,7 @@ describe('multipart bodies are stored server-side', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('No file provided');
+    expect((await res.json()).error).toBe('No file provided');
   });
 
   it('course-thumbnail still rejects a non-image sent as multipart', async () => {
@@ -323,7 +325,7 @@ describe('multipart bodies are stored server-side', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Only image files are allowed');
+    expect((await res.json()).error).toBe('Only image files are allowed');
     expect(h.putObject).not.toHaveBeenCalled();
   });
 });

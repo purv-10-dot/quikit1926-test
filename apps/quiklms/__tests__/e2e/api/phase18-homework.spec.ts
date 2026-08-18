@@ -31,7 +31,7 @@ import { apiAs, apiAnon, safeJson } from "../fixtures/api";
 import { loadManifest, mintSessionToken } from "../fixtures/auth";
 
 const m = loadManifest();
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 const MISSING = "00000000-0000-0000-0000-000000000000";
 const RUN = `AUDIT18-${Date.now()}`;
 const LEARNER_B_EMAIL = "e2e-learner-b@quiklms.test";
@@ -262,6 +262,27 @@ test.describe("Phase 18 — homework lifecycle", () => {
     expect(row.feedback).toBe(`${RUN} good effort`);
     expect(row.rubricScores).toHaveLength(2);
     expect(row.rubricScores.map((r) => r.criterion).sort()).toEqual(["Accuracy", "Presentation"]);
+  });
+
+  /**
+   * The score ceiling comes from the homework, not from a literal in the route.
+   *
+   * This homework is worth 100 (see `createHomework`), so 101 must be refused —
+   * and the message must name the maximum, because "Validation failed" told the
+   * teacher nothing about which number to change.
+   */
+  test("refuses a score above the homework's maxScore", async () => {
+    const res = await PATCH(teacher, `/api/homework/submissions/${submissionId}/grade`, {
+      score: 101,
+    });
+    expect(res.status()).toBe(400);
+    expect(((await safeJson(res)) as Envelope<never>).message).toContain("100");
+
+    // The refusal did not disturb the grade already on record.
+    const rows = (await safeJson(
+      await GET(teacher, `/api/homework/${homeworkId}/submissions`),
+    )) as Submission[];
+    expect(rows.find((s) => s.id === submissionId)!.score).toBe(42);
   });
 
   test("re-grading REPLACES the rubric rather than appending to it", async () => {
@@ -506,12 +527,25 @@ test.describe("Phase 18 — guards", () => {
     await teacher.dispose();
   });
 
-  test("grade validation rejects an out-of-range score", async () => {
+  /**
+   * A NEGATIVE score is still refusable from the schema alone, so this stays a
+   * field-level 400.
+   *
+   * The upper bound is not: it is the homework's own `maxScore`, which cannot be
+   * known without loading the row. This test used to send `score: 5000` at a
+   * NONEXISTENT submission and expect a 400, which only passed because the route
+   * carried a literal `.max(100)` that fired before the lookup — the same literal
+   * that made a 150-point assignment ungradable. The ceiling now lives in
+   * `gradeSubmission` against the real homework (see the lifecycle block's
+   * "refuses a score above the homework's maxScore"), so an unknown submission
+   * correctly answers 404 first.
+   */
+  test("grade validation rejects a negative score", async () => {
     const teacher = await apiAs("teacher");
-    const res = await PATCH(teacher, `/api/homework/submissions/${MISSING}/grade`, { score: 5000 });
+    const res = await PATCH(teacher, `/api/homework/submissions/${MISSING}/grade`, { score: -1 });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors!.some((v) => v.field === "score")).toBe(true);
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("score");
     await teacher.dispose();
   });
 
@@ -519,10 +553,9 @@ test.describe("Phase 18 — guards", () => {
     const teacher = await apiAs("teacher");
     const res = await POST(teacher, "/api/homework", { title: `${RUN} incomplete` });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors!.map((v) => v.field)).toEqual(
-      expect.arrayContaining(["batchId", "dueDate"]),
-    );
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("batchId");
+    expect(body.error).toContain("dueDate");
     await teacher.dispose();
   });
 

@@ -8,7 +8,7 @@ import { computeBatchGrades } from '@/lib/services/gradebook-service';
 // `requireAuth` only, so any learner could trigger a recompute for any batch.
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   const url = new URL(req.url);
   const batchId = url.searchParams.get('batchId') || '';
   const term = url.searchParams.get('term') || undefined;

@@ -69,11 +69,11 @@ interface Question {
   correctAnswer: number | number[]; // Single index for 'single', array of indices for 'multiple'
 }
 
-// The fetch wrapper in `@/lib/api` throws the parsed error BODY (an `ApiError`:
-// `{ statusCode, message, error? }`) where axios threw `err.response.data`.
-// This is the narrowing shim for the `catch (err: unknown)` blocks below.
+// The fetch wrapper in `@/lib/api` throws an `ApiClientError` (`{ status,
+// message, error }`) where axios threw `err.response.data`. This is the
+// narrowing shim for the `catch (err: unknown)` blocks below.
 interface ApiErrorLike {
-  statusCode?: number;
+  status?: number;
   message?: string;
   error?: string;
 }
@@ -290,7 +290,7 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
       console.error('Failed to check storage:', error);
       const apiError = asApiError(error);
       // For master courses, if tenant check fails, allow upload anyway
-      if (apiError.statusCode === 400 && apiError.message?.includes('Tenant ID')) {
+      if (apiError.status === 400 && apiError.message?.includes('Tenant ID')) {
         // This is a master course - allow upload without tenant ID
         setStorageUsage({ current: 0, limit: 10 * 1024 * 1024 * 1024 }); // 10GB default
         return true;
@@ -747,7 +747,7 @@ const CourseCreator: React.FC<CourseCreatorProps> = ({ onClose, onSuccess, cours
       setError(errorMessage);
 
       // If unauthorized, suggest logging in again
-      if (apiError.statusCode === 401) {
+      if (apiError.status === 401) {
         setError(`${errorMessage}. Please try logging out and logging back in.`);
       }
     } finally {

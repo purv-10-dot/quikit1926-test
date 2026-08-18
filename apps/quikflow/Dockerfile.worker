@@ -19,8 +19,7 @@
 #                                        OAuth connector callback URLs
 #   WF_CONNECTION_ENC_KEY              — decrypts stored connector tokens
 #   QUIKFLOW_DEFAULT_TIMEZONE          — calendar event default (e.g. Asia/Kolkata)
-#   GOOGLE_*/MICROSOFT_*/FATHOM_*       — connector credentials the scans need
-#                                        (MICROSOFT_* is shared by mail + Teams calendar)
+#   GOOGLE_*/MS_*/MS_TEAMS_*/FATHOM_*  — connector credentials the scans need
 #
 # The worker serves NO application traffic. It exposes exactly one route —
 # GET /health on $PORT (default 9101) — so k8s has something to probe, matching

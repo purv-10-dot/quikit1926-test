@@ -35,9 +35,15 @@ export default function DocUploadPortal({ params }: { params: { token: string } 
       fd.append("file", file);
       fd.append("docName", docName);
       const r = await fetch(withBasePath(`/api/v1/hrms/onboarding/doc-upload/${token}`), { method: "POST", body: fd });
-      const res = await r.json();
-      if (res.success) await refresh();
-      else alert(res.error?.message ?? "Upload failed.");
+      // A dropped connection, or a body the platform rejected before this
+      // route ran (oversized upload → an HTML error page, not JSON), throws
+      // here — without this catch it was an unhandled rejection: the spinner
+      // still cleared via `finally` but no error ever reached the user.
+      const res = await r.json().catch(() => null);
+      if (res?.success) await refresh();
+      else alert(res?.error?.message ?? "Upload failed. Please check your connection and try again.");
+    } catch {
+      alert("Upload failed. Please check your connection and try again.");
     } finally {
       setBusyDoc(null);
     }
@@ -85,7 +91,7 @@ export default function DocUploadPortal({ params }: { params: { token: string } 
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-semibold text-gray-900 truncate">{doc}</div>
-                  <div className="text-[11.5px] text-gray-400 truncate">{up ? `Uploaded: ${up.fileName}` : "PDF, JPG or PNG · max 10MB"}</div>
+                  <div className="text-[11.5px] text-gray-400 truncate">{up ? `Uploaded: ${up.fileName}` : "PDF, JPG or PNG · max 4MB"}</div>
                 </div>
                 {badge && <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold ${badge.c}`}>{badge.t}</span>}
                 <input ref={(el) => { fileInputs.current[doc] = el; }} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" className="hidden"

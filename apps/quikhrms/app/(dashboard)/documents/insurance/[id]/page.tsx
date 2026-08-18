@@ -88,7 +88,7 @@ export default function InsurancePolicyDetailPage({ params }: { params: { id: st
   // Active employees, for the "Notify (multiple)" recipient picker + chip labels.
   const { data: empData } = useQuery({
     queryKey: ["employees-active-list"],
-    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?status=Active&limit=200"),
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?status=Active&limit=200&picker=1"),
     staleTime: 5 * 60_000,
   });
   const employees = empData?.data ?? [];

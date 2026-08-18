@@ -121,7 +121,7 @@ export default function ApprovalChainsPage() {
 
   const { data: empResp } = useQuery({
     queryKey: ["approval-chains", "employees"],
-    queryFn: () => api.get<EmployeeRef[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    queryFn: () => api.get<EmployeeRef[]>("/api/v1/hrms/employees?limit=500&status=Active&picker=1"),
   });
   const employees = empResp?.data ?? [];
   const empById = new Map(employees.map((e) => [e.id, e]));
@@ -451,6 +451,7 @@ export default function ApprovalChainsPage() {
                           value={l.userId ?? ""}
                           onChange={(v) => updateLevel(idx, { userId: v })}
                           size="sm"
+                          searchable
                           placeholder="Pick an employee…"
                           options={employees.map((e) => ({
                             value: e.id,

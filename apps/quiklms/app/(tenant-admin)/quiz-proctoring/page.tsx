@@ -21,6 +21,7 @@ import { Card, CardContent } from '@/components/ui';
 import { Badge } from '@/components/ui';
 import { Skeleton } from '@/components/ui';
 import { DashboardScaffold } from '@/components/DashboardScaffold';
+import FeatureRoute from '@/components/FeatureRoute';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
@@ -100,7 +101,20 @@ const eventTypeLabels: Record<string, { label: string; icon: string; color: stri
   face_too_far: { label: 'Too Far from Camera', icon: '📏', color: 'text-gray-600' },
 };
 
+/**
+ * Corporate tenants have quiz proctoring off, so this review surface has nothing
+ * to show and its `/api/quiz-proctoring/*` calls now 403. The nav entry is
+ * feature-gated too; this guards the deep link.
+ */
 export default function QuizProctoringReviewPage() {
+  return (
+    <FeatureRoute feature="showQuizProctoring">
+      <QuizProctoringReviewContent />
+    </FeatureRoute>
+  );
+}
+
+function QuizProctoringReviewContent() {
   const [incidents, setIncidents] = useState<ProctoringIncident[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIncident, setSelectedIncident] = useState<ProctoringIncident | null>(null);

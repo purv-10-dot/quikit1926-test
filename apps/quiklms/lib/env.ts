@@ -11,8 +11,8 @@ const schema = z.object({
   // App's own public origin — platform-standard names (replaces the app-local
   // BASE_URL / FRONTEND_URL). NEXTAUTH_URL is the server-side self-origin every
   // QuikIT app defines; NEXT_PUBLIC_QUIKLMS_URL is the client-exposed variant.
-  NEXTAUTH_URL: z.string().url().default('http://localhost:3014'),
-  NEXT_PUBLIC_QUIKLMS_URL: z.string().url().default('http://localhost:3014'),
+  NEXTAUTH_URL: z.string().url().default('http://localhost:3016'),
+  NEXT_PUBLIC_QUIKLMS_URL: z.string().url().default('http://localhost:3016'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   DATABASE_URL_DIRECT: z.string().optional(),
   REDIS_URL: z.string().default('redis://127.0.0.1:6379'),

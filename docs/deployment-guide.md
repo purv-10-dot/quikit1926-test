@@ -570,6 +570,7 @@ needs its own deployment/scaling:
 | quikcrm | `npm run worker` (BullMQ) | Imports, SLA checks, notification crons — requires `REDIS_URL` |
 | quiksupport | email worker (`workers/email-worker.ts`) | Async ticket email; without it, email is a no-op (ticket still saves) |
 | quikflow | **separate image** — `apps/quikflow/Dockerfile.worker` | Workflow execution + 60s scheduler tick (mail / Fathom / date scans). Without it, workflows queue but never run |
+| quikflow | **separate image** — `apps/quikflow/Dockerfile.worker` | Workflow execution + 60s scheduler tick (mail / Fathom / date scans). Without it, workflows queue but never run |
 
 When deploying these apps, confirm the worker Deployment exists and points at
 the same image tag as the web Deployment.
@@ -588,8 +589,8 @@ matrix entry from `Dockerfile.worker`, pushing
   not route user traffic to it.
 - It needs `REDIS_URL` (the BullMQ broker, `https://bullmq.quikit.ai` in UAT),
   `DATABASE_URL` + `DATABASE_URL_DIRECT`, `WF_CONNECTION_ENC_KEY` (decrypts
-  stored connector tokens), `QUIKFLOW_URL`, and the `GOOGLE_*` / `MICROSOFT_*`
-  (shared by mail + Teams calendar) / `FATHOM_*` connector credentials.
+  stored connector tokens), `QUIKFLOW_URL`, and the `GOOGLE_*` / `MS_*` /
+  `MS_TEAMS_*` / `FATHOM_*` connector credentials.
 - Keep it at **one replica** unless you have verified the scheduler tick is safe
   to run concurrently — it fans out due `WfSchedule` rows on a repeatable job.
 

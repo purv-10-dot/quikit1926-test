@@ -155,9 +155,9 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
       }
     } catch (err: unknown) {
       console.error('Failed to update profile:', err);
-      const e = err as { message?: string; statusCode?: number };
+      const e = err as { message?: string; status?: number };
       const errorMessage = e?.message ||
-                          (e?.statusCode === 404 ? 'Profile update endpoint not found. Please restart the backend server.' : 'Failed to update profile. Please try again.');
+                          (e?.status === 404 ? 'Profile update endpoint not found. Please restart the backend server.' : 'Failed to update profile. Please try again.');
       setError(errorMessage);
     } finally {
       setSaving(false);

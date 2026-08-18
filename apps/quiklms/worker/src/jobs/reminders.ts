@@ -57,7 +57,19 @@ async function meetingFor(classId: string, meetingId: string | null) {
   });
 }
 
-async function notifyWindow(minLow: number, minHigh: number, mode: 'email' | 'sms' | 'both') {
+/**
+ * `minutesBefore` is the bucket LABEL, not just the window bound — every message
+ * names it ("starts in 30 minutes"), which is the whole content of a reminder.
+ * The port had dropped it from the subject and body, so all three buckets sent an
+ * identical, undated "Class reminder: <title>" and a recipient could not tell the
+ * −30 nudge from the one telling them the class is about to begin.
+ */
+async function notifyWindow(
+  minLow: number,
+  minHigh: number,
+  minutesBefore: number,
+  mode: 'email' | 'sms' | 'both',
+) {
   const now = Date.now();
   const from = new Date(now + minLow * 60_000);
   const to = new Date(now + minHigh * 60_000);
@@ -70,24 +82,40 @@ async function notifyWindow(minLow: number, minHigh: number, mode: 'email' | 'sm
     const meeting = await meetingFor(c.id, c.meetingId).catch(() => null);
     const joinUrl = meeting?.joinUrl || '';
     const password = meeting?.password || '';
-    const when = new Date(c.startTime).toLocaleTimeString();
+    // `toLocaleString`, not `toLocaleTimeString` — the reminder for a class late
+    // tonight and one tomorrow morning read identically with time alone.
+    const when = new Date(c.startTime).toLocaleString();
     const teacherName = `${teacher?.firstName ?? ''} ${teacher?.lastName ?? ''}`.trim() || 'Your teacher';
 
-    const subject = `Class reminder: ${c.title}`;
-    const html =
-      `<p>Your class <strong>${c.title}</strong> with ${teacherName} starts at ${when}.</p>` +
-      (joinUrl
-        ? `<div style="margin:20px 0;"><a href="${joinUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">Join Class Now</a></div>` +
-          (password ? `<p>Meeting password: <strong>${password}</strong></p>` : '')
-        : '');
+    const subject = `Class Reminder: ${c.title} starts in ${minutesBefore} minutes`;
     const sms =
-      `QuikSkill: "${c.title}" starts at ${when}.` +
+      `QuikSkill: "${c.title}" with ${teacherName} starts in ${minutesBefore} min.` +
       (joinUrl ? ` Join: ${joinUrl}` : '') +
       (joinUrl && password ? ` Password: ${password}` : '');
 
     const all = [teacher, ...students, ...parents].filter(Boolean) as Recipient[];
     for (const r of all) {
-      if ((mode === 'email' || mode === 'both') && r.email) await sendEmail(r.email, subject, html).catch(() => {});
+      if ((mode === 'email' || mode === 'both') && r.email) {
+        const html =
+          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">` +
+          `<div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">` +
+          `<h2 style="margin: 0;">Class Starting Soon!</h2>` +
+          `<p style="margin: 8px 0 0; opacity: 0.9;">${minutesBefore} minutes until class begins</p>` +
+          `</div>` +
+          `<div style="background: white; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">` +
+          `<p>Hello <strong>${r.firstName ?? 'there'}</strong>,</p>` +
+          `<p><strong>Class:</strong> ${c.title}</p>` +
+          `<p><strong>Teacher:</strong> ${teacherName}</p>` +
+          `<p><strong>Time:</strong> ${when}</p>` +
+          (joinUrl
+            ? `<div style="text-align: center; margin: 24px 0;">` +
+              `<a href="${joinUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">Join Class Now</a>` +
+              `</div>` +
+              (password ? `<p style="text-align:center;font-size:12px;color:#6b7280;">Meeting password: <strong>${password}</strong></p>` : '')
+            : '') +
+          `</div></div>`;
+        await sendEmail(r.email, subject, html).catch(() => {});
+      }
       const phone = r.phone || r.guardianContact;
       if ((mode === 'sms' || mode === 'both') && phone) await sendSms(phone, sms).catch(() => {});
     }
@@ -95,7 +123,7 @@ async function notifyWindow(minLow: number, minHigh: number, mode: 'email' | 'sm
 }
 
 export async function runClassReminders(): Promise<void> {
-  await notifyWindow(29, 30, 'email');   // −30 min
-  await notifyWindow(9, 10, 'both');     // −10 min
-  await notifyWindow(4, 5, 'sms');       // −5 min
+  await notifyWindow(29, 30, 30, 'email');  // −30 min
+  await notifyWindow(9, 10, 10, 'both');    // −10 min
+  await notifyWindow(4, 5, 5, 'sms');       // −5 min
 }

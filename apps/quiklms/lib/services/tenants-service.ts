@@ -17,7 +17,7 @@ import { provisionOrgForTenant, provisionLmsUser } from './identity-service';
  * every row storing the identical `${BASE_URL}/login` string, which then went
  * stale the moment the deployment URL changed. Derived once here instead.
  */
-const TENANT_LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').replace(/\/$/, '')}/login`;
+const TENANT_LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3016').replace(/\/$/, '')}/login`;
 
 const SCHOOL_FEATURES = {
   enableCourses: false, enableScorm: false, enableCompliance: false, enableManagerReports: false, enableSelfEnrollment: false,
@@ -412,7 +412,7 @@ export async function createTenantAdminsForAllTenants(): Promise<{
  *   for the platform operator alone.
  *
  *   This was unconditionally platform-wide, which showed every tenant to an org's
- *   founding admin once that role resolved to SUPER_ADMIN. It must NOT be narrowed to a
+ *   founding admin once that role resolved to ADMIN. It must NOT be narrowed to a
  *   single `id === actor.orgId` either: `onboardTenant` gives each new tenant its OWN
  *   org id, so that filter hid every tenant the admin had just created.
  */

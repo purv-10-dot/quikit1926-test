@@ -15,6 +15,7 @@ import {
   Download,
   ArrowRight,
   ShieldAlert,
+  RotateCcw,
 } from "lucide-react";
 import { Select } from "@/components/hrms/select";
 import { useDialog } from "@/components/hrms/dialog";
@@ -148,7 +149,7 @@ const CANONICAL_FIELDS: { key: CanonicalKey; label: string; required?: boolean }
   { key: "maritalStatus", label: "Marital Status" },
   { key: "bloodGroup", label: "Blood Group" },
   { key: "nationality", label: "Nationality" },
-  { key: "departmentName", label: "Department (by name)", required: true },
+  { key: "departmentName", label: "Department (by name)" },
   { key: "departmentCode", label: "Department Code" },
   { key: "designation", label: "Designation", required: true },
   { key: "team", label: "Team" },
@@ -156,7 +157,7 @@ const CANONICAL_FIELDS: { key: CanonicalKey; label: string; required?: boolean }
   { key: "dateOfJoining", label: "Date of Joining", required: true },
   { key: "confirmationDate", label: "Confirmation Date" },
   { key: "probationEndDate", label: "Probation End Date" },
-  { key: "employmentType", label: "Employment Type", required: true },
+  { key: "employmentType", label: "Employment Type" },
   { key: "workerType", label: "Worker Type" },
   // Work Location / Office Location / Job Title / Notice Period were required
   // for a while (mirroring the Add Employee form) but that blocked imports
@@ -435,8 +436,6 @@ const MANDATORY_TEMPLATE_HEADERS = [
   "Gender",
   "Date of Birth",
   "Designation",
-  "Department",
-  "Employment Type",
   "Date of Joining",
 ];
 
@@ -808,6 +807,22 @@ export default function BulkImportEmployeesPage() {
     }
 
     return { headers: masterParsed.headers, rows: masterParsed.rows, subSheets };
+  };
+
+  // Full restart — the Result step has no other way back to Step 1 (it's a
+  // one-shot summary/error screen, not a wizard step you can navigate away
+  // from). Clears every step's state so a re-upload starts clean.
+  const resetImport = () => {
+    setFileName("");
+    setRawText("");
+    setResult(null);
+    setHeaders([]);
+    setRawRows([]);
+    setSubSheets({});
+    setMapping({});
+    setParseError(null);
+    setPendingImportId(null);
+    setPollProgress(null);
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1459,7 +1474,16 @@ export default function BulkImportEmployeesPage() {
       {/* Step 4: Result */}
       {result && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <h2 className="text-[13px] font-semibold text-gray-900 mb-3">4. Result</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[13px] font-semibold text-gray-900">4. Result</h2>
+            <button
+              type="button"
+              onClick={resetImport}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+            >
+              <RotateCcw size={12} /> Start over
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
               <CheckCircle className="text-green-600" size={20} />

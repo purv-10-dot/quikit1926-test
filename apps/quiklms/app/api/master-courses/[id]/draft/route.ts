@@ -2,7 +2,7 @@ import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
 
-const ROLES = ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN'] as const;
+const ROLES = ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN'] as const;
 
 /**
  * GET /api/master-courses/:id/draft
