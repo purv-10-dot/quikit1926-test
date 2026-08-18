@@ -27,11 +27,12 @@ export const dynamic = "force-dynamic";
  *
  * `ownerId` maps to CrmProspect.savedById — prospects have no `ownerId` column
  * (they are pre-pipeline captures), so the dashboard-wide Owner dropdown is
- * applied to the person who saved the prospect. Unlike the lead funnel this is
- * NOT date-filtered by default: a prospect funnel is a snapshot of the current
- * backlog, and clipping it to the selected range would hide prospects saved
- * earlier that are still sitting at "New". Pass ?applyRange=1 to opt into the
- * dashboard date range.
+ * applied to the person who saved the prospect.
+ *
+ * Date filtering is opt-in via ?applyRange=1, which the dashboard card DOES send
+ * (see prospect-funnel-chart.tsx) so this funnel windows together with every
+ * other widget. Callers wanting the full current backlog — a snapshot including
+ * prospects saved earlier that are still at "New" — simply omit the flag.
  */
 export async function GET(req: NextRequest) {
   try {

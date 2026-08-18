@@ -102,11 +102,17 @@ function installFetch({
   return calls;
 }
 
-function renderWidget(props?: Partial<{ userRole: string }>) {
+function renderWidget(props?: Partial<{ userRole: string; qs: string; tz: string }>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <ActivityBreakdownWidget userRole={props?.userRole ?? "Administrator"} />
+      <ActivityBreakdownWidget
+        userRole={props?.userRole ?? "Administrator"}
+        // The widget now forwards the active dashboard filters so it shares the
+        // ["dashboard","role-metrics",qs] key with role-kpi-grid.
+        qs={props?.qs ?? "from=2026-08-01&to=2026-08-17"}
+        tz={props?.tz ?? "Asia/Kolkata"}
+      />
     </QueryClientProvider>,
   );
 }

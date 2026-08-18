@@ -47,8 +47,18 @@ import type { RoleMetricsDto } from "@/lib/dashboard/role-metrics-types";
 // ---------------------------------------------------------------------------
 // Fetch helper
 // ---------------------------------------------------------------------------
-async function fetchRoleMetrics(): Promise<{ success: boolean; data: RoleMetricsDto }> {
-  const res = await fetch("/api/dashboard/metrics", { credentials: "include" });
+// Carries the ACTIVE dashboard filters (from/to/ownerId) + the client TZ header,
+// exactly like fetchSummary in dashboard-client. Previously this fetched with no
+// params at all, so every KPI card silently showed all-time data regardless of
+// the selected date chip / owner.
+async function fetchRoleMetrics(
+  qs: string,
+  tz: string,
+): Promise<{ success: boolean; data: RoleMetricsDto }> {
+  const res = await fetch(`/api/dashboard/metrics?${qs}`, {
+    credentials: "include",
+    headers: { "X-Client-TZ": tz },
+  });
   if (!res.ok) throw new Error(`Role metrics fetch failed (${res.status})`);
   return res.json() as Promise<{ success: boolean; data: RoleMetricsDto }>;
 }
@@ -127,13 +137,22 @@ function KpiCardGrid({
 export const RoleKpiGrid = memo(function RoleKpiGrid({
   userRole,
   onNavigate,
+  qs,
+  tz,
 }: {
   userRole: string;
   onNavigate: (path: string) => void;
+  /** Active dashboard filter query string (from/to/ownerId) — same one the
+   *  summary query uses, so the cards and the hero always agree. */
+  qs: string;
+  tz: string;
 }) {
   const query = useQuery<{ success: boolean; data: RoleMetricsDto }>({
-    queryKey: ["dashboard", "role-metrics"],
-    queryFn: fetchRoleMetrics,
+    // qs is part of the key so changing a date chip / owner refetches rather
+    // than serving another range's cached numbers. activity-breakdown-widget
+    // uses the SAME key + fetcher args so react-query still dedupes.
+    queryKey: ["dashboard", "role-metrics", qs],
+    queryFn: () => fetchRoleMetrics(qs, tz),
     staleTime: 60_000,
     refetchInterval: 60_000,
   });

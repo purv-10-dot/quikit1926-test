@@ -528,8 +528,11 @@ export async function getSalespersonDetail(
   const buckets = buildDayBuckets(range).slice(-14);
   const activityTrend = await Promise.all(
     buckets.map(async (b) => {
-      const from = new Date(b.iso);
-      const to = endOfDayInTz(from, range.tz);
+      // Use the tz-snapped bounds buildDayBuckets already computed. Parsing
+      // b.iso ("YYYY-MM-DD") via new Date() would read it as UTC midnight and
+      // shift every bucket for non-UTC users (IST: 5.5h early).
+      const from = b.start;
+      const to = b.end;
       const [leads, activities] = await Promise.all([
         prisma.crmLead.count({
           where: { orgId, deletedAt: null, createdAt: { gte: from, lte: to }, ...leadFilter },

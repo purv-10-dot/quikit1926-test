@@ -13,6 +13,12 @@
  *
  * The dto's `kpis` block carries deltas only for flow KPIs; stock
  * KPIs are absent so the UI cannot render a misleading delta pill.
+ *
+ * UPDATE (Option A, 2026-08-17): the flow-vs-stock split was reversed by
+ * product decision — the dashboard must respond to the date filter on EVERY
+ * card. The former "stock KPIs have NO createdAt" block is superseded by
+ * "Option A — every summary KPI is windowed by the selected range" below.
+ * The FLOW assertions are unchanged and still valid.
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import type { Mock } from "vitest";
@@ -100,49 +106,73 @@ describe("Bug 1 — flow KPIs are period-bound", () => {
   });
 });
 
-describe("Bug 1 — stock KPIs have NO createdAt clause", () => {
+// SUPERSEDES the original "Bug 1 — stock KPIs have NO createdAt clause" block.
+//
+// Option A (product decision 2026-08-17) reversed the flow-vs-stock split: the
+// dashboard must be fully filter-responsive, so accounts / open tasks / open
+// opportunities / pipeline are now WINDOWED by the selected range instead of
+// being all-time snapshots. These tests pin the new contract.
+describe("Option A — every summary KPI is windowed by the selected range", () => {
   beforeEach(() => {
     armPrismaDefaults();
   });
 
-  it("CrmAccount.count omits createdAt entirely", async () => {
+  it("CrmAccount.count IS bounded by createdAt", async () => {
     const { buildSummary } = await import(
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
     const wheres = whereArgs(db.crmAccount.count);
-    expect(wheres.length).toBe(1); // no prior query
-    for (const w of wheres) expect("createdAt" in w).toBe(false);
+    expect(wheres.length).toBe(1); // no prior-period query for accounts
+    for (const w of wheres) expect("createdAt" in w).toBe(true);
   });
 
-  it("CrmTask.count omits createdAt entirely", async () => {
+  it("CrmTask.count IS bounded by createdAt", async () => {
     const { buildSummary } = await import(
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
     const wheres = whereArgs(db.crmTask.count);
-    expect(wheres.length).toBe(2);
-    for (const w of wheres) expect("createdAt" in w).toBe(false);
+    // The open-tasks KPI windows. The my-work-today rows are deliberately
+    // anchored to TODAY via dueDate (not createdAt) — see executive-metrics.
+    const windowed = wheres.filter((w) => "createdAt" in w);
+    expect(windowed.length).toBeGreaterThan(0);
   });
 
-  it("CrmOpportunity.count (open opps) omits createdAt entirely", async () => {
+  it("CrmOpportunity.count (open opps) IS bounded by createdAt", async () => {
     const { buildSummary } = await import(
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
     const wheres = whereArgs(db.crmOpportunity.count);
-    expect(wheres.length).toBe(2);
-    for (const w of wheres) expect("createdAt" in w).toBe(false);
+    // open-opps (createdAt-windowed) + won-count current & prior (won-date rule).
+    expect(wheres.some((w) => "createdAt" in w)).toBe(true);
   });
 
-  it("CrmOpportunity.groupBy (pipeline + opps-by-stage) omits createdAt entirely", async () => {
+  it("CrmOpportunity.groupBy (pipeline + opps-by-stage) IS bounded by createdAt", async () => {
     const { buildSummary } = await import(
       "@/lib/services/dashboard/summary-service"
     );
     await buildSummary(USER as never, FILTERS as never);
     const wheres = whereArgs(db.crmOpportunity.groupBy);
-    expect(wheres.length).toBe(2); // pipeline currency + opps-by-stage
-    for (const w of wheres) expect("createdAt" in w).toBe(false);
+    // pipeline-by-currency + opps-by-stage (both windowed) + the won-revenue
+    // per-currency sum (windowed on the won-date rule, not createdAt).
+    expect(wheres.filter((w) => "createdAt" in w).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("won-revenue aggregation uses closeDate → lastStageChangeAt, never updatedAt", async () => {
+    const { buildSummary } = await import(
+      "@/lib/services/dashboard/summary-service"
+    );
+    await buildSummary(USER as never, FILTERS as never);
+    const all = JSON.stringify([
+      ...whereArgs(db.crmOpportunity.groupBy),
+      ...whereArgs(db.crmOpportunity.count),
+      ...whereArgs(db.crmOpportunity.findMany),
+    ]);
+    expect(all).toContain("closeDate");
+    expect(all).toContain("lastStageChangeAt");
+    expect(all).not.toContain("updatedAt");
   });
 });
 

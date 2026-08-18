@@ -275,6 +275,20 @@ const SPECIALIZED_TYPES_QUERY = [
   "OpportunityClientMeeting",
 ] as const;
 
+/**
+ * Every `type` string that means "a meeting happened", across both writers: the
+ * opportunity client-meeting route stores "OpportunityClientMeeting", while the
+ * Activity module stores the configured type LABEL ("Meeting"). The Meetings
+ * section must match ALL of them — matching only the opportunity casing made
+ * Activity-module meetings count as 0 while ALSO being excluded from the generic
+ * pass by SPECIALIZED_TYPES, so they landed in no bucket at all.
+ *
+ * Prisma's `in` is case-sensitive, hence the explicit casings. Keep every entry
+ * here present in SPECIALIZED_TYPES too, so a row counted as a meeting is never
+ * also counted as a generic "other" activity.
+ */
+const MEETING_TYPES_QUERY = ["OpportunityClientMeeting", "Meeting", "meeting"] as const;
+
 function isSpecializedType(type: string): boolean {
   return SPECIALIZED_TYPES.has(type.trim().toLowerCase());
 }
@@ -526,10 +540,13 @@ export async function assembleUserActivityDetail(
   }
 
   // ── Meetings ─────────────────────────────────────────────────────────────────
-  // Meeting activities are type="OpportunityClientMeeting"; rich detail lives on
-  // CrmOpportunityClientMeeting (join via opportunityId). Client = opp's account.
+  // Two writers produce meetings (see MEETING_TYPES_QUERY): the opportunity
+  // client-meeting route ("OpportunityClientMeeting"), whose rich detail lives on
+  // CrmOpportunityClientMeeting (join via opportunityId, Client = opp's account),
+  // and the Activity module ("Meeting"), which has no such record — its detail
+  // comes off the activity row itself (fields selected below).
   const meetingActivities = await prisma.crmActivity.findMany({
-    where: { ...windowWhere, ...owner, type: "OpportunityClientMeeting" },
+    where: { ...windowWhere, ...owner, type: { in: [...MEETING_TYPES_QUERY] } },
     select: {
       ownerId: true,
       occurredAt: true,
@@ -538,6 +555,13 @@ export async function assembleUserActivityDetail(
       // relatedKind lets the lead-wise rollup tell a Lead-linked meeting from an
       // Opportunity-linked one; the meeting section itself doesn't need it.
       relatedKind: true,
+      // Fallback detail for Activity-module meetings, which have no
+      // CrmOpportunityClientMeeting row to read from.
+      subject: true,
+      outcome: true,
+      activityCode: true,
+      logOutcome: true,
+      detailNotes: true,
     },
     orderBy: { occurredAt: "asc" },
   });
@@ -559,6 +583,10 @@ export async function assembleUserActivityDetail(
       })
     : [];
   const oppById = new Map(opps.map((o) => [o.id, o]));
+  // Activity-module meetings can hang off any record kind (Lead, Contact, …), so
+  // the opportunity/account lookup above cannot name their client. Resolve those
+  // labels with the same batch resolver the Calls and generic sections use.
+  const meetingRelatedLabels = await resolveRelatedLabels(orgId, meetingActivities);
   // Pick the meeting record closest to the activity's occurredAt per opp+time.
   const meetingByOppTime = new Map<string, (typeof meetingRecords)[number]>();
   for (const m of meetingRecords) {
@@ -755,12 +783,16 @@ export async function assembleUserActivityDetail(
       meetingByOppTime.get(`${oppId}:${m.occurredAt?.getTime() ?? 0}`) ??
       meetingRecords.find((r) => r.opportunityId === oppId);
     const opp = oppById.get(oppId);
+    // Activity-module meetings have no CrmOpportunityClientMeeting row (rec is
+    // undefined) — read their detail off the activity instead, so they render as
+    // real rows rather than a line of em-dashes.
     u.meetings.push({
       time: m.occurredAt,
-      client: opp?.account?.name || opp?.name || "—",
-      meetingType: rec?.meetingType || "—",
-      status: rec?.outcome || "Completed",
-      notes: rec?.notes || "—",
+      client:
+        opp?.account?.name || opp?.name || meetingRelatedLabels.get(rowKey(m)) || "—",
+      meetingType: rec?.meetingType || m.activityCode || m.subject || "—",
+      status: rec?.outcome || m.logOutcome || m.outcome || "Completed",
+      notes: rec?.notes || m.detailNotes || "—",
     });
   }
 

@@ -209,6 +209,8 @@ export function DashboardClient({ userRole }: { userRole: string }) {
         <RoleKpiGrid
           userRole={userRole}
           onNavigate={(path) => router.push(path)}
+          qs={qs}
+          tz={tz}
         />
       </div>
 
@@ -276,6 +278,8 @@ export function DashboardClient({ userRole }: { userRole: string }) {
         <ProspectFunnelChart
           ownerId={prospectUserQ}
           onOwnerIdChange={(v) => updateUrl({ prospectUser: v })}
+          dashQs={qs}
+          tz={tz}
         />
       </div>
 
@@ -319,7 +323,7 @@ export function DashboardClient({ userRole }: { userRole: string }) {
       {/* Activity breakdown — by-type counts + per-rep custom-field aggregates (FR-4.5) */}
       {isSales ? (
         <section className="mb-6">
-          <ActivityBreakdownWidget userRole={userRole} />
+          <ActivityBreakdownWidget userRole={userRole} qs={qs} tz={tz} />
         </section>
       ) : null}
 
