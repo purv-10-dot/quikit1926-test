@@ -147,6 +147,22 @@ export const DEFAULT_ACTIVITY_TYPES: readonly DefaultActivityType[] = [
     fields: [],
   },
   {
+    // Logged automatically by the LinkedIn extension when a conversation is
+    // saved to CRM. Exactly ONE activity per prospect per calendar day,
+    // regardless of how many times the user re-saves or how many messages the
+    // thread contains — enforced by the (orgId, sourceSystem, externalId)
+    // unique index, with the day encoded into externalId. See
+    // app/api/leads/from-linkedin/route.ts.
+    //
+    // No custom fields: the thread itself lives on the prospect's
+    // `linkedinConversation`, so duplicating message data here would be a
+    // second source of truth.
+    code: "linkedin_conversation",
+    label: "LinkedIn Conversation",
+    category: "Communication",
+    fields: [],
+  },
+  {
     code: "whatsapp",
     label: "WhatsApp",
     category: "Communication",

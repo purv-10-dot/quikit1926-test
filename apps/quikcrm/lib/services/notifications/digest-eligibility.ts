@@ -1,28 +1,34 @@
 /**
  * Digest recipient ELIGIBILITY (Phase 5 recipient feature, Stage 1).
  *
- * Decides WHO can be a digest recipient. Single source of truth, used by:
+ * Decides WHO can RECEIVE a digest. Single source of truth, used by:
  *   - the read API  (Settings → Users: render the toggle enabled/disabled + reason)
  *   - the write API  (reject toggling an ineligible user)
  *   - digest-run     (defense-in-depth: drop a since-ineligible recipient at send)
  *
- * Rules (spec 2026-06-25):
- *   - Administrator                                   → eligible (org-wide scope)
- *   - SalesManager who OWNS ≥1 group in THIS org      → eligible (team scope)
- *   - SalesManager with no group in this org          → ineligible "no-team"
- *   - SalesUser / Marketing / Finance / anything else → ineligible "not-eligible-role"
+ * Rules (spec 2026-08-11 — role restrictions REMOVED):
+ *   - EVERY role is eligible to RECEIVE the daily digest. If a user's Daily
+ *     Digest toggle is ON, they get the email regardless of their CRM role
+ *     (SalesUser / SalesManager / MarketingUser / FinanceUser / TeamManager /
+ *     Administrator all qualify).
  *
- * INVARIANT (eligibility ⟺ has-a-resolvable-team): the SalesManager group lookup
- * here mirrors resolveManagerTeam (lib/services/dashboard/team.ts) EXACTLY — same
- * query (crmSalesGroupManager.findMany where userId, select group.orgId) and the
- * SAME org-via-join filter (group.orgId === user.orgId). If they diverged, a
- * SalesManager could be marked eligible yet resolve an empty team at send time
- * (recipient with an empty digest). Keep these two in lockstep.
+ * The toggle itself remains admin-only — that is a separate concern enforced at
+ * the write boundary (app/api/settings/digest-recipients/route.ts), NOT here.
+ * Receiving eligibility and toggle authorization are deliberately decoupled:
+ * an admin turns the toggle on for anyone; anyone with it on receives.
+ *
+ * Each recipient is still SCOPED by their real role downstream
+ * (buildRoleMetrics / getActivityFieldAggregates) — "who receives" is answered
+ * here, "what they see" is answered by their role at render time. So a
+ * SalesUser recipient gets a SalesUser-scoped digest, not org-wide data.
+ *
+ * The prior rules (Administrator-only + SalesManager-needs-a-team, with the
+ * "no-team" / "not-eligible-role" reasons) are intentionally gone. The reason
+ * type is retained so the read DTO and the toggle's tooltip map keep compiling
+ * and can carry future non-role reasons.
  *
  * No CrmUserAppRole dependency (that was the silent-skip root cause).
  */
-
-import { prisma } from "@/lib/db/prisma";
 
 export type DigestIneligibleReason = "no-team" | "not-eligible-role";
 
@@ -38,25 +44,11 @@ interface EligibilityUser {
   role: string;
 }
 
-export async function isDigestEligible(user: EligibilityUser): Promise<DigestEligibility> {
-  // Admin → eligible, org-wide. No group query needed.
-  if (user.role === "Administrator") {
-    return { eligible: true };
-  }
-
-  // SalesManager → eligible iff they own ≥1 group IN THIS ORG.
-  if (user.role === "SalesManager") {
-    // Mirrors resolveManagerTeam (team.ts:30-40) exactly so eligibility ⟺ a
-    // resolvable team. The manager link table has no orgId column, so we trust
-    // the join and filter on group.orgId === user.orgId.
-    const managed = await prisma.crmSalesGroupManager.findMany({
-      where: { userId: user.userId },
-      select: { groupId: true, group: { select: { orgId: true } } },
-    });
-    const ownsGroupInOrg = managed.some((g) => g.group.orgId === user.orgId);
-    return ownsGroupInOrg ? { eligible: true } : { eligible: false, reason: "no-team" };
-  }
-
-  // SalesUser / Marketing / Finance / unknown → not eligible by role.
-  return { eligible: false, reason: "not-eligible-role" };
+/**
+ * Every role can receive the daily digest. Kept async (and keeping its
+ * signature) so all four call sites — read DTO, write API, send-time re-check —
+ * stay unchanged.
+ */
+export async function isDigestEligible(_user: EligibilityUser): Promise<DigestEligibility> {
+  return { eligible: true };
 }

@@ -70,8 +70,18 @@ function stubActivitiesByType(byType: Record<string, unknown[]>, other: unknown[
   }) => {
     const where = args?.where ?? {};
     if (where.NOT) return other;
-    const t = typeof where.type === "string" ? where.type : "";
-    return byType[t] ?? [];
+    // The meetings query filters `type: { in: [...casings] }` because two writers
+    // spell a meeting differently; the others filter on a plain string. Return the
+    // rows registered under ANY key the filter accepts.
+    const t = where.type;
+    if (t && typeof t === "object" && Array.isArray((t as { in?: unknown[] }).in)) {
+      for (const k of (t as { in: unknown[] }).in) {
+        const rows = byType[String(k)];
+        if (rows) return rows;
+      }
+      return [];
+    }
+    return byType[typeof t === "string" ? t : ""] ?? [];
   }) as never);
 }
 
@@ -227,18 +237,254 @@ describe("assembleUserActivityDetail — emails + reply derivation", () => {
   });
 });
 
+/**
+ * EMAIL REPLIES — regression suite.
+ *
+ * Bug: the reply derivation collected candidate threads from outbound mail sent
+ * INSIDE the digest window, then queried inbound on those threads with no date
+ * filter at all. Both halves were wrong:
+ *   - a customer replying the day after the send (the normal case) was missed,
+ *     because that thread had no in-window outbound → Email Replies stuck at 0;
+ *   - when a thread did qualify, replies from ANY date counted, so the number
+ *     didn't track the window.
+ *
+ * Fix: thread OWNERSHIP comes from unbounded outbound history ("has this rep
+ * ever sent into this thread?"); the window is applied to the inbound
+ * receivedAt. Cold inbound (no preceding send) is still excluded.
+ */
+describe("assembleUserActivityDetail — email replies", () => {
+  beforeEach(() => {
+    activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" },
+    ] as never);
+    prismaMock.crmMailboxConnection.findMany.mockResolvedValue([{ id: "mb1", userId: "r1" }] as never);
+  });
+
+  const send = (over: Record<string, unknown> = {}) => ({
+    mailboxConnectionId: "mb1",
+    threadId: "t1",
+    sentAt: new Date("2026-07-19T10:00:00.000Z"),
+    toAddresses: ["amit@abc.com"],
+    subject: "Product Brochure",
+    ...over,
+  });
+  const reply = (over: Record<string, unknown> = {}) => ({
+    threadId: "t1",
+    receivedAt: new Date("2026-07-19T15:00:00.000Z"),
+    fromAddress: "amit@abc.com",
+    subject: "Re: Product Brochure",
+    ...over,
+  });
+
+  /**
+   * Route the THREE crmEmailMessage queries the assembly now issues:
+   *   windowed outbound  → direction outbound + sentAt.gte  (Emails Sent)
+   *   ownership outbound → direction outbound, no sentAt.gte (thread ownership)
+   *   inbound            → direction inbound                (replies)
+   * Each arg is the rows that query should return, so a test can make the
+   * window and the history disagree — which is the whole point of the bug.
+   */
+  function stubEmail(opts: {
+    windowedOutbound?: unknown[];
+    historyOutbound?: unknown[];
+    inbound?: unknown[];
+  }) {
+    prismaMock.crmEmailMessage.findMany.mockImplementation((async (args: {
+      where: { direction: string; sentAt?: { gte?: Date } };
+    }) => {
+      if (args.where.direction === "outbound") {
+        return args.where.sentAt?.gte
+          ? (opts.windowedOutbound ?? [])
+          : (opts.historyOutbound ?? []);
+      }
+      return opts.inbound ?? [];
+    }) as never);
+  }
+
+  it("CROSS-DAY reply counts: rep sent 10 Aug, customer replied in-window, no send this window", async () => {
+    stubEmail({
+      windowedOutbound: [], // rep sent nothing today
+      historyOutbound: [send({ sentAt: new Date("2026-07-18T10:00:00.000Z") })], // yesterday
+      inbound: [reply()],
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailsTotal).toBe(0); // Emails Sent stays window-bounded
+    expect(rep.emailRepliesTotal).toBe(1); // the reply is still credited
+    expect(rep.emailReplies[0]).toMatchObject({
+      from: "amit@abc.com",
+      subject: "Re: Product Brochure",
+      originalEmail: "Product Brochure", // names the mail it answers
+      replyReceived: "Yes",
+    });
+  });
+
+  it("SAME-DAY reply counts once, and marks the sent mail 'Customer Replied'", async () => {
+    stubEmail({
+      windowedOutbound: [send()],
+      historyOutbound: [send()],
+      inbound: [reply()],
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailsTotal).toBe(1);
+    expect(rep.emailRepliesTotal).toBe(1);
+    expect(rep.emails[0].replyStatus).toBe("Customer Replied");
+  });
+
+  it("COLD inbound does NOT count — no preceding send from a scoped rep on that thread", async () => {
+    stubEmail({
+      windowedOutbound: [],
+      historyOutbound: [], // rep never sent into any thread
+      inbound: [reply({ threadId: "cold", fromAddress: "stranger@nowhere.com" })],
+    });
+
+    const result = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    // No activity at all for this rep → not listed; certainly no reply credited.
+    expect(result.find((u) => u.userId === "r1")?.emailRepliesTotal ?? 0).toBe(0);
+  });
+
+  it("inbound that PREDATES every send on an owned thread is not a reply", async () => {
+    stubEmail({
+      windowedOutbound: [send({ sentAt: new Date("2026-07-19T16:00:00.000Z") })],
+      historyOutbound: [send({ sentAt: new Date("2026-07-19T16:00:00.000Z") })],
+      inbound: [reply({ receivedAt: new Date("2026-07-19T09:00:00.000Z") })], // before the send
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailsTotal).toBe(1);
+    expect(rep.emailRepliesTotal).toBe(0);
+  });
+
+  it("OUTBOUND is counted only in Emails Sent, never as a reply", async () => {
+    stubEmail({
+      windowedOutbound: [send()],
+      historyOutbound: [send()],
+      inbound: [],
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailsTotal).toBe(1);
+    expect(rep.emailRepliesTotal).toBe(0);
+    expect(rep.emails[0].replyStatus).toBe("No Reply");
+  });
+
+  it("FUTURE reply does not affect the earlier digest (replyStatus stays 'No Reply')", async () => {
+    // Rep sends in-window; the customer answers AFTER range.to, so the inbound
+    // query (receivedAt < range.to) returns nothing for this window.
+    stubEmail({
+      windowedOutbound: [send()],
+      historyOutbound: [send()],
+      inbound: [], // tomorrow's reply is outside the window
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailRepliesTotal).toBe(0);
+    expect(rep.emails[0].replyStatus).toBe("No Reply");
+  });
+
+  it("two replies on one owned thread count twice (rows, not threads) and are not deduped away", async () => {
+    stubEmail({
+      windowedOutbound: [send()],
+      historyOutbound: [send()],
+      inbound: [
+        reply({ receivedAt: new Date("2026-07-19T12:00:00.000Z"), subject: "Re: one" }),
+        reply({ receivedAt: new Date("2026-07-19T13:00:00.000Z"), subject: "Re: two" }),
+      ],
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailRepliesTotal).toBe(2);
+    expect(rep.emails[0].replyStatus).toBe("Customer Replied"); // one flag, still consistent
+  });
+
+  it("a duplicate provider message never reaches the fold — dedupe is the unique index, so one row = one reply", async () => {
+    // persistMessage dedupes on @@unique([orgId, mailboxConnectionId,
+    // providerMessageId]), so a re-synced message yields ONE row. The digest
+    // counts rows, so the same reply cannot be counted twice.
+    stubEmail({
+      windowedOutbound: [send()],
+      historyOutbound: [send()],
+      inbound: [reply()], // re-sync produced no second row
+    });
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(rep.emailRepliesTotal).toBe(1);
+  });
+
+  it("each reply is credited to the rep whose send most recently preceded it", async () => {
+    activityGroupBy.mockResolvedValue([
+      { ownerId: "r1", _count: { _all: 1 } },
+      { ownerId: "r2", _count: { _all: 1 } },
+    ]);
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" },
+      { id: "r2", firstName: "Rep", lastName: "Two", email: "r2@x.co" },
+    ] as never);
+    prismaMock.crmMailboxConnection.findMany.mockResolvedValue([
+      { id: "mb1", userId: "r1" },
+      { id: "mb2", userId: "r2" },
+    ] as never);
+    stubEmail({
+      windowedOutbound: [],
+      historyOutbound: [
+        send({ mailboxConnectionId: "mb1", sentAt: new Date("2026-07-18T08:00:00.000Z"), subject: "First touch" }),
+        send({ mailboxConnectionId: "mb2", sentAt: new Date("2026-07-18T20:00:00.000Z"), subject: "Follow-up" }),
+      ],
+      inbound: [reply({ receivedAt: new Date("2026-07-19T09:00:00.000Z") })],
+    });
+
+    const result = await assembleUserActivityDetail(ADMIN, RANGE);
+
+    expect(result.find((u) => u.userId === "r2")?.emailRepliesTotal).toBe(1);
+    expect(result.find((u) => u.userId === "r1")?.emailRepliesTotal ?? 0).toBe(0);
+    expect(result.find((u) => u.userId === "r2")?.emailReplies[0].originalEmail).toBe("Follow-up");
+  });
+
+  it("query shape: Emails Sent stays windowed; ownership is unbounded; inbound is windowed on receivedAt", async () => {
+    stubEmail({ windowedOutbound: [send()], historyOutbound: [send()], inbound: [reply()] });
+
+    await assembleUserActivityDetail(ADMIN, RANGE);
+
+    const wheres = prismaMock.crmEmailMessage.findMany.mock.calls.map(
+      (c) => (c[0] as { where: Record<string, unknown> }).where,
+    );
+    const windowed = wheres.find(
+      (w) => w.direction === "outbound" && (w.sentAt as { gte?: Date })?.gte,
+    );
+    const ownership = wheres.find(
+      (w) => w.direction === "outbound" && !(w.sentAt as { gte?: Date })?.gte,
+    );
+    const inbound = wheres.find((w) => w.direction === "inbound");
+
+    expect(windowed?.sentAt).toEqual({ gte: RANGE.from, lt: RANGE.to });
+    // Ownership must NOT lower-bound the send — that was the bug.
+    expect(ownership).toBeDefined();
+    expect((ownership!.sentAt as { gte?: Date }).gte).toBeUndefined();
+    expect(inbound?.receivedAt).toEqual({ gte: RANGE.from, lt: RANGE.to });
+    // Tenant isolation on all three.
+    for (const w of wheres) expect(w.orgId).toBe("org1");
+  });
+});
+
 describe("assembleUserActivityDetail — meetings + tasks", () => {
   it("meeting status = the meeting outcome; client = opp account name", async () => {
     activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
     prismaMock.user.findMany.mockResolvedValue([{ id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" }] as never);
-    prismaMock.crmActivity.findMany.mockImplementation((async (args: { where: { type?: string } }) => {
-      if (args.where.type === "OpportunityClientMeeting") {
-        return [
-          { ownerId: "r1", occurredAt: new Date("2026-07-19T11:30:00.000Z"), opportunityId: "opp1", relatedObjectId: "opp1" },
-        ];
-      }
-      return [];
-    }) as never);
+    stubActivitiesByType({
+      OpportunityClientMeeting: [
+        { ownerId: "r1", occurredAt: new Date("2026-07-19T11:30:00.000Z"), opportunityId: "opp1", relatedObjectId: "opp1" },
+      ],
+    });
     prismaMock.crmOpportunityClientMeeting.findMany.mockResolvedValue([
       { opportunityId: "opp1", meetingAt: new Date("2026-07-19T11:30:00.000Z"), meetingType: "Demo", outcome: "Positive", notes: "went well" },
     ] as never);
@@ -252,6 +498,67 @@ describe("assembleUserActivityDetail — meetings + tasks", () => {
       meetingType: "Demo",
       status: "Positive",
       notes: "went well",
+    });
+  });
+
+  // REGRESSION: the Meetings section used to filter `type: "OpportunityClientMeeting"`
+  // only, so a meeting logged in the Activity module (which stores the configured
+  // type LABEL, "Meeting") counted as 0. It was ALSO excluded from the generic pass
+  // by SPECIALIZED_TYPES, so the row vanished from the digest entirely.
+  it('counts Activity-module meetings (type="Meeting") toward meetingsTotal', async () => {
+    activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" }] as never);
+    stubActivitiesByType({
+      Meeting: [
+        {
+          ownerId: "r1",
+          occurredAt: new Date("2026-07-19T09:15:00.000Z"),
+          opportunityId: null,
+          relatedObjectId: "lead1",
+          relatedKind: "Lead",
+          subject: "Intro call with Acme",
+          outcome: "Interested",
+          activityCode: "Discovery",
+          logOutcome: null,
+          detailNotes: "asked for pricing",
+        },
+      ],
+    });
+    vi.mocked(resolveRelatedLabels).mockResolvedValue(new Map([["lead:lead1", "Acme Corp"]]));
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+    expect(rep.meetingsTotal).toBe(1);
+    // ...and it must NOT also be counted as a generic "other" activity.
+    expect(rep.otherTotal).toBe(0);
+  });
+
+  it("renders Activity-module meeting detail from the activity row (no CrmOpportunityClientMeeting exists)", async () => {
+    activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" }] as never);
+    stubActivitiesByType({
+      Meeting: [
+        {
+          ownerId: "r1",
+          occurredAt: new Date("2026-07-19T09:15:00.000Z"),
+          opportunityId: null,
+          relatedObjectId: "lead1",
+          relatedKind: "Lead",
+          subject: "Intro call with Acme",
+          outcome: "Interested",
+          activityCode: "Discovery",
+          logOutcome: null,
+          detailNotes: "asked for pricing",
+        },
+      ],
+    });
+    vi.mocked(resolveRelatedLabels).mockResolvedValue(new Map([["lead:lead1", "Acme Corp"]]));
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+    expect(rep.meetings[0]).toMatchObject({
+      client: "Acme Corp",
+      meetingType: "Discovery",
+      status: "Interested",
+      notes: "asked for pricing",
     });
   });
 

@@ -55,13 +55,15 @@ export function emptyCompose(prefill?: {
   cc?: string[];
   bcc?: string[];
   subject?: string;
+  /** Pre-written body HTML (an AI draft, a template). Empty for a blank form. */
+  body?: string;
 }): ComposeValue {
   return {
     to: dedupeAddresses(prefill?.to ?? []).join(", "),
     cc: dedupeAddresses(prefill?.cc ?? []).join(", "),
     bcc: dedupeAddresses(prefill?.bcc ?? []).join(", "),
     subject: prefill?.subject ?? "",
-    body: "",
+    body: prefill?.body ?? "",
     attachments: [],
   };
 }
@@ -72,7 +74,17 @@ export function parseAddresses(raw: string): string[] {
 
 /** One send path for the whole app. Returns { ok, error }. */
 export async function sendComposedEmail(args: {
-  relatedKind: "Lead" | "Contact" | "Account" | "Opportunity" | "None";
+  // Mirrors ACTIVITY_KINDS (the enum /api/email/send validates against).
+  // Spelled out rather than imported because that registry module is
+  // server-only (it imports the Prisma client at module scope).
+  relatedKind:
+    | "Lead"
+    | "Contact"
+    | "Account"
+    | "Opportunity"
+    | "Prospect"
+    | "Upwork"
+    | "None";
   relatedObjectId?: string;
   value: ComposeValue;
   inReplyToMessageId?: string;

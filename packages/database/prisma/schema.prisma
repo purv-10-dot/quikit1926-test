@@ -9056,6 +9056,7 @@ model CrmAccount {
   opportunities         CrmOpportunity[]
   userAccess            CrmUserAccountAccess[]
   groupAccess           CrmSalesGroupAccount[]
+  icpProfiles           CrmIcpProfileAccount[]
 
   @@index([orgId])
   @@index([orgId, name])
@@ -9116,6 +9117,11 @@ model CrmLead {
   ownerId                String?
   ownerName              String?
   accountId              String?
+  /// Ideal Customer Profile. Copied by reference from CrmProspect.icpId during
+  /// Convert-to-Lead (the user is not asked again), and settable directly on the
+  /// lead form. Nullable + SetNull: pre-existing leads have none, and deleting an
+  /// ICP must not delete leads.
+  icpId                  String?
   linkedContactId        String?
   externalId             String?
   sourceSystem           String?
@@ -9163,6 +9169,7 @@ model CrmLead {
   updatedAt              DateTime             @updatedAt
   deletedAt              DateTime?
   account                CrmAccount?          @relation(fields: [accountId], references: [id])
+  icp                    CrmIcpProfile?       @relation(fields: [icpId], references: [id], onDelete: SetNull)
   attachments            CrmLeadAttachment[]
   contacts               CrmContact[]
   activities             CrmActivity[]
@@ -9178,6 +9185,7 @@ model CrmLead {
   @@index([orgId, accountId])
   @@index([orgId, isStarred])
   @@index([orgId, deletedAt])
+  @@index([orgId, icpId])
   @@schema("app_quikcrm")
 }
 
@@ -9257,26 +9265,170 @@ model CrmProspect {
   about           String?
   profilePicture  String?
   // Raw extracted blobs (posts, company data, experiences) kept verbatim for
-  // later enrichment â€” shape is owned by the extension, so stored as Json.
-  posts           Json?
-  companyData     Json?
-  experiences     Json?
-  savedById       String?
-  savedByName     String?
+  // later enrichment — shape is owned by the extension, so stored as Json.
+  // `companyData` remains the complete record: the promoted columns below are a
+  // queryable PROJECTION of it, never a replacement.
+  posts          Json?
+  companyData    Json?
+  experiences    Json?
+  /// Complete LinkedIn message thread captured by the extension's conversation
+  /// extractor, stored verbatim as an ordered array. Same Json pattern as
+  /// `posts` / `experiences` above: the shape is owned by the extension.
+  ///
+  /// Element shape:
+  ///   { messageId, senderName, senderProfileUrl, text, timestamp, date, time,
+  ///     direction, messageOrder, source: "LINKEDIN", attachments: [] }
+  ///
+  /// `messageOrder` is the authoritative chronological key. Messages are NEVER
+  /// deduplicated: a thread legitimately repeats the same text from different
+  /// senders ("Well", "No problem"), so identical entries are distinct messages
+  /// distinguished only by `messageOrder`.
+  ///
+  /// Nothing is promoted to a column — unlike `companyData`, no field here is
+  /// filterable, so widening the table would buy nothing.
+  linkedinConversation Json?
+
+  /// ── Promoted company fields ────────────────────────────────────────────
+  /// Extracted by the LinkedIn extension's company scraper and denormalised out
+  /// of `companyData` so they can be filtered, grouped and indexed in SQL —
+  /// "all prospects at 1,000+ employee software companies in Washington" is a
+  /// query, not a JSON scan.
+  ///
+  /// Only the FILTERABLE fields are promoted. Long-form and binary-ish content
+  /// (about, tagline, specialties, logo, banner, posts) stays in `companyData`,
+  /// because widening the table for text nobody filters on buys nothing.
+  ///
+  /// All nullable: a prospect saved without visiting the company page is valid,
+  /// and existing rows must stay valid without a backfill.
+  companyIndustry      String?
+  companyWebsite       String?
+  companyHeadquarters  String?
+  /// Human-readable band as LinkedIn presents it, e.g. "11-50 employees".
+  companySize          String?
+  /// Numeric headcount when LinkedIn exposes one. Int (not String) so range
+  /// queries work; null when only the band above is available.
+  companyEmployeeCount Int?
+  /// Canonical /company/<slug>/ URL, for de-duplicating prospects by employer.
+  companyLinkedinUrl   String?
+  savedById      String?
+  savedByName    String?
+  /// Ideal Customer Profile chosen in the extension before saving. Reference
+  /// only — never a copy of the ICP's fields. Nullable + SetNull so existing
+  /// prospects stay valid and deleting an ICP does not delete prospects.
+  icpId          String?
+  icp            CrmIcpProfile? @relation(fields: [icpId], references: [id], onDelete: SetNull)
   // Conversion state. "New" until the prospect is converted into a CrmLead via
   // the Prospects page; then "Converted" with a pointer to the created lead.
   status          String    @default("New")
   convertedLeadId String?
-  convertedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  convertedAt    DateTime?
+
+  /// Origin Upwork job, when this prospect was created via "Convert to
+  /// Prospect" on an Upwork record. A REFERENCE ONLY — the Upwork job keeps all
+  /// of its own fields and is never copied into or deleted by the conversion.
+  /// Null for every prospect from any other source (LinkedIn, manual).
+  ///
+  /// SetNull rather than Cascade: deleting an Upwork job must never delete a
+  /// prospect the user has since worked on.
+  upworkJobId    String?
+  upworkJob      CrmUpworkJob? @relation(fields: [upworkJobId], references: [id], onDelete: SetNull)
+
+  /// Outcome of the automatic email-discovery cascade, when it has been run for
+  /// this prospect. Kept in its own row rather than widened onto this table:
+  /// discovery has its own lifecycle (re-runnable, attempt-counted) and most
+  /// prospects arrive with an email already, so the columns would be mostly null.
+  emailDiscovery CrmProspectEmailDiscovery?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // One prospect per LinkedIn profile per org â€” re-saving the same profile
   // updates the existing row instead of creating duplicates.
   @@unique([orgId, linkedinUrl], name: "prospect_org_linkedin_uk")
+  // One prospect per Upwork job per org. THIS is the duplicate-conversion
+  // guard: the API pre-checks for a friendly message, but this constraint is
+  // what holds under two concurrent "Convert to Prospect" clicks. Postgres
+  // treats NULLs as distinct, so the many prospects with no Upwork origin are
+  // unaffected.
+  @@unique([orgId, upworkJobId], name: "prospect_org_upwork_uk")
   @@index([orgId])
   @@index([orgId, createdAt])
   @@index([orgId, status])
+  @@index([orgId, icpId])
+  // Org-scoped, matching every other index here: these support "prospects in
+  // this industry / at this employer" filters, which are always tenant-scoped.
+  @@index([orgId, companyIndustry])
+  @@index([orgId, companyLinkedinUrl])
+  @@schema("app_quikcrm")
+}
+
+/// Result of the automatic email-discovery cascade for one prospect.
+///
+/// WHY A SEPARATE ROW: a discovered address is not the same thing as a known
+/// address. `CrmProspect.email` is what the CRM will actually mail; this table
+/// is the audit trail of how (and how confidently) a value was arrived at, plus
+/// the holding pen for suggestions too weak to promote. A guess that looks
+/// plausible but is wrong is worse than a blank field — it hard-bounces and
+/// burns sender reputation — so only high-confidence provider hits are copied
+/// onto the prospect (see email-discovery/cascade.ts::shouldPromote).
+model CrmProspectEmailDiscovery {
+  id         String      @id @default(cuid())
+  orgId      String
+  /// One discovery record per prospect: re-running overwrites in place and
+  /// increments `attempts` rather than accumulating history rows.
+  prospectId String      @unique
+  prospect   CrmProspect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  /// verified | guessed | not_found | domain_not_found | company_invalid
+  /// "verified" means a provider returned it with a score above threshold —
+  /// NOT that anyone delivered mail to it. Without SMTP probing (blocked on
+  /// serverless) no stronger claim is available.
+  status     String
+  /// The best address found, at whatever confidence. Copied to
+  /// CrmProspect.email only when it clears the promotion bar.
+  email      String?
+  /// 0..1. Provider score where one exists, else a fixed per-source value.
+  confidence Float       @default(0)
+  domain     String?
+  /// e.g. "firstname.lastname" — the shape the address was built from.
+  pattern    String?
+  /// hunter | apollo | pattern_memory | guess
+  source     String?
+  /// Incremented on every run, so a prospect that repeatedly fails can be
+  /// excluded from re-runs instead of burning provider credits forever.
+  attempts   Int         @default(0)
+  /// Last provider/parse error, for debugging a run that found nothing.
+  lastError  String?
+  lastRunAt  DateTime?
+
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@schema("app_quikcrm")
+}
+
+/// Learned email pattern per company domain — the Postgres replacement for the
+/// source implementation's in-process Map cache.
+///
+/// Persisted rather than cached in memory because the discovery route is
+/// serverless: a Map dies with the instance, so every cold start would re-pay
+/// for a provider lookup it had already made. Scoped per org (not global) so one
+/// tenant's data never informs another's, consistent with every other table here.
+model CrmOrgEmailPattern {
+  id        String   @id @default(cuid())
+  orgId     String
+  domain    String
+  /// One of the keys understood by buildFromPattern().
+  pattern   String
+  /// Where the pattern came from: hunter | apollo | inferred
+  source    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, domain], name: "org_email_pattern_uk")
+  @@index([orgId])
   @@schema("app_quikcrm")
 }
 
@@ -10369,6 +10521,194 @@ enum CrmProductTaxonomyKind {
   @@schema("app_quikcrm")
 }
 
+/// ===== ICP (Ideal Customer Profile) =====
+///
+/// An org-level master describing the kind of customer the business wants to
+/// sell to. One ICP gathers the firmographic criteria (segment, revenue band,
+/// employee range, geography) plus what it is sold WITH (products/services) and
+/// what it is sold INTO (industries, verticals, technologies).
+///
+/// Deliberately NOT in scope (see the ICP module brief): scoring, lead matching,
+/// recommendations, automation. Nothing here computes a fit score — the account
+/// links are hand-curated examples, not the output of a matching engine.
+model CrmIcpProfile {
+  id          String  @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  /// Free-form "who this is" summary shown on the ICP card. Distinct from
+  /// `description`, which explains why the profile exists.
+  personaNotes String?
+
+  /// Firmographics. Reuses CrmAccountSegment so an ICP and a CrmAccount speak
+  /// the same vocabulary (Enterprise / MidMarket / SMB) without a new enum.
+  segment            CrmAccountSegment?
+  employeeCountMin   Int?
+  employeeCountMax   Int?
+  annualRevenueMin   Decimal? @db.Decimal(18, 2)
+  annualRevenueMax   Decimal? @db.Decimal(18, 2)
+  revenueCurrency    String?  @default("INR")
+  /// ISO-3166 alpha-2 list, matching CrmAccount.countryCode so the two can be
+  /// compared by a human reading both screens.
+  countryCodes       String[] @default([])
+  /// Free-text region labels (APAC, EMEA, "North India") — intentionally not a
+  /// master table; geography vocabularies differ too much per org to seed.
+  regions            String[] @default([])
+
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  taxonomyLinks CrmIcpProfileTaxonomy[]
+  productLinks  CrmIcpProfileProduct[]
+  accountLinks  CrmIcpProfileAccount[]
+  /// Prospects/leads tagged with this ICP. Plain back-relations (no join table):
+  /// a prospect or lead belongs to at most ONE ICP, unlike the many-to-many
+  /// account/product/taxonomy links above.
+  prospects     CrmProspect[]
+  leads         CrmLead[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, isActive])
+  @@index([orgId, segment])
+  @@schema("app_quikcrm")
+}
+
+/// Org-scoped master list for the three ICP dimensions that had no table before
+/// this module: Industry, Vertical, Technology.
+///
+/// One polymorphic table with a `kind` discriminator, following the
+/// CrmProductTaxonomy precedent in this same schema, rather than three
+/// near-identical tables. `parentId` allows nesting (Industry →
+/// Sub-industry, Technology → specific product) without a second model.
+///
+/// Note on industries: CrmAccount already carries free-text `industry` and a
+/// coded `industryKey`. This table does NOT replace or migrate those — it is the
+/// ICP module's own curated vocabulary. Keeping `name` aligned with existing
+/// `industryKey` values is a deliberate convenience for humans comparing the two
+/// screens, not an enforced FK.
+model CrmIcpTaxonomy {
+  id        String             @id @default(cuid())
+  orgId     String
+  kind      CrmIcpTaxonomyKind
+  name      String
+  /// Optional stable code for orgs that already key industries elsewhere.
+  code      String?
+  parentId  String?
+  parent    CrmIcpTaxonomy?    @relation("IcpTaxonomyTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  CrmIcpTaxonomy[]   @relation("IcpTaxonomyTree")
+  sortOrder Int                @default(0)
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  profileLinks CrmIcpProfileTaxonomy[]
+
+  /// NOTE: this @@unique does NOT cover top-level entries. `parentId` is NULL for
+  /// them and Postgres treats NULL != NULL, so two identical root rows would both
+  /// insert. A partial unique index (…_orgId_kind_name_root_key, WHERE parentId IS
+  /// NULL) closes that hole — it lives in the migration SQL because Prisma cannot
+  /// express partial indexes. Do not "simplify" either one away.
+  @@unique([orgId, kind, name, parentId])
+  @@index([orgId])
+  @@index([orgId, kind])
+  @@index([orgId, kind, isActive])
+  @@index([orgId, parentId])
+  @@schema("app_quikcrm")
+}
+
+/// ICP ↔ taxonomy (industry / vertical / technology) link.
+///
+/// `kind` is denormalised from CrmIcpTaxonomy so a profile's industries can be
+/// counted or filtered without joining the master table. It is written from the
+/// taxonomy row at link time and must never diverge — the service layer is the
+/// only writer.
+model CrmIcpProfileTaxonomy {
+  id           String             @id @default(cuid())
+  orgId        String
+  icpProfileId String
+  taxonomyId   String
+  kind         CrmIcpTaxonomyKind
+  createdAt    DateTime           @default(now())
+
+  icpProfile CrmIcpProfile  @relation(fields: [icpProfileId], references: [id], onDelete: Cascade)
+  taxonomy   CrmIcpTaxonomy @relation(fields: [taxonomyId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, icpProfileId, taxonomyId])
+  @@index([orgId])
+  @@index([orgId, icpProfileId])
+  @@index([orgId, icpProfileId, kind])
+  @@index([taxonomyId])
+  @@schema("app_quikcrm")
+}
+
+/// ICP ↔ product/service link.
+///
+/// Services are NOT a separate entity in this schema: a service is a CrmProduct
+/// with `productType = Service` (it even has its own `sacCode` column). So this
+/// one join table covers both the "Products" and "Services" ICP dimensions, and
+/// the UI splits them by reading CrmProduct.productType.
+model CrmIcpProfileProduct {
+  id           String   @id @default(cuid())
+  orgId        String
+  icpProfileId String
+  productId    String
+  createdAt    DateTime @default(now())
+
+  icpProfile CrmIcpProfile @relation(fields: [icpProfileId], references: [id], onDelete: Cascade)
+  product    CrmProduct    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, icpProfileId, productId])
+  @@index([orgId])
+  @@index([orgId, icpProfileId])
+  @@index([productId])
+  @@schema("app_quikcrm")
+}
+
+/// ICP ↔ example company link.
+///
+/// Hand-curated reference only: "ABC Pvt Ltd is an example of this profile".
+/// This is NOT lead/account matching and nothing derives it automatically —
+/// a user picks accounts explicitly. Reuses CrmAccount rather than introducing
+/// any parallel company master.
+model CrmIcpProfileAccount {
+  id           String   @id @default(cuid())
+  orgId        String
+  icpProfileId String
+  accountId    String
+  /// Why this company exemplifies the profile — optional curator's note.
+  ///
+  /// RESERVED / not yet writable: the detail API returns it, but the ICP form
+  /// links accounts by id only, so nothing sets it today. Kept because adding a
+  /// nullable column later is a migration while the read path already carries it.
+  /// Wire it up by extending `accountIds: string[]` to accept
+  /// `{ id, note }` objects in lib/validators/icp.ts.
+  note         String?
+  createdAt    DateTime @default(now())
+
+  icpProfile CrmIcpProfile @relation(fields: [icpProfileId], references: [id], onDelete: Cascade)
+  account    CrmAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, icpProfileId, accountId])
+  @@index([orgId])
+  @@index([orgId, icpProfileId])
+  @@index([accountId])
+  @@schema("app_quikcrm")
+}
+
+enum CrmIcpTaxonomyKind {
+  Industry
+  Vertical
+  Technology
+
+  @@schema("app_quikcrm")
+}
+
 enum CrmStockMovementType {
   Receipt
   Issue
@@ -10533,6 +10873,7 @@ model CrmProduct {
   images         CrmProductImage[]
   inventory      CrmProductInventory[]
   stockMovements CrmStockMovement[]
+  icpProfiles    CrmIcpProfileProduct[]
 
   @@unique([orgId, sku])
   @@index([orgId])
@@ -11164,8 +11505,326 @@ model CrmUserPermissionExtra {
   @@schema("app_quikcrm")
 }
 
+/// Upwork job captured by the QuikCRM Upwork browser extension.
+///
+/// DELIBERATELY STANDALONE. An Upwork job is a *market signal*, not yet a party
+/// we have a relationship with, so it is NOT a CrmLead / CrmProspect /
+/// CrmAccount / CrmContact / CrmOpportunity and carries no FK to any of them.
+/// Nothing in this module auto-converts a row into those entities. A future
+/// "convert to lead" workflow would add an explicit nullable `convertedLeadId`
+/// here; until then the separation is absolute and intentional.
+///
+/// Every scraped field is stored as free text exactly as Upwork rendered it
+/// ("$25.00 Hourly", "20 to 50", "Less than 30 hrs/week"). Upwork has no stable
+/// public schema for these and the strings are what a human needs to read when
+/// triaging. Parsing them into numerics would silently lose information the
+/// moment Upwork changes a label, so normalisation is left to a later pass.
+model CrmUpworkJob {
+  id    String @id @default(cuid())
+  orgId String
+
+  /// Canonical Upwork job URL (query string and fragment stripped before
+  /// storage — see normalizeJobUrl). Nullable because the scraper cannot always
+  /// resolve a URL; dedupe then falls back to the title+description hash.
+  jobUrl String?
+
+  /// Upwork's own job ticket id ("~021234…") when it can be parsed out of the
+  /// URL. Informational — dedupe keys on `dedupeKey`, not this.
+  upworkJobId String?
+
+  /// Stable per-org dedupe key: the normalised jobUrl when present, otherwise
+  /// a sha256 of (title + description). @@unique([orgId, dedupeKey]) is what
+  /// actually enforces "the same job is never added twice" — the service does a
+  /// pre-check for a friendly message, but this constraint is the guarantee
+  /// under a race between two concurrent "Add to CRM" clicks.
+  dedupeKey String
+
+  jobTitle       String
+  jobDescription String?
+  projectType    String?
+  /// Free-text skills exactly as scraped; the extension joins Upwork's list
+  /// with ", ". A String[] would imply a normalised vocabulary we do not have.
+  skills           String?
+  clientLocation   String?
+  proposals        String?
+  reviews          String?
+  projectPrice     String?
+  projectTime      String?
+  requiredConnects String?
+
+  /// Everything the scraper produced, verbatim. Kept so a scraper change or a
+  /// field we did not model can still be recovered from an existing row.
+  rawData Json?
+
+  /// Output of the existing Upwork AI chain (match percentages, fit score,
+  /// confidence, suggested client message, feedback), written by a follow-up
+  /// PATCH after the job row exists. Nullable throughout: the AI step is
+  /// optional and skippable from the panel, so a row with no AI data is normal.
+  ///
+  /// Stored as one Json blob rather than columns because the shape is owned by
+  /// an external service we do not version — promoting fields to columns would
+  /// mean a migration every time that service changes its response.
+  aiAnalysis    Json?
+  aiScore       Int?
+  aiConfidence  String?
+  /// The message the user actually wrote to the client, kept alongside the
+  /// AI-suggested one inside aiAnalysis so the two are never confused.
+  clientMessage String?
+  aiAnalyzedAt  DateTime?
+
+  /// Prospects created from this job via "Convert to Prospect".
+  ///
+  /// A back-relation only — the job never stores prospect data. Modelled as a
+  /// list because Prisma requires one for the inverse side; the single-
+  /// conversion rule is enforced by @@unique([orgId, upworkJobId]) on
+  /// CrmProspect, not here.
+  convertedProspects CrmProspect[]
+
+  /// Owner = the user who clicked "Add to CRM". Non-admins only see their own
+  /// rows (see buildUpworkWhere); admins see the whole org.
+  createdByUserId String?
+  updatedByUserId String?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  /// One row per job per org — the duplicate guard.
+  @@unique([orgId, dedupeKey])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, createdByUserId])
+  @@index([orgId, createdAt])
+  @@schema("app_quikcrm")
+}
+
 // ============================================================================
-// Custom Fields (a.k.a. Customer Fields) â€” see FRD "Customer Fields" v2.
+// Sales Cost Management — Settings → Sales Cost. Admin-only (isCrmAdminUser).
+//
+// Computes the real acquisition cost per sales rep:
+//   salary + allocated tool costs + other costs = total monthly cost
+//   -> cost per lead / prospect / opportunity / won deal
+//
+// HISTORICAL CORRECTNESS is the central design constraint. Nothing here is ever
+// edited in place: every cost is an EFFECTIVE-DATED row (effectiveFrom /
+// effectiveTo). "Raise Rahul's salary" closes the current row at the end of the
+// prior month and opens a new one, so re-running August 2026 next year yields
+// the same number it did in August 2026. There is no snapshot table and no
+// month-close step — a period's cost is always re-derivable from these rows.
+//
+// Lead / prospect / opportunity / won-deal COUNTS are NOT stored here. They are
+// read live from CrmLead.ownerId, CrmProspect.savedById and
+// CrmOpportunity.ownerId. This module deliberately introduces no second
+// ownership system; see lib/services/sales-cost/counts.ts.
+//
+// `userId` is a bare String matching the convention across app_quikcrm (User
+// lives in schema `auth`), with a denormalised `userName` snapshot so a
+// historical report still renders a name after a user is removed.
+// ============================================================================
+
+/// One effective-dated salary row for a sales rep. Amounts are monthly.
+///
+/// Non-overlap per (orgId, userId) is enforced by the service layer
+/// (assertNoSalaryOverlap), not by a DB constraint — Postgres cannot express
+/// "no overlapping [effectiveFrom, effectiveTo) ranges" without an exclusion
+/// constraint over a range type, which Prisma cannot model. The unique index on
+/// (orgId, userId, effectiveFrom) stops the exact-duplicate case.
+model CrmSalesRepSalary {
+  id     String @id @default(cuid())
+  orgId  String
+  userId String
+  /// Denormalised at write time so historical rows still render a name after
+  /// the user leaves the org. Never used for lookups.
+  userName String?
+
+  /// Gross monthly salary in `currency`. Decimal(18,2) matches
+  /// CrmOpportunity.amount so money never round-trips through a JS float.
+  monthlyAmount Decimal @db.Decimal(18, 2)
+  currency      String  @default("INR")
+
+  /// Inclusive start. Normalised to the first day of the month at UTC midnight
+  /// by the service, so period math is a plain date comparison.
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = still current. A row effective for August only is
+  /// [2026-08-01, 2026-09-01).
+  effectiveTo DateTime?
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([orgId, userId, effectiveFrom])
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([orgId, userId, effectiveFrom])
+  @@index([orgId, effectiveFrom, effectiveTo])
+  @@schema("app_quikcrm")
+}
+
+/// A paid sales tool (LinkedIn Sales Navigator, a dialer, an email tool, …).
+///
+/// The tool row is stable IDENTITY only — name, vendor, availability window,
+/// on/off switch. Its PRICE lives in CrmSalesToolPrice, effective-dated exactly
+/// like CrmSalesRepSalary, so raising a seat from ₹8,000 to ₹10,000 in September
+/// leaves August's report reading ₹8,000 forever. There is deliberately no
+/// `cost` column here: a single mutable price field is precisely what would let
+/// an edit rewrite history.
+///
+/// Who pays is expressed entirely by CrmSalesToolAllocation. That split is what
+/// prevents a shared tool from being double-counted: a ₹16,000 seat allocated
+/// 50/50 charges ₹8,000 to each rep, and the allocation percentages for any
+/// overlapping period are validated to sum to ≤ 100.
+model CrmSalesTool {
+  id    String @id @default(cuid())
+  orgId String
+
+  name     String
+  vendor   String?
+  category String?
+
+  /// Tool-level availability window. An allocation is only billed for a period
+  /// when the tool's window, the allocation's window AND a price version all
+  /// cover that period.
+  startDate DateTime
+  endDate   DateTime?
+  /// Hard off switch, independent of the dates — an admin pausing a tool should
+  /// not have to rewrite its window.
+  active Boolean @default(true)
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  prices      CrmSalesToolPrice[]
+  allocations CrmSalesToolAllocation[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, active])
+  @@index([orgId, startDate, endDate])
+  @@schema("app_quikcrm")
+}
+
+/// One effective-dated price version for a tool.
+///
+/// Mirrors CrmSalesRepSalary's contract: `effectiveFrom` INCLUSIVE,
+/// `effectiveTo` EXCLUSIVE and nullable (= current), both snapped to UTC month
+/// boundaries. Changing a tool's price closes the open version at the new start
+/// month and inserts a new row, so a report for any earlier month keeps
+/// resolving to the price that was actually in force then.
+///
+/// `billingFrequency` and `currency` live here rather than on the tool because
+/// they are properties of a PRICE — switching a seat from monthly to annual
+/// billing is a price change, and the old months must keep their old basis.
+model CrmSalesToolPrice {
+  id     String @id @default(cuid())
+  orgId  String
+  toolId String
+
+  /// Cost for one `billingFrequency` interval, NOT normalised to a month.
+  /// monthlyCostOf() in lib/services/sales-cost/period.ts converts to a monthly
+  /// figure (annual/12, quarterly/3) at read time; storing the raw amount keeps
+  /// the number the finance team actually sees on the invoice.
+  cost Decimal @db.Decimal(18, 2)
+  /// "monthly" | "quarterly" | "annual" | "one_time" — see BILLING_FREQUENCIES.
+  billingFrequency String @default("monthly")
+  currency         String @default("INR")
+
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = current price. A price effective for August only is
+  /// [2026-08-01, 2026-09-01).
+  effectiveTo DateTime?
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tool CrmSalesTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  /// One price version per tool per starting month. Full range non-overlap is
+  /// enforced in the service, for the same reason as CrmSalesRepSalary.
+  @@unique([orgId, toolId, effectiveFrom])
+  @@index([orgId])
+  @@index([orgId, toolId])
+  @@index([orgId, toolId, effectiveFrom, effectiveTo])
+  @@schema("app_quikcrm")
+}
+
+/// How much of one tool's cost a given sales rep carries, over a date range.
+///
+/// `percentage` is the allocation share (100 = the rep pays for the whole
+/// tool). Effective-dated for the same reason salaries are: changing a 50/50
+/// split to 70/30 must not rewrite last month's numbers.
+model CrmSalesToolAllocation {
+  id     String @id @default(cuid())
+  orgId  String
+  toolId String
+  userId String
+  /// Denormalised name snapshot — same rationale as CrmSalesRepSalary.userName.
+  userName String?
+
+  /// 0.01–100. Decimal(6,3) so a three-way split (33.333) is exact rather than
+  /// a float that fails a "sums to 100" check.
+  percentage Decimal @db.Decimal(6, 3)
+
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = ongoing.
+  effectiveTo DateTime?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tool CrmSalesTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, toolId, userId, effectiveFrom])
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([orgId, toolId])
+  @@index([orgId, userId, effectiveFrom, effectiveTo])
+  @@schema("app_quikcrm")
+}
+
+/// Any recurring sales cost that is neither salary nor a tool — travel budget,
+/// lead-list purchases, incentive pool. Same effective-dating contract.
+model CrmSalesOtherCost {
+  id     String @id @default(cuid())
+  orgId  String
+  userId String
+  userName String?
+
+  label String
+  /// Monthly amount. Unlike CrmSalesTool there is no billingFrequency here —
+  /// these are entered as a monthly figure by design.
+  monthlyAmount Decimal @db.Decimal(18, 2)
+  currency      String  @default("INR")
+
+  effectiveFrom DateTime
+  /// EXCLUSIVE end, null = ongoing.
+  effectiveTo DateTime?
+  active      Boolean   @default(true)
+
+  notes String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, userId])
+  @@index([orgId, userId, effectiveFrom, effectiveTo])
+  @@index([orgId, active])
+  @@schema("app_quikcrm")
+}
+
+// ============================================================================
+// Custom Fields (a.k.a. Customer Fields) — see FRD "Customer Fields" v2.
 // Two-tier scope: scope="global" (org-wide, projectId NULL) or scope="space"
 // (one project). Values live in QtIssueFieldValue with typed columns so the
 // backlog filter can index by value (NFR-02). Name/key uniqueness within a

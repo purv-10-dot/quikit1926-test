@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule, maskHiddenLeadFields, filterRestrictedLeadFields } from "@/lib/auth/permissions";
 import { accountScopeFilter, assertAccountAccess } from "@/lib/auth/account-acl";
+import { assertIcpInOrg } from "@/lib/services/icp/assert-icp";
 import { createLeadSchema, listLeadsQuerySchema } from "@/lib/validators/lead";
 import { onLeadCreated } from "@/lib/services/automation/triggers";
 import { publishLeadEvent } from "@/lib/services/leads/realtime";
@@ -152,6 +153,8 @@ export async function POST(req: NextRequest) {
     }
     const data = await filterRestrictedLeadFields(user, parsed.data);
     if (data.accountId) await assertAccountAccess(user, data.accountId);
+    // Org-scope the ICP reference before it reaches Prisma (see assert-icp.ts).
+    if (data.icpId) await assertIcpInOrg(user.orgId, data.icpId);
 
     // Validate owner assignment: only assign when caller explicitly sets a
     // different owner — self-assign is always permitted and already the default.

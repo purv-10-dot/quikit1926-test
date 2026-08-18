@@ -80,7 +80,14 @@ type RelatedOption = { id: string; label: string };
 
 // "None" = standalone activity (no linked record). The 4 lookup kinds follow.
 const STANDALONE_KIND = "None" as const;
-const LOOKUP_KINDS = ["Lead", "Opportunity", "Contact", "Account"] as const;
+const LOOKUP_KINDS = [
+  "Lead",
+  "Opportunity",
+  "Contact",
+  "Account",
+  "Prospect",
+  "Upwork",
+] as const;
 const KIND_OPTIONS = [STANDALONE_KIND, ...LOOKUP_KINDS] as const;
 type LookupKind = (typeof LOOKUP_KINDS)[number];
 const KIND_LABELS: Record<(typeof KIND_OPTIONS)[number], string> = {
@@ -89,6 +96,33 @@ const KIND_LABELS: Record<(typeof KIND_OPTIONS)[number], string> = {
   Opportunity: "Opportunity",
   Contact: "Contact",
   Account: "Account",
+  Prospect: "Prospect",
+  Upwork: "Upwork",
+};
+
+/**
+ * Picker endpoint per lookup kind. All return
+ * `{ data: { items: [{ id, name, company? }] } }`, which is what the shared
+ * option mapper in `fetchRelatedOptions` expects — the Upwork picker maps
+ * `jobTitle` to `name` server-side for exactly this reason.
+ */
+const KIND_PICKER_PATH: Record<LookupKind, string> = {
+  Lead: "/api/leads/picker",
+  Opportunity: "/api/opportunities/picker",
+  Contact: "/api/contacts/picker",
+  Account: "/api/accounts/picker",
+  Prospect: "/api/prospects/picker",
+  Upwork: "/api/upwork/picker",
+};
+
+/** Placeholder shown in each picker; "Upwork" reads better as "Upwork job". */
+const KIND_SEARCH_NOUN: Record<LookupKind, string> = {
+  Lead: "lead",
+  Opportunity: "opportunity",
+  Contact: "contact",
+  Account: "account",
+  Prospect: "prospect",
+  Upwork: "Upwork job",
 };
 // Draft storage keys, the `NamedDraft` shape, and the localStorage read helpers
 // live in @/lib/activities/activity-drafts — shared with the Drafts list so the
@@ -168,7 +202,14 @@ export function LogActivityForm({
   // Keyed by the lookup kinds only — "None" (standalone) has no record options.
   const [relatedOptions, setRelatedOptions] = useState<
     Record<LookupKind, RelatedOption[] | undefined>
-  >({ Lead: undefined, Opportunity: undefined, Contact: undefined, Account: undefined });
+  >({
+    Lead: undefined,
+    Opportunity: undefined,
+    Contact: undefined,
+    Account: undefined,
+    Prospect: undefined,
+    Upwork: undefined,
+  });
   const [relatedLoading, setRelatedLoading] = useState(false);
 
   const selectedType = types?.find((t) => t.id === activityTypeId) ?? null;
@@ -287,15 +328,7 @@ export function LogActivityForm({
 
   const fetchRelatedOptions = useCallback(
     async (kind: LookupKind): Promise<RelatedOption[]> => {
-      const path =
-        kind === "Lead"
-          ? "/api/leads/picker?limit=200"
-          : kind === "Opportunity"
-            ? "/api/opportunities/picker?limit=200"
-            : kind === "Contact"
-              ? "/api/contacts/picker?limit=200"
-              : "/api/accounts/picker?limit=200";
-      const res = await fetch(path);
+      const res = await fetch(`${KIND_PICKER_PATH[kind]}?limit=200`);
       if (!res.ok) return [];
       const body = await res.json();
       const items: { id: string; name?: string; company?: string | null }[] =
@@ -634,7 +667,7 @@ export function LogActivityForm({
                     ) : (
                       <SearchableSelect
                         label={relatedKind}
-                        placeholder={`Search ${relatedKind.toLowerCase()}…`}
+                        placeholder={`Search ${KIND_SEARCH_NOUN[relatedKind]}…`}
                         value={relatedObjectId}
                         loading={relatedLoading && relatedOptions[relatedKind] === undefined}
                         options={relatedOptions[relatedKind] ?? []}

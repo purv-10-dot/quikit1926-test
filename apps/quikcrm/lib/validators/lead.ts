@@ -93,6 +93,12 @@ const createLeadObjectSchema = z.object({
   sourceDetails: z.string().trim().max(500).optional().nullable(),
   contactLinkedinUrl: optionalUrlSchema,
   leadQuality: z.string().optional().nullable(),
+  /**
+   * Ideal Customer Profile reference. Normally copied from the prospect during
+   * Convert-to-Lead rather than typed by the user. Nullable so a lead can be
+   * created or edited without one, and so an existing ICP can be cleared.
+   */
+  icpId: z.string().trim().min(1).optional().nullable(),
   externalId: z.string().optional().nullable(),
   sourceSystem: z.string().optional().nullable(),
   originChannel: z.enum(LEAD_CREATION_CHANNELS).optional().nullable(),

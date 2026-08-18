@@ -59,4 +59,10 @@ export async function buildActivityAclWhere(
       { relatedKind: { in: ["Contact", "contact"] }, relatedObjectId: { in: contactIds } },
     ],
   };
+  // Note: Prospect / Upwork activities are intentionally absent from this OR.
+  // Neither record has an `accountId`, so account scope cannot express "in
+  // scope" for them. They surface for a restricted user only via the
+  // `{ ownerId: user.userId }` branch above — the same rule the Upwork job
+  // timeline already documents. Adding a blanket kind branch here would leak
+  // every prospect's activities to every restricted user.
 }

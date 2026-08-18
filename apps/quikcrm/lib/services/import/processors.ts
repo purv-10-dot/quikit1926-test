@@ -6,7 +6,10 @@
 import { parseCsv } from "@/lib/services/import/csv-processor";
 import type { CrmLeadImportJob as LeadImportJob } from "@prisma/client";
 import { logActivity } from "@/lib/services/activities/log-activity";
-import { isPrimaryKind } from "@/lib/services/activities/target-existence";
+import {
+  ACTIVITY_PRIMARY_KINDS,
+  isPrimaryKind,
+} from "@/lib/services/activities/target-existence";
 import { upsertImportedLeadRow } from "@/lib/services/import/lead-import-row";
 import { prisma } from "@/lib/db/prisma";
 
@@ -88,7 +91,7 @@ export async function processActivitiesImport(job: LeadImportJob): Promise<Proce
     if (!isPrimaryKind(r.relatedKind)) {
       errors.push({
         row: i,
-        error: `relatedKind must be Lead | Opportunity | Contact | Account`,
+        error: `relatedKind must be ${ACTIVITY_PRIMARY_KINDS.join(" | ")}`,
       });
       continue;
     }

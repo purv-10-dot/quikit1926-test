@@ -527,26 +527,98 @@ body:not(.mode-individual) #individualView {
   color: #374151;
 }
 
-/* Active organization badge on the extractor screen */
-.org-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+/* Active-organization switcher on the extractor screen. Reuses .form-input for
+   the control itself so it matches every other field; only the wrapper spacing
+   is defined here (same 16px gap the badge it replaced used). */
+.org-switcher {
   margin-bottom: 16px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
 }
-.org-badge.hidden {
+.org-switcher.hidden {
   display: none;
 }
-.org-badge-icon {
+.org-switcher-select {
   font-size: 14px;
-  line-height: 1;
+  /* Native select needs an explicit background — .form-input assumes an input. */
+  background-color: #ffffff;
+  cursor: pointer;
 }
-.org-badge-name {
+
+/* ── ICP picker (searchable single-select on the prospect form) ──────────────
+   Styling follows the existing .form-input / .org-option conventions above so
+   the control reads as part of the same form; #4f46e5 is the accent already used
+   by the extension's interactive elements. */
+.icp-picker {
+  position: relative;
+}
+.icp-options {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+.icp-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
   font-size: 13px;
-  font-weight: 600;
   color: #374151;
+}
+.icp-option:last-child {
+  border-bottom: none;
+}
+.icp-option:hover,
+.icp-option.is-active {
+  background: #eef2ff;
+  color: #3730a3;
+}
+.icp-option-segment {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.icp-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #6b7280;
+}
+.icp-selected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: #eef2ff;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #3730a3;
+  width: fit-content;
+  max-width: 100%;
+}
+.icp-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #4f46e5;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.icp-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
 }
