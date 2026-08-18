@@ -612,7 +612,7 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
 
 ## 10. Structural
 
-- **🔴 vitest is split 4.1.10 / 3.2.4, and neither of our two suites can start.**
+- **⚠️ vitest is split 4.1.10 / 3.2.4, and it is fragile but NOT blocking.**
   `common_setup89` upgraded nine-plus workspaces to vitest **4.1.10**
   (`packages/ai-sdk`, `packages/auth`, `packages/shared`, `admin`, `auth`,
   `quikasset`, others) but left `apps/quikchat` and `services/realtime` on
@@ -627,8 +627,15 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   `resolvePlugins`, most likely the `yamlRaw()` plugin), or a root `overrides`
   entry pinning 3.2.4 (which drags nine workspaces backwards and is outside our
   scope line). **This belongs to whoever owns 89.**
-  Last verified baseline is **140 files / 1288 tests** at `63735b13`, pre-merge.
-  Everything after that merge is unverified by tests.
+  Last verified baseline is **142 files / 1318 tests**, post-`common_setup96`.
+  **CORRECTED (18 Aug):** an earlier revision of this row said neither suite
+  could start. That was wrong. The `ERR_MODULE_NOT_FOUND` failures were a broken
+  *install* — incremental `npm install`s layered onto 89's lockfile during the
+  merge — not an inherent consequence of the version split. A clean `npm ci`
+  repairs it; `node_modules/loupe` is keyed in `package-lock.json` and installed
+  at the hoisted root. What remains true: we are the only two workspaces still on
+  vitest 3, which makes the nested tree fragile across merges. Worth aligning
+  when convenient; the ask upstream is small, not urgent.
 - **A lock-file conflict on a merge is not a conflict to resolve — it is a
   question of whose dependency graph you want.** `--theirs` on
   `package-lock.json` imports the other branch's entire resolution, including
@@ -659,23 +666,28 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   hold and surface on re-enable. Weakening our module gate to leak the list is
   the wrong answer; the question belongs upstream. Loosening the gate for
   *pending rows only* is a possible middle path if they want one.
-- **🔴 The vitest 3/4 split is patched only in an untracked `node_modules`, so
-  "the suite passes" is currently a statement about one machine.** Neither
-  QuikChat's nor `services/realtime`'s suite can start after merging
-  `common_setup89` (see the split row): vitest 3.2.4's transitive deps are never
-  placed, and it exits before collecting a single test. Verification was unblocked
-  by installing the missing packages into `apps/quikchat/node_modules` directly —
-  **gitignored, so it evaporates on a fresh clone, in CI, and on anyone else's
-  machine.** No tracked file was changed.
-  **The four packages, recorded so nobody rediscovers them one at a time:**
-  `loupe`, `tinyrainbow`, `strip-literal` (which also needs `js-tokens`), and
-  `tinyspy`. They surfaced sequentially — each one unblocked vitest just far
-  enough to reveal the next — so **expect a fifth** as different test paths get
-  exercised (a jsdom-heavy or coverage run may pull more). Treat the list as
-  known-incomplete.
-  The real fix is upstream and not ours: the conflict is in the `package.json`
-  files, not the lock, so regenerating the lock cannot help. Until it lands,
-  **do not read a green local suite as a green suite.**
+- **The `@sentry/node` v8 pin — the partial-bump pattern, second instance.**
+  `common_setup96` moved `@sentry/nextjs` to 10.69.0, hoisting `@sentry/node`
+  v10, while `apps/quikchat` still pinned `@sentry/node` 8.26.0. npm nested the
+  pin and `tsc` resolved the nested copy — whose declared dependency
+  `@sentry/types` was **absent from the tree entirely**, since v9+ folded it into
+  `@sentry/core` and nothing in the new tree asks for it. With `Options`
+  unresolvable, `NodeOptions` collapsed to `BaseNodeOptions`, and
+  `init({ dsn })` failed typecheck. **The error named a type that was not the
+  problem**, and `error-tracking.ts` was never wrong — fixed by dropping the pin.
+  Same shape as the vitest split: a shared dependency moves for some workspaces
+  and not others, and the failure surfaces somewhere unrelated to the cause.
+  Two instances in two merges. Worth a dependency check after every
+  `common_setup` merge rather than waiting for a symptom.
+- **`vitest.config.ts` documents a mechanism that has never existed.** A comment
+  states quikchat is "pinned via root package.json overrides". Root `overrides`
+  holds only `react`/`react-dom`; what actually pins it is the ordinary exact
+  `"vitest": "3.2.4"` in this app's own `package.json`, nested by npm because the
+  root hoists 4.1.10. That comment is the origin of the false "local patch"
+  belief corrected above. **Third comment this cycle asserting something untrue**
+  — `seedRole`'s docblock and the Dockerfile cache-bust note were the others. A
+  comment that states a safety or mechanism property is worth verifying, not
+  trusting. One-line fix, in scope, not yet done.
 - **CI never builds QuikChat — only quikscale.** `ci.yml` runs lint, typecheck
   and test across all apps via turbo, then builds **one** app
   (`cd apps/quikscale && npm run build`, line 109). `next build` for QuikChat runs
