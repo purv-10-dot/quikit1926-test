@@ -49,6 +49,7 @@ import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
 import { QuikTestResultsPanel } from "@/components/issue-full-view/quiktest-results-panel";
+import { ChildWorkItems } from "@/components/issue-full-view/child-work-items";
 import { IssueTitleEditor } from "@/components/issue-title-editor";
 import {
   IssueAppsMenu,
@@ -1476,6 +1477,14 @@ export function EditIssueModal({
                 );
               })()}
               {/* end Subtasks */}
+
+              {/* Child work items — Epics group their tasks/stories/bugs via
+                  epicId (not parentId), so they get this section in place of
+                  Subtasks. Lets you create a child already attached to the epic,
+                  or attach an existing one. */}
+              {issue?.type === "EPIC" && issue.id && issue.projectId && (
+                <ChildWorkItems epicId={issue.id} projectId={issue.projectId} />
+              )}
 
               {/* Linked work items */}
               {issue?.id && issue.projectId && (
