@@ -192,26 +192,8 @@ export async function verifyAgentJwt(token: string): Promise<AgentJwtClaims | nu
       return null;
     }
 
-    // TEMPORARY FALLBACK — the auth service mints the user identifier as `id`;
-    // `sub` is the standard claim and the long-term fix on their side. Accept
-    // both, and warn when the fallback fires so removal is evidence-driven
-    // rather than something someone has to remember.
-    //
-    // REMOVAL CONDITION: this warning stops appearing in logs. Not a date.
-    // When it does, delete this block, the `id` branch of isAgentJwtPayload,
-    // and this comment.
-    const sub = typeof payload.sub === "string" && payload.sub.length > 0 ? payload.sub : null;
-    if (!sub) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[agent-jwt] Auth service minted `id` without `sub`; falling back to `id`. " +
-          "When this warning stops appearing, delete the `id` fallback in lib/api/agentJwt.ts.",
-      );
-    }
-
     return {
-      // The guard guarantees at least one of the two is a non-empty string.
-      userId: sub ?? (payload.id as string),
+      userId: payload.sub,
       orgId: payload.orgId,
       actingAs: payload.actingAs,
       actingAgentId: payload.actingAgentId,
