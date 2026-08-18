@@ -19,6 +19,7 @@ import React, { useEffect, useState } from 'react';
 import { Trophy, Download, X, Award, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '@/lib/api';
+import { downloadCertificatePdf, certificateFilename } from '@/lib/certificate-download';
 import { useRouter } from 'next/navigation';
 
 interface CelebrationModalProps {
@@ -88,25 +89,15 @@ const CelebrationModal: React.FC<CelebrationModalProps> = ({
         return;
       }
 
-      // Exact same approach as Achievement Gallery download button
-      // Raw fetch (not the api client) so the PDF comes back as a blob instead
-      // of being run through JSON.parse; cookies still travel via credentials.
-      const response = await fetch(`/api/certificates/${certId}/download`, {
-        credentials: 'include',
-      });
-
-      const blob = new Blob([await response.blob()], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${courseName.replace(/[^a-zA-Z0-9\s-]/g, '')}_Certificate.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // Exact same approach as Achievement Gallery download button.
+      //
+      // This used to re-type whatever came back as `application/pdf` before
+      // saving it, which turned a JSON error body into a "corrupt" download.
+      // The helper checks the status first and throws the server's message.
+      await downloadCertificatePdf(certId, certificateFilename(courseName));
     } catch (err: unknown) {
       console.error('[CelebrationModal] Download failed:', err);
-      alert('Failed to download certificate. Please try from the Achievement Gallery.');
+      alert(err instanceof Error ? err.message : 'Failed to download certificate. Please try from the Achievement Gallery.');
     } finally {
       setDownloading(false);
     }

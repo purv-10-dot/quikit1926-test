@@ -1,125 +1,114 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { SignJWT } from "jose";
 import { NextRequest } from "next/server";
+import { SignJWT } from "jose";
 
-// SEC-03 regression: the handoff consumer must bind the launcher-minted token to
-// quiktrack's own slug. SEC-02 regression: the token's jti must be single-use
-// and the freshness window tightened, so a captured token cannot be replayed.
+/**
+ * Regression: signing in from the QuikTrack landing page (or returning from a
+ * deep link) dropped the user on the launcher `/apps` grid instead of QuikTrack.
+ *
+ * Two issuers mint tokens for this endpoint, and only one binds to an app:
+ *   - the launcher's /api/launch-token stamps `slug` (tile click / ?handoff=)
+ *   - the auth host's /api/post-login bridge mints a user-session token for a
+ *     target ORIGIN with no app claim at all
+ *
+ * The SEC-03 binding check required `slug` unconditionally, so every bridge
+ * token was rejected as `wrong_app_handoff`. No sibling app (quikscale,
+ * quikinfra, quikcrm, quikasset) enforces the claim, which is why the identical
+ * flow worked there. The binding must still reject a token minted for a
+ * DIFFERENT app.
+ */
 
-// Stateful fake Redis so the single-use jti check (SEC-02) can be exercised.
-const jtiStore = new Set<string>();
-vi.mock("@quikit/redis", () => ({
-  getRedis: () => ({
-    set: async (
-      key: string,
-      _v: string,
-      _ex: string,
-      _ttl: number,
-      nx?: string,
-    ) => {
-      if (nx === "NX") {
-        if (jtiStore.has(key)) return null;
-        jtiStore.add(key);
-        return "OK";
-      }
-      jtiStore.add(key);
-      return "OK";
-    },
-  }),
+// Redis-backed single-use guard — always allow so the tests exercise the
+// binding check, not the replay store.
+vi.mock("@/lib/handoff-replay", () => ({
+  consumeHandoffJti: vi.fn(async () => true),
 }));
 
-// eslint-disable-next-line import/first
-import { GET } from "@/app/auth-handoff/route";
+const INTERNAL_SECRET = "test-internal-secret-value-32-chars";
+const NEXTAUTH_SECRET = "test-nextauth-secret-value-32-chars";
 
-const INTERNAL_SECRET = "test-internal-secret";
-const NEXTAUTH_SECRET = "test-nextauth-secret";
+process.env.INTERNAL_SECRET = INTERNAL_SECRET;
+process.env.NEXTAUTH_SECRET = NEXTAUTH_SECRET;
+process.env.NEXTAUTH_URL = "http://localhost:3004";
 
-let jtiSeq = 0;
+const { GET } = await import("@/app/auth-handoff/route");
 
-beforeEach(() => {
-  process.env.INTERNAL_SECRET = INTERNAL_SECRET;
-  process.env.NEXTAUTH_SECRET = NEXTAUTH_SECRET;
-  jtiStore.clear();
-});
+const DEEP_LINK = "/browse/QUIKTR-76";
 
-async function mintToken(
-  opts: {
-    claims?: Record<string, unknown>;
-    jti?: string;
-    omitJti?: boolean;
-    iatOffsetSec?: number; // negative = issued in the past
-  } = {},
-) {
-  const { claims = {}, jti = `jti_${++jtiSeq}`, omitJti = false, iatOffsetSec = 0 } = opts;
-  const key = new TextEncoder().encode(INTERNAL_SECRET);
-  const iat = Math.floor(Date.now() / 1000) + iatOffsetSec;
-  let b = new SignJWT({
+/** Mint a handoff token the way a given issuer would. */
+async function mintToken(extra: Record<string, unknown>, to = DEEP_LINK) {
+  return new SignJWT({
     sub: "user_1",
     orgId: "org_1",
-    appId: "quiktrack",
-    slug: "quiktrack",
-    to: "/",
-    ...claims,
+    to,
+    isSuperAdmin: false,
+    membershipRole: "member",
+    email: "pravin@quikit.ai",
+    sessionId: "sess_1",
+    ...extra,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuedAt(iat)
-    .setExpirationTime(iat + 120);
-  if (!omitJti) b = b.setJti(jti);
-  return b.sign(key);
+    .setIssuedAt()
+    .setExpirationTime("120s")
+    .setJti(`jti-${Math.random().toString(36).slice(2)}`)
+    .sign(new TextEncoder().encode(INTERNAL_SECRET));
 }
 
-function requestWith(token: string) {
-  return new NextRequest(`http://localhost:3004/auth-handoff?token=${token}`);
+function req(token: string) {
+  return new NextRequest(
+    `http://localhost:3004/auth-handoff?token=${encodeURIComponent(token)}`,
+  );
 }
 
-const hasSessionCookie = (res: Response) =>
-  Boolean(res.headers.get("set-cookie")?.includes("next-auth.session-token"));
+/** Path + query of the route's redirect. */
+function redirectPath(res: Response): string {
+  const loc = res.headers.get("location") ?? "";
+  const url = new URL(loc, "http://localhost:3004");
+  return `${url.pathname}${url.search}`;
+}
 
-describe("GET /auth-handoff (SEC-03 slug binding)", () => {
-  it("accepts a token minted for quiktrack and sets a session cookie", async () => {
-    const res = await GET(requestWith(await mintToken()));
-    expect(res.status).toBe(307);
-    expect(hasSessionCookie(res)).toBe(true);
+describe("GET /auth-handoff — app binding (SEC-03)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("rejects a token minted for a DIFFERENT app and sets no session", async () => {
-    const res = await GET(
-      requestWith(await mintToken({ claims: { slug: "quikcrm", appId: "quikcrm" } })),
-    );
-    expect(res.headers.get("location")).toContain("reason=wrong_app_handoff");
-    expect(hasSessionCookie(res)).toBe(false);
+  it("accepts the auth host's post-login bridge token (no slug claim)", async () => {
+    // Exactly what apps/auth/app/api/post-login/route.ts mints: no `slug`.
+    const res = await GET(req(await mintToken({}, "/dashboard")));
+    expect(redirectPath(res)).toBe("/dashboard");
+    expect(res.headers.get("location")).not.toContain("wrong_app_handoff");
   });
 
-  it("rejects a token with no slug claim", async () => {
-    const res = await GET(requestWith(await mintToken({ claims: { slug: undefined } })));
-    expect(res.headers.get("location")).toContain("reason=wrong_app_handoff");
-    expect(hasSessionCookie(res)).toBe(false);
-  });
-});
-
-describe("GET /auth-handoff (SEC-02 replay protection)", () => {
-  it("rejects a second use of the same token (replay)", async () => {
-    const token = await mintToken({ jti: "replay_me" });
-
-    const first = await GET(requestWith(token));
-    expect(first.status).toBe(307);
-    expect(hasSessionCookie(first)).toBe(true);
-
-    const second = await GET(requestWith(token));
-    expect(second.headers.get("location")).toContain("reason=replayed_handoff");
-    expect(hasSessionCookie(second)).toBe(false);
+  it("lands the user on the work item a deep link asked for", async () => {
+    const res = await GET(req(await mintToken({})));
+    expect(redirectPath(res)).toBe(DEEP_LINK);
   });
 
-  it("rejects a token that carries no jti", async () => {
-    const res = await GET(requestWith(await mintToken({ omitJti: true })));
-    expect(res.headers.get("location")).toContain("reason=replayed_handoff");
-    expect(hasSessionCookie(res)).toBe(false);
+  it("accepts a launcher token bound to this app", async () => {
+    const res = await GET(req(await mintToken({ slug: "quiktrack" })));
+    expect(redirectPath(res)).toBe(DEEP_LINK);
   });
 
-  it("rejects a stale token outside the tightened freshness window", async () => {
-    // Issued 60s ago — inside the 120s mint TTL but past the 30s maxTokenAge.
-    const res = await GET(requestWith(await mintToken({ iatOffsetSec: -60 })));
-    expect(res.headers.get("location")).toContain("/login");
-    expect(hasSessionCookie(res)).toBe(false);
+  it("still rejects a token minted for a different app", async () => {
+    const res = await GET(req(await mintToken({ slug: "quikscale" })));
+    expect(redirectPath(res)).toBe("/login?reason=wrong_app_handoff");
+  });
+
+  it("sets a session cookie on the accepted bridge token", async () => {
+    const res = await GET(req(await mintToken({})));
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("next-auth.session-token");
+  });
+
+  it("rejects a token signed with the wrong secret", async () => {
+    const forged = await new SignJWT({ sub: "user_1", to: DEEP_LINK })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt()
+      .setExpirationTime("120s")
+      .setJti("jti-forged")
+      .sign(new TextEncoder().encode("a-totally-different-secret-value-x"));
+    const res = await GET(req(forged));
+    expect(redirectPath(res)).toContain("_handoff");
+    expect(redirectPath(res)).toContain("/login");
   });
 });

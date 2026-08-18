@@ -29,8 +29,7 @@ vi.mock('@/lib/db', () => ({ db: {} }));
 // predicates). That module pulls in NextAuth + a real PrismaClient at import
 // time, which a pure unit test must not construct.
 vi.mock('@/lib/auth/context', () => ({
-  userHasRole: (u: { role?: string; secondaryRole?: string | null }, role: string) =>
-    u?.role === role || u?.secondaryRole === role,
+  userHasRole: (u: { role?: string }, role: string) => u?.role === role,
 }));
 
 import { enrichCourseWithPresignedUrls, enrichCoursesWithPresignedUrls } from '@/lib/services/master-course-service';

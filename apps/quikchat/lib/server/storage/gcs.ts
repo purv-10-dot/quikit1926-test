@@ -1,9 +1,10 @@
 /**
  * Google Cloud Storage driver — fully implemented, inert until env is set
  * (`STORAGE_DRIVER=gcs` or `GCS_BUCKET` + creds). Activates by env alone, no
- * code change. Uploads are proxied through the app (browser → `/api/uploads/gcs/
- * {token}` → this driver's `save`) so no bucket CORS is needed — matching the
- * platform pattern (quiktrack/quikhrms/quikcrm) and the interim local driver.
+ * code change. Uploads are proxied through the app (browser → `/api/uploads/gcs`,
+ * token in the `X-Upload-Token` header → this driver's `save`) so no bucket
+ * CORS is needed — matching the platform pattern (quiktrack/quikhrms/quikcrm)
+ * and the interim local driver.
  * Downloads still use a v4 signed-GET URL the browser hits directly. Tested via
  * a mocked `@google-cloud/storage` (no real bucket/network).
  *
@@ -22,7 +23,7 @@ import {
   type UploadTarget,
   type UploadTargetInput,
 } from "./types";
-import { signToken, uploadTokenSecret } from "./tokens";
+import { signToken, uploadTokenSecret, UPLOAD_TOKEN_HEADER } from "./tokens";
 import { randomUUID } from "node:crypto";
 
 const UPLOAD_TTL_MS = 5 * 60_000;
@@ -86,6 +87,7 @@ export class GcsDriver implements StorageDriver {
     // Route the browser PUT through an app endpoint (not a direct-to-GCS signed
     // write URL) so no bucket CORS is needed — mirrors LocalDriver. The HMAC
     // token is the authorization; `write()` (below) pushes the bytes to GCS.
+    // The token rides in a header, not the URL — see UPLOAD_TOKEN_HEADER.
     const objectPath = buildObjectPath(input.orgId, input.channelId, randomUUID(), input.filename);
     const exp = Date.now() + UPLOAD_TTL_MS;
     const token = signToken(
@@ -101,9 +103,9 @@ export class GcsDriver implements StorageDriver {
       uploadTokenSecret(),
     );
     return {
-      uploadUrl: `/api/uploads/gcs/${token}`,
+      uploadUrl: `/api/uploads/gcs`,
       method: "PUT",
-      headers: { "Content-Type": input.contentType },
+      headers: { "Content-Type": input.contentType, [UPLOAD_TOKEN_HEADER]: token },
       objectPath,
       maxBytes: input.size,
       expiresAt: new Date(exp).toISOString(),

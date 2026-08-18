@@ -28,7 +28,7 @@ const requisitionBaseObject = z.object({
   pipelineId: z.string().min(1, "Pipeline required"),
   departmentId: z.string().min(1, "Department required"),
   reportingToId: z.string().optional(),
-  positions: z.number().int().min(1).max(500).default(1),
+  positions: z.number().int().min(1).max(100).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
   employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelance"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
@@ -67,14 +67,26 @@ const requisitionBaseObject = z.object({
   postToJobPortal: z.boolean().default(false),
   referralBonusAmount: z.number().min(0).max(1000000, "Referral bonus can’t exceed ₹10,00,000").optional(),
   hiringManagerId: z.string().min(1, "Hiring manager required"),
-  recruiterId: z.string().min(1, "Recruiter required"),
+  recruiterId: z.string().optional(),
+  // Recruiter Performance Dashboard — Job Level drives the default SLA;
+  // customSlaDays/Reason let HR override it for this one requisition.
+  jobLevelId: z.string().optional(),
+  customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
+  customSlaReason: z.string().max(1000).optional(),
+  // Optional multi-recruiter position split — e.g. 10 openings: 4 to
+  // Recruiter A, 3 to B, 3 to C. Omit entirely for the default single-
+  // recruiter case (recruiterId keeps working exactly as before).
+  recruiterAssignments: z.array(z.object({
+    employeeId: z.string().min(1),
+    positionsAssigned: z.number().int().min(1),
+  })).optional(),
 
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
   budget: z.number().nullable().optional(),
-  targetJoiningDate: z.string().optional(),
-  closedDate: z.string().optional(), // "Timeline to Close"
+  targetJoiningDate: z.string().min(1, "End Date required"), // UI label: "End Date"
+  closedDate: z.string().min(1, "Start Date required"), // UI label: "Start Date"
   etaToFillDays: z.number().int().optional(),
   jobGrade: z.string().optional(),
   costCenter: z.string().optional(),
@@ -111,11 +123,12 @@ function requisitionCrossFieldChecks(
   }
   // YYYY-MM-DD strings compare correctly lexicographically.
   if (d.targetJoiningDate && d.closedDate && d.targetJoiningDate < d.closedDate) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Target joining date should be on or after the close timeline", path: ["targetJoiningDate"] });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End Date should be on or after the Start Date", path: ["targetJoiningDate"] });
   }
 }
 
-export const createRequisitionSchema = requisitionBaseObject.superRefine(requisitionCrossFieldChecks);
+export const createRequisitionSchema = requisitionBaseObject
+  .superRefine(requisitionCrossFieldChecks);
 
 export const updateRequisitionSchema = requisitionBaseObject.partial().extend({
   status: z.enum(["ReqDraft", "PendingApproval", "ReqApproved", "ReqOpen", "ReqOnHold", "ReqClosed", "ReqCancelled"]).optional(),

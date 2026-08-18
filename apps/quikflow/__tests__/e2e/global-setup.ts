@@ -53,7 +53,7 @@ export default async function globalSetup() {
       },
     });
 
-    const baseUrl = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3016");
+    const baseUrl = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3018");
     const storageState = {
       cookies: [
         {

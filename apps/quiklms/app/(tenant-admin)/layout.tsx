@@ -2,12 +2,12 @@ import { AppShell } from '@/components/AppShell';
 import { requirePageRoles } from '@/lib/auth/page-guard';
 
 // Server-side role gate (F-001). Previously chrome-only: any authenticated user
-// could load this group's pages. SUPER_ADMIN passes everywhere by design.
+// could load this group's pages. ADMIN passes everywhere by design.
 //
 // Render the shell for the role that ACTUALLY passed the gate — not a hardcoded
 // TENANT_ADMIN. Two pages the super-admin sidebar links to (Users →
 // /user-management, Question Bank → /question-bank) physically live in this
-// route group; with the role hardcoded, a SUPER_ADMIN who clicked them was
+// route group; with the role hardcoded, a ADMIN who clicked them was
 // dropped into the tenant-admin shell, which — having no tenant type — falls
 // back to the SCHOOL sidebar (Dashboard → /school-dashboard). That is the
 // "clicking Users sends me to the school dashboard" bug. Passing the resolved

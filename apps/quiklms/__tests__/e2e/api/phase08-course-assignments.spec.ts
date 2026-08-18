@@ -173,9 +173,9 @@ test.describe("Phase 08 — assign", () => {
       data: { courseId: NONEXISTENT, targetType: "USER", targetIds: [LEARNER] },
     });
     expect(res.status()).toBe(404);
-    const body = (await safeJson(res)) as { statusCode?: number; message?: string };
-    expect(body.statusCode).toBe(404);
-    expect(body.message).toContain("Course not found");
+    const body = (await safeJson(res)) as { success?: boolean; error?: string };
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Course not found");
     await api.dispose();
   });
 
@@ -185,20 +185,19 @@ test.describe("Phase 08 — assign", () => {
       data: { courseId: assignableCourseId, targetType: "NONSENSE", targetIds: [LEARNER] },
     });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors?.map((v) => v.field)).toContain("targetType");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("targetType");
     await api.dispose();
   });
 
-  test("assign rejects a body missing courseId with 400 + validationErrors", async () => {
+  test("assign rejects a body missing courseId with 400 naming the field", async () => {
     const api = await apiAs("tenantAdmin", REQ);
     const res = await api.post("/api/course-assignments/assign", {
       data: { targetType: "USER", targetIds: [LEARNER] },
     });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { message?: string; validationErrors?: Array<{ field: string }> };
-    expect(body.message).toBe("Validation failed");
-    expect(body.validationErrors?.map((v) => v.field)).toContain("courseId");
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("courseId");
     await api.dispose();
   });
 

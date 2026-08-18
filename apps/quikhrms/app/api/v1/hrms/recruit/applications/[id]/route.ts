@@ -352,6 +352,10 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         }).catch(() => null);
       }
       if (data.status === "AppHired") {
+        // Stable hire timestamp — distinct from updatedAt, which any later
+        // unrelated edit (e.g. fixing a typo'd phone number) would otherwise
+        // move, silently corrupting Time-to-Hire / "hires this month".
+        if (existing.status !== "AppHired") updateData.hiredAt = new Date();
         // Atomic headcount claim: increment ONLY if a seat is still open, in a
         // single conditional UPDATE. Prevents two simultaneous hires from both
         // passing a separate "is it full?" check and overfilling the req.
@@ -369,6 +373,7 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       // rejected/declined/withdrawn rolls filledPositions back and reopens the
       // requisition if it had been auto-closed by being fully filled.
       if (existing.status === "AppHired" && ["AppRejected", "AppDeclined", "AppWithdrawn"].includes(data.status)) {
+        updateData.hiredAt = null;
         const reqRow = await prisma.jobRequisition.findFirst({
           where: { id: existing.requisitionId, orgId, deletedAt: null },
           select: { filledPositions: true, status: true },

@@ -1,7 +1,7 @@
 import { WebhookReceiver } from "livekit-server-sdk";
 import { db as prisma } from "@quikit/database";
 import * as calling from "@/lib/server/calling/calling.service";
-import { logger } from "@/lib/shared";
+import { errorFields, logger } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +49,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     event = await receiver.receive(body, authHeader);
   } catch (e) {
-    logger.warn({ error: e }, "LiveKit webhook signature verification failed");
+    logger.warn(errorFields(e), "LiveKit webhook signature verification failed");
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
@@ -82,7 +82,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (e) {
     // Best-effort: a failure here must not make LiveKit retry forever — the
     // heartbeat sweep is the safety net either way.
-    logger.error({ error: e, event: event.event }, "LiveKit webhook handler error");
+    logger.error({ ...errorFields(e), event: event.event }, "LiveKit webhook handler error");
   }
 
   return Response.json({ ok: true });

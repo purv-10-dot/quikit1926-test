@@ -3,7 +3,7 @@
  * Requires LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL env vars.
  */
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
-import { logger } from "@/lib/shared";
+import { errorFields, logger } from "@/lib/shared";
 import type { SFUParticipant, SFUProvider, SFURoom } from "./sfu-provider";
 
 const NOT_CONFIGURED_MESSAGE =
@@ -48,34 +48,20 @@ function requireRoomServiceClient(roomId: string): RoomServiceClient {
   return client;
 }
 
-/**
- * Pull safe, explicit fields off an unknown thrown value for logging — NEVER
- * the error object itself. `RoomServiceClient` speaks Twirp-over-HTTP; its
- * `ServerError` carries `status`/`code`/`metadata`, and `metadata` is sourced
- * from the SERVER's response body (see livekit-server-sdk's `toTwirpError`) —
- * not from the outgoing request, so today's SDK shouldn't be able to echo the
- * Authorization bearer JWT (built from LIVEKIT_API_SECRET) back onto it. But
- * that's an SDK-internals fact that could stop holding after a version bump,
- * so the logging code doesn't rely on it: only these four named fields are
- * ever read off the error, so there is nothing for a future `metadata` (or a
- * `config`/`request` field some other error shape might carry) to leak
- * through. See the "does not leak a planted secret" test for the empirical
- * check this comment doesn't get to skip.
+/*
+ * Every catch below logs via `errorFields()` (@/lib/shared) — the four named
+ * fields, NEVER the error object. This matters most here: `RoomServiceClient`
+ * speaks Twirp-over-HTTP, and its `ServerError` carries `status`/`code`/
+ * `metadata`, with `metadata` sourced from the SERVER's response body (see
+ * livekit-server-sdk's `toTwirpError`). Not from the outgoing request — so
+ * today's SDK shouldn't be able to echo the Authorization bearer JWT (built
+ * from LIVEKIT_API_SECRET) back onto it. That's an SDK-internals fact that
+ * could stop holding after a version bump, so the logging code doesn't rely on
+ * it: reading only four named fields leaves nothing for a future `metadata`
+ * (or a `config`/`request` on some other error shape) to leak through. See the
+ * "does not leak a planted secret" test for the empirical check this comment
+ * doesn't get to skip.
  */
-function errorFields(err: unknown): {
-  errName: string;
-  errMessage: string;
-  errCode: string | number | undefined;
-  errStatus: number | undefined;
-} {
-  const e = err as { code?: unknown; status?: unknown } | null | undefined;
-  return {
-    errName: err instanceof Error ? err.name : typeof err,
-    errMessage: err instanceof Error ? err.message : "unknown error",
-    errCode: typeof e?.code === "string" || typeof e?.code === "number" ? e.code : undefined,
-    errStatus: typeof e?.status === "number" ? e.status : undefined,
-  };
-}
 
 // Token TTL matches the call model's hard duration cap (ACTIVE_MAX_DURATION_MS
 // in timeout-sweep.ts) rather than a short-lived default — a token that expires

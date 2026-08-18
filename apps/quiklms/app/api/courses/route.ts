@@ -29,10 +29,10 @@ const createCourseSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
 });
 
-// POST /api/courses — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/courses — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const orgId = actor.orgId;
   if (!orgId) {
     return json({ success: false, message: 'Tenant ID is required', data: [] });

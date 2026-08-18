@@ -38,7 +38,7 @@ describe('tenant admins route by tenant kind', () => {
 
 describe('every other role is unaffected by tenant kind', () => {
   const CASES: [string, string][] = [
-    ['SUPER_ADMIN', '/dashboard'],
+    ['ADMIN', '/dashboard'],
     ['SUB_ADMIN', '/sub-admin-dashboard'],
     ['MANAGER', '/manager-dashboard'],
     ['TEACHER', '/teacher-dashboard'],

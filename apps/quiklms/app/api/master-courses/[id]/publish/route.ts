@@ -27,11 +27,11 @@ const publishSchema = z.object({
   }),
 });
 
-// POST /api/master-courses/:id/publish — SUPER_ADMIN
+// POST /api/master-courses/:id/publish — ADMIN
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const { selectedTenants } = await parseBody(req, publishSchema);
-  const course = await svc.publish(params!.id, selectedTenants);
+  const course = await svc.publish(actor, params!.id, selectedTenants);
   return json({ success: true, data: course, message: 'Master course published successfully' });
 });

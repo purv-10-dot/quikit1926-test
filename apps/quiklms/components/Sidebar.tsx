@@ -1,11 +1,29 @@
 'use client';
+/**
+ * Role sidebar — quikhrms's layout language (apps/quikhrms/components/hrms/
+ * layout/sidebar.tsx), expressed with QuikLMS's own nav model and brand vars.
+ *
+ * What that means concretely:
+ *   - a light, calm panel: no gradient wash on the rows, no sheen sweep;
+ *   - one accordion group open at a time, defaulting to the group that holds
+ *     the current route, with children indented under a tree line;
+ *   - a group holding a SINGLE item collapses into a plain link (Messages,
+ *     Analytics, Dashboard…) — nine of the ten role menus below have several of
+ *     those, and an accordion around one child is pure noise;
+ *   - the active row is a rounded brand-tinted pill, not a left edge bar.
+ *
+ * Deliberately NOT copied from quikhrms: its hardcoded `#eaf1fe` / `#2563eb`.
+ * Those become `--brand-primary` mixes here so a tenant's accent colour still
+ * drives the menu (apps/quiklms/CLAUDE.md §5).
+ */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useBranding, useFeatures } from '@/app/providers';
-import { getNavGroups } from './nav-groups';
+import { getNavGroups, GROUP_ICONS, type NavItem } from './nav-groups';
+import { SidebarAccount } from './SidebarAccount';
 
 interface SidebarProps {
   role: string;
@@ -13,8 +31,15 @@ interface SidebarProps {
   onToggle?: () => void;
 }
 
-/** Per-group open/closed state, persisted so the menu shape survives reloads. */
-const GROUPS_KEY = 'qs_sidebar_groups';
+/** The one open group, persisted so the menu shape survives a reload. */
+const GROUP_KEY = 'qs_sidebar_group';
+
+/**
+ * Sentinel for `openGroup`: the user explicitly shut the group holding the
+ * current route. Distinct from `null`, which means "no interaction yet — follow
+ * the route" and would otherwise snap the group straight back open.
+ */
+const COLLAPSED = '__collapsed__';
 
 export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
@@ -26,166 +51,226 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
   const isActive = (path: string) =>
     pathname === path || (path !== '/' && pathname.startsWith(`${path}/`));
 
-  // Groups default to open; only explicit user toggles are stored. Reading in an
-  // effect (not during render) keeps the server and first client paint identical,
-  // so this can't produce a hydration mismatch.
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  // Read in an effect, not during render, so the server and first client paint
+  // stay identical — a hydration mismatch here would flash the wrong group.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(GROUPS_KEY);
-      if (raw) setOpenGroups(JSON.parse(raw));
-    } catch { /* corrupt value — fall back to all-open */ }
+      const raw = localStorage.getItem(GROUP_KEY);
+      if (raw) setOpenGroup(raw);
+    } catch { /* private mode — fall back to route-driven */ }
   }, []);
 
-  const toggleGroup = (id: string) => {
-    setOpenGroups((prev) => {
-      const next = { ...prev, [id]: !(prev[id] ?? true) };
-      try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
-      return next;
-    });
+  const chooseGroup = (id: string | null) => {
+    const next = id ?? COLLAPSED;
+    setOpenGroup(next);
+    try { localStorage.setItem(GROUP_KEY, next); } catch { /* private mode */ }
   };
 
-  // Running index across all rendered items so the entrance stagger is smooth
-  // across group boundaries (capped so long menus don't crawl in forever).
-  let animIndex = 0;
+  /** Items a tenant's feature flags leave visible. Flags fail open while loading. */
+  const visibleItemsOf = (items: NavItem[]) =>
+    items.filter((item) => !item.feature || !loaded || features[item.feature] !== false);
+
+  // The group holding the current route — the default open one until the user
+  // picks another (or shuts it via the COLLAPSED sentinel).
+  const routeGroup =
+    groups.find((g) => visibleItemsOf(g.items).some((i) => isActive(i.path)))?.id ?? null;
+  const effectiveOpen = openGroup === COLLAPSED ? null : (openGroup ?? routeGroup);
+
+  /** Opening a group from the icon rail has to widen the panel first. */
+  const openFromRail = (id: string) => {
+    onToggle?.();
+    chooseGroup(id);
+  };
+
+  const brandName = branding.name ?? 'QuikSkill';
 
   return (
     <aside
       className={cn(
         'qs-sidebar relative flex h-screen shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 ease-out',
-        collapsed ? 'w-[68px]' : 'w-64',
+        collapsed ? 'w-[72px]' : 'w-[264px]',
       )}
     >
-      {/* Ambient brand glow — clipped decorative layer, sits behind everything. */}
-      <div className="qs-sidebar-glow" aria-hidden="true" />
+      {/* ── Tenant brand ──────────────────────────────────────────────────────
+          The tenant's own logo and NOTHING else — no name beside it. Most
+          uploaded marks are wordmarks that already carry the name, so printing
+          it again gave two names in one row and truncated the longer one ("the
+          corporate of corp…"). The name still reaches the user, in the account
+          footer and on the tenant pages.
 
-      {/* ── Logo / Brand ────────────────────────────────────────────────────── */}
-      <div className={cn('flex h-16 shrink-0 items-center border-b border-line', collapsed ? 'justify-center px-2' : 'gap-3 px-5')}>
+          Shown to every user under the tenant: `/api/tenants/current` is
+          `requireAuth`-guarded with no role gate, so a learner reads the same
+          branding an admin does.
+
+          `w-auto` with only the HEIGHT pinned is what lets a wide wordmark use
+          the space the name vacated — boxing it into a square (the old `w-11`)
+          letterboxed it down to a sliver, which is why an uploaded logo looked
+          tiny even after the size bump. */}
+      <div
+        className={cn(
+          'flex h-[76px] shrink-0 items-center border-b border-line',
+          collapsed ? 'justify-center px-2' : 'px-4',
+        )}
+      >
         {branding.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={branding.logo} alt={branding.name} className="h-8 w-auto max-w-full object-contain" />
-        ) : (
-          <div className={cn('flex items-center', collapsed ? '' : 'gap-2.5')}>
-            <div className="qs-brandmark flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-black">
-              {(branding.name ?? 'Q')[0].toUpperCase()}
-            </div>
-            {!collapsed && (
-              <span className="font-display text-base font-bold text-fg truncate">{branding.name ?? 'QuikSkill'}</span>
+          <img
+            src={branding.logo}
+            alt={brandName}
+            className={cn(
+              'max-w-full object-contain',
+              collapsed ? 'size-10' : 'h-12 w-auto',
             )}
+          />
+        ) : (
+          // No uploaded mark — the initial tile stands in as the logo.
+          <div
+            className={cn(
+              'qs-brandmark grid shrink-0 place-items-center rounded-xl font-black',
+              collapsed ? 'size-10 text-base' : 'size-11 text-lg',
+            )}
+          >
+            {brandName[0].toUpperCase()}
           </div>
         )}
       </div>
 
-      {/* ── Collapse / expand toggle ────────────────────────────────────────── */}
+      {/* ── Collapse / expand toggle ──────────────────────────────────────────
+          The button straddles the sidebar's right edge (`-right-3`), which puts
+          its outer half under the topbar — a sticky `z-20` bar with a backdrop
+          filter that spans the first 64px. At `top-[60px] z-10` the two overlapped
+          between 60px and 64px and the topbar won, clipping the circle's top.
+
+          Two fixes, and the numbers line up so neither costs anything:
+            • `top-[64px]` starts the 24px circle exactly where the topbar ends,
+              so they no longer share a pixel — and 64 + 12 = 76 puts its centre
+              precisely on the brand header's bottom border.
+            • `z-30` clears the topbar anyway, so a future change to either
+              height cannot bring the clipping back. */}
       {onToggle && (
         <button
           onClick={onToggle}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand' : 'Collapse'}
-          className="qs-collapse-btn absolute -right-3 top-[52px] z-10 grid size-6 place-items-center rounded-full border border-line bg-surface text-fg-muted shadow-sm"
+          className="qs-collapse-btn absolute -right-3 top-[64px] z-30 grid size-6 place-items-center rounded-full border border-line bg-surface text-fg-muted shadow-sm"
         >
           <ChevronLeft className={cn('size-3.5 transition-transform duration-200', collapsed && 'rotate-180')} />
         </button>
       )}
 
       {/* ── Navigation (only this scrolls) ──────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto py-2 scrollbar-none">
+      <nav className={cn('flex-1 overflow-y-auto py-3 scrollbar-none', collapsed ? 'px-2' : 'px-2.5')}>
         {groups.map((group) => {
-          const visibleItems = group.items.filter(
-            (item) => !item.feature || !loaded || features[item.feature] !== false,
-          );
-          if (!visibleItems.length) return null;
+          const items = visibleItemsOf(group.items);
+          if (!items.length) return null;
 
-          // In the icon-only rail there is no header to click, so groups always
-          // render open — the accordion only applies to the expanded sidebar.
-          const hasActive = visibleItems.some((item) => isActive(item.path));
-          const open = collapsed ? true : (openGroups[group.id] ?? true);
+          // ── Single item: render the item itself, not a group around it ──────
+          if (items.length === 1) {
+            const item = items[0];
+            const active = isActive(item.path);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={group.id}
+                href={item.path}
+                data-active={active}
+                aria-current={active ? 'page' : undefined}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  'qs-nav-link mb-0.5 flex items-center rounded-[10px] text-[14px] transition-colors',
+                  collapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-3 py-2.5',
+                  active ? 'font-semibold text-fg' : 'font-medium text-fg-muted hover:text-fg',
+                )}
+              >
+                <Icon
+                  className={cn(
+                    'size-[18px] shrink-0',
+                    active ? 'text-[var(--brand-primary)]' : 'text-fg-subtle',
+                  )}
+                />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          }
+
+          // ── Several items: accordion group ─────────────────────────────────
+          const GroupIcon = GROUP_ICONS[group.id] ?? items[0].icon;
+          const hasActive = items.some((i) => isActive(i.path));
+          const open = !collapsed && effectiveOpen === group.id;
 
           return (
-            <div key={group.id} className="mb-1">
-              {/* Group label — hidden when collapsed (a divider stands in) */}
-              {collapsed ? (
-                <div className="mx-3 my-2 border-t border-line/70 first:border-0" />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.id)}
-                  aria-expanded={open}
-                  aria-controls={`navgroup-${group.id}`}
-                  className="qs-group-btn mb-0.5 flex w-full items-center gap-1.5 px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-subtle first:pt-2"
-                >
-                  <span className="truncate">{group.label}</span>
-                  {/* Shut group still holds the current page — say so. */}
-                  {!open && hasActive && (
+            <div key={group.id} className="mb-0.5">
+              <button
+                type="button"
+                onClick={() => (collapsed ? openFromRail(group.id) : chooseGroup(open ? null : group.id))}
+                aria-expanded={open}
+                aria-controls={`navgroup-${group.id}`}
+                title={collapsed ? group.label : undefined}
+                className={cn(
+                  'qs-nav-row flex w-full items-center rounded-[10px] text-[14px] transition-colors',
+                  collapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-3 py-2.5',
+                  hasActive ? 'font-semibold text-[var(--brand-primary)]' : 'font-medium text-fg-muted hover:text-fg',
+                )}
+              >
+                <span className="relative shrink-0">
+                  <GroupIcon
+                    className={cn('size-[18px]', hasActive ? 'text-[var(--brand-primary)]' : 'text-fg-subtle')}
+                  />
+                  {/* In the rail there is no label to carry the active state. */}
+                  {collapsed && hasActive && (
                     <span
-                      className="size-1.5 shrink-0 rounded-full"
+                      className="absolute -right-1 -top-1 size-1.5 rounded-full"
                       style={{ backgroundColor: 'var(--brand-primary)' }}
                     />
                   )}
-                  <ChevronDown
-                    className={cn(
-                      'ml-auto size-3 shrink-0 transition-transform duration-200',
-                      !open && '-rotate-90',
-                    )}
-                  />
-                </button>
-              )}
+                </span>
+                {!collapsed && (
+                  <>
+                    <span className="flex-1 truncate text-left">{group.label}</span>
+                    <ChevronRight
+                      className={cn(
+                        'size-[15px] shrink-0 text-fg-subtle transition-transform duration-200',
+                        open && 'rotate-90',
+                      )}
+                    />
+                  </>
+                )}
+              </button>
 
-              <div className="qs-nav-group" data-open={open} id={`navgroup-${group.id}`}>
-                <div>
-                  {visibleItems.map((item) => {
-                    const active = isActive(item.path);
-                    const Icon = item.icon;
-                    const delay = Math.min(animIndex++ * 28, 420);
-                    return (
-                      <Link
-                        key={item.path + item.label}
-                        href={item.path}
-                        data-active={active}
-                        aria-current={active ? 'page' : undefined}
-                        title={collapsed ? item.label : undefined}
-                        style={{ animationDelay: `${delay}ms` }}
-                        className={cn(
-                          'qs-nav-link qs-nav-enter group mx-2 flex items-center gap-3 rounded-lg py-2 text-sm',
-                          collapsed ? 'justify-center px-0' : 'px-3',
-                          active
-                            ? 'font-semibold text-[var(--brand-primary)]'
-                            : 'font-medium text-fg-muted hover:text-fg',
-                        )}
-                      >
-                        <Icon
-                          className={cn(
-                            'qs-nav-icon size-[17px] shrink-0',
-                            active ? 'text-[var(--brand-primary)]' : 'text-fg-subtle group-hover:text-fg-muted',
-                          )}
-                        />
-                        {!collapsed && <span className="truncate leading-none">{item.label}</span>}
-                      </Link>
-                    );
-                  })}
+              {/* 0fr→1fr grid animates to the content's natural height, no JS measuring. */}
+              {!collapsed && (
+                <div className="qs-nav-group" data-open={open} id={`navgroup-${group.id}`}>
+                  <div>
+                    <div className="my-0.5 ml-[22px] space-y-0.5 border-l border-line pl-3">
+                      {items.map((item) => {
+                        const active = isActive(item.path);
+                        return (
+                          <Link
+                            key={item.path + item.label}
+                            href={item.path}
+                            data-active={active}
+                            aria-current={active ? 'page' : undefined}
+                            className={cn(
+                              'qs-nav-link block truncate rounded-[9px] px-3 py-2 text-[13.5px] transition-colors',
+                              active ? 'font-semibold text-fg' : 'font-medium text-fg-subtle hover:text-fg',
+                            )}
+                          >
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
       </nav>
 
-      {/* ── Tenant badge ────────────────────────────────────────────────────── */}
-      <div className={cn('shrink-0 border-t border-line py-3', collapsed ? 'px-2' : 'px-3')}>
-        <div className={cn('qs-tenant-card flex items-center rounded-lg', collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2.5')}>
-          <div className="qs-tenant-avatar flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-bold">
-            {(branding.name ?? 'Q')[0].toUpperCase()}
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-fg leading-none mb-0.5">{branding.name ?? 'QuikSkill'}</p>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-fg-subtle leading-none">
-                {tenantType === 'school' ? 'School' : tenantType === 'corporate' ? 'Corporate' : 'Platform'}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* ── Account — the only sign-out surface since the topbar menu was removed */}
+      <SidebarAccount role={role} collapsed={collapsed} />
     </aside>
   );
 }

@@ -8,15 +8,6 @@ import { isAllowedUpload, UPLOAD_MAX_BYTES, type MediaMeta } from "@/lib/server/
 
 export { UPLOAD_MAX_BYTES };
 
-export type MediaKind = "image" | "video" | "audio" | "file";
-
-export function mediaKind(contentType: string | undefined): MediaKind {
-  if (contentType?.startsWith("image/")) return "image";
-  if (contentType?.startsWith("video/")) return "video";
-  if (contentType?.startsWith("audio/")) return "audio";
-  return "file";
-}
-
 /** Client-side guard mirroring the server allowlist/size for instant feedback. */
 export function validateFile(file: { type: string; size: number; name: string }): string | null {
   if (!isAllowedUpload(file.type, file.name)) return "That file type isn't supported.";

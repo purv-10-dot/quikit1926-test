@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Fraunces } from "next/font/google";
 import "./marketing.css";
 
+
 /**
  * Marketing route-group layout — wraps the public landing page at `/`.
  *

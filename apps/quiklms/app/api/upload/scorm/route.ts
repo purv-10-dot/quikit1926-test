@@ -5,7 +5,7 @@ import { processScormFile } from '@/lib/services/scorm-service';
 import { presignFromUrlOrKey } from '@/lib/s3';
 
 /**
- * POST /api/upload/scorm — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * POST /api/upload/scorm — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Port of `UploadController.uploadScorm` (`upload.controller.ts:262-310`).
  *
@@ -19,7 +19,7 @@ import { presignFromUrlOrKey } from '@/lib/s3';
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
 
   const file = await readUploadedFile(req, 'file');
   if (!file) throw BadRequest('No file uploaded');
@@ -32,7 +32,7 @@ export const POST = route(async (req) => {
   // summary: `getAuthContext` never returns a null `orgId`, so the master branch
   // is unreachable here — carried over as-is rather than silently redefined.
   const orgId = actor.orgId;
-  const isMasterCourse = !orgId && actor.role === 'SUPER_ADMIN';
+  const isMasterCourse = !orgId && actor.role === 'ADMIN';
   const effectiveOrgId = isMasterCourse ? 'master' : orgId;
   if (!effectiveOrgId) throw BadRequest('Tenant ID is required');
 

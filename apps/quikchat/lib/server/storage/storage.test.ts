@@ -5,7 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { selectDriverName } from "./index";
 import { LocalDriver, fsPathFor, localUploadSecret } from "./local";
 import { fileExtension, isAllowedUpload, isAllowedUploadType, isInlineType } from "./types";
-import { verifyToken, type DownloadTokenPayload, type UploadTokenPayload } from "./tokens";
+import {
+  UPLOAD_TOKEN_HEADER,
+  verifyToken,
+  type DownloadTokenPayload,
+  type UploadTokenPayload,
+} from "./tokens";
 
 const tokenOf = (url: string) => url.split("/").pop()!;
 
@@ -128,11 +133,14 @@ describe("LocalDriver", () => {
       size: 2048,
     });
     expect(target.method).toBe("PUT");
-    expect(target.uploadUrl.startsWith("/api/uploads/local/")).toBe(true);
+    expect(target.uploadUrl).toBe("/api/uploads/local");
     expect(target.objectPath).toMatch(/^quikchat\/o1\/c1\/[0-9a-f-]+-My_Photo_.png$/);
     expect(target.headers["Content-Type"]).toBe("image/png");
 
-    const payload = verifyToken<UploadTokenPayload>(tokenOf(target.uploadUrl), localUploadSecret());
+    const payload = verifyToken<UploadTokenPayload>(
+      target.headers[UPLOAD_TOKEN_HEADER]!,
+      localUploadSecret(),
+    );
     expect(payload).toMatchObject({
       kind: "up",
       objectPath: target.objectPath,

@@ -57,7 +57,7 @@ export default function FNFListPage() {
 
   const { data: empRes } = useQuery({
     queryKey: ["fnf", "employees"],
-    queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=500"),
+    queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=500&picker=1"),
   });
   const employees = empRes?.data ?? [];
 

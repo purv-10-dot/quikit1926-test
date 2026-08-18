@@ -7,7 +7,7 @@ import { linkParentStudent } from '@/lib/services/users-service';
 const schema = z.object({ studentId: z.string().min(1) }).strict();
 
 /**
- * POST /api/users/:id/link-student — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * POST /api/users/:id/link-student — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * `:id` is the PARENT. Port of `POST /auth/users/:userId/link-student`
  * (`auth.controller.ts:475`); it lives under `/users` rather than `/auth`
@@ -17,7 +17,7 @@ const schema = z.object({ studentId: z.string().min(1) }).strict();
  */
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
 
   const { studentId } = await parseBody(req, schema);

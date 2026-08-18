@@ -21,7 +21,7 @@ import {
   sendMessage,
 } from "@/lib/api";
 import { useNotifications } from "@/components/notifications/NotificationProvider";
-import { useProfile } from "@/components/profile/ProfileProvider";
+import { useProfile, type CallType } from "@/components/profile/ProfileProvider";
 import {
   createRealtimeClient,
   fetchRealtimeToken,
@@ -56,6 +56,7 @@ import {
   type PresenceStatusEvent,
 } from "@/lib/presence-store";
 import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
+import { useOlderMessages } from "@/lib/use-older-messages";
 import { streamAssist } from "@/lib/assist-client";
 import type { AssistSource } from "@/lib/shared";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
@@ -78,7 +79,6 @@ const ASSISTANT_BOT_USER_ID = "quikchat-assistant-bot";
 export interface ChatWorkspaceProps {
   currentUserId: string;
   currentUserName: string;
-  workspaceName: string;
   realtimeUrl: string;
   /** Deep-link target (e.g. after accepting an invite at /?channel=...). */
   initialChannelId?: string;
@@ -100,10 +100,19 @@ function lastMessageOf(dto: MessageDto) {
   };
 }
 
+/**
+ * How long the socket must stay down before we say so on screen.
+ *
+ * socket.io recovers from an ordinary blip in well under a second, and a badge
+ * that flickers on every one of those teaches people to ignore it — which
+ * defeats the point of having it for the outage that matters. Long enough to
+ * skip the noise, short enough that a genuinely dead socket is not a silent one.
+ */
+const RECONNECT_NOTICE_DELAY_MS = 2_000;
+
 export function ChatWorkspace({
   currentUserId,
   currentUserName,
-  workspaceName,
   realtimeUrl,
   initialChannelId,
 }: ChatWorkspaceProps) {
@@ -121,7 +130,9 @@ export function ChatWorkspace({
   const [openedUnreadCount, setOpenedUnreadCount] = useState(0);
   const [connected, setConnected] = useState(true);
   const [newChatOpen, setNewChatOpen] = useState(false);
-  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  // null = closed. "group" (private) and "channel" (public) are two entry
+  // points into one modal — the vocabulary split, not two components.
+  const [createMode, setCreateMode] = useState<"group" | "channel" | null>(null);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [presence, setPresence] = useState<PresenceState>(emptyPresence);
   const [typing, setTyping] = useState<TypingState>(emptyTyping);
@@ -144,6 +155,13 @@ export function ChatWorkspace({
   activeIdRef.current = activeId;
   const clientRef = useRef<RealtimeClient | null>(null);
 
+  // Tell the bell which channel is open so an inbound notification for it (tab
+  // focused) is suppressed instead of toasting/bumping the unread count — the
+  // user is already looking at it.
+  useEffect(() => {
+    notifications.setActiveChannel(activeId);
+  }, [activeId, notifications.setActiveChannel]);
+
   // Check for active calls on mount (rejoin after refresh)
   useEffect(() => {
     void fetchActiveCall().then((call) => {
@@ -159,6 +177,11 @@ export function ChatWorkspace({
     queryFn: async () => seedFromApiPage(await fetchMessages(activeId!)),
     enabled: !!activeId,
   });
+
+  // Scroll-back pagination for the active conversation. Writes older pages
+  // straight into the same ["messages", activeId] cache this query owns — see
+  // useOlderMessages for why it deliberately sidesteps React Query.
+  const olderMessages = useOlderMessages(activeId);
 
   const activeChannel: ChannelListItem | undefined = useMemo(() => {
     const data = channelsQuery.data;
@@ -221,6 +244,28 @@ export function ChatWorkspace({
     );
   }, []);
 
+  // Debounced per-channel read advance: bumpChannelList already zeroes the
+  // active channel's unread count LOCALLY on each inbound message, but the
+  // server's `lastReadAt` cutoff only moves on the mark-read PATCH fired once
+  // at channel-open. Left alone, any later refetch of ["channels"] (window
+  // focus, or the invalidate below for an unrelated new channel) pulls the
+  // server's real — and by then stale — count back in, resurrecting the badge
+  // for a channel the user never left. Re-firing the PATCH on each arrival
+  // while the channel stays open keeps the server truth current too. Coalesced
+  // like advanceDelivered so a burst of messages is one PATCH, not one each.
+  const readTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const advanceReadForOpenChannel = useCallback((channelId: string) => {
+    const timers = readTimers.current;
+    if (timers.has(channelId)) return; // already scheduled
+    timers.set(
+      channelId,
+      setTimeout(() => {
+        timers.delete(channelId);
+        void markChannelReadApi(channelId).catch(() => undefined);
+      }, 400),
+    );
+  }, []);
+
   // --- realtime cache merge ---
   const onMessage = useCallback(
     (dto: MessageDto) => {
@@ -251,8 +296,11 @@ export function ChatWorkspace({
       }
       // Our client received someone else's message → mark it delivered.
       if (dto.senderId && dto.senderId !== currentUserId) advanceDelivered(dto.channelId);
+      // The channel stays open through this arrival → keep the server's
+      // lastReadAt current (see advanceReadForOpenChannel above).
+      if (dto.channelId === activeIdRef.current) advanceReadForOpenChannel(dto.channelId);
     },
-    [qc, currentUserId, advanceDelivered],
+    [qc, currentUserId, advanceDelivered, advanceReadForOpenChannel],
   );
 
   const onPatch = useCallback(
@@ -295,6 +343,17 @@ export function ChatWorkspace({
         old ? applyChannelUpdated(old, p) : old,
       );
       void qc.invalidateQueries({ queryKey: ["channel-detail", p.channelId] });
+      // The ROSTER is a separate query from the channel row, and `channel_updated`
+      // now also carries membership changes (leave / remove / role change — see
+      // `publishRosterChanged`). Invalidating only `["channel-detail"]` refreshed
+      // the channel and left the member list stale, which is the disagreement
+      // this fixes: the "left the chat" system message arrived live while the
+      // list still showed them.
+      void qc.invalidateQueries({ queryKey: ["members", p.channelId] });
+      // `channel.members` off the list feeds the header member count and mention
+      // autocomplete, so it goes stale for the same reason. A rename-only event
+      // refetches this too — cheap, and it keeps one event honest for both.
+      void qc.invalidateQueries({ queryKey: ["channels"] });
     },
     [qc],
   );
@@ -475,6 +534,20 @@ export function ChatWorkspace({
     };
   }, [realtimeUrl, invalidateLastSeenFor]);
 
+  // Surface a dead socket, but only once it has stayed dead. There is no polling
+  // fallback any more, so an unannounced disconnect is indistinguishable from a
+  // quiet room — this is the only signal the user gets. Healthy sessions render
+  // nothing at all; the useful state is "disconnected", not "connected".
+  const [showDisconnected, setShowDisconnected] = useState(false);
+  useEffect(() => {
+    if (connected) {
+      setShowDisconnected(false);
+      return;
+    }
+    const t = setTimeout(() => setShowDisconnected(true), RECONNECT_NOTICE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [connected]);
+
   // Expire stale typing indicators (no explicit "stop" is ever sent).
   useEffect(() => {
     const t = setInterval(() => setTyping((s) => pruneTyping(s, Date.now())), 1_000);
@@ -559,6 +632,13 @@ export function ChatWorkspace({
     notifications.registerChannelOpener((channelId) => selectChannel(channelId));
   }, [notifications, selectChannel]);
 
+  // Same pattern for the "new chat" composer, whose trigger is local state here
+  // and therefore unreachable from DesktopBridge's `quikchat://new-chat` deep
+  // link without a registered opener.
+  useEffect(() => {
+    notifications.registerNewChatOpener(() => setNewChatOpen(true));
+  }, [notifications]);
+
   const onChannelReady = useCallback(
     (channel: ChannelListItem) => {
       qc.setQueryData<ChannelList>(["channels"], (old) =>
@@ -580,10 +660,15 @@ export function ChatWorkspace({
     });
   }, [registerStartDm, onChannelReady, toast]);
 
-  // "Call" from a profile card: initiate a call with that user.
+  // "Call" from a profile card, or from a call-log row in CallsModule.
   const [callTargetUserId, setCallTargetUserId] = useState<string | null>(null);
+  // `callType` used to be hardcoded "audio" at the CallHandler call site, so a
+  // caller could not ask for video. Defaulting to "audio" when the opener is
+  // called without a type keeps the profile card's existing behaviour exactly.
+  const [callType, setCallType] = useState<CallType>("audio");
   useEffect(() => {
-    registerStartCall((userId) => {
+    registerStartCall((userId, type) => {
+      setCallType(type ?? "audio");
       setCallTargetUserId(userId);
     });
   }, [registerStartCall]);
@@ -936,10 +1021,13 @@ export function ChatWorkspace({
 
   useEffect(() => {
     const timers = deliveredTimers.current;
+    const readTs = readTimers.current;
     return () => {
       assistAbort.current?.abort();
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
+      for (const t of readTs.values()) clearTimeout(t);
+      readTs.clear();
     };
   }, []);
 
@@ -949,15 +1037,15 @@ export function ChatWorkspace({
         <ChannelListView
           data={channelsQuery.data}
           loading={channelsQuery.isLoading}
-          workspaceName={workspaceName}
           activeChannelId={activeId}
           currentUserId={currentUserId}
           onlineUserIds={presence.online}
           statusOf={statusOfUser}
-          chromeless
           onPick={pickChannel}
           onNewChat={() => setNewChatOpen(true)}
-          onNewGroup={() => setNewGroupOpen(true)}
+          onNewGroup={() => setCreateMode("group")}
+          onNewChannel={() => setCreateMode("channel")}
+          canCreateChannel={perms.has("Channel.Public", "create")}
           onDiscover={() => setDiscoverOpen(true)}
           onOpenAiChat={handleOpenAiChat}
         />
@@ -968,6 +1056,9 @@ export function ChatWorkspace({
             messages={messagesQuery.data}
             loadingMessages={messagesQuery.isLoading}
             messagesFetching={messagesQuery.isFetching}
+            onLoadOlder={olderMessages.loadOlder}
+            loadingOlder={olderMessages.loadingOlder}
+            atEndOfHistory={olderMessages.atEnd}
             channels={channelsQuery.data}
             openedUnreadCount={openedUnreadCount}
             online={presence.online}
@@ -995,6 +1086,7 @@ export function ChatWorkspace({
             kbWiden={kbWiden}
             onToggleKbWiden={toggleKbWiden}
             kbDocCount={kbSourceIds.length}
+            onChannelLeft={onChannelDeleted}
           />
         ) : (
           <section className="qc-pane-convo">
@@ -1005,8 +1097,8 @@ export function ChatWorkspace({
             />
           </section>
         )}
-        {!connected ? (
-          <div className="qc-reconnect qc-reconnect-float" role="status">
+        {showDisconnected ? (
+          <div className="qc-reconnect qc-reconnect-float" role="status" aria-live="polite">
             <WifiOff size={13} /> Reconnecting…
           </div>
         ) : null}
@@ -1020,12 +1112,17 @@ export function ChatWorkspace({
           }}
         />
         <NewGroupModal
-          open={newGroupOpen}
-          onClose={() => setNewGroupOpen(false)}
-          canCreatePublic={perms.has("Channel.Public", "create")}
+          open={createMode !== null}
+          mode={createMode ?? "group"}
+          onClose={() => setCreateMode(null)}
           onCreated={(ch) => {
             onChannelReady(ch);
-            toast.success({ title: `Created ${ch.name ? `#${ch.name}` : "the group"}` });
+            toast.success({
+              title:
+                ch.visibility === "public"
+                  ? `Created #${ch.name ?? "channel"}`
+                  : `Created ${ch.name ?? "the group"}`,
+            });
           }}
         />
         <DiscoverModal
@@ -1065,7 +1162,7 @@ export function ChatWorkspace({
           currentUserName={currentUserName}
           socket={clientRef.current?.socket ?? null}
           callTargetUserId={callTargetUserId}
-          callType="audio"
+          callType={callType}
           onCallStarted={() => setCallTargetUserId(null)}
           getUserName={(userId) => {
             const member = activeChannel?.members.find((m) => m.id === userId);

@@ -44,6 +44,8 @@ export interface UpdateHomeworkInput {
   dueDate?: string;
   maxScore?: number;
   allowLateSubmission?: boolean;
+  lateSubmissionDeadline?: string;
+  latePenaltyPercent?: number;
   type?: 'assignment' | 'quiz' | 'project' | 'reading';
 }
 
@@ -62,8 +64,27 @@ export interface GradeSubmissionInput {
 
 const BATCH_LITE = { id: true, name: true, grade: true, subject: true } as const;
 
+/**
+ * Reduce a possibly-presigned storage URL back to the permanent one we store.
+ *
+ * The signature must never be persisted: it expires in an hour, and a row holding
+ * a stale `…X-Goog-Signature=…` hands the browser a URL that 403s at exactly the
+ * moment the read path's re-presign fails open and returns the stored value
+ * unchanged (see `presignFromUrlOrKey`).
+ *
+ * WHY THE GUARD IS TWO PREFIXES. This tested `X-Amz-` only — correct while the
+ * app was on S3, but storage moved to GCS, which signs with `X-Goog-Algorithm` /
+ * `X-Goog-Signature` (`lib/s3.ts` mints v4 GCS URLs). So every URL the current
+ * bucket produces sailed through untouched and was written to
+ * `attachmentUrls` / `correctedFileUrl` with its signature attached. The same
+ * migration updated the URL builders and missed this one, which is the third
+ * instance of that exact oversight in this codebase.
+ *
+ * Legacy `X-Amz-` rows still exist, so both prefixes are honoured.
+ */
 function stripPresignedParams(url: string): string {
-  if (!url || !url.includes('X-Amz-')) return url;
+  if (!url) return url;
+  if (!url.includes('X-Amz-') && !url.includes('X-Goog-')) return url;
   try {
     const parsed = new URL(url);
     return `${parsed.origin}${parsed.pathname}`;
@@ -175,8 +196,10 @@ export async function update(orgId: string, homeworkId: string, dto: UpdateHomew
   if (dto.resourceLinks !== undefined) data.resourceLinks = dto.resourceLinks as unknown as Prisma.InputJsonValue;
   if (dto.maxScore !== undefined) data.maxScore = dto.maxScore;
   if (dto.allowLateSubmission !== undefined) data.allowLateSubmission = dto.allowLateSubmission;
+  if (dto.latePenaltyPercent !== undefined) data.latePenaltyPercent = dto.latePenaltyPercent;
   if (dto.type !== undefined) data.type = dto.type;
   if (dto.dueDate) data.dueDate = new Date(dto.dueDate);
+  if (dto.lateSubmissionDeadline) data.lateSubmissionDeadline = new Date(dto.lateSubmissionDeadline);
   if (dto.attachmentUrls) data.attachmentUrls = normalizeUrls(dto.attachmentUrls);
 
   const updated = await db.lmsHomework.update({ where: { id: homeworkId }, data });
@@ -243,6 +266,18 @@ export async function submitHomework(orgId: string, homeworkId: string, studentI
   if (isLate && !homework.allowLateSubmission) {
     throw BadRequest('Late submissions are not allowed for this homework');
   }
+  /**
+   * The late window has a far end, and it was never enforced.
+   *
+   * `lateSubmissionDeadline` is a real column the create form writes, but only
+   * `allowLateSubmission` was ever consulted — so "late submissions accepted
+   * until the 20th" accepted them forever. A teacher who closed the window by
+   * setting the date had no way to tell it did nothing, because the homework
+   * stays `published` and the student's Submit button stays live.
+   */
+  if (isLate && homework.lateSubmissionDeadline && now > new Date(homework.lateSubmissionDeadline)) {
+    throw BadRequest('The late submission deadline for this homework has passed');
+  }
 
   const created = await db.lmsHomeworkSubmission.create({
     data: {
@@ -282,10 +317,25 @@ export async function gradeSubmission(orgId: string, submissionId: string, grade
   const submission = await db.lmsHomeworkSubmission.findFirst({ where: { id: submissionId, orgId } });
   if (!submission) throw NotFound('Submission not found');
 
+  /**
+   * The homework is loaded UNCONDITIONALLY now, not just for late submissions.
+   *
+   * It carries the only correct ceiling for `score`. The route used to pin that at
+   * a literal 100, which is both too permissive (100 on a 20-point assignment) and
+   * too strict (a 150-point assignment could not be graded at all). Neither bound
+   * belongs in the route — `maxScore` is per-homework data.
+   */
+  const homework = await db.lmsHomework.findUnique({
+    where: { id: submission.homeworkId },
+    select: { latePenaltyPercent: true, maxScore: true },
+  });
+  if (homework?.maxScore != null && dto.score > homework.maxScore) {
+    throw BadRequest(`Score cannot exceed the maximum for this homework (${homework.maxScore})`);
+  }
+
   let finalScore = dto.score;
   let latePenaltyApplied = 0;
   if (submission.isLate) {
-    const homework = await db.lmsHomework.findUnique({ where: { id: submission.homeworkId }, select: { latePenaltyPercent: true } });
     const penaltyPercent = homework?.latePenaltyPercent || 0;
     if (penaltyPercent > 0) {
       latePenaltyApplied = Math.round(dto.score * (penaltyPercent / 100));

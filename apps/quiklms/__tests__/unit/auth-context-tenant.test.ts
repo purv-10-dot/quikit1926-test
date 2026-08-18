@@ -13,7 +13,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     lmsUser: { findUnique: h.userFindUnique },
     lmsTenant: { findUnique: h.tenantFindUnique },
-    // The coarse fallback asks whether the actor is the org's FOUNDING admin.
+    // The coarse fallback reads the actor's live central membership role.
     orgMember: { findFirst: h.orgMemberFindFirst },
   },
 }));
@@ -25,7 +25,6 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/auth/central-access', () => ({ hasCentralAppAccess: vi.fn().mockResolvedValue(true) }));
 
 import { getAuthContext } from '@/lib/auth/context';
-// Clears BOTH central-membership caches (the actor's role and the org's founder).
 import { _clearCentralMembershipCache } from '@/lib/auth/founding-admin';
 
 const sessionFor = (membershipRole: string, over: Record<string, unknown> = {}) => ({
@@ -46,48 +45,66 @@ beforeEach(() => {
   h.userFindUnique.mockReset();
   h.tenantFindUnique.mockReset();
   h.orgMemberFindFirst.mockReset();
-  h.orgMemberFindFirst.mockResolvedValue(null); // not the founding admin by default
+  h.orgMemberFindFirst.mockResolvedValue(null); // no central membership row by default
   _clearCentralMembershipCache();
 });
 
 describe('getAuthContext — operator role + tenantType', () => {
-  it('resolves the operator to SUPER_ADMIN with null tenantType', async () => {
+  it('resolves the operator to ADMIN with null tenantType', async () => {
     // The operator is identified by the `isSuperAdmin` claim, never inferred.
     h.getServerSession.mockResolvedValue(sessionFor('org_admin', { isSuperAdmin: true }));
     h.userFindUnique.mockResolvedValue(null); // operator has no LMS row
     h.tenantFindUnique.mockResolvedValue(null); // operator org has no Tenant row
 
     const ctx = await getAuthContext();
-    expect(ctx?.role).toBe('SUPER_ADMIN');
+    expect(ctx?.role).toBe('ADMIN');
     expect(ctx?.tenantType).toBeNull();
   });
 
-  it('resolves an org FOUNDING admin (org_admin, no LMS row) to SUPER_ADMIN', async () => {
-    // The freshly-invited admin of a new org: no LMS row, no assignment, and the
-    // earliest admin-tier membership in the org. Was TENANT_ADMIN → landed on the
-    // corporate /tenant-dashboard.
+  /**
+   * `org_admin` is AMBIGUOUS, so this branch splits on the org.
+   *
+   * Both ADMIN and TENANT_ADMIN used to be stored centrally as `org_admin`, and
+   * this fallback answered ADMIN for both — promoting a tenant's own admin into the
+   * provider's tier, including the shared-catalog approve/reject powers guarded by
+   * `assertCanActOnGlobalCourse`. The org is what separates them: an onboarded
+   * tenant has an `app_quiklms.tenants` row, a root org does not.
+   *
+   * This case previously asserted ADMIN here and was labelled "quikscale parity"
+   * (2026-08-04, when every org_admin was made ADMIN regardless of who was first).
+   * That still holds for a ROOT org — covered by the sibling case below. What
+   * changed on 2026-08-11 is the tenant-org half: a tenant admin administers their
+   * tenant, not the platform.
+   */
+  it('resolves an org_admin of a TENANT org to TENANT_ADMIN, not ADMIN', async () => {
     h.getServerSession.mockResolvedValue(sessionFor('org_admin'));
-    h.userFindUnique.mockResolvedValue(null);
-    h.tenantFindUnique.mockResolvedValue({ tenantType: 'corporate' });
-    h.orgMemberFindFirst.mockResolvedValue({ userId: 'u1' });
+    h.userFindUnique.mockResolvedValue(null); // no LMS row
+    h.tenantFindUnique.mockResolvedValue({ tenantType: 'corporate' }); // ← tenant org
+    h.orgMemberFindFirst.mockResolvedValue({ role: 'org_admin' });
 
     const ctx = await getAuthContext();
-    expect(ctx?.role).toBe('SUPER_ADMIN');
-    // ...but their tenant context is still their OWN org, and the platform flag
-    // stays false — so `tenantWhere` keeps filtering them to org1.
+    expect(ctx?.role).toBe('TENANT_ADMIN');
+    // Their tenant context and scoping are unchanged — the platform flag stays
+    // false, so `tenantWhere` keeps filtering them to org1.
     expect(ctx?.tenantType).toBe('corporate');
     expect(ctx?.isSuperAdmin).toBe(false);
     expect(ctx?.orgId).toBe('org1');
   });
 
-  it('resolves a NON-founding org_admin (no LMS row) to TENANT_ADMIN', async () => {
+  it('resolves an org_admin of a ROOT org to ADMIN — the provider tier', async () => {
+    // The other half: an org quikit created has no tenants row, and its admin is
+    // the provider. This is the 2026-08-04 "every org_admin is ADMIN" rule, which
+    // the tenant-org case above narrows rather than replaces.
     h.getServerSession.mockResolvedValue(sessionFor('org_admin'));
     h.userFindUnique.mockResolvedValue(null);
-    h.tenantFindUnique.mockResolvedValue({ tenantType: 'corporate' });
-    h.orgMemberFindFirst.mockResolvedValue({ userId: 'somebody-else' });
+    h.tenantFindUnique.mockResolvedValue(null); // ← root org, no tenants row
+    h.orgMemberFindFirst.mockResolvedValue({ role: 'org_admin' });
 
     const ctx = await getAuthContext();
-    expect(ctx?.role).toBe('TENANT_ADMIN');
+    expect(ctx?.role).toBe('ADMIN');
+    expect(ctx?.tenantType).toBeNull();
+    expect(ctx?.isSuperAdmin).toBe(false);
+    expect(ctx?.orgId).toBe('org1');
   });
 
   /**
@@ -103,13 +120,10 @@ describe('getAuthContext — operator role + tenantType', () => {
     h.getServerSession.mockResolvedValue(sessionFor('member')); // ← the bad claim
     h.userFindUnique.mockResolvedValue(null);
     h.tenantFindUnique.mockResolvedValue(null);
-    // The actor's own row, then the org's founding admin — both are this user.
-    h.orgMemberFindFirst.mockImplementation(async (args: { where?: { userId?: string } }) =>
-      args?.where?.userId === 'u1' ? { role: 'org_admin' } : { userId: 'u1' },
-    );
+    h.orgMemberFindFirst.mockResolvedValue({ role: 'org_admin' });
 
     const ctx = await getAuthContext();
-    expect(ctx?.role).toBe('SUPER_ADMIN'); // was LEARNER → /learner/dashboard
+    expect(ctx?.role).toBe('ADMIN'); // was LEARNER → /learner/dashboard
     expect(ctx?.isSuperAdmin).toBe(false); // still org-scoped
   });
 
@@ -120,16 +134,16 @@ describe('getAuthContext — operator role + tenantType', () => {
     h.orgMemberFindFirst.mockRejectedValue(new Error('central DB unavailable'));
 
     const ctx = await getAuthContext();
-    // Claim honoured, founding unknown → the org-scoped tier, never a silent demotion
-    // to LEARNER and never an unearned promotion.
-    expect(ctx?.role).toBe('TENANT_ADMIN');
+    // Central read failed → falls back to the claim (`org_admin`), which still
+    // resolves ADMIN. Never a silent demotion to LEARNER.
+    expect(ctx?.role).toBe('ADMIN');
   });
 
-  it('does not query for a founding admin when an LMS row already answered', async () => {
+  it('does not query the central membership when an LMS row already answered', async () => {
     // The lookup is lazy on purpose — it must not land on the hot path for the
     // ~335-file majority who already have a row.
     h.getServerSession.mockResolvedValue(sessionFor('org_admin'));
-    h.userFindUnique.mockResolvedValue({ role: 'TEACHER', secondaryRole: null, isActive: true });
+    h.userFindUnique.mockResolvedValue({ role: 'TEACHER', isActive: true });
     h.tenantFindUnique.mockResolvedValue({ tenantType: 'school' });
 
     await getAuthContext();
@@ -138,7 +152,7 @@ describe('getAuthContext — operator role + tenantType', () => {
 
   it('resolves a school tenant admin to TENANT_ADMIN with tenantType "school"', async () => {
     h.getServerSession.mockResolvedValue(sessionFor('org_admin'));
-    h.userFindUnique.mockResolvedValue({ role: 'TENANT_ADMIN', secondaryRole: null, isActive: true });
+    h.userFindUnique.mockResolvedValue({ role: 'TENANT_ADMIN', isActive: true });
     h.tenantFindUnique.mockResolvedValue({ tenantType: 'school' });
 
     const ctx = await getAuthContext();
@@ -148,7 +162,7 @@ describe('getAuthContext — operator role + tenantType', () => {
 
   it('surfaces tenantType "corporate" so server-side role filtering can fire', async () => {
     h.getServerSession.mockResolvedValue(sessionFor('org_admin'));
-    h.userFindUnique.mockResolvedValue({ role: 'TENANT_ADMIN', secondaryRole: null, isActive: true });
+    h.userFindUnique.mockResolvedValue({ role: 'TENANT_ADMIN', isActive: true });
     h.tenantFindUnique.mockResolvedValue({ tenantType: 'corporate' });
 
     const ctx = await getAuthContext();
@@ -157,7 +171,7 @@ describe('getAuthContext — operator role + tenantType', () => {
 
   it('a failing tenant lookup does not break user/role resolution', async () => {
     h.getServerSession.mockResolvedValue(sessionFor('org_admin'));
-    h.userFindUnique.mockResolvedValue({ role: 'TEACHER', secondaryRole: null, isActive: true });
+    h.userFindUnique.mockResolvedValue({ role: 'TEACHER', isActive: true });
     h.tenantFindUnique.mockRejectedValue(new Error('tenant db down'));
 
     const ctx = await getAuthContext();

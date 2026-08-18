@@ -15,7 +15,6 @@ interface SubAdmin {
   firstName: string;
   lastName: string;
   role: string;
-  secondaryRole?: string;
   isActive: boolean;
   profilePicture?: string;
   profilePictureUrl?: string;
@@ -71,7 +70,7 @@ const SubAdminsPage = () => {
     try {
       // orgId is resolved SERVER-side from the session for every non-super-admin
       // (`app/api/auth/register/route.ts` uses `actor.orgId` and ignores
-      // `body.orgId` unless the caller is a SUPER_ADMIN). This used to read it
+      // `body.orgId` unless the caller is a ADMIN). This used to read it
       // from `sessionStorage('user')` and HARD-BAIL when absent — but that key is
       // only populated asynchronously by `refreshUser()` in providers, so opening
       // a roster page and submitting before hydration finished blocked the
@@ -254,9 +253,6 @@ const SubAdminsPage = () => {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold text-gray-900 truncate">{user.firstName} {user.lastName}</h3>
-                        {user.role === 'LEARNER' && user.secondaryRole === 'SUB_ADMIN' && (
-                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 shrink-0">Learner + Sub Admin</span>
-                        )}
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
                         <Mail className="w-3.5 h-3.5" />

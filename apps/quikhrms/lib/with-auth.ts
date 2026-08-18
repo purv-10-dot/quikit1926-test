@@ -7,7 +7,7 @@ import type { AuthContext } from "@/lib/types/api";
 import { getCached, invalidateKeys, cacheKeys } from "@/lib/services/cache";
 import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { expandDelegatedPermissions } from "@/lib/rbac/delegatable";
-import { provisionEmployee, provisionFromInvitation } from "@/lib/rbac/provisioning";
+import { provisionEmployee, provisionFromInvitation, applyInvitationRoles, applyCentralRoleIfAny } from "@/lib/rbac/provisioning";
 import { verifyJWT } from "@quikit/auth/jwt";
 
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -55,11 +55,25 @@ async function resolveEmployeeByAuthUser(claims: {
           data: { authUserId },
         });
         // Rare: an employee already existed AND a pending invite was raised for
-        // them — mark it Accepted so the admin's Users list reflects reality.
-        await prisma.invitation.updateMany({
+        // them — apply the invited role (mirrors provisionFromInvitation's
+        // brand-new-employee path, which this one previously skipped) and mark
+        // the invitation Accepted so the admin's Users list reflects reality.
+        const pendingInvite = await prisma.invitation.findFirst({
           where: { orgId, status: "Pending", deletedAt: null, email: { equals: email, mode: "insensitive" } },
-          data: { status: "Accepted", acceptedAt: new Date(), employeeId: byEmail.id },
+          select: { id: true, roleIds: true, invitedBy: true },
         });
+        if (pendingInvite) {
+          await applyInvitationRoles(orgId, byEmail.id, pendingInvite);
+          await prisma.invitation.updateMany({
+            where: { id: pendingInvite.id, status: "Pending" },
+            data: { status: "Accepted", acceptedAt: new Date(), employeeId: byEmail.id },
+          });
+        } else {
+          // No HRMS-native invite — this employee may still have been granted
+          // HRMS access via the Admin Portal's "Role in QuikHRMS" picker. Apply
+          // it now, on this first link, so it isn't silently lost.
+          await applyCentralRoleIfAny(orgId, byEmail.id, authUserId);
+        }
       }
       return byEmail.id;
     }

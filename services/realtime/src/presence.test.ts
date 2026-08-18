@@ -87,7 +87,28 @@ describe("onlineUserIds (§2.3 pipelined)", () => {
 describe("refresh", () => {
   it("keeps the key alive without throwing", async () => {
     await markOnline(redis, ORG, "u1", "s1", TTL);
-    await refresh(redis, ORG, "u1", TTL);
+    await refresh(redis, ORG, "u1", "s1", TTL);
     expect(await redis.exists(`presence:${ORG}:u1`)).toBe(1);
+  });
+
+  // REGRESSION: `refresh` was `pexpire` alone, which does nothing to a key that
+  // has already expired. A client whose heartbeat lapsed past the TTL stayed
+  // connected but permanently absent from the set — invisible to onlineUserIds,
+  // with nothing in the system able to put it back.
+  it("resurrects the set after the TTL lapsed, for a still-connected socket", async () => {
+    await markOnline(redis, ORG, "u1", "s1", TTL);
+    // Simulate the TTL firing while the socket is still very much alive.
+    await redis.del(`presence:${ORG}:u1`);
+    expect(await onlineUserIds(redis, ORG, ["u1"])).toEqual([]);
+
+    await refresh(redis, ORG, "u1", "s1", TTL);
+    expect(await onlineUserIds(redis, ORG, ["u1"])).toEqual(["u1"]);
+  });
+
+  it("does not double-count a socket it re-adds", async () => {
+    await markOnline(redis, ORG, "u1", "s1", TTL);
+    await refresh(redis, ORG, "u1", "s1", TTL);
+    // Still ONE socket: the next markOffline must be the 1→0 transition.
+    expect(await markOffline(redis, ORG, "u1", "s1")).toMatchObject({ lastSocket: true });
   });
 });

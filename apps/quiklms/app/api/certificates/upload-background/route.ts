@@ -2,14 +2,14 @@ import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { uploadCertificateAsset } from '@/lib/services/certificates-service';
 
-// POST /api/certificates/upload-background — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// POST /api/certificates/upload-background — ADMIN | TENANT_ADMIN | SUB_ADMIN
 //
 // The file is uploaded to S3 AND returned as a base64 data URL: the legacy stores
 // the data URL in the template so reading the image back never needs
 // s3:GetObject, keeping the S3 object as a backup reference.
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
 
   const form = await req.formData();
   const file = form.get('file');

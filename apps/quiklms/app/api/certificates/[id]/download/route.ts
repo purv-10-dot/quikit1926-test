@@ -3,7 +3,7 @@ import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles, userHasRole } from '@/lib/auth/context';
 import { findIssuedById, downloadGateBlocked, regeneratePdfForIssuedCertificate } from '@/lib/services/certificates-service';
 
-// GET /api/certificates/:id/download — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER | LEARNER
+// GET /api/certificates/:id/download — ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER | LEARNER
 //
 // The PDF is always regenerated fresh against the tenant's current template, so
 // private-bucket images are embedded and an old template is never served.
@@ -19,7 +19,7 @@ import { findIssuedById, downloadGateBlocked, regeneratePdfForIssuedCertificate 
 // (`/manager/certificates/download/:managerId`).
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
   if (!user.id) return json({ success: false, message: 'User ID is required' }, 400);
 
   const issued = await findIssuedById(params!.id).catch(() => null);
@@ -33,7 +33,7 @@ export const GET = route(async (req, { params }) => {
   // Everyone below tenant-admin may only download their OWN certificate.
   // `userHasRole` so a secondary admin role still grants the exemption.
   const isAdminActor =
-    userHasRole(user, 'SUPER_ADMIN') || userHasRole(user, 'TENANT_ADMIN') || userHasRole(user, 'SUB_ADMIN');
+    userHasRole(user, 'ADMIN') || userHasRole(user, 'TENANT_ADMIN') || userHasRole(user, 'SUB_ADMIN');
   if (!isAdminActor && issued.learnerId !== user.id) {
     return json({ success: false, message: 'Certificate not found' }, 404);
   }

@@ -15,6 +15,7 @@ type MockSocket = Socket & {
   _handlers: Record<string, (...args: unknown[]) => void | Promise<void>>;
 };
 
+
 function createMockSocket(userId: string, orgId: string): MockSocket {
   const handlers: Record<string, (...args: unknown[]) => void | Promise<void>> = {};
   return {

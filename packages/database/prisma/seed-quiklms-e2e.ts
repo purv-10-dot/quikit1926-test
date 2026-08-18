@@ -42,7 +42,11 @@ export const E2E = {
  *  (quikit.OrgMember.role); `role` is the LMS role. They are distinct
  *  vocabularies and the mapping between them is what we want under test. */
 const USERS = [
-  { key: "superAdmin",  role: "SUPER_ADMIN",  orgMemberRole: "super_admin", isSuperAdmin: true,  firstName: "E2E", lastName: "SuperAdmin" },
+  // `superAdmin` is the PLATFORM OPERATOR fixture — the distinguishing fact is
+  // `isSuperAdmin: true` (quikit's claim), not the LMS role, which is the ordinary
+  // top tier ADMIN. The LMS role formerly shared the name SUPER_ADMIN; it no longer
+  // exists. Key kept as-is so the e2e specs that reference it are unaffected.
+  { key: "superAdmin",  role: "ADMIN",        orgMemberRole: "super_admin", isSuperAdmin: true,  firstName: "E2E", lastName: "SuperAdmin" },
   { key: "tenantAdmin", role: "TENANT_ADMIN", orgMemberRole: "org_admin",   isSuperAdmin: false, firstName: "E2E", lastName: "TenantAdmin" },
   { key: "subAdmin",    role: "SUB_ADMIN",    orgMemberRole: "member",      isSuperAdmin: false, firstName: "E2E", lastName: "SubAdmin" },
   { key: "manager",     role: "MANAGER",      orgMemberRole: "member",      isSuperAdmin: false, firstName: "E2E", lastName: "Manager" },
@@ -72,7 +76,7 @@ async function wipe(orgId: string) {
   await prisma.lmsBatch.deleteMany({ where: scope }).catch(() => {});
   // Modules/lessons cascade from course.
   await prisma.lmsCourse.deleteMany({ where: scope }).catch(() => {});
-  // Delete by email too: the SUPER_ADMIN row is deliberately tenant-less
+  // Delete by email too: the platform-operator row is deliberately tenant-less
   // (orgId null), so an orgId-scoped delete would leave it behind and the
   // next seed would collide on the identity-id primary key.
   await prisma.lmsUser.deleteMany({ where: scope }).catch(() => {});
@@ -186,8 +190,11 @@ async function main() {
         firstName: u.firstName,
         lastName: u.lastName,
         role: u.role as never,
-        // Global super-admins are deliberately tenant-less.
-        orgId: u.role === "SUPER_ADMIN" ? null : org.id,
+        // Global platform operators are deliberately tenant-less. Keyed on the
+        // `isSuperAdmin` CLAIM, not the LMS role: the role that used to identify them
+        // (SUPER_ADMIN) is now the ordinary org-scoped top tier ADMIN, so testing the
+        // role here would hand every admin a null orgId. Selects the same single row.
+        orgId: u.isSuperAdmin ? null : org.id,
         isActive: true,
         mustChangePassword: false,
       },
