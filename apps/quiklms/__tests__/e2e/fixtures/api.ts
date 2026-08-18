@@ -10,7 +10,7 @@
 import { request, type APIRequestContext } from "@playwright/test";
 import { mintSessionToken, type RoleKey } from "./auth";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 
 /**
  * `timeout` sets the default per-request timeout for every call made through the
@@ -43,16 +43,10 @@ export async function apiWithBadToken(): Promise<APIRequestContext> {
   });
 }
 
-/** The app's standard error envelope (lib/http.ts). */
+/** The app's standard error envelope (lib/http.ts) — platform-standard shape. */
 export interface ErrorEnvelope {
-  statusCode: number;
-  timestamp: string;
-  path: string;
-  method: string;
-  requestId: string;
-  message?: string;
-  error?: string;
-  validationErrors?: Array<{ field: string; message: string }>;
+  success: false;
+  error: string;
 }
 
 /** Parse a response body as JSON, tolerating HTML/empty error pages. */

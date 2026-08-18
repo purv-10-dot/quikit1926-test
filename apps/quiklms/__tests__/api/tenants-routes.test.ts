@@ -19,7 +19,7 @@ vi.mock('@/lib/auth/context', () => ({
   requireRoles: h.requireRoles,
   assertTenantMatch: h.assertTenantMatch,
   // REAL implementation, not a stub. `/api/tenants/:id` takes the org id from the
-  // PATH, and `requireRoles(['SUPER_ADMIN'])` was its only gate — so any holder of
+  // PATH, and `requireRoles(['ADMIN'])` was its only gate — so any holder of
   // that role could read, PATCH or DELETE another org's tenant by naming it in the
   // URL. Stubbing this guard would hide exactly that.
   assertOrgAccess: (u: { isSuperAdmin?: boolean; orgId?: string | null }, target?: string | null) => {
@@ -75,7 +75,7 @@ function post(url: string, body: unknown) {
 }
 
 const ctx = { params: { id: 'org-1' } };
-const actor = { id: 'u1', role: 'SUPER_ADMIN', orgId: 'org-1', isActive: true };
+const actor = { id: 'u1', role: 'ADMIN', orgId: 'org-1', isActive: true };
 
 beforeEach(() => {
   Object.values(h).forEach((fn) => fn.mockReset());
@@ -157,7 +157,7 @@ describe('PATCH /api/tenants/:id — featureConfig merge + mass assignment', () 
     h.findUnique.mockResolvedValue({ id: 'org-1', featureConfig: {} });
     const res = await tenantPATCH(req('http://x/api/tenants/org-1', { nope: 'x' }), ctx);
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Validation failed');
+    expect((await res.json()).error).toContain('nope');
   });
 
   it('blocks mass assignment of identity columns', async () => {
@@ -268,7 +268,7 @@ describe('POST /api/tenants', () => {
     const res = await tenantsPOST(post('http://x/api/tenants', { ...valid, gstNumber: 'NOT-A-GST' }), {});
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.validationErrors[0].message).toBe('Invalid GST Number format');
+    expect(body.error).toContain('Invalid GST Number format');
   });
 
   it('requires gstNumber', async () => {
@@ -282,14 +282,14 @@ describe('POST /api/tenants', () => {
     h.findUnique.mockResolvedValueOnce({ id: 'other' });
     const res = await tenantsPOST(post('http://x/api/tenants', valid), {});
     expect(res.status).toBe(409);
-    expect((await res.json()).message).toBe('Subdomain already exists');
+    expect((await res.json()).error).toBe('Subdomain already exists');
   });
 
   it('409s on a duplicate GST with the legacy message', async () => {
     h.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'other' });
     const res = await tenantsPOST(post('http://x/api/tenants', valid), {});
     expect(res.status).toBe(409);
-    expect((await res.json()).message).toBe('GST Number already registered');
+    expect((await res.json()).error).toBe('GST Number already registered');
   });
 
   it('derives clientUrl from NEXTAUTH_URL (never a bare localhost in prod)', async () => {

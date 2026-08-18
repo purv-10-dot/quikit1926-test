@@ -57,7 +57,7 @@ describe('the public download honours the pass gate', () => {
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toMatchObject({
       success: false,
-      message: 'You need to meet the passing criteria to download the certificate.',
+      error: 'You need to meet the passing criteria to download the certificate.',
     });
     // The PDF must never be rendered for a blocked certificate.
     expect(h.regenerate).not.toHaveBeenCalled();

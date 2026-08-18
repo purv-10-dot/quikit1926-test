@@ -37,13 +37,18 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
     where: { id: clientId, orgId, deletedAt: null },
     include: {
       teamMembers: {
-        include: { member: { select: { deletedAt: true } } },
+        include: { member: { select: { id: true, name: true, deletedAt: true } } },
       },
     },
   });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
-  // Roster size = active client team members (mirrors the dashboard route).
-  const rosterSize = client.teamMembers.filter(tm => !tm.member.deletedAt).length;
+  // Roster = active client team members (mirrors the dashboard route). Feeds
+  // both the attendance denominator and "Quality of the dashboards" — see
+  // clientMeetingsMath.ts › monthlyMemberWeightedQuality.
+  const activeRoster = client.teamMembers
+    .filter(tm => !tm.member.deletedAt)
+    .map(tm => ({ id: tm.member.id, name: tm.member.name }));
+  const rosterSize = activeRoster.length;
 
   const from = new Date(Date.UTC(months[0].year, months[0].month, 1));
   const toEnd = new Date(Date.UTC(months[months.length - 1].year, months[months.length - 1].month + 1, 0, 23, 59, 59, 999));
@@ -91,8 +96,13 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
         priorityStartEndDate: s.priorityStartEndDate,
         priorityColor: s.priorityColor,
       })),
+      // Must match the Member Punch-In export: memberScores rows are keyed by
+      // ClientMember.id, so compare against the ClientMember-keyed relations.
+      absentUserIds: m.absentTeamMembers.map(a => a.clientMemberId),
+      dashboardNAUserIds: m.dashboardNATeamMembers.map(a => a.clientMemberId),
     })),
     months, client.weeklyStartTime, client.weeklyEndTime,
+    activeRoster,
   );
 
   // Full metric descriptions — shared with the dashboard so labels never drift.

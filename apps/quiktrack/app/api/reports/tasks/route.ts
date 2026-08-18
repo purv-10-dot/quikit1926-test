@@ -17,7 +17,7 @@ import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
  */
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
-  const projectId = url.searchParams.get("projectId");
+  const projectIdOrKey = url.searchParams.get("projectId");
   const statusId = url.searchParams.get("statusId");
   // Status names are duplicated across projects (each project has its own
   // status set), so the filter UI dedupes by name and we match against name
@@ -41,6 +41,36 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   // Space Admin. A non-admin with no Space Admin projects (or requesting a
   // project outside that set) gets an empty report.
   const isAdmin = await hasAdminAccess(userId, orgId);
+
+  // projectId query param may be a cuid or a project KEY (keys are per-org).
+  // Resolve to a cuid so scoping checks + the qtIssue filter use the real id.
+  // An unresolvable projectId means "no such accessible project" → empty report.
+  let projectId: string | null = null;
+  if (projectIdOrKey) {
+    const proj = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
+      select: { id: true },
+    });
+    if (!proj) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          tasks: [],
+          summary: empty(),
+          facets: { statuses: [], assignees: [] },
+          page: 1,
+          pageSize: 10,
+          total: 0,
+          totalPages: 1,
+        },
+      });
+    }
+    projectId = proj.id;
+  }
 
   let projectIds: string[] | null = null;
   if (!isAdmin) {

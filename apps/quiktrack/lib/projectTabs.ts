@@ -29,6 +29,10 @@ export const PROJECT_TABS: ProjectTab[] = [
   { path: "list", label: "List", perm: { resource: "ProjectList", action: "view" } },
   { path: "task-table", label: "Task Table", perm: { resource: "ProjectTaskTable", action: "view" } },
   { path: "reports", label: "Reports", perm: { resource: "ProjectReports", action: "view" } },
+  // QuikTest — the per-project test-management surface (repository, runs,
+  // plans, reports). The org-level cross-project view is the sidebar's
+  // "Apps → QuikTest" tree instead.
+  { path: "test", label: "Tests", perm: { resource: "TestCase", action: "view" } },
   { path: "development", label: "Development", perm: { resource: "Board", action: "view" } },
   { path: "timesheet", label: "Timesheet", perm: { resource: "Timesheet", action: "view" } },
   { path: "docs", label: "Docs", perm: { resource: "Doc", action: "view" } },

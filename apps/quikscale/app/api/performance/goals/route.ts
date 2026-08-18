@@ -8,6 +8,7 @@ import {
 } from "@/lib/schemas/goalSchema";
 import { validationError } from "@/lib/api/validationError";
 import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
+import { emitGoalCreated } from "@/lib/services/workflowEvents";
 
 /**
  * GET /api/performance/goals
@@ -196,6 +197,16 @@ export const POST = withOrgAuth(
         status: true,
         progressPercent: true,
       },
+    });
+
+    // QuikFlow: emit goal.created (fire-and-forget, flag-gated).
+    emitGoalCreated({
+      orgId,
+      goalId: goal.id,
+      title: input.title,
+      owner: input.ownerId,
+      category: input.category ?? null,
+      status: input.status,
     });
 
     return NextResponse.json({ success: true, data: goal }, { status: 201 });

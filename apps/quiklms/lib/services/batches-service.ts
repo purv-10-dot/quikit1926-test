@@ -1,7 +1,7 @@
 /**
  * Batches service — ported from NestJS BatchesService (Mongoose → Prisma).
  * Tenant scoping is applied with the explicit orgId arguments threaded through
- * every query (callers obtain it from the authed user / SUPER_ADMIN bypass via
+ * every query (callers obtain it from the authed user / ADMIN bypass via
  * tenantWhere). Mongo subdoc arrays (schedule/studentIds/substituteTeacherIds)
  * map to the BatchSchedule / BatchStudent / BatchSubstituteTeacher child tables.
  */
@@ -13,6 +13,7 @@ import {
   generateClasses,
   cancelFutureClassesForBatch,
 } from './scheduling-service';
+import { announceBatchSchedule } from './class-invitations-service';
 
 type ScheduleItem = { dayOfWeek: number; startTime: string; endTime: string; location?: string };
 
@@ -262,12 +263,29 @@ export async function create(orgId: string, dto: CreateBatchInput, userId?: stri
 
   // Auto-generate classes for active batches (was fire-and-forget in legacy; awaited
   // here so the serverless function does not terminate before they persist).
+  //
+  // The generated `LmsScheduledClass` rows ARE the teacher's and the students'
+  // calendars — `getTeacherClasses` and `getStudentClasses` read nothing else. So
+  // a swallowed failure here is exactly the reported "the batch only shows on the
+  // school's side": the batch row exists and lists fine, while both calendars stay
+  // empty and nothing anywhere says why. Still non-blocking (the batch is saved
+  // and an admin can regenerate), but no longer silent.
   if (created.status === 'active') {
     try {
       await generateClasses(orgId, { batchId: created.id });
-    } catch {
-      /* non-blocking */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[batches] class generation failed for batch ${created.id} — teacher/student calendars will be empty until it is regenerated:`,
+        err,
+      );
     }
+
+    // Provision the online classrooms and send the invitations. Nothing used to
+    // do either: a meeting only existed once a teacher manually picked a provider
+    // on one class row, and until then `sendJoinLinkToStudents` returned early,
+    // so no invitation ever reached the teacher or the students.
+    await announceBatchSchedule(orgId, created.id, { kind: 'invitation' });
   }
 
   return shapeBatch(created.id);
@@ -402,6 +420,22 @@ export async function update(orgId: string, batchId: string, dto: UpdateBatchInp
   if (dto.studentIds?.length) await assertUsersInTenant(orgId, dto.studentIds, { role: 'LEARNER', label: 'student IDs' });
   if (dto.substituteTeacherIds?.length) await assertUsersInTenant(orgId, dto.substituteTeacherIds, { role: 'TEACHER', label: 'substitute teacher IDs' });
 
+  /**
+   * Who is genuinely NEW to this batch, captured before the write replaces the
+   * roster wholesale.
+   *
+   * The batch form posts the entire form on every save, so `dto.studentIds` is
+   * always present — "the field was supplied" says nothing about whether the roster
+   * changed. Without this diff, renaming a batch or nudging its capacity would mail
+   * a fresh invitation to every student and the teacher.
+   */
+  let arrivingStudentIds: string[] = [];
+  if (dto.studentIds !== undefined) {
+    const current = await db.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
+    const before = new Set(current.map((r) => r.studentId));
+    arrivingStudentIds = [...new Set(dto.studentIds)].filter((id) => !before.has(id));
+  }
+
   const data: Prisma.LmsBatchUpdateInput = {};
   if (dto.name !== undefined) data.name = dto.name;
   if (dto.grade !== undefined) data.grade = dto.grade;
@@ -448,14 +482,49 @@ export async function update(orgId: string, batchId: string, dto: UpdateBatchInp
 
   const datesOrScheduleChanged =
     dto.startDate !== undefined || dto.endDate !== undefined || dto.schedule !== undefined;
+  const teacherChanged = dto.teacherId !== undefined && dto.teacherId !== batch.teacherId;
+
   if (datesOrScheduleChanged && updated.status === 'active') {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     await cancelFutureClassesForBatch(orgId, batchId, today);
     try {
       await generateClasses(orgId, { batchId });
-    } catch {
-      /* non-blocking */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[batches] class regeneration failed for batch ${batchId} — calendars will be empty until it is regenerated:`,
+        err,
+      );
+    }
+  }
+
+  /**
+   * Anyone whose calendar just moved has to be told — and only them.
+   *
+   * Cancelling and regenerating the future classes silently rewrote the whole
+   * roster's week, and swapping the teacher handed a batch to somebody who was
+   * never informed they owned it. Three distinct audiences, so three cases rather
+   * than one blanket announcement:
+   */
+  if (updated.status === 'active') {
+    if (datesOrScheduleChanged) {
+      // The week changed for everybody already in the batch.
+      await announceBatchSchedule(orgId, batchId, { kind: 'update' });
+    } else if (teacherChanged) {
+      // The new teacher owns a batch they have not been told about. Students keep
+      // the same slots, so they are not re-invited — only the teacher.
+      await announceBatchSchedule(orgId, batchId, { kind: 'invitation', studentIds: [] });
+    }
+
+    // Students added through the batch form rather than `addStudents`. Scoped to
+    // the arrivals, and never re-announced to the teacher.
+    if (!datesOrScheduleChanged && arrivingStudentIds.length) {
+      await announceBatchSchedule(orgId, batchId, {
+        studentIds: arrivingStudentIds,
+        kind: 'invitation',
+        notifyTeacher: false,
+      });
     }
   }
 
@@ -490,6 +559,17 @@ export async function addStudents(orgId: string, batchId: string, dto: { student
     data: dto.studentIds.map((studentId) => ({ batchId, studentId })),
     skipDuplicates: true,
   });
+
+  // A student enrolled into a RUNNING batch inherits a calendar full of classes
+  // they were never told about. Scoped to the arrivals so the existing roster is
+  // not re-invited to classes they already have.
+  if (batch.status === 'active') {
+    await announceBatchSchedule(orgId, batchId, {
+      studentIds: dto.studentIds,
+      kind: 'invitation',
+      notifyTeacher: false,
+    });
+  }
 
   return shapeBatch(batchId);
 }

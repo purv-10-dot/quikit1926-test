@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { GroupCallGrid } from "./GroupCallGrid";
 import { CallControls } from "./CallControls";
+import { RemovedFromCallToast } from "./RemovedFromCallToast";
 import { useLiveKitRoom } from "@/lib/use-livekit-room";
 
 export interface LiveKitGroupCallProps {
@@ -13,6 +14,8 @@ export interface LiveKitGroupCallProps {
   callType: "audio" | "video";
   /** Host = the call's initiator, matching the roomAdmin grant on the token. */
   isHost: boolean;
+  /** Shown in the removed-from-call explanation; falls back to a generic label. */
+  channelName?: string;
   onEndCall: () => void;
 }
 
@@ -23,6 +26,7 @@ export function LiveKitGroupCall({
   localUserId,
   callType,
   isHost,
+  channelName = "this call",
   onEndCall,
 }: LiveKitGroupCallProps) {
   const [showParticipantList, setShowParticipantList] = useState(false);
@@ -34,6 +38,7 @@ export function LiveKitGroupCall({
     mediaError,
     isReconnecting,
     terminalDisconnect,
+    removedByHost,
     toggleMute,
     toggleCamera,
     toggleScreenShare,
@@ -74,8 +79,21 @@ export function LiveKitGroupCall({
   // call: onEndCall causes side effects (PATCH, window.close()) that must
   // never run during render.
   useEffect(() => {
-    if (terminalDisconnect) onEndCall();
-  }, [terminalDisconnect, onEndCall]);
+    // `removedByHost` is excluded: it renders the explanation below, and
+    // onEndCall closes the window. Running it here too would tear the window
+    // down before the removed participant could read why — which is the exact
+    // silent close this change exists to fix. Their dismiss triggers it.
+    if (terminalDisconnect && !removedByHost) onEndCall();
+  }, [terminalDisconnect, removedByHost, onEndCall]);
+
+  // Removed by the host: hold the window open on an explanation instead of the
+  // silent close that made a kick indistinguishable from the call simply
+  // ending. `removedByHost` is a strict subset of `terminalDisconnect` and is
+  // only ever set on an explicit PARTICIPANT_REMOVED, so an unrecognised
+  // disconnect reason still takes the normal path above.
+  if (removedByHost) {
+    return <RemovedFromCallToast channelName={channelName} onDismiss={onEndCall} />;
+  }
 
   if (terminalDisconnect) return null;
 

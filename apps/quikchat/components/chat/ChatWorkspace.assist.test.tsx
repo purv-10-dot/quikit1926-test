@@ -125,6 +125,9 @@ vi.mock("@/components/notifications/NotificationProvider", () => ({
     requestOsPermission: vi.fn(),
     attachClient: vi.fn(),
     registerChannelOpener: vi.fn(),
+    registerNewChatOpener: vi.fn(),
+    openNewChat: vi.fn(),
+    setActiveChannel: vi.fn(),
   }),
 }));
 
@@ -200,7 +203,6 @@ async function openChannel() {
       <ChatWorkspace
         currentUserId="u-me"
         currentUserName="Alice"
-        workspaceName="Acme"
         realtimeUrl="http://rt"
       />
     </QueryClientProvider>,

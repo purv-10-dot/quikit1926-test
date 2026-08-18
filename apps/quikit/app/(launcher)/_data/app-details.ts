@@ -20,6 +20,21 @@ export interface AppDetail {
 }
 
 export const APP_DETAILS: Record<string, AppDetail> = {
+  quikflow: {
+    accent: "#6D28D9",
+    tagline: "No-code automation across every QuikIT app.",
+    overview:
+      "QuikFlow lets anyone build Trigger → Condition → Action workflows across QuikScale, QuikCRM, HRMS and more — plus Slack, Teams and Outlook. App admins publish org-wide automations; everyone builds their own. Native, org-scoped, and pre-authenticated — no external tool required.",
+    features: [
+      "Visual Trigger → Condition → Action builder",
+      "Org-wide & personal workflows",
+      "Run history with step-by-step timelines",
+      "Templates to start in one click",
+      "Slack / Teams / Outlook notify channels",
+    ],
+    stats: { rating: "New", language: "EN", category: "Automation", updated: "just now" },
+    screenshots: [],
+  },
   quikcrm: {
     accent: "#2F5BD0",
     tagline: "Sales execution OS for your whole pipeline.",

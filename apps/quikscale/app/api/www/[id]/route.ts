@@ -15,6 +15,7 @@ import { canEditWWW, canEditWWWAssignment } from "@/lib/api/wwwPermissions";
 import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
 import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
+import { emitWwwStatusChanged } from "@/lib/services/workflowEvents";
 const auth = withOrgAuthForResource("www", "WWW");
 
 /** Before/after fields needed to diff a WWW item for the audit timeline. */
@@ -316,6 +317,16 @@ export const PUT = auth.update<{ id: string }>(
         revisedDates: revisedDates ?? undefined,
         updatedBy: userId,
       },
+    });
+
+    // QuikFlow: emit www.completed on transition to "completed" (fire-and-forget).
+    emitWwwStatusChanged({
+      orgId,
+      wwwId: updated.id,
+      what: updated.what,
+      owner: updated.who,
+      before: existing.status,
+      after: updated.status,
     });
 
     // Synthesize whoIds from the persisted single `who` (resp. from the

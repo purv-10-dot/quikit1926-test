@@ -12,6 +12,7 @@
  *   - The token's calendar scopes are UNVERIFIED (the env name implies Gmail) —
  *     `verify()` probes them and returns an actionable error if insufficient.
  */
+import { allDayDatePart } from "@/lib/all-day";
 import { logger } from "@/lib/shared";
 import type {
   CalendarHealth,
@@ -161,13 +162,27 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async createMeeting(input: CreateMeetingInput): Promise<CreateMeetingResult> {
+    // All-day is a SHAPE change here, not a flag: Google has no `isAllDay`, it
+    // takes `{ date: "YYYY-MM-DD" }` instead of `{ dateTime }`. Passing a
+    // dateTime for an all-day event silently creates a midnight-to-midnight
+    // TIMED event, which renders in each viewer's own zone — the exact day-drift
+    // bug this feature exists to avoid. `end` is exclusive in both shapes.
+    const period = (iso: string) =>
+      input.allDay ? { date: allDayDatePart(iso) } : { dateTime: iso };
+
     const body: Record<string, unknown> = {
       summary: input.title,
       description: input.description,
-      start: { dateTime: input.start },
-      end: { dateTime: input.end },
-      attendees: input.attendeeEmails.map((email) => ({ email })),
+      start: period(input.start),
+      end: period(input.end),
+      attendees: input.attendees.map((a) => ({
+        email: a.email,
+        ...(a.optional ? { optional: true } : {}),
+      })),
     };
+    if (input.location) {
+      body.location = input.location;
+    }
     if (input.conferencing) {
       body.conferenceData = {
         createRequest: {

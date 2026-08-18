@@ -9,9 +9,7 @@ const StorageMock = vi.fn(() => ({ bucket: bucketFn }));
 vi.mock("@google-cloud/storage", () => ({ Storage: StorageMock }));
 
 import { GcsDriver } from "./gcs";
-import { uploadTokenSecret, verifyToken, type UploadTokenPayload } from "./tokens";
-
-const tokenOf = (url: string) => url.split("/").pop()!;
+import { UPLOAD_TOKEN_HEADER, uploadTokenSecret, verifyToken, type UploadTokenPayload } from "./tokens";
 
 beforeEach(() => {
   getSignedUrl.mockReset();
@@ -49,14 +47,17 @@ describe("GcsDriver.createUploadTarget", () => {
       size: 2048,
     });
     expect(target.method).toBe("PUT");
-    expect(target.uploadUrl.startsWith("/api/uploads/gcs/")).toBe(true);
+    expect(target.uploadUrl).toBe("/api/uploads/gcs");
     expect(target.headers["Content-Type"]).toBe("video/mp4");
     expect(target.headers["x-goog-content-length-range"]).toBeUndefined();
     expect(target.objectPath).toMatch(/^quikchat\/o1\/c1\//);
     expect(target.maxBytes).toBe(2048);
 
     // The token IS the auth — it verifies and carries the tenant scope.
-    const payload = verifyToken<UploadTokenPayload>(tokenOf(target.uploadUrl), uploadTokenSecret());
+    const payload = verifyToken<UploadTokenPayload>(
+      target.headers[UPLOAD_TOKEN_HEADER]!,
+      uploadTokenSecret(),
+    );
     expect(payload).toMatchObject({
       kind: "up",
       objectPath: target.objectPath,

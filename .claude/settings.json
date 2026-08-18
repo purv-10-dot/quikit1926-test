@@ -15,7 +15,16 @@
       "Bash(node -r dotenv/config ./cols.mjs)",
       "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/fix_drift.py\")",
       "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/reports_table.py\")",
-      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/scope_report.py\")"
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/scope_report.py\")",
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/cssdiff.py\")",
+      "Bash(python \"C:/Users/saadk/AppData/Local/Temp/claude/c--Users-saadk-OneDrive-Desktop-quikit-arch/af05267f-b8f6-499b-8f22-aba00d567500/scratchpad/cssfix.py\")",
+      "Bash(vercel project *)",
+      "Bash(vercel link *)",
+      "Read(//c/Users/saadk/OneDrive/Desktop/**)",
+      "Bash(stat -c '%y %n' .vercel/project.json apps/admin/.vercel/project.json apps/auth/.vercel/project.json apps/quikit/.vercel/project.json 2>&1 | sed 's/\\\\.[0-9]* +0530//')",
+      "Read(//c/Users/saadk/OneDrive/Desktop/quikit_arch/**)",
+      "Bash(vercel --prod --yes)",
+      "Bash(echo \"auth exit=$?\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections",

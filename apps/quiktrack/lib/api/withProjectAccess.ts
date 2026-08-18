@@ -66,16 +66,24 @@ export function withProjectAccess<Params extends Record<string, string>>(
 ) {
   const paramKey = options.paramKey ?? "projectId";
   return withOrgAuth<Params>(async (tenantCtx, req, routeCtx) => {
-    const projectId = routeCtx.params?.[paramKey] as string | undefined;
-    if (!projectId) {
+    const idOrKey = routeCtx.params?.[paramKey] as string | undefined;
+    if (!idOrKey) {
       return NextResponse.json(
         { success: false, error: "Project id missing" },
         { status: 400 },
       );
     }
 
+    // The route param may be either the project's cuid OR its human-readable
+    // projectKey (e.g. "WST") — readable URLs like /spaces/WST/backlog. Resolve
+    // to the real id once, org-scoped (keys are unique per org), then use that
+    // cuid for every downstream check so nothing else has to know about keys.
     const project = await db.qtProject.findFirst({
-      where: { id: projectId, orgId: tenantCtx.orgId, isDeleted: false },
+      where: {
+        orgId: tenantCtx.orgId,
+        isDeleted: false,
+        OR: [{ id: idOrKey }, { projectKey: idOrKey }],
+      },
       select: { id: true },
     });
     if (!project) {
@@ -84,6 +92,7 @@ export function withProjectAccess<Params extends Record<string, string>>(
         { status: 404 },
       );
     }
+    const projectId = project.id;
 
     // Global admin override: tenant admin OR app admin → full access. Skips
     // membership + every project-level permission check.
@@ -154,13 +163,19 @@ export interface LoadedProjectAccess {
 export async function loadProjectAccess(
   orgId: string,
   userId: string,
-  projectId: string,
+  idOrKey: string,
 ): Promise<LoadedProjectAccess | null> {
+  // Accept cuid OR projectKey (see withProjectAccess) and resolve to the id.
   const project = await db.qtProject.findFirst({
-    where: { id: projectId, orgId, isDeleted: false },
+    where: {
+      orgId,
+      isDeleted: false,
+      OR: [{ id: idOrKey }, { projectKey: idOrKey }],
+    },
     select: { id: true },
   });
   if (!project) return null;
+  const projectId = project.id;
 
   const fullAccess =
     (await isTenantAdmin(userId, orgId)) || (await isQuikTrackAppAdmin(userId, orgId));
@@ -179,6 +194,50 @@ export async function loadProjectAccess(
     projectRole: (member.role as ProjectRole) ?? null,
     isTenantAdmin: false,
   };
+}
+
+/**
+ * True if the user is still an active member of the org. This is the
+ * live-access recheck for a user-scoped PAT (withPatAuth.ts) — unlike a
+ * legacy project-scoped PAT, it isn't bound to any one project to recheck
+ * membership against, so the closest equivalent signal is org membership.
+ */
+export async function isActiveOrgMember(orgId: string, userId: string): Promise<boolean> {
+  const member = await db.orgMember.findFirst({
+    where: { userId, orgId, status: "active" },
+    select: { role: true },
+  });
+  return Boolean(member);
+}
+
+export interface AccessibleProject {
+  id: string;
+  projectKey: string;
+  name: string;
+}
+
+/**
+ * Every project a user can act on in this org — same admin-bypass-else-
+ * membership branching as `loadProjectAccess`/`app/api/projects/route.ts`'s
+ * space list. Backs the `list_projects` MCP tool, which a user-scoped PAT
+ * needs to discover valid project ids (a legacy project-scoped PAT has no
+ * use for this beyond its own single project).
+ */
+export async function loadAccessibleProjects(
+  orgId: string,
+  userId: string,
+): Promise<AccessibleProject[]> {
+  const fullAccess =
+    (await isTenantAdmin(userId, orgId)) || (await isQuikTrackAppAdmin(userId, orgId));
+
+  return db.qtProject.findMany({
+    where: {
+      orgId,
+      isDeleted: false,
+      ...(fullAccess ? {} : { members: { some: { userId, isDeleted: false } } }),
+    },
+    select: { id: true, projectKey: true, name: true },
+  });
 }
 
 /**

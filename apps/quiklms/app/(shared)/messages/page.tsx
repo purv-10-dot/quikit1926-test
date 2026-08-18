@@ -102,21 +102,13 @@ const getCurrentUserId = (): string => {
   } catch { return 'dev-user-id'; }
 };
 
-const getCurrentUserRole = (): string => {
-  if (typeof document === 'undefined') return '';
-  try {
-    const match = document.cookie.match(/qs_role=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : '';
-  } catch { return ''; }
-};
-
 const ROLE_FILTER_OPTIONS: Record<string, { value: string; label: string }[]> = {
   TEACHER:      [{ value: '', label: 'All' }, { value: 'LEARNER', label: 'Students' }, { value: 'PARENT', label: 'Parents' }, { value: 'TENANT_ADMIN', label: 'Admin' }],
   PARENT:       [{ value: '', label: 'All' }, { value: 'TEACHER', label: 'Teachers' }],
   LEARNER:      [{ value: '', label: 'All' }, { value: 'TEACHER', label: 'Teachers' }],
   TENANT_ADMIN: [{ value: '', label: 'All' }, { value: 'TEACHER', label: 'Teachers' }, { value: 'PARENT', label: 'Parents' }, { value: 'LEARNER', label: 'Students' }, { value: 'SUB_ADMIN', label: 'Sub Admins' }],
   SUB_ADMIN:    [{ value: '', label: 'All' }, { value: 'TEACHER', label: 'Teachers' }, { value: 'PARENT', label: 'Parents' }, { value: 'LEARNER', label: 'Students' }, { value: 'TENANT_ADMIN', label: 'Admin' }],
-  SUPER_ADMIN:  [{ value: '', label: 'All' }, { value: 'TENANT_ADMIN', label: 'Admins' }, { value: 'TEACHER', label: 'Teachers' }, { value: 'PARENT', label: 'Parents' }, { value: 'LEARNER', label: 'Students' }],
+  ADMIN:  [{ value: '', label: 'All' }, { value: 'TENANT_ADMIN', label: 'Admins' }, { value: 'TEACHER', label: 'Teachers' }, { value: 'PARENT', label: 'Parents' }, { value: 'LEARNER', label: 'Students' }],
 };
 
 const fullName = (u: UserRef | SearchUser | null | undefined): string => {
@@ -159,14 +151,8 @@ const MessagesPage = () => {
   const primaryColor = branding.primaryColor;
   const secondaryColor = branding.secondaryColor;
   const currentUserId = useRef(getCurrentUserId()).current;
-  // Server-resolved ACTIVE role (GET /api/me), which honours the role switcher —
-  // so a user who switched to Sub Admin gets the sub-admin recipient filters.
-  // The `qs_role` cookie is only the pre-hydration fallback now: read alone it
-  // was empty for anyone who had never switched, leaving the filter unpopulated,
-  // and it is client-writable. NOT a useRef — `user` arrives asynchronously, so
-  // pinning it on first render would freeze the fallback in place.
   const { user: currentUser } = useCurrentUser();
-  const currentUserRole = currentUser?.role ?? getCurrentUserRole();
+  const currentUserRole = currentUser?.role ?? '';
   const isCorporateTenant = false; // default school tenant
 
   const [conversations, setConversations] = useState<Conversation[]>([]);

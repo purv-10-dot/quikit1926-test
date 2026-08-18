@@ -19,6 +19,10 @@ const nextConfig = {
       allowedOrigins: ["localhost:3004"],
     },
     outputFileTracingRoot: path.join(__dirname, "../.."),
+    // sanitize-html pulls in htmlparser2, which ships ESM-only. It's only used
+    // server-side (lib/docs/import-to-html.ts), so keep it out of the webpack
+    // bundle and let Node resolve it natively at runtime instead.
+    serverComponentsExternalPackages: ["sanitize-html"],
   },
   async headers() {
     return [

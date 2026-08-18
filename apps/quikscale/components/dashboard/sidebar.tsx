@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import {
-  LayoutDashboard, Target, CheckSquare, Activity,
+  LayoutDashboard, Target, CheckSquare, Activity, Gauge,
   Calendar, FileText, TrendingUp, Building2,
   Users, User, CalendarDays, Clock,
   BookOpen, Star, List, UserCheck, MessageSquare,
@@ -86,6 +86,7 @@ const navigation: SidebarEntry[] = [
     { label: "Individual KPI", href: "/kpi",       icon: User,  moduleKey: "kpi.individual" },
     { label: "Teams KPI",      href: "/kpi/teams", icon: Users, moduleKey: "kpi.teams" },
   ]},
+  { label: "Critical Numbers", href: "/critical-numbers", icon: Gauge, moduleKey: "criticalNumbers" },
   { label: "Priority",       href: "/priority", icon: CheckSquare, moduleKey: "priority" },
   { label: "WWW",            href: "/www",      icon: Activity,    moduleKey: "www" },
   { label: "Meeting Rhythm", icon: Calendar, moduleKey: "clientMeetings", children: [

@@ -69,10 +69,10 @@ export default function RecruitDashboardPage() {
   const funnelMax = Math.max(1, ...(d?.funnel.map((f) => f.count) ?? [1]));
 
   const kpiTiles = d ? [
-    { icon: <Briefcase size={16} />, n: d.kpis.openRequisitions, l: "Open Requisitions", sub: `${d.kpis.openPositions} positions` },
-    { icon: <Users size={16} />, n: d.kpis.inPipeline, l: "In Pipeline" },
+    { icon: <Briefcase size={16} />, n: d.kpis.openRequisitions, l: "Open Requisitions", sub: `${d.kpis.openPositions} positions`, href: "/recruit/requisitions?status=ReqOpen" },
+    { icon: <Users size={16} />, n: d.kpis.inPipeline, l: "In Pipeline", href: "/recruit/pipeline" },
     { icon: <Calendar size={16} />, n: d.kpis.interviewsThisWeek, l: "Interviews / week" },
-    { icon: <FileText size={16} />, n: d.kpis.offersOut, l: "Offers Out" },
+    { icon: <FileText size={16} />, n: d.kpis.offersOut, l: "Offers Out", href: "/recruit/pipeline?stage=Offer" },
     { icon: <Award size={16} />, n: d.kpis.hiresMTD, l: "Hires (this month)" },
     { icon: <Clock size={16} />, n: d.kpis.avgTimeToHire, l: "Avg Time-to-Hire", suffix: "d" },
   ] : [];
@@ -97,16 +97,24 @@ export default function RecruitDashboardPage() {
         <>
           {/* KPI tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {kpiTiles.map((k) => (
-              <div key={k.l} className="bg-white border border-gray-200 rounded-xl shadow-sm p-3.5">
-                <span className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">{k.icon}</span>
-                <div className="text-2xl font-bold text-gray-900 leading-none mt-2.5 tabular-nums">
-                  {k.n}{k.suffix && <span className="text-base font-semibold">{k.suffix}</span>}
-                </div>
-                <div className="text-[11.5px] text-gray-500 font-semibold mt-1">{k.l}</div>
-                {k.sub && <div className="text-[11px] text-gray-400 mt-0.5">{k.sub}</div>}
-              </div>
-            ))}
+            {kpiTiles.map((k) => {
+              const cls = clsx("bg-white border border-gray-200 rounded-xl shadow-sm p-3.5", k.href && "hover:border-green-300 hover:shadow-md transition-shadow cursor-pointer");
+              const body = (
+                <>
+                  <span className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">{k.icon}</span>
+                  <div className="text-2xl font-bold text-gray-900 leading-none mt-2.5 tabular-nums">
+                    {k.n}{k.suffix && <span className="text-base font-semibold">{k.suffix}</span>}
+                  </div>
+                  <div className="text-[11.5px] text-gray-500 font-semibold mt-1">{k.l}</div>
+                  {k.sub && <div className="text-[11px] text-gray-400 mt-0.5">{k.sub}</div>}
+                </>
+              );
+              return k.href ? (
+                <Link key={k.l} href={k.href} className={cls}>{body}</Link>
+              ) : (
+                <div key={k.l} className={cls}>{body}</div>
+              );
+            })}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">

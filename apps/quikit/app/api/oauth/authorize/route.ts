@@ -4,7 +4,8 @@ import { getToken } from "next-auth/jwt";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { generateAuthCode } from "@/lib/oauth";
+import { generateAuthCode, redirectUriMatches, resolveAppOrigin, resolveAppByResource } from "@/lib/oauth";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 
 // Reads runtime session + env-backed OAuth keys — never prerender.
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
   // Look up the OAuth client
   const client = await db.oAuthClient.findUnique({
     where: { clientId },
-    select: { redirectUris: true, scopes: true },
+    select: { appId: true, redirectUris: true, scopes: true, clientSecret: true },
   });
   if (!client) {
     return NextResponse.json(
@@ -54,10 +55,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Validate redirect_uri against registered URIs
-  if (!client.redirectUris.includes(redirectUri)) {
+  // Validate redirect_uri against registered URIs (exact match, or a
+  // registered loopback wildcard-port pattern — see redirectUriMatches).
+  if (!client.redirectUris.some((registered) => redirectUriMatches(registered, redirectUri))) {
     return NextResponse.json(
       { error: "invalid_request", error_description: "redirect_uri not registered for this client" },
+      { status: 400 },
+    );
+  }
+
+  // A public client (no clientSecret) has nothing but PKCE standing between
+  // an intercepted auth code and a stolen token — require it up front rather
+  // than minting a code that /token would have to reject anyway.
+  if (!client.clientSecret && !codeChallenge) {
+    return NextResponse.json(
+      { error: "invalid_request", error_description: "code_challenge required for public clients" },
       { status: 400 },
     );
   }
@@ -66,9 +78,9 @@ export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     // Redirect to login, then back here after login
-    const currentUrl = request.nextUrl.toString();
+    const currentUrl = `${publicBaseUrl(request)}${request.nextUrl.pathname}${request.nextUrl.search}`;
     return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`, request.nextUrl.origin),
+      new URL(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`, publicBaseUrl(request)),
     );
   }
 
@@ -95,18 +107,27 @@ export async function GET(request: NextRequest) {
       memberRole = membership.role;
     } else {
       // No membership at all → redirect to app launcher
-      const currentUrl = request.nextUrl.toString();
+      const currentUrl = `${publicBaseUrl(request)}${request.nextUrl.pathname}${request.nextUrl.search}`;
       return NextResponse.redirect(
-        new URL(`/apps?callbackUrl=${encodeURIComponent(currentUrl)}`, request.nextUrl.origin),
+        new URL(`/apps?callbackUrl=${encodeURIComponent(currentUrl)}`, publicBaseUrl(request)),
       );
     }
   }
 
-  // Verify user has access to this app
-  const app = await db.app.findFirst({
-    where: { oauthClient: { clientId } },
-    select: { id: true, slug: true, baseUrl: true },
-  });
+  // Verify user has access to this app. Prefer the client's own bound appId
+  // (set at registration when it declared `resource` there) — never let a
+  // caller-supplied `resource` override an already-bound client's app. Only
+  // an unbound dynamic client (registered without `resource`, e.g. Claude
+  // Desktop) falls back to resolving the app from the `resource` query
+  // param it sends here instead (RFC 8707's actual intended location for
+  // it) — see resolveAppByResource() in lib/oauth.ts.
+  let app = client.appId
+    ? await db.app.findUnique({ where: { id: client.appId }, select: { id: true, slug: true, baseUrl: true } })
+    : null;
+  if (!app && !client.appId) {
+    const resourceParam = params.get("resource");
+    if (resourceParam) app = await resolveAppByResource(resourceParam);
+  }
   if (app) {
     const access = await db.userAppAccess.findFirst({
       where: { userId, orgId, appId: app.id },
@@ -133,20 +154,17 @@ export async function GET(request: NextRequest) {
         isSuperAdmin: session.user.isSuperAdmin === true,
         memberRole,
       });
-      // Resolve the app's landing origin the SAME way the launcher does: a
-      // per-app env override (e.g. QUIKSCALE_URL) wins over the DB's stored
-      // baseUrl. Critical because App.baseUrl holds PRODUCTION URLs, so in local
-      // dev a raw baseUrl redirect would bounce the user to prod. Falls back to
-      // the DB baseUrl (prod) and finally this IdP's /apps.
-      const appBaseUrl = process.env[`${app.slug.toUpperCase()}_URL`] || app.baseUrl;
+      // Resolve the app's landing origin the same way the launcher does —
+      // falls back to the DB baseUrl (prod) and finally this IdP's /apps.
+      const appBaseUrl = resolveAppOrigin(app);
       const target = appBaseUrl
         ? new URL("/", appBaseUrl)
-        : new URL("/apps", request.nextUrl.origin);
+        : new URL("/apps", publicBaseUrl(request));
       target.searchParams.set("reason", "no_app_access");
       target.searchParams.set("others", String(otherAppsCount));
       // The launcher (this IdP) origin — lets the popup's "Go to my apps" link
       // resolve without relying on NEXT_PUBLIC_QUIKIT_URL being set client-side.
-      target.searchParams.set("home", process.env.QUIKIT_URL || request.nextUrl.origin);
+      target.searchParams.set("home", process.env.QUIKIT_URL || publicBaseUrl(request));
       return NextResponse.redirect(target.toString());
     }
   }

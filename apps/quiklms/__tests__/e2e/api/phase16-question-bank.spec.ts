@@ -39,8 +39,10 @@ const DELETE = (a: APIRequestContext, p: string) => a.delete(p, { timeout: CEIL 
 interface Envelope<T> {
   success?: boolean;
   data?: T;
-  statusCode?: number;
+  /** Success-response business message (route-supplied, e.g. "…deactivated"). */
   message?: string;
+  /** Error-response message (lib/http.ts's `{success:false,error}` envelope). */
+  error?: string;
 }
 interface ListEnvelope {
   success?: boolean;
@@ -396,7 +398,7 @@ test.describe("Phase 16 — guards", () => {
     const teacher = await apiAs("teacher");
     const res = await GET(teacher, "/api/question-bank/not-a-uuid-at-all");
     expect(res.status()).toBe(404);
-    expect(((await safeJson(res)) as Envelope<never>).statusCode).toBe(404);
+    expect(((await safeJson(res)) as Envelope<never>).success).toBe(false);
     await teacher.dispose();
   });
 

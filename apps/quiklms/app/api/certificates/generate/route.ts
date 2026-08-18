@@ -31,10 +31,10 @@ const generateCertificateSchema = z.object({
   passed: z.boolean().nullish(),
 });
 
-// POST /api/certificates/generate — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER
+// POST /api/certificates/generate — ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER']);
+  requireRoles(user, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER']);
   const body = (await parseBody(req, generateCertificateSchema)) as Record<string, unknown>;
   const certificate = await generateCertificate({
     certificateTemplateId: body.certificateTemplateId as string | undefined,

@@ -9,6 +9,7 @@ import {
   diffFields,
   WEEKLY_MEETING_AUDIT_FIELDS,
 } from "@/lib/audit";
+import { emitWeeklyMeetingStatusChanged } from "@/lib/services/workflowEvents";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -109,6 +110,7 @@ export const PUT = withOrgAuth<{ id: string }>(
         dashboardNAMembers: { select: { userId: true } },
         absentTeamMembers: { select: { clientMemberId: true } },
         dashboardNATeamMembers: { select: { clientMemberId: true } },
+        client: { select: { name: true } },
       },
     });
     if (!existing)
@@ -289,6 +291,21 @@ export const PUT = withOrgAuth<{ id: string }>(
           });
         }
       }
+
+      // A member just flagged Absent/Dashboard-NA for this meeting can't also
+      // carry a saved score for it — a stale ClientWeeklyMemberScore row here
+      // is exactly what let the "Quality of the dashboards" dashboard cell and
+      // the Member Punch-In Excel export disagree (86% vs 90.3%). Clear it in
+      // the same transaction so the two can never diverge again.
+      const clearedMemberIds = [
+        ...(d.absentClientMemberIds ?? []),
+        ...(d.dashboardNAClientMemberIds ?? []),
+      ];
+      if (clearedMemberIds.length > 0) {
+        await tx.clientWeeklyMemberScore.deleteMany({
+          where: { meetingId: params.id, clientMemberId: { in: clearedMemberIds } },
+        });
+      }
     });
 
     const updated = await db.clientWeeklyMeeting.findUnique({
@@ -411,6 +428,15 @@ export const PUT = withOrgAuth<{ id: string }>(
         ...requestContext(request),
       });
     }
+
+    emitWeeklyMeetingStatusChanged({
+      orgId,
+      meetingId: params.id,
+      clientId: existing.clientId,
+      clientName: existing.client?.name ?? null,
+      before: existing.callStatus,
+      after: d.callStatus ?? existing.callStatus,
+    });
 
     return NextResponse.json({ success: true });
   }

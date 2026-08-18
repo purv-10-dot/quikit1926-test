@@ -6,7 +6,8 @@ import { getCallerEmployeeId } from "@/lib/rbac/scope";
 import {
   getActiveChainLevels,
   getCallerRoleIds,
-  callerCanActionLevel,
+  getDelegatedApprovers,
+  resolveLevelActor,
 } from "@/lib/services/approval-chain";
 
 /**
@@ -28,9 +29,12 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
     const { orgId } = ctx;
     const callerId = (await getCallerEmployeeId(ctx)) ?? ctx.userId;
 
-    const [chainLevels, roleIds] = await Promise.all([
+    // Delegators who handed this user "Approve Leave" authority — their pending
+    // approvals should also surface here (matches the Requisition inbox).
+    const [chainLevels, roleIds, delegated] = await Promise.all([
       getActiveChainLevels(orgId, "Leave"),
       getCallerRoleIds(orgId, callerId),
+      getDelegatedApprovers(orgId, callerId, "hrms.leave.approve"),
     ]);
 
     // All pending requests that still have at least one pending approval level.
@@ -61,20 +65,23 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
       },
     });
 
-    // Keep only those whose *current* level the caller can action.
-    const visible = requests.filter((r) => {
-      const pending = r.approvals
-        .filter((a) => a.status === "Pending")
-        .sort((a, b) => a.level - b.level);
-      const current = pending[0];
-      if (!current) return false;
-      const levelCfg = chainLevels?.find((l) => l.level === current.level);
-      return callerCanActionLevel(
-        levelCfg,
-        { employeeId: callerId, roleIds },
-        current.approverId,
-      );
-    });
+    // Keep only those whose *current* level the caller can action — either in
+    // their own right or by standing in for a delegator's authority.
+    const visible = requests
+      .map((r) => {
+        const pending = r.approvals
+          .filter((a) => a.status === "Pending")
+          .sort((a, b) => a.level - b.level);
+        const current = pending[0];
+        if (!current) return null;
+        const levelCfg = chainLevels?.find((l) => l.level === current.level);
+        const actor = resolveLevelActor(levelCfg, { employeeId: callerId, roleIds }, delegated, current.approverId);
+        if (!actor.canAction) return null;
+        // Tagged when this item is in the inbox only via delegation — the
+        // delegator's id, so the UI can badge it "on behalf of …".
+        return { ...r, onBehalfOf: actor.onBehalfOf };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
 
     // Strip the approvals detail from the response shape (kept only for filtering).
     const payload = visible.map(({ approvals: _approvals, ...rest }) => rest);

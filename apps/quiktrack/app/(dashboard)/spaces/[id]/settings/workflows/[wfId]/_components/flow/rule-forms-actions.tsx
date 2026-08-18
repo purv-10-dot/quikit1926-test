@@ -86,7 +86,13 @@ export function CopyFieldForm({
   const from = String(value.from ?? "");
   const to = String(value.to ?? "");
   const set = (patch: Record<string, unknown>) => onChange({ ...value, ...patch });
-  const opts = WRITABLE_FIELDS.map((f) => ({ value: f.value, label: f.label }));
+  const fromOpts = WRITABLE_FIELDS.map((f) => ({ value: f.value, label: f.label }));
+  // "To" excludes the chosen source field (can't copy a field onto itself).
+  const toOpts = fromOpts.filter((f) => f.value !== from);
+
+  // Picking a source clears the destination if it now collides with the source.
+  const pickFrom = (next: string) =>
+    set({ from: next, ...(next === to ? { to: "" } : {}) });
 
   return (
     <div className="space-y-4">
@@ -104,11 +110,17 @@ export function CopyFieldForm({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-700">Copy from this field</label>
-          <PortalDropdown placeholder="Select a field" options={opts} selected={from ? [from] : []} onChange={(n) => set({ from: n[0] ?? "" })} />
+          <PortalDropdown placeholder="Select a field" options={fromOpts} selected={from ? [from] : []} onChange={(n) => pickFrom(n[0] ?? "")} />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-700">To this field</label>
-          <PortalDropdown placeholder="Select a field to copy to" options={opts} selected={to ? [to] : []} onChange={(n) => set({ to: n[0] ?? "" })} />
+          <PortalDropdown
+            placeholder="Select a field to copy to"
+            options={toOpts}
+            selected={to ? [to] : []}
+            disabled={!from}
+            onChange={(n) => set({ to: n[0] ?? "" })}
+          />
         </div>
       </div>
       {to && <p className="text-[11px] text-gray-500">This field&apos;s value will replace the destination field&apos;s value.</p>}

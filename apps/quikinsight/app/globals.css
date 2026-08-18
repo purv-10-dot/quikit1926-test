@@ -46,7 +46,7 @@
   .hamburger{display:none; width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:var(--surface); align-items:center; justify-content:center;}
 
   .topbar-body{flex:1; display:flex; align-items:center; gap:14px; padding:0 22px; min-width:0;}
-  .global-search{position:relative; flex:1; max-width:420px; min-width:0;}
+  .global-search{position:relative; flex:1; max-width:420px; min-width:0; width:100%;}
   .global-search-box{display:flex; align-items:center; gap:9px; background:var(--canvas); border:1px solid var(--border); border-radius:10px; padding:8px 12px;}
   .global-search-box input{flex:1; border:none; background:none; font-size:13.5px; outline:none; color:var(--text-primary);}
   .global-search-box svg{opacity:0.55; flex-shrink:0;}
@@ -164,9 +164,9 @@
   /* ── Modal (ported from the v15 preview) ─────────────────────────────── */
   .modal-overlay{display:none; position:fixed; inset:0; background:rgba(18,20,43,0.45); z-index:60; align-items:center; justify-content:center; padding:20px;}
   .modal-overlay.open{display:flex;}
-  .modal-box{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:22px; width:100%; max-width:440px; box-shadow:0 18px 48px rgba(20,22,43,0.22);}
-  .modal-title{font-size:17px; font-weight:700; margin:0 0 6px;}
-  .modal-sub{font-size:13px; color:var(--text-secondary); margin:0 0 16px; line-height:1.6;}
+  .modal-box{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:24px; width:440px; max-width:100%; box-shadow:0 20px 60px rgba(20,22,43,0.3); max-height:86vh; overflow-y:auto;}
+  .modal-title{font-size:17px; font-weight:700; margin:0 0 4px;}
+  .modal-sub{font-size:13px; color:var(--text-secondary); margin:0 0 18px; line-height:1.5;}
   .modal-field{margin-bottom:12px;}
   .modal-field label{display:block; font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:5px;}
   .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
@@ -364,9 +364,9 @@
   .fab-chat:hover{opacity:0.9;}
 
   /* team page */
-  .team-banner{display:flex; align-items:center; justify-content:space-between; gap:14px; background:var(--accent-soft); border:1px solid var(--accent-soft); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:18px;}
-  .team-banner-text{font-size:13.5px; color:var(--accent-ink); line-height:1.5;}
-  .team-banner-chips{display:flex; gap:6px; flex-shrink:0;}
+  .team-banner{display:flex; align-items:center; justify-content:space-between; gap:14px; background:var(--accent-soft); border:1px solid var(--accent-soft); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:18px; flex-wrap:wrap;}
+  .team-banner-text{font-size:13.5px; color:var(--accent-ink); line-height:1.5; flex:1 1 260px; min-width:0;}
+  .team-banner-chips{display:flex; gap:6px; flex-shrink:0; flex-wrap:wrap; align-items:center;}
   .team-synced-pill{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--green); font-weight:600;}
   .team-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-bottom:18px;}
   .team-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:18px;}
@@ -491,3 +491,28 @@
   .skeleton::after{content:""; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 65%, transparent), transparent); animation:skeleton-shimmer 1.4s ease-in-out infinite;}
   @keyframes skeleton-shimmer{100%{transform:translateX(100%);}}
   @media (prefers-reduced-motion: reduce){ .skeleton::after{animation:none;} }
+
+  /* ── Parity with the v15 UI preview ──────────────────────────────────
+     Rules present in the preview stylesheet but absent here, added
+     verbatim so the two match. Kept in one block rather than scattered
+     so the next preview diff is a single comparison.
+     ------------------------------------------------------------------ */
+  .activity-icon{width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; color:#fff; flex-shrink:0;}
+  .app.sidebar-collapsed .sidebar{width:76px;}
+  .app.sidebar-collapsed .main{margin-left:76px;}
+  .app.sidebar-collapsed .nav-item.active::before{left:0;}
+  .app.sidebar-collapsed .collapse-btn{transform:rotate(180deg);}
+  .toggle-switch{width:38px; height:22px; border-radius:20px; background:var(--border); border:none; position:relative; flex-shrink:0; padding:0;}
+  .toggle-switch .toggle-knob{position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .15s;}
+  .toggle-switch.on{background:var(--accent);}
+  .toggle-switch.on .toggle-knob{left:18px;}
+  .app.sidebar-collapsed .nav-label, .app.sidebar-collapsed .side-section-label, .app.sidebar-collapsed .plan-card, .app.sidebar-collapsed .nav-badge{display:none;}
+  .app.sidebar-collapsed .nav-item, .app.sidebar-collapsed .nav-item-platform{justify-content:center; padding-left:0; padding-right:0; gap:0;}
+  .modal-field input, .modal-field select, .modal-field textarea{width:100%; border:1px solid var(--border); border-radius:9px; padding:9px 12px; font-size:13px; background:var(--surface); color:var(--text-primary); font-family:var(--font-body);}
+
+  /* Print styles, verbatim from the preview. */
+  @media print{
+    body *{visibility:hidden;}
+    .report-card, .report-card *{visibility:visible;}
+    .report-card{position:absolute; top:0; left:0; width:100%; border:none; padding:0;}
+  }

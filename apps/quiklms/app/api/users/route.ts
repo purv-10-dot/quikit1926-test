@@ -3,10 +3,10 @@ import { requireAuth, requireRoles, orgScope } from '@/lib/auth/context';
 import { findAllUsers } from '@/lib/services/users-service';
 import { applyTeacherPrivacy } from '@/lib/privacy';
 
-// GET /api/users?search=&role= — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// GET /api/users?search=&role= — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const url = new URL(req.url);
   const search = url.searchParams.get('search') || undefined;
   const role = url.searchParams.get('role') || undefined;

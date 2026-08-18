@@ -21,7 +21,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth/context', () => ({
   requireAuth: h.requireAuth,
   requireRoles: vi.fn(),
-  userHasRole: (u: any, r: string) => u?.role === r || u?.secondaryRole === r,
+  userHasRole: (u: any, r: string) => u?.role === r,
   tenantWhere: (_u: unknown, extra: object) => extra,
   assertTenantMatch: vi.fn(),
 }));
@@ -39,7 +39,7 @@ vi.mock('@/lib/db', () => ({
 import { GET } from '@/app/api/assessments/[id]/route';
 
 const ctx = { params: { id: 'a1' } };
-const learner = { id: 'u1', role: 'LEARNER', secondaryRole: null, orgId: 'org-1', isActive: true };
+const learner = { id: 'u1', role: 'LEARNER', orgId: 'org-1', isActive: true };
 
 /** q0..q3 main pool, b0..b1 bonus pool — each carrying its answer key. */
 const assessment = {

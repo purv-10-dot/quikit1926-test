@@ -1,20 +1,43 @@
 /**
  * Users service — ported from UsersService (Prisma). Tenant scoping is applied
- * by callers via the orgId argument (SUPER_ADMIN passes undefined to span all).
+ * by callers via the orgId argument (ADMIN passes undefined to span all).
  */
 import type { Prisma, LmsUserRole as UserRole } from '@prisma/client';
 import { LmsUserRole } from '@prisma/client';
 import { db } from '@/lib/db';
-import { BadRequest, Forbidden, NotFound } from '@/lib/http';
+import { BadRequest, NotFound } from '@/lib/http';
 import { sendEmail } from '@/lib/email';
 
 /** Every valid role, read from the generated enum so it cannot drift from the schema. */
 const USER_ROLES = Object.values(LmsUserRole) as UserRole[];
 
+/**
+ * The roster list projection.
+ *
+ * `GET /api/users` is the ONLY read the Teachers page has — it has no per-user
+ * detail endpoint — so anything missing from this select is a field the admin
+ * typed into the create form and never saw again. It carried `subjects` but not
+ * the teacher's WEEKLY AVAILABILITY nor any of the pay/qualification columns, so
+ * a freshly-created teacher rendered as "+ Set Availability", payout "-", and
+ * the edit modal reopened with an empty qualification and a default rate that
+ * silently overwrote the real one on the next save.
+ *
+ * The availability gap was the expensive one, because it reads as data loss on
+ * a flow that actually persisted correctly: `enrichRosterUser` DID write the
+ * slots (see lib/services/roster-profile.ts), the list simply never asked for
+ * them — and `validateTeacherSchedule` then rejected the batch the admin tried
+ * to build with that teacher, with an error saying availability was never set.
+ *
+ * `availableSlots` is a relation, so Prisma resolves it in one extra query for
+ * the whole page rather than per row.
+ */
 const LIST_SELECT = {
-  id: true, firstName: true, lastName: true, email: true, role: true, secondaryRole: true,
+  id: true, firstName: true, lastName: true, email: true, role: true,
   profilePicture: true, grade: true, section: true, studentId: true, employeeId: true, parentCode: true,
   isActive: true, managerId: true, orgId: true, phone: true, subjects: true, createdAt: true,
+  ratePerClass: true, ratePerHour: true, rateType: true, qualification: true, monthlyPayout: true,
+  maxSlotsPerWeek: true, tutoringEnabled: true, tutoringCreditCost: true,
+  availableSlots: { select: { id: true, dayOfWeek: true, startTime: true, endTime: true } },
 } satisfies Prisma.LmsUserSelect;
 
 function nameSearch(search: string): Prisma.LmsUserWhereInput {
@@ -124,8 +147,7 @@ export async function searchUsers(orgId: string | undefined, query?: string, rol
 export async function findAllUsers(orgId: string | undefined, search?: string, role?: string, excludeRoles: string[] = []) {
   const where: Prisma.LmsUserWhereInput = {};
   if (orgId) where.orgId = orgId;
-  if (role === 'SUB_ADMIN') where.OR = [{ role: 'SUB_ADMIN' }, { secondaryRole: 'SUB_ADMIN' }];
-  else if (role && role !== 'ALL') where.role = role as UserRole;
+  if (role && role !== 'ALL') where.role = role as UserRole;
   else if (excludeRoles.length) where.role = { notIn: excludeRoles as UserRole[] };
   if (search?.trim()) Object.assign(where, nameSearch(search));
   return db.lmsUser.findMany({ where, select: LIST_SELECT, orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }] });
@@ -137,21 +159,6 @@ export async function findUsersByIds(orgId: string, ids: string[]) {
     where: { id: { in: ids }, orgId },
     select: { id: true, firstName: true, lastName: true, email: true, role: true, grade: true, section: true, studentId: true },
   });
-}
-
-export async function promoteToSubAdmin(userId: string, orgId: string) {
-  const user = await db.lmsUser.findUnique({ where: { id: userId } });
-  if (!user) throw NotFound('User not found');
-  if (!user.orgId || user.orgId !== orgId) throw Forbidden('User is not in this organization');
-  if (user.secondaryRole === 'SUB_ADMIN') throw BadRequest('User already has Sub Admin role');
-  return db.lmsUser.update({ where: { id: userId }, data: { secondaryRole: 'SUB_ADMIN' }, select: LIST_SELECT });
-}
-
-export async function revokeSubAdmin(userId: string, orgId: string) {
-  const user = await db.lmsUser.findUnique({ where: { id: userId } });
-  if (!user) throw NotFound('User not found');
-  if (!user.orgId || user.orgId !== orgId) throw Forbidden('User is not in this organization');
-  return db.lmsUser.update({ where: { id: userId }, data: { secondaryRole: null }, select: LIST_SELECT });
 }
 
 /**
@@ -178,8 +185,7 @@ export async function revokeSubAdmin(userId: string, orgId: string) {
 async function assertInOrg(userId: string, orgId: string, role: 'PARENT' | 'LEARNER', label: string) {
   const user = await db.lmsUser.findFirst({ where: { id: userId, orgId } });
   if (!user) throw NotFound(`${label} not found in this tenant`);
-  // `secondaryRole` counts: the legacy's RolesGuard treated either as the role.
-  if (user.role !== role && user.secondaryRole !== role) {
+  if (user.role !== role) {
     throw BadRequest(`${label} does not have the ${role} role`);
   }
   return user;
@@ -231,7 +237,7 @@ export async function updateUser(id: string, orgId: string | undefined, data: Re
   /**
    * role — legacy parity (`users.service.ts:305`, allowed by `update-user.dto.ts:38`).
    * This endpoint CAN change a user's privileges, and always could: the route
-   * is guarded to SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN, matching the legacy's
+   * is guarded to ADMIN | TENANT_ADMIN | SUB_ADMIN, matching the legacy's
    * `@Roles` on `@Patch(':id')` (`users.controller.ts:198-199`), and the actor's
    * org scope is already enforced by the `findFirst` above.
    *

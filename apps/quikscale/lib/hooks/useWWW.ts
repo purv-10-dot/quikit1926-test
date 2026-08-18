@@ -21,9 +21,14 @@ export interface WWWFilters {
   limit?: number;
   who?: string;
   teamId?: string;
+  /** Due-date range ("YYYY-MM-DD") — filters on `when`, server-side. */
+  from?: string;
+  to?: string;
 }
 
-function buildListUrl(filters: WWWFilters): string {
+/** Exported for unit testing — verifies the client → server query-param wiring
+ *  independent of the RBAC-gated API route (which real requests also hit). */
+export function buildListUrl(filters: WWWFilters): string {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.status) params.set("status", filters.status);
@@ -37,6 +42,8 @@ function buildListUrl(filters: WWWFilters): string {
   if (filters.limit) params.set("limit", String(filters.limit));
   if (filters.who) params.set("who", filters.who);
   if (filters.teamId) params.set("teamId", filters.teamId);
+  if (filters.from) params.set("from", filters.from);
+  if (filters.to) params.set("to", filters.to);
   const qs = params.toString();
   return `/api/www${qs ? `?${qs}` : ""}`;
 }

@@ -11,6 +11,7 @@ import {
 import { HttpError, isHttpError } from "./errors";
 import { getRawSession } from "./session";
 import { assertMembership } from "./authz";
+import { assertQuikChatAccess } from "./authz/appAccess";
 import { ensureUserRole } from "./authz/seed";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 
@@ -116,6 +117,26 @@ export function withOrgAuth(
       const ctx = await authContext(req as NextRequest);
       const orgCtx: OrgContext = { userId: ctx.userId, orgId: ctx.orgId };
       const base = { orgId: ctx.orgId, actorType: "human", userId: ctx.userId };
+      // ENTITLEMENT. `withAuth` above proves a valid JWT with an orgId — it does
+      // NOT check UserAppAccess, and middleware.ts's matcher excludes /api/*
+      // entirely. Without this line the only app-access gate in the whole app is
+      // `(dashboard)/layout.tsx`, which route handlers never run, so any
+      // authenticated same-org user with no QuikChat grant could drive every
+      // QuikChat API directly while the UI refused to load for them.
+      //
+      // Argument set comes from the JWT, so this costs no extra session read —
+      // and `orgRole` MUST be passed: getAppAccess grants org admins access on
+      // org-level entitlement alone, and omitting it would deny them.
+      //
+      // BEFORE ensureUserRole, deliberately: there is no reason to seed roles
+      // for a caller who cannot open the app, and rejecting first keeps us from
+      // writing QcUserAppRole rows for people who will never use them.
+      await assertQuikChatAccess({
+        userId: ctx.userId,
+        orgId: ctx.orgId,
+        isSuperAdmin: ctx.isSuperAdmin,
+        memberRole: ctx.orgRole,
+      });
       // RBAC v2 seed-before-check (Phase 2): guarantee the caller holds a role
       // BEFORE any userCan/requireAdmin gate in the handler runs, so fail-closed
       // enforcement can't lock out a not-yet-seeded user. Steady state is one

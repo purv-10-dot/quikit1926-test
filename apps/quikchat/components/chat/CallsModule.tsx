@@ -14,10 +14,11 @@ import {
   Send,
   Spinner,
   useToast,
-  Users,
   Video,
 } from "@/components/ui";
 import { createChannel, fetchCallHistory, sendMessage } from "@/lib/api";
+import { useNotifications } from "@/components/notifications/NotificationProvider";
+import { useProfile, type CallType } from "@/components/profile/ProfileProvider";
 import {
   dateDividerLabel,
   formatCallDuration,
@@ -70,7 +71,10 @@ export function CallsModule() {
   // In-flight guard: blocks a second submit (button OR Enter) while a send is
   // outstanding, which an empty/whitespace check alone would not.
   const [sending, setSending] = useState(false);
+  const [opening, setOpening] = useState(false);
   const toast = useToast();
+  const { openChannel } = useNotifications();
+  const { startCallWith } = useProfile();
 
   const historyQuery = useQuery({ queryKey: ["calls-history"], queryFn: fetchCallHistory });
 
@@ -113,6 +117,40 @@ export function CallsModule() {
    * fetch. Deliberately does NOT navigate: this is a reply from the history pane,
    * so the user stays here.
    */
+  /**
+   * Open the conversation this call belonged to. Same find-or-create-DM path as
+   * `sendQuickMessage` below, then hands off to the notification provider's
+   * channel opener — the one mechanism that switches ChatShell's view AND
+   * selects the channel (NotificationsModule uses it for feed rows).
+   */
+  async function openConversation() {
+    if (!selected || !canQuickSend || opening) return;
+    setOpening(true);
+    try {
+      const channelId =
+        selected.channelId ??
+        (await createChannel({ type: "dm", memberIds: [selected.otherUserId!] })).channelId;
+      openChannel(channelId);
+    } catch (err) {
+      toast.error({
+        title: "Couldn't open that conversation",
+        body: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  /**
+   * Call this person back. `startCallWith` runs ChatWorkspace's registered
+   * opener, which is the same path the profile card's "Call" action uses — no
+   * duplicate call-creation logic here.
+   */
+  function callBack(type: CallType) {
+    if (!selected?.otherUserId) return;
+    startCallWith(selected.otherUserId, type);
+  }
+
   async function sendQuickMessage() {
     const content = quickMsg.trim();
     if (!content || sending || !selected || !canQuickSend) return;
@@ -224,17 +262,35 @@ export function CallsModule() {
                   <span className="qc-calls-det__status" aria-hidden />
                 </span>
                 <div className="qc-calls-det__name">{selected.name}</div>
+                {/* "Org chart" was removed rather than wired: QuikChat has no
+                    org-chart route, page or data source, so there was nothing
+                    to point it at and inventing a destination is not a fix. */}
                 <div className="qc-calls-det__actions">
-                  <button type="button" className="qc-iconbtn" aria-label="Chat">
+                  <button
+                    type="button"
+                    className="qc-iconbtn"
+                    aria-label="Chat"
+                    disabled={!canQuickSend || opening}
+                    onClick={() => void openConversation()}
+                  >
                     <MessageSquare size={17} />
                   </button>
-                  <button type="button" className="qc-iconbtn" aria-label="Org chart">
-                    <Users size={17} />
-                  </button>
-                  <button type="button" className="qc-iconbtn" aria-label="Video call">
+                  <button
+                    type="button"
+                    className="qc-iconbtn"
+                    aria-label="Video call"
+                    disabled={!selected.otherUserId}
+                    onClick={() => callBack("video")}
+                  >
                     <Video size={17} />
                   </button>
-                  <button type="button" className="qc-iconbtn" aria-label="Call">
+                  <button
+                    type="button"
+                    className="qc-iconbtn"
+                    aria-label="Call"
+                    disabled={!selected.otherUserId}
+                    onClick={() => callBack("audio")}
+                  >
                     <Phone size={17} />
                   </button>
                 </div>

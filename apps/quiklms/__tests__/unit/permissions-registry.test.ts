@@ -7,7 +7,7 @@ import { PERMISSION_MATRIX, MATRIX_EXCEPTIONS } from '@/lib/auth/permission-matr
  * The resource rule is what makes the derived matrix safe, so it is worth pinning.
  *
  * Granularity was measured. One path segment left 47 of 135 resource:action pairs
- * self-contradictory — `certificates:view` spanned a SUPER_ADMIN-only approval queue
+ * self-contradictory — `certificates:view` spanned a ADMIN-only approval queue
  * and a learner's own certificate list, and seeding the union would have handed
  * learners the approval queue. Two segments left 6. Full depth plus `.item` leaves
  * ZERO across 392 pairs, which is why it is the rule.
@@ -50,7 +50,7 @@ describe('resourceForPath', () => {
   /**
    * REGRESSION. An id in the MIDDLE of a path must not truncate the key. An earlier
    * version took the first two segments and only then dropped ids, which turned
-   * `/api/tenants/<id>/branding` into `tenants` — seeded SUPER_ADMIN-only — so the
+   * `/api/tenants/<id>/branding` into `tenants` — seeded ADMIN-only — so the
    * shadow probe reported every tenant admin reading their own branding as a denial
    * of `tenants:view`. The generator had recorded `tenants.branding`.
    */

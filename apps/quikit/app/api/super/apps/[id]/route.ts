@@ -15,7 +15,8 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _request: Nex
     const app = await db.app.findUnique({
       where: { id },
       include: {
-        oauthClient: {
+        oauthClients: {
+          where: { purpose: "first_party" },
           select: {
             id: true,
             clientId: true,
@@ -24,6 +25,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _request: Nex
             grantTypes: true,
             createdAt: true,
           },
+          take: 1,
         },
         _count: { select: { userAccess: true } },
       },
@@ -36,7 +38,13 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _request: Nex
       );
     }
 
-    return NextResponse.json({ success: true, data: app });
+    // Reshape back to the singular `oauthClient` shape the Super Admin app
+    // detail page expects — dynamically self-registered clients (purpose
+    // "dynamic") are intentionally excluded from this view.
+    const { oauthClients, ...rest } = app;
+    const data = { ...rest, oauthClient: oauthClients[0] ?? null };
+
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

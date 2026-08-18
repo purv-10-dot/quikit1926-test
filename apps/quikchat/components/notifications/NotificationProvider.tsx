@@ -71,6 +71,22 @@ export interface NotificationContextValue {
   // --- wiring (no-ops without a provider) ---
   attachClient(client: NotifRealtimeClient | null): void;
   registerChannelOpener(fn: (channelId: string, messageId?: string | null) => void): void;
+  /**
+   * Open the "new direct message" composer. Mirrors `openChannel` — the trigger
+   * lives in ChatWorkspace local state, so anything outside it (the
+   * `quikchat://new-chat` desktop deep link) needs a registered opener to reach
+   * it. No-op when nothing has registered, exactly like `openChannel`.
+   */
+  openNewChat(): void;
+  registerNewChatOpener(fn: () => void): void;
+  /**
+   * Tell the provider which channel is currently open (null when none is).
+   * Called from ChatWorkspace on every `activeId` change. An inbound
+   * notification for this channel, while the tab is focused, is suppressed
+   * (no toast, no unread bump) rather than delivered — the user is already
+   * looking at it.
+   */
+  setActiveChannel(channelId: string | null): void;
 }
 
 const noopAsync = async () => undefined;
@@ -90,6 +106,9 @@ const defaultValue: NotificationContextValue = {
   requestOsPermission: noopAsync,
   attachClient: () => undefined,
   registerChannelOpener: () => undefined,
+  openNewChat: () => undefined,
+  registerNewChatOpener: () => undefined,
+  setActiveChannel: () => undefined,
 };
 
 const NotificationContext = createContext<NotificationContextValue>(defaultValue);
@@ -108,6 +127,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const openerRef = useRef<((channelId: string, messageId?: string | null) => void) | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Ref, not state: ChatWorkspace calls this on every channel switch, and it
+  // must not change handleInbound's identity (that would re-subscribe the
+  // realtime listener on every switch — see attachClient's single-subscription
+  // comment).
+  const activeChannelRef = useRef<string | null>(null);
+  const setActiveChannel = useCallback((channelId: string | null) => {
+    activeChannelRef.current = channelId;
+  }, []);
 
   const openChannel = useCallback((channelId: string | null, messageId?: string | null) => {
     if (!channelId) return;
@@ -121,6 +148,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const newChatOpenerRef = useRef<(() => void) | null>(null);
+  const openNewChat = useCallback(() => {
+    newChatOpenerRef.current?.();
+  }, []);
+  const registerNewChatOpener = useCallback((fn: () => void) => {
+    newChatOpenerRef.current = fn;
+  }, []);
+
   // ---- inbound realtime event ----
   const handleInbound = useCallback(
     (payload: NotificationRealtimePayload) => {
@@ -129,6 +164,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       // strip both so neither leaks into the stored DTO or the bell feed.
       const { desktop, sound, ...dto } = payload;
       const n = dto as NotificationDto;
+
+      // The user is already looking at this channel (tab focused, that
+      // channel open): treat the inbound row as already-read rather than
+      // delivering it — it still lands in the feed, but no toast and no
+      // unread bump for something nobody will see change. Keep the server
+      // row in sync so a later full refetch doesn't resurrect it as unread.
+      const isOpenChannel = !!n.channelId && n.channelId === activeChannelRef.current;
+      if (isOpenChannel && isAppFocused()) {
+        setState((s) => applyInbound(s, { ...n, isRead: true }));
+        if (!n.isRead) void markNotificationsReadApi([n.id]).catch(() => undefined);
+        return;
+      }
+
       setState((s) => applyInbound(s, n));
 
       if (isAppFocused()) {
@@ -290,6 +338,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       requestOsPermission,
       attachClient,
       registerChannelOpener,
+      openNewChat,
+      registerNewChatOpener,
+      setActiveChannel,
     }),
     [
       state,
@@ -305,6 +356,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       requestOsPermission,
       attachClient,
       registerChannelOpener,
+      openNewChat,
+      registerNewChatOpener,
+      setActiveChannel,
     ],
   );
 

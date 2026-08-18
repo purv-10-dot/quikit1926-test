@@ -53,7 +53,7 @@ const FeatureRoute: React.FC<FeatureRouteProps> = ({ feature, children, fallback
         if (user.role === 'PARENT') return router.replace('/parent-dashboard');
         if (user.role === 'TENANT_ADMIN') return router.replace('/tenant-dashboard');
         if (user.role === 'SUB_ADMIN') return router.replace('/sub-admin-dashboard');
-        if (user.role === 'SUPER_ADMIN') return router.replace('/dashboard');
+        if (user.role === 'ADMIN') return router.replace('/dashboard');
       } catch {
         // ignore
       }

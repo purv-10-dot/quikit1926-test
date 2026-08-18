@@ -37,13 +37,10 @@ export const useTheme = () => useContext(ThemeCtx);
 // ── Current user ────────────────────────────────────────────────────────────
 export interface CurrentUser {
   id: string; _id: string; email: string; firstName: string; lastName: string;
-  /** The role they are ACTING as — honours the header role switcher. */
+  /** Single-role model (quikscale parity). */
   role: string;
-  /** The `LmsUser.role` column, i.e. the role they are when not switched. */
+  /** The `LmsUser.role` column — same as `role` under the single-role model. */
   primaryRole: string;
-  secondaryRole: string | null;
-  /** Every role they may switch between, default first. Server-derived. */
-  roles: string[];
   orgId: string | null;
   tenantType: 'corporate' | 'school' | null; managerId: string | null;
   childIds: string[]; isActive: boolean;

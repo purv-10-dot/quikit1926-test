@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { APP_ID, splitCode, joinCode } from "@/lib/rbac/registry";
 import { PERMISSIONS, DEFAULT_ROLES } from "@/lib/rbac/permissions";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
+import { getCentralHrmsRole } from "@/lib/rbac/mirrorRole";
 
 /** Central membership roles that should map to the HRMS `admin` role. */
 const CENTRAL_ADMIN_ROLES = new Set(["super_admin", "org_admin", "app_admin", "admin"]);
@@ -97,6 +98,38 @@ export function mappedHrmsRole(membershipRole: string | null, isSuperAdmin: bool
   return "employee"; // every provisioned user gets an explicit UserAppRole row
 }
 
+/**
+ * Apply the role the Admin Portal's Members Invite/Edit flow assigned this
+ * central user for HRMS specifically ("Role in QuikHRMS"), if a matching
+ * central access row and HRMS role name both exist. Preferred over
+ * `mappedHrmsRole`'s coarse org-membership mapping since it's a deliberate
+ * per-app choice, not a fallback default. Only fires on first link — it
+ * doesn't help a role CHANGE made after the employee already has an
+ * authUserId (see with-auth.ts's "linked" fast path, which never re-checks).
+ * Returns true if a role was applied.
+ */
+export async function applyCentralRoleIfAny(
+  orgId: string,
+  employeeId: string,
+  authUserId: string,
+): Promise<boolean> {
+  const centralRoleName = await getCentralHrmsRole(orgId, authUserId);
+  if (!centralRoleName) return false;
+
+  const role = await prisma.hrmsAppRole.findFirst({
+    where: { orgId, appId: APP_ID, name: { equals: centralRoleName, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!role) return false;
+
+  await prisma.hrmsUserAppRole.upsert({
+    where: { userId_orgId_roleId: { userId: employeeId, orgId, roleId: role.id } },
+    create: { userId: employeeId, orgId, roleId: role.id, assignedBy: authUserId },
+    update: {},
+  });
+  return true;
+}
+
 export interface ProvisionArgs {
   orgId: string;
   authUserId: string;
@@ -157,18 +190,21 @@ export async function provisionEmployee(args: ProvisionArgs): Promise<string> {
     employeeId = existing.id;
   }
 
-  const roleName = mappedHrmsRole(membershipRole, isSuperAdmin);
-  if (roleName) {
-    const role = await prisma.hrmsAppRole.findFirst({
-      where: { orgId: orgId, appId: APP_ID, name: roleName },
-      select: { id: true },
-    });
-    if (role) {
-      await prisma.hrmsUserAppRole.upsert({
-        where: { userId_orgId_roleId: { userId: employeeId, orgId: orgId, roleId: role.id } },
-        create: { userId: employeeId, orgId: orgId, roleId: role.id, assignedBy: authUserId },
-        update: {},
+  const appliedFromCentral = await applyCentralRoleIfAny(orgId, employeeId, authUserId);
+  if (!appliedFromCentral) {
+    const roleName = mappedHrmsRole(membershipRole, isSuperAdmin);
+    if (roleName) {
+      const role = await prisma.hrmsAppRole.findFirst({
+        where: { orgId: orgId, appId: APP_ID, name: roleName },
+        select: { id: true },
       });
+      if (role) {
+        await prisma.hrmsUserAppRole.upsert({
+          where: { userId_orgId_roleId: { userId: employeeId, orgId: orgId, roleId: role.id } },
+          create: { userId: employeeId, orgId: orgId, roleId: role.id, assignedBy: authUserId },
+          update: {},
+        });
+      }
     }
   }
 
@@ -192,6 +228,56 @@ export interface ProvisionFromInvitationArgs {
   authUserId: string;
   email: string;
   invitation: InvitationProvisionData;
+}
+
+/**
+ * Grant an invitation's roleIds to an employee, capped by the inviter's own
+ * permissions (defense-in-depth: provisioning can't escalate the invitee
+ * beyond the inviter's own authority, even if an over-privileged invite
+ * slipped through). Shared by brand-new-employee provisioning
+ * (provisionFromInvitation) and the existing-employee SSO-link path in
+ * with-auth.ts, which both consume a pending Invitation's roleIds.
+ */
+export async function applyInvitationRoles(
+  orgId: string,
+  employeeId: string,
+  invitation: Pick<InvitationProvisionData, "roleIds" | "invitedBy">,
+): Promise<void> {
+  let grantRoleIds = invitation.roleIds;
+  if (grantRoleIds.length === 0) return;
+
+  const inviterLinks = await prisma.hrmsUserAppRole.findMany({
+    where: { orgId, userId: invitation.invitedBy },
+    select: { roleId: true },
+  });
+  const inviterRoles = inviterLinks.length
+    ? await prisma.hrmsAppRole.findMany({
+        where: { orgId, id: { in: inviterLinks.map((l) => l.roleId) } },
+        select: { name: true, permissions: { select: { resource: true, action: true } } },
+      })
+    : [];
+  const inviterIsSuper = inviterRoles.some((r) => r.name === "admin");
+  if (!inviterIsSuper) {
+    const held = new Set(inviterRoles.flatMap((r) => r.permissions.map((p) => joinCode(p.resource, p.action))));
+    const requested = await prisma.hrmsAppRole.findMany({
+      where: { orgId, id: { in: grantRoleIds } },
+      select: { id: true, permissions: { select: { resource: true, action: true } } },
+    });
+    grantRoleIds = requested
+      .filter((r) => r.permissions.every((p) => held.has(joinCode(p.resource, p.action))))
+      .map((r) => r.id);
+  }
+  if (grantRoleIds.length === 0) return;
+
+  await prisma.hrmsUserAppRole.createMany({
+    data: grantRoleIds.map((roleId) => ({
+      userId: employeeId,
+      orgId: orgId,
+      roleId,
+      assignedBy: "invitation",
+    })),
+    skipDuplicates: true,
+  });
 }
 
 /**
@@ -243,45 +329,7 @@ export async function provisionFromInvitation(args: ProvisionFromInvitationArgs)
     employeeId = existing.id;
   }
 
-  // Tier guard (defense-in-depth): only grant roles whose permissions the
-  // INVITER actually held — even if an over-privileged invite slipped through,
-  // provisioning can't escalate the invitee beyond the inviter's own authority.
-  // The inviter's roles are resolved live; an "admin" inviter grants anything.
-  let grantRoleIds = invitation.roleIds;
-  if (grantRoleIds.length > 0) {
-    const inviterLinks = await prisma.hrmsUserAppRole.findMany({
-      where: { orgId, userId: invitation.invitedBy },
-      select: { roleId: true },
-    });
-    const inviterRoles = inviterLinks.length
-      ? await prisma.hrmsAppRole.findMany({
-          where: { orgId, id: { in: inviterLinks.map((l) => l.roleId) } },
-          select: { name: true, permissions: { select: { resource: true, action: true } } },
-        })
-      : [];
-    const inviterIsSuper = inviterRoles.some((r) => r.name === "admin");
-    if (!inviterIsSuper) {
-      const held = new Set(inviterRoles.flatMap((r) => r.permissions.map((p) => joinCode(p.resource, p.action))));
-      const requested = await prisma.hrmsAppRole.findMany({
-        where: { orgId, id: { in: grantRoleIds } },
-        select: { id: true, permissions: { select: { resource: true, action: true } } },
-      });
-      grantRoleIds = requested
-        .filter((r) => r.permissions.every((p) => held.has(joinCode(p.resource, p.action))))
-        .map((r) => r.id);
-    }
-  }
-  if (grantRoleIds.length > 0) {
-    await prisma.hrmsUserAppRole.createMany({
-      data: grantRoleIds.map((roleId) => ({
-        userId: employeeId,
-        orgId: orgId,
-        roleId,
-        assignedBy: "invitation",
-      })),
-      skipDuplicates: true,
-    });
-  }
+  await applyInvitationRoles(orgId, employeeId, invitation);
 
   // Mark Accepted only while still Pending — idempotent under the race above.
   await prisma.invitation.updateMany({

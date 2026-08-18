@@ -61,7 +61,7 @@ describe("GET /api/super/apps", () => {
         baseUrl: "https://quikscale.example.com",
         status: "active",
         createdAt: now,
-        oauthClient: { clientId: "client-1" },
+        oauthClients: [{ clientId: "client-1" }],
       },
     ];
 
@@ -94,7 +94,7 @@ describe("GET /api/super/apps", () => {
         baseUrl: "https://no-oauth.example.com",
         status: "active",
         createdAt: new Date(),
-        oauthClient: null,
+        oauthClients: [],
       },
     ];
 

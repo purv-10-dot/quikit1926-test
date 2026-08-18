@@ -5,6 +5,7 @@ import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
 import { weekEditState, isWeeklyWriteAllowed, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
+import { emitPriorityWeeklyStatusChanged } from "@/lib/services/workflowEvents";
 const withOrgAuth = withOrgAuthForModule("priority");
 
 const normNotes = (s: string | null | undefined) => (s == null || s === "" ? null : s);
@@ -25,7 +26,7 @@ export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
     const priority = await db.priority.findFirst({
       where: { id: params.id, orgId },
-      select: { quarter: true, year: true, teamId: true },
+      select: { quarter: true, year: true, teamId: true, name: true, owner: true },
     });
     if (!priority) {
       return NextResponse.json(
@@ -186,6 +187,25 @@ export const POST = withOrgAuth<{ id: string }>(
           });
         }
       }
+    }
+
+    // QuikFlow: one priority.weekly.status.changed per CHANGED week (deduped
+    // downstream by weekNumber + status). Notes-only edits don't emit. Applied
+    // after the DB writes; fire-and-forget, never blocks the save.
+    for (const c of appliedChanges) {
+      if (!c.statusChanged) continue;
+      emitPriorityWeeklyStatusChanged({
+        orgId,
+        priorityId: params.id,
+        name: priority.name,
+        owner: priority.owner,
+        teamId: priority.teamId,
+        quarter: priority.quarter,
+        year: priority.year,
+        weekNumber: c.weekNumber,
+        weekStatus: c.newStatus,
+        previousWeekStatus: c.oldStatus,
+      });
     }
 
     return NextResponse.json({ success: true, data: { applied, failed, weeks } });

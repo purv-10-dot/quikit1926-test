@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
 import { notify } from "@/lib/utils/notify";
@@ -33,6 +33,8 @@ import { GlobalExportModal, type GlobalExportSelection } from "@/components/expo
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { Target } from "lucide-react";
+import { buildFilterSummaryLabel } from "@/lib/utils/filterSummary";
+import { FilterSummaryButton } from "@/components/filters/FilterSummaryButton";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -323,6 +325,10 @@ export default function IndividualKPIPage() {
   const fiscalWeek = useCurrentWeek(currentYear, realQuarter);
   const fiscalWeekRange = useWeekDateRange(currentYear, realQuarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner.length ? 1 : 0);
+  const activeFilterLabel = useMemo(() => buildFilterSummaryLabel([
+    { label: "Team", values: filterTeam ? [teams.find(t => t.id === filterTeam)?.name].filter((n): n is string => Boolean(n)) : [] },
+    { label: "Owner", values: selectedOwnerOptions.map(o => o.label) },
+  ]), [filterTeam, teams, selectedOwnerOptions]);
 
   return (
     <div className="flex flex-col h-full">
@@ -417,15 +423,12 @@ export default function IndividualKPIPage() {
 
           {/* Filter button */}
           <div className="relative" ref={filterRef}>
-            <button
+            <FilterSummaryButton
+              label={activeFilterLabel}
+              active={activeFilterCount > 0}
+              open={showFilter}
               onClick={() => setShowFilter(o => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-              </svg>
-              {activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter"}
-            </button>
+            />
 
             {showFilter && (
               <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">

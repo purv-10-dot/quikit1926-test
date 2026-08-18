@@ -14,11 +14,13 @@ import {
   relativeTime,
 } from "@/lib/utils/history";
 
+
 type Tab = "recommended" | "assigned" | "starred" | "worked" | "viewed";
 
 interface SpaceCard {
   id: string;
   name: string;
+  projectKey?: string;
   projectType?: string;
   icon?: string | null;
   color?: string | null;
@@ -153,7 +155,7 @@ export function ForYouContent() {
             {recommended.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/backlog`}
+                href={`/spaces/${s.projectKey ?? s.id}/backlog`}
                 className="flex items-center gap-3 border border-gray-200 rounded-md p-3 hover:bg-gray-50"
               >
                 <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={36} radius={8} />
@@ -330,7 +332,7 @@ function SpaceList({
       {spaces.map((s) => (
         <Link
           key={s.id}
-          href={`/spaces/${s.id}/backlog`}
+          href={`/spaces/${s.projectKey ?? s.id}/backlog`}
           className="flex items-center gap-3 border border-gray-200 rounded-md p-3 hover:bg-gray-50"
         >
           <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={36} radius={8} />

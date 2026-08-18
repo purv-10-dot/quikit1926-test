@@ -25,6 +25,7 @@ import {
   setMemberRole,
   updateChannel,
   deleteChannel,
+  leaveChannel,
   setMessagePinApi,
   toggleReactionApi,
 } from "@/lib/api";
@@ -115,6 +116,24 @@ export interface ConversationViewProps {
   onToggleKbWiden?: () => void;
   /** How many docs are in this conversation's auto-scope (drives the hint). */
   kbDocCount?: number;
+  /**
+   * Reuses ChatWorkspace's `onChannelDeleted` teardown (removes the channel
+   * from the list cache, clears `activeId` if it was open) — leaving publishes
+   * no realtime event for the actor's own client, unlike delete-for-everyone,
+   * so this view calls it directly after a successful leave instead of
+   * waiting for a socket echo that will never arrive.
+   */
+  onChannelLeft?: (p: { channelId: string }) => void;
+  /**
+   * Scroll-back pagination, owned by the caller (it owns the messages query).
+   * OPTIONAL by design: NotificationsModule renders this view against the same
+   * cache key with its own query and does not wire them, so its mini pane keeps
+   * today's newest-page-only behaviour. Reaching history there is a separate
+   * backlog item, not an oversight.
+   */
+  onLoadOlder?: () => void;
+  loadingOlder?: boolean;
+  atEndOfHistory?: boolean;
 }
 
 export function PinnedBanner({ count, onOpen }: { count: number; onOpen?: () => void }) {
@@ -153,6 +172,10 @@ export function ConversationView({
   kbWiden,
   onToggleKbWiden,
   kbDocCount,
+  onChannelLeft,
+  onLoadOlder,
+  loadingOlder,
+  atEndOfHistory,
 }: ConversationViewProps) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -437,6 +460,9 @@ export function ConversationView({
             actions={actions}
             openedUnreadCount={openedUnreadCount}
             messagesFetching={messagesFetching}
+            onLoadOlder={onLoadOlder}
+            loadingOlder={loadingOlder}
+            atEndOfHistory={atEndOfHistory}
           />
         )}
         {replyTarget ? (
@@ -608,6 +634,18 @@ export function ConversationView({
               void qc.invalidateQueries({ queryKey: ["channels"] });
             } catch (e) {
               setRoleError(e instanceof Error ? e.message : "Could not delete group");
+            }
+          }}
+          onLeaveChannel={async () => {
+            setRoleError(null);
+            try {
+              await leaveChannel(channelId);
+              // `leave` publishes no realtime event for the actor's own client
+              // (unlike delete-for-everyone), so drive the same teardown directly.
+              setInfoOpen(false);
+              onChannelLeft?.({ channelId });
+            } catch (e) {
+              setRoleError(e instanceof Error ? e.message : "Could not leave");
             }
           }}
         />

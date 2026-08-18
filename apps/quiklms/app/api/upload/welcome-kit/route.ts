@@ -12,7 +12,7 @@ const WELCOME_KIT_KEY = 'welcome-kit/QuikSkill_Welcome_Guide.pdf';
 const MAX_BYTES = 10 * 1024 * 1024;
 
 /**
- * POST /api/upload/welcome-kit — SUPER_ADMIN
+ * POST /api/upload/welcome-kit — ADMIN
  *
  * Re-platformed to presigned-PUT: the browser uploads the PDF directly to the
  * fixed welcome-kit key. (Legacy accepted a multipart PDF body.)
@@ -30,7 +30,7 @@ const schema = z.object({
 
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const { fileType, fileSize } = await parseBody(req, schema);
 
   if (fileType !== 'application/pdf') throw BadRequest('Only PDF files are allowed');
@@ -46,7 +46,7 @@ export const POST = route(async (req) => {
 });
 
 /**
- * GET /api/upload/welcome-kit — SUPER_ADMIN
+ * GET /api/upload/welcome-kit — ADMIN
  *
  * Returns the PDF BYTES, as the legacy handler did (`upload.controller.ts:131-171`:
  * `Content-Type: application/pdf` + `Content-Disposition: attachment`).
@@ -61,7 +61,7 @@ export const POST = route(async (req) => {
  */
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
 
   let buffer: Buffer;
   try {

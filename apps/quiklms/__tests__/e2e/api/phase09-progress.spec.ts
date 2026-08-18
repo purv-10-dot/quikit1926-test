@@ -157,8 +157,8 @@ test.describe("Phase 09 — write then read back", () => {
     const anon = await apiAnon();
     const res = await anon.get("/api/progress/my");
     expect([401, 403]).toContain(res.status());
-    const body = (await safeJson(res)) as { statusCode?: number };
-    expect(body.statusCode).toBe(res.status());
+    const body = (await safeJson(res)) as { success?: boolean };
+    expect(body.success).toBe(false);
     await anon.dispose();
   });
 });

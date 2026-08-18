@@ -13,14 +13,40 @@ import {
   SearchInput,
   Sparkles,
   Spinner,
-  Users,
 } from "@/components/ui";
 import { formatChannelTime } from "@/lib/format";
 import { messagePreview } from "@/lib/preview";
 import type { EffectiveStatus } from "@/lib/presence-store";
 
 /** Conversation-list filters surfaced by the email-style nav row. */
-export type ListFilter = "all" | "unread" | "dm" | "group" | "pinned";
+export type ListFilter = "all" | "unread" | "dm" | "channel" | "group" | "pinned";
+
+/**
+ * The three things a row can be, in the vocabulary users see.
+ *
+ * NOT derivable from `type` alone — and that is the whole subtlety of this
+ * change. A `group` row is a **Channel** when it is public and a **Group** when
+ * it is private, so every place that used to switch on `type === "group"` now
+ * needs `visibility` too. `type` stays untouched in the database; this is
+ * presentation over the existing two columns, per the backlog decision.
+ */
+export type ChannelKind = "channel" | "group" | "dm";
+
+export function kindOf(item: Pick<ChannelListItem, "type" | "visibility">): ChannelKind {
+  if (item.type !== "group") return "dm";
+  return item.visibility === "public" ? "channel" : "group";
+}
+
+/**
+ * `ChannelKind` → `Avatar`'s variant. Only "dm" needs translating: the list
+ * calls it a DM, the avatar calls it a person.
+ */
+export function avatarVariantFor(
+  item: Pick<ChannelListItem, "type" | "visibility">,
+): "person" | "group" | "channel" {
+  const kind = kindOf(item);
+  return kind === "dm" ? "person" : kind;
+}
 
 function ChannelRow({
   item,
@@ -49,7 +75,7 @@ function ChannelRow({
         name={item.name ?? "Conversation"}
         id={item.channelId}
         avatarUrl={item.avatarUrl}
-        group={item.type === "group"}
+        variant={avatarVariantFor(item)}
         size={36}
         online={online}
         status={status}
@@ -68,6 +94,43 @@ function ChannelRow({
   );
 }
 
+const SECTIONS: ReadonlyArray<{ key: ChannelKind; title: string }> = [
+  { key: "channel", title: "Channels" },
+  { key: "group", title: "Groups" },
+  { key: "dm", title: "Direct Messages" },
+];
+
+/**
+ * Per-section empty copy.
+ *
+ * The Channels branch is the reason this is a component and not a string map.
+ * Creating a public channel is gated on `Channel.Public:create`, which most
+ * roles do not hold by default — so telling everyone to "create one" advertises
+ * a button that is not there and an action the server will refuse. Without the
+ * grant the copy explains how channels DO appear for them instead.
+ */
+function SectionEmpty({
+  kind,
+  canCreateChannel,
+}: {
+  kind: ChannelKind;
+  canCreateChannel: boolean;
+}) {
+  if (kind === "channel") {
+    return canCreateChannel ? (
+      <p className="qc-list-empty">No channels yet — create one.</p>
+    ) : (
+      <p className="qc-list-empty">
+        No channels yet. Channels you join or get added to will appear here.
+      </p>
+    );
+  }
+  if (kind === "group") {
+    return <p className="qc-list-empty">No groups yet — create one.</p>;
+  }
+  return <p className="qc-list-empty">No direct messages yet.</p>;
+}
+
 function filterByName(items: ChannelListItem[], q: string): ChannelListItem[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return items;
@@ -77,7 +140,6 @@ function filterByName(items: ChannelListItem[], q: string): ChannelListItem[] {
 export interface ChannelListProps {
   data?: ChannelListData;
   loading?: boolean;
-  workspaceName: string;
   activeChannelId?: string | null;
   /** Viewer id — excluded when deciding if a DM's other member is online. */
   currentUserId?: string;
@@ -85,13 +147,22 @@ export interface ChannelListProps {
   onlineUserIds?: ReadonlySet<string>;
   /** Effective presence status accessor (rich status dot). Falls back to online-only. */
   statusOf?: (userId: string) => EffectiveStatus;
-  /** Controlled filter from the email-style nav row. Uncontrolled all/unread segment when omitted. */
+  /** Controlled filter from the nav row. Falls back to the internal segment when omitted. */
   filter?: ListFilter;
-  /** Hide the legacy header + all/unread segment (controls moved to the card nav row). */
-  chromeless?: boolean;
   onPick: (id: string) => void;
   onNewChat?: () => void;
   onNewGroup?: () => void;
+  /** Open the create-CHANNEL flow (public). Omit when the viewer may not. */
+  onNewChannel?: () => void;
+  /**
+   * Does the viewer hold `Channel.Public:create`?
+   *
+   * Drives BOTH the Channels section's `+` and its empty-state copy. The old
+   * design assumed everyone could create, so the empty state advised an action
+   * most users could not take — the `+` was there, they clicked it, and the
+   * server 403'd. Defaults to false: a missing permission prop must not grant.
+   */
+  canCreateChannel?: boolean;
   onDiscover?: () => void;
   /** Open (find-or-create) the caller's AI-chat singleton. */
   onOpenAiChat?: () => void;
@@ -102,9 +173,13 @@ function matchesType(item: ChannelListItem, filter: ListFilter): boolean {
     case "unread":
       return item.unreadCount > 0;
     case "dm":
-      return item.type === "dm";
+      return kindOf(item) === "dm";
+    // Both of these used to be one `type === "group"` branch, which lumped
+    // public channels in with private groups.
+    case "channel":
+      return kindOf(item) === "channel";
     case "group":
-      return item.type === "group";
+      return kindOf(item) === "group";
     default:
       return true;
   }
@@ -113,22 +188,30 @@ function matchesType(item: ChannelListItem, filter: ListFilter): boolean {
 export function ChannelList({
   data,
   loading,
-  workspaceName,
   activeChannelId,
   currentUserId,
   onlineUserIds,
   statusOf,
   filter,
-  chromeless,
   onPick,
   onNewChat,
   onNewGroup,
+  onNewChannel,
+  canCreateChannel = false,
   onDiscover,
   onOpenAiChat,
 }: ChannelListProps) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [internalFilter, setInternalFilter] = useState<ListFilter>("all");
+  const [collapsed, setCollapsed] = useState<ReadonlySet<ChannelKind>>(new Set());
+  const toggleSection = (key: ChannelKind) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const effectiveFilter: ListFilter = filter ?? internalFilter;
 
   // DM rows get a presence dot for the other participant. Group rows show a
@@ -144,23 +227,25 @@ export function ChannelList({
     return other ? statusOf(other.id) : undefined;
   };
 
-  const filtered = (items: ChannelListItem[]) =>
-    filterByName(items, query).filter((c) => matchesType(c, effectiveFilter));
-  const priority = useMemo(
-    () => filtered(data?.priority ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, query, effectiveFilter],
+  // Pinned first, then recent — the section grouping is orthogonal to that
+  // ordering, so it is preserved WITHIN each section rather than replaced.
+  const visible = useMemo(() => {
+    const all = [...(data?.priority ?? []), ...(data?.recent ?? [])];
+    return filterByName(all, query).filter((c) => matchesType(c, effectiveFilter));
+  }, [data, query, effectiveFilter]);
+
+  const byKind = useMemo(
+    () => ({
+      channel: visible.filter((c) => kindOf(c) === "channel"),
+      group: visible.filter((c) => kindOf(c) === "group"),
+      dm: visible.filter((c) => kindOf(c) === "dm"),
+    }),
+    [visible],
   );
-  const recent = useMemo(
-    () => filtered(data?.recent ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, query, effectiveFilter],
-  );
-  const totalCount = (data?.priority.length ?? 0) + (data?.recent.length ?? 0);
-  const isEmpty = !loading && totalCount === 0;
-  // "Pinned" filter collapses the list to just the pinned section.
-  const showRecent = effectiveFilter !== "pinned";
-  const chromelessEmpty = priority.length + recent.length === 0;
+
+  /** Nothing left after the active filter — distinct from "no conversations at all". */
+  const filteredEmpty = visible.length === 0;
+  const filterActive = effectiveFilter !== "all";
 
   const renderRow = (item: ChannelListItem) => (
     <ChannelRow
@@ -175,55 +260,36 @@ export function ChannelList({
 
   return (
     <nav className="qc-pane-list" aria-label="Conversations">
-      {chromeless ? (
-        <div className="qc-list-head qc-list-head--inbox">
-          <div className="qc-inbox-title">
-            <h2 className="qc-inbox-h">Messages</h2>
-          </div>
-          <span style={{ display: "flex", gap: 2 }}>
-            <IconButton
-              label={searchOpen ? "Hide search" : "Search"}
-              onClick={() =>
-                setSearchOpen((open) => {
-                  if (open) setQuery("");
-                  return !open;
-                })
-              }
-            >
-              <Search size={16} />
-            </IconButton>
-            <IconButton label="AI Chat" onClick={onOpenAiChat} disabled={!onOpenAiChat}>
-              <Sparkles size={16} />
-            </IconButton>
-            <IconButton label="Discover channels" onClick={onDiscover} disabled={!onDiscover}>
-              <Hash size={16} />
-            </IconButton>
-            <IconButton label="New group" onClick={onNewGroup} disabled={!onNewGroup}>
-              <Users size={16} />
-            </IconButton>
-            <IconButton label="New direct message" onClick={onNewChat} disabled={!onNewChat}>
-              <Plus size={16} />
-            </IconButton>
-          </span>
+      <div className="qc-list-head qc-list-head--inbox">
+        <div className="qc-inbox-title">
+          <h2 className="qc-inbox-h">Messages</h2>
         </div>
-      ) : (
-        <div className="qc-list-head">
-          <span style={{ fontWeight: 500 }}>{workspaceName}</span>
-          <span style={{ display: "flex", gap: 2 }}>
-            <IconButton label="Discover channels" onClick={onDiscover} disabled={!onDiscover}>
-              <Hash size={16} />
-            </IconButton>
-            <IconButton label="New group" onClick={onNewGroup} disabled={!onNewGroup}>
-              <Users size={16} />
-            </IconButton>
-            <IconButton label="New direct message" onClick={onNewChat} disabled={!onNewChat}>
-              <Plus size={16} />
-            </IconButton>
-          </span>
-        </div>
-      )}
+        <span style={{ display: "flex", gap: 2 }}>
+          <IconButton
+            label={searchOpen ? "Hide search" : "Search"}
+            onClick={() =>
+              setSearchOpen((open) => {
+                if (open) setQuery("");
+                return !open;
+              })
+            }
+          >
+            <Search size={16} />
+          </IconButton>
+          <IconButton label="AI Chat" onClick={onOpenAiChat} disabled={!onOpenAiChat}>
+            <Sparkles size={16} />
+          </IconButton>
+          {/* Creation moved INTO the section headers below — each of Channels /
+              Groups / Direct Messages owns its own `+`, and the Channels one is
+              permission-conditional. A second set here would duplicate them and
+              put the ungated `+` back on screen for users without the grant. */}
+          <IconButton label="Discover channels" onClick={onDiscover} disabled={!onDiscover}>
+            <Hash size={16} />
+          </IconButton>
+        </span>
+      </div>
       <div className="qc-list-search">
-        {!chromeless || searchOpen ? (
+        {searchOpen ? (
           <SearchInput
             placeholder="Search"
             aria-label="Search conversations"
@@ -232,93 +298,101 @@ export function ChannelList({
             onChange={(e) => setQuery(e.target.value)}
           />
         ) : null}
-        {chromeless ? (
-          <div className="qc-segment" role="tablist" aria-label="Filter conversations">
-            {(
-              [
-                ["all", "All"],
-                ["unread", "Unread"],
-                ["group", "Groups"],
-                ["pinned", "Pinned"],
-              ] as [ListFilter, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={internalFilter === key}
-                data-active={internalFilter === key}
-                onClick={() => setInternalFilter(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="qc-segment" role="tablist" aria-label="Filter conversations">
+        <div className="qc-segment" role="tablist" aria-label="Filter conversations">
+          {(
+            [
+              ["all", "All"],
+              ["unread", "Unread"],
+              ["channel", "Channels"],
+              ["group", "Groups"],
+              // "dm" was implemented in matchesType and never offered as a chip
+              // — an unreachable branch until now.
+              ["dm", "Direct"],
+              ["pinned", "Pinned"],
+            ] as [ListFilter, string][]
+          ).map(([key, label]) => (
             <button
+              key={key}
               type="button"
               role="tab"
-              aria-selected={internalFilter === "all"}
-              data-active={internalFilter === "all"}
-              onClick={() => setInternalFilter("all")}
+              aria-selected={internalFilter === key}
+              data-active={internalFilter === key}
+              onClick={() => setInternalFilter(key)}
             >
-              All
+              {label}
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={internalFilter === "unread"}
-              data-active={internalFilter === "unread"}
-              onClick={() => setInternalFilter("unread")}
-            >
-              Unread
-            </button>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
       <div className="qc-list-scroll">
+        {filterActive && filteredEmpty && !loading ? (
+          <EmptyState title="Nothing here" hint="No conversations match this filter." />
+        ) : (
+          // NOTE: no global "no conversations yet" branch. A brand-new user sees
+          // the three sections with their own empty copy instead, because that
+          // copy is what tells them what they can actually create — and for
+          // Channels it is permission-conditional, which a single generic empty
+          // state could never be.
+          <>
+            {SECTIONS.map(({ key, title }) => {
+              const rows = byKind[key];
+              const isCollapsed = collapsed.has(key);
+              // The Channels `+` is the permission-conditional one. Groups and
+              // DMs need only Channel:create / Channel.DM:create, which every
+              // seeded role above Guest holds.
+              const add =
+                key === "channel"
+                  ? canCreateChannel && onNewChannel
+                    ? { label: "New channel", onClick: onNewChannel }
+                    : null
+                  : key === "group"
+                    ? onNewGroup
+                      ? { label: "New group", onClick: onNewGroup }
+                      : null
+                    : onNewChat
+                      ? { label: "New direct message", onClick: onNewChat }
+                      : null;
+
+              return (
+                <section key={key} className="qc-list-group" data-kind={key}>
+                  <div className="qc-list-section qc-list-section--head">
+                    <button
+                      type="button"
+                      className="qc-list-section__toggle"
+                      aria-expanded={!isCollapsed}
+                      onClick={() => toggleSection(key)}
+                    >
+                      <span className="qc-list-section__chev" data-collapsed={isCollapsed}>
+                        ›
+                      </span>
+                      <span className="qc-label">{title}</span>
+                      <span className="qc-list-section__count">{rows.length}</span>
+                    </button>
+                    {add ? (
+                      <IconButton label={add.label} onClick={add.onClick}>
+                        <Plus size={14} />
+                      </IconButton>
+                    ) : null}
+                  </div>
+                  {isCollapsed || loading ? null : rows.length > 0 ? (
+                    rows.map(renderRow)
+                  ) : (
+                    <SectionEmpty kind={key} canCreateChannel={canCreateChannel} />
+                  )}
+                </section>
+              );
+            })}
+          </>
+        )}
+        {/* Spinner sits BELOW the section headers, not in place of them: the
+            per-section `+` is the only way to start a conversation now, and
+            hiding it behind the initial load would make the app briefly
+            unusable on every mount. */}
         {loading ? (
           <div style={{ padding: 16 }}>
             <Spinner />
           </div>
-        ) : isEmpty ? (
-          <EmptyState title="No conversations yet" hint="Start one to get going." />
-        ) : chromeless ? (
-          chromelessEmpty ? (
-            <EmptyState title="Nothing here" hint="No conversations match this filter." />
-          ) : (
-            <>
-              {priority.length > 0 ? (
-                <>
-                  <div className="qc-list-section qc-label">Pinned</div>
-                  {priority.map(renderRow)}
-                </>
-              ) : null}
-              {showRecent && recent.length > 0 ? (
-                <>
-                  <div className="qc-list-section qc-label">All messages</div>
-                  {recent.map(renderRow)}
-                </>
-              ) : null}
-            </>
-          )
-        ) : (
-          <>
-            {priority.length > 0 ? (
-              <>
-                <div className="qc-list-section qc-label">Pinned</div>
-                {priority.map(renderRow)}
-              </>
-            ) : null}
-            {recent.length > 0 ? (
-              <>
-                <div className="qc-list-section qc-label">Recent</div>
-                {recent.map(renderRow)}
-              </>
-            ) : null}
-          </>
-        )}
+        ) : null}
       </div>
     </nav>
   );

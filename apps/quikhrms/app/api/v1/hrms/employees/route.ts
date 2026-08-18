@@ -45,16 +45,26 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
     const invitable = searchParams.get("invitable") === "true";
     // Opt-in: further restrict to the caller's role-priority hierarchy.
     const accessible = searchParams.get("accessible") === "true";
+    // Opt-in: lightweight "pick a person" mode (interviewer, approver,
+    // assignee, reporting manager, recipient, etc.) — returns every active
+    // employee org-wide, bypassing the caller's own self/team/all employee-read
+    // scope below. Choosing someone's name for an assignment isn't the same as
+    // browsing/managing their full profile, so this intentionally matches the
+    // policy the Org Chart/Directory already uses (name+role visible to any
+    // authenticated employee, no permission gate).
+    const picker = searchParams.get("picker") === "1";
 
-    const scope = resolveScope(ctx, {
-      all: "hrms.employee.read",
-      team: "hrms.employee.read_team",
-      self: "hrms.employee.read_self",
-    });
-    const scopeFilter = await employeeScopeFilter(ctx, scope);
-    if (!scopeFilter.allow) return forbidden("No employee read permission");
-
-    let scopeIds = scopeFilter.employeeIds ?? null;
+    let scopeIds: string[] | null = null;
+    if (!picker) {
+      const scope = resolveScope(ctx, {
+        all: "hrms.employee.read",
+        team: "hrms.employee.read_team",
+        self: "hrms.employee.read_self",
+      });
+      const scopeFilter = await employeeScopeFilter(ctx, scope);
+      if (!scopeFilter.allow) return forbidden("No employee read permission");
+      scopeIds = scopeFilter.employeeIds ?? null;
+    }
     if (accessible) {
       const hierarchy = await getHierarchyAccessibleEmployeeIds(ctx);
       scopeIds = intersectEmployeeIds(scopeIds ?? undefined, hierarchy) ?? null;
@@ -245,14 +255,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
       }
     }
 
-    // Validate the salary template BEFORE any writes. Otherwise an invalid
+    // Salary template is optional on create (HR can add an employee before any
+    // template exists and assign salary later via Payroll → Employee Salaries).
+    // When one IS supplied, validate it BEFORE any writes — otherwise an invalid
     // template returns a 400 *after* the employee + role rows are created,
-    // orphaning a half-provisioned employee (no salary) in the tenant.
-    const structure = await prisma.salaryStructure.findFirst({
-      where: { id: data.salaryTemplateId, orgId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!structure) {
+    // orphaning a half-provisioned employee in the tenant.
+    const structure = data.salaryTemplateId
+      ? await prisma.salaryStructure.findFirst({
+          where: { id: data.salaryTemplateId, orgId, deletedAt: null },
+          select: { id: true },
+        })
+      : null;
+    if (data.salaryTemplateId && !structure) {
       return validationError("Salary template not found");
     }
 
@@ -382,19 +396,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
       });
     }
 
-    // Salary assignment — required on create. Template validated before writes.
-    await prisma.employeeSalary.create({
-      data: {
-        orgId,
-        employeeId: employee.id,
-        structureId: structure.id,
-        ctc: data.ctcLpa * 100000,
-        effectiveFrom: new Date(data.dateOfJoining),
-        isActive: true,
-        createdBy: userId,
-        updatedBy: userId,
-      },
-    });
+    // Salary assignment — optional on create. Skipped when no template was
+    // picked (e.g. org has none yet); HR assigns it later via Payroll →
+    // Employee Salaries, same as the recruit-onboarding and bulk-import paths.
+    if (structure && data.ctcLpa != null) {
+      await prisma.employeeSalary.create({
+        data: {
+          orgId,
+          employeeId: employee.id,
+          structureId: structure.id,
+          ctc: data.ctcLpa * 100000,
+          effectiveFrom: new Date(data.dateOfJoining),
+          isActive: true,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+    }
 
     try {
       await allocateProRataLeaveBalances({

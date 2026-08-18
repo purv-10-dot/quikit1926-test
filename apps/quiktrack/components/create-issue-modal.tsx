@@ -858,7 +858,9 @@ function PriorityPicker({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  const Sel = PRIORITY_META[value];
+  // Guarded: `priority` has no DB constraint, so an unmapped value would
+  // otherwise crash on `Sel.Icon`.
+  const Sel = PRIORITY_META[value] ?? PRIORITY_META.MEDIUM;
   return (
     <div className="relative" ref={ref}>
       <button

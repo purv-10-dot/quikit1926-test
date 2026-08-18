@@ -260,10 +260,7 @@ export async function findOneExam(user: AuthUser, id: string) {
     user.role === 'TEACHER' ||
     user.role === 'TENANT_ADMIN' ||
     user.role === 'SUB_ADMIN' ||
-    user.role === 'SUPER_ADMIN' ||
-    user.secondaryRole === 'TEACHER' ||
-    user.secondaryRole === 'TENANT_ADMIN' ||
-    user.secondaryRole === 'SUB_ADMIN';
+    user.role === 'ADMIN';
   return isStaff ? shaped : stripAnswerKey(shaped);
 }
 

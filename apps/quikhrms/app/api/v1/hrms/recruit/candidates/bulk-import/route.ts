@@ -143,4 +143,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     console.error("POST /recruit/candidates/bulk-import error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"], anyPermission: true });

@@ -23,6 +23,7 @@ export const PATCH = withAuth(async (req, ctx) => {
     return NextResponse.json({ error: "Missing user id" }, { status: 400 });
   }
 
+  
   let role: Role;
   let teamId: string | null;
   try {
