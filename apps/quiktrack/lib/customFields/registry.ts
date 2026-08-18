@@ -54,6 +54,8 @@ export type FilterOperator =
   | "neq"
   | "lt"
   | "gt"
+  | "gte"
+  | "lte"
   | "between"
   | "before"
   | "after"

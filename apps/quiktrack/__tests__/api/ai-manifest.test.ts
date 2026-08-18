@@ -9,11 +9,11 @@ function req(headers: Record<string, string> = {}) {
 }
 
 beforeEach(() => {
-  process.env.INTERNAL_AI_RUNTIME_SECRET = SECRET;
+  process.env.INTERNAL_SECRET = SECRET;
 });
 
 afterEach(() => {
-  delete process.env.INTERNAL_AI_RUNTIME_SECRET;
+  delete process.env.INTERNAL_SECRET;
 });
 
 describe("GET /api/internal/manifest", () => {
@@ -29,8 +29,8 @@ describe("GET /api/internal/manifest", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 401 when INTERNAL_AI_RUNTIME_SECRET is unset server-side, even if a header is sent — fail-closed, never fail-open", async () => {
-    delete process.env.INTERNAL_AI_RUNTIME_SECRET;
+  it("returns 401 when INTERNAL_SECRET is unset server-side, even if a header is sent — fail-closed, never fail-open", async () => {
+    delete process.env.INTERNAL_SECRET;
     const res = await GET(req({ "x-internal-secret": "anything" }));
     expect(res.status).toBe(401);
   });
