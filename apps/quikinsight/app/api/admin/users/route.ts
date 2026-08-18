@@ -10,7 +10,6 @@ export const GET = withAuth(async (req) => {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "asc" },
     select: {
