@@ -53,12 +53,24 @@ describe("GET /api/filters/[id] — tql param", () => {
     expect(body.error).toMatch(/admin-only/);
   });
 
-  it("400 when tql is set but id isn't 'all'", async () => {
+  it("runs on any slug, not just 'all' — the tql query fully replaces the slug's implicit filter", async () => {
     asAdmin();
     mockEmptyResults();
     const res = await GET(req('?tql=status="Done"'), { params: { id: "my-open" } } as never);
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/"all"/);
+    expect(res.status).toBe(200);
+
+    // The "my-open" slug's implicit assigneeId/status-category filter must NOT
+    // be applied — the tql where-clause is the only source of truth.
+    const call = mockDb.qtIssue.findMany.mock.calls[0]![0]!;
+    expect(call.where).not.toHaveProperty("assigneeId");
+  });
+
+  it("titles a tql result 'TQL search' rather than the stale slug title", async () => {
+    asAdmin();
+    mockEmptyResults();
+    const res = await GET(req('?tql=status="Done"'), { params: { id: "my-open" } } as never);
+    const body = await res.json();
+    expect(body.meta.title).toBe("TQL search");
   });
 
   it("400 with a position on malformed tql", async () => {
@@ -143,6 +155,34 @@ describe("GET /api/filters/[id] — tql param", () => {
     const res = await GET(req('?tql=cf["Nope"] = "x"'), { params: { id: "all" } } as never);
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/Unknown custom field/);
+  });
+
+  it("an empty tql= (mode active, no query text) returns everything — no filter at all", async () => {
+    asAdmin();
+    mockEmptyResults();
+    const res = await GET(req("?tql="), { params: { id: "all" } } as never);
+    expect(res.status).toBe(200);
+    const call = mockDb.qtIssue.findMany.mock.calls[0]![0]!;
+    // Only orgId/isDeleted — no assigneeId, no status, nothing slug-derived.
+    expect(call.where).toEqual({ orgId: ORG, isDeleted: false });
+  });
+
+  it("an empty tql= on a non-'all' slug still returns everything, not that slug's implicit filter", async () => {
+    asAdmin();
+    mockEmptyResults();
+    const res = await GET(req("?tql="), { params: { id: "my-open" } } as never);
+    expect(res.status).toBe(200);
+    const call = mockDb.qtIssue.findMany.mock.calls[0]![0]!;
+    expect(call.where).toEqual({ orgId: ORG, isDeleted: false });
+  });
+
+  it("tql= absent entirely (Basic mode) still uses the slug's own implicit filter, not 'return everything'", async () => {
+    asAdmin();
+    mockEmptyResults();
+    const res = await GET(req(""), { params: { id: "my-open" } } as never);
+    expect(res.status).toBe(200);
+    const call = mockDb.qtIssue.findMany.mock.calls[0]![0]!;
+    expect(call.where).toMatchObject({ assigneeId: USER });
   });
 });
 

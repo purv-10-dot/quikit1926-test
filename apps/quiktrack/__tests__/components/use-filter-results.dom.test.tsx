@@ -22,6 +22,7 @@ function mockFetchRouter(handlers: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  window.sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -130,24 +131,58 @@ describe("useFilterResults — saved TQL filter", () => {
     });
   });
 
-  it("reseeds to Basic mode and clears tql when navigating away from a saved filter to a default slug", async () => {
+  it("a fresh mount on a default slug starts in Basic mode when no sticky preference is set", () => {
+    global.fetch = mockFetchRouter({});
+    const { result } = renderHook(() => useFilterResults("my-open"));
+    expect(result.current.mode).toBe("basic");
+    expect(result.current.tql).toBe("");
+  });
+});
+
+/**
+ * The Basic/TQL choice is meant to persist as an admin clicks between
+ * different default filters in the sidebar — each is its own page
+ * (app/(dashboard)/filters/[id]/page.tsx keys <FilterView> by params.id), so
+ * this can only be exercised by actually unmounting and mounting a fresh hook
+ * instance per "navigation", not by rerendering the same one.
+ */
+describe("useFilterResults — TQL mode is sticky across a simulated page navigation", () => {
+  it("choosing TQL on one default filter makes the next one mount straight into TQL, pre-filled with its own equivalent query", async () => {
     global.fetch = mockFetchRouter({
+      "/api/filters/my-open": { success: true, data: [], total: 0, meta: {} },
+      "/api/filters/reported-by-me": { success: true, data: [], total: 0, meta: {} },
+    });
+
+    const first = renderHook(() => useFilterResults("my-open"));
+    act(() => {
+      first.result.current.setMode("tql");
+    });
+    expect(first.result.current.mode).toBe("tql");
+    first.unmount();
+
+    // A genuinely fresh hook instance, as a real page navigation would create.
+    const second = renderHook(() => useFilterResults("reported-by-me"));
+    expect(second.result.current.mode).toBe("tql");
+    expect(second.result.current.tql).toBe("reporter = currentUser() ORDER BY updated DESC");
+  });
+
+  it("does not carry a saved filter's own TQL mode into the sticky preference for later default filters", async () => {
+    global.fetch = mockFetchRouter({
+      "/api/saved-filters/sf_6": {
+        success: true,
+        data: { id: "sf_6", name: "T", criteria: { tql: 'priority = "HIGH"' } },
+      },
+      "/api/filters/all": { success: true, data: [], total: 0, meta: {} },
       "/api/filters/my-open": { success: true, data: [], total: 0, meta: {} },
     });
 
-    const { result, rerender } = renderHook(({ id }) => useFilterResults(id), {
-      initialProps: { id: "sf_5" },
-    });
+    const savedHook = renderHook(() => useFilterResults("sf_6"));
+    await waitFor(() => expect(savedHook.result.current.mode).toBe("tql"));
+    savedHook.unmount();
 
-    act(() => {
-      result.current.setMode("tql");
-      result.current.setTql('status = "Done"');
-    });
-    expect(result.current.mode).toBe("tql");
-
-    rerender({ id: "my-open" });
-
-    await waitFor(() => expect(result.current.mode).toBe("basic"));
-    expect(result.current.tql).toBe("");
+    // The saved filter's TQL mode is a property of that filter, not a
+    // browsing preference — a later default filter should still start Basic.
+    const nextHook = renderHook(() => useFilterResults("my-open"));
+    expect(nextHook.result.current.mode).toBe("basic");
   });
 });

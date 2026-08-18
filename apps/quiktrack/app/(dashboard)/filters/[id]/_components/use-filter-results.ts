@@ -1,11 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { defaultToolbarStateFor, type ToolbarState } from "./filter-toolbar";
+import { defaultToolbarStateFor, defaultTqlFor, type ToolbarState } from "./filter-toolbar";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import type { TqlErrorInfo } from "./tql-editor";
 
 export type FilterMode = "basic" | "tql";
+
+const MODE_STORAGE_KEY = "quiktrack.filters.tqlModeSticky";
+
+// The page remounts per slug (`key={params.id}` in page.tsx), so component
+// state can't carry "I was in TQL mode" across a sidebar navigation —
+// sessionStorage is the one thing that survives the remount without also
+// persisting across devices/sessions the way a server-side preference would.
+function readStickyMode(): FilterMode {
+  if (typeof window === "undefined") return "basic";
+  return window.sessionStorage.getItem(MODE_STORAGE_KEY) === "tql" ? "tql" : "basic";
+}
+
+function writeStickyMode(mode: FilterMode): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(MODE_STORAGE_KEY, mode);
+}
 
 export interface IssueRow {
   id: string;
@@ -75,30 +91,43 @@ export function useFilterResults(filterId: string) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [toolbar, setToolbar] = useState<ToolbarState>(() => defaultToolbarStateFor(filterId));
-  const [mode, setMode] = useState<FilterMode>("basic");
-  const [tql, setTql] = useState("");
+  const isSaved = filterId.startsWith("sf_");
+  // A saved filter's own criteria (loaded below) decides its mode — the
+  // sticky preference is only the starting point for default-filter slugs.
+  const [mode, setModeState] = useState<FilterMode>(() => (isSaved ? "basic" : readStickyMode()));
+  const [tql, setTql] = useState<string>(() =>
+    !isSaved && readStickyMode() === "tql" ? defaultTqlFor(filterId) : "",
+  );
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Wrap setMode so every explicit toggle (not just the initial mount read)
+  // updates the sticky preference too — flipping Basic -> TQL on any filter
+  // should make the next filter you visit open in TQL as well. Switching to
+  // TQL on a default-filter slug (not a saved filter, and not already holding
+  // some typed query) also auto-fills that slug's TQL equivalent, matching
+  // Jira's Basic -> JQL translation.
+  const setMode = (next: FilterMode) => {
+    writeStickyMode(next);
+    setModeState(next);
+    if (next === "tql" && !isSaved && !tql) {
+      setTql(defaultTqlFor(filterId));
+    }
+  };
 
   // A saved filter's id is prefixed `sf_`. It isn't a backend filter slug, so
   // its results query runs against the "all" base with the saved criteria
   // applied as toolbar or tql params. `savedReady` gates the results fetch
   // until the criteria have been loaded (so we don't fetch unfiltered first).
-  const isSaved = filterId.startsWith("sf_");
+  //
+  // Note: app/(dashboard)/filters/[id]/page.tsx keys <FilterView> by
+  // params.id, so this whole component remounts on every slug navigation —
+  // `mode`/`tql`/`toolbar`'s useState initializers above run fresh per slug
+  // (reading the sticky mode preference + that slug's own TQL/toolbar
+  // equivalent), which is why there's no corresponding "reseed on filterId
+  // change" effect here the way there used to be.
   const resultSlug = isSaved ? "all" : filterId;
   const [savedName, setSavedName] = useState<string | null>(null);
   const [savedReady, setSavedReady] = useState(!isSaved);
-
-  // Reseed the toolbar state (and drop back to Basic mode) whenever the user
-  // switches between Default filters in the sidebar — each slug carries its
-  // own implicit chips, and TQL only makes sense while viewing a saved filter
-  // or the "all" slug.
-  useEffect(() => {
-    if (!filterId.startsWith("sf_")) {
-      setToolbar(defaultToolbarStateFor(filterId));
-      setMode("basic");
-      setTql("");
-    }
-  }, [filterId]);
 
   // Load a saved filter's criteria (name + toolbar/tql + search) when viewing one.
   useEffect(() => {
@@ -120,12 +149,16 @@ export function useFilterResults(filterId: string) {
         }
         const criteria = (j.data?.criteria ?? {}) as SavedCriteria;
         setSavedName(j.data?.name ?? "Saved filter");
+        // setModeState directly, not the sticky-writing setMode — a saved
+        // filter's mode is a property of that filter, not a browsing
+        // preference, so opening one shouldn't overwrite what Basic/TQL the
+        // user's other (default-filter) tabs should default back to.
         if (isTqlCriteria(criteria)) {
-          setMode("tql");
+          setModeState("tql");
           setTql(criteria.tql);
         } else {
           const { search: savedSearch, ...rest } = criteria;
-          setMode("basic");
+          setModeState("basic");
           setToolbar({
             type: [],
             statusCategory: [],
@@ -207,6 +240,10 @@ export function useFilterResults(filterId: string) {
     setTqlError(null);
     const qs = new URLSearchParams();
     if (mode === "tql") {
+      // Set even when empty — presence of the param (not its content) is
+      // what tells the API "TQL mode is active", so an empty query correctly
+      // means "no filter" (all data) instead of falling back to the slug's
+      // own implicit filter.
       qs.set("tql", tql);
     } else {
       new URLSearchParams(toolbarQs).forEach((v, k) => qs.set(k, v));

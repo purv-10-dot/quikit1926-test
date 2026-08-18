@@ -19,8 +19,9 @@ import { TqlParseError } from "@/lib/tql/errors";
  * `updatedAt desc` and is flagged via `meta.fallback` so the UI can warn.
  *
  * Admin-only TQL mode: `?tql=<query>` bypasses the slug/toolbar where-building
- * below entirely (id must be "all") and instead compiles the query via
- * lib/tql. Non-admins get a 403 before any parsing happens.
+ * below entirely — regardless of which slug the request came in on — and
+ * instead compiles the query via lib/tql. Non-admins get a 403 before any
+ * parsing happens.
  */
 
 export type FilterId =
@@ -65,20 +66,23 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
   const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0));
 
-  const tqlRaw = url.searchParams.get("tql")?.trim();
-  let tqlOrderBy: Prisma.QtIssueOrderByWithRelationInput[] | null = null;
+  // Presence of the param (not truthiness) is what means "TQL mode is
+  // active" — an admin can clear the query box entirely and expect all data
+  // back, same as Jira's JQL bar. `tqlRaw` stays "" in that case rather than
+  // falling through to the slug's own implicit filter below.
+  const isTql = url.searchParams.has("tql");
+  const tqlRaw = (url.searchParams.get("tql") ?? "").trim();
 
-  if (tqlRaw) {
+  if (isTql) {
     if (!(await hasAdminAccess(userId, orgId))) {
       return NextResponse.json({ success: false, error: "TQL search is admin-only" }, { status: 403 });
     }
-    if (id !== "all") {
-      return NextResponse.json(
-        { success: false, error: 'TQL search requires the "all" filter' },
-        { status: 400 },
-      );
-    }
+    // No slug restriction — a TQL query is self-contained and replaces
+    // whichever slug's implicit filter the request arrived under (matches
+    // Jira: switching Basic -> JQL on any saved search runs the raw query,
+    // not the search AND'd with the view you started from).
   }
+  let tqlOrderBy: Prisma.QtIssueOrderByWithRelationInput[] | null = null;
 
   // Toolbar overrides — when set, they replace the slug's implicit filter
   // for that field. Slug-derived filters still apply for fields the toolbar
@@ -101,41 +105,46 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   let fallback: string | undefined;
   let customFilterWhere: Prisma.QtIssueWhereInput[] = [];
 
-  if (tqlRaw) {
+  if (isTql) {
     // TQL mode replaces the slug/toolbar/search/custom-filter where-building
     // below entirely — the translated where/orderBy are the only source of
-    // truth for this request (orgId/isDeleted above are still applied).
-    try {
-      // cf[...] refs may be an id or a name — org-wide (TQL isn't
-      // project-scoped), so every active custom field in the org is
-      // fetched once and looked up by either key. Cheap: this is a small,
-      // admin-configured table, not per-issue data.
-      const customFields = await db.qtCustomField.findMany({
-        where: { orgId, status: "active", isDeleted: false },
-        select: { id: true, name: true, type: true },
-      });
-      const byId = new Map(customFields.map((f) => [f.id, f] as const));
-      const byName = new Map(customFields.map((f) => [f.name.toLowerCase(), f] as const));
-      const resolveCustomField = (ref: string) => {
-        const hit = byId.get(ref) ?? byName.get(ref.toLowerCase());
-        return hit ? { id: hit.id, type: hit.type } : undefined;
-      };
+    // truth for this request (orgId/isDeleted above are still applied). An
+    // empty query means "no filter" (all data), matching Jira's JQL bar —
+    // there's nothing to tokenize/parse, so that's handled without calling
+    // into lib/tql at all.
+    if (tqlRaw) {
+      try {
+        // cf[...] refs may be an id or a name — org-wide (TQL isn't
+        // project-scoped), so every active custom field in the org is
+        // fetched once and looked up by either key. Cheap: this is a small,
+        // admin-configured table, not per-issue data.
+        const customFields = await db.qtCustomField.findMany({
+          where: { orgId, status: "active", isDeleted: false },
+          select: { id: true, name: true, type: true },
+        });
+        const byId = new Map(customFields.map((f) => [f.id, f] as const));
+        const byName = new Map(customFields.map((f) => [f.name.toLowerCase(), f] as const));
+        const resolveCustomField = (ref: string) => {
+          const hit = byId.get(ref) ?? byName.get(ref.toLowerCase());
+          return hit ? { id: hit.id, type: hit.type } : undefined;
+        };
 
-      const query = parseTql(tqlRaw);
-      const { where: tqlWhere, orderBy: builtOrderBy } = translateTql(query, { userId, resolveCustomField });
-      Object.assign(where, tqlWhere);
-      if (builtOrderBy.length > 0) {
-        tqlOrderBy = builtOrderBy;
-        orderBy = builtOrderBy[0]!;
+        const query = parseTql(tqlRaw);
+        const { where: tqlWhere, orderBy: builtOrderBy } = translateTql(query, { userId, resolveCustomField });
+        Object.assign(where, tqlWhere);
+        if (builtOrderBy.length > 0) {
+          tqlOrderBy = builtOrderBy;
+          orderBy = builtOrderBy[0]!;
+        }
+      } catch (error: unknown) {
+        if (error instanceof TqlParseError) {
+          return NextResponse.json(
+            { success: false, error: error.message, position: error.position },
+            { status: 400 },
+          );
+        }
+        throw error;
       }
-    } catch (error: unknown) {
-      if (error instanceof TqlParseError) {
-        return NextResponse.json(
-          { success: false, error: error.message, position: error.position },
-          { status: 400 },
-        );
-      }
-      throw error;
     }
   } else {
     switch (id) {
@@ -285,7 +294,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   // translator's where-clause targets QtIssue only and ideas would appear
   // unfiltered against it.
   const includeIdeas =
-    !tqlRaw && ideasEligible && !restrictsToIssueStatus && customFilterWhere.length === 0;
+    !isTql && ideasEligible && !restrictsToIssueStatus && customFilterWhere.length === 0;
   const [issueRows, issueCount, ideaRows, ideaCount] = await Promise.all([
     db.qtIssue.findMany({
       where,
@@ -354,6 +363,8 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     success: true,
     data,
     total,
-    meta: { title: FILTER_TITLES[id], fallback },
+    // A TQL query replaces the slug's meaning entirely, so its title shouldn't
+    // still say e.g. "My open work items" once the query no longer means that.
+    meta: { title: isTql ? "TQL search" : FILTER_TITLES[id], fallback },
   });
 });
