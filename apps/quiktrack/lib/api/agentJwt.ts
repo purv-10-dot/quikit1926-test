@@ -1,4 +1,4 @@
-import { jwtDecrypt } from "jose";
+import { jwtDecrypt, type JWTPayload } from "jose";
 import hkdf from "@panva/hkdf";
 
 /**
@@ -28,6 +28,44 @@ const EXPECTED_ALG = "dir";
 const EXPECTED_ENC = "A256GCM";
 const NEXTAUTH_HKDF_INFO = "NextAuth.js Generated Encryption Key";
 const NEXTAUTH_HKDF_SALT = "";
+
+/**
+ * Upper bound on `exp - iat`. Matches the auth service's stated mint cap, so a
+ * legitimately longer-lived token IS rejected here — that is intended, and it
+ * is why this is a named constant rather than an inline 900.
+ *
+ * These tokens carry no `sessionId` claim and so cannot be revoked mid-flight;
+ * their age is the only bound there is. A verifier that trusts the issuer's
+ * self-restraint is not verifying — QuikTrack cannot know if the mint cap
+ * changes, or if a token ever arrives from somewhere else.
+ *
+ * The comparison below is `>`, not `>=`, and that is load-bearing rather than
+ * stylistic: the auth service mints at exactly 900s (`exp - iat === 900`,
+ * confirmed against a real payload), so `>=` would reject 100% of legitimate
+ * traffic. A token AT the cap is valid.
+ */
+const MAX_AGENT_JWT_AGE_SECONDS = 900;
+
+/**
+ * Debug-only diagnostics. `verifyAgentJwt` returns `null` for eight distinct
+ * failures and, without this, says nothing about which one — a claim-shape
+ * mismatch (`id` where `sub` was expected) once cost both teams an afternoon
+ * that logging the payload's KEY NAMES would have ended in five minutes.
+ *
+ * Off unless `ALLOW_AGENT_JWT_DEBUG === "true"`. An env flag rather than a
+ * `NODE_ENV !== "production"` check on purpose: the failure this exists for
+ * happens against a running deployment, so a gate that only opens in local dev
+ * would be useless exactly when it is needed. Naming follows the app's one
+ * existing precedent, ALLOW_EMAIL_DEBUG (app/api/debug/email-test/route.ts).
+ *
+ * NEVER pass a token, a payload, or a claim VALUE to this. Failure reasons and
+ * key names only — see the call sites.
+ */
+function debugLog(reason: string): void {
+  if (process.env.ALLOW_AGENT_JWT_DEBUG !== "true") return;
+  // eslint-disable-next-line no-console
+  console.debug(`[agent-jwt] ${reason}`);
+}
 
 /** `actingAs` values the auth service can mint. All non-"user" values collapse to `actorType: "agent"` at the call site — see withOrgAuth.ts. */
 export type ActingAs = "user" | "ai_agent" | "platform_service" | "scheduled_job";
@@ -63,7 +101,9 @@ async function getDerivedKey(): Promise<Uint8Array> {
   return hkdf("sha256", secret, NEXTAUTH_HKDF_SALT, NEXTAUTH_HKDF_INFO, 32);
 }
 
-function isAgentJwtPayload(payload: unknown): payload is {
+// Intersected with JWTPayload so narrowing keeps the registered claims —
+// `iat`/`exp` are read for the age bound after this guard passes.
+function isAgentJwtPayload(payload: unknown): payload is JWTPayload & {
   sub: string;
   orgId: string;
   actingAs: ActingAs;
@@ -99,36 +139,95 @@ function isAgentJwtPayload(payload: unknown): payload is {
 
 /**
  * Decrypt and validate an agent JWT. Returns `null` on anything wrong —
- * malformed, wrong alg/enc, expired, missing claims — callers treat `null`
- * as unauthenticated. Never throws.
+ * malformed, wrong alg/enc, expired, over-age, missing claims — callers treat
+ * `null` as unauthenticated. Never throws.
  *
  * Deliberately stateless: no caching of decrypted claims beyond the caller's
- * own request lifetime. These tokens live ≤900s specifically because they
- * cannot be revoked mid-flight — the TTL is the only bound, so re-verifying
- * on every call (rather than caching a decoded result) is load-bearing, not
- * just simple.
+ * own request lifetime. These tokens cannot be revoked mid-flight (they carry
+ * no `sessionId` claim and so never join the session store), which makes their
+ * age the only bound there is — and it is ENFORCED here rather than assumed of
+ * the minter: `exp - iat` must be ≤ MAX_AGENT_JWT_AGE_SECONDS, and a token
+ * missing either claim is rejected. Re-verifying on every call, rather than
+ * caching a decoded result, is load-bearing rather than merely simple.
  */
 export async function verifyAgentJwt(token: string): Promise<AgentJwtClaims | null> {
-  if (!token) return null;
+  if (!token) {
+    debugLog("empty token");
+    return null;
+  }
   try {
     const key = await getDerivedKey();
-    // jwtDecrypt enforces exp/nbf itself (default clockTolerance 0s — these
-    // tokens are ≤900s TTL by design, no reason to widen it) and rejects
-    // anything not matching the pinned alg/enc up front.
+    // jwtDecrypt enforces exp/nbf itself (default clockTolerance 0s — not
+    // widened; the age bound below is what actually keeps these tokens
+    // short-lived) and rejects anything not matching the pinned alg/enc up
+    // front.
     const { payload } = await jwtDecrypt(token, key, {
       contentEncryptionAlgorithms: [EXPECTED_ENC],
       keyManagementAlgorithms: [EXPECTED_ALG],
     });
-    if (!isAgentJwtPayload(payload)) return null;
+    if (!isAgentJwtPayload(payload)) {
+      // Key NAMES only, never values — this is what would have identified the
+      // `id`-instead-of-`sub` mismatch immediately. See debugLog's contract.
+      debugLog(
+        `claim shape mismatch; keys=[${Object.keys(payload).sort().join(", ")}]`,
+      );
+      return null;
+    }
+
+    // Age bound. `exp` and `iat` are both REQUIRED: jwtDecrypt only enforces
+    // `exp` when it is present, so a token omitting it would never expire, and
+    // a token omitting `iat` would bypass the bound by having no start point.
+    // Rejecting both closes those holes rather than describing them.
+    const { iat, exp } = payload;
+    if (typeof iat !== "number") {
+      debugLog("iat claim missing — token age cannot be bounded");
+      return null;
+    }
+    if (typeof exp !== "number") {
+      debugLog("exp claim missing — token would never expire");
+      return null;
+    }
+    if (exp - iat > MAX_AGENT_JWT_AGE_SECONDS) {
+      debugLog(`token age exceeds the ${MAX_AGENT_JWT_AGE_SECONDS}s bound`);
+      return null;
+    }
+
+    // TEMPORARY FALLBACK — the auth service mints the user identifier as `id`;
+    // `sub` is the standard claim and the long-term fix on their side. Accept
+    // both, and warn when the fallback fires so removal is evidence-driven
+    // rather than something someone has to remember.
+    //
+    // REMOVAL CONDITION: this warning stops appearing in logs. Not a date.
+    // When it does, delete this block, the `id` branch of isAgentJwtPayload,
+    // and this comment.
+    const sub = typeof payload.sub === "string" && payload.sub.length > 0 ? payload.sub : null;
+    if (!sub) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[agent-jwt] Auth service minted `id` without `sub`; falling back to `id`. " +
+          "When this warning stops appearing, delete the `id` fallback in lib/api/agentJwt.ts.",
+      );
+    }
 
     return {
-      userId: payload.sub,
+      // The guard guarantees at least one of the two is a non-empty string.
+      userId: sub ?? (payload.id as string),
       orgId: payload.orgId,
       actingAs: payload.actingAs,
       actingAgentId: payload.actingAgentId,
     };
-  } catch {
-    // Decryption failure / wrong alg-enc / expired / malformed — all unauthenticated.
+  } catch (error: unknown) {
+    // Decryption failure / wrong alg-enc / expired / malformed — all
+    // unauthenticated. jose's `code` is a stable reason string
+    // (ERR_JWT_EXPIRED, ERR_JWE_DECRYPTION_FAILED, ERR_JOSE_ALG_NOT_ALLOWED…),
+    // never a claim value, so it is safe to surface.
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code: unknown }).code)
+        : error instanceof Error
+          ? error.name
+          : "unknown";
+    debugLog(`decrypt/validate failed: ${code}`);
     return null;
   }
 }

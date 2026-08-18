@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { EncryptJWT, jwtDecrypt } from "jose";
 import hkdf from "@panva/hkdf";
 import { encode } from "next-auth/jwt";
@@ -238,5 +238,135 @@ describe("contract: a token minted the way the auth service actually mints it", 
     expect(payload.iss).toBe(AGENT_JWT_ISSUER);
     // Session cookies carry no `iss`. Enforcement must never move into the
     // shared session path — see AGENT_JWT_ISSUER's docs.
+  });
+});
+
+/* ───────────────── sub required, age bound, diagnostics ───────────────── */
+
+const BASE = { orgId: "org_1", actingAs: "ai_agent", actingAgentId: "ai-runtime" } as const;
+
+/**
+ * Lower-level mint than `mintAgentJwt` above: `iat` and `exp` can each be set
+ * to an explicit epoch second, or to `null` to OMIT the claim entirely. The
+ * omission cases are the point — `mintAgentJwt` always sets both, so it cannot
+ * express a token that bypasses the age bound.
+ */
+async function mintRaw(
+  claims: Record<string, unknown>,
+  opts: { iat?: number | null; exp?: number | null } = {},
+) {
+  const key = await deriveKey(NEXTAUTH_SECRET);
+  const now = Math.floor(Date.now() / 1000);
+  const { iat = now, exp = now + 300 } = opts;
+  let jwt = new EncryptJWT(claims).setProtectedHeader({ alg: "dir", enc: "A256GCM" });
+  if (iat !== null) jwt = jwt.setIssuedAt(iat);
+  if (exp !== null) jwt = jwt.setExpirationTime(exp);
+  return jwt.encrypt(key);
+}
+
+describe("verifyAgentJwt — sub is required", () => {
+  it("uses sub when present, and warns nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const token = await mintRaw({ sub: "user_sub", ...BASE });
+    expect((await verifyAgentJwt(token))?.userId).toBe("user_sub");
+    // Load-bearing: if the warning ever fires on the `sub` path it becomes
+    // always-on, and the removal condition it exists for stops meaning anything.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("rejects a token carrying only id — `sub` is the claim this path resolves the user from", async () => {
+    expect(await verifyAgentJwt(await mintRaw({ id: "user_id", ...BASE }))).toBeNull();
+  });
+
+  it("ignores a stray id claim when sub is present", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const token = await mintRaw({ sub: "user_sub", id: "user_id", ...BASE });
+    expect((await verifyAgentJwt(token))?.userId).toBe("user_sub");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("rejects a token carrying neither sub nor id", async () => {
+    expect(await verifyAgentJwt(await mintRaw({ ...BASE }))).toBeNull();
+  });
+
+  it("rejects a token whose sub and id are both empty strings", async () => {
+    expect(await verifyAgentJwt(await mintRaw({ sub: "", id: "", ...BASE }))).toBeNull();
+  });
+});
+
+describe("verifyAgentJwt — max age", () => {
+  const now = () => Math.floor(Date.now() / 1000);
+
+  it("accepts a token at exactly the 900s bound (what the auth service mints)", async () => {
+    const t = now();
+    const token = await mintRaw({ sub: "user_1", ...BASE }, { iat: t, exp: t + 900 });
+    expect(await verifyAgentJwt(token)).not.toBeNull();
+  });
+
+  it("rejects a token one second over the bound", async () => {
+    const t = now();
+    const token = await mintRaw({ sub: "user_1", ...BASE }, { iat: t, exp: t + 901 });
+    expect(await verifyAgentJwt(token)).toBeNull();
+  });
+
+  it("rejects a token with no iat — otherwise the bound is bypassed by omission", async () => {
+    const t = now();
+    const token = await mintRaw({ sub: "user_1", ...BASE }, { iat: null, exp: t + 300 });
+    expect(await verifyAgentJwt(token)).toBeNull();
+  });
+
+  it("rejects a token with no exp — jwtDecrypt only enforces exp when present, so it would never expire", async () => {
+    const token = await mintRaw({ sub: "user_1", ...BASE }, { exp: null });
+    expect(await verifyAgentJwt(token)).toBeNull();
+  });
+});
+
+describe("verifyAgentJwt — debug diagnostics", () => {
+  afterEach(() => {
+    delete process.env.ALLOW_AGENT_JWT_DEBUG;
+  });
+
+  it("stays silent when ALLOW_AGENT_JWT_DEBUG is unset", async () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    expect(await verifyAgentJwt("not.a.valid.jwe.token")).toBeNull();
+    expect(await verifyAgentJwt("")).toBeNull();
+    expect(debug).not.toHaveBeenCalled();
+    debug.mockRestore();
+  });
+
+  it("names the failing check when enabled", async () => {
+    process.env.ALLOW_AGENT_JWT_DEBUG = "true";
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const t = Math.floor(Date.now() / 1000);
+    await verifyAgentJwt(await mintRaw({ sub: "user_1", ...BASE }, { iat: t, exp: t + 901 }));
+    expect(String(debug.mock.calls[0]?.[0])).toContain("age exceeds");
+    debug.mockRestore();
+  });
+
+  /**
+   * The no-leak claim, enforced rather than asserted: a canary claim whose
+   * NAME must appear (key names are what make a shape mismatch diagnosable)
+   * and whose VALUE must not (that is the line the debug log must never cross).
+   */
+  it("logs claim key names but never a claim value", async () => {
+    process.env.ALLOW_AGENT_JWT_DEBUG = "true";
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    // `id` where `sub` was expected → shape mismatch → the keys branch logs.
+    // This is the exact mismatch the flag exists for.
+    const token = await mintRaw({
+      id: "user_1",
+      orgId: "org_1",
+      actingAs: "ai_agent",
+      canaryClaim: "MUST-NOT-APPEAR-IN-LOGS",
+    });
+    expect(await verifyAgentJwt(token)).toBeNull();
+    const emitted = debug.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(emitted).toContain("canaryClaim");
+    expect(emitted).not.toContain("MUST-NOT-APPEAR-IN-LOGS");
+    expect(emitted).not.toContain("user_1");
+    expect(emitted).not.toContain("org_1");
+    debug.mockRestore();
   });
 });
