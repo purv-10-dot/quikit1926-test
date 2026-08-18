@@ -319,6 +319,42 @@ export interface AssistApprovalListPage {
   total: number;
 }
 
+/**
+ * The runtime's answer to `POST /ai/requests/{id}/approve` or `.../reject`.
+ *
+ * ── THE ONE THING TO GET RIGHT ─────────────────────────────────────────────
+ * `status: "failed"` comes back on **HTTP 200**, and that is not a bug to route
+ * around. The approval itself succeeded — the human decision was recorded and
+ * the runtime attempted the write — and then the TARGET APP rejected it. Two
+ * different things failed in two different systems, and only one of them is a
+ * transport problem. Rendering this as a network error would tell the user to
+ * retry a decision that has already been consumed (approval is deliberately not
+ * idempotent, so the retry lands on 409) and would hide the target app's actual
+ * complaint, which is the only part that says what to fix.
+ *
+ * So: 200 + `failed` is an OUTCOME, rendered as an outcome. Only a non-2xx is a
+ * failure to decide.
+ *
+ * Field names are frozen camelCase, per the runtime contract.
+ */
+export interface AssistApprovalDecision {
+  requestId: string;
+  /**
+   * Terminal state after the decision. `executed` / `failed` follow an approve;
+   * `rejected` follows a reject. Typed as the full union rather than a narrowed
+   * literal for the same leniency reason as `AssistApprovalStatus` — the runtime
+   * may answer with a state this build does not know, and a card that renders it
+   * as "unrecognised, not actionable" beats one that throws.
+   */
+  status: AssistApprovalStatus;
+  /** Present on `executed`. The target app's own shape — pass through untouched. */
+  result?: Record<string, unknown> | null;
+  /** Present on `failed`. The target app's own code, e.g. "APP_API_ERROR". */
+  errorCode?: string;
+  /** Present on `failed`. The target app's own message. Never rewritten by us. */
+  error?: string;
+}
+
 export interface SendMessageInput {
   content: string;
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";

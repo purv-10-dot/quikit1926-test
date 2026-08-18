@@ -10,15 +10,17 @@
  */
 import { mintRuntimeToken } from "./token";
 import type { IngestResult } from "@/lib/shared";
-import { IngestError, ListApprovalsError } from "./types";
+import { ApprovalDecisionError, IngestError, ListApprovalsError } from "./types";
 import type {
+  ApprovalDecisionErrorCode,
   AssistInput,
+  DecideApprovalInput,
   IngestInput,
   ListApprovalsInput,
   RuntimeClient,
   RuntimeEvent,
 } from "./types";
-import type { AssistApprovalListPage } from "@/lib/shared";
+import type { AssistApprovalDecision, AssistApprovalListPage } from "@/lib/shared";
 
 // Time-to-first-response guard: covers connection + response headers (Render
 // free-tier cold starts can add 30–50s). Retired the moment the stream is open.
@@ -44,6 +46,19 @@ const INGEST_TIMEOUT_MS = 180_000;
  * timed-out list look identical on screen and mean opposite things.
  */
 const LIST_APPROVALS_TIMEOUT_MS = 15_000;
+/**
+ * A decision is a write on the runtime's side AND, on approve, a call out to the
+ * target app — so it gets more room than the list's 15s SELECT, and far less
+ * than ingest's 180s (no extract, no embed). 30s is the target app's API call
+ * plus overhead.
+ *
+ * CONSEQUENCE IF IT FIRES, and it is the sharpest one on this surface:
+ * `ApprovalDecisionError("timeout")` means WE DO NOT KNOW whether the decision
+ * landed. The runtime may have recorded it and executed the write while our
+ * socket was already gone. Because approval is deliberately not idempotent, the
+ * caller must NOT be told to try again — see `mapApprovalDecisionError`.
+ */
+const DECIDE_APPROVAL_TIMEOUT_MS = 30_000;
 
 export class HttpRuntimeClient implements RuntimeClient {
   constructor(private readonly baseUrl: string) {}
@@ -273,6 +288,104 @@ export class HttpRuntimeClient implements RuntimeClient {
     // target app's own naming and are never touched; `mode` is carried and
     // ignored. See AssistApprovalRow.
     return (await res.json()) as AssistApprovalListPage;
+  }
+
+  /** `POST /ai/requests/{id}/approve` — perform the parked write. */
+  approveRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision> {
+    return this.decide(input, "approve");
+  }
+
+  /** `POST /ai/requests/{id}/reject` — discard the parked write. */
+  rejectRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision> {
+    return this.decide(input, "reject");
+  }
+
+  /**
+   * The shared decision call. Approve and reject differ ONLY in the path
+   * segment: same auth, same identity rule, same timeout, same status mapping,
+   * same "200 is an outcome" rule. Splitting them into two near-identical
+   * methods is how one of them quietly stops mapping 409.
+   *
+   * ⚠️ `orgId`/`userId` go into the MINTED TOKEN. The only client-derived value
+   * in the whole request is `requestId` in the path, and there is no body at
+   * all — an empty POST, deliberately, so there is nowhere for an identity field
+   * to be added later "just to be safe".
+   *
+   * ⚠️ A 2xx ALWAYS resolves, including `status: "failed"`. That is a recorded
+   * approval whose write the target app refused: an outcome to render, not a
+   * transport error to retry. Only a non-2xx throws.
+   */
+  private async decide(
+    input: DecideApprovalInput,
+    action: "approve" | "reject",
+  ): Promise<AssistApprovalDecision> {
+    const token = await mintRuntimeToken({
+      orgId: input.orgId,
+      botAgentId: input.botAgentId,
+      userId: input.userId,
+    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DECIDE_APPROVAL_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/ai/requests/${encodeURIComponent(input.requestId)}/${action}`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            accept: "application/json",
+            ...(input.traceId ? { "x-trace-id": input.traceId } : {}),
+          },
+          signal: controller.signal,
+        },
+      );
+    } catch (e) {
+      clearTimeout(timer);
+      // An abort is the timeout; anything else is a network fault. They are
+      // NOT the same here: a network fault before the request left is "nothing
+      // happened", while a timeout is "we don't know". Keeping them apart is
+      // what lets the relay word the two differently.
+      throw new ApprovalDecisionError(
+        (e as { name?: string })?.name === "AbortError" ? "timeout" : "unavailable",
+      );
+    }
+    clearTimeout(timer);
+
+    if (!res.ok) throw new ApprovalDecisionError(decisionCodeFor(res.status), res.status);
+
+    // `result` interiors are the target app's own naming — relayed byte-identical,
+    // never normalised, exactly like `toolInput` on the list.
+    return (await res.json()) as AssistApprovalDecision;
+  }
+}
+
+/**
+ * Runtime HTTP status → decision error code.
+ *
+ * Every branch here is a genuinely different situation for the person who just
+ * tapped a button, which is why this is a table and not `status >= 400`.
+ * `default` is `unavailable` (retryable) rather than a hard failure: an
+ * unrecognised status from the runtime is more likely a proxy or a gateway than
+ * a semantic refusal, and telling the user "try again" is the safe reading — the
+ * one status where "try again" is NOT safe (timeout) never reaches this function.
+ */
+function decisionCodeFor(status: number): ApprovalDecisionErrorCode {
+  switch (status) {
+    case 409:
+      return "already_handled";
+    case 403:
+      return "forbidden";
+    case 410:
+      return "tool_gone";
+    case 404:
+      return "not_found";
+    case 401:
+      return "bad_jwt";
+    default:
+      return "unavailable";
   }
 }
 

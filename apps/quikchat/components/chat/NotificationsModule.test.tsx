@@ -18,6 +18,12 @@ const api = {
   fetchMessages: vi.fn(),
   markChannelReadApi: vi.fn(),
   sendMessage: vi.fn(),
+  // The "Your approvals" section mounts inside this module. This factory
+  // replaces the whole `@/lib/api` module, so an unlisted key is `undefined` and
+  // the section's query would throw rather than render — the section self-hides
+  // on an empty page, which is what these notification tests want.
+  fetchApprovals: vi.fn(),
+  decideApproval: vi.fn(),
 };
 vi.mock("@/lib/api", () => ({
   fetchNotifications: (...a: unknown[]) => api.fetchNotifications(...a),
@@ -31,6 +37,12 @@ vi.mock("@/lib/api", () => ({
   fetchMessages: (...a: unknown[]) => api.fetchMessages(...a),
   markChannelReadApi: (...a: unknown[]) => api.markChannelReadApi(...a),
   sendMessage: (...a: unknown[]) => api.sendMessage(...a),
+  fetchApprovals: (...a: unknown[]) => api.fetchApprovals(...a),
+  decideApproval: (...a: unknown[]) => api.decideApproval(...a),
+  // Not a function, so it needs declaring here too — Vitest throws on any
+  // access to an export the factory omitted, and the section reads this one at
+  // render time to key its query.
+  APPROVALS_QUERY_KEY: ["ai-approvals"],
 }));
 
 vi.mock("@/lib/web-notifications", () => ({
@@ -120,6 +132,9 @@ beforeEach(() => {
   api.markAllNotificationsReadApi.mockResolvedValue({ unreadCount: 0 });
   api.markChannelNotificationsReadApi.mockResolvedValue({ affected: 2, unreadCount: 0 });
   api.clearNotificationsApi.mockResolvedValue({ unreadCount: 0 });
+  // No parked writes in these fixtures — the section self-hides, so the
+  // notification assertions below see the pane they were written against.
+  api.fetchApprovals.mockResolvedValue({ requests: [], total: 0 });
 });
 
 afterEach(() => {

@@ -5,9 +5,17 @@
  * Configurable error/slow modes for tests via env.
  */
 import { randomUUID } from "node:crypto";
-import type { AssistApprovalListPage, AssistApprovalRow, IngestResult } from "@/lib/shared";
+import type {
+  AssistApprovalDecision,
+  AssistApprovalListPage,
+  AssistApprovalRow,
+  AssistApprovalStatus,
+  IngestResult,
+} from "@/lib/shared";
+import { ApprovalDecisionError } from "./types";
 import type {
   AssistInput,
+  DecideApprovalInput,
   IngestInput,
   ListApprovalsInput,
   RuntimeClient,
@@ -22,6 +30,21 @@ export interface StubOptions {
 }
 
 export class StubRuntimeClient implements RuntimeClient {
+  /**
+   * Decisions already taken in THIS process, so a second tap on the same row
+   * gets a real 409 rather than a second success.
+   *
+   * Deliberately stateful, in a file whose whole point is determinism — because
+   * "approval is not idempotent" is a rule with no local expression otherwise.
+   * A stateless stub would answer every double-tap with a cheerful `executed`,
+   * the card's latch would look unnecessary to the next person reading it, and
+   * the first real 409 would arrive in UAT. Instance-scoped, and
+   * `getRuntimeClient` caches one instance, so it lasts a dev server's lifetime
+   * and resets on restart; a fresh `new StubRuntimeClient()` (every test) starts
+   * clean.
+   */
+  private readonly decided = new Map<string, AssistApprovalStatus>();
+
   constructor(private readonly opts: StubOptions = {}) {}
 
   async *assist(input: AssistInput): AsyncIterable<RuntimeEvent> {
@@ -80,20 +103,74 @@ export class StubRuntimeClient implements RuntimeClient {
    * list. "Renders nothing" would then look correct right up until UAT. This
    * project has shipped that failure more than once.
    *
-   * Four rows, one per state that renders differently — `pending`, `expired`,
-   * `rejected`, `executed`. A pending-only fixture set would hide exactly what
-   * the terminal-rows change exists to expose: a write that expired unactioned
-   * must be visible as expired, not absent.
+   * Five rows, covering every state that renders differently: `pending`,
+   * `expired`, `rejected`, `executed`, plus a SECOND pending row whose approval
+   * answers `status: "failed"` at HTTP 200 (`STUB_FAILING_REQUEST_ID`) — the one
+   * response most easily mistaken for a network error, and previously
+   * unreachable without the live runtime. A pending-only fixture set would hide
+   * exactly what the terminal-rows change exists to expose: a write that expired
+   * unactioned must be visible as expired, not absent.
    *
    * Deterministic: fixed ids, fixed timestamps, no randomness, so assertions
    * against it are stable. `limit`/`offset` are honoured so pagination is
    * exercisable without the live runtime, and `total` stays the UNPAGED count.
    */
   async listApprovalRequests(input: ListApprovalsInput): Promise<AssistApprovalListPage> {
-    const all = stubApprovalRows(input.orgId, input.userId);
+    const all = stubApprovalRows(input.orgId, input.userId).map((r) => {
+      // A row decided earlier in this process reports its NEW state, so the
+      // Activity list agrees with the card the user just acted on. Without this
+      // the local list would keep showing an approved row as pending and the
+      // "terminal rows render as terminal" path would be unreachable by hand.
+      const decided = this.decided.get(r.id);
+      return decided ? { ...r, status: decided, decisionBy: input.userId } : r;
+    });
     const offset = Math.max(0, input.offset ?? 0);
     const limit = input.limit != null ? Math.max(0, input.limit) : all.length;
     return { requests: all.slice(offset, offset + limit), total: all.length };
+  }
+
+  async approveRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision> {
+    const row = this.claim(input);
+    // The one fixture that answers `failed` — see STUB_FAILING_REQUEST_ID.
+    if (row.id === STUB_FAILING_REQUEST_ID) {
+      this.decided.set(row.id, "failed");
+      return {
+        requestId: row.id,
+        status: "failed",
+        errorCode: "APP_API_ERROR",
+        error: "QuikTrack rejected the write: field 'dueDate' is in the past.",
+      };
+    }
+    this.decided.set(row.id, "executed");
+    return {
+      requestId: row.id,
+      // Target app's own naming, same rule as toolInput — never camelCased by us.
+      result: { issueId: "QTRK-903", url: "https://quiktrack.test/issues/QTRK-903" },
+      status: "executed",
+    };
+  }
+
+  async rejectRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision> {
+    const row = this.claim(input);
+    this.decided.set(row.id, "rejected");
+    return { requestId: row.id, status: "rejected" };
+  }
+
+  /**
+   * Resolve a request id to a still-pending fixture row, or throw the same coded
+   * error the real runtime would. Shared by approve and reject so the two cannot
+   * drift on which ids they accept.
+   */
+  private claim(input: DecideApprovalInput): AssistApprovalRow {
+    const row = stubApprovalRows(input.orgId, input.userId).find((r) => r.id === input.requestId);
+    // Unknown id and another org's row are ONE code on purpose: "that exists but
+    // isn't yours" is itself a leak. The real runtime scopes on the token and
+    // answers 404 for both.
+    if (!row) throw new ApprovalDecisionError("not_found", 404);
+    if (this.decided.has(row.id) || row.status !== "pending") {
+      throw new ApprovalDecisionError("already_handled", 409);
+    }
+    return row;
   }
 }
 
@@ -101,9 +178,27 @@ export class StubRuntimeClient implements RuntimeClient {
 const STUB_NOW = "2026-08-14T09:00:00.000Z";
 
 /**
- * The four fixture rows. `toolInput` interiors deliberately use the TARGET app's
- * naming (`projectId`, `assigneeId`) — not camelCased by us — so a consumer that
- * wrongly normalises them fails against the stub rather than only against UAT.
+ * The pending row whose approval answers `status: "failed"` on HTTP 200.
+ *
+ * Exists because that is the single most misreadable response on this surface —
+ * the approval succeeded and the target app refused the write — and a stub where
+ * every approve returns `executed` makes "renders the outcome, not a network
+ * error" untestable by hand. A developer needs to be able to reach the failed
+ * card locally.
+ */
+export const STUB_FAILING_REQUEST_ID = "stub-req-pending-failing";
+
+/**
+ * The fixture rows. `toolInput` interiors deliberately use the TARGET app's
+ * naming (`projectId`, `assigneeId`, and a snake_case `custom_field_7`) — not
+ * camelCased by us — so a consumer that wrongly normalises them fails against the
+ * stub rather than only against UAT.
+ *
+ * The snake_case key is load-bearing and was missing until 18 Aug: every fixture
+ * interior happened to be camelCase already, so a normalising consumer passed
+ * every local run and would have broken on first contact with a real QuikTrack
+ * payload. That is exactly the failure these fixtures exist to prevent, so the
+ * key is now present on the row a card is most likely to be built against.
  */
 function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
   const base = {
@@ -124,12 +219,30 @@ function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
       ...base,
       id: "stub-req-pending",
       toolName: "create_issue",
-      toolInput: { projectId: "QTRK", title: "Login fails on Safari", assigneeId: "u-priya" },
+      toolInput: {
+        projectId: "QTRK",
+        title: "Login fails on Safari",
+        assigneeId: "u-priya",
+        // snake_case ON PURPOSE. A consumer that normalises interiors must break
+        // here, locally, and not first against a real QuikTrack payload in UAT.
+        custom_field_7: { nested: ["a", 1, null] },
+      },
       riskClass: "soft_write",
       status: "pending",
       expiresAt: "2026-08-14T09:15:00.000Z",
       createdAt: STUB_NOW,
       traceId: "stub-trace-pending",
+    },
+    {
+      ...base,
+      id: STUB_FAILING_REQUEST_ID,
+      toolName: "update_issue",
+      toolInput: { issueId: "QTRK-208", dueDate: "2020-01-01" },
+      riskClass: "medium_write",
+      status: "pending",
+      expiresAt: "2026-08-14T09:20:00.000Z",
+      createdAt: STUB_NOW,
+      traceId: "stub-trace-pending-failing",
     },
     {
       ...base,

@@ -9,6 +9,7 @@
  */
 
 import type {
+  AssistApprovalDecision,
   AssistApprovalListPage,
   AssistApprovalRequest,
   AssistSource,
@@ -16,7 +17,12 @@ import type {
   IngestVisibility,
 } from "@/lib/shared";
 
-export type { AssistApprovalListPage, AssistApprovalRequest, AssistSource };
+export type {
+  AssistApprovalDecision,
+  AssistApprovalListPage,
+  AssistApprovalRequest,
+  AssistSource,
+};
 
 export interface AssistHistoryItem {
   role: "user" | "assistant";
@@ -148,6 +154,73 @@ export class ListApprovalsError extends Error {
   }
 }
 
+/**
+ * Act on one parked request. Same identity rule as the list: `orgId`/`userId`
+ * ride the MINTED TOKEN and are never sent in the path, query or body. The
+ * runtime authorises the decision against the token, which is what makes
+ * requester-only isolation hold — a body field would let a caller approve
+ * someone else's write.
+ *
+ * `requestId` is the ONLY thing that comes from the client, and it is safe to:
+ * a request belonging to another org resolves to 404 on the runtime side
+ * precisely because the token scopes the lookup.
+ */
+export interface DecideApprovalInput {
+  /** From the caller's auth context. Goes into the JWT, not the path. */
+  orgId: string;
+  userId: string;
+  /** Stable bot agent id — becomes the JWT `sub`, same as assist/ingest/list. */
+  botAgentId: string;
+  /** The runtime-owned request id, from the SSE frame or a ledger row. */
+  requestId: string;
+  /** Correlates this decision with the runtime's own logs. Always sent. */
+  traceId?: string;
+}
+
+/**
+ * Why a decision could not be RECORDED. Distinct from a decision that was
+ * recorded and whose write then failed — that is `AssistApprovalDecision` with
+ * `status: "failed"` on HTTP 200, and it is not an error at all here.
+ *
+ * Each code means something materially different to the person who just tapped
+ * a button, which is why they are not collapsed into one "couldn't approve":
+ *
+ *  - `already_handled` (409) — the request is no longer pending. Approval is
+ *    deliberately NOT idempotent, so this is also exactly where a double-tap
+ *    lands. The right response is "already handled", plus a refetch; never a
+ *    retry, which would either 409 again or, worse, double-write if the runtime
+ *    ever relaxed the rule.
+ *  - `forbidden` (403) — permission was revoked between proposal and approval.
+ *    The user could have done this a minute ago and cannot now.
+ *  - `tool_gone` (410) — the tool was deregistered. Nothing the user can do, and
+ *    distinct from "no permission", which sounds like it could be granted.
+ *  - `not_found` (404) — unknown id, or another org's. Deliberately one code:
+ *    telling a caller "that exists but isn't yours" is itself a leak.
+ *  - `bad_jwt` (401) — our token, not their problem. Never shown as a user error.
+ *  - `unavailable` (5xx / network) — theirs, retryable.
+ *  - `timeout` — WE DO NOT KNOW whether the decision landed. See the note on
+ *    the relay's message for why this must never say "try again".
+ */
+export type ApprovalDecisionErrorCode =
+  | "already_handled"
+  | "forbidden"
+  | "tool_gone"
+  | "not_found"
+  | "bad_jwt"
+  | "unavailable"
+  | "timeout";
+
+/** Thrown when a decision could not be recorded. Carries a mappable code. */
+export class ApprovalDecisionError extends Error {
+  constructor(
+    public readonly code: ApprovalDecisionErrorCode,
+    public readonly runtimeStatus?: number,
+  ) {
+    super(code);
+    this.name = "ApprovalDecisionError";
+  }
+}
+
 export interface RuntimeClient {
   /** SSE-shaped stream of runtime events for one assistant turn. */
   assist(input: AssistInput): AsyncIterable<RuntimeEvent>;
@@ -158,6 +231,15 @@ export interface RuntimeClient {
    * Throws `ListApprovalsError`; never resolves to an empty page on failure.
    */
   listApprovalRequests(input: ListApprovalsInput): Promise<AssistApprovalListPage>;
+  /**
+   * Approve a parked write and let the runtime perform it. Resolves with the
+   * OUTCOME — including `status: "failed"`, which is a successful approval of a
+   * write the target app refused. Throws `ApprovalDecisionError` only when the
+   * decision could not be recorded at all.
+   */
+  approveRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision>;
+  /** Reject a parked write. Same throw/resolve split as `approveRequest`. */
+  rejectRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision>;
 }
 
 export type RuntimeMode = "stub" | "http";

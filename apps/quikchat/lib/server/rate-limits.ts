@@ -28,6 +28,19 @@ export const RATE = {
    * Shaped after `notifyRead` instead.
    */
   approvalsList: { bucket: "approvals_list", limit: 120, windowMs: 10_000 },
+  /**
+   * Approving or rejecting — a WRITE, and deliberately not sized like the list
+   * it sits next to. `approvalsList` is 120/10s because a surface may poll it;
+   * a decision is a deliberate button press that performs a real write in
+   * another app, and there is no legitimate reason for one person to make
+   * dozens of them per minute.
+   *
+   * NOT the double-tap guard. That is the card's synchronous latch plus the
+   * runtime's 409 — a rate limit that let the second tap through 29 times before
+   * refusing would be no guard at all. This is a flood ceiling; shaped after
+   * `meetingCreate`, the other "deliberate action with real consequences".
+   */
+  approvalDecision: { bucket: "approval_decision", limit: 30, windowMs: 60_000 },
   // KB ingest (Stage 3): explicit "Add to KB" button — deliberate + rare + heavy
   // (indexing on the runtime), so tight.
   ingest: { bucket: "ingest", limit: 10, windowMs: 60_000 },

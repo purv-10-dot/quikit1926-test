@@ -772,3 +772,73 @@ which model a ticket means before estimating it.
 `joinUrl: "https://meet.quikchat.dev/new"` on an event that creates no meeting
 and notifies nobody. Same fabrication pattern the calendar stub was cleaned up
 to avoid.
+---
+
+## Approval card + decision relays (18 Aug 2026) — what shipped and what did not
+
+Shipped: `ApprovalCard` (one component, two adapters in `lib/approval-card.ts`),
+the "Your approvals" section in Activity, `POST /api/ai/requests/{id}/approve`
+and `.../reject`, and the live-turn wiring for `approval_needed`.
+
+### 🔴 RAISE WITH THE RUNTIME TEAM: two gaps, one fix — a generated string persisted on the ledger row
+
+Both need the same thing from the runtime, and neither is a nice-to-have.
+
+1. **`AssistApprovalRow` carries no `summary`.** The SSE frame has one; the
+   ledger row does not. The consequence is not cosmetic: **the Activity card is
+   the only surface a user reaches after the turn ends**, and it is the one
+   showing `quiktrack_create_issue` where the live card showed a sentence. The
+   card that survives is the worse card.
+   We are NOT synthesising one from `toolName` + `toolInput`. That is precisely
+   the coupling `summary` exists to prevent — it would put our guess at another
+   app's semantics in front of the user at the moment they authorise a write, and
+   it would silently rot every time QuikTrack renamed an argument. So the card
+   falls back to the raw tool name, which is honest and poor.
+2. **There is no outcome string.** A terminal row renders its `status` and, on
+   `failed`, the target app's `error`. What it should say is what actually
+   happened — "Created QTRK-902". It must come from the **list**, not only from
+   the approve response: a decision answered on one device would otherwise show
+   nothing on another, and nothing at all after a reload.
+
+Seams are left for both in `ApprovalCardModel` and `SettledLine`, and **no field
+names were invented** — when the runtime ships them, the adapters gain two lines.
+Documented as an open ask at the foot of `docs/RUNTIME.md`.
+
+### Activity is not a paginating surface, and this did not make it one
+
+`GET /api/ai/requests` carries `limit`/`offset` and returns `total`, but Activity
+has no pagination anywhere (the feed's "See all activity" belongs to the
+notification store, not to a page cursor). `ApprovalsSection` asks for the
+relay's default page and, when `total` exceeds what came back, renders
+`Showing N of M` — no load-more control. **If that caption starts appearing
+routinely, that is the signal to give Activity real paging, not to raise the
+limit.** Silent truncation was the alternative and it reads as "these are all of
+them", which on a list of pending writes is the one thing it must not say.
+
+### Fixed here: the stub's `toolInput` had no snake_case key
+
+`stub.ts` was written so "a consumer that normalises interiors breaks against the
+stub rather than only against UAT" — but every fixture interior was already
+camelCase (`projectId`, `assigneeId`), so the guard was decorative and a
+normalising consumer passed every local run. `custom_field_7` is now on the
+pending fixture and asserted. A fifth fixture row was also added whose approval
+answers `status: "failed"` at HTTP 200 (`STUB_FAILING_REQUEST_ID`) — that is the
+single most misreadable response on this surface and it was previously
+unreachable locally. The stub also latches decisions per instance so a second tap
+gets a real 409; approval is deliberately not idempotent and had no local
+expression of that before.
+
+### Still open
+
+- **The persisted channel-visible card** — the fast-follow. Today the live card
+  is ephemeral: dismissing it, reloading, or opening the channel on another
+  device leaves Activity as the only route back to the request. That is
+  deliberate for v1 (a card in history would outlive the request it describes),
+  but it means the chat transcript has no trace that a write was ever proposed.
+- **`RATE.approvalDecision` is a flood ceiling, not a concurrency guard.** 30/60s.
+  The double-tap guard is the card's synchronous ref latch plus the runtime's
+  409 — a rate limit that let the second tap through 29 times before refusing
+  would be no guard at all. Do not "harden" one by tightening the other.
+- **Module-gate consequence, unchanged and still upstream:** a request already
+  pending when the assistant module is switched off is now unactionable through
+  three routes rather than one. Same question, same owner — see the row above.

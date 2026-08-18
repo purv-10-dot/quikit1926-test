@@ -199,10 +199,14 @@ describe("HttpRuntimeClient.listApprovalRequests", () => {
  * permanently empty list, and "renders nothing" would look correct until UAT.
  */
 describe("StubRuntimeClient.listApprovalRequests", () => {
-  it("returns one row per state that renders differently", async () => {
+  it("covers every state that renders differently", async () => {
     const page = await new StubRuntimeClient().listApprovalRequests(listInput);
-    expect(page.total).toBe(4);
+    expect(page.total).toBe(5);
+    // Two pending rows, because the second one's APPROVAL renders differently:
+    // it answers `status: "failed"` on HTTP 200, the one response most likely to
+    // be mistaken for a network error. See STUB_FAILING_REQUEST_ID.
     expect(page.requests.map((r) => r.status)).toEqual([
+      "pending",
       "pending",
       "expired",
       "rejected",
@@ -224,12 +228,17 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
     const page = await new StubRuntimeClient().listApprovalRequests(listInput);
     const pending = page.requests.find((r) => r.id === "stub-req-pending")!;
     // A consumer that normalises interiors breaks against the stub, not only
-    // against UAT.
+    // against UAT — which only holds if a fixture actually CARRIES a key a
+    // normaliser would rewrite. Until 18 Aug every interior here was already
+    // camelCase, so the guard was decorative and a normalising consumer passed
+    // every local run. `custom_field_7` is the one that makes it real.
     expect(pending.toolInput).toEqual({
       projectId: "QTRK",
       title: "Login fails on Safari",
       assigneeId: "u-priya",
+      custom_field_7: { nested: ["a", 1, null] },
     });
+    expect(Object.keys(pending.toolInput)).toContain("custom_field_7");
   });
 
   it("includes an already-expired row, so an unactioned write stays visible", async () => {
@@ -244,8 +253,8 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
       limit: 2,
       offset: 1,
     });
-    expect(page.requests.map((r) => r.status)).toEqual(["expired", "rejected"]);
-    expect(page.total).toBe(4);
+    expect(page.requests.map((r) => r.status)).toEqual(["pending", "expired"]);
+    expect(page.total).toBe(5);
   });
 
   it("is deterministic across calls", async () => {
