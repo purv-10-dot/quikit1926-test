@@ -842,3 +842,82 @@ expression of that before.
 - **Module-gate consequence, unchanged and still upstream:** a request already
   pending when the assistant module is switched off is now unactionable through
   three routes rather than one. Same question, same owner — see the row above.
+
+---
+
+## Approvals, follow-up (18 Aug 2026) — outcomeSummary, cancelled, unknown-status audit
+
+Three runtime changes landed the day after the card shipped. Wired
+`outcomeSummary`, added `cancelled`, and audited unknown-`status` handling.
+
+### The unknown-`status` audit came back better than expected — and the reason is reusable
+
+The worry was that `status` might have the same hole `riskClass` had: an
+unrecognised value falling through to a pending-shaped card, so `cancelled`
+arriving before we knew about it would have shown Approve/Reject on a request
+nobody can action. **It would not have.** Verified by driving raw rows through
+the adapter into rendered DOM: `cancelled`, `quarantined`, `PENDING`, `pending `
+and `""` were all non-actionable already.
+
+The reason is structural, and worth remembering because it decides how much
+defensive code a future field needs:
+
+- **`riskClass` needed a normaliser** because the safe value (`high_risk`) lives
+  *inside* the known set. An unfamiliar value has to be actively mapped onto it;
+  left alone it renders unstyled, which reads as mild. So: normalise, plus a CSS
+  base rule as the second enforcement.
+- **`status` needed nothing** because the safe behaviour is "not actionable", and
+  every gate is a *positive check for `"pending"`* rather than a denylist of
+  terminal states. Unknown values fall safe by construction, at each gate
+  independently.
+
+Rule of thumb: when the safe default is inside the known set, you need a
+normaliser; when it is outside, a positive check for the one live value gets it
+free. Written up next to both gates in `lib/approval-card.ts` and
+`contracts.ts`.
+
+Two real findings survived the audit:
+
+1. **`status: ""` rendered a blank outcome box.** Small, and worse than it
+   sounds: an empty bordered box reads as a rendering bug rather than a data
+   problem, and sends whoever hits it looking in the wrong place. Now
+   `String(status).trim() || "Unrecognised state"` — `String()` because the
+   switch is exhaustive over the union so TS narrows to `never`, while the whole
+   point is that non-union values (including non-strings) arrive at runtime.
+2. **No test drove the property end-to-end.** Two existed and each assumed the
+   other's guarantee — the adapter test checked `viewerMayAct === false`, the
+   card test handed the card a model already marked terminal. Neither would catch
+   a regression loosening both. **This is a repeat pattern here** (the
+   `olderThanCursor` composition test, the `ensureSeeded` ordering,
+   `SettingsModule.test.tsx`). Now covered raw-row → adapter → DOM, including a
+   positive control asserting a `pending` row still *gets* buttons — otherwise
+   "no buttons" passes trivially forever.
+
+### 🔴 NOT OURS: cancel-pending
+
+The runtime exposes an endpoint to cancel a pending request, and we are not
+calling it. It needs an **org-admin user token**, and QuikChat reads module state
+but does not own toggling it — that is the admin portal's job. Wiring a cancel
+button here would put an administrative action behind a chat surface with the
+wrong credential, and would imply QuikChat can disable a module it cannot
+disable. If cancel-on-disable is wanted, it belongs next to the toggle that
+causes it. Related: the pending-requests-orphaned-on-disable row above, which is
+the same question from the other side.
+
+### `total` was correct code that could never fire
+
+`ApprovalsSection`'s "Showing N of M" footer is driven by
+`total - requests.length`. The live endpoint used to return the **page size** as
+`total`, so that was always 0 and the footer never rendered. Our stub modelled it
+as the unpaged count from the start, so the behaviour was right locally and
+unreachable in UAT — a case where the stub being stricter than the real service
+hid nothing but also proved nothing. The runtime now returns a real `COUNT(*)`
+and the footer starts working with no client change. Asserted explicitly in
+`approvals.test.ts` so the stub cannot drift back.
+
+### Still open
+
+- **The proposal `summary` on the ledger row** — the last remaining runtime ask,
+  down from two. Generator exists, unwired, ships with emission. Until then the
+  Activity card shows a raw `toolName`. Not synthesising one; see RUNTIME.md.
+- **The persisted channel-visible card** — unchanged, still the fast-follow.

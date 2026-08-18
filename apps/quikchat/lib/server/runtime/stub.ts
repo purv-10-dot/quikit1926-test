@@ -103,13 +103,17 @@ export class StubRuntimeClient implements RuntimeClient {
    * list. "Renders nothing" would then look correct right up until UAT. This
    * project has shipped that failure more than once.
    *
-   * Five rows, covering every state that renders differently: `pending`,
-   * `expired`, `rejected`, `executed`, plus a SECOND pending row whose approval
-   * answers `status: "failed"` at HTTP 200 (`STUB_FAILING_REQUEST_ID`) — the one
-   * response most easily mistaken for a network error, and previously
-   * unreachable without the live runtime. A pending-only fixture set would hide
-   * exactly what the terminal-rows change exists to expose: a write that expired
-   * unactioned must be visible as expired, not absent.
+   * Six rows, covering every state that renders differently: `pending`,
+   * `expired`, `rejected`, `executed`, `cancelled`, plus a SECOND pending row
+   * whose approval answers `status: "failed"` at HTTP 200
+   * (`STUB_FAILING_REQUEST_ID`) — the one response most easily mistaken for a
+   * network error, and previously unreachable without the live runtime. A
+   * pending-only fixture set would hide exactly what the terminal-rows change
+   * exists to expose: a write that expired unactioned must be visible as
+   * expired, not absent.
+   *
+   * `outcomeSummary` is on every terminal row EXCEPT `stub-req-cancelled`, which
+   * omits it so the pre-field fallback is reachable by hand. See that row.
    *
    * Deterministic: fixed ids, fixed timestamps, no randomness, so assertions
    * against it are stable. `limit`/`offset` are honoured so pagination is
@@ -139,6 +143,11 @@ export class StubRuntimeClient implements RuntimeClient {
         status: "failed",
         errorCode: "APP_API_ERROR",
         error: "QuikTrack rejected the write: field 'dueDate' is in the past.",
+        // Present on a FAILED decision too, and it does not carry the reason —
+        // which is the point. It says what happened; `error` says why. A card
+        // that dropped `error` once this arrived would lose the only actionable
+        // text, so the stub makes that mistake visible locally.
+        outcomeSummary: "Could not update QTRK-208.",
       };
     }
     this.decided.set(row.id, "executed");
@@ -147,13 +156,20 @@ export class StubRuntimeClient implements RuntimeClient {
       // Target app's own naming, same rule as toolInput — never camelCased by us.
       result: { issueId: "QTRK-903", url: "https://quiktrack.test/issues/QTRK-903" },
       status: "executed",
+      // Served on the DECISION RESPONSE as well as the row, so the live card
+      // shows the real outcome with no refetch.
+      outcomeSummary: "Created QTRK-903 in QuikTrack.",
     };
   }
 
   async rejectRequest(input: DecideApprovalInput): Promise<AssistApprovalDecision> {
     const row = this.claim(input);
     this.decided.set(row.id, "rejected");
-    return { requestId: row.id, status: "rejected" };
+    return {
+      requestId: row.id,
+      status: "rejected",
+      outcomeSummary: "Declined — nothing was changed in QuikTrack.",
+    };
   }
 
   /**
@@ -256,6 +272,9 @@ function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
       expiresAt: "2026-08-13T10:00:00.000Z",
       createdAt: "2026-08-13T09:45:00.000Z",
       traceId: "stub-trace-expired",
+      // The runtime's sweep generates one for expiry too — it is a terminal
+      // state with a describable outcome, not only decisions have them.
+      outcomeSummary: "Expired after 15 minutes; QTRK-141 was not changed.",
     },
     {
       ...base,
@@ -269,6 +288,10 @@ function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
       expiresAt: null,
       createdAt: "2026-08-13T14:00:00.000Z",
       traceId: "stub-trace-rejected",
+      // Decided BY the viewer, so the card can say "you declined this" rather
+      // than the passive "Rejected". `decisionBy: userId` above is what makes
+      // that path reachable locally.
+      outcomeSummary: "Declined — QTRK-77 was not deleted.",
     },
     {
       ...base,
@@ -284,6 +307,36 @@ function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
       createdAt: "2026-08-13T16:08:00.000Z",
       traceId: "stub-trace-executed",
       result: { issueId: "QTRK-902", url: "https://quiktrack.test/issues/QTRK-902" },
+      outcomeSummary: "Created QTRK-902 in QuikTrack.",
+    },
+    {
+      ...base,
+      id: "stub-req-cancelled",
+      toolName: "update_issue",
+      toolInput: { issueId: "QTRK-310", status: "DONE" },
+      riskClass: "medium_write",
+      /**
+       * The tenant disabled the assistant module while this sat parked, so
+       * nobody answered it and nobody now can. `decisionBy: null` on purpose —
+       * this is the case with no human actor at all, which is what separates it
+       * from `rejected` and what the card's passive wording exists for.
+       */
+      status: "cancelled",
+      decisionBy: null,
+      decisionAt: "2026-08-13T18:30:00.000Z",
+      expiresAt: null,
+      createdAt: "2026-08-13T18:00:00.000Z",
+      traceId: "stub-trace-cancelled",
+      /**
+       * DELIBERATELY NO `outcomeSummary` — the one terminal fixture without it.
+       *
+       * Rows written before the runtime shipped the field are the common case in
+       * a 24h ledger spanning the deploy, and a card that renders blank for them
+       * fails on real historical data. Same instinct as the snake_case key: the
+       * fallback path has to be reachable by hand, not only in a unit test, or
+       * "it renders" stays true locally right up until someone opens Activity in
+       * UAT.
+       */
     },
   ];
 }

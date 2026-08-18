@@ -201,7 +201,7 @@ describe("HttpRuntimeClient.listApprovalRequests", () => {
 describe("StubRuntimeClient.listApprovalRequests", () => {
   it("covers every state that renders differently", async () => {
     const page = await new StubRuntimeClient().listApprovalRequests(listInput);
-    expect(page.total).toBe(5);
+    expect(page.total).toBe(6);
     // Two pending rows, because the second one's APPROVAL renders differently:
     // it answers `status: "failed"` on HTTP 200, the one response most likely to
     // be mistaken for a network error. See STUB_FAILING_REQUEST_ID.
@@ -211,7 +211,49 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
       "expired",
       "rejected",
       "executed",
+      "cancelled",
     ]);
+  });
+
+  /**
+   * `cancelled` is not `rejected`: the tenant disabled the module while the
+   * request sat parked, so there is no human decider. `decisionBy: null` is what
+   * makes the card's passive wording reachable locally rather than only in a
+   * unit test.
+   */
+  it("has a cancelled row with no human decider", async () => {
+    const page = await new StubRuntimeClient().listApprovalRequests(listInput);
+    const cancelled = page.requests.find((r) => r.status === "cancelled")!;
+    expect(cancelled).toBeTruthy();
+    expect(cancelled.decisionBy).toBeNull();
+  });
+
+  /**
+   * `outcomeSummary` is OPTIONAL, and rows predating it are ordinary traffic in
+   * a 24h ledger that spans the deploy. Exactly one terminal fixture omits it,
+   * so a card that renders blank for those breaks locally rather than first in
+   * UAT — the same instinct as the snake_case key in `toolInput`.
+   */
+  it("carries outcomeSummary on terminal rows, and deliberately omits it on one", async () => {
+    const page = await new StubRuntimeClient().listApprovalRequests(listInput);
+    const terminal = page.requests.filter((r) => r.status !== "pending");
+    const without = terminal.filter((r) => !r.outcomeSummary);
+
+    expect(terminal.length).toBeGreaterThan(1);
+    // EXACTLY one, and named — so the gap stays deliberate. A second fixture
+    // drifting into "no summary" would make the fallback look like the norm and
+    // would stop this fixture set proving anything about the field's presence.
+    expect(without.map((r) => r.id)).toEqual(["stub-req-cancelled"]);
+    expect(page.requests.find((r) => r.id === "stub-req-executed")!.outcomeSummary).toBe(
+      "Created QTRK-902 in QuikTrack.",
+    );
+  });
+
+  it("never puts outcomeSummary on a pending row — nothing has happened yet", async () => {
+    const page = await new StubRuntimeClient().listApprovalRequests(listInput);
+    for (const r of page.requests.filter((x) => x.status === "pending")) {
+      expect(r.outcomeSummary).toBeUndefined();
+    }
   });
 
   it("scopes rows to the caller and carries the dead mode field", async () => {
@@ -254,7 +296,22 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
       offset: 1,
     });
     expect(page.requests.map((r) => r.status)).toEqual(["pending", "expired"]);
-    expect(page.total).toBe(5);
+    expect(page.total).toBe(6);
+  });
+
+  /**
+   * `total` is the UNPAGED count, and the stub modelled it that way from the
+   * start. That matters more than it looks: the live endpoint used to return the
+   * page size, so `hidden = total - requests.length` in ApprovalsSection was
+   * always 0 and the "Showing N of M" footer was correct code that could never
+   * fire. The runtime now returns a real COUNT(*), so it starts working — and
+   * this assertion is what proves our side was right all along.
+   */
+  it("reports total as the unpaged count, not the page size", async () => {
+    const page = await new StubRuntimeClient().listApprovalRequests({ ...listInput, limit: 2 });
+    expect(page.requests).toHaveLength(2);
+    expect(page.total).toBe(6);
+    expect(page.total).not.toBe(page.requests.length);
   });
 
   it("is deterministic across calls", async () => {

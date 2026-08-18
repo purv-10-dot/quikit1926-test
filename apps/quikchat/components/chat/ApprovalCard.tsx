@@ -32,24 +32,62 @@ const RISK_LABEL: Record<AssistRiskClass, string> = {
 };
 
 /**
- * Our own label for a lifecycle state — not an interpretation of the write. The
- * `default` returns the raw status rather than a friendly guess: an unfamiliar
- * state must read as unfamiliar, not be quietly folded into a known one.
+ * Our own label for a lifecycle state — not an interpretation of the write, and
+ * only ever a FALLBACK: when the row carries the runtime's `outcomeSummary`,
+ * that sentence is shown instead of anything from this function.
+ *
+ * `byViewer` names the actor where we can do so truthfully. "Rejected" and
+ * "Cancelled" are passive voice hiding a subject, and the ledger's whole purpose
+ * is who-decided-what — but the only identity available here is a boolean (see
+ * `decidedByViewer`), so this says "you" or says nothing. A named third party
+ * comes from `outcomeSummary`, which the runtime can populate because it has the
+ * directory and this component does not.
  */
-function statusLabel(status: AssistApprovalStatus): string {
+function statusLabel(status: AssistApprovalStatus, byViewer = false): string {
   switch (status) {
     case "executed":
       return "Approved — action completed";
     case "failed":
       return "Approved — the action failed";
     case "rejected":
-      return "Rejected";
+      return byViewer ? "Rejected — you declined this" : "Rejected";
+    case "cancelled":
+      /**
+       * Deliberately NOT the `rejected` wording. A human declining and the
+       * request being withdrawn are different facts about different actors:
+       * `cancelled` means the tenant disabled the assistant module while this
+       * sat parked, so nobody answered it and nobody now can. Wording it as a
+       * decision would attribute an administrative action to the requester —
+       * who, in v1, is the person reading this card.
+       */
+      return byViewer
+        ? "Cancelled — you withdrew this"
+        : "Cancelled — withdrawn before it was answered";
     case "expired":
       return "Expired without an answer";
     case "pending":
       return "Waiting for your answer";
     default:
-      return status;
+      /**
+       * An unfamiliar state reads as unfamiliar rather than being folded into a
+       * known one — so the raw value is shown.
+       *
+       * The `||` is the part that matters. A raw `""` (or whitespace) rendered
+       * an EMPTY outcome line: the card showed a bordered box with nothing in
+       * it, which reads as a rendering bug rather than as a data problem and
+       * sends whoever hits it looking in the wrong place entirely. "Visibly
+       * terminal" has to hold for degenerate values too, not just for
+       * plausible-looking unknown ones.
+       */
+      /**
+       * `String(...)` because TypeScript narrows `status` to `never` here — the
+       * switch is exhaustive over the union — while the whole point of the
+       * leniency rule is that a value OUTSIDE the union reaches this line at
+       * runtime. It may not even be a string: a number or null from the wire
+       * would throw on `.trim()`, turning a cosmetic unknown-state problem into
+       * a blank-screen render error.
+       */
+      return String(status).trim() || "Unrecognised state";
   }
 }
 
@@ -256,9 +294,30 @@ export function ApprovalCard({ model, onDecide, onSettled }: ApprovalCardProps) 
       {phase.kind === "settled" ? (
         <SettledLine decision={phase.decision} />
       ) : model.status !== "pending" ? (
-        /* A terminal row is an outcome, not a live proposal — no buttons, ever. */
+        /*
+         * A terminal row is an outcome, not a live proposal — no buttons, ever.
+         *
+         * This is the card's OWN positive check for "pending", repeated rather
+         * than delegated to `model.viewerMayAct`. The adapter already computed
+         * the same thing; doing it again here means an unknown status renders as
+         * terminal even if a future adapter (or a hand-built model) got
+         * `viewerMayAct` wrong. Two independent gates, both positive, so an
+         * unfamiliar state falls safe at each — see AssistApprovalStatus.
+         */
         <div className="qc-approval__outcome" data-testid="approval-terminal">
-          {statusLabel(model.status)}
+          {/*
+            The runtime's sentence when there is one, our label when there is
+            not. Rows predating `outcomeSummary` are the common case in a 24h
+            ledger that spans the deploy, so the fallback is a live path, not a
+            defensive gesture.
+          */}
+          {model.outcomeSummary ?? statusLabel(model.status, model.decidedByViewer)}
+          {/*
+            `error` renders INDEPENDENTLY of which line won above. On a failed
+            row the generated sentence may say "Could not create the issue"
+            without saying why, and this is the target app's own words — the only
+            text on the card a user can act on. Mild duplication beats dropping it.
+          */}
           {model.error ? <span className="qc-approval__err">{model.error}</span> : null}
         </div>
       ) : model.blockedReason === "not-requester" ? (
@@ -326,19 +385,25 @@ function SettledLine({ decision }: { decision: AssistApprovalDecision }) {
       data-testid="approval-settled"
       role="status"
     >
-      {statusLabel(decision.status)}
+      {/*
+        NO REFETCH NEEDED. The runtime serves `outcomeSummary` on the decision
+        response as well as on the ledger row, so the card that just took the
+        decision shows the real outcome immediately — "Created QTRK-903" rather
+        than "Approved — action completed".
+        The list still refetches (`onSettled`), but for the OTHER surfaces: the
+        Activity section, a second tab, a reload. This line never waits on it.
+        `||` and not `??`: this value comes straight off the wire with no adapter
+        in between, so an empty string reaches here intact — and an empty summary
+        is the runtime saying nothing useful, which our own label beats.
+      */}
+      {decision.outcomeSummary || statusLabel(decision.status)}
       {failed && decision.error ? (
+        // Same rule as the terminal row: the app's own words survive whichever
+        // line won above, because they are the only actionable text here.
         <span className="qc-approval__err" data-testid="approval-settled-error">
           {decision.error}
         </span>
       ) : null}
-      {/*
-        SEAM: the runtime's own sentence for what happened ("Created QTRK-903")
-        belongs here. It does not exist yet, and when it does it must come from
-        the LIST rather than only from this response — a decision answered on one
-        device would otherwise show nothing on another. No placeholder field is
-        invented for it; see ApprovalCardModel's note.
-      */}
     </div>
   );
 }

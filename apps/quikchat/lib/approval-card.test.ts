@@ -99,6 +99,14 @@ describe("fromApprovalRequest — the live SSE frame", () => {
   it("normalises an empty expiresAt to null rather than an unparseable string", () => {
     expect(fromApprovalRequest(req({ expiresAt: "" })).expiresAt).toBeNull();
   });
+
+  it("has no outcome — a proposal is not an outcome", () => {
+    // The live card gets its outcome from the decision RESPONSE once answered,
+    // not from the frame that proposed the write.
+    const m = fromApprovalRequest(req());
+    expect(m.outcomeSummary).toBeNull();
+    expect(m.decidedByViewer).toBe(false);
+  });
 });
 
 describe("fromApprovalRow — the ledger row", () => {
@@ -118,11 +126,25 @@ describe("fromApprovalRow — the ledger row", () => {
 
   it("is actionable only when pending", () => {
     expect(fromApprovalRow(row({ status: "pending" }), "u-me").viewerMayAct).toBe(true);
-    for (const status of ["executed", "failed", "rejected", "expired"] as const) {
+    for (const status of ["executed", "failed", "rejected", "expired", "cancelled"] as const) {
       const m = fromApprovalRow(row({ status }), "u-me");
       expect(m.viewerMayAct).toBe(false);
       expect(m.blockedReason).toBe("terminal");
     }
+  });
+
+  /**
+   * `cancelled` was added to the union in this change — and it needed no adapter
+   * work at all, because the gate is a positive check for `"pending"` rather
+   * than a denylist of terminal states. This asserts that property directly:
+   * a status the adapter has never heard of behaves identically to one it has.
+   * If they ever diverge, the gate has been rewritten as a denylist.
+   */
+  it("treats a brand-new status exactly like a known terminal one", () => {
+    const known = fromApprovalRow(row({ status: "cancelled" }), "u-me");
+    const unknown = fromApprovalRow(row({ status: "invented-next-quarter" as never }), "u-me");
+    expect(unknown.viewerMayAct).toBe(known.viewerMayAct);
+    expect(unknown.blockedReason).toBe(known.blockedReason);
   });
 
   /**
@@ -143,6 +165,55 @@ describe("fromApprovalRow — the ledger row", () => {
     expect(m.status).toBe("quarantined");
     expect(m.viewerMayAct).toBe(false);
     expect(m.blockedReason).toBe("terminal");
+  });
+
+  /**
+   * The runtime persists a generated sentence for what HAPPENED and serves it
+   * from the list. It is OPTIONAL: rows written before it shipped do not carry
+   * one, and a 24h ledger spans the deploy, so the absent case is ordinary
+   * traffic rather than an edge.
+   */
+  it("carries outcomeSummary through when the row has one", () => {
+    const m = fromApprovalRow(
+      row({ status: "executed", outcomeSummary: "Created QTRK-903 in QuikTrack." }),
+      "u-me",
+    );
+    expect(m.outcomeSummary).toBe("Created QTRK-903 in QuikTrack.");
+  });
+
+  it("reports null — not undefined — when the row predates the field", () => {
+    // The card branches on presence, so the two must not be distinguishable.
+    expect(fromApprovalRow(row({ status: "executed" }), "u-me").outcomeSummary).toBeNull();
+  });
+
+  it("folds an empty outcomeSummary into absent, so it cannot render blank", () => {
+    // `""` would win a presence check and produce an empty outcome line — the
+    // exact failure the status fallback exists to prevent.
+    expect(
+      fromApprovalRow(row({ status: "executed", outcomeSummary: "" }), "u-me").outcomeSummary,
+    ).toBeNull();
+  });
+
+  /**
+   * A boolean, never the id: the card can truthfully say "you", and the only
+   * alternative it could offer is a raw user id. A named third party belongs in
+   * `outcomeSummary`, which the runtime can populate and this cannot.
+   */
+  describe("decidedByViewer", () => {
+    it("is true when the viewer took the decision", () => {
+      const m = fromApprovalRow(row({ status: "rejected", decisionBy: "u-me" }), "u-me");
+      expect(m.decidedByViewer).toBe(true);
+    });
+
+    it("is false when someone else did", () => {
+      const m = fromApprovalRow(row({ status: "rejected", decisionBy: "u-other" }), "u-me");
+      expect(m.decidedByViewer).toBe(false);
+    });
+
+    it("is false when nobody did — a cancelled row has no human actor", () => {
+      const m = fromApprovalRow(row({ status: "cancelled", decisionBy: null }), "u-me");
+      expect(m.decidedByViewer).toBe(false);
+    });
   });
 
   it("carries a failed row's error through untouched", () => {

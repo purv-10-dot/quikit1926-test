@@ -232,6 +232,43 @@ describe("StubRuntimeClient — decisions", () => {
     expect(decision.error).toBeTruthy();
   });
 
+  /**
+   * `outcomeSummary` is served on the DECISION RESPONSE as well as the row, so
+   * the live card shows the real outcome with no refetch. If the stub stopped
+   * returning it, that path would silently fall back to the status label
+   * locally and only the live runtime would show the difference.
+   */
+  it("returns outcomeSummary on both decisions, so the live card needs no refetch", async () => {
+    const approved = await new StubRuntimeClient().approveRequest({
+      ...input,
+      requestId: "stub-req-pending",
+    });
+    expect(approved.outcomeSummary).toBe("Created QTRK-903 in QuikTrack.");
+
+    const rejected = await new StubRuntimeClient().rejectRequest({
+      ...input,
+      requestId: "stub-req-pending",
+    });
+    expect(rejected.outcomeSummary).toBeTruthy();
+  });
+
+  /**
+   * ⚠️ On a failed decision the summary does NOT carry the reason — that is the
+   * point of keeping `error` beside it. The fixture is built so a card that
+   * dropped `error` once the summary arrived loses the only actionable text, and
+   * loses it locally rather than in UAT.
+   */
+  it("returns a summary that does NOT subsume the error on a failed decision", async () => {
+    const decision = await new StubRuntimeClient().approveRequest({
+      ...input,
+      requestId: STUB_FAILING_REQUEST_ID,
+    });
+    expect(decision.outcomeSummary).toBeTruthy();
+    expect(decision.error).toBeTruthy();
+    expect(decision.outcomeSummary).not.toContain("dueDate");
+    expect(decision.error).toContain("dueDate");
+  });
+
   it("shows a decided row as decided on the next list read", async () => {
     const client = new StubRuntimeClient();
     await client.rejectRequest({ ...input, requestId: "stub-req-pending" });

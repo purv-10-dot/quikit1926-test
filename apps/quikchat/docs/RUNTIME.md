@@ -10,6 +10,11 @@ team on 2026-07-22. Scope: text-only, push-context, ungated replies + Stage-3
 KB retrieval and ingest, plus the approval surface (`/ai/requests` and its two
 decision endpoints) added 18 Aug 2026.
 
+**Revised 18 Aug 2026, same day as written**, for three runtime changes that
+landed immediately after: `outcomeSummary` (shipped — see the row fields and the
+decision response), the `cancelled` status, and `total` becoming a real
+`COUNT(*)`. The open ask below is down from two items to one.
+
 **Place at:** `apps/quikchat/docs/RUNTIME.md`
 
 ---
@@ -132,26 +137,65 @@ runtime's own ledger row, which `/ai/requests` serves.
 
 ## `/ai/requests` — the approval ledger
 
-`GET`, returns `{ requests: AssistApprovalRow[], total }`. `total` is the unpaged
-count.
+`GET`, returns `{ requests: AssistApprovalRow[], total }`.
+
+**`total` is the unpaged `COUNT(*)`.** It previously returned the page size,
+which made it useless: QuikChat's "Showing N of M" footer is driven by
+`total - requests.length`, so it was always 0 and the footer was correct code
+that could never fire. Our stub modelled `total` as the unpaged count from the
+start, so the behaviour was right locally and unreachable in UAT — the footer
+starts working now with no client change. (Fixed by the runtime 18 Aug 2026.)
 
 **Identity is in the JWT, never the query string.** `orgId`/`userId` are not
 accepted as parameters — the runtime scopes the result on the token, and that is
 the mechanism that makes v1's requester-only isolation hold.
 
 Returns pending rows **plus terminal ones** (`expired`, `rejected`, `executed`,
-`failed`) from the last 24h, each carrying `status`. Deliberately unfiltered: a
-write that expired unactioned must remain visible as expired rather than
-disappearing.
+`failed`, `cancelled`) from the last 24h, each carrying `status`. Deliberately
+unfiltered: a write that expired unactioned must remain visible as expired rather
+than disappearing.
 
 Row fields: `id`, `orgId`, `userId`, `appId`, `useCase`, `toolName`, `toolInput`,
 `proposedOutput`, `riskClass`, `mode`, `status`, `decisionBy`, `decisionAt`,
-`executedAt`, `expiresAt`, `createdAt`, `error`, `traceId`, `result?`.
+`executedAt`, `expiresAt`, `createdAt`, `error`, `traceId`, `result?`,
+`outcomeSummary?`.
 
 - `toolInput` / `proposedOutput` / `result` interiors are the **target app's own
   naming** (`projectId`, `custom_field_7`, …) and are relayed byte-identical.
 - `mode` is always `'copilot'` and carries no information. Carried so the payload
   round-trips; never surfaced or filtered on.
+- **`outcomeSummary`** (shipped 18 Aug 2026) — a deterministic, generated
+  sentence for what HAPPENED: *"Created QTRK-903"*. No LLM. Persisted on the row,
+  so the list, the fetch-one and the decision response all return the same
+  string. **Optional**: rows written before it shipped do not carry one, and a
+  24h ledger spans the deploy, so the absent case is ordinary traffic. QuikChat
+  falls back to a status-derived label and never renders blank.
+  Do not confuse it with the proposal `summary`, which describes what is ABOUT to
+  happen and is still missing — see the open ask below.
+
+### Statuses
+
+| `status` | Meaning |
+|---|---|
+| `pending` | Parked, awaiting an answer. The only actionable state. |
+| `executed` | Approved and the write succeeded. |
+| `failed` | Approved, and the target app refused the write. |
+| `rejected` | A human declined it. `decisionBy` names them. |
+| `expired` | Aged out unanswered. |
+| `cancelled` | **Withdrawn** — the tenant disabled the assistant module while it was parked. |
+
+`cancelled` and `rejected` are deliberately distinct and QuikChat renders them
+differently. A human declining and a request being withdrawn are different facts
+about different actors, and the ledger exists to record who decided what;
+collapsing them would attribute an administrative action to the requester, who in
+v1 is the person reading the card. A `cancelled` row carries `decisionBy: null` —
+there is no human decider.
+
+**Adding a status is safe on our side and needs no coordination.** Every gate in
+QuikChat is a positive check for `"pending"` rather than a denylist of terminal
+states, so an unrecognised value is non-actionable by construction. `cancelled`
+was verified to render correctly as a terminal row *before* it was added to our
+union.
 
 Client → HTTP-status error mapping (`ListApprovalsErrorCode`):
 
@@ -181,16 +225,30 @@ card's double-tap latch.
 Response (HTTP 200):
 
 ```jsonc
-{ "requestId": "…", "status": "executed", "result": { … } }
-{ "requestId": "…", "status": "failed", "errorCode": "APP_API_ERROR", "error": "…" }
-{ "requestId": "…", "status": "rejected" }
+{ "requestId": "…", "status": "executed", "result": { … }, "outcomeSummary": "Created QTRK-903" }
+{ "requestId": "…", "status": "failed", "errorCode": "APP_API_ERROR", "error": "…",
+  "outcomeSummary": "Could not update QTRK-208" }
+{ "requestId": "…", "status": "rejected", "outcomeSummary": "Declined — nothing was changed" }
 ```
+
+**`outcomeSummary` is served here as well as on the row**, which is what lets the
+card that just took the decision show the real outcome with no refetch. QuikChat
+still refetches the list afterwards, but only so the Activity section, a second
+tab and a reload converge — the card in front of the user never waits on it.
+Optional here for the same reason as on the row; absent falls back to a
+status-derived label, never to blank.
 
 ⚠️ **`status: "failed"` comes back on HTTP 200 and that is correct.** The approval
 succeeded — the decision was recorded and the write attempted — and the *target
 app* refused it. Two failures in two systems; only a non-2xx is a failure to
 decide. QuikChat renders `failed` as an outcome carrying `error`, never as a
 network error, and never retries it.
+
+⚠️ **On a `failed` decision, `outcomeSummary` does NOT replace `error`.** The
+generated sentence is deterministic and says *what* happened without saying
+*why*; `error` is the target app's own words and the only text on the card a user
+can act on. QuikChat renders both, accepting mild duplication — please keep
+sending `error` on `failed` even once every decision carries a summary.
 
 Client → HTTP-status error mapping (`ApprovalDecisionErrorCode` → QuikChat's own
 relay status):
@@ -210,27 +268,35 @@ user is told to refresh and check, never to try again.
 
 ---
 
-## 🔴 Open ask for the runtime team — a generated string on the ledger row
+## 🔴 Open ask for the runtime team — the PROPOSAL summary on the ledger row
 
-Two gaps, one fix. Both need a runtime-generated human sentence **persisted on
-the row** and served by `/ai/requests`:
+**One remaining item.** This section previously listed two; the second — an
+outcome string — shipped on 18 Aug 2026 as `outcomeSummary`, served from the
+list, the fetch-one and the decision response. It is wired and documented above.
+What follows is what is left.
 
-1. **`AssistApprovalRow` carries no `summary`.** The SSE frame has one; the
-   ledger row does not. The Activity card — the only surface a user reaches
-   after the turn ends — is therefore reduced to showing `create_issue` where
-   the live card showed a sentence. QuikChat will not synthesise one from
-   `toolName` + `toolInput`: that is exactly the coupling `summary` exists to
-   prevent, and it would put our guess at another app's semantics in front of the
-   user at the moment they decide.
-2. **There is no outcome string.** A terminal row renders its `status` and, when
-   failed, `error`. What it should say is what actually happened ("Created
-   QTRK-903"). It must come from the **list**, not only from the approve
-   response — a decision answered on one device would otherwise show nothing on
-   another.
+**`AssistApprovalRow` still carries no `summary`.** The SSE frame has one; the
+ledger row does not. So the Activity card — the only surface a user reaches after
+the turn ends, and the one that survives a reload or a second device — is reduced
+to showing `create_issue` where the live card showed a sentence. The card that
+lasts is the worse card.
 
-QuikChat has left seams for both and has deliberately **not invented field
-names**; when the runtime ships them, the adapters in `lib/approval-card.ts` gain
-two lines.
+We understand the generator exists but is unwired, and ships with emission. Two
+things worth stating while it is still in flight:
+
+- **QuikChat will not synthesise one from `toolName` + `toolInput`.** That is
+  precisely the coupling `summary` exists to prevent: it would put our guess at
+  another app's argument semantics in front of the user at the moment they
+  authorise a write, and it would rot silently every time QuikTrack renamed a
+  field. The fallback is the raw tool name — honest and poor — until this lands.
+- **It is a different string from `outcomeSummary`,** not a rename of it. One
+  describes what is *about to* happen and is needed on a `pending` row; the other
+  describes what *did* happen and only exists on terminal ones. A row mid-life
+  needs the first and has no second.
+
+The seam is left in `ApprovalCardModel.summary` and no field name has been
+invented for it. When it lands, `fromApprovalRow` gains one line and the
+`toolName` fallback stops firing.
 
 ---
 

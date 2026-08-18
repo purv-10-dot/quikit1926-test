@@ -295,6 +295,21 @@ export interface AssistApprovalRow {
   traceId: string | null;
   /** Present once executed. Target app's own shape; pass through untouched. */
   result?: Record<string, unknown> | null;
+  /**
+   * The runtime's own sentence for what HAPPENED — "Created QTRK-903". Generated
+   * deterministically (no LLM) and persisted on the row, so it is identical from
+   * the list, the fetch-one and the approve response.
+   *
+   * ⚠️ OPTIONAL, and the optionality is not decoration. Rows created before the
+   * runtime shipped this field do not have it, and they are exactly the rows
+   * most likely to be read (a 24h ledger spans the deploy). A consumer that
+   * assumes it is present renders a blank outcome on real historical data. Every
+   * read site must fall back to the status-derived line, never to empty.
+   *
+   * Distinct from the proposal `summary`, which describes what is ABOUT to
+   * happen and is still missing from this row — see the note on `toolName`.
+   */
+  outcomeSummary?: string | null;
 }
 
 /**
@@ -305,13 +320,40 @@ export interface AssistApprovalRow {
  * whose status we do not recognise would hide a real parked write. A consumer
  * seeing an unfamiliar status should render it as non-actionable rather than
  * discard it.
+ *
+ * ── WHY THIS UNION NEEDS NO NORMALISER, UNLIKE `AssistRiskClass` ────────────
+ * The two leniency rules read alike and are enforced completely differently,
+ * and the difference is structural rather than incidental.
+ *
+ * For `riskClass` the SAFE value lives inside the known set (`high_risk`), so an
+ * unfamiliar value has to be actively MAPPED onto it — do nothing and it renders
+ * unstyled, which reads as mild. It needs a normaliser, and it has one.
+ *
+ * For `status` the safe behaviour is "not actionable", and every gate is a
+ * POSITIVE check for `"pending"` rather than a denylist of terminal states. An
+ * unfamiliar value therefore falls to the safe side by construction: it is not
+ * `"pending"`, so it is not actionable, at every gate independently. Adding a
+ * state to this union is purely additive — nothing has to learn to reject it
+ * first.
+ *
+ * Keep it that way. The moment a consumer switches to `status !== "executed" &&
+ * status !== "rejected" && …`, an unknown state starts rendering as live and a
+ * request nobody can action grows Approve/Reject buttons.
  */
 export type AssistApprovalStatus =
   | "pending"
   | "expired"
   | "rejected"
   | "executed"
-  | "failed";
+  | "failed"
+  /**
+   * The request was withdrawn out from under the user — the tenant disabled the
+   * assistant module while it was parked. NOT `rejected`: a human declining and
+   * a request being cancelled are different facts about different actors, and
+   * the ledger's entire purpose is recording who decided what. Collapsing them
+   * would attribute an administrative action to the requester.
+   */
+  | "cancelled";
 
 /** One page of the approval ledger. `total` is the unpaged count. */
 export interface AssistApprovalListPage {
@@ -353,6 +395,20 @@ export interface AssistApprovalDecision {
   errorCode?: string;
   /** Present on `failed`. The target app's own message. Never rewritten by us. */
   error?: string;
+  /**
+   * The same generated sentence the ledger row carries — served here too, so the
+   * card that just took the decision can show the outcome WITHOUT a refetch.
+   *
+   * Optional for the same reason as on the row, plus one of its own: this is the
+   * runtime's newest field on its newest endpoint, and a card that renders blank
+   * when it is absent fails on exactly the deploy skew it exists to survive.
+   *
+   * ⚠️ On a `failed` decision this does NOT replace `error`. The sentence is
+   * deterministic and may say "Could not create the issue" without saying why;
+   * `error` is the target app's own words and the only actionable text on the
+   * card. Both render.
+   */
+  outcomeSummary?: string | null;
 }
 
 export interface SendMessageInput {

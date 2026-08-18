@@ -80,6 +80,30 @@ export interface ApprovalCardModel {
   /** Lifecycle state. Always `pending` for a live turn. */
   status: AssistApprovalStatus;
   /**
+   * The runtime's sentence for what HAPPENED, on a terminal row — "Created
+   * QTRK-903". `null` on a live proposal (nothing has happened yet) and on rows
+   * that predate the field.
+   *
+   * When present it replaces the status-derived line. It does NOT replace
+   * `error`: see that field.
+   */
+  outcomeSummary: string | null;
+  /**
+   * Did the VIEWER take the decision on this row?
+   *
+   * A boolean, not the id, and that is the whole design. "Rejected" and
+   * "Cancelled" are passive voice hiding a subject, and the ledger exists to
+   * record who decided what — but the only name this card could supply is a raw
+   * user id, and printing `u-7f3a91` at someone is worse than the passive form.
+   * So the adapter answers the one question it can answer truthfully from
+   * `decisionBy` alone, and the card says "you" or stays passive.
+   *
+   * A named THIRD party belongs in `outcomeSummary`: the runtime has the
+   * directory and we do not. If "cancelled by Priya" is wanted, it comes from
+   * there, not from a lookup bolted on here.
+   */
+  decidedByViewer: boolean;
+  /**
    * May this viewer act — IGNORING THE CLOCK.
    *
    * Expiry is left out on purpose. A card can sit on screen across its own
@@ -92,18 +116,24 @@ export interface ApprovalCardModel {
   viewerMayAct: boolean;
   /** Why not, when `viewerMayAct` is false. Expiry is reported by the card. */
   blockedReason: ApprovalBlockedReason | null;
-  /** The target app's own failure message, on a `failed` row. Never rewritten. */
+  /**
+   * The target app's own failure message, on a `failed` row. Never rewritten,
+   * and never suppressed by `outcomeSummary` — the generated sentence says WHAT
+   * happened, this says why, and only one of them is actionable.
+   */
   error: string | null;
   /**
-   * ── SEAM: the outcome string ────────────────────────────────────────────
-   * A terminal row currently renders its `status` and, when failed, `error`.
-   * What it should eventually render is the runtime's own human sentence for
-   * what happened ("Created QTRK-903"), which does not exist yet and must come
-   * from the LIST — a decision response only reaches whoever was holding the
-   * card at the time, so an approval answered on one device would show nothing
-   * on another. No field is invented here to hold it: when the runtime ships
-   * one, it lands on `AssistApprovalRow`, gets adapted here, and the card gains
-   * one line. Deliberately not named in advance.
+   * ── SEAM: the PROPOSAL summary, still missing ───────────────────────────
+   * The outcome half of this seam closed — `outcomeSummary` above is the
+   * runtime's sentence for what happened, served from the list and the decision
+   * response alike, so it is identical on every device.
+   *
+   * What is still absent is a sentence for what is ABOUT to happen. The SSE
+   * frame carries one; the ledger row does not, so the Activity card falls back
+   * to the raw `toolName` (see `summary`). The runtime's generator exists but is
+   * unwired and ships with emission. Still no field invented here for it: when
+   * it lands it goes on `AssistApprovalRow`, is read by `fromApprovalRow`, and
+   * the fallback below stops firing.
    */
 }
 
@@ -151,6 +181,11 @@ export function fromApprovalRequest(req: AssistApprovalRequest): ApprovalCardMod
     riskIsUnrecognised,
     expiresAt: req.expiresAt || null,
     status: "pending",
+    // Nothing has happened yet — this is a proposal, not an outcome. The live
+    // card gets its outcome from the decision RESPONSE once answered, not from
+    // here; see `SettledLine`.
+    outcomeSummary: null,
+    decidedByViewer: false,
     viewerMayAct: true,
     blockedReason: null,
     error: null,
@@ -169,9 +204,25 @@ export function fromApprovalRequest(req: AssistApprovalRequest): ApprovalCardMod
  */
 export function fromApprovalRow(row: AssistApprovalRow, viewerId: string): ApprovalCardModel {
   const { risk, riskIsUnrecognised } = normaliseRisk(row.riskClass);
-  // An unfamiliar status is NOT actionable and NOT discarded — same leniency
-  // rule as riskClass. Dropping a row whose state we do not recognise would hide
-  // a real parked write; offering buttons on it would guess that it is pending.
+  /**
+   * ⚠️ A POSITIVE CHECK FOR "pending", NEVER A DENYLIST OF TERMINAL STATES —
+   * and this is why `status` needs no normaliser while `riskClass` does.
+   *
+   * For `riskClass` the safe value (`high_risk`) is INSIDE the known set, so an
+   * unfamiliar value has to be actively mapped onto it; left alone it renders
+   * mild. Hence `normaliseRisk` above.
+   *
+   * For `status` the safe behaviour is "not actionable", and `!== "pending"`
+   * delivers that for free: `cancelled`, a state added next quarter, a typo, an
+   * empty string — none of them are `"pending"`, so none of them are actionable,
+   * without this function ever having heard of them. `cancelled` was verified to
+   * render correctly as a terminal row BEFORE it was added to the union.
+   *
+   * Written as `status !== "executed" && status !== "rejected" && …` it would
+   * invert: every unknown state would read as live, and a request nobody can
+   * action would grow Approve/Reject buttons. The card repeats the same positive
+   * check independently rather than trusting `viewerMayAct` — see ApprovalCard.
+   */
   const isPending = row.status === "pending";
   const isRequester = row.userId === viewerId;
   return {
@@ -184,6 +235,15 @@ export function fromApprovalRow(row: AssistApprovalRow, viewerId: string): Appro
     riskIsUnrecognised,
     expiresAt: row.expiresAt,
     status: row.status,
+    // Absent on rows written before the runtime shipped the field. `||` folds
+    // an empty string into "absent" as well as a missing key: the card branches
+    // on presence, so `""` would win that branch and render a blank outcome —
+    // the exact failure the status fallback exists to prevent. Same normalise
+    // `summary` gets in `fromApprovalRequest`.
+    outcomeSummary: row.outcomeSummary || null,
+    // `decisionBy` is null on rows nobody decided (pending, expired) and on a
+    // `cancelled` row the runtime attributed to no one.
+    decidedByViewer: row.decisionBy != null && row.decisionBy === viewerId,
     viewerMayAct: isPending && isRequester,
     blockedReason: !isPending ? "terminal" : !isRequester ? "not-requester" : null,
     error: row.error,
