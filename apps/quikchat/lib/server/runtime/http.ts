@@ -9,6 +9,7 @@
  * (`{type:"delta",text}` | `{type:"done",text,agentRunId}` | `{type:"error",...}`).
  */
 import { mintRuntimeToken } from "./token";
+import { errorFields, logger } from "@/lib/shared/logger";
 import type { IngestResult } from "@/lib/shared";
 import { ApprovalDecisionError, IngestError, ListApprovalsError } from "./types";
 import type {
@@ -60,6 +61,61 @@ const LIST_APPROVALS_TIMEOUT_MS = 15_000;
  */
 const DECIDE_APPROVAL_TIMEOUT_MS = 30_000;
 
+/**
+ * ⏳ TEMPORARY DIAGNOSTIC — added 19 Aug 2026, remove when the diagnosis closes.
+ *
+ * WHY IT EXISTS: the runtime team is diagnosing why QuikChat's assist turns come
+ * back with no tool catalog while their hand-built token works. Their logs show
+ * `app_manifest.fetched` → `app_tools.registered` → `tool.selection` for their
+ * call and NONE of the three for ours, and they asked to see our decoded token
+ * payload rather than trust our reading of the source.
+ *
+ * REMOVAL: grep `RUNTIME_TOKEN_DEBUG` — this function, its one call site in
+ * `assist()`, and the tests naming it are the whole footprint. Delete together.
+ * Nothing else reads the flag.
+ *
+ * ⚠️ NEVER LOGS THE TOKEN OR ITS SIGNATURE. This reads `parts[1]` and nothing
+ * else: the signature is never bound to a variable, so there is no path by which
+ * it can reach a log line — a structural guarantee rather than a careful author.
+ * Ours is HS256 with a shared secret, so a token in a log file is a credential in
+ * a log file, and log files outlive the incidents that create them.
+ *
+ * Note the field is `tokenPayload`, not `token`: pino's `redact.paths` censors a
+ * key named `token`, so the obvious name would have silently blanked the one
+ * thing this exists to show.
+ */
+export function logRuntimeTokenPayload(token: string, botAgentId: string): void {
+  // Read at CALL TIME, never hoisted to a module const — so the flag can be
+  // flipped in UAT and take effect on the next request instead of needing a
+  // fresh build.
+  if (!process.env.RUNTIME_TOKEN_DEBUG) return;
+  try {
+    const payloadSegment = token.split(".")[1];
+    if (!payloadSegment) {
+      logger.warn({ botAgentId }, "runtime token debug: token has no payload segment");
+      return;
+    }
+    const decoded: unknown = JSON.parse(
+      Buffer.from(payloadSegment, "base64url").toString("utf8"),
+    );
+    logger.info(
+      {
+        botAgentId,
+        tokenPayload: decoded,
+        // The key set is the actual question — "what arrives" is answered by
+        // which claims exist at all, not only by their values.
+        tokenClaimKeys:
+          decoded && typeof decoded === "object" ? Object.keys(decoded as object) : [],
+      },
+      "runtime token debug: decoded agent JWT payload (TEMPORARY — see RUNTIME_TOKEN_DEBUG)",
+    );
+  } catch (e) {
+    // A malformed token must never take down an assist turn on account of a
+    // diagnostic. `errorFields` so nothing rides in on the thrown value.
+    logger.warn({ ...errorFields(e), botAgentId }, "runtime token debug: could not decode payload");
+  }
+}
+
 export class HttpRuntimeClient implements RuntimeClient {
   constructor(private readonly baseUrl: string) {}
 
@@ -69,6 +125,19 @@ export class HttpRuntimeClient implements RuntimeClient {
       botAgentId: input.botAgentId,
       userId: input.userId,
     });
+
+    /**
+     * ⏳ TEMPORARY — see `logRuntimeTokenPayload`. Deliberately HERE, at the
+     * point of use, and not inside `mintRuntimeToken`: this records the token as
+     * SENT rather than as constructed, so it cannot disagree with what actually
+     * goes on the wire. No-op unless `RUNTIME_TOKEN_DEBUG` is set.
+     *
+     * `assist` only. The reported symptom is assist-specific, and `ingest` /
+     * `listApprovalRequests` / `decide` mint the identical claim set from the
+     * same function — three more call sites on token-authenticated hot paths
+     * would add blast radius and no information. One line each if it widens.
+     */
+    logRuntimeTokenPayload(token, input.botAgentId);
 
     // orgId/userId are in the token, NOT the body. `appId` rides EVERY turn
     // (toolset scoping). A doc turn adds `url`+`filename` FLAT at the top level;
