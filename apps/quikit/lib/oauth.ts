@@ -10,6 +10,7 @@
 
 import { SignJWT, importPKCS8, importSPKI, exportJWK, type KeyLike } from "jose";
 import crypto from "crypto";
+import { db } from "@/lib/db";
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -184,6 +185,34 @@ export function generateAuthCode(): string {
 
 /* ── PKCE ───────────────────────────────────────────────────────────────── */
 
+/* ── Redirect URI matching ──────────────────────────────────────────────── */
+
+/**
+ * True if `actual` satisfies a client's registered `redirectUris` entry.
+ *
+ * Exact string match always wins first — every existing (confidential)
+ * client's registration is unaffected. The one extra case: a registered
+ * loopback URI may use a literal wildcard in place of the port number (e.g.
+ * a "localhost, any port, /callback" pattern) to match any port on that
+ * host+path. This is RFC 8252 §7.3's recommendation for native/desktop OAuth
+ * clients, which can't reserve a fixed port across launches — a public MCP
+ * client (see `token/route.ts`'s clientSecret-less flow) is exactly this case.
+ */
+export function redirectUriMatches(registered: string, actual: string): boolean {
+  if (registered === actual) return true;
+
+  const wildcard = registered.match(/^(https?:\/\/(?:localhost|127\.0\.0\.1)):\*(\/.*)?$/);
+  if (!wildcard) return false;
+  const [, origin, path = "/"] = wildcard;
+
+  try {
+    const actualUrl = new URL(actual);
+    return `${actualUrl.protocol}//${actualUrl.hostname}` === origin && actualUrl.pathname === path;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Verify PKCE code_verifier against the stored code_challenge.
  */
@@ -201,6 +230,66 @@ export function verifyPKCE(
   }
   // plain method (not recommended but supported)
   return codeVerifier === codeChallenge;
+}
+
+/* ── App resolution ─────────────────────────────────────────────────────── */
+
+/**
+ * An app's effective origin: a per-app env override (e.g. QUIKSCALE_URL)
+ * wins over the DB's stored `baseUrl`, since `baseUrl` holds PRODUCTION
+ * URLs — in local dev a raw `baseUrl` redirect would bounce to prod.
+ * Shared by the authorize route's app-access-denied redirect and the
+ * Dynamic Client Registration endpoint's `resource` → App resolution.
+ */
+export function resolveAppOrigin(app: { slug: string; baseUrl: string }): string {
+  return process.env[`${app.slug.toUpperCase()}_URL`] || app.baseUrl;
+}
+
+/**
+ * Resolve which App a `resource` indicator (RFC 8707) refers to, by matching
+ * its origin against every active app's effective origin (resolveAppOrigin).
+ * Shared by /api/oauth/register (when a caller does declare `resource` up
+ * front) and /api/oauth/authorize (the fallback for a client that didn't —
+ * e.g. Claude Desktop, whose RFC 7591 registration request has no `resource`
+ * field, but which does send one here per RFC 8707).
+ */
+export async function resolveAppByResource(
+  resource: string,
+): Promise<{ id: string; slug: string; baseUrl: string } | null> {
+  let resourceOrigin: string;
+  try {
+    resourceOrigin = new URL(resource).origin;
+  } catch {
+    return null;
+  }
+  const apps = await db.app.findMany({
+    where: { status: { not: "disabled" } },
+    select: { id: true, slug: true, baseUrl: true },
+  });
+  return (
+    apps.find((a) => {
+      try {
+        return new URL(resolveAppOrigin(a)).origin === resourceOrigin;
+      } catch {
+        return false;
+      }
+    }) ?? null
+  );
+}
+
+/* ── Rate limiting ──────────────────────────────────────────────────────── */
+
+/**
+ * Bucket IPs to /24. One attacker can't trivially spray source IPs within
+ * their own /24 to dodge the limit; a shared-office /24 still shares one
+ * bucket of reasonable size. Shared by /token and /register.
+ */
+export function ipSlash24(raw: string): string {
+  if (!raw || raw === "anonymous") return "anon";
+  const v4 = raw.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
+  if (v4) return v4[1]!;
+  const v6 = raw.split(":").slice(0, 3).join(":");
+  return v6 || raw;
 }
 
 /* ── JWKS ───────────────────────────────────────────────────────────────── */
@@ -221,4 +310,32 @@ export async function getJWKS() {
       },
     ],
   };
+}
+
+/* ── CORS for OAuth endpoints ───────────────────────────────────────────── */
+
+/**
+ * A browser-based/Electron MCP client (e.g. Claude Desktop's connector UI)
+ * calls discovery/registration/token endpoints via fetch() from a renderer
+ * context, which enforces CORS. Without these headers an OPTIONS preflight
+ * 404/405s and the browser blocks the real request before it's ever sent —
+ * surfacing to the user as a generic "couldn't register"/"couldn't connect"
+ * with no further detail. These endpoints have no cookie-based session to
+ * protect, so a wildcard origin is fine — same posture as any public OAuth
+ * discovery/registration endpoint.
+ */
+export const OAUTH_CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export function oauthCorsPreflight(): Response {
+  return new Response(null, { status: 204, headers: OAUTH_CORS_HEADERS });
+}
+
+export function withOAuthCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [key, value] of Object.entries(OAUTH_CORS_HEADERS)) headers.set(key, value);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }

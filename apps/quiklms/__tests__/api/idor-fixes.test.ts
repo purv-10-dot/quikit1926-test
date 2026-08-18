@@ -54,7 +54,7 @@ import { logEvent } from '@/lib/services/proctoring-service';
 beforeEach(() => {
   Object.values(h).forEach((fn) => fn.mockReset());
   h.requireRoles.mockReturnValue(undefined);
-  h.userHasRole.mockImplementation((u: { role: string; secondaryRole?: string }, r: string) => u.role === r || u.secondaryRole === r);
+  h.userHasRole.mockImplementation((u: { role: string }, r: string) => u.role === r);
   h.getTransactions.mockResolvedValue({ transactions: [] });
   h.getStudentProgress.mockResolvedValue({ ok: true });
   h.parentFindUnique.mockResolvedValue(null);
@@ -97,36 +97,36 @@ describe('2. student analytics — relationship required', () => {
   const ctx = { params: { studentId: 'kid1' } };
 
   it('an admin may view any student in their org', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'a1', role: 'TENANT_ADMIN', secondaryRole: null, orgId: 'org-1' });
+    h.requireAuth.mockResolvedValue({ id: 'a1', role: 'TENANT_ADMIN', orgId: 'org-1' });
     expect((await analyticsGET(req(), ctx)).status).toBe(200);
   });
 
   it('a linked PARENT may view their child', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'p1', role: 'PARENT', secondaryRole: null, orgId: 'org-1' });
+    h.requireAuth.mockResolvedValue({ id: 'p1', role: 'PARENT', orgId: 'org-1' });
     h.parentFindUnique.mockResolvedValue({ id: 'link1' });
     expect((await analyticsGET(req(), ctx)).status).toBe(200);
   });
 
   it('403s an UNLINKED parent', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'p1', role: 'PARENT', secondaryRole: null, orgId: 'org-1' });
+    h.requireAuth.mockResolvedValue({ id: 'p1', role: 'PARENT', orgId: 'org-1' });
     const res = await analyticsGET(req(), ctx);
     expect(res.status).toBe(403);
     expect(h.getStudentProgress).not.toHaveBeenCalled();
   });
 
   it('a TEACHER who shares a batch may view the student', async () => {
-    h.requireAuth.mockResolvedValue({ id: 't1', role: 'TEACHER', secondaryRole: null, orgId: 'org-1' });
+    h.requireAuth.mockResolvedValue({ id: 't1', role: 'TEACHER', orgId: 'org-1' });
     h.batchStudentFindFirst.mockResolvedValue({ id: 'bs1' });
     expect((await analyticsGET(req(), ctx)).status).toBe(200);
   });
 
   it('403s a TEACHER with no connection to the student', async () => {
-    h.requireAuth.mockResolvedValue({ id: 't1', role: 'TEACHER', secondaryRole: null, orgId: 'org-1' });
+    h.requireAuth.mockResolvedValue({ id: 't1', role: 'TEACHER', orgId: 'org-1' });
     expect((await analyticsGET(req(), ctx)).status).toBe(403);
   });
 
   it('anyone may read their OWN record', async () => {
-    h.requireAuth.mockResolvedValue({ id: 'kid1', role: 'LEARNER', secondaryRole: null, orgId: 'org-1' });
+    h.requireAuth.mockResolvedValue({ id: 'kid1', role: 'LEARNER', orgId: 'org-1' });
     expect((await analyticsGET(req(), ctx)).status).toBe(200);
   });
 });

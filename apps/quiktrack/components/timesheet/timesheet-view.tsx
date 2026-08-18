@@ -698,7 +698,7 @@ export function TimesheetView({
 
   return (
     <div className="px-6 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <div className="sticky top-0 z-40 -mx-6 px-6 py-2 mb-1 bg-white border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
         {/* Left — week navigation */}
         <div className="inline-flex items-center gap-1 border border-gray-300 rounded h-9 px-1">
           <button

@@ -14,6 +14,7 @@
  * case this boundary is meant to catch.
  */
 
+
 import { useEffect } from "react";
 
 export default function DashboardError({

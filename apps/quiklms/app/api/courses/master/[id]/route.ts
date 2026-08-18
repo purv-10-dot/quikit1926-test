@@ -40,10 +40,10 @@ const updateMasterCourseSchema = z.object({
   selectedTenants: z.array(z.string()).optional(),
 });
 
-// GET /api/courses/master/:id — SUPER_ADMIN
+// GET /api/courses/master/:id — ADMIN
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const course = await findOneMaster(params!.id);
   // Legacy enriched this endpoint (`courses.controller.ts:154`); a null course
   // short-circuits, matching `course ? enrich(...) : course`.
@@ -51,19 +51,19 @@ export const GET = route(async (req, { params }) => {
   return json({ success: true, data });
 });
 
-// PUT /api/courses/master/:id — SUPER_ADMIN
+// PUT /api/courses/master/:id — ADMIN
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const body = await parseBody(req, updateMasterCourseSchema);
   const data = await updateMasterCourse(params!.id, body as Record<string, unknown>);
   return json({ success: true, data, message: 'Master course updated successfully' });
 });
 
-// DELETE /api/courses/master/:id — SUPER_ADMIN
+// DELETE /api/courses/master/:id — ADMIN
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   await deleteMasterCourse(params!.id);
   return json({ success: true, message: 'Master course deleted successfully' });
 });

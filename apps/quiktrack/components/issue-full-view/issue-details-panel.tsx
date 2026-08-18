@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ChevronDown, ChevronRight, Zap } from "lucide-react";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { WorkflowStatusControl } from "@/components/workflow-status-control";
@@ -173,6 +174,25 @@ export function IssueDetailsPanel({
           ) : (
             <span className="text-gray-500">None</span>
           )}
+        </Row>
+        {/* QuikTest deep links — mirror the TestRail-for-Jira sidebar fields.
+            Not editable: they are navigation into the test module, filtered to
+            this work item, not properties of the issue. */}
+        <Row label="QuikTest: Cases">
+          <Link
+            href={`/spaces/${issue.projectId}/test`}
+            className="text-blue-700 hover:underline dark:text-blue-400"
+          >
+            Open QuikTest: Cases
+          </Link>
+        </Row>
+        <Row label="QuikTest: Runs">
+          <Link
+            href={`/spaces/${issue.projectId}/test/runs`}
+            className="text-blue-700 hover:underline dark:text-blue-400"
+          >
+            Open QuikTest: Runs
+          </Link>
         </Row>
         {/* JPD/global + space custom fields — same picker the side modal uses,
             so the full-page panel stays in parity. Compact "detail" variant. */}

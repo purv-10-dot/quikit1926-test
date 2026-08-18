@@ -1,0 +1,23 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
+import { assertModule } from "@/lib/auth/permissions";
+import { parseFilters, applyOwnerRestriction } from "@/lib/services/dashboard/filters";
+import { buildSummary } from "@/lib/services/dashboard/summary-service";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await requireApiUser();
+    if (isResponse(user)) return user;
+    await assertModule(user, "dashboard", "view");
+
+    const filters = await applyOwnerRestriction(parseFilters(req, user), user);
+    const summary = await buildSummary(user, filters);
+    return NextResponse.json({ success: true, data: summary });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}

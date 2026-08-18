@@ -2,7 +2,7 @@
 import { io, type Socket } from 'socket.io-client';
 
 // The Socket.IO server runs in the /worker (NEXT_PUBLIC_WORKER_URL, :3021),
-// NOT the Next app (NEXT_PUBLIC_QUIKLMS_URL, :3014). Prefer the worker URL and
+// NOT the Next app (NEXT_PUBLIC_QUIKLMS_URL, :3016). Prefer the worker URL and
 // fall back to the app URL only if the worker URL isn't configured.
 const WS_BASE = (process.env.NEXT_PUBLIC_WORKER_URL ?? process.env.NEXT_PUBLIC_QUIKLMS_URL ?? '')
   .replace(/\/api\/?$/, '') || '';

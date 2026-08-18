@@ -11,7 +11,7 @@ export const GET = route(async (req) => {
   // findTenant. Also covers a platform super-admin with no org.
   //
   // Keyed on the `isSuperAdmin` claim, not the role: an org's founding admin now
-  // resolves to an LMS role of SUPER_ADMIN (lib/auth/founding-admin.ts) but has a
+  // resolves to an LMS role of ADMIN (lib/auth/founding-admin.ts) but has a
   // real tenant, and the role test served them the "QuikSkill Platform" placeholder
   // instead of their own org's name, branding and localization.
   if (actor.isSuperAdmin === true || !actor.orgId) {

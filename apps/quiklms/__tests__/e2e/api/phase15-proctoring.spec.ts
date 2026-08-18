@@ -35,7 +35,7 @@ import { apiAs, apiAnon, safeJson } from "../fixtures/api";
 import { loadManifest, mintSessionToken } from "../fixtures/auth";
 
 const m = loadManifest();
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 const MISSING = "00000000-0000-0000-0000-000000000000";
 const RUN = `AUDIT15-${Date.now()}`;
 const LEARNER_B_EMAIL = "e2e-learner-b@quiklms.test";
@@ -251,8 +251,8 @@ test.describe("Phase 15 — exam proctoring", () => {
       action: "warning",
     });
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors!.some((v) => v.field === "disposition")).toBe(true);
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("disposition");
   });
 
   test("reviewing with session_voided actually voids the session", async () => {
@@ -640,10 +640,9 @@ test.describe("Phase 15 — quiz proctoring guards", () => {
     const learner = await apiAs("learner");
     const res = await POST(learner, "/api/quiz-proctoring/start", {});
     expect(res.status()).toBe(400);
-    const body = (await safeJson(res)) as { validationErrors?: Array<{ field: string }> };
-    expect(body.validationErrors!.map((v) => v.field)).toEqual(
-      expect.arrayContaining(["assessmentId", "courseId"]),
-    );
+    const body = (await safeJson(res)) as { error?: string };
+    expect(body.error).toContain("assessmentId");
+    expect(body.error).toContain("courseId");
     await learner.dispose();
   });
 

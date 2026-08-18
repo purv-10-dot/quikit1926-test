@@ -308,6 +308,28 @@ describe("applyChannelUpdated (QC_008)", () => {
     expect(next.priority[0]!.description).toBeNull();
     expect(next.priority[0]!.name).toBe("keep");
   });
+
+  /**
+   * `publishRosterChanged` (channels.service) reuses `channel_updated` to signal
+   * a MEMBERSHIP change — someone left, was removed, or had their role changed —
+   * with a payload of nothing but `{ channelId }`. That is only safe because the
+   * merge below is field-guarded: the event's job there is to trigger the
+   * `["members"]` / `["channels"]` refetch in `onChannelUpdated`, not to carry
+   * new channel details.
+   *
+   * If this ever becomes an unconditional assign, every roster change would
+   * blank the channel's name, description and avatar in the sidebar.
+   */
+  it("leaves the channel untouched when the payload carries only a channelId", () => {
+    const seeded: ChannelList = {
+      priority: [
+        chan({ channelId: "c1", name: "Design", description: "the good stuff", avatarUrl: "a.png" }),
+      ],
+      recent: [],
+    };
+    const next = applyChannelUpdated(seeded, { channelId: "c1" });
+    expect(next.priority[0]).toEqual(seeded.priority[0]);
+  });
 });
 
 describe("removeChannelFromList (QC_008)", () => {

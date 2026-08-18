@@ -26,6 +26,18 @@ export const CLIENT_MEETING_STATUSES = [
 export const flagSchema = z.enum(CLIENT_MEETING_FLAGS);
 export const statusSchema = z.enum(CLIENT_MEETING_STATUSES);
 
+/** Lowercase weekday names — the Teams-calendar recurrence day tokens. */
+export const WEEKDAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+const weekdaySchema = z.enum(WEEKDAYS);
+
 /**
  * Shared invariant for both Daily Huddle and Weekly Meeting: when the call was
  * "HELD", the Actual Start/End times are mandatory (the meeting happened, so
@@ -62,6 +74,11 @@ export const createClientSchema = z.object({
   weeklyEndTime: z.string().regex(TIME_24H, "Weekly end time is required (HH:mm)"),
   dailyStartTime: z.string().regex(TIME_24H, "Daily start time is required (HH:mm)"),
   dailyEndTime: z.string().regex(TIME_24H, "Daily end time is required (HH:mm)"),
+  // Meeting recurrence for the Teams calendar series (all optional — set only
+  // when a calendar workflow is configured; empty ⇒ Daily=Mon–Fri / open-ended).
+  weeklyDay: weekdaySchema.optional().nullable(),
+  dailyDays: z.array(weekdaySchema).optional().default([]),
+  meetingUntil: z.string().regex(DATE_ISO_OR_YMD).optional().nullable(),
   /// IDs of ClientMember rows that should be on this client's roster.
   teamMemberIds: z.array(z.string()).default([]),
 });

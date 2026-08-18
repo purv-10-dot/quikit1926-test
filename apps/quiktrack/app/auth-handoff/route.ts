@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { encode } from "next-auth/jwt";
 import { publicBaseUrl } from "@quikit/auth/public-url";
 import { consumeHandoffJti } from "@/lib/handoff-replay";
+import { safeInternalPath } from "@/lib/utils/safe-redirect";
 import manifest from "@/manifest";
 
 /**
@@ -79,16 +80,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?reason=invalid_handoff", origin));
   }
 
-  // SEC-03: app-binding check. The launcher mints the handoff token with a
-  // `slug` claim set to the DB App row's slug for the app the user launched.
-  // Because INTERNAL_SECRET is shared across every consumer app, a token
-  // minted for app X would otherwise verify here and be convertible into a
-  // quiktrack session (cross-app session forgery, P0). Reject any token whose
-  // slug isn't this app's manifest appId.
+  // SEC-03: app-binding check. Because INTERNAL_SECRET is shared across every
+  // consumer app, a token minted for app X would otherwise verify here and be
+  // convertible into a quiktrack session (cross-app session forgery, P0).
+  //
+  // Two different issuers mint tokens that legitimately land here, and only one
+  // of them binds to an app:
+  //   - the launcher's /api/launch-token (tile click, ?handoff= auto-launch)
+  //     always stamps `slug` with the DB App row's slug — that binding is what
+  //     this check enforces;
+  //   - the auth host's /api/post-login bridge (landing-page "Login", and the
+  //     return leg of any deep link) mints a *user-session* token for a target
+  //     ORIGIN, with no app claim at all.
+  //
+  // Requiring `slug` unconditionally rejected every bridge token with
+  // `wrong_app_handoff`, which is why signing in from the QuikTrack landing page
+  // never reached QuikTrack. No other consumer app enforces this claim, so the
+  // strict form also made quiktrack behave differently from quikscale/quikinfra
+  // on the identical flow. Enforce the binding when the token carries one, and
+  // accept the unbound bridge token like every sibling app does.
+  //
   // NOTE: requires the DB App.slug for this app to equal manifest.appId
   // ("quiktrack"). If a stale UAT catalog row uses a different slug, correct
   // the DB row rather than weakening this check.
-  if (payload.slug !== manifest.appId) {
+  if (payload.slug && payload.slug !== manifest.appId) {
     return NextResponse.redirect(new URL("/login?reason=wrong_app_handoff", origin));
   }
 
@@ -122,7 +137,7 @@ export async function GET(request: NextRequest) {
     maxAge: 7 * 24 * 60 * 60,
   });
 
-  const safeTo = sanitizeRedirect(payload.to ?? "/");
+  const safeTo = safeInternalPath(payload.to, "/");
   const response = NextResponse.redirect(new URL(safeTo, origin));
 
   const cookieName =
@@ -140,12 +155,4 @@ export async function GET(request: NextRequest) {
   });
 
   return response;
-}
-
-/** Reject absolute URLs / protocol-relative URLs / cross-host redirects. */
-function sanitizeRedirect(to: string): string {
-  if (!to || typeof to !== "string") return "/";
-  if (!to.startsWith("/")) return "/";
-  if (to.startsWith("//")) return "/";
-  return to;
 }

@@ -26,7 +26,7 @@
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 
-const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
+const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3016';
 
 function escapeHtml(s: string): string {
   return String(s || '')

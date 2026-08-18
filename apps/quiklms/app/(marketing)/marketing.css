@@ -307,22 +307,6 @@ html:has(.lp-root) { scroll-behavior: smooth; scroll-padding-top: 96px; }
 .lp-root .hero .sub { font-size: clamp(17px, 2vw, 20px); color: var(--lp-text-soft); max-width: 600px; margin: 0 auto 32px; }
 .lp-root .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
-/* floating product chips in the hero gutters */
-.lp-root .hero-chip {
-  position: absolute; z-index: 3; display: flex; align-items: center; gap: 10px;
-  background: var(--lp-elev); border: 1px solid var(--lp-border); border-radius: 14px;
-  padding: 10px 14px; box-shadow: var(--lp-shadow-md); font-size: 13px; font-weight: 600;
-  animation: lpBob 5s ease-in-out infinite;
-}
-.lp-root .hero-chip small { display: block; font-weight: 500; color: var(--lp-text-faint); font-size: 11px; }
-.lp-root .hero-chip .hc-i { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
-.lp-root .hero-chip .hc-i svg { width: 16px; height: 16px; }
-.lp-root .hc-1 { top: calc(170px + var(--lp-notice-h)); left: 3%; animation-delay: 0s; }
-.lp-root .hc-2 { top: calc(140px + var(--lp-notice-h)); right: 3%; animation-delay: 1.1s; }
-.lp-root .hc-3 { top: calc(360px + var(--lp-notice-h)); left: 5.5%; animation-delay: 2.1s; }
-@media (max-width: 1180px) { .lp-root .hero-chip { display: none; } }
-@keyframes lpBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-
 /* proof row under the CTAs */
 .lp-root .proof { display: flex; align-items: center; justify-content: center; gap: 26px; margin-top: 30px; flex-wrap: wrap; }
 .lp-root .proof li { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 500; color: var(--lp-text-soft); }
@@ -466,20 +450,6 @@ html:has(.lp-root) { scroll-behavior: smooth; scroll-padding-top: 96px; }
     linear-gradient(0deg, var(--lp-text) 20%, transparent 20% 44%, var(--lp-text) 44% 58%, transparent 58%);
   background-size: 12px 12px; opacity: 0.55;
 }
-
-/* floating notification cards beside the mockup */
-.lp-root .float-card {
-  position: absolute; background: var(--lp-elev); border: 1px solid var(--lp-border);
-  border-radius: 14px; padding: 12px 15px; box-shadow: var(--lp-shadow-md);
-  display: flex; align-items: center; gap: 11px; font-size: 13px; font-weight: 600;
-  z-index: 3; animation: lpBob 5s ease-in-out infinite;
-}
-.lp-root .float-card .fc-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
-.lp-root .float-card .fc-ico svg { width: 16px; height: 16px; }
-.lp-root .float-card small { display: block; font-weight: 500; color: var(--lp-text-faint); font-size: 11.5px; }
-.lp-root .fc-1 { top: 200px; left: -34px; animation-delay: 0s; }
-.lp-root .fc-2 { bottom: 96px; right: -34px; animation-delay: 1.2s; }
-.lp-root .fc-3 { bottom: 26px; left: 44px; animation-delay: 2.1s; }
 
 /* =========================================================================
    TRUST MARQUEE
@@ -803,7 +773,6 @@ html:has(.lp-root) { scroll-behavior: smooth; scroll-padding-top: 96px; }
   .lp-root .timeline { grid-template-columns: 1fr 1fr; gap: 30px; }
   .lp-root .timeline::before, .lp-root .timeline .line-fill { display: none; }
   .lp-root .ld-kpis { grid-template-columns: 1fr; }
-  .lp-root .float-card { display: none; }
   .lp-root .footer-grid { grid-template-columns: 1fr; }
   .lp-root .panel-inset { padding: 44px 22px; }
   .lp-root .section { padding: 72px 0; }

@@ -16,9 +16,15 @@ function fakeIo() {
   const emits: Array<{ room: string; event: string; payload: unknown }> = [];
   const joins: Array<{ rooms: string[]; target: string }> = [];
   const io = {
-    to: (room: string) => ({
-      emit: (event: string, payload: unknown) => emits.push({ room, event, payload }),
-    }),
+    to: (room: string) => {
+      const op = {
+        emit: (event: string, payload: unknown) => emits.push({ room, event, payload }),
+        get local() {
+          return op;
+        },
+      };
+      return op;
+    },
     in: (rooms: string | string[]) => ({
       socketsJoin: (target: string) =>
         joins.push({ rooms: Array.isArray(rooms) ? rooms : [rooms], target }),

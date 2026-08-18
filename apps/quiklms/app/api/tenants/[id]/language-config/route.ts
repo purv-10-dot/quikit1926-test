@@ -18,7 +18,7 @@ const schema = z.object({
 });
 
 /**
- * PATCH /api/tenants/:id/language-config — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * PATCH /api/tenants/:id/language-config — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Port of `TenantsController.updateLanguageConfig` (`tenants.controller.ts:407-422`).
  * Previously had no route file at all, while `GET /api/tenants/current` already
@@ -37,7 +37,7 @@ const schema = z.object({
  */
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
+  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN']);
   assertTenantMatch(actor, params!.id);
 
   await findTenant(params!.id);

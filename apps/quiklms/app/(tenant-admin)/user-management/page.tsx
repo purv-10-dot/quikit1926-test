@@ -37,7 +37,6 @@ interface User {
   firstName: string;
   lastName: string;
   role: string;
-  secondaryRole?: string;
   isActive: boolean;
   managerId?: Manager | string | null;
 }
@@ -292,26 +291,6 @@ const UserManagementPage = () => {
       loadUsers();
     } catch (error) {
       console.error('Failed to toggle user status:', error);
-    }
-  };
-
-  const handlePromoteSubAdmin = async (userId: string) => {
-    try {
-      await api.patch(`/users/${userId}/promote-subadmin`, {});
-      toast.success('Sub Admin role granted');
-      loadUsers();
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to grant Sub Admin role');
-    }
-  };
-
-  const handleRevokeSubAdmin = async (userId: string) => {
-    try {
-      await api.patch(`/users/${userId}/revoke-subadmin`, {});
-      toast.success('Sub Admin role revoked');
-      loadUsers();
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to revoke Sub Admin role');
     }
   };
 
@@ -590,12 +569,6 @@ const UserManagementPage = () => {
                 </div>
 
                 {/* Sub Admin Badge */}
-                {user.secondaryRole === 'SUB_ADMIN' && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full mb-2">
-                    + Sub Admin
-                  </span>
-                )}
-
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 pt-3 border-t border-line">
                   <button
@@ -615,17 +588,6 @@ const UserManagementPage = () => {
                     }`}
                   >
                     {user.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
-                  <div className="w-px h-4 bg-line"></div>
-                  <button
-                    onClick={() =>
-                      user.secondaryRole === 'SUB_ADMIN'
-                        ? handleRevokeSubAdmin(user._id)
-                        : handlePromoteSubAdmin(user._id)
-                    }
-                    className="flex-1 text-xs font-medium text-purple-600 hover:text-purple-800 transition-colors py-1"
-                  >
-                    {user.secondaryRole === 'SUB_ADMIN' ? 'Revoke SubAdmin' : '+ Sub Admin'}
                   </button>
                 </div>
               </div>
@@ -743,11 +705,6 @@ const UserManagementPage = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-3">
-                            {user.secondaryRole === 'SUB_ADMIN' && (
-                              <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
-                                SubAdmin
-                              </span>
-                            )}
                             <button
                               onClick={() => handleEditClick(user)}
                               className="inline-flex items-center gap-1 text-[var(--brand-primary)] hover:opacity-75 transition-opacity"
@@ -764,16 +721,6 @@ const UserManagementPage = () => {
                               }`}
                             >
                               {user.isActive ? 'Deactivate' : 'Activate'}
-                            </button>
-                            <button
-                              onClick={() =>
-                                user.secondaryRole === 'SUB_ADMIN'
-                                  ? handleRevokeSubAdmin(user._id)
-                                  : handlePromoteSubAdmin(user._id)
-                              }
-                              className="text-purple-600 hover:text-purple-800 transition-colors text-xs font-medium"
-                            >
-                              {user.secondaryRole === 'SUB_ADMIN' ? 'Revoke' : '+SubAdmin'}
                             </button>
                           </div>
                         </td>

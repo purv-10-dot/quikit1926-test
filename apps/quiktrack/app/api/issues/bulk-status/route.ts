@@ -26,7 +26,22 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         { status: 400 },
       );
     }
-    const { projectId, ids, statusId } = parsed.data;
+    const { projectId: projectIdOrKey, ids, statusId } = parsed.data;
+
+    // Body projectId may be a cuid OR a project KEY (readable URLs). Resolve to
+    // the real id, org-scoped, before it's used to scope statuses/issues below.
+    const project = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
+      select: { id: true },
+    });
+    if (!project) {
+      return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
+    }
+    const projectId = project.id;
 
     // QtIssueStatus is scoped by projectId (no orgId column); the project's
     // org ownership is enforced by the permission check below.

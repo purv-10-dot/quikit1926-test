@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const signUploadApi = vi.fn();
 vi.mock("./api", () => ({ signUploadApi: (...a: unknown[]) => signUploadApi(...a) }));
 
-import { mediaKind, uploadFile, validateFile } from "./upload";
+import { uploadFile, validateFile } from "./upload";
 
 // Minimal XHR fake that resolves the PUT immediately with a progress tick.
 class FakeXHR {
@@ -58,15 +58,6 @@ describe("validateFile", () => {
     expect(validateFile({ type: "image/png", size: 26 * 1024 * 1024, name: "a.png" })).toMatch(
       /too large/,
     );
-  });
-});
-
-describe("mediaKind", () => {
-  it("buckets by content-type prefix", () => {
-    expect(mediaKind("image/png")).toBe("image");
-    expect(mediaKind("video/mp4")).toBe("video");
-    expect(mediaKind("audio/mpeg")).toBe("audio");
-    expect(mediaKind("application/pdf")).toBe("file");
   });
 });
 

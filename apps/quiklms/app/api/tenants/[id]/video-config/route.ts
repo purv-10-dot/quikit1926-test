@@ -6,7 +6,7 @@ import { db } from '@/lib/db';
 import { findTenant } from '@/lib/services/tenants-service';
 
 /**
- * GET /api/tenants/:id/video-config — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * GET /api/tenants/:id/video-config — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Port of `TenantsController.getVideoConfig` (`tenants.controller.ts:375-380`).
  *
@@ -20,7 +20,7 @@ import { findTenant } from '@/lib/services/tenants-service';
  */
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
+  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN']);
   assertTenantMatch(actor, params!.id);
 
   const tenant = await findTenant(params!.id);
@@ -28,7 +28,7 @@ export const GET = route(async (req, { params }) => {
 });
 
 /**
- * PATCH /api/tenants/:id/video-config — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+ * PATCH /api/tenants/:id/video-config — ADMIN | TENANT_ADMIN | SUB_ADMIN
  *
  * Port of `TenantsController.updateVideoConfig` (`tenants.controller.ts:364-373`).
  *
@@ -73,7 +73,7 @@ const videoConfigSchema = z.object({
 
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
+  requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'ADMIN']);
   assertTenantMatch(actor, params!.id);
 
   const existingTenant = await findTenant(params!.id);

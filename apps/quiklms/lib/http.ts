@@ -1,7 +1,12 @@
 /**
- * HTTP helpers — standardized success/error envelopes matching the legacy
- * NestJS AllExceptionsFilter shape exactly:
- *   { statusCode, timestamp, path, method, requestId, message, error, validationErrors }
+ * HTTP helpers — standardized success/error envelopes matching the platform
+ * standard (root CLAUDE.md): success = `{ success: true, data, ... }`, error =
+ * `{ success: false, error }`. Was previously the legacy NestJS
+ * AllExceptionsFilter shape (`statusCode/timestamp/path/method/requestId/
+ * message/error/validationErrors`); migrated for quikscale parity — the HTTP
+ * status code alone now carries what `statusCode` used to duplicate in the
+ * body, and `X-Request-Id` stays a response HEADER (unchanged) rather than a
+ * body field.
  *
  * Every route handler is wrapped with `route()` which injects a requestId,
  * sets the X-Request-Id header, and converts thrown errors (ApiError, ZodError,
@@ -15,13 +20,11 @@ import { randomUUID } from 'crypto';
 export class ApiError extends Error {
   statusCode: number;
   errorLabel?: string;
-  validationErrors?: unknown;
 
-  constructor(statusCode: number, message: string, errorLabel?: string, validationErrors?: unknown) {
+  constructor(statusCode: number, message: string, errorLabel?: string) {
     super(message);
     this.statusCode = statusCode;
     this.errorLabel = errorLabel;
-    this.validationErrors = validationErrors;
   }
 }
 
@@ -86,49 +89,19 @@ export function json(data: unknown, status = 200): NextResponse {
   return NextResponse.json(data, { status });
 }
 
-const STATUS_LABEL: Record<number, string> = {
-  400: 'Bad Request',
-  401: 'Unauthorized',
-  403: 'Forbidden',
-  404: 'Not Found',
-  409: 'Conflict',
-  413: 'Payload Too Large',
-  422: 'Unprocessable Entity',
-  500: 'Internal Server Error',
-};
-
-function buildEnvelope(
-  req: NextRequest,
-  requestId: string,
-  statusCode: number,
-  message: string,
-  errorLabel?: string,
-  validationErrors?: unknown,
-) {
-  const body: Record<string, unknown> = {
-    statusCode,
-    timestamp: new Date().toISOString(),
-    path: new URL(req.url).pathname,
-    method: req.method,
-    requestId,
-    message,
-    error: errorLabel ?? STATUS_LABEL[statusCode],
-  };
-  if (validationErrors) body.validationErrors = validationErrors;
-  return body;
+/** The `{ success: false, error }` body every error branch below emits. */
+function errorBody(message: string): { success: false; error: string } {
+  return { success: false, error: message };
 }
 
 export function toErrorResponse(err: unknown, req: NextRequest, requestId: string): NextResponse {
-  // zod validation → 400 with validationErrors
+  // zod validation → 400, one joined string naming every offending field
+  // (structured per-field errors were dropped for the platform-standard shape).
   if (err instanceof ZodError) {
-    const validationErrors = err.issues.map((i) => ({
-      field: i.path.join('.'),
-      message: i.message,
-    }));
-    const res = NextResponse.json(
-      buildEnvelope(req, requestId, 400, 'Validation failed', 'Bad Request', validationErrors),
-      { status: 400 },
-    );
+    const message = err.issues
+      .map((i) => `${i.path.length ? i.path.join('.') : '(value)'}: ${i.message}`)
+      .join('; ');
+    const res = NextResponse.json(errorBody(message), { status: 400 });
     res.headers.set('X-Request-Id', requestId);
     return res;
   }
@@ -137,17 +110,14 @@ export function toErrorResponse(err: unknown, req: NextRequest, requestId: strin
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === 'P2002') {
       const res = NextResponse.json(
-        buildEnvelope(req, requestId, 409, 'A record with these unique fields already exists', 'Conflict'),
+        errorBody('A record with these unique fields already exists'),
         { status: 409 },
       );
       res.headers.set('X-Request-Id', requestId);
       return res;
     }
     if (err.code === 'P2025') {
-      const res = NextResponse.json(
-        buildEnvelope(req, requestId, 404, 'Record not found', 'Not Found'),
-        { status: 404 },
-      );
+      const res = NextResponse.json(errorBody('Record not found'), { status: 404 });
       res.headers.set('X-Request-Id', requestId);
       return res;
     }
@@ -157,26 +127,14 @@ export function toErrorResponse(err: unknown, req: NextRequest, requestId: strin
     // unhandled server error, which both misreports the fault and buries real
     // 500s in noise.
     if (err.code === 'P2003') {
-      const res = NextResponse.json(
-        buildEnvelope(
-          req,
-          requestId,
-          400,
-          'A referenced record does not exist',
-          'Bad Request',
-        ),
-        { status: 400 },
-      );
+      const res = NextResponse.json(errorBody('A referenced record does not exist'), { status: 400 });
       res.headers.set('X-Request-Id', requestId);
       return res;
     }
     // P2011 null constraint / P2012 missing required value — a required column
     // was absent from the payload.
     if (err.code === 'P2011' || err.code === 'P2012') {
-      const res = NextResponse.json(
-        buildEnvelope(req, requestId, 400, 'A required field is missing', 'Bad Request'),
-        { status: 400 },
-      );
+      const res = NextResponse.json(errorBody('A required field is missing'), { status: 400 });
       res.headers.set('X-Request-Id', requestId);
       return res;
     }
@@ -192,19 +150,13 @@ export function toErrorResponse(err: unknown, req: NextRequest, requestId: strin
   if (err instanceof Prisma.PrismaClientValidationError) {
     // eslint-disable-next-line no-console
     console.warn(`[${requestId}] Prisma validation (client fault):`, err.message.split('\n')[0]);
-    const res = NextResponse.json(
-      buildEnvelope(req, requestId, 400, 'Invalid or incomplete request body', 'Bad Request'),
-      { status: 400 },
-    );
+    const res = NextResponse.json(errorBody('Invalid or incomplete request body'), { status: 400 });
     res.headers.set('X-Request-Id', requestId);
     return res;
   }
 
   if (err instanceof ApiError) {
-    const res = NextResponse.json(
-      buildEnvelope(req, requestId, err.statusCode, err.message, err.errorLabel, err.validationErrors),
-      { status: err.statusCode },
-    );
+    const res = NextResponse.json(errorBody(err.message), { status: err.statusCode });
     res.headers.set('X-Request-Id', requestId);
     return res;
   }
@@ -212,10 +164,7 @@ export function toErrorResponse(err: unknown, req: NextRequest, requestId: strin
   // Unknown → 500
   // eslint-disable-next-line no-console
   console.error(`[${requestId}] Unhandled error:`, err);
-  const res = NextResponse.json(
-    buildEnvelope(req, requestId, 500, 'Internal server error', 'Internal Server Error'),
-    { status: 500 },
-  );
+  const res = NextResponse.json(errorBody('Internal server error'), { status: 500 });
   res.headers.set('X-Request-Id', requestId);
   return res;
 }

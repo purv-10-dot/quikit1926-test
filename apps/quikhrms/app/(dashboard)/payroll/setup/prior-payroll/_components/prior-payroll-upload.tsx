@@ -129,7 +129,7 @@ export function PriorPayrollUpload() {
   // the session. Limit 500 covers any realistic prior-payroll batch.
   const { data: empData } = useQuery({
     queryKey: ["employees", "lite-for-prior-payroll"],
-    queryFn: () => api.get<EmployeeLite[]>("/api/v1/hrms/employees?limit=500"),
+    queryFn: () => api.get<EmployeeLite[]>("/api/v1/hrms/employees?limit=500&picker=1"),
   });
   const employees = empData?.data ?? [];
   const empByCode = useMemo(() => {

@@ -1,0 +1,391 @@
+Interested-FollowUp	Could Not Connect
+Interested-FollowUp	Payment Link Sent
+Interested-FollowUp	Interested Followup
+Interested-FollowUp	Not Interested (For making Payment)
+Interested-FollowUp	Future Lead
+Interested-FollowUp	Payment Done
+Interested-FollowUp	Negotiation
+Interested-FollowUp	Already paid Customer
+Interested-FollowUp	Paid CX Service Request
+Interested-FollowUp	Active Partner
+Interested-FollowUp	Inactive Partner
+Interested-FollowUp	Last Sync more than 15 days
+Interested-FollowUp	Last Sync within 15 days
+Demo Scheduled	Could Not Connect
+Demo Scheduled	Demo Completed
+Demo Scheduled	Demo Rescheduled
+Demo Scheduled	Call Back (Demo Scheduled)
+Demo Scheduled	Not Interested (For Demo Done)
+Demo Scheduled	Future Lead
+Demo Scheduled	Already paid Customer
+Demo Scheduled	Paid CX Service Request
+Demo Scheduled	Active Partner
+Demo Scheduled	Inactive Partner
+Demo Scheduled	Last Sync more than 15 days
+Demo Scheduled	Last Sync within 15 days
+Demo Completed Demo Data	Unable to sync (Oracle user)
+Demo Completed Demo Data	Could Not Connect
+Demo Completed Demo Data	Payment Link Sent
+Demo Completed Demo Data	Interested Followup
+Demo Completed Demo Data	Not Interested (For making Payment)
+Demo Completed Demo Data	Future Lead
+Demo Completed Demo Data	Payment Done
+Demo Completed Demo Data	Negotiation
+Demo Completed Demo Data	Already paid Customer
+Demo Completed Demo Data	Paid CX Service Request
+Demo Completed Demo Data	Active Partner
+Demo Completed Demo Data	Inactive Partner
+Demo Completed Demo Data	Last Sync more than 15 days
+Demo Completed Demo Data	Last Sync within 15 days
+Demo Completed-demo Syncing	Could Not Connect
+Demo Completed-demo Syncing	Payment Link Sent
+Demo Completed-demo Syncing	Interested Followup
+Demo Completed-demo Syncing	Not Interested (For making Payment)
+Demo Completed-demo Syncing	Future Lead
+Demo Completed-demo Syncing	Payment Done
+Demo Completed-demo Syncing	Negotiation
+Demo Completed-demo Syncing	Already paid Customer
+Demo Completed-demo Syncing	Paid CX Service Request
+Demo Completed-demo Syncing	Active Partner
+Demo Completed-demo Syncing	Inactive Partner
+Demo Completed-demo Syncing	Last Sync more than 15 days
+Demo Completed-demo Syncing	Last Sync within 15 days
+Payment Done	Payment Verified
+Payment Done	Payment Not Verified
+Payment Done	Already paid Customer
+Payment Done	Paid CX Service Request
+Payment Done	Active Partner
+Payment Done	Inactive Partner
+Payment Done	Last Sync more than 15 days
+Payment Done	Last Sync within 15 days
+Customers	Payment Verified
+Customers	Payment Not Verified
+Customers	Already paid Customer
+Customers	Paid CX Service Request
+Customers	Active Partner
+Customers	Inactive Partner
+Customers	Last Sync more than 15 days
+Customers	Last Sync within 15 days
+Discussion Pending	Disqualified
+Discussion Pending	Could Not Connect
+Discussion Pending	Discussion Pending (Answered Calls)
+Discussion Pending	Demo Scheduled
+Discussion Pending	Interested Followup Counselling
+Discussion Pending	Not Interested (For scheduling Demo)
+Discussion Pending	Already paid Customer
+Discussion Pending	Paid CX Service Request
+Discussion Pending	Active Partner
+Discussion Pending	Inactive Partner
+Discussion Pending	Last Sync more than 15 days
+Discussion Pending	Future Lead
+Discussion Pending	Last Sync within 15 days
+Negotiation	Could Not Connect
+Negotiation	Payment Link Sent
+Negotiation	Not Interested (For making Payment)
+Negotiation	Future Lead
+Negotiation	Payment Done
+Negotiation	Negotiation
+Negotiation	Already paid Customer
+Negotiation	Paid CX Service Request
+Negotiation	Active Partner
+Negotiation	Inactive Partner
+Negotiation	Last Sync more than 15 days
+Negotiation	Last Sync within 15 days
+Payment Not Done	Already paid Customer
+Payment Not Done	Paid CX Service Request
+Payment Not Done	Active Partner
+Payment Not Done	Inactive Partner
+Payment Not Done	Last Sync more than 15 days
+Payment Not Done	Last Sync within 15 days
+Payment Not Done	Not Interested (For making Payment)
+Not Connected (New Lead)	Disqualified
+Not Connected (New Lead)	Could Not Connect
+Not Connected (New Lead)	Discussion Pending (Answered Calls)
+Not Connected (New Lead)	Demo Scheduled
+Not Connected (New Lead)	Not Interested (For scheduling Demo)
+Not Connected (New Lead)	Interested Followup Counselling
+Not Connected (New Lead)	Future Lead
+Not Connected (New Lead)	Already paid Customer
+Not Connected (New Lead)	Paid CX Service Request
+Not Connected (New Lead)	Active Partner
+Not Connected (New Lead)	Inactive Partner
+Not Connected (New Lead)	Last Sync more than 15 days
+Not Connected (New Lead)	Last Sync within 15 days
+Not Connected (Discussion Pending)	Disqualified
+Not Connected (Discussion Pending)	Could Not Connect
+Not Connected (Discussion Pending)	Discussion Pending (Answered Calls)
+Not Connected (Discussion Pending)	Demo Scheduled
+Not Connected (Discussion Pending)	Not Interested (For scheduling Demo)
+Not Connected (Discussion Pending)	Interested Followup Counselling
+Not Connected (Discussion Pending)	Future Lead
+Not Connected (Discussion Pending)	Already paid Customer
+Not Connected (Discussion Pending)	Paid CX Service Request
+Not Connected (Discussion Pending)	Active Partner
+Not Connected (Discussion Pending)	Inactive Partner
+Not Connected (Discussion Pending)	Last Sync more than 15 days
+Not Connected (Discussion Pending)	Last Sync within 15 days
+Not Connected (Demo Scheduled)	Unable to sync (Oracle user)
+Not Connected (Demo Scheduled)	Could Not Connect
+Not Connected (Demo Scheduled)	Demo Completed
+Not Connected (Demo Scheduled)	Not Interested (For Demo Done)
+Not Connected (Demo Scheduled)	Call Back (Demo Scheduled)
+Not Connected (Demo Scheduled)	Demo Rescheduled
+Not Connected (Demo Scheduled)	Future Lead
+Not Connected (Demo Scheduled)	Already paid Customer
+Not Connected (Demo Scheduled)	Paid CX Service Request
+Not Connected (Demo Scheduled)	Active Partner
+Not Connected (Demo Scheduled)	Inactive Partner
+Not Connected (Demo Scheduled)	Last Sync more than 15 days
+Not Connected (Demo Scheduled)	Last Sync within 15 days
+Not Connected (Interested Followup)	Could Not Connect
+Not Connected (Interested Followup)	Payment Link Sent
+Not Connected (Interested Followup)	Interested Followup
+Not Connected (Interested Followup)	Not Interested (For making Payment)
+Not Connected (Interested Followup)	Future Lead
+Not Connected (Interested Followup)	Payment Done
+Not Connected (Interested Followup)	Negotiation
+Not Connected (Interested Followup)	Already paid Customer
+Not Connected (Interested Followup)	Paid CX Service Request
+Not Connected (Interested Followup)	Active Partner
+Not Connected (Interested Followup)	Inactive Partner
+Not Connected (Interested Followup)	Last Sync more than 15 days
+Not Connected (Interested Followup)	Last Sync within 15 days
+Not Connected (Payment Link Sent)	Could Not Connect
+Not Connected (Payment Link Sent)	Payment Link Sent
+Not Connected (Payment Link Sent)	Interested Followup
+Not Connected (Payment Link Sent)	Not Interested (For making Payment)
+Not Connected (Payment Link Sent)	Future Lead
+Not Connected (Payment Link Sent)	Payment Done
+Not Connected (Payment Link Sent)	Negotiation
+Not Connected (Payment Link Sent)	Already paid Customer
+Not Connected (Payment Link Sent)	Paid CX Service Request
+Not Connected (Payment Link Sent)	Active Partner
+Not Connected (Payment Link Sent)	Inactive Partner
+Not Connected (Payment Link Sent)	Last Sync more than 15 days
+Not Connected (Payment Link Sent)	Last Sync within 15 days
+Interested Followup Counselling	Disqualified
+Interested Followup Counselling	Could Not Connect
+Interested Followup Counselling	Discussion Pending (Answered Calls)
+Interested Followup Counselling	Demo Scheduled
+Interested Followup Counselling	Not Interested (For scheduling Demo)
+Interested Followup Counselling	Interested Followup Counselling
+Interested Followup Counselling	Future Lead
+Interested Followup Counselling	Already paid Customer
+Interested Followup Counselling	Paid CX Service Request
+Interested Followup Counselling	Active Partner
+Interested Followup Counselling	Inactive Partner
+Interested Followup Counselling	Last Sync more than 15 days
+Interested Followup Counselling	Last Sync within 15 days
+Payment Verified	Plan Activation Done
+Payment Verified	Plan Activation Failed
+Payment Verified	Already paid Customer
+Payment Verified	Paid CX Service Request
+Payment Verified	Active Partner
+Payment Verified	Inactive Partner
+Payment Verified	Last Sync more than 15 days
+Payment Verified	Last Sync within 15 days
+Payment Verification Failed	Payment Verified
+Payment Verification Failed	Payment Not Verified
+Payment Verification Failed	Already paid Customer
+Payment Verification Failed	Paid CX Service Request
+Payment Verification Failed	Active Partner
+Payment Verification Failed	Inactive Partner
+Payment Verification Failed	Last Sync more than 15 days
+Payment Verification Failed	Last Sync within 15 days
+Pending for Activation	Plan Activation Done
+Pending for Activation	Already paid Customer
+Pending for Activation	Paid CX Service Request
+Pending for Activation	Active Partner
+Pending for Activation	Inactive Partner
+Pending for Activation	Last Sync more than 15 days
+Pending for Activation	Last Sync within 15 days
+Activation Done	Paid Customer Demo Done
+Activation Done	Paid Customer Demo Failed
+Activation Done	Paid Customer Demo to be done
+Activation Done	Already paid Customer
+Activation Done	Paid CX Service Request
+Activation Done	Active Partner
+Activation Done	Inactive Partner
+Activation Done	Last Sync more than 15 days
+Activation Done	Last Sync within 15 days
+Onboarding Done	Already paid Customer
+Onboarding Done	Paid CX Service Request
+Onboarding Done	Active Partner
+Onboarding Done	Inactive Partner
+Onboarding Done	Last Sync more than 15 days
+Onboarding Done	Last Sync within 15 days
+Upgrade Done	Payment Verified
+Upgrade Done	Payment Not Verified
+Upgrade Done	Already paid Customer
+Upgrade Done	Paid CX Service Request
+Upgrade Done	Active Partner
+Upgrade Done	Inactive Partner
+Upgrade Done	Last Sync more than 15 days
+Upgrade Done	Last Sync within 15 days
+Renewal Done	Payment Verified
+Renewal Done	Payment Not Verified
+Renewal Done	Already paid Customer
+Renewal Done	Paid CX Service Request
+Renewal Done	Active Partner
+Renewal Done	Inactive Partner
+Renewal Done	Last Sync more than 15 days
+Renewal Done	Last Sync within 15 days
+Additional Payment Done	Payment Verified
+Additional Payment Done	Payment Not Verified
+Additional Payment Done	Already paid Customer
+Additional Payment Done	Paid CX Service Request
+Additional Payment Done	Active Partner
+Additional Payment Done	Inactive Partner
+Additional Payment Done	Last Sync more than 15 days
+Additional Payment Done	Last Sync within 15 days
+Referral Done	Payment Verified
+Referral Done	Payment Not Verified
+Referral Done	Already paid Customer
+Referral Done	Paid CX Service Request
+Referral Done	Active Partner
+Referral Done	Inactive Partner
+Referral Done	Last Sync more than 15 days
+Referral Done	Last Sync within 15 days
+Deviation	PD required
+Deviation	Done by Riya || Pending on Kunal
+Deviation	UW rejected
+Deviation	Amount sanctioned
+Deviation	Already paid Customer
+Deviation	Paid CX Service Request
+Deviation	Active Partner
+Deviation	Inactive Partner
+Deviation	Last Sync more than 15 days
+Deviation	Last Sync within 15 days
+Onboarding	Document verified
+Onboarding	Document not-verified
+Onboarding	Already paid Customer
+Onboarding	Paid CX Service Request
+Onboarding	Active Partner
+Onboarding	Inactive Partner
+Onboarding	Last Sync more than 15 days
+Onboarding	Last Sync within 15 days
+Paid Customer Demo Done	Onboarding Done
+Paid Customer Demo Done	Already paid Customer
+Paid Customer Demo Done	Paid CX Service Request
+Paid Customer Demo Done	Active Partner
+Paid Customer Demo Done	Inactive Partner
+Paid Customer Demo Done	Last Sync more than 15 days
+Paid Customer Demo Done	Last Sync within 15 days
+Paid Customer Demo Failed	Paid Customer Demo Done
+Paid Customer Demo Failed	Already paid Customer
+Paid Customer Demo Failed	Paid CX Service Request
+Paid Customer Demo Failed	Active Partner
+Paid Customer Demo Failed	Inactive Partner
+Paid Customer Demo Failed	Last Sync more than 15 days
+Paid Customer Demo Failed	Last Sync within 15 days
+Paid Customer Demo to be Done	Paid Customer Demo Done
+Paid Customer Demo to be Done	Paid Customer Demo Failed
+Paid Customer Demo to be Done	Onboarding Done
+Paid Customer Demo to be Done	Already paid Customer
+Paid Customer Demo to be Done	Paid CX Service Request
+Paid Customer Demo to be Done	Active Partner
+Paid Customer Demo to be Done	Inactive Partner
+Paid Customer Demo to be Done	Last Sync more than 15 days
+Paid Customer Demo to be Done	Last Sync within 15 days
+Renewal Due	Could Not connect
+Renewal Due	Not Using Tally Busy
+Renewal Due	Not satisfied with the services
+Renewal Due	Language Barrier
+Renewal Due	Discussion Pending
+Renewal Due	Demo Scheduled
+Renewal Due	Not Interested
+Renewal Due	Interested follow up
+Renewal Due	Renewal Done
+Renewal Due	Upgrade Done
+Renewal Due	Renewal Due
+Renewal Due	Renewal Not Due
+Renewal Due	Interested Proper Syncing
+Renewal Due	Syncing Issue
+Renewal Due	Pricing Issue
+Renewal Due	Support Issue
+Renewal Due	Channel - Unapproved Partner Lead
+Renewal Due	Already paid Customer
+Renewal Due	Paid CX Service Request
+Renewal Due	Active Partner
+Renewal Due	Inactive Partner
+Renewal Due	Last Sync more than 15 days
+Renewal Due	Last Sync within 15 days
+Renewal Due	Unable to sync (Oracle user)
+Renewal Due	Demo Done (Renewal)
+Upgrade Due	Disqualified
+Upgrade Due	Could Not connect
+Upgrade Due	Not Using Tally Busy
+Upgrade Due	Not satisfied with the services
+Upgrade Due	Language Barrier
+Upgrade Due	Discussion Pending
+Upgrade Due	Demo Scheduled
+Upgrade Due	Not Interested
+Upgrade Due	Interested follow up
+Upgrade Due	Future lead
+Upgrade Due	Renewal Done
+Upgrade Due	Upgrade done
+Upgrade Due	Upgrade Due
+Upgrade Due	Already paid Customer
+Upgrade Due	Paid CX Service Request
+Upgrade Due	Active Partner
+Upgrade Due	Inactive Partner
+Upgrade Due	Last Sync more than 15 days
+Upgrade Due	Last Sync within 15 days
+Restocking Done	Active Partner
+Restocking Done	Inactive Partner
+Restocking Done	Last Sync more than 15 days
+Restocking Done	Last Sync within 15 days
+Active Partner	Active Partner
+Active Partner	Inactive Partner
+Active Partner	Last Sync more than 15 days
+Active Partner	Last Sync within 15 days
+Payment Link Sent	Could Not Connect
+Payment Link Sent	Not Interested (For making Payment)
+Payment Link Sent	Payment Done
+Payment Link Sent	Future Lead
+Payment Link Sent	Already paid Customer
+Payment Link Sent	Paid CX Service Request
+Payment Link Sent	Active Partner
+Payment Link Sent	Inactive Partner
+Payment Link Sent	Last Sync more than 15 days
+Payment Link Sent	Last Sync within 15 days
+Disqualified	Rechurned Disqualified
+Disqualified	Qualified Lead
+Disqualified	Demo Scheduled
+Disqualified	Already paid Customer
+Disqualified	Paid CX Service Request
+Disqualified	Active Partner
+Disqualified	Inactive Partner
+Disqualified	Last Sync more than 15 days
+Disqualified	Last Sync within 15 days
+Invalid	Already paid Customer
+Invalid	Paid CX Service Request
+Invalid	Active Partner
+Invalid	Inactive Partner
+Invalid	Last Sync more than 15 days
+Invalid	Last Sync within 15 days
+Not Interested	Discussion Pending (Answered Calls)
+Not Interested	Demo Scheduled
+Not Interested	Payment Done
+Not Interested	Already paid Customer
+Not Interested	Paid CX Service Request
+Not Interested	Active Partner
+Not Interested	Inactive Partner
+Not Interested	Last Sync more than 15 days
+Not Interested	Last Sync within 15 days
+Future Lead	Qualified Lead
+Future Lead	Demo Scheduled
+Future Lead	Future Lead
+Future Lead	Interested Followup Counselling
+Future Lead	Disqualified
+Future Lead	Already paid Customer
+Future Lead	Paid CX Service Request
+Future Lead	Active Partner
+Future Lead	Inactive Partner
+Future Lead	Last Sync more than 15 days
+Future Lead	Not Interested
+Future Lead	Last Sync within 15 days
+Inactive Partner	Active Partner
+Inactive Partner	Inactive Partner
+Inactive Partner	Last Sync more than 15 days
+Inactive Partner	Last Sync within 15 days

@@ -118,6 +118,13 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
   const { hasPermission } = useDashboardConfig();
   const canManageEmployees = hasPermission("hrms.employee.write");
   const canEdit = isSelf || canManageEmployees;
+  // Self-service editors (no "Manage Employees" permission) may only change
+  // their own personal/contact fields — the API silently drops org, comp,
+  // identity and statutory changes from them (see the SELF_EDITABLE whitelist
+  // in employees/[id]/route.ts). Hide those steps instead of showing fields
+  // that look editable but no-op on save.
+  const restrictedSelfEdit = isSelf && !canManageEmployees;
+  const visibleSteps = restrictedSelfEdit ? STEPS.filter((s) => !["employment", "identity", "bank"].includes(s.id)) : STEPS;
 
   const [form, setForm] = useState<EmployeeData | null>(null);
   const [activeStep, setActiveStep] = useState<StepId>("personal");
@@ -145,20 +152,20 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
 
   // True wizard navigation — only the active step's section renders (mirrors
   // the Add Employee form). Jumping steps resets scroll to the top.
-  const stepIdx = STEPS.findIndex((s) => s.id === activeStep);
+  const stepIdx = visibleSteps.findIndex((s) => s.id === activeStep);
   const isFirstStep = stepIdx === 0;
-  const isLastStep = stepIdx >= STEPS.length - 1;
+  const isLastStep = stepIdx >= visibleSteps.length - 1;
   const goToStep = (sid: StepId) => {
     setActiveStep(sid);
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const nextStep = () => { if (!isLastStep) goToStep(STEPS[stepIdx + 1].id); };
-  const prevStep = () => { if (!isFirstStep) goToStep(STEPS[stepIdx - 1].id); };
+  const nextStep = () => { if (!isLastStep) goToStep(visibleSteps[stepIdx + 1].id); };
+  const prevStep = () => { if (!isFirstStep) goToStep(visibleSteps[stepIdx - 1].id); };
 
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100&picker=1") });
   const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
   const noticePeriods = noticePeriodsData?.data ?? [];
 
@@ -276,30 +283,35 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
       toast.error("Invalid work phone", "Work phone must be exactly 10 digits.");
       return;
     }
-    if (!form.jobTitle?.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
-      goToStep("employment");
-      toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
-      return;
-    }
-    if (!form.reportingManagerId) {
-      goToStep("employment");
-      toast.error("Reporting Manager required", "Pick a reporting manager in Employment.");
-      return;
-    }
-    if (!form.dateOfJoining) {
-      goToStep("employment");
-      toast.error("Date of Joining required", "Set the joining date in Employment.");
-      return;
-    }
-    if (!form.panNumber?.trim() || !form.aadhaarNumber?.trim()) {
-      goToStep("identity");
-      toast.error("Identity required", "PAN and Aadhaar are mandatory.");
-      return;
-    }
-    if (!form.bankName?.trim() || !form.bankAccountNumber?.trim() || !form.bankIfsc?.trim()) {
-      goToStep("bank");
-      toast.error("Bank details required", "Bank name, account number and IFSC are mandatory.");
-      return;
+    // Employment/Identity/Bank are hidden (not just disabled) for a restricted
+    // self-editor — those steps don't render, so their "required" checks would
+    // otherwise permanently block save on fields the user can't even see.
+    if (!restrictedSelfEdit) {
+      if (!form.jobTitle?.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
+        goToStep("employment");
+        toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
+        return;
+      }
+      if (!form.reportingManagerId) {
+        goToStep("employment");
+        toast.error("Reporting Manager required", "Pick a reporting manager in Employment.");
+        return;
+      }
+      if (!form.dateOfJoining) {
+        goToStep("employment");
+        toast.error("Date of Joining required", "Set the joining date in Employment.");
+        return;
+      }
+      if (!form.panNumber?.trim() || !form.aadhaarNumber?.trim()) {
+        goToStep("identity");
+        toast.error("Identity required", "PAN and Aadhaar are mandatory.");
+        return;
+      }
+      if (!form.bankName?.trim() || !form.bankAccountNumber?.trim() || !form.bankIfsc?.trim()) {
+        goToStep("bank");
+        toast.error("Bank details required", "Bank name, account number and IFSC are mandatory.");
+        return;
+      }
     }
     // Clear confirmation popup so the user knows the save is happening (avoids
     // the "did it save?" confusion from a silent redirect).
@@ -385,9 +397,9 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
 
       <div className="bg-white border-b border-gray-100 px-5 py-4 sticky top-[57px] z-10">
         <div className="flex items-center justify-between gap-2 max-w-5xl mx-auto">
-          {STEPS.map((s, idx) => {
+          {visibleSteps.map((s, idx) => {
             const active = activeStep === s.id;
-            const passed = STEPS.findIndex((x) => x.id === activeStep) > idx;
+            const passed = visibleSteps.findIndex((x) => x.id === activeStep) > idx;
             return (
               <button
                 key={s.id}
@@ -401,7 +413,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     : passed ? "bg-[#166534]/15 text-[#166534]"
                     : "border-2 border-gray-300 text-gray-500 bg-white",
                 )}>
-                  {passed ? <Check size={14} /> : s.num}
+                  {passed ? <Check size={14} /> : idx + 1}
                 </div>
                 <div className="min-w-0">
                   <p className={clsx("text-[13px] font-semibold truncate leading-tight", active ? "text-[#166534]" : "text-gray-700")}>
@@ -409,7 +421,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                   </p>
                   <p className="text-[11px] text-gray-500 truncate">{s.subtitle}</p>
                 </div>
-                {idx < STEPS.length - 1 && <div className="hidden md:block flex-1 h-px bg-gray-200 mx-1" />}
+                {idx < visibleSteps.length - 1 && <div className="hidden md:block flex-1 h-px bg-gray-200 mx-1" />}
               </button>
             );
           })}
@@ -462,49 +474,54 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                 </Field>
                 <div />
 
-                {/* Handicapped flag + Statutory applicability override.
-                    These affect what the payroll engine deducts for this employee. */}
-                <div className="col-span-2 pt-3 border-t border-gray-100">
-                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.isHandicapped ?? false}
-                      onChange={(e) => update({ isHandicapped: e.target.checked })}
-                      className="text-[#22c55e] rounded"
-                    />
-                    Handicapped <span className="text-xs text-gray-400">(bumps ESI ceiling to ₹25k)</span>
-                  </label>
-                </div>
+                {/* Handicapped flag + Statutory applicability override — both
+                    payroll-facing and outside SELF_EDITABLE, so hide them for
+                    a self-service editor rather than let them no-op on save. */}
+                {!restrictedSelfEdit && (
+                  <>
+                    <div className="col-span-2 pt-3 border-t border-gray-100">
+                      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.isHandicapped ?? false}
+                          onChange={(e) => update({ isHandicapped: e.target.checked })}
+                          className="text-[#22c55e] rounded"
+                        />
+                        Handicapped <span className="text-xs text-gray-400">(bumps ESI ceiling to ₹25k)</span>
+                      </label>
+                    </div>
 
-                <div className="col-span-2 pt-3 border-t border-gray-100">
-                  <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
-                    Statutory applicability
-                  </p>
-                  <p className="text-[11px] text-gray-500 mb-3">
-                    Uncheck only for legitimate exclusions (contractor, expat, Excluded Employee per EPF Act).
-                    Changes take effect on the next payroll run.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <EditStatutoryToggle
-                      label="Apply EPF"
-                      checked={form.epfApplicable ?? true}
-                      onChange={(v) => update({ epfApplicable: v })}
-                      hint="Uncheck for new hires above ₹15k who were never EPF members, contractors, or expats."
-                    />
-                    <EditStatutoryToggle
-                      label="Apply ESI"
-                      checked={form.esiApplicable ?? true}
-                      onChange={(v) => update({ esiApplicable: v })}
-                      hint="Engine already auto-skips if gross > ₹21k. Uncheck only for contractors / non-salary roles."
-                    />
-                    <EditStatutoryToggle
-                      label="Apply Professional Tax"
-                      checked={form.ptApplicable ?? true}
-                      onChange={(v) => update({ ptApplicable: v })}
-                      hint="Uncheck for expats / non-residents or where state exempts the employee category."
-                    />
-                  </div>
-                </div>
+                    <div className="col-span-2 pt-3 border-t border-gray-100">
+                      <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+                        Statutory applicability
+                      </p>
+                      <p className="text-[11px] text-gray-500 mb-3">
+                        Uncheck only for legitimate exclusions (contractor, expat, Excluded Employee per EPF Act).
+                        Changes take effect on the next payroll run.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <EditStatutoryToggle
+                          label="Apply EPF"
+                          checked={form.epfApplicable ?? true}
+                          onChange={(v) => update({ epfApplicable: v })}
+                          hint="Uncheck for new hires above ₹15k who were never EPF members, contractors, or expats."
+                        />
+                        <EditStatutoryToggle
+                          label="Apply ESI"
+                          checked={form.esiApplicable ?? true}
+                          onChange={(v) => update({ esiApplicable: v })}
+                          hint="Engine already auto-skips if gross > ₹21k. Uncheck only for contractors / non-salary roles."
+                        />
+                        <EditStatutoryToggle
+                          label="Apply Professional Tax"
+                          checked={form.ptApplicable ?? true}
+                          onChange={(v) => update({ ptApplicable: v })}
+                          hint="Uncheck for expats / non-residents or where state exempts the employee category."
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </Section>
 
@@ -545,6 +562,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
               </div>
             </Section>
 
+            {!restrictedSelfEdit && (
             <Section
               id="employment"
               icon={<Briefcase size={18} />}
@@ -628,7 +646,9 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                 </Field>
               </div>
             </Section>
+            )}
 
+            {!restrictedSelfEdit && (
             <Section
               id="identity"
               icon={<ShieldCheck size={18} />}
@@ -650,7 +670,9 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                 </Field>
               </div>
             </Section>
+            )}
 
+            {!restrictedSelfEdit && (
             <Section
               id="bank"
               icon={<Banknote size={18} />}
@@ -672,6 +694,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                 inputCls={inputCls}
               />
             </Section>
+            )}
 
             <Section
               id="review"
@@ -706,7 +729,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-3 flex items-center justify-between gap-2 z-10">
           <div className="flex items-center gap-2">
             <Link href={`/employees/${id}`} className="btn btn-ghost">Cancel</Link>
-            <span className="text-xs text-gray-400 hidden sm:inline">Step {stepIdx + 1} of {STEPS.length}</span>
+            <span className="text-xs text-gray-400 hidden sm:inline">Step {stepIdx + 1} of {visibleSteps.length}</span>
           </div>
           <div className="flex items-center gap-2">
             {!isFirstStep && (

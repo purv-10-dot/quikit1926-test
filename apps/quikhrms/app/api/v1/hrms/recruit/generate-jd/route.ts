@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
-import { anthropic, CLAUDE_MODEL } from "@/lib/ai/claude";
 
 interface GenBody {
   title?: string;
@@ -36,59 +35,13 @@ function templateJD(b: GenBody): JDResult {
   };
 }
 
+// AI-generated JD is temporarily disabled — the direct Anthropic call has
+// been removed pending migration to @quikit/ai-sdk. Always returns the
+// deterministic template so the "Auto-write" button keeps working.
 export const POST = withAuth(async (req: NextRequest) => {
   try {
     const b = (await req.json()) as GenBody;
-    if (!b.title || !b.title.trim()) {
-      return successResponse(templateJD(b));
-    }
-
-    // No API key configured → return the deterministic template.
-    if (!anthropic) {
-      return successResponse(templateJD(b));
-    }
-
-    const prompt = [
-      `Write a job description for this role. Indian company context.`,
-      `Role title: ${b.title}`,
-      b.department ? `Department: ${b.department}` : "",
-      b.employmentType ? `Employment type: ${b.employmentType}` : "",
-      b.workLocation ? `Work location: ${b.workLocation}` : "",
-      b.experienceMin != null || b.experienceMax != null
-        ? `Experience: ${b.experienceMin ?? 0}${b.experienceMax != null ? `-${b.experienceMax}` : "+"} years`
-        : "",
-      b.skills?.length ? `Key skills: ${b.skills.join(", ")}` : "",
-      ``,
-      `Return ONLY strict JSON (no markdown, no prose) with this exact shape:`,
-      `{"jobDescription": string (2-3 short paragraphs on role, scope, impact), "requirements": string[] (5-7 must-have bullets), "niceToHave": string[] (3-5 bullets)}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    try {
-      const msg = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: 1200,
-        system:
-          "You are an expert technical recruiter writing clear, professional, bias-free job descriptions. Output strict JSON only — no markdown fences, no commentary.",
-        messages: [{ role: "user", content: prompt }],
-      });
-      const text = msg.content
-        .map((c) => (c.type === "text" ? c.text : ""))
-        .join("")
-        .trim();
-      // Strip any accidental ```json fences, then parse.
-      const json = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-      const parsed = JSON.parse(json) as Partial<JDResult>;
-      return successResponse({
-        jobDescription: typeof parsed.jobDescription === "string" ? parsed.jobDescription : templateJD(b).jobDescription,
-        requirements: Array.isArray(parsed.requirements) ? parsed.requirements.filter((x) => typeof x === "string") : [],
-        niceToHave: Array.isArray(parsed.niceToHave) ? parsed.niceToHave.filter((x) => typeof x === "string") : [],
-      });
-    } catch {
-      // Model/parse failure → graceful template fallback.
-      return successResponse(templateJD(b));
-    }
+    return successResponse(templateJD(b));
   } catch (error) {
     console.error("POST /recruit/generate-jd error:", error);
     return internalError();

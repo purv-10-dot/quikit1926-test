@@ -117,7 +117,7 @@ const CourseStatusTrackingPage = () => {
         setProgressMap(map);
       } catch (err: any) {
         if (!mounted) return;
-        if (err?.statusCode === 401) {
+        if (err?.status === 401) {
           setError('Your session has expired. Please login again.');
         } else {
           setError('Error');

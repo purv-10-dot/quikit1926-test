@@ -10,7 +10,7 @@ import { applyTeacherPrivacy } from '@/lib/privacy';
  * this as "role guard dropped entirely", citing `auth.controller.ts:461-462` —
  * but that is a DIFFERENT endpoint. There were two searches in the legacy app:
  *
- *   /auth/users/search   auth.controller.ts:461   @Roles(TENANT_ADMIN, SUPER_ADMIN, SUB_ADMIN)
+ *   /auth/users/search   auth.controller.ts:461   @Roles(TENANT_ADMIN, ADMIN, SUB_ADMIN)
  *                        @Query('email')          — "Search users by email (for linking UI)"
  *   /users/search        users.controller.ts:111  NO @Roles — open to any authenticated user
  *                        @Query('q'), @Query('role') — "SEARCH USERS (for messaging, etc.)"

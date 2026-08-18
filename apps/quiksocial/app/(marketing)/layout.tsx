@@ -5,6 +5,7 @@ import RevealObserver from "./_components/RevealObserver";
 import "./marketing.css";
 import "lenis/dist/lenis.css";
 
+
 /**
  * Marketing layout for the public landing page at `/`.
  *

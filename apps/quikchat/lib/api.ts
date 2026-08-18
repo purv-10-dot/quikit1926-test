@@ -55,8 +55,15 @@ export function fetchChannels(): Promise<ChannelList> {
   return getJson<ChannelList>("/api/channels");
 }
 
+/**
+ * History page size. Exported because end-of-history detection compares a
+ * returned page's length against it — if the two drift apart, scroll-back
+ * either stops one page early or never stops at all.
+ */
+export const MESSAGES_PAGE_SIZE = 30;
+
 export function fetchMessages(channelId: string, before?: string): Promise<MessageDto[]> {
-  const qs = new URLSearchParams({ limit: "30" });
+  const qs = new URLSearchParams({ limit: String(MESSAGES_PAGE_SIZE) });
   if (before) qs.set("before", before);
   return getJson<MessageDto[]>(`/api/channels/${channelId}/messages?${qs.toString()}`);
 }
@@ -296,6 +303,22 @@ export function updateChannel(
 /** Delete the group for everyone (dedicated route — NOT the leave DELETE). */
 export function deleteChannel(channelId: string): Promise<{ deleted: true }> {
   return send<{ deleted: true }>(`/api/channels/${channelId}/delete`, "POST");
+}
+
+/**
+ * Leave a channel (self-removal). Plain `send()` isn't used here because it
+ * discards the response body on failure — a future server-side refusal (e.g.
+ * a last-admin guard) needs its real message surfaced, not a generic
+ * "DELETE ... → 400".
+ */
+export async function leaveChannel(channelId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`/api/channels/${channelId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const body = (await res.json().catch(() => ({}))) as { deleted?: boolean; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `leave → ${res.status}`);
+  return { deleted: !!body.deleted };
 }
 
 /**

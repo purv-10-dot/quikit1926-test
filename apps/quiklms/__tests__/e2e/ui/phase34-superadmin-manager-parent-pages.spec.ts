@@ -28,7 +28,7 @@ interface PageSpec {
   copy: RegExp;
 }
 
-const SUPER_ADMIN: PageSpec[] = [
+const ADMIN: PageSpec[] = [
   { path: "/dashboard",              role: "superAdmin", h1: "Super Admin Dashboard", copy: /Platform health across all tenants/i },
   { path: "/tenants",                role: "superAdmin", h1: "Platform Partners",     copy: /Monitor and manage tenant ecosystems/i },
   { path: "/platform-analytics",     role: "superAdmin", h1: "Platform Analytics",    copy: /Cross-tenant usage overview/i },
@@ -81,14 +81,14 @@ function suite(name: string, specs: PageSpec[]) {
   });
 }
 
-suite("Phase 34 — (super-admin) pages", SUPER_ADMIN);
+suite("Phase 34 — (super-admin) pages", ADMIN);
 suite("Phase 34 — (manager) pages", MANAGER);
 suite("Phase 34 — (parent) pages", PARENT);
 suite("Phase 34 — (sub-admin) pages", SUB_ADMIN);
 
 test.describe("Phase 34 — super-admin pages surface cross-tenant data", () => {
   /**
-   * SUPER_ADMIN crosses tenants by design (CONVENTIONS rule 6), so `/tenants`
+   * ADMIN crosses tenants by design (CONVENTIONS rule 6), so `/tenants`
    * is the one place where seeing BOTH fixture orgs is correct behaviour and
    * their absence would mean the list never loaded.
    */

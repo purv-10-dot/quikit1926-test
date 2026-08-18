@@ -34,6 +34,7 @@ import {
 import { api } from '@/lib/api';
 import InteractiveQuizComponent from '@/components/learner/InteractiveQuizComponent';
 import ProctoredQuizWrapper from '@/components/learner/ProctoredQuizWrapper';
+import QuizTakingComponent from '@/components/learner/QuizTakingComponent';
 import AudioPlayerResource from '@/components/learner/AudioPlayerResource';
 import PdfProgressViewer from '@/components/learner/PdfProgressViewer';
 import SlidesProgressViewer from '@/components/learner/SlidesProgressViewer';
@@ -279,7 +280,12 @@ const getVimeoVideoId = (url: string): string | null => {
 
 const UniversalLMSPlayer: React.FC = () => {
 
-  const { tenantType } = useFeatures();
+  // `features.showQuizProctoring` decides which quiz surface a Quiz lesson gets.
+  // Corporate tenants — and any org whose LmsTenant row is missing — resolve it
+  // to false, and every /api/quiz-proctoring/* route 403s for them. `loaded` is
+  // waited on deliberately: `features` is `{}` until the fetch lands, so acting
+  // on the pre-fetch default would start a school learner's quiz unproctored.
+  const { features, tenantType, loaded: featuresLoaded } = useFeatures();
   // The player uses a single light theme for every learner (corporate or
   // otherwise) so the new course-completion flow looks consistent. The
   // tenantType variable is still read for any downstream feature checks that
@@ -2668,6 +2674,91 @@ const UniversalLMSPlayer: React.FC = () => {
     );
   }
 
+  // ── Quiz lesson plumbing ───────────────────────────────────────────────────
+  // Hoisted out of the JSX because BOTH quiz surfaces (proctored wrapper and
+  // plain quiz) use them, and both submit through the same
+  // POST /learner/submit-quiz — so the completion bookkeeping is identical.
+  const quizAssessmentId =
+    currentLesson?.assessmentId ||
+    (currentLesson as any)?.quizData?.id ||
+    currentLesson?._id ||
+    `quiz-${currentModuleIndex}-${currentLessonIndex}`;
+
+  const handleQuizAttemptComplete = async (result: {
+    passed?: boolean;
+    percentage?: number;
+    passingScore?: number;
+    correctCount?: number;
+    wrongCount?: number;
+    totalQuestions?: number;
+  }) => {
+    if (!currentLesson) return;
+    const quizLessonKey = getLessonKey(currentLesson);
+    setShowQuiz(false);
+    setRetakeMode(false);
+    setQuizAutoResumeBlockedForLesson(quizLessonKey);
+    // Remember the per-quiz passing score (creator-defined or default 75)
+    // for the post-attempt pass/fail display.
+    const passingScore = result?.passingScore;
+    if (typeof passingScore === 'number') {
+      setPassingScoreByLesson(prev => ({
+        ...prev,
+        [quizLessonKey]: passingScore,
+      }));
+    }
+    // Capture correct/wrong/total counts so the post-quiz card
+    // can show them ("12 correct / 3 wrong / 80%").
+    const { correctCount, wrongCount, totalQuestions } = result ?? {};
+    if (typeof correctCount === 'number' && typeof totalQuestions === 'number') {
+      setQuizResultByLesson(prev => ({
+        ...prev,
+        [quizLessonKey]: {
+          correct: correctCount,
+          wrong: typeof wrongCount === 'number' ? wrongCount : (totalQuestions - correctCount),
+          total: totalQuestions,
+        },
+      }));
+    }
+    // `isCompleted` mirrors the pass result so the course's
+    // aggregate completion stays below 100% until the
+    // learner passes. `attempted` lets the post-quiz
+    // card detect "show score + retake" even on fail.
+    updateLessonProgress(quizLessonKey, {
+      completionPercentage: result.passed ? 100 : (result.percentage ?? 0),
+      isCompleted: !!result.passed,
+      attempted: true,
+    } as any);
+    const aid =
+      currentLesson.assessmentId ||
+      (currentLesson as any)?.quizData?.id;
+    if (aid) {
+      updateLessonProgress(String(aid), {
+        completionPercentage: result.percentage ?? 0,
+        isCompleted: !!result.passed,
+        attempted: true,
+      } as any);
+    }
+    await loadProgress();
+    setTimeout(async () => {
+      const latest = await loadProgress();
+      const pct = latest?.completionPercentage ?? 0;
+      // Only celebrate when the learner has actually passed
+      // the gating quiz — never show the "Course completed"
+      // popup on a failed attempt, even if every lesson is
+      // marked done.
+      if (pct >= 100 && result?.passed === true) {
+        setShowCourseCompleteModal(true);
+      }
+    }, 1200);
+  };
+
+  const handleQuizAttemptCancel = () => {
+    if (!currentLesson) return;
+    const quizLessonKey = getLessonKey(currentLesson);
+    setShowQuiz(false);
+    setQuizAutoResumeBlockedForLesson(quizLessonKey);
+  };
+
   return (
     <div className={`h-screen flex ${isCorporate ? 'bg-gray-50 text-gray-900' : 'bg-gradient-to-br from-[#0a0e27] to-[#1a1f3a] text-white'} overflow-hidden relative`}>
       {/* Animated Background Orbs */}
@@ -3917,86 +4008,42 @@ const UniversalLMSPlayer: React.FC = () => {
                       : (currentLesson.type === 'Quiz') ?
                       showQuiz ? (
                       <div className="w-full h-full overflow-y-auto">
-                        <ProctoredQuizWrapper
-                          assessmentId={
-                            currentLesson.assessmentId ||
-                            (currentLesson as any)?.quizData?.id ||
-                            currentLesson._id ||
-                            `quiz-${currentModuleIndex}-${currentLessonIndex}`
-                          }
-                          courseId={courseId!}
-                          lessonId={currentLesson?._id || currentLesson?.title}
-                          quizTitle={currentLesson.title}
-                          timeLimitMinutes={
-                            (currentLesson as any)?.quizData?.settings?.timeLimit || undefined
-                          }
-                          retakeMode={retakeMode}
-                          onComplete={async (result) => {
-                            const quizLessonKey = getLessonKey(currentLesson);
-                            setShowQuiz(false);
-                            setRetakeMode(false);
-                            setQuizAutoResumeBlockedForLesson(quizLessonKey);
-                            // Remember the per-quiz passing score (creator-defined or default 75)
-                            // for the post-attempt pass/fail display.
-                            if (typeof result?.passingScore === 'number') {
-                              setPassingScoreByLesson(prev => ({
-                                ...prev,
-                                [quizLessonKey]: result.passingScore,
-                              }));
+                        {!featuresLoaded ? (
+                          // Hold until the flag is known — rendering the proctored
+                          // wrapper on the pre-fetch default sent learners whose org
+                          // has proctoring OFF into a disclosure screen whose
+                          // "Accept & Start" 403s ("Quiz proctoring is not enabled
+                          // for your organization"), with no way to reach the quiz.
+                          <div className="w-full h-full flex items-center justify-center">
+                            <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-indigo-600" />
+                          </div>
+                        ) : features.showQuizProctoring ? (
+                          <ProctoredQuizWrapper
+                            assessmentId={quizAssessmentId}
+                            courseId={courseId!}
+                            lessonId={currentLesson?._id || currentLesson?.title}
+                            quizTitle={currentLesson.title}
+                            timeLimitMinutes={
+                              (currentLesson as any)?.quizData?.settings?.timeLimit || undefined
                             }
-                            // Capture correct/wrong/total counts so the post-quiz card
-                            // can show them ("12 correct / 3 wrong / 80%").
-                            if (
-                              typeof result?.correctCount === 'number' &&
-                              typeof result?.totalQuestions === 'number'
-                            ) {
-                              setQuizResultByLesson(prev => ({
-                                ...prev,
-                                [quizLessonKey]: {
-                                  correct: result.correctCount,
-                                  wrong: typeof result.wrongCount === 'number' ? result.wrongCount : (result.totalQuestions - result.correctCount),
-                                  total: result.totalQuestions,
-                                },
-                              }));
-                            }
-                            // `isCompleted` mirrors the pass result so the course's
-                            // aggregate completion stays below 100% until the
-                            // learner passes. `attempted` lets the post-quiz
-                            // card detect "show score + retake" even on fail.
-                            updateLessonProgress(quizLessonKey, {
-                              completionPercentage: result.passed ? 100 : (result.percentage ?? 0),
-                              isCompleted: !!result.passed,
-                              attempted: true,
-                            } as any);
-                            const aid =
-                              currentLesson.assessmentId ||
-                              (currentLesson as any)?.quizData?.id;
-                            if (aid) {
-                              updateLessonProgress(String(aid), {
-                                completionPercentage: result.percentage ?? 0,
-                                isCompleted: !!result.passed,
-                                attempted: true,
-                              } as any);
-                            }
-                            await loadProgress();
-                            setTimeout(async () => {
-                              const latest = await loadProgress();
-                              const pct = latest?.completionPercentage ?? 0;
-                              // Only celebrate when the learner has actually passed
-                              // the gating quiz — never show the "Course completed"
-                              // popup on a failed attempt, even if every lesson is
-                              // marked done.
-                              if (pct >= 100 && result?.passed === true) {
-                                setShowCourseCompleteModal(true);
-                              }
-                            }, 1200);
-                          }}
-                          onCancel={() => {
-                            const quizLessonKey = getLessonKey(currentLesson);
-                            setShowQuiz(false);
-                            setQuizAutoResumeBlockedForLesson(quizLessonKey);
-                          }}
-                        />
+                            retakeMode={retakeMode}
+                            onComplete={handleQuizAttemptComplete}
+                            onCancel={handleQuizAttemptCancel}
+                          />
+                        ) : (
+                          // Plain quiz — same component the proctored wrapper
+                          // delegates to, minus the session. No `sessionId`, so
+                          // nothing calls /api/quiz-proctoring/*. Matches the split
+                          // LockedCoursePlayer already makes.
+                          <QuizTakingComponent
+                            assessmentId={quizAssessmentId}
+                            courseId={courseId!}
+                            lessonId={currentLesson?._id || currentLesson?.title}
+                            retakeMode={retakeMode}
+                            onComplete={handleQuizAttemptComplete}
+                            onCancel={handleQuizAttemptCancel}
+                          />
+                        )}
                       </div>
                       ) : (
                       // Quiz ready / locked / completed states — light theme card.

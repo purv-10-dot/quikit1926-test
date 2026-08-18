@@ -1,20 +1,23 @@
 import { z } from 'zod';
 import { route, json } from '@/lib/http';
-import { parseBody } from '@/lib/validation';
+import { dateField, parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { findOne, update, remove, type UpdateHomeworkInput } from '@/lib/services/homework-service';
+import { maxScoreField, resourceLink } from '@/lib/services/homework-schema';
 
-const resourceLink = z.object({ url: z.string(), label: z.string().optional() });
-
+// Bounds must match the create schema exactly — an edit that the create would
+// have accepted must not be rejected, and vice versa.
 const updateSchema = z.object({
-  title: z.string().optional(),
+  title: z.string().min(1, 'title is required').optional(),
   description: z.string().optional(),
   instructions: z.string().optional(),
-  attachmentUrls: z.array(z.string()).optional(),
+  attachmentUrls: z.array(z.string().min(1)).optional(),
   resourceLinks: z.array(resourceLink).optional(),
-  dueDate: z.string().optional(),
-  maxScore: z.number().min(0).max(100).optional(),
+  dueDate: dateField.optional(),
+  maxScore: maxScoreField.optional(),
   allowLateSubmission: z.boolean().optional(),
+  lateSubmissionDeadline: dateField.optional(),
+  latePenaltyPercent: z.number().min(0).max(100).optional(),
   type: z.enum(['assignment', 'quiz', 'project', 'reading']).optional(),
 });
 

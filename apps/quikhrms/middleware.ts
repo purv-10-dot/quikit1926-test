@@ -9,6 +9,7 @@ import { createMiddleware } from "@quikit/auth/middleware";
  * Public routes stay open for flows that are NOT QuikIT users:
  *  - /candidate-portal, /candidate-documents — external job applicants (token-based)
  *  - /interview-feedback — tokenised interviewer links
+ *  - /careers — public career page (no token; identified by Org.slug in the path)
  */
 const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
@@ -30,6 +31,7 @@ const centralMiddleware = createMiddleware({
     "/auth-handoff", // launcher hand-off — establishes the session, must not redirect
     "/candidate-portal",
     "/candidate-documents",
+    "/careers", // public career page — job listing + apply, no login
     "/interview-feedback",
     "/take-home", // tokenised candidate take-home task submission links
     "/offer", // tokenised candidate offer accept/decline links

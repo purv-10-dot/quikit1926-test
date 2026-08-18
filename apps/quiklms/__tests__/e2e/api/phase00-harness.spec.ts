@@ -51,8 +51,8 @@ test.describe("Phase 00 — harness", () => {
     const anon = await apiAnon();
     const res = await anon.get("/api/courses");
     expect([401, 403]).toContain(res.status());
-    const body = (await safeJson(res)) as { statusCode?: number; error?: string };
-    expect(body.statusCode, "error envelope shape from lib/http.ts").toBe(res.status());
+    const body = (await safeJson(res)) as { success?: boolean; error?: string };
+    expect(body.success, "error envelope shape from lib/http.ts").toBe(false);
   });
 
   test("a forged session token is rejected, not accepted", async () => {

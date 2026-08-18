@@ -28,8 +28,14 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     );
   }
 
+  // Body projectId may be a cuid OR a project KEY (readable URLs). Resolve
+  // either to the real id, org-scoped; project.id is used downstream.
   const project = await db.qtProject.findFirst({
-    where: { id: parsed.data.projectId, orgId: orgId, isDeleted: false },
+    where: {
+      orgId,
+      isDeleted: false,
+      OR: [{ id: parsed.data.projectId }, { projectKey: parsed.data.projectId }],
+    },
     select: { id: true },
   });
   if (!project) {

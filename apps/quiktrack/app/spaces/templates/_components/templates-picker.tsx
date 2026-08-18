@@ -148,7 +148,11 @@ export function TemplatesPicker() {
                 const res = await fetch("/api/projects");
                 const json = await res.json();
                 const first = json?.success && json.data?.[0];
-                router.push(first ? `/spaces/${first.id}/backlog` : "/spaces");
+                router.push(
+                  first
+                    ? `/spaces/${first.projectKey ?? first.id}/backlog`
+                    : "/spaces",
+                );
               } catch {
                 router.push("/spaces");
               }

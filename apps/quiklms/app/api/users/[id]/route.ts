@@ -55,10 +55,10 @@ const updateUserSchema = z.object({
   childrenIds: z.array(z.string()).optional(),
 });
 
-// PATCH /api/users/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
+// PATCH /api/users/:id — ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  requireRoles(actor, ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const data = await parseBody(req, updateUserSchema);
   const orgId = orgScope(actor);
   const result = await updateUser(params!.id, orgId, data as Record<string, unknown>);

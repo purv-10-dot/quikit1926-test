@@ -12,58 +12,78 @@
  */
 import type { LmsUserRole as UserRole } from "@prisma/client";
 
+/**
+ * @param isTenantOrg  True when this org has an `LmsTenant` row — i.e. it is a
+ *   tenant somebody onboarded, not a root org quikit created. It is what
+ *   disambiguates `org_admin`, which is otherwise LOSSY: `toMembershipRole`
+ *   (identity-service) squeezes BOTH `ADMIN` and `TENANT_ADMIN` into that single
+ *   central value, so reading it back can only guess — and guessing `ADMIN`
+ *   silently promoted every tenant admin a tier when this path ran.
+ *
+ *   Omitted → the historical `ADMIN` answer, so no caller changes behaviour by
+ *   not passing it.
+ */
 export function mapPlatformRoleToLmsRole(
   membershipRole: string | undefined,
   isSuperAdmin?: boolean,
-  /**
-   * True when this user is the FOUNDING admin of their org — the earliest
-   * admin-tier `OrgMember` row (see lib/auth/founding-admin.ts). Callers that can
-   * resolve it (`getAuthContext`, `resolveLmsRoles`) pass it; callers that cannot
-   * omit it and every `org_admin` stays `TENANT_ADMIN`.
-   *
-   * This parameter replaces `belongsToTenantOrg`, which inferred the platform
-   * operator from the ABSENCE of an `app_quiklms.tenants` row. That inference was
-   * wrong in both directions — an org provisioned by the launcher or the admin
-   * portal has no tenants row either — so ordinary tenant admins were labelled
-   * SUPER_ADMIN. "Is this the org's first admin?" is a fact, not a guess.
-   */
-  isFoundingOrgAdmin?: boolean,
+  isTenantOrg?: boolean,
 ): UserRole {
-  if (isSuperAdmin) return "SUPER_ADMIN";
+  // The platform operator gets the top LMS tier so the console is usable. Note
+  // this is the ONLY thing the claim does here — the cross-tenant data access it
+  // also grants is decided in `tenantWhere` / `assertTenantMatch`, off the same
+  // claim and never off the role this function returns.
+  if (isSuperAdmin) return "ADMIN";
 
   const r = (membershipRole ?? "").toLowerCase().replace(/[-\s]/g, "_");
   switch (r) {
-    // The FOUNDING admin of an org gets the top tier; every later `org_admin`
-    // gets TENANT_ADMIN.
+    // Every `org_admin` gets the top LMS tier — quikscale parity (`org_admin`
+    // clears the admin bar on its own there too, with no "who was first"
+    // concept). QuikIT's invite form (`POST /api/super/orgs/[id]/members`)
+    // offers only `org_admin | member`, so ADMIN is what every person a
+    // platform admin invites to administer an org — first or fifth — arrives
+    // as. This used to depend on a "founding admin" fact (was this the
+    // earliest admin-tier OrgMember row?) so only the org's first invite got
+    // ADMIN and later ones got TENANT_ADMIN; that distinction is gone (removed
+    // 2026-08-04) — every org_admin is ADMIN now.
     //
-    // QuikIT's invite form (`POST /api/super/orgs/[id]/members`) offers only
-    // `org_admin | member`, so the admin a platform admin invites to run a NEW org
-    // arrives indistinguishable from the org's fifth admin. Both landed on
-    // `/tenant-dashboard` — the corporate tenant-admin dashboard — which is the
-    // "logged in as corporate admin, expected admin" report this branch answers.
+    // WHY THIS IS NOT THE OLD CROSS-TENANT LEAK. `tenantWhere`,
+    // `assertTenantMatch`, `requireFeature` and the `/api/users*` +
+    // `/api/tenants/*` handlers all key their scoping on the platform operator
+    // claim `isSuperAdmin`, which only apps/quikit's audited super-admin
+    // console can set and which is checked above — never on this ROLE. ADMIN
+    // decides which dashboard, nav and page guards a user gets; `isSuperAdmin`
+    // decides what data they can read, and an ADMIN's stays filtered to
+    // `orgId` regardless of how many other ADMINs exist in other orgs.
     //
-    // WHY THIS IS NOT THE OLD CROSS-TENANT LEAK. The previous version of this
-    // branch read `belongsToTenantOrg ? "TENANT_ADMIN" : "SUPER_ADMIN"`, and back
-    // then `tenantWhere()` keyed unscoped reads on the ROLE:
+    // The one place ADMIN is NOT automatically unscoped: the shared
+    // master-course catalog's approve/reject/publish/archive/duplicate
+    // actions. With every org_admin now ADMIN (not just one founder per org),
+    // `assertCanActOnGlobalCourse` (lib/services/master-course-service.ts)
+    // restricts a non-operator ADMIN to courses submitted by their OWN org —
+    // added in the same change, because without it any org's ADMIN could act
+    // on any other org's submitted course.
     //
-    //     if (user.role === 'SUPER_ADMIN') return extra;   // every tenant's rows
-    //
-    // so anything that made `role` resolve to SUPER_ADMIN also handed out every
-    // tenant's data. That is no longer true: `tenantWhere`, `assertTenantMatch`,
-    // `requireFeature` and the `/api/users*` + `/api/tenants/*` handlers all key
-    // their scoping on the platform operator claim `isSuperAdmin`, which only
-    // apps/quikit's audited super-admin console can set and which is checked above.
-    // A founding admin is therefore the top admin OF THEIR OWN ORG: SUPER_ADMIN
-    // decides which dashboard, nav and page guards they get; `isSuperAdmin` decides
-    // what data they can read, and theirs stays filtered to `orgId`.
+    // A school/corporate tenant's own first admin does NOT reach this branch:
+    // `onboardTenant` provisions them with an explicit TENANT_ADMIN assignment, and
+    // `getAssignedLmsRole` wins over this fallback in `resolveLmsRoles`. This fires
+    // only for someone with no assignment and no LMS row yet — the person quikit
+    // invited to run the org.
     case "org_admin":
     case "owner":
     case "administrator":
-      return isFoundingOrgAdmin ? "SUPER_ADMIN" : "TENANT_ADMIN";
+      // A tenant's own admin is TENANT_ADMIN, never ADMIN. Both were stored as
+      // `org_admin`, so the org itself is the only thing that separates them: a
+      // tenant org has an `LmsTenant` row, a root org does not. Without this the
+      // round-trip TENANT_ADMIN → org_admin → ADMIN handed a tenant admin the top
+      // tier — including the shared-catalog approve/reject powers guarded by
+      // `assertCanActOnGlobalCourse`.
+      return isTenantOrg ? "TENANT_ADMIN" : "ADMIN";
     // Retained separately: an explicit `super_admin` MEMBERSHIP role is a
-    // deliberate statement, unlike the `org_admin` inference above.
+    // deliberate statement, unlike the `org_admin` inference above. This is the
+    // central `OrgMember.role` STRING, not an LMS role — QuikLMS no longer has a
+    // role by that name, but quikit still issues the membership value.
     case "super_admin":
-      return "SUPER_ADMIN";
+      return "ADMIN";
     case "admin":
     case "tenant_admin":
       return "TENANT_ADMIN";

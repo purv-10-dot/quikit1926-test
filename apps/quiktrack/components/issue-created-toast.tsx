@@ -44,7 +44,10 @@ export function IssueCreatedToast() {
 
   function copyLink() {
     if (!issue) return;
-    const url = `${window.location.origin}${window.location.pathname}?issueId=${encodeURIComponent(issue.id)}`;
+    // Canonical readable work-item URL. The previous `?issueId=` on the current
+    // pathname was a dead param — no route reads it, so the link just reopened
+    // whatever view (usually the board) the creator happened to be on.
+    const url = `${window.location.origin}/browse/${encodeURIComponent(issue.key)}`;
     void navigator.clipboard?.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);

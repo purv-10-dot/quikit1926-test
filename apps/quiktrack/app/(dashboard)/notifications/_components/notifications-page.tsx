@@ -172,9 +172,13 @@ function Row({ item, onOpen }: { item: NotificationRow; onOpen: () => void }) {
     );
   }
 
-  const issueHref = item.projectId
-    ? `/spaces/${item.projectId}/board${item.issueId ? `?openIssue=${encodeURIComponent(item.issueId)}` : ""}`
-    : "/notifications";
+  // Open the work item itself. `/spaces/<id>/board?openIssue=` was a dead param
+  // (the board route never reads searchParams), so these landed on the board.
+  const issueHref = item.projectId && item.issueId
+    ? `/spaces/${item.projectId}/work/${encodeURIComponent(item.issueId)}`
+    : item.projectId
+      ? `/spaces/${item.projectId}/board`
+      : "/notifications";
   return (
     <Link
       href={issueHref}

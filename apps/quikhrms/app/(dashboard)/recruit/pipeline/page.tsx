@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
 import { useToast } from "@/components/hrms/toast";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -39,6 +39,13 @@ interface ApplicationItem {
     technical?: { question: string; answer: string }[];
     comments?: string;
     submittedAt?: string;
+    // Cover note + any extra fields an org's OWN careers website form
+    // collects beyond our fixed apply contract (name/email/phone/resume) —
+    // captured generically so a one-off extra question on someone's website
+    // form never needs a QuikHRMS schema change. See job-requisitions/
+    // external/apply/route.ts.
+    coverNote?: string;
+    extra?: Record<string, string>;
   } | null;
   _count: { interviews: number; scorecards: number };
   avgRating: number | null;
@@ -236,9 +243,13 @@ export default function PipelinePage() {
   const qc = useQueryClient();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [reqFilter, setReqFilter] = useState("");
   const [nameQuery, setNameQuery] = useState("");
-  const [stageFilters, setStageFilters] = useState<Set<string>>(new Set());
+  const [stageFilters, setStageFilters] = useState<Set<string>>(() => {
+    const stage = searchParams.get("stage");
+    return stage ? new Set([stage]) : new Set();
+  });
   const [requisitionFilters, setRequisitionFilters] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -431,9 +442,14 @@ export default function PipelinePage() {
   const STAGES: string[] = stageConfigs.map((s) => s.name);
   const stageHasMail = (name: string) => stageConfigs.find((s) => s.name === name)?.sendMail ?? false;
   const isInterviewStage = (s: string | null | undefined) => !!s && /interview|screen/i.test(s);
-  // Static screening checklist — shown ONLY in the Screening stage.
-  // Screening sheet is only for the Screening round itself (not Phone Screen etc.).
-  const showScreening = (app: ApplicationItem) => (app.currentStage ?? "").trim().toLowerCase() === "screening";
+  // Career-page candidates clearing the Source round move straight to Phone
+  // Screen with no "Schedule Interview" popup and no email — that round is
+  // just a resume/AI screen, not a real interview, for these applicants.
+  const isCareerPageSourceRound = (app: ApplicationItem | null | undefined) =>
+    app?.candidate.source === "CandCareerPage" && app?.currentStage === "Screening";
+  // Static screening checklist — shown ONLY in the Phone Screen stage (the
+  // actual screening-call round; Source is just the initial applicant list).
+  const showScreening = (app: ApplicationItem) => (app.currentStage ?? "").trim().toLowerCase() === "phonescreen";
   const getNextStage = (current: string | null | undefined) => {
     const idx = current ? STAGES.indexOf(current) : -1;
     return idx >= 0 && idx < STAGES.length - 1 ? STAGES[idx + 1] : null;
@@ -523,7 +539,7 @@ export default function PipelinePage() {
 
   const { data: empData } = useQuery({
     queryKey: ["employees-active-list"],
-    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; jobTitle: string | null; employeeCode?: string }[]>("/api/v1/hrms/employees?status=Active&limit=200"),
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; jobTitle: string | null; employeeCode?: string }[]>("/api/v1/hrms/employees?status=Active&limit=200&picker=1"),
     enabled: !!scheduleApp,
   });
   const employees = empData?.data ?? [];
@@ -629,7 +645,7 @@ export default function PipelinePage() {
       const app = feedbackApp;
       const isApprove = vars.body.recommendation === "Hire";
       const nextStage = app ? getNextStage(app.currentStage) : null;
-      const willSchedule = isApprove && !!app && !!nextStage && isInterviewStage(nextStage);
+      const willSchedule = isApprove && !!app && !!nextStage && isInterviewStage(nextStage) && !isCareerPageSourceRound(app);
       setFeedbackApp(null);
       setFeedback({ overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" });
       toast.success("Feedback saved", willSchedule ? "Stage will move once interview is scheduled" : undefined);
@@ -1138,7 +1154,7 @@ export default function PipelinePage() {
                   </td>
                   <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
                   <td className="px-3 py-2.5 text-slate-600 text-xs">
-                    {c.expectedCTC ? `₹ ${Number(c.expectedCTC).toLocaleString("en-IN")}` : "—"}
+                    {c.expectedCTC ? `₹${Number(c.expectedCTC).toLocaleString("en-IN")}L` : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-center text-[11px] text-slate-400">—</td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -1199,7 +1215,7 @@ export default function PipelinePage() {
                       {app.appliedDate ? new Date(app.appliedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-slate-600 text-xs">
-                      {app.candidate.expectedCTC ? `₹ ${Number(app.candidate.expectedCTC).toLocaleString("en-IN")}` : "—"}
+                      {app.candidate.expectedCTC ? `₹${Number(app.candidate.expectedCTC).toLocaleString("en-IN")}L` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       {app._count.scorecards > 0 ? (
@@ -1666,7 +1682,8 @@ export default function PipelinePage() {
             e.preventDefault();
             if (!feedback.recommendation) return toast.error("Recommendation required");
             const nextStage = getNextStage(feedbackApp.currentStage);
-            const deferStageMove = feedback.recommendation === "Hire" && !!nextStage && isInterviewStage(nextStage);
+            const deferStageMove = !isCareerPageSourceRound(feedbackApp)
+              && feedback.recommendation === "Hire" && !!nextStage && isInterviewStage(nextStage);
             feedbackMut.mutate({ id: feedbackApp.id, body: { ...feedback, deferStageMove } });
           }} className="flex flex-col min-h-0 flex-1">
             <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4">
@@ -1686,6 +1703,18 @@ export default function PipelinePage() {
                 </div>
               </div>
             </div>
+
+            {(feedbackApp.screeningAnswers?.coverNote || (feedbackApp.screeningAnswers?.extra && Object.keys(feedbackApp.screeningAnswers.extra).length > 0)) && (
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl px-4 py-3 text-xs space-y-2">
+                <p className="font-semibold text-indigo-700 uppercase tracking-wide text-[10.5px]">From their application</p>
+                {feedbackApp.screeningAnswers?.coverNote && (
+                  <p className="text-slate-700 whitespace-pre-line">{feedbackApp.screeningAnswers.coverNote}</p>
+                )}
+                {feedbackApp.screeningAnswers?.extra && Object.entries(feedbackApp.screeningAnswers.extra).map(([k, v]) => (
+                  <p key={k} className="text-slate-700"><span className="font-medium text-slate-500">{k}:</span> {v}</p>
+                ))}
+              </div>
+            )}
 
             <div>
               <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-2">

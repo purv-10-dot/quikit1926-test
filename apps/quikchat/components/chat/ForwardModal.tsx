@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ChannelList, ChannelListItem, MessageDto } from "@/lib/shared";
 import { Avatar, Button, Check, Input, Modal } from "@/components/ui";
+import { avatarVariantFor } from "./ChannelList";
 
 export interface ForwardModalProps {
   open: boolean;
@@ -76,7 +77,7 @@ export function ForwardModal({ open, message, channels, onClose, onForward }: Fo
             <Avatar
               name={c.name ?? "Conversation"}
               id={c.channelId}
-              group={c.type === "group"}
+              variant={avatarVariantFor(c)}
               size={28}
             />
             <span style={{ flex: 1 }}>{c.name ?? "Direct message"}</span>

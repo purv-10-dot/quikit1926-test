@@ -28,6 +28,15 @@ async function fetchTemplates(): Promise<OrgWorkflow[]> {
   return j.data as OrgWorkflow[];
 }
 
+/** Localized "Last modified", or "Built-in" for the built-in template's epoch
+ *  placeholder date (which isn't a real timestamp). */
+function formatModified(iso: string): string {
+  const t = Date.parse(iso);
+  // The built-in classic template ships with the Unix epoch as a placeholder.
+  if (Number.isNaN(t) || t <= 0) return "Built-in";
+  return new Date(t).toLocaleString();
+}
+
 /**
  * Build read-only React Flow nodes/edges from a name-based template graph by
  * synthesising a pseudo-draft whose status ids ARE the status names. Reuses the
@@ -42,7 +51,11 @@ function templateToFlow(t: TemplateGraph): { nodes: Node[]; edges: Edge[]; statu
     workflowId: "__preview__",
     name: "preview",
     description: t.description,
-    statuses: t.statuses.map((s) => ({ statusId: s.name, isInitial: s.isInitial, x: null, y: null })),
+    // Templates carry no saved node positions, so lay the statuses out in a
+    // horizontal row (initial status first) — fitView then centres it.
+    statuses: [...t.statuses]
+      .sort((a, b) => Number(b.isInitial) - Number(a.isInitial))
+      .map((s, i) => ({ statusId: s.name, isInitial: s.isInitial, x: 80 + i * 200, y: 160 })),
     transitions: t.transitions.map((tr, i) => ({
       id: `${tr.name}-${i}`,
       name: tr.name,
@@ -171,6 +184,14 @@ export function AddExistingWorkflowDialog({
                       panOnDrag
                       zoomOnScroll={false}
                       proOptions={{ hideAttribution: true }}
+                      onInit={(inst) => {
+                        // Re-fit once the instance + container have their real
+                        // size. The modal mounts with 0 height, so the initial
+                        // fitView fits to nothing (tiny diagram in the corner).
+                        requestAnimationFrame(() =>
+                          inst.fitView({ padding: 0.18, maxZoom: 1 }),
+                        );
+                      }}
                     >
                       <Background gap={16} />
                       {/* Zoom controls in the top-left so they don't overlap the
@@ -194,7 +215,7 @@ export function AddExistingWorkflowDialog({
                   </div>
                   <div className="flex gap-2">
                     <dt className="w-24 shrink-0 text-gray-500">Last modified</dt>
-                    <dd className="text-gray-800">{new Date(selected.updatedAt).toLocaleString()}</dd>
+                    <dd className="text-gray-800">{formatModified(selected.updatedAt)}</dd>
                   </div>
                 </dl>
                 {add.error && <p className="mt-2 text-sm text-red-600">{(add.error as Error).message}</p>}

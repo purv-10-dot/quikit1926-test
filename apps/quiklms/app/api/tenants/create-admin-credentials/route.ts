@@ -15,7 +15,7 @@ import {
 const schema = z.object({ tenantId: z.string().optional() });
 
 /**
- * POST /api/tenants/create-admin-credentials — SUPER_ADMIN
+ * POST /api/tenants/create-admin-credentials — ADMIN
  *
  * Port of `TenantsController.createAdminCredentials` (`tenants.controller.ts:424-446`).
  * Previously had no route file, so bulk tenant-admin provisioning was lost.
@@ -34,12 +34,12 @@ const schema = z.object({ tenantId: z.string().optional() });
  */
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  requireRoles(actor, ['SUPER_ADMIN']);
+  requireRoles(actor, ['ADMIN']);
   const { tenantId } = await parseBody(req, schema);
 
   // The sharpest edge on the console: this MINTS admin credentials and returns the
   // passwords in plaintext, and an absent `tenantId` did it for EVERY tenant. Behind a
-  // role-only check, any holder of SUPER_ADMIN — including an org's founding admin —
+  // role-only check, any holder of ADMIN — including an org's founding admin —
   // could POST an empty body and walk away with admin passwords for the whole platform.
   //
   // Scoped rather than denied, for the reason in lib/auth/context.ts `orgScope`: a

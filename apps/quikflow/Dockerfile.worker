@@ -1,0 +1,104 @@
+# syntax=docker/dockerfile:1.6
+#
+# Multi-stage Docker build for the QuikFlow execution worker — a standalone
+# BullMQ consumer (apps/quikflow/worker/main.ts), NOT the Next.js Builder UI.
+# Pattern mirrors services/realtime/Dockerfile: turbo prune --docker (slices
+# monorepo to just this app's deps) -> installer (npm ci + prisma generate +
+# esbuild bundle) -> runner (bundled dist + node_modules, non-root). NO tsx
+# at runtime, no HTTP server (this process has none — see worker/main.ts).
+#
+# Build (from monorepo root):
+#   docker build -f apps/quikflow/Dockerfile.worker -t quikflow-worker:latest .
+#
+# This image takes NO origin build-args: nothing here is compiled into a client
+# bundle, so every URL it needs is read from the environment at runtime. The
+# UAT Deployment must supply at least:
+#   DATABASE_URL, DATABASE_URL_DIRECT  — shared Postgres
+#   REDIS_URL                          — BullMQ broker (https://bullmq.quikit.ai)
+#   QUIKFLOW_URL                       — https://uatflow.quikit.ai, used to build
+#                                        OAuth connector callback URLs
+#   WF_CONNECTION_ENC_KEY              — decrypts stored connector tokens
+#   QUIKFLOW_DEFAULT_TIMEZONE          — calendar event default (e.g. Asia/Kolkata)
+#   GOOGLE_*/MS_*/MS_TEAMS_*/FATHOM_*  — connector credentials the scans need
+#
+# The worker serves NO application traffic. It exposes exactly one route —
+# GET /health on $PORT (default 9101) — so k8s has something to probe, matching
+# services/realtime. Point the UAT ingress (bullmq.quikit.ai) at that port if you
+# want the queue's health reachable; do not route user traffic here.
+
+FROM node:20-alpine AS base
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 1 — builder: prune the monorepo down to the quikflow app + workspace
+# deps. The prune target matches the "name" in apps/quikflow/package.json.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS builder
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+RUN npm install -g turbo
+COPY . .
+RUN turbo prune quikflow --docker
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 2 — installer: install pruned deps, generate Prisma, bundle the
+# worker entrypoint to dist/worker.js.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS installer
+# Prisma's query engine needs OpenSSL (libssl) on Alpine. NOTE:
+# packages/database/prisma/schema.prisma must list a linux-musl-openssl
+# binaryTarget for the engine to load on Alpine at runtime.
+RUN apk update && apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY --from=builder /app/out/json/ .
+COPY --from=builder /app/out/package-lock.json ./package-lock.json
+RUN npm ci --ignore-scripts
+
+COPY --from=builder /app/out/full/ .
+COPY turbo.json turbo.json
+COPY tsconfig.base.json tsconfig.base.json
+
+# Placeholder — prisma generate parses the datasource url but never connects.
+ARG DATABASE_URL="postgresql://x:x@localhost:5432/x"
+# packages/database/prisma/schema.prisma declares `directUrl = env("DATABASE_URL_DIRECT")`.
+# Prisma resolves it at generate time, so it needs a value here too.
+ARG DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
+ENV DATABASE_URL=$DATABASE_URL
+ENV DATABASE_URL_DIRECT=$DATABASE_URL_DIRECT
+ENV NODE_ENV=production
+
+RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
+# Not `turbo build` — the worker bundle is its own script (build-worker.mjs via
+# the app's `build:worker`), separate from the app's `next build` turbo task.
+RUN npm run build:worker --workspace=quikflow
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 3 — runner: minimal image running the bundled JS as non-root.
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS runner
+# wget is for the HEALTHCHECK below — same as services/realtime.
+RUN apk add --no-cache openssl wget
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 worker
+
+ENV NODE_ENV=production
+# Port for the worker's /health endpoint (worker/main.ts). 9101 sits next to the
+# realtime gateway's 9100 in the internal-services range, clear of the 30xx app
+# ports. This is a health/probe surface only — it serves no application traffic.
+ENV PORT=9101
+
+# node_modules carries the externalized runtime deps (bullmq, ioredis, etc.)
+# + the generated Prisma client (@prisma / .prisma).
+COPY --from=installer --chown=worker:nodejs /app/node_modules ./node_modules
+COPY --from=installer --chown=worker:nodejs /app/apps/quikflow/dist ./apps/quikflow/dist
+
+USER worker
+WORKDIR /app/apps/quikflow
+EXPOSE 9101
+# Returns 503 while Redis is disconnected, so a dead broker connection restarts
+# the pod instead of leaving a silently idle consumer.
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+  CMD wget -qO- "http://localhost:${PORT:-9101}/health" || exit 1
+CMD ["node", "dist/worker.js"]

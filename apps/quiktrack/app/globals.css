@@ -463,9 +463,10 @@ html.dark .qt-timesheet-scroll { scrollbar-color: #2E3744 #151A21; }
 /* Board horizontal scrollbar (Attendance matrix + project board). Uses a
    transparent track in light mode; the thumb just needs a darker base so
    it doesn't blow out against the slate surface. */
-html.dark .qt-board-scroll::-webkit-scrollbar-thumb { background: #2E3744; }
-html.dark .qt-board-scroll::-webkit-scrollbar-thumb:hover { background: #3A4350; }
-html.dark .qt-board-scroll { scrollbar-color: #2E3744 transparent; }
+html.dark .qt-board-scroll::-webkit-scrollbar-track { background: #151A21; border-top-color: #222A35; }
+html.dark .qt-board-scroll::-webkit-scrollbar-thumb { background: #3A4350; border-color: #151A21; }
+html.dark .qt-board-scroll::-webkit-scrollbar-thumb:hover { background: #4A5560; border-color: #151A21; }
+html.dark .qt-board-scroll { scrollbar-color: #3A4350 #151A21; }
 
 html.dark .qt-shimmer {
   background: linear-gradient(90deg, #151A21 0%, #222A35 50%, #151A21 100%);
@@ -625,25 +626,26 @@ html.dark .qt-rich-content hr { border-top-color: #262E3A !important; }
    of the board pane so users see they can pan to reveal off-screen
    columns (parallel sprints + many statuses can easily exceed the
    viewport width). */
-.qt-board-scroll::-webkit-scrollbar { height: 10px; }
+.qt-board-scroll::-webkit-scrollbar { height: 12px; }
 .qt-board-scroll::-webkit-scrollbar-track {
-  background: transparent;
-  margin: 0 4px;
+  background: #f1f5f9;
+  border-top: 1px solid #e5e7eb;
+  border-radius: 999px;
 }
 .qt-board-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #94a3b8;
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 3px solid #f1f5f9;
   background-clip: padding-box;
-  min-width: 48px;
+  min-width: 56px;
 }
 .qt-board-scroll::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #64748b;
   background-clip: padding-box;
-  border: 2px solid transparent;
+  border: 3px solid #f1f5f9;
 }
 .qt-board-scroll {
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: #94a3b8 #f1f5f9;
   scrollbar-width: thin;
 }
 

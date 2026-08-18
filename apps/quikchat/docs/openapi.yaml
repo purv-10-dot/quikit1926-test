@@ -1,0 +1,1642 @@
+openapi: 3.0.3
+info:
+  title: QuikChat API (Mobile MVP Surface)
+  version: "0.1.0-mvp"
+  description: |
+    Covers the endpoints a mobile client needs to build a functioning MVP:
+    channels, messages, uploads, and the realtime handshake token. This is
+    **not** the full QuikChat API surface — admin/settings/AI-assistant/
+    knowledge-base/calendar/call-history routes exist but are out of scope
+    for this document.
+
+    ## ⚠️ Auth status: UNRESOLVED for quikchat mobile
+
+    Every route below requires a NextAuth session cookie (see the
+    `sessionCookie` security scheme). **No bearer-token, PKCE, or other
+    non-cookie mechanism exists in `@quikit/auth` or in quikchat today.**
+
+    The only validated mobile-auth precedent in this monorepo is the
+    cookie-jar bridge documented in `docs/MOBILE_FLUTTER_COOKIE_AUTH.md`
+    (built for quikinfra's Flutter app), which explicitly rejects
+    Bearer-token auth as a wrong approach for this backend. See
+    `MOBILE_INTEGRATION_GUIDE.md` in this folder for the full analysis.
+    Until a mobile auth strategy is chosen for quikchat, treat every
+    `security: [sessionCookie]` block below as **TBD in practice**, not a
+    solved integration detail.
+
+    ## Validation posture (read before generating a client)
+
+    Routes in this codebase do **not** perform schema-level runtime
+    validation (no Zod, no equivalent) on request bodies for
+    channels/messages/uploads — request bodies are cast at compile time
+    only. Real enforcement is a set of manual, per-field checks inside each
+    route/service function. The `requestBody` schemas below describe the
+    fields the server actually reads and validates (per the manual checks),
+    not an aspirational strict schema. Fields the server never validates
+    (e.g. array element types) are called out in that operation's
+    description — sending malformed data there can produce an **undocumented
+    500** instead of a clean 400.
+
+    ## Error envelope — NOT uniform across this API
+
+    Most routes return `{ "error": string }` with the HTTP status carrying
+    the meaning. Three routes deviate:
+    - Tenant/module feature-gate failures (`POST /api/channels/ai`) return
+      `{ "success": false, "error": string }` instead.
+    - Upload PUT routes (`/api/uploads/local`, `/api/uploads/gcs`) build
+      `{ "error": string }` by hand outside the normal error wrapper, so
+      their error bodies are shaped the same but travel a different code
+      path — a write failure on either is flattened to `400`, even for
+      what might be an underlying 5xx-class storage outage.
+    - Any exception that is not an internal `HttpError` (e.g. a raw Prisma
+      error from unvalidated input) is **not** converted to `{error}` JSON
+      at all — it surfaces as an unstructured Next.js framework 500. This
+      spec does not invent a schema for that case; assume any endpoint can
+      return a bare 500 with no guaranteed JSON body.
+  contact:
+    name: QuikChat
+  license:
+    name: Proprietary
+    url: https://www.quikit.ai/legal/terms
+servers:
+  # Relative URL — resolved against wherever this document is being served from.
+  # MUST stay first: it is what makes "Try it out" in the in-app viewer at
+  # /api-docs issue SAME-ORIGIN requests, so the browser attaches the NextAuth
+  # session cookie automatically. Swapping in an absolute origin here (even the
+  # correct production one) breaks that on every non-matching host — the request
+  # goes cross-origin, the cookie is not sent, and the CSP `connect-src` blocks
+  # it outright. Locked by a regression test in app/(dashboard)/api-docs/.
+  - url: /
+    description: >-
+      Same origin as this document. Used by the in-app viewer at /api-docs;
+      a browser session cookie is sent automatically.
+  - url: https://{host}
+    variables:
+      host:
+        default: chat.quikit.ai
+        description: Replace with the deployed quikchat origin (or localhost:PORT in dev).
+
+security:
+  - sessionCookie: []
+
+tags:
+  - name: Channels
+    description: Create, list, and manage DMs/groups/the AI singleton — membership, roles, pins, read/delivery receipts, and notification preferences.
+  - name: Members
+    description: Add, remove, and change roles for members of a group channel.
+  - name: Invites
+    description: Create and revoke shareable invite links, and preview/accept an invite (the only endpoints in this API reachable without a session).
+  - name: Messages
+    description: Send, edit, delete, forward, pin, and react to messages within a channel.
+  - name: Uploads
+    description: Sign an upload target, PUT raw file bytes to storage, and download local-driver files — a 3-step flow, not a single multipart POST.
+  - name: Realtime
+    description: Mint the short-lived handshake token a client presents to the Socket.IO gateway for live updates (not covered by REST polling).
+
+paths:
+  # ============================================================ CHANNELS ===
+  /api/channels:
+    get:
+      tags: [Channels]
+      summary: List the caller's channels (priority + recent)
+      operationId: listChannels
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Channels]
+      summary: Create a channel (group or DM), or find-or-return an existing DM
+      operationId: createChannel
+      description: |
+        Request body is cast at compile time only (`as unknown as
+        CreateChannelInput`) — NOT runtime-validated. `memberIds` in
+        particular is never checked to be an array; a non-array value
+        throws an uncaught runtime error (undocumented 500) rather than a
+        clean 400.
+
+        Rate limited: 20 requests / 60s per (org, user).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateChannelInput" }
+      responses:
+        "200":
+          description: Created (or existing DM returned as-is)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "400":
+          description: |
+            One of: `type must be 'dm' or 'group'` · `DM must have exactly
+            two members` · `DMs cannot be public` · `Public channels must
+            have a name`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            One of: `You do not have permission to create channels` ·
+            `You do not have permission to create public channels` ·
+            `You do not have permission to start direct messages`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/channels/discover:
+    get:
+      tags: [Channels]
+      summary: Search public channels the caller can join
+      operationId: discoverChannels
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Clamped server-side to 100; a non-numeric value is silently ignored (defaults to 25), never a 400.
+          schema: { type: integer, default: 25, maximum: 100 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DiscoverChannelItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/channels/ai:
+    post:
+      tags: [Channels]
+      summary: Open (find-or-create) the caller's singleton AI-assistant channel
+      operationId: openAiChannel
+      description: |
+        Out of MVP scope for feature use, but included since it's the only
+        way an `"ai"`-typed channel is created. Gated by a tenant/module
+        feature flag ahead of the normal auth flow — note the distinct
+        error envelope on the gate failures.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            Either `You do not have permission to use the assistant`
+            (`{error}` shape) or the app-level gate `App access blocked for
+            this tenant` (`{success:false,error}` shape — see schema).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/ErrorResponse" }
+                  - { $ref: "#/components/schemas/ModuleGateError" }
+        "404":
+          description: Module-level gate — `{success:false,error:"Not found"}`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleGateError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/channels/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Channels]
+      summary: Get a channel by id
+      operationId: getChannel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found` (missing, or belongs to another org)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      tags: [Channels]
+      summary: Edit group name/description/avatar (group channels only)
+      operationId: updateChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateChannelInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "400":
+          description: |
+            One of: `Only group details can be edited` · `Group name
+            cannot be empty` · `Group name is too long (max 100)` ·
+            `Description is too long (max 500)` · `avatarUrl must be a
+            non-empty object path` · `No changes provided`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only admins or moderators can perform this action`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      tags: [Channels]
+      summary: Leave a channel (self-removal — NOT delete-for-everyone)
+      operationId: leaveChannel
+      description: |
+        Removing the AI singleton channel tears it down entirely. For a
+        group where the caller is the last member, the channel and its
+        messages are deleted. Otherwise a system message announces the
+        departure.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                required: [deleted]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/delete:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    post:
+      tags: [Channels]
+      summary: Delete a group channel for everyone (admin/moderator only)
+      operationId: deleteChannelForEveryone
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { deleted: { type: boolean, enum: [true] } }
+        "400":
+          description: "`Only group channels can be deleted`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only admins or moderators can perform this action`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/join:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    post:
+      tags: [Channels]
+      summary: Join a public group channel (idempotent)
+      operationId: joinChannel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`This channel is not joinable` (not a public group)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/pin:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    patch:
+      tags: [Channels]
+      summary: Set/unset this channel's "priority" pin for the caller
+      operationId: setChannelPinned
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pinned:
+                  description: Coerced with `!!pinned` — any truthy value pins, not validated as boolean.
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { pinned: { type: boolean } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    patch:
+      tags: [Channels]
+      summary: Mark the channel read up to now (advances lastReadAt)
+      operationId: markChannelRead
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { ok: { type: boolean, enum: [true] } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/delivered:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    patch:
+      tags: [Channels]
+      summary: Advance the caller's delivery watermark for this channel
+      operationId: markChannelDelivered
+      description: Rate limited — 120 requests / 10s per (org, user).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                at:
+                  type: string
+                  format: date-time
+                  description: Only honored if it is a string; otherwise silently ignored (no error).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  deliveredAt: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/channels/{id}/last-seen:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Channels]
+      summary: Get the other DM participant's last-seen timestamp
+      operationId: getLastSeen
+      description: |
+        DM channels only. `lastSeen: null` is overloaded by design — it can
+        mean privacy opt-out, "appear offline", never seen, or Redis being
+        unavailable; these are deliberately indistinguishable to the client.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lastSeen: { type: string, format: date-time, nullable: true }
+        "400":
+          description: "`last-seen applies to direct messages only`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Channel not found in this org` or `Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/notification-preference:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Channels]
+      summary: Get the caller's per-channel notification preference
+      operationId: getChannelNotificationPreference
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferenceDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [Channels]
+      summary: Update the caller's per-channel notification preference
+      operationId: updateChannelNotificationPreference
+      description: Rate limited — 60 requests / 60s per (org, user).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum: [all, mentions, none]
+                mutedUntil:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Any non-string value is treated as null. An invalid date string is NOT rejected — it is stored as `Invalid Date`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferenceDto" }
+        "400":
+          description: "`level must be one of all|mentions|none`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  # ============================================================= MEMBERS ===
+  /api/channels/{id}/members:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Members]
+      summary: List channel members
+      operationId: listMembers
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ChannelMemberDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      tags: [Members]
+      summary: Add a member to a group channel
+      operationId: addMember
+      description: Rate limited — 30 requests / 60s per (org, user).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties: { userId: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "400":
+          description: "`userId is required` · `Only group channels can have members added` · `User is already a member`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only admins or moderators can perform this action`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/channels/{id}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [Members]
+      summary: Remove another member from a group channel
+      operationId: removeMember
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { removed: { type: boolean, enum: [true] } }
+        "400":
+          description: "`Use leave to remove yourself` · `Only group members can be removed`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only admins or moderators can perform this action`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found` or `User is not a member`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/channels/{id}/members/{userId}/role:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Members]
+      summary: Change a group member's role
+      operationId: updateMemberRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties: { role: { type: string, enum: [admin, member] } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { role: { type: string, enum: [admin, member] } }
+        "400":
+          description: "`role must be 'admin' or 'member'` · `Only group member roles can be changed` · `Cannot demote the last admin`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only admins or moderators can perform this action`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found` or `User is not a member`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ============================================================= INVITES ===
+  /api/channels/{id}/invites:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Invites]
+      summary: List invite links for a group channel
+      operationId: listInvites
+      description: Any member can list — this route does not check group-only or admin, unlike creation.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/InviteDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      tags: [Invites]
+      summary: Create an invite link for a group channel
+      operationId: createInvite
+      description: Rate limited — 10 requests / 60s per (org, user).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateInviteInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteDto" }
+        "400":
+          description: "`Only groups can have invite links` · `maxUses must be >= 1`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only admins can create invites for private groups`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Channel not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/channels/{id}/invites/{inviteId}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+      - name: inviteId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [Invites]
+      summary: Revoke an invite link
+      operationId: revokeInvite
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { revoked: { type: boolean, enum: [true] } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Not a member of this channel` or `Only the invite creator or an admin can revoke this invite`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Invite not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/invites/{code}:
+    get:
+      tags: [Invites]
+      summary: Preview an invite by its public code
+      operationId: previewInvite
+      description: |
+        **No authentication required** — this is the one genuinely public
+        route in the MVP surface (a client hasn't necessarily logged in yet
+        when opening an invite link).
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitePreview" }
+        "404":
+          description: "`Invite not found` or `Channel no longer exists`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "410":
+          description: "`This invite was revoked` · `This invite has expired` · `This invite has reached its use limit`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/invites/{code}/accept:
+    post:
+      tags: [Invites]
+      summary: Accept an invite and join the channel
+      operationId: acceptInvite
+      description: |
+        Unlike the preview GET above, this route DOES require
+        authentication. Note the status-code inconsistency vs. the preview
+        route: a channel that no longer exists is `404` on preview but
+        `410` here. A cross-org invite is deliberately reported as `404`
+        (not leaked as 403) to avoid confirming the invite's existence
+        across tenants.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: "`Invite not found` (also returned for a cross-org invite)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "410":
+          description: "`This invite was revoked` · `This invite has expired` · `This invite has reached its use limit` · `Channel no longer exists`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ============================================================ MESSAGES ===
+  /api/channels/{id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Messages]
+      summary: List messages in a channel (paginated, newest-first)
+      operationId: listMessages
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 30, maximum: 100 }
+        - name: before
+          in: query
+          description: A message id — return messages older than this one.
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MessageDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Channel not found in this org` or `Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      tags: [Messages]
+      summary: Send a message
+      operationId: sendMessage
+      description: |
+        Request body is cast (`as unknown as SendMessageInput`), NOT
+        runtime-validated by a schema. Only `content` is actually checked.
+        `type` is never validated against the enum — any string is accepted
+        and persisted verbatim, including the server-reserved value
+        `"Delete"` (normally only used internally for soft-deletes).
+
+        `clientMessageId` gives idempotent retries: sending the same
+        `(channelId, clientMessageId)` pair again returns the original
+        message with `200`, never a duplicate or a 409.
+
+        Rate limited — 30 requests / 10s per (org, user).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendMessageInput" }
+      responses:
+        "200":
+          description: OK (including idempotent replays of a prior `clientMessageId`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageDto" }
+        "400":
+          description: "`content is required` · `content too long` (max 8000 chars)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Channel not found in this org` or `Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Parent message not found in this channel` (invalid `parentMessageId`)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/channels/{id}/messages/pinned:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [Messages]
+      summary: List pinned messages in a channel (up to 50)
+      operationId: listPinnedMessages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MessageDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Channel not found in this org` or `Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/messages/{id}:
+    parameters:
+      - $ref: "#/components/parameters/MessageId"
+    patch:
+      tags: [Messages]
+      summary: Edit a message (sender only, within a 15-minute window)
+      operationId: editMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditMessageInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageDto" }
+        "400":
+          description: "`content is required`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            `Message not found` is 404 elsewhere but this operation's other
+            failures are all 403: `You can only edit your own messages` ·
+            `This message cannot be edited` (deleted/system messages) ·
+            `Edit window has passed` (>15 min old) · `Message cannot be
+            empty` (note: empty-after-trim is 403 here, inconsistent with
+            the 400 used for empty content on send) · `Channel not found in
+            this org` / `Not a member of this channel`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Message not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      tags: [Messages]
+      summary: Delete a message for everyone (soft delete — sender only)
+      operationId: deleteMessage
+      description: |
+        This irreversibly wipes `content`/`data`/`reactions` and sets
+        `type: "Delete"` — it is not a flag that preserves the original
+        content for later recovery.
+      responses:
+        "200":
+          description: OK — returns the message in its now-redacted shape.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`You can only delete your own messages`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Message not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/messages/{id}/forward:
+    parameters:
+      - $ref: "#/components/parameters/MessageId"
+    post:
+      tags: [Messages]
+      summary: Forward a message to one or more channels
+      operationId: forwardMessage
+      description: |
+        `channelIds` entries are never individually type-checked — a
+        non-string entry simply fails its membership lookup and is skipped
+        rather than rejecting the whole request. Per-target membership
+        failures are swallowed silently: the response always succeeds
+        (`200`) and just reports which channels actually received the
+        message; `delivered` can be `[]`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForwardMessageInput" }
+      responses:
+        "200":
+          description: OK — may report zero deliveries even on success.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered:
+                    type: array
+                    items: { type: string }
+                    description: Channel ids that actually received the forward.
+        "400":
+          description: "`channelIds must be a non-empty array`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Cannot forward this message` (deleted/system) or source-channel membership failures"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Message not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/messages/{id}/pin:
+    parameters:
+      - $ref: "#/components/parameters/MessageId"
+    patch:
+      tags: [Messages]
+      summary: Pin/unpin a message
+      operationId: setMessagePinned
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pinned:
+                  description: Coerced with `!!pinned` — no boolean validation.
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Cannot pin a deleted message` or channel-membership failures"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Message not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/messages/{id}/reactions:
+    parameters:
+      - $ref: "#/components/parameters/MessageId"
+    post:
+      tags: [Messages]
+      summary: Toggle an emoji reaction on a message
+      operationId: toggleReaction
+      description: Rate limited — 60 requests / 10s per (org, user).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emoji]
+              properties:
+                emoji:
+                  type: string
+                  maxLength: 16
+                  description: Only length is validated — no grapheme/emoji-format check.
+      responses:
+        "200":
+          description: |
+            OK — note the response is just the updated `MessageDto`, not
+            the richer `{message, channelId, added, messageSenderId}` object
+            the service function internally computes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageDto" }
+        "400":
+          description: "`emoji is required`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Channel-membership failures
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Message not found`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  # ============================================================= UPLOADS ===
+  /api/uploads/sign:
+    post:
+      tags: [Uploads]
+      summary: Mint a signed upload target (step 1 of the upload flow)
+      operationId: signUpload
+      description: |
+        See `MOBILE_INTEGRATION_GUIDE.md` for the full 3-step upload
+        sequence. This is NOT a multipart file upload endpoint — it returns
+        a target the client then `PUT`s raw bytes to. Rate limited — 30
+        requests / 60s per (org, user).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId, filename, contentType, size]
+              properties:
+                channelId: { type: string }
+                filename: { type: string }
+                contentType:
+                  type: string
+                  description: Empty string is allowed (normalized to application/octet-stream) for files with no browser-detected MIME.
+                size:
+                  type: number
+                  description: Byte size; must be a finite number ≥ 0.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTarget" }
+        "400":
+          description: "`channelId required` · `filename required` · `contentType required` · `size required`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`Channel not found in this org` or `Not a member of this channel`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "413":
+          description: "`File too large` (> 25 MB)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "415":
+          description: "`Unsupported file type`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/uploads/local:
+    put:
+      tags: [Uploads]
+      summary: Upload raw bytes (local storage driver) — step 2
+      operationId: uploadLocal
+      description: |
+        **Not covered by session-cookie auth.** This route is intentionally
+        excluded from the app's auth middleware matcher; authorization is
+        entirely the HMAC-signed, single-use upload token returned by
+        `/api/uploads/sign`, sent in the `X-Upload-Token` header — NOT the
+        URL, and NOT a query/path parameter. `Content-Type` must exactly
+        match the value declared during signing.
+      security: []
+      parameters:
+        - name: X-Upload-Token
+          in: header
+          required: true
+          schema: { type: string }
+        - name: Content-Type
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  objectPath: { type: string }
+        "400":
+          description: "`Content-Type mismatch` or `Write failed` (any storage-layer failure, including disk full/permission errors, is flattened to 400)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: "`Invalid or expired upload token`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "413":
+          description: "`Payload too large` (exceeds the `maxBytes` bound in the signed token)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/uploads/gcs:
+    put:
+      tags: [Uploads]
+      summary: Upload raw bytes (GCS storage driver, proxied through the app) — step 2
+      operationId: uploadGcs
+      description: |
+        Same auth model as `/api/uploads/local` — token-only via
+        `X-Upload-Token`, no session cookie. Write failures log only a safe
+        allowlist of fields server-side (never the raw GCS client error
+        object, to avoid leaking an embedded OAuth bearer token) and are
+        flattened to `400` even for what may be a genuine GCS-side 5xx.
+      security: []
+      parameters:
+        - name: X-Upload-Token
+          in: header
+          required: true
+          schema: { type: string }
+        - name: Content-Type
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  objectPath: { type: string }
+        "400":
+          description: "`Content-Type mismatch` or `Write failed`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: "`Invalid or expired upload token`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "413":
+          description: "`Payload too large`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/uploads/local/{token}:
+    get:
+      tags: [Uploads]
+      summary: Download a file uploaded via the local storage driver
+      operationId: downloadLocal
+      description: |
+        Public route (no session cookie) — the download token rides in the
+        URL path, unlike the upload token, because this URL is consumed
+        directly by `<img>`/`<video>`/`<a>` elements that can't attach a
+        custom header. There is NO equivalent download route for the GCS
+        driver — GCS-backed files are fetched directly from a v4-signed
+        `storage.googleapis.com` URL embedded in the message/channel DTO,
+        bypassing this app entirely.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Raw file bytes.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=600" }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "401":
+          description: "`Invalid or expired download token`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: "`Not found` (underlying file missing)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ============================================================ REALTIME ===
+  /api/realtime/token:
+    get:
+      tags: [Realtime]
+      summary: Mint a short-lived Socket.IO handshake token
+      operationId: getRealtimeToken
+      description: |
+        The NextAuth session cookie is httpOnly and effectively unusable
+        directly in a Socket.IO handshake, so this endpoint hands the
+        client a 60-second JWT to present instead. Re-fetch on every
+        (re)connect — see `MOBILE_INTEGRATION_GUIDE.md` for the full
+        connection sequence, event catalogue, and why the gateway is
+        websocket-only (no long-polling transport).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, description: "HS256 JWT, payload {userId, orgId}" }
+                  expiresIn: { type: integer, example: 60, description: Seconds. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: "`REALTIME_TOKEN_SECRET is not configured` (deployment misconfiguration)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: next-auth.session-token
+      description: |
+        NextAuth session cookie. Name is `next-auth.session-token` in
+        development and `__Secure-next-auth.session-token` in production.
+        **No bearer/token alternative exists for quikchat today** — see the
+        top-level description and `MOBILE_INTEGRATION_GUIDE.md`.
+
+  parameters:
+    ChannelId:
+      name: id
+      in: path
+      required: true
+      description: Channel id.
+      schema: { type: string }
+    MessageId:
+      name: id
+      in: path
+      required: true
+      description: Message id.
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: No/invalid session.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example: { error: "Unauthorized" }
+    TooManyRequests:
+      description: Rate limit exceeded for this (org, user, bucket).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds until the caller may retry.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          example: { error: "Too many requests" }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    ModuleGateError:
+      type: object
+      description: Distinct envelope used only by the tenant/module feature-gate check ahead of `channels/ai`, `assist`, and `ingest`.
+      required: [success, error]
+      properties:
+        success: { type: boolean, enum: [false] }
+        error: { type: string }
+
+    ChannelType: { type: string, enum: [dm, group, ai] }
+    ChannelVisibility: { type: string, enum: [public, private] }
+    MessageType: { type: string, enum: [Text, Media, SystemActivity, Delete, Meeting, Call] }
+    ActorType: { type: string, enum: [human, ai_agent] }
+    MemberRole: { type: string, enum: [admin, member] }
+    NotificationLevel: { type: string, enum: [all, mentions, none] }
+
+    PublicUser:
+      type: object
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        avatarUrl: { type: string, nullable: true }
+
+    ReactionSummary:
+      type: object
+      properties:
+        emoji: { type: string }
+        count: { type: integer }
+        userIds: { type: array, items: { type: string } }
+
+    Mention:
+      type: object
+      properties:
+        userId: { type: string }
+        displayName: { type: string }
+        offsetStart: { type: integer }
+        offsetEnd: { type: integer }
+
+    ParentPreview:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        senderId: { type: string, nullable: true }
+        type: { type: string }
+        content: { type: string }
+
+    MessageDto:
+      type: object
+      properties:
+        id: { type: string }
+        channelId: { type: string }
+        senderId: { type: string, nullable: true }
+        actorType: { $ref: "#/components/schemas/ActorType" }
+        type: { $ref: "#/components/schemas/MessageType" }
+        content: { type: string }
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: For Media messages, includes a freshly-minted `mediaUrl` on every read. For Meeting messages, includes a freshly-resolved `meeting` object.
+        parentMessageId: { type: string, nullable: true }
+        parentPreview: { $ref: "#/components/schemas/ParentPreview" }
+        isPinned: { type: boolean }
+        reactions:
+          type: array
+          items: { $ref: "#/components/schemas/ReactionSummary" }
+        mentions:
+          type: array
+          items: { $ref: "#/components/schemas/Mention" }
+        clientMessageId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        editedAt: { type: string, format: date-time, nullable: true }
+
+    ChannelLastMessage:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        type: { type: string }
+        content: { type: string }
+        senderId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    ChannelListItem:
+      type: object
+      properties:
+        channelId: { type: string }
+        name: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        type: { $ref: "#/components/schemas/ChannelType" }
+        visibility: { $ref: "#/components/schemas/ChannelVisibility" }
+        isPriority: { type: boolean }
+        unreadCount: { type: integer }
+        lastActivityAt: { type: string, format: date-time }
+        members:
+          type: array
+          items: { $ref: "#/components/schemas/PublicUser" }
+        memberReadAt:
+          type: object
+          additionalProperties: { type: string, format: date-time, nullable: true }
+          description: Per-member lastReadAt, excluding self.
+        memberDeliveredAt:
+          type: object
+          additionalProperties: { type: string, format: date-time, nullable: true }
+          description: Per-member lastDeliveredAt, excluding self.
+        lastMessage: { $ref: "#/components/schemas/ChannelLastMessage" }
+
+    ChannelList:
+      type: object
+      properties:
+        priority:
+          type: array
+          items: { $ref: "#/components/schemas/ChannelListItem" }
+        recent:
+          type: array
+          items: { $ref: "#/components/schemas/ChannelListItem" }
+
+    ChannelMemberDto:
+      allOf:
+        - $ref: "#/components/schemas/PublicUser"
+        - type: object
+          properties:
+            role: { $ref: "#/components/schemas/MemberRole" }
+            joinedAt: { type: string, format: date-time }
+
+    DiscoverChannelItem:
+      type: object
+      properties:
+        channelId: { type: string }
+        name: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        memberCount: { type: integer }
+        visibility: { $ref: "#/components/schemas/ChannelVisibility" }
+        isMember: { type: boolean }
+
+    InviteDto:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string }
+        channelId: { type: string }
+        channelName: { type: string, nullable: true }
+        maxUses: { type: integer, nullable: true }
+        useCount: { type: integer }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        createdById: { type: string, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+
+    InvitePreview:
+      type: object
+      properties:
+        channelId: { type: string }
+        name: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        visibility: { $ref: "#/components/schemas/ChannelVisibility" }
+        memberCount: { type: integer }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        remainingUses: { type: integer, nullable: true, description: "null = unlimited" }
+
+    NotificationPreferenceDto:
+      type: object
+      properties:
+        channelId: { type: string }
+        level: { $ref: "#/components/schemas/NotificationLevel" }
+        mutedUntil: { type: string, format: date-time, nullable: true }
+
+    MentionRefInput:
+      type: object
+      required: [userId, offsetStart, offsetEnd]
+      properties:
+        userId: { type: string, description: "A user UUID, or the literal 'everyone'." }
+        offsetStart: { type: integer }
+        offsetEnd: { type: integer }
+
+    CreateChannelInput:
+      type: object
+      required: [type]
+      properties:
+        type: { $ref: "#/components/schemas/ChannelType" }
+        visibility: { $ref: "#/components/schemas/ChannelVisibility" }
+        name: { type: string }
+        description: { type: string }
+        memberIds:
+          type: array
+          items: { type: string }
+          description: NOT runtime-checked to actually be an array — see the operation description.
+
+    UpdateChannelInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        avatarUrl: { type: string, description: "Storage object path of a previously-uploaded image, not a URL." }
+
+    SendMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, maxLength: 8000 }
+        type:
+          type: string
+          enum: [Text, Media, SystemActivity, Meeting, Call]
+          description: Never validated against this enum at runtime — any string is accepted and stored as-is.
+        data: { type: object, additionalProperties: true }
+        parentMessageId: { type: string }
+        mentions:
+          type: array
+          items: { $ref: "#/components/schemas/MentionRefInput" }
+        clientMessageId: { type: string, description: Client-generated UUID; enables idempotent retries. }
+
+    EditMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+        mentions:
+          type: array
+          items: { $ref: "#/components/schemas/MentionRefInput" }
+
+    ForwardMessageInput:
+      type: object
+      required: [channelIds]
+      properties:
+        channelIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+        note: { type: string }
+
+    CreateInviteInput:
+      type: object
+      properties:
+        maxUses:
+          type: integer
+          minimum: 1
+          description: Not type-checked at runtime — a non-numeric value is not rejected before the `< 1` comparison.
+        expiresInMinutes: { type: integer }
+
+    UploadTarget:
+      type: object
+      properties:
+        uploadUrl: { type: string, example: "/api/uploads/local" }
+        method: { type: string, enum: [PUT] }
+        headers:
+          type: object
+          properties:
+            Content-Type: { type: string }
+            X-Upload-Token: { type: string }
+        objectPath: { type: string, example: "quikchat/{orgId}/{channelId}/{uuid}-{filename}" }
+        maxBytes: { type: integer }
+        expiresAt: { type: string, format: date-time, description: Token TTL is 5 minutes from signing. }

@@ -12,10 +12,18 @@ describe("@quikit/ui primitives", () => {
     expect(btn.className).toContain("qc-btn--primary");
   });
 
-  it("Avatar shows initials for users and a hash for groups", () => {
+  // THREE-WAY, not two. A private GROUP renders like a person (initials),
+  // because a group is its members; only a public CHANNEL gets the hash,
+  // because a channel is a place. The old boolean collapsed those two.
+  it("Avatar shows initials for people, initials for groups, and a hash only for channels", () => {
     const { rerender } = render(<Avatar name="Alice Acme" />);
     expect(screen.getByText("AA")).toBeInTheDocument();
-    rerender(<Avatar name="general" group />);
+
+    rerender(<Avatar name="Design Team" variant="group" />);
+    expect(screen.getByText("DT")).toBeInTheDocument();
+    expect(screen.queryByText("#")).not.toBeInTheDocument();
+
+    rerender(<Avatar name="general" variant="channel" />);
     expect(screen.getByText("#")).toBeInTheDocument();
   });
 

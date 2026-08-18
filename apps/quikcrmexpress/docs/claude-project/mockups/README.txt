@@ -1,0 +1,1 @@
+Mockup lives in the artifact — this file is a placeholder marker so the folder is tracked.

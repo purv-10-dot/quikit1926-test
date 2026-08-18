@@ -78,7 +78,7 @@ describe('POST /api/scorm/parse', () => {
   it('400s when the file field is missing', async () => {
     const res = await parsePOST(await multipartReq('http://x/api/scorm/parse', null), {});
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('SCORM zip file is required');
+    expect((await res.json()).error).toBe('SCORM zip file is required');
   });
 
   it('400s when the file is not a .zip', async () => {
@@ -87,7 +87,7 @@ describe('POST /api/scorm/parse', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('File must be a .zip SCORM package');
+    expect((await res.json()).error).toBe('File must be a .zip SCORM package');
   });
 });
 
@@ -196,12 +196,12 @@ describe('POST /api/upload/scorm', () => {
       {},
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Only ZIP files are allowed for SCORM packages');
+    expect((await res.json()).error).toBe('Only ZIP files are allowed for SCORM packages');
   });
 
   it('400s when no file is uploaded', async () => {
     const res = await uploadScormPOST(await multipartReq('http://x/api/upload/scorm', null), {});
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('No file uploaded');
+    expect((await res.json()).error).toBe('No file uploaded');
   });
 });

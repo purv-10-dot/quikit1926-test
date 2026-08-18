@@ -147,11 +147,29 @@ export function generateDemoWeeklyValues(
 export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Promise<SeedDemoDataResult> {
   const state = await db.demoDataState.findUnique({ where: { orgId } });
   if (state?.clearedAt) return { seeded: false, reason: "cleared" };
-  if (state?.seededAt) return { seeded: false, reason: "already-seeded" };
+  if (state) return { seeded: false, reason: "already-seeded" };
+
+  // Atomically claim the seed slot before touching any other table. This
+  // layout runs on every server-rendered hit (force-dynamic) and Next.js
+  // fires more than one of those per navigation (the page request plus link
+  // prefetches) — without a claim, two concurrent calls both pass the check
+  // above, both open their own `$transaction` below, and the second one dies
+  // deep inside it on an unrelated unique constraint (e.g. AccountabilityFunction
+  // `orgId,chartType,name`). `orgId` is `@unique` on DemoDataState, so the
+  // loser's `create` throws P2002 right here instead — clean, cheap bailout.
+  try {
+    await db.demoDataState.create({ data: { orgId } });
+  } catch (err) {
+    if ((err as { code?: string } | null)?.code === "P2002") {
+      return { seeded: false, reason: "already-seeded" };
+    }
+    throw err;
+  }
 
   const now = new Date();
 
-  await db.$transaction(async (tx) => {
+  try {
+    await db.$transaction(async (tx) => {
     // --- Org Setup: Quarter Settings (prerequisite for every other module) --
     const { year, quarter, currentWeek, weekCount } = await ensureQuarterContext(tx, orgId, adminUserId);
 
@@ -581,14 +599,15 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
       },
     });
 
-    // --- Tracking ----------------------------------------------------------------------
-    await tx.demoDataState.upsert({
-      where: { orgId },
-      create: { orgId, seededAt: now },
-      update: { seededAt: now },
     });
-  });
+  } catch (err) {
+    // Release the claim so a future request can retry cleanly instead of
+    // permanently believing this org is "already seeding" after a failed run.
+    await db.demoDataState.delete({ where: { orgId } }).catch(() => {});
+    throw err;
+  }
 
+  await db.demoDataState.update({ where: { orgId }, data: { seededAt: now } });
   return { seeded: true, reason: "created" };
 }
 

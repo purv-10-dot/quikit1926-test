@@ -21,6 +21,7 @@
     "db:seed:oauth": "tsx prisma/seed-oauth.ts",
     "db:seed:plans": "tsx prisma/seed-plans.ts",
     "db:seed:quikvc": "tsx prisma/seed-quikvc.ts",
+    "db:seed:quikflow": "tsx prisma/seed-quikflow.ts",
     "db:seed:moreyeahs": "tsx prisma/seed-moreyeahs.ts"
   },
   "dependencies": {

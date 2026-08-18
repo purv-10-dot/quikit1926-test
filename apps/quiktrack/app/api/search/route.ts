@@ -23,7 +23,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const limit = Number.isFinite(limitRaw) ? Math.min(25, Math.max(1, limitRaw)) : 10;
   // Single-id (legacy) and multi-id (CSV) params for project/assignee.
   // The popover sends CSV; tests / external callers may still pass a single id.
-  const projectId = url.searchParams.get("projectId") ?? undefined;
+  const projectIdOrKey = url.searchParams.get("projectId") ?? undefined;
   const projectIdsParam = url.searchParams.get("projectIds");
   const projectIds = projectIdsParam
     ? projectIdsParam.split(",").map((s) => s.trim()).filter(Boolean)
@@ -53,6 +53,25 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 
   // Visibility scope.
   const isAdmin = await hasAdminAccess(userId, orgId);
+
+  // The single `projectId` scope param may be a cuid or a project KEY (keys are
+  // per-org). Resolve to a cuid so the membership + id-in filters compare real
+  // ids. An unresolvable value means "no such project" → empty results.
+  let projectId: string | undefined;
+  if (projectIdOrKey) {
+    const scopeProject = await db.qtProject.findFirst({
+      where: {
+        orgId,
+        isDeleted: false,
+        OR: [{ id: projectIdOrKey }, { projectKey: projectIdOrKey }],
+      },
+      select: { id: true },
+    });
+    if (!scopeProject) {
+      return NextResponse.json({ success: true, data: { issues: [], projects: [] } });
+    }
+    projectId = scopeProject.id;
+  }
 
   let allowedProjectIds: string[] | null = null;
   if (!isAdmin) {
