@@ -67,7 +67,9 @@ export async function GET(
         baseUrl: true,
         status: true,
         requiresOrgAdmin: true,
-        oauthClient: { select: { clientId: true } },
+        // Only the app's own first-party SSO client counts — not the DCR-registered
+        // clients that share this one-to-many relation. Mirrors /api/super/apps.
+        oauthClients: { where: { purpose: "first_party" }, select: { clientId: true }, take: 1 },
       },
     });
 
@@ -89,7 +91,7 @@ export async function GET(
         iconUrl: app.iconUrl,
         baseUrl: app.baseUrl,
         status: app.status,
-        hasOAuthClient: !!app.oauthClient,
+        hasOAuthClient: app.oauthClients.length > 0,
       },
     });
   } catch (error: unknown) {
