@@ -244,6 +244,7 @@ model Org {
   QtUserViewPref           QtUserViewPref[]
   QtReportView             QtReportView[]
   QtSavedFilter            QtSavedFilter[]
+  QtProjectStar            QtProjectStar[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -6447,6 +6448,7 @@ model QtProject {
   workflowScheme       QtWorkflowScheme?
   boardColumns         QtBoardColumn[]
   personalAccessTokens QtPersonalAccessToken[]
+  stars                QtProjectStar[]
   // QuikTest (test management) — see the QuikTest block near the end of this file.
   testSuites           QtTestSuite[]
   testMilestones       QtTestMilestone[]
@@ -6457,6 +6459,22 @@ model QtProject {
   @@unique([orgId, projectKey])
   @@index([orgId, status])
   @@index([leadUserId])
+  @@schema("app_quiktrack")
+}
+
+/// Per-user "starred" (favourite) spaces. A row = this user has starred this
+/// project; deleting the row un-stars it. Drives the sidebar's "Starred" group
+/// and the star toggle on the Projects list. Unique on (userId, projectId).
+model QtProjectStar {
+  orgId     String
+  userId    String
+  projectId String
+  createdAt DateTime  @default(now())
+  project   QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@index([orgId, userId])
   @@schema("app_quiktrack")
 }
 
