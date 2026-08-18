@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "next-auth";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
+import { Toaster } from "sonner";
 import {
   LayoutDashboard,
   Zap,
@@ -88,6 +89,7 @@ export function DashboardShell({
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-secondary)]">
       <ThemeApplier />
+      <Toaster richColors closeButton position="top-right" />
 
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 flex w-60 flex-col bg-accent-800 px-3 py-4 text-white">

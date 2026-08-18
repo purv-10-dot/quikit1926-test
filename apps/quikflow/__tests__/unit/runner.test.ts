@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Prisma } from "@quikit/database";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { runWorkflow } from "@/lib/engine/runner";
+import * as actions from "@/lib/engine/actions";
 import type { EngineEvent } from "@/lib/engine/types";
 
 const event: EngineEvent = {
@@ -27,6 +28,7 @@ const workflow = {
 const context = { data: event.data, trigger: event.data, moduleKey: null, record: null };
 
 beforeEach(() => resetMockDb());
+afterEach(() => vi.restoreAllMocks());
 
 describe("runWorkflow", () => {
   it("walks trigger → action, writes a WfRun + one WfStepLog per node, succeeds", async () => {
@@ -43,9 +45,39 @@ describe("runWorkflow", () => {
     expect(result!.steps).toBe(2);
     expect(mockDb.wfRun.create.mock.calls[0][0].data.orgId).toBe("org_A");
     expect(mockDb.wfStepLog.create).toHaveBeenCalledTimes(2);
-    // finalizes run + stamps workflow.lastRunAt
+    // finalizes run + stamps workflow.lastRunAt/lastRunStatus
     expect(mockDb.wfRun.update.mock.calls[0][0].data.status).toBe("success");
-    expect(mockDb.wfWorkflow.update).toHaveBeenCalled();
+    expect(mockDb.wfWorkflow.update.mock.calls[0][0].data.lastRunStatus).toBe("success");
+  });
+
+  it("stamps workflow.lastRunStatus = 'failed' when a step fails, so a broken workflow is visible without opening Run History", async () => {
+    // Regression: WfRun.status flips to "failed" on a failed step, but before
+    // this fix WfWorkflow.lastRunStatus was never written at all — a workflow
+    // could fail on every single trigger and still show as "Live" forever.
+    mockDb.wfRun.findUnique.mockResolvedValue(null);
+    mockDb.wfRun.create.mockResolvedValue({ id: "run3" } as never);
+    mockDb.wfStepLog.create.mockResolvedValue({} as never);
+    mockDb.wfRun.update.mockResolvedValue({} as never);
+    mockDb.wfWorkflow.update.mockResolvedValue({} as never);
+    vi.spyOn(actions, "getActionExecutor").mockReturnValue(async () => ({ status: "failed", error: "boom" }));
+
+    const failingWorkflow = {
+      id: "wf3",
+      graphNodes: [
+        { id: "t", kind: "trigger" },
+        { id: "a", kind: "action", config: { actionId: "notify_owner" } },
+      ],
+      graphEdges: [{ from: "t", to: "a" }],
+    };
+
+    const result = await runWorkflow(failingWorkflow, event, "evt3:wf3", context);
+
+    expect(result!.status).toBe("failed");
+    expect(mockDb.wfRun.update.mock.calls[0][0].data.status).toBe("failed");
+    expect(mockDb.wfWorkflow.update).toHaveBeenCalledWith({
+      where: { id: "wf3" },
+      data: { lastRunAt: expect.any(Date), lastRunStatus: "failed" },
+    });
   });
 
   it("is idempotent — a duplicate (orgId, dedupeKey) returns null without a new run", async () => {

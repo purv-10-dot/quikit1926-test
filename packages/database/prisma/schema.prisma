@@ -23924,9 +23924,14 @@ model WfWorkflow {
   graphEdges Json          @default("[]") // edges incl. branch labels
   version    Int           @default(1)
   lastRunAt  DateTime?
+  // Outcome of the most recent run, so the Workflows list can flag a workflow
+  // that's silently failing on every trigger — WfStatus (Draft/Active/Paused/
+  // Archived) tracks whether it's *enabled*, not whether it's *working*.
+  lastRunStatus WfRunStatus?
   createdBy  String
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime? // soft-delete (recoverable); null = active. Filter this out of every read.
   runs       WfRun[]
   versions   WfVersion[]
   schedules  WfSchedule[]
@@ -23936,6 +23941,7 @@ model WfWorkflow {
   @@index([orgId, app])
   @@index([orgId, scope])
   @@index([orgId, ownerId])
+  @@index([orgId, deletedAt])
   @@schema("app_quikflow")
 }
 

@@ -21,6 +21,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const rows = await db.wfWorkflow.findMany({
     where: {
       orgId,
+      deletedAt: null,
       ...(status ? { status } : {}),
       OR: [{ scope: "org" }, { scope: "personal", ownerId: userId }],
     },
@@ -34,6 +35,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       trigger: true,
       graphNodes: true,
       lastRunAt: true,
+      lastRunStatus: true,
       updatedAt: true,
     },
     orderBy: { updatedAt: "desc" },
@@ -52,6 +54,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     triggerLabel: triggerLabel(r.trigger),
     actionLabel: actionLabel(r.graphNodes),
     lastRunAt: r.lastRunAt?.toISOString() ?? null,
+    lastRunStatus: r.lastRunStatus,
     updatedAt: r.updatedAt.toISOString(),
   }));
 

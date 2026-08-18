@@ -190,7 +190,7 @@ export async function runWorkflow(
   });
   await db.wfWorkflow.update({
     where: { id: workflow.id },
-    data: { lastRunAt: new Date(finishedAt) },
+    data: { lastRunAt: new Date(finishedAt), lastRunStatus: status },
   });
 
   return {

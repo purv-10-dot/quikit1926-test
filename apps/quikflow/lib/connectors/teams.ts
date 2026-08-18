@@ -21,12 +21,13 @@ import {
   msRefresh,
   type MsAppConfig,
 } from "./microsoft-identity";
-import type {
-  CalendarEventInput,
-  CalendarEventResult,
-  CalendarEventView,
-  CalendarProvider,
-  CalendarRecurrence,
+import {
+  CalendarEventNotFoundError,
+  type CalendarEventInput,
+  type CalendarEventResult,
+  type CalendarEventView,
+  type CalendarProvider,
+  type CalendarRecurrence,
 } from "./types";
 
 const SCOPES = ["offline_access", "Calendars.ReadWrite", "User.Read"];
@@ -159,7 +160,14 @@ export const TEAMS: CalendarProvider = {
       accessToken,
       { method: "PATCH", body: toGraphEvent(event) },
     );
-    if (!res.ok) throw new Error(`Teams calendar update failed: ${graphError(json, res.status)}`);
+    if (!res.ok) {
+      const message = `Teams calendar update failed: ${graphError(json, res.status)}`;
+      // 404 here means the stored event id is stale (deleted in Outlook/Teams,
+      // or orphaned by a calendar reconnect) — not a real failure of this run.
+      // Let the caller recreate the event instead of failing the workflow.
+      if (res.status === 404) throw new CalendarEventNotFoundError(message);
+      throw new Error(message);
+    }
     return toResult(json);
   },
 
