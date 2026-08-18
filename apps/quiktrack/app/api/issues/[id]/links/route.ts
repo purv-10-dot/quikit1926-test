@@ -4,17 +4,37 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
 import { recordIssueEvent } from "@/lib/services/issueHistory";
-
-const LINK_TYPES = ["RELATES_TO"] as const;
-
-const LINK_TYPE_LABELS: Record<(typeof LINK_TYPES)[number], string> = {
-  RELATES_TO: "relates to",
-};
+import {
+  ISSUE_LINK_TYPE_VALUES,
+  linkLabel,
+  type LinkDirection,
+} from "@/lib/services/issueLinkTypes";
 
 const createLinkSchema = z.object({
   targetIssueId: z.string().min(1),
-  type: z.enum(LINK_TYPES).default("RELATES_TO"),
+  // One of the 5 canonical types (RELATES_TO/BLOCKS/CLONES/DUPLICATES/CAUSES).
+  type: z
+    .string()
+    .refine((v) => ISSUE_LINK_TYPE_VALUES.includes(v), "Unknown link type")
+    .default("RELATES_TO"),
+  // Which side of the edge the caller is describing. OUTWARD => this issue is
+  // the source ("this blocks target"). INWARD => this issue is the target
+  // ("this is blocked by the other"), so we flip source/target on write.
+  direction: z.enum(["OUTWARD", "INWARD"]).default("OUTWARD"),
 });
+
+const issueSelect = {
+  id: true,
+  key: true,
+  title: true,
+  type: true,
+  priority: true,
+  assigneeId: true,
+  statusId: true,
+  status: {
+    select: { id: true, name: true, color: true, category: true },
+  },
+} as const;
 
 /**
  * Verify the caller can see this source issue (project member or tenant admin)
@@ -44,34 +64,44 @@ export const GET = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    // Outgoing only — when "A relates to B" is created, we surface it on A.
-    // The target side is rendered separately via incomingLinks if we ever
-    // want a bidirectional view, but Jira-style "relates to" is symmetric
-    // semantically so showing one side is enough.
-    const links = await db.qtIssueLink.findMany({
-      where: { orgId: orgId, sourceIssueId: params.id },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        type: true,
-        createdAt: true,
-        targetIssue: {
-          select: {
-            id: true,
-            key: true,
-            title: true,
-            type: true,
-            priority: true,
-            assigneeId: true,
-            statusId: true,
-            status: {
-              select: { id: true, name: true, color: true, category: true },
-            },
-          },
-        },
-      },
-    });
-    return NextResponse.json({ success: true, data: links });
+    // Fetch BOTH directions so a link created as "is blocked by X" (stored as
+    // X blocks this) still surfaces here. Outgoing edges are viewed from the
+    // OUTWARD side; incoming edges from the INWARD side. We normalise every row
+    // to `{ otherIssue, side }` so the client renders one flat list regardless
+    // of how the edge was stored.
+    const [outgoing, incoming] = await Promise.all([
+      db.qtIssueLink.findMany({
+        where: { orgId: orgId, sourceIssueId: params.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, type: true, createdAt: true, targetIssue: { select: issueSelect } },
+      }),
+      db.qtIssueLink.findMany({
+        where: { orgId: orgId, targetIssueId: params.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, type: true, createdAt: true, sourceIssue: { select: issueSelect } },
+      }),
+    ]);
+
+    const rows = [
+      ...outgoing.map((l) => ({
+        id: l.id,
+        type: l.type,
+        side: "OUTWARD" as LinkDirection,
+        label: linkLabel(l.type, "OUTWARD"),
+        createdAt: l.createdAt,
+        otherIssue: l.targetIssue,
+      })),
+      ...incoming.map((l) => ({
+        id: l.id,
+        type: l.type,
+        side: "INWARD" as LinkDirection,
+        label: linkLabel(l.type, "INWARD"),
+        createdAt: l.createdAt,
+        otherIssue: l.sourceIssue,
+      })),
+    ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    return NextResponse.json({ success: true, data: rows });
   },
 );
 
@@ -97,21 +127,26 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
-    // Target must live in the same tenant. We don't require the same project
-    // — cross-project "relates to" is a useful pattern.
-    const target = await db.qtIssue.findFirst({
+    // Target must live in the same tenant. Cross-project links are allowed.
+    const other = await db.qtIssue.findFirst({
       where: { id: parsed.data.targetIssueId, orgId: orgId, isDeleted: false },
       select: { id: true, projectId: true },
     });
-    if (!target) {
+    if (!other) {
       return NextResponse.json({ success: false, error: "Target issue not found" }, { status: 404 });
     }
+
+    // Resolve the stored edge orientation. OUTWARD: this --type--> other.
+    // INWARD: other --type--> this (flip), so "this is blocked by other" is
+    // stored identically to someone opening `other` and picking "blocks this".
+    const inward = parsed.data.direction === "INWARD";
+    const sourceIssueId = inward ? other.id : params.id;
+    const targetIssueId = inward ? params.id : other.id;
+    // The edge's project follows its source issue (the owning side).
+    const edgeProjectId = inward ? other.projectId : issue.projectId;
+
     const existing = await db.qtIssueLink.findFirst({
-      where: {
-        sourceIssueId: params.id,
-        targetIssueId: target.id,
-        type: parsed.data.type,
-      },
+      where: { sourceIssueId, targetIssueId, type: parsed.data.type },
       select: { id: true },
     });
     if (existing) {
@@ -123,9 +158,9 @@ export const POST = withOrgAuth<{ id: string }>(
     const created = await db.qtIssueLink.create({
       data: {
         orgId: orgId,
-        projectId: issue.projectId,
-        sourceIssueId: params.id,
-        targetIssueId: target.id,
+        projectId: edgeProjectId,
+        sourceIssueId,
+        targetIssueId,
         type: parsed.data.type,
         createdBy: userId,
       },
@@ -133,22 +168,15 @@ export const POST = withOrgAuth<{ id: string }>(
         id: true,
         type: true,
         createdAt: true,
-        targetIssue: {
-          select: {
-            id: true,
-            key: true,
-            title: true,
-            type: true,
-            priority: true,
-            assigneeId: true,
-            statusId: true,
-            status: {
-              select: { id: true, name: true, color: true, category: true },
-            },
-          },
-        },
+        sourceIssue: { select: issueSelect },
+        targetIssue: { select: issueSelect },
       },
     });
+
+    // Label + "other" issue from THIS issue's point of view for the response
+    // and history entry.
+    const side = parsed.data.direction;
+    const otherIssue = inward ? created.sourceIssue : created.targetIssue;
     void recordIssueEvent({
       orgId,
       projectId: issue.projectId,
@@ -156,8 +184,21 @@ export const POST = withOrgAuth<{ id: string }>(
       userId,
       field: "Link",
       oldValue: null,
-      newValue: `This work item ${LINK_TYPE_LABELS[parsed.data.type]} ${created.targetIssue.key}`,
+      newValue: `This work item ${linkLabel(created.type, side)} ${otherIssue.key}`,
     });
-    return NextResponse.json({ success: true, data: created }, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          id: created.id,
+          type: created.type,
+          side,
+          label: linkLabel(created.type, side),
+          createdAt: created.createdAt,
+          otherIssue,
+        },
+      },
+      { status: 201 },
+    );
   },
 );

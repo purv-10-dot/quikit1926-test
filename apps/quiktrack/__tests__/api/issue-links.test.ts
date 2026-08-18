@@ -50,7 +50,7 @@ describe("GET /api/issues/[id]/links", () => {
     expect(res.status).toBe(404);
   });
 
-  it("happy path returns the issue's outgoing links", async () => {
+  it("happy path returns both outgoing and incoming links with directional labels", async () => {
     setSession({ id: USER, orgId: TENANT, role: "member" });
     mockDb.qtIssue.findFirst.mockResolvedValue({
       id: ISSUE,
@@ -59,20 +59,36 @@ describe("GET /api/issues/[id]/links", () => {
     } as never);
     mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
-    mockDb.qtIssueLink.findMany.mockResolvedValue([
-      {
-        id: LINK,
-        type: "RELATES_TO",
-        createdAt: new Date(),
-        targetIssue: { id: TARGET, key: "QT-2", title: "Other" },
-      },
-    ] as never);
+    // First findMany = outgoing (this is source), second = incoming (this is target).
+    mockDb.qtIssueLink.findMany
+      .mockResolvedValueOnce([
+        {
+          id: LINK,
+          type: "BLOCKS",
+          createdAt: new Date(1),
+          targetIssue: { id: TARGET, key: "QT-2", title: "Other" },
+        },
+      ] as never)
+      .mockResolvedValueOnce([
+        {
+          id: "link_2",
+          type: "BLOCKS",
+          createdAt: new Date(2),
+          sourceIssue: { id: "issue_3", key: "QT-3", title: "Upstream" },
+        },
+      ] as never);
     const res = await GET(getReq(), GET_CTX);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.data).toHaveLength(1);
-    expect(body.data[0].id).toBe(LINK);
+    expect(body.data).toHaveLength(2);
+    // Outgoing BLOCKS => "blocks"; incoming BLOCKS => "is blocked by".
+    const out = body.data.find((r: { id: string }) => r.id === LINK);
+    const inc = body.data.find((r: { id: string }) => r.id === "link_2");
+    expect(out.label).toBe("blocks");
+    expect(out.otherIssue.key).toBe("QT-2");
+    expect(inc.label).toBe("is blocked by");
+    expect(inc.otherIssue.key).toBe("QT-3");
   });
 });
 
@@ -133,7 +149,7 @@ describe("POST /api/issues/[id]/links", () => {
     expect(res.status).toBe(409);
   });
 
-  it("happy path creates the link with 201", async () => {
+  it("happy path creates the link with 201 (outward)", async () => {
     setSession({ id: USER, orgId: TENANT, role: "member" });
     mockDb.qtIssue.findFirst
       .mockResolvedValueOnce({
@@ -147,14 +163,61 @@ describe("POST /api/issues/[id]/links", () => {
     mockDb.qtIssueLink.findFirst.mockResolvedValue(null);
     mockDb.qtIssueLink.create.mockResolvedValue({
       id: LINK,
-      type: "RELATES_TO",
+      type: "BLOCKS",
       createdAt: new Date(),
+      sourceIssue: { id: ISSUE, key: "QT-1", title: "This" },
       targetIssue: { id: TARGET, key: "QT-2", title: "Other" },
     } as never);
-    const res = await POST(postReq({ targetIssueId: TARGET }), POST_CTX);
+    const res = await POST(
+      postReq({ targetIssueId: TARGET, type: "BLOCKS", direction: "OUTWARD" }),
+      POST_CTX,
+    );
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.data.id).toBe(LINK);
+    expect(body.data.label).toBe("blocks");
+    expect(body.data.otherIssue.key).toBe("QT-2");
+    // Stored source is this issue.
+    expect(mockDb.qtIssueLink.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sourceIssueId: ISSUE, targetIssueId: TARGET }),
+      }),
+    );
+  });
+
+  it("inward direction flips source/target and labels from this issue's side", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.qtIssue.findFirst
+      .mockResolvedValueOnce({
+        id: ISSUE,
+        projectId: PROJECT,
+        orgId: TENANT,
+      } as never)
+      .mockResolvedValueOnce({ id: TARGET, projectId: PROJECT } as never);
+    mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.qtIssueLink.findFirst.mockResolvedValue(null);
+    mockDb.qtIssueLink.create.mockResolvedValue({
+      id: LINK,
+      type: "BLOCKS",
+      createdAt: new Date(),
+      sourceIssue: { id: TARGET, key: "QT-2", title: "Other" },
+      targetIssue: { id: ISSUE, key: "QT-1", title: "This" },
+    } as never);
+    const res = await POST(
+      postReq({ targetIssueId: TARGET, type: "BLOCKS", direction: "INWARD" }),
+      POST_CTX,
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.data.label).toBe("is blocked by");
+    expect(body.data.otherIssue.key).toBe("QT-2");
+    // Stored edge is flipped: the OTHER issue blocks this one.
+    expect(mockDb.qtIssueLink.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sourceIssueId: TARGET, targetIssueId: ISSUE }),
+      }),
+    );
   });
 });
 
@@ -175,8 +238,28 @@ describe("DELETE /api/issues/[id]/links/[linkId]", () => {
     setSession({ id: USER, orgId: TENANT, role: "member" });
     mockDb.qtIssueLink.findFirst.mockResolvedValue({
       id: LINK,
-      projectId: PROJECT,
+      sourceIssueId: ISSUE,
+      sourceIssue: { key: "QT-1" },
+      targetIssue: { key: "QT-2" },
     } as never);
+    mockDb.qtIssue.findFirst.mockResolvedValue({ projectId: PROJECT } as never);
+    mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.qtIssueLink.delete.mockResolvedValue({ id: LINK } as never);
+    const res = await DELETE(delReq(), DEL_CTX);
+    expect(res.status).toBe(200);
+  });
+
+  it("deletes an inbound link from the target side too", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    // This issue is the TARGET of the stored edge (an "is blocked by" row).
+    mockDb.qtIssueLink.findFirst.mockResolvedValue({
+      id: LINK,
+      sourceIssueId: "issue_3",
+      sourceIssue: { key: "QT-3" },
+      targetIssue: { key: "QT-1" },
+    } as never);
+    mockDb.qtIssue.findFirst.mockResolvedValue({ projectId: PROJECT } as never);
     mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
     mockDb.qtIssueLink.delete.mockResolvedValue({ id: LINK } as never);

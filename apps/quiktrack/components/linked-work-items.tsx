@@ -16,11 +16,11 @@ import {
 } from "lucide-react";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { CreateIssueModal } from "@/components/create-issue-modal";
-
-type LinkType = "RELATES_TO";
-const LINK_TYPE_LABELS: Record<LinkType, string> = {
-  RELATES_TO: "relates to",
-};
+import {
+  LINK_OPTIONS,
+  type LinkDirection,
+  type LinkOption,
+} from "@/lib/services/issueLinkTypes";
 
 interface LinkedIssue {
   id: string;
@@ -33,12 +33,22 @@ interface LinkedIssue {
   status: { id: string; name: string; color: string; category: string } | null;
 }
 
+/**
+ * A link row as seen from the current issue: `label` is the directional phrase
+ * ("is blocked by") and `otherIssue` is the issue on the far end, regardless of
+ * how the edge was stored (source→target). See the links GET route.
+ */
 interface LinkRow {
   id: string;
-  type: LinkType;
+  type: string;
+  side: LinkDirection;
+  label: string;
   createdAt: string;
-  targetIssue: LinkedIssue;
+  otherIssue: LinkedIssue;
 }
+
+const DEFAULT_OPTION: LinkOption =
+  LINK_OPTIONS.find((o) => o.id === "RELATES_TO:OUTWARD") ?? LINK_OPTIONS[0]!;
 
 interface SearchHit {
   id: string;
@@ -80,16 +90,15 @@ function pushRecent(hit: SearchHit) {
 /**
  * "Linked work items" panel for the issue detail modal.
  *
- * - Renders the current outgoing links grouped by relationship type.
- * - The header `+` opens an inline creator: relationship dropdown + search
- *   input that surfaces "Recently viewed" issues from localStorage and
- *   searches the project's issues live as the user types.
+ * - Renders links grouped by directional relationship phrase (Jira-style):
+ *   "blocks", "is blocked by", "relates to", etc. Both outgoing and incoming
+ *   edges are shown (an "is blocked by X" is stored as X blocks this issue).
+ * - The header `+` opens an inline creator: relationship dropdown (all 9
+ *   directional options from LINK_OPTIONS) + search input that surfaces
+ *   "Recently viewed" issues from localStorage and searches live as you type.
  * - On selection, POSTs the link and re-renders. On row hover, an ✕ unlinks.
  * - Clicking a linked row calls `onOpenIssue` so the parent modal can swap
  *   to the linked issue.
- *
- * Only `RELATES_TO` is exposed as a relationship type for v1; the API and
- * schema accept other types so we can add them later without UI churn.
  */
 export function LinkedWorkItems({
   issueId,
@@ -113,7 +122,7 @@ export function LinkedWorkItems({
 
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [pendingLinkType, setPendingLinkType] = useState<LinkType>("RELATES_TO");
+  const [pendingOption, setPendingOption] = useState<LinkOption>(DEFAULT_OPTION);
   const [open, setOpen] = useState(true);
 
   // While the "Create linked work item" modal is open, intercept the global
@@ -128,7 +137,11 @@ export function LinkedWorkItems({
       void fetch(`/api/issues/${issueId}/links`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetIssueId: newId, type: pendingLinkType }),
+        body: JSON.stringify({
+          targetIssueId: newId,
+          type: pendingOption.type,
+          direction: pendingOption.direction,
+        }),
       })
         .then((r) => r.json())
         .then((res) => {
@@ -142,7 +155,7 @@ export function LinkedWorkItems({
     }
     window.addEventListener("quiktrack:issue-created", onCreated);
     return () => window.removeEventListener("quiktrack:issue-created", onCreated);
-  }, [createModalOpen, issueId, pendingLinkType, refreshLinks]);
+  }, [createModalOpen, issueId, pendingOption, refreshLinks]);
 
   async function unlink(linkId: string) {
     const res = await fetch(`/api/issues/${issueId}/links/${linkId}`, {
@@ -153,11 +166,15 @@ export function LinkedWorkItems({
     }
   }
 
-  async function createLink(target: SearchHit, type: LinkType) {
+  async function createLink(target: SearchHit, option: LinkOption) {
     const res = await fetch(`/api/issues/${issueId}/links`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetIssueId: target.id, type }),
+      body: JSON.stringify({
+        targetIssueId: target.id,
+        type: option.type,
+        direction: option.direction,
+      }),
     }).then((r) => r.json());
     if (res?.success) {
       void refreshLinks();
@@ -166,16 +183,14 @@ export function LinkedWorkItems({
     }
   }
 
-  // Group links by type so each relationship gets its own header (Jira-style).
-  const groups = links.reduce<Record<LinkType, LinkRow[]>>(
-    (acc, l) => {
-      const k = l.type as LinkType;
-      acc[k] = acc[k] ?? [];
-      acc[k]!.push(l);
-      return acc;
-    },
-    {} as Record<LinkType, LinkRow[]>,
-  );
+  // Group links by directional label so each relationship phrase gets its own
+  // header (Jira-style): "blocks", "is blocked by", "relates to", etc. Ordered
+  // by LINK_OPTIONS so headers appear in a stable, Jira-matching order.
+  const groups = links.reduce<Record<string, LinkRow[]>>((acc, l) => {
+    (acc[l.label] = acc[l.label] ?? []).push(l);
+    return acc;
+  }, {});
+  const groupOrder = LINK_OPTIONS.map((o) => o.label).filter((lbl) => groups[lbl]);
 
   return (
     <div className="mb-5">
@@ -218,8 +233,8 @@ export function LinkedWorkItems({
               excludeIssueId={issueId}
               onCreate={createLink}
               onCancel={() => setCreatorOpen(false)}
-              onCreateNew={(type) => {
-                setPendingLinkType(type);
+              onCreateNew={(option) => {
+                setPendingOption(option);
                 setCreateModalOpen(true);
               }}
             />
@@ -229,15 +244,15 @@ export function LinkedWorkItems({
             <p className="text-xs text-gray-400">No linked work items yet.</p>
           )}
 
-          {(Object.keys(groups) as LinkType[]).map((type) => (
-            <div key={type} className="mt-2">
-              <div className="text-xs text-gray-500 mb-1">{LINK_TYPE_LABELS[type]}</div>
+          {groupOrder.map((label) => (
+            <div key={label} className="mt-2">
+              <div className="text-xs text-gray-500 mb-1">{label}</div>
               <div className="space-y-1">
-                {groups[type]!.map((link) => (
+                {groups[label]!.map((link) => (
                   <LinkRowCard
                     key={link.id}
                     link={link}
-                    onOpen={() => onOpenIssue?.(link.targetIssue.id)}
+                    onOpen={() => onOpenIssue?.(link.otherIssue.id)}
                     onUnlink={() => unlink(link.id)}
                   />
                 ))}
@@ -259,7 +274,7 @@ function LinkRowCard({
   onOpen: () => void;
   onUnlink: () => void;
 }) {
-  const T = TYPE_ICON[link.targetIssue.type] ?? TYPE_ICON.TASK!;
+  const T = TYPE_ICON[link.otherIssue.type] ?? TYPE_ICON.TASK!;
   return (
     <div className="group flex items-center gap-2 px-2 py-1.5 border border-gray-200 rounded-md hover:bg-gray-50">
       <T.Icon className={`h-4 w-4 shrink-0 ${T.color}`} />
@@ -268,17 +283,17 @@ function LinkRowCard({
         onClick={onOpen}
         className="text-xs font-medium text-gray-900 hover:underline shrink-0"
       >
-        {link.targetIssue.key}
+        {link.otherIssue.key}
       </button>
-      <span className="text-xs text-gray-700 truncate flex-1 min-w-0" title={link.targetIssue.title}>
-        {link.targetIssue.title}
+      <span className="text-xs text-gray-700 truncate flex-1 min-w-0" title={link.otherIssue.title}>
+        {link.otherIssue.title}
       </span>
-      {link.targetIssue.status && (
+      {link.otherIssue.status && (
         <span
           className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 shrink-0"
-          title={link.targetIssue.status.name}
+          title={link.otherIssue.status.name}
         >
-          {link.targetIssue.status.name}
+          {link.otherIssue.status.name}
         </span>
       )}
       <button
@@ -303,11 +318,11 @@ function LinkCreator({
 }: {
   projectId: string;
   excludeIssueId: string;
-  onCreate: (target: SearchHit, type: LinkType) => void | Promise<void>;
+  onCreate: (target: SearchHit, option: LinkOption) => void | Promise<void>;
   onCancel: () => void;
-  onCreateNew: (type: LinkType) => void;
+  onCreateNew: (option: LinkOption) => void;
 }) {
-  const [type, setType] = useState<LinkType>("RELATES_TO");
+  const [option, setOption] = useState<LinkOption>(DEFAULT_OPTION);
   const [typeOpen, setTypeOpen] = useState(false);
   const typeRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -401,7 +416,7 @@ function LinkCreator({
     if (!picked || submitting) return;
     setSubmitting(true);
     try {
-      await onCreate(picked, type);
+      await onCreate(picked, option);
     } finally {
       setSubmitting(false);
     }
@@ -424,26 +439,26 @@ function LinkCreator({
           <button
             type="button"
             onClick={() => setTypeOpen((v) => !v)}
-            className="inline-flex items-center justify-between gap-2 h-9 px-3 min-w-[140px] text-sm border border-gray-300 rounded hover:bg-gray-50"
+            className="inline-flex items-center justify-between gap-2 h-9 px-3 min-w-[160px] text-sm border border-gray-300 rounded hover:bg-gray-50"
           >
-            <span>{LINK_TYPE_LABELS[type]}</span>
+            <span>{option.label}</span>
             <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
           </button>
           {typeOpen && (
-            <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-              {(Object.keys(LINK_TYPE_LABELS) as LinkType[]).map((t) => (
+            <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1 max-h-72 overflow-y-auto">
+              {LINK_OPTIONS.map((o) => (
                 <button
-                  key={t}
+                  key={o.id}
                   type="button"
                   onClick={() => {
-                    setType(t);
+                    setOption(o);
                     setTypeOpen(false);
                   }}
                   className={`w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
-                    t === type ? "text-blue-700 bg-blue-50" : "text-gray-700"
+                    o.id === option.id ? "text-blue-700 bg-blue-50" : "text-gray-700"
                   }`}
                 >
-                  {LINK_TYPE_LABELS[t]}
+                  {o.label}
                 </button>
               ))}
             </div>
@@ -509,7 +524,7 @@ function LinkCreator({
       <div className="mt-2 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => onCreateNew(type)}
+          onClick={() => onCreateNew(option)}
           className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900"
         >
           <Plus className="h-3.5 w-3.5" />
