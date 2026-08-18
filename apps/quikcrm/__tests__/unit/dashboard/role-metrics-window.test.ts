@@ -88,7 +88,97 @@ describe("(i) — buildRoleMetrics optional range window (KEYSTONE)", () => {
     await buildRoleMetrics(user("Administrator"), RANGE);
     for (const w of leadCountWheres()) {
       expect(w).not.toHaveProperty("occurredAt");
+      // Default mode must not introduce a createdAt bound either — this is the
+      // contract the daily digest depends on.
+      expect(JSON.stringify(w)).not.toContain("createdAt");
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// windowAllMetrics — the DASHBOARD's explicit opt-in to full windowing.
+// The default mode above (used by the daily digest) is unaffected.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("windowAllMetrics — full windowing (dashboard mode)", () => {
+  it("windowAllMetrics + range → the lead count IS bounded by createdAt", async () => {
+    await buildRoleMetrics(user("Administrator"), RANGE, { windowAllMetrics: true });
+    const wheres = leadCountWheres();
+    expect(wheres.length).toBeGreaterThan(0);
+    expect(
+      wheres.some((w) =>
+        JSON.stringify(w).includes(`"createdAt":{"gte":"${RANGE.from.toISOString()}"`),
+      ),
+    ).toBe(true);
+  });
+
+  it("windowAllMetrics windows accounts, contacts, tasks and quotes too", async () => {
+    await buildRoleMetrics(user("Administrator"), RANGE, { windowAllMetrics: true });
+    for (const m of [
+      prismaMock.crmAccount.count,
+      prismaMock.crmContact.count,
+      prismaMock.crmTask.count,
+      prismaMock.crmQuote.count,
+    ]) {
+      const calls = (m as unknown as { mock: { calls: { 0: { where: unknown } }[] } }).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      for (const c of calls) {
+        expect(JSON.stringify(c[0].where)).toContain("createdAt");
+      }
+    }
+  });
+
+  it("won revenue uses closeDate → lastStageChangeAt (NEVER updatedAt)", async () => {
+    await buildRoleMetrics(user("Administrator"), RANGE, { windowAllMetrics: true });
+    const aggCalls = prismaMock.crmOpportunity.aggregate.mock.calls;
+    expect(aggCalls.length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(aggCalls.map((c) => (c[0] as { where: unknown }).where));
+    expect(serialized).toContain("closeDate");
+    expect(serialized).toContain("lastStageChangeAt");
+    expect(serialized).not.toContain("updatedAt");
+  });
+
+  it("NO range + windowAllMetrics → no-op (cannot window without bounds)", async () => {
+    await buildRoleMetrics(user("Administrator"), undefined, { windowAllMetrics: true });
+    for (const w of leadCountWheres()) {
+      expect(JSON.stringify(w)).not.toContain("createdAt");
+    }
+  });
+});
+
+describe("ownerId — Owner dropdown plumbed through buildRoleMetrics", () => {
+  it("Administrator + ownerId → every record where narrows to that owner", async () => {
+    await buildRoleMetrics(user("Administrator"), undefined, { ownerId: "rep-9" });
+    expect(JSON.stringify(leadCountWheres())).toContain('"ownerId":"rep-9"');
+    expect(JSON.stringify(activityCountWheres())).toContain('"ownerId":"rep-9"');
+  });
+
+  it("date + owner combine: both clauses present on the same query", async () => {
+    await buildRoleMetrics(user("Administrator"), RANGE, {
+      windowAllMetrics: true,
+      ownerId: "rep-9",
+    });
+    const s = JSON.stringify(leadCountWheres());
+    expect(s).toContain('"ownerId":"rep-9"');
+    expect(s).toContain("createdAt");
+  });
+
+  it("SalesUser + FOREIGN ownerId → intersected to __none__, never widened", async () => {
+    await buildRoleMetrics(user("SalesUser"), undefined, { ownerId: "somebody-else" });
+    const s = JSON.stringify(leadCountWheres());
+    expect(s).toContain("__none__");
+    expect(s).not.toContain("somebody-else");
+  });
+
+  it("SalesUser + OWN ownerId → still scoped to self (no sentinel)", async () => {
+    await buildRoleMetrics(user("SalesUser"), undefined, { ownerId: "u1" });
+    const s = JSON.stringify(leadCountWheres());
+    expect(s).toContain('"ownerId":"u1"');
+    expect(s).not.toContain("__none__");
+  });
+
+  it("no ownerId → where carries no ownerId narrowing (Admin org-wide)", async () => {
+    await buildRoleMetrics(user("Administrator"));
+    expect(activityCountWheres()).toContainEqual({ orgId: "t1" });
   });
 });
 

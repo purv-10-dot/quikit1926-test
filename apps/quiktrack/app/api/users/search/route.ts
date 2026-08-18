@@ -3,6 +3,29 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
 
+/**
+ * Split a search query into whitespace-separated tokens for an AND-of-tokens
+ * match. A single-token query ("Sagar", "sagar@x.com") keeps its old
+ * single-OR behaviour exactly (see buildUserNameFilter). Multi-token queries
+ * ("Sagar Roy") require EVERY token to match somewhere across
+ * firstName/lastName/email — no single column contains the full name, so a
+ * plain OR-of-the-whole-string (the previous behaviour) could never match a
+ * two-token full name at all.
+ */
+function buildUserNameFilter(q: string) {
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return {};
+  const perToken = (token: string) => ({
+    OR: [
+      { email: { contains: token, mode: "insensitive" as const } },
+      { firstName: { contains: token, mode: "insensitive" as const } },
+      { lastName: { contains: token, mode: "insensitive" as const } },
+    ],
+  });
+  if (tokens.length === 1) return perToken(tokens[0]!);
+  return { AND: tokens.map(perToken) };
+}
+
 // GET /api/users/search?q=<prefix>&limit=10
 // Returns active org members matching the query, with a `hasQuikTrackAccess`
 // flag the Add-User typeahead uses to mark rows already in QuikTrack.
@@ -19,17 +42,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       where: {
         orgId,
         status: "active",
-        ...(q
-          ? {
-              user: {
-                OR: [
-                  { email: { contains: q, mode: "insensitive" } },
-                  { firstName: { contains: q, mode: "insensitive" } },
-                  { lastName: { contains: q, mode: "insensitive" } },
-                ],
-              },
-            }
-          : {}),
+        ...(q ? { user: buildUserNameFilter(q) } : {}),
       },
       // Fetch one extra row to tell the client whether another page exists.
       take: limit + 1,

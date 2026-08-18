@@ -128,6 +128,46 @@ export const TEST_STATUSES: readonly TestStatusMeta[] = [
   },
 ];
 
+/**
+ * The rows every org must have in `QtTestStatus`, and the ONLY definition of them.
+ *
+ * These mirror the seed in `20260807120000_quiktest_test_management/migration.sql`
+ * exactly — same keys, labels, hex colours, flags and order. Kept here as well
+ * because that seed was a `CROSS JOIN quikit."Org"`, i.e. a one-shot backfill over
+ * orgs that existed when the migration ran: any org created afterwards had NO
+ * statuses, and creating a run there failed with "No default test status is
+ * configured for this organisation."
+ *
+ * `ensureTestStatuses()` provisions from this list, so a new org is never in that
+ * state. The Tailwind classes above are for rendering; `color` is what the DB
+ * stores and what a custom status would set.
+ */
+export interface TestStatusSeed {
+  key: TestStatusKey;
+  label: string;
+  /** Hex, because `QtTestStatus.color` is a hex string, not a Tailwind class. */
+  color: string;
+  isFinal: boolean;
+  isDefault: boolean;
+  isAutomation: boolean;
+  orderNo: number;
+}
+
+export const TEST_STATUS_SEED: readonly TestStatusSeed[] = [
+  { key: "passed", label: "Passed", color: "#22c55e", isFinal: true, isDefault: false, isAutomation: false, orderNo: 1 },
+  { key: "blocked", label: "Blocked", color: "#374151", isFinal: true, isDefault: false, isAutomation: false, orderNo: 2 },
+  { key: "skipped", label: "Skipped", color: "#facc15", isFinal: true, isDefault: false, isAutomation: false, orderNo: 3 },
+  { key: "failed", label: "Failed", color: "#e11d48", isFinal: true, isDefault: false, isAutomation: false, orderNo: 4 },
+  { key: "retest", label: "Retest", color: "#3b82f6", isFinal: false, isDefault: false, isAutomation: false, orderNo: 5 },
+  // Exactly one row may have isDefault = true — enforced by a partial unique index
+  // (`QtTestStatus_orgId_default_uniq`), which is why provisioning must never
+  // insert a second default.
+  { key: "untested", label: "Untested", color: "#9ca3af", isFinal: false, isDefault: true, isAutomation: false, orderNo: 6 },
+  { key: "automation_passed", label: "Automation Passed", color: "#15803d", isFinal: true, isDefault: false, isAutomation: true, orderNo: 7 },
+  { key: "automation_failed", label: "Automation Failed", color: "#dc2626", isFinal: true, isDefault: false, isAutomation: true, orderNo: 8 },
+  { key: "automation_error", label: "Automation Error", color: "#9ca3af", isFinal: true, isDefault: false, isAutomation: true, orderNo: 9 },
+];
+
 const BY_KEY = new Map<TestStatusKey, TestStatusMeta>(
   TEST_STATUSES.map((s) => [s.key, s]),
 );

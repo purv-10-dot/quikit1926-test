@@ -3,6 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Lock, Pause, Play, RotateCcw } from "lucide-react";
 import { Button, Textarea } from "@quikit/ui";
+
+/** Current-status pill (QUIKTR-318). Semantic data states → fixed colours. */
+const CURRENT_PILL: Record<string, string> = {
+  passed: "bg-green-100 text-green-800",
+  automation_passed: "bg-green-100 text-green-900",
+  failed: "bg-rose-100 text-rose-800",
+  automation_failed: "bg-red-100 text-red-900",
+  automation_error: "bg-gray-200 text-gray-700",
+  blocked: "bg-gray-200 text-gray-800",
+  skipped: "bg-yellow-100 text-yellow-800",
+  retest: "bg-blue-100 text-blue-800",
+  untested: "bg-gray-100 text-gray-600",
+};
 import {
   formatElapsed,
   type TestDetail,
@@ -118,10 +131,23 @@ export function ResultEntryPane({
     <div className="flex w-80 shrink-0 flex-col border-l border-gray-200">
       <div className="border-b border-gray-200 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-gray-900">Result</h3>
-        <p className="text-[11px] text-gray-400">
-          Current: {detail.currentStatus.label}
+        {/* QUIKTR-318 — the current outcome stated plainly, not just a glyph. */}
+        <p className="mt-1">
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+              CURRENT_PILL[detail.currentStatus.key] ?? "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {detail.currentStatus.label}
+          </span>
         </p>
       </div>
+
+      {/* Assignment deliberately does NOT live here. This pane is for RECORDING an
+          outcome, and the person executing a test is not necessarily its assignee —
+          putting a picker above the Passed/Failed buttons implied you were
+          assigning yourself in order to record. Assignment happens on the test row
+          in the list (and the run's owner is set at creation). */}
 
       {closed ? (
         <div className="p-4">

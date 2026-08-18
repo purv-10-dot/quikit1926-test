@@ -122,7 +122,14 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
     window.addEventListener("qt:idea-panel", onPanel as EventListener);
     return () => window.removeEventListener("qt:idea-panel", onPanel as EventListener);
   }, []);
-  const activeTab = PROJECT_TABS.find((t) => pathname.endsWith(`/${t.path}`))?.path ?? "board";
+  const activeTab =
+    PROJECT_TABS.find((t) => {
+      const marker = `/${t.path}`;
+      const i = pathname.indexOf(marker);
+      if (i === -1) return false;
+      const after = pathname.slice(i + marker.length);
+      return after === "" || after.startsWith("/");
+    })?.path ?? "board";
 
   useEffect(() => {
     if (!project || !pathname) return;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { User } from "lucide-react";
 import { ChartCard, ChartCardSkeleton } from "./chart-card";
@@ -18,9 +19,10 @@ type PickerUser = { id: string; name: string; email: string; role: string };
 // Same ramp as the lead funnel so the two cards read as one system.
 const FUNNEL_COLORS = ["#2563eb", "#3b82f6", "#7c3aed", "#0d9488", "#059669", "#d97706"];
 
-async function fetchProspectFunnel(qs: string): Promise<ProspectFunnelDto> {
+async function fetchProspectFunnel(qs: string, tz: string): Promise<ProspectFunnelDto> {
   const res = await fetch(`/api/dashboard/prospect-funnel?${qs}`, {
     credentials: "include",
+    headers: { "X-Client-TZ": tz },
   });
   if (!res.ok) throw new Error(`Prospect funnel failed (${res.status})`);
   const json = (await res.json()) as
@@ -50,20 +52,38 @@ async function fetchUsers(): Promise<PickerUser[]> {
  * the dashboard-wide Owner filter, because prospects are scoped by `savedById`
  * (who captured them) rather than the `ownerId` the rest of the dashboard
  * filters on. Non-admins never see the dropdown — their experience is unchanged.
+ *
+ * The card DOES follow the dashboard date range: `dashQs` (from/to) is forwarded
+ * with applyRange=1 so this funnel windows with every other widget rather than
+ * showing an all-time backlog next to filtered cards.
  */
 export function ProspectFunnelChart({
   ownerId,
   onOwnerIdChange,
+  dashQs,
+  tz,
 }: {
   /** "" = all users, otherwise a user id. Admin-only; ignored server-side for others. */
   ownerId: string;
   onOwnerIdChange: (next: string) => void;
+  /** Active dashboard filter query string (from/to/ownerId). */
+  dashQs: string;
+  tz: string;
 }) {
-  const qs = ownerId ? `ownerId=${encodeURIComponent(ownerId)}` : "";
+  // Start from the shared dashboard filters (from/to), then let this card's own
+  // savedById picker override the dashboard-wide ownerId, and opt into the
+  // server's date filtering with applyRange=1.
+  const qs = useMemo(() => {
+    const sp = new URLSearchParams(dashQs);
+    sp.set("applyRange", "1");
+    if (ownerId) sp.set("ownerId", ownerId);
+    else sp.delete("ownerId");
+    return sp.toString();
+  }, [dashQs, ownerId]);
 
   const { data, isLoading, isError, error } = useQuery<ProspectFunnelDto>({
-    queryKey: ["dashboard", "prospect-funnel", ownerId],
-    queryFn: () => fetchProspectFunnel(qs),
+    queryKey: ["dashboard", "prospect-funnel", qs],
+    queryFn: () => fetchProspectFunnel(qs, tz),
     staleTime: 30_000,
     // Prospects are written from outside this page (the browser extension's
     // "Save to CRM", and the Settings → Prospects convert action, which uses

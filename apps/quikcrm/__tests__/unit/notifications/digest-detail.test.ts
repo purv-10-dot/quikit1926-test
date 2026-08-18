@@ -70,8 +70,18 @@ function stubActivitiesByType(byType: Record<string, unknown[]>, other: unknown[
   }) => {
     const where = args?.where ?? {};
     if (where.NOT) return other;
-    const t = typeof where.type === "string" ? where.type : "";
-    return byType[t] ?? [];
+    // The meetings query filters `type: { in: [...casings] }` because two writers
+    // spell a meeting differently; the others filter on a plain string. Return the
+    // rows registered under ANY key the filter accepts.
+    const t = where.type;
+    if (t && typeof t === "object" && Array.isArray((t as { in?: unknown[] }).in)) {
+      for (const k of (t as { in: unknown[] }).in) {
+        const rows = byType[String(k)];
+        if (rows) return rows;
+      }
+      return [];
+    }
+    return byType[typeof t === "string" ? t : ""] ?? [];
   }) as never);
 }
 
@@ -470,14 +480,11 @@ describe("assembleUserActivityDetail — meetings + tasks", () => {
   it("meeting status = the meeting outcome; client = opp account name", async () => {
     activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
     prismaMock.user.findMany.mockResolvedValue([{ id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" }] as never);
-    prismaMock.crmActivity.findMany.mockImplementation((async (args: { where: { type?: string } }) => {
-      if (args.where.type === "OpportunityClientMeeting") {
-        return [
-          { ownerId: "r1", occurredAt: new Date("2026-07-19T11:30:00.000Z"), opportunityId: "opp1", relatedObjectId: "opp1" },
-        ];
-      }
-      return [];
-    }) as never);
+    stubActivitiesByType({
+      OpportunityClientMeeting: [
+        { ownerId: "r1", occurredAt: new Date("2026-07-19T11:30:00.000Z"), opportunityId: "opp1", relatedObjectId: "opp1" },
+      ],
+    });
     prismaMock.crmOpportunityClientMeeting.findMany.mockResolvedValue([
       { opportunityId: "opp1", meetingAt: new Date("2026-07-19T11:30:00.000Z"), meetingType: "Demo", outcome: "Positive", notes: "went well" },
     ] as never);
@@ -491,6 +498,67 @@ describe("assembleUserActivityDetail — meetings + tasks", () => {
       meetingType: "Demo",
       status: "Positive",
       notes: "went well",
+    });
+  });
+
+  // REGRESSION: the Meetings section used to filter `type: "OpportunityClientMeeting"`
+  // only, so a meeting logged in the Activity module (which stores the configured
+  // type LABEL, "Meeting") counted as 0. It was ALSO excluded from the generic pass
+  // by SPECIALIZED_TYPES, so the row vanished from the digest entirely.
+  it('counts Activity-module meetings (type="Meeting") toward meetingsTotal', async () => {
+    activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" }] as never);
+    stubActivitiesByType({
+      Meeting: [
+        {
+          ownerId: "r1",
+          occurredAt: new Date("2026-07-19T09:15:00.000Z"),
+          opportunityId: null,
+          relatedObjectId: "lead1",
+          relatedKind: "Lead",
+          subject: "Intro call with Acme",
+          outcome: "Interested",
+          activityCode: "Discovery",
+          logOutcome: null,
+          detailNotes: "asked for pricing",
+        },
+      ],
+    });
+    vi.mocked(resolveRelatedLabels).mockResolvedValue(new Map([["lead:lead1", "Acme Corp"]]));
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+    expect(rep.meetingsTotal).toBe(1);
+    // ...and it must NOT also be counted as a generic "other" activity.
+    expect(rep.otherTotal).toBe(0);
+  });
+
+  it("renders Activity-module meeting detail from the activity row (no CrmOpportunityClientMeeting exists)", async () => {
+    activityGroupBy.mockResolvedValue([{ ownerId: "r1", _count: { _all: 1 } }]);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "r1", firstName: "Rep", lastName: "One", email: "r1@x.co" }] as never);
+    stubActivitiesByType({
+      Meeting: [
+        {
+          ownerId: "r1",
+          occurredAt: new Date("2026-07-19T09:15:00.000Z"),
+          opportunityId: null,
+          relatedObjectId: "lead1",
+          relatedKind: "Lead",
+          subject: "Intro call with Acme",
+          outcome: "Interested",
+          activityCode: "Discovery",
+          logOutcome: null,
+          detailNotes: "asked for pricing",
+        },
+      ],
+    });
+    vi.mocked(resolveRelatedLabels).mockResolvedValue(new Map([["lead:lead1", "Acme Corp"]]));
+
+    const [rep] = await assembleUserActivityDetail(ADMIN, RANGE);
+    expect(rep.meetings[0]).toMatchObject({
+      client: "Acme Corp",
+      meetingType: "Discovery",
+      status: "Interested",
+      notes: "asked for pricing",
     });
   });
 

@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { assertResolvedProjectId } from "@/lib/test/projectId";
+import { ensureTestStatusesQuietly } from "./testStatusProvisioning";
 import type { CreateTestRunInput, RecordResultInput } from "@/lib/validation/testRun";
 
 /**
@@ -34,10 +35,14 @@ async function defaultStatusId(
     select: { id: true },
   });
   if (!row) {
-    // The migration seeds this for every org, so a miss means the seed did not
-    // run for a newer org — surface it rather than silently picking a status.
+    // Callers provision via `ensureTestStatuses` before opening the transaction, so
+    // reaching this means the catalogue exists but NO row is flagged default — an
+    // org has soft-deleted or unset its Untested status. Picking one arbitrarily
+    // would put every new test into a status nobody chose, so this still refuses,
+    // but the message now points at the fix instead of blaming the seed.
     throw new TestRunError(
-      "No default test status is configured for this organisation.",
+      "This organisation has no default test status. Open Settings → Test statuses " +
+        "and restore the missing defaults.",
       500,
       "NO_DEFAULT_STATUS",
     );
@@ -95,10 +100,29 @@ export async function createTestRun(
   });
 
   if (cases.length === 0) {
+    if (input.includeDrafts) {
+      throw new TestRunError(
+        "No test cases matched that selection.",
+        400,
+        "EMPTY_SELECTION",
+      );
+    }
+    // Distinguish "nothing here at all" from "everything here is still draft".
+    // The second is the common case while a suite is being written, and saying
+    // so points at the fix (approve them, or tick the box) instead of leaving
+    // the user to guess why an apparently full suite produced an empty run.
+    //
+    // `approvalState` is destructured out rather than set to undefined: Prisma
+    // treats an explicit `undefined` as "omit this filter" only for top-level
+    // keys, and relying on that is easy to get subtly wrong — removing the key
+    // is unambiguous.
+    const { approvalState: _excluded, ...withoutApproval } = caseWhere;
+    const draftCount = await db.qtTestCase.count({ where: withoutApproval });
     throw new TestRunError(
-      input.includeDrafts
-        ? "No test cases matched that selection."
-        : "No approved test cases matched that selection. Draft cases are excluded unless you include them.",
+      draftCount > 0
+        ? `All ${draftCount} matching case${draftCount === 1 ? " is" : "s are"} still in Draft or In Review. ` +
+            "Approve them on the case, or tick “Include draft cases”."
+        : "No test cases matched that selection.",
       400,
       "EMPTY_SELECTION",
     );
@@ -108,6 +132,20 @@ export async function createTestRun(
   // no configs, a single null-config test per case.
   const configIds: Array<string | null> =
     input.configIds && input.configIds.length > 0 ? input.configIds : [null];
+
+  // Backstop provisioning, BEFORE the transaction opens.
+  //
+  // The migration seeded statuses with a CROSS JOIN over orgs existing at the
+  // time, so any org created later had none and this call failed with
+  // "No default test status is configured for this organisation." Project creation
+  // now provisions them, but an org whose projects all predate that change would
+  // still be broken — this covers it, and makes the error unreachable.
+  //
+  // Outside the transaction on purpose: creating rows inside it and re-reading them
+  // works, but a unique violation from a concurrent call would then abort the whole
+  // run creation. Here a race is absorbed by skipDuplicates and the read below
+  // simply finds the winner's rows.
+  await ensureTestStatusesQuietly(orgId);
 
   try {
     return await db.$transaction(async (tx) => {
@@ -126,6 +164,11 @@ export async function createTestRun(
           build: input.build ?? null,
           environment: input.environment ?? null,
           assigneeId: input.assigneeId ?? null,
+          // Date-only strings from the form; stored as timestamps. The DB also
+          // enforces endDate >= startDate.
+          startDate: input.startDate ? new Date(input.startDate) : null,
+          endDate: input.endDate ? new Date(input.endDate) : null,
+          refTickets: input.refTickets ?? null,
           planId: input.planId ?? null,
           suiteId: input.suiteId ?? null,
           milestoneId: input.milestoneId ?? null,
@@ -160,7 +203,12 @@ export async function createTestRun(
             refId: seq,
             caseVersion: c.currentVersion,
             currentStatusId: statusId,
-            assigneeId: input.assigneeId ?? null,
+            // Deliberately NOT the run's assignee. `QtTestRun.assigneeId` is the
+            // run's OWNER; per-test assignment is independent, so a lead can own
+            // the run while individual cases go to different testers (and whoever
+            // executes a test need not be its assignee). Copying the owner down
+            // here made every test look pre-assigned to one person.
+            assigneeId: null,
           });
         }
       }

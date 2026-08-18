@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell, ExternalLink, MoreHorizontal, CheckCheck, ListChecks } from "lucide-react";
 import { ITEM_LABEL, summarise, type NotificationRow } from "./notifications-meta";
 
+
 type Tab = "direct" | "watching";
 
 interface UnreadCounts {
@@ -13,13 +14,13 @@ interface UnreadCounts {
   total: number;
 }
 
-const POLL_MS = 60_000;
+const POLL_MS = 15_000;
 
 export function NotificationsPopover() {
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [tab] = useState<Tab>("direct");
+  const [tab, setTab] = useState<Tab>("direct");
   const [unread, setUnread] = useState<UnreadCounts>({ direct: 0, watching: 0, total: 0 });
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +60,10 @@ export function NotificationsPopover() {
   }, []);
 
   useEffect(() => {
-    if (open) void loadList(tab, onlyUnread);
+    if (!open) return;
+    void loadList(tab, onlyUnread);
+    const id = setInterval(() => void loadList(tab, onlyUnread), POLL_MS);
+    return () => clearInterval(id);
   }, [open, tab, onlyUnread, loadList]);
 
   useEffect(() => {
@@ -205,18 +209,24 @@ export function NotificationsPopover() {
           </div>
 
           <div className="px-4 border-b border-gray-200 flex items-center gap-4">
-            <button
-              type="button"
-              className="relative pb-2 text-sm font-medium text-accent-700"
-            >
-              Direct
-              {unread.direct > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent-100 text-accent-700 text-[10px] font-semibold">
-                  {unread.direct}
-                </span>
-              )}
-              <span className="absolute -bottom-px left-0 right-0 h-0.5 bg-accent-600 rounded" />
-            </button>
+            {(["direct", "watching"] as Tab[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`relative pb-2 text-sm font-medium ${
+                  tab === t ? "text-accent-700" : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {t === "direct" ? "Direct" : "Watching"}
+                {unread[t] > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent-100 text-accent-700 text-[10px] font-semibold">
+                    {unread[t]}
+                  </span>
+                )}
+                {tab === t && <span className="absolute -bottom-px left-0 right-0 h-0.5 bg-accent-600 rounded" />}
+              </button>
+            ))}
           </div>
 
           <div className="flex-1 overflow-y-auto">

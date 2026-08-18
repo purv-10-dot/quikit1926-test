@@ -54,12 +54,17 @@ export async function buildExecutiveSummary(
     occurredAt: { gte: range.from, lte: range.to },
   };
 
+  // Won-date business rule — aligned with lib/services/sales-cost/counts.ts (the
+  // established CRM convention): `closeDate` is the business close date, with
+  // `lastStageChangeAt` as the fallback for rows won without one set.
+  // Deliberately NOT `updatedAt` — any later field edit would re-date the win and
+  // silently move revenue between periods.
   const wonWhere = (from: Date, to: Date) => ({
     ...oppWhere,
     stage: "ClosedWon" as CrmOpportunityStage,
     OR: [
-      { lastStageChangeAt: { gte: from, lte: to } },
-      { lastStageChangeAt: null, updatedAt: { gte: from, lte: to } },
+      { closeDate: { gte: from, lte: to } },
+      { closeDate: null, lastStageChangeAt: { gte: from, lte: to } },
     ],
   });
 
@@ -68,6 +73,8 @@ export async function buildExecutiveSummary(
     callsPrior,
     activityRows,
     wonOpps,
+    wonDealsCount,
+    wonAggByCurrency,
     wonDealsPrior,
     openOppsForWeight,
     tasksDueTodayCount,
@@ -90,6 +97,10 @@ export async function buildExecutiveSummary(
       where: activityBase,
       select: { type: true, activityCode: true },
     }),
+    // DISPLAY LIST ONLY — the 8 most recent wins for the Recent Wins widget.
+    // The KPI count and revenue below come from separate unbounded aggregates so
+    // they are NOT capped by this take (the previous code derived both from this
+    // list, silently clamping "Won deals" and "Won revenue" at 8).
     prisma.crmOpportunity.findMany({
       where: wonWhere(range.from, range.to),
       select: {
@@ -98,11 +109,21 @@ export async function buildExecutiveSummary(
         amount: true,
         currency: true,
         ownerName: true,
+        closeDate: true,
         lastStageChangeAt: true,
-        updatedAt: true,
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: [{ closeDate: "desc" }, { lastStageChangeAt: "desc" }],
       take: 8,
+    }),
+    // TRUE won-deal count across the COMPLETE matching dataset (no take).
+    prisma.crmOpportunity.count({
+      where: wonWhere(range.from, range.to),
+    }),
+    // TRUE won revenue, summed in the DB per currency across the complete set.
+    prisma.crmOpportunity.groupBy({
+      by: ["currency"],
+      where: wonWhere(range.from, range.to),
+      _sum: { amount: true },
     }),
     prisma.crmOpportunity.count({
       where: wonWhere(prior.from, prior.to),
@@ -176,13 +197,19 @@ export async function buildExecutiveSummary(
     total: callsInRange + emailsInRange + meetingsInRange + otherActivities,
   };
 
+  // Won revenue from the DB-side per-currency sums over the COMPLETE dataset.
+  // INR is the reporting currency; if the org books exclusively in another
+  // currency, fall back to the grand total so the card isn't a misleading ₹0
+  // (same intent as the previous list-based fallback, now uncapped).
+  const wonRows = Array.isArray(wonAggByCurrency) ? wonAggByCurrency : [];
   let wonInr = 0;
-  for (const o of wonList) {
-    if ((o.currency ?? "INR") === "INR") wonInr += Number(o.amount ?? 0);
+  let wonAllCurrencies = 0;
+  for (const r of wonRows) {
+    const amt = Number(r._sum?.amount ?? 0);
+    wonAllCurrencies += amt;
+    if ((r.currency ?? "INR") === "INR") wonInr += amt;
   }
-  if (wonInr === 0 && wonList.length > 0) {
-    wonInr = wonList.reduce((s, o) => s + Number(o.amount ?? 0), 0);
-  }
+  if (wonInr === 0 && wonAllCurrencies !== 0) wonInr = wonAllCurrencies;
 
   let weightedInr = 0;
   for (const o of weightList) {
@@ -210,12 +237,15 @@ export async function buildExecutiveSummary(
     };
   });
 
+  // Recent Wins — same won-date rule, same range + owner scope as the KPI.
+  // closedAt reports the business won date (closeDate → lastStageChangeAt),
+  // never updatedAt.
   const recentWins = wonList.slice(0, 5).map((o) => ({
     id: o.id,
     name: o.name,
     amountDisplay: formatCompactCurrency(Number(o.amount ?? 0), o.currency ?? "INR"),
     ownerName: o.ownerName,
-    closedAt: (o.lastStageChangeAt ?? o.updatedAt).toISOString(),
+    closedAt: (o.closeDate ?? o.lastStageChangeAt)?.toISOString() ?? "",
   }));
 
   return {
@@ -224,7 +254,8 @@ export async function buildExecutiveSummary(
       emailsInRange,
       meetingsInRange,
       activityMix,
-      wonDealsCount: wonList.length,
+      // Unbounded count — NOT wonList.length (that list is take:8 for display).
+      wonDealsCount,
       wonRevenueDisplay: formatINRLong(wonInr),
       weightedPipelineDisplay: formatINRLong(weightedInr),
       tasksDueToday: tasksDueTodayCount,

@@ -13,6 +13,7 @@ import {
   BarChart3,
   Code,
   FlaskConical,
+  Rocket,
 } from "lucide-react";
 
 /**
@@ -25,6 +26,7 @@ export const TAB_ICONS: Record<string, typeof Globe> = {
   timeline: CalendarIcon,
   backlog: ListIcon,
   epics: Zap,
+  releases: Rocket,
   board: Columns,
   "grouped-kanban": LayoutGrid,
   list: ListChecks,

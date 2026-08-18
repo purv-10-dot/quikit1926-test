@@ -102,13 +102,22 @@ export function AddRuleDialog({
   onPick,
   onClose,
   initialBucket = "CONDITION",
+  allowedBuckets,
 }: {
   onPick: (meta: RuleTypeMeta) => void;
   onClose: () => void;
   /** Rail bucket to open on (the + button's bucket). Defaults to Restrict. */
   initialBucket?: BucketId;
+  /** Restrict the rail to these buckets (e.g. the Create transition allows only
+   *  Validate details / Perform actions). Undefined = all buckets. */
+  allowedBuckets?: BucketId[];
 }) {
-  const [bucket, setBucket] = useState<BucketId>(initialBucket);
+  const rails = allowedBuckets
+    ? RULE_BUCKETS.filter((b) => allowedBuckets.includes(b.id))
+    : RULE_BUCKETS;
+  const [bucket, setBucket] = useState<BucketId>(
+    allowedBuckets && !allowedBuckets.includes(initialBucket) ? allowedBuckets[0] : initialBucket,
+  );
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -120,7 +129,7 @@ export function AddRuleDialog({
       ),
     [bucket, q],
   );
-  const activeBucket = RULE_BUCKETS.find((b) => b.id === bucket);
+  const activeBucket = rails.find((b) => b.id === bucket);
 
   return (
     <ModalShell
@@ -150,7 +159,7 @@ export function AddRuleDialog({
         {/* Rule-type rail */}
         <div className="w-56 shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-4">
           <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Rule types</div>
-          {RULE_BUCKETS.map((b) => (
+          {rails.map((b) => (
             <button
               key={b.id}
               type="button"
