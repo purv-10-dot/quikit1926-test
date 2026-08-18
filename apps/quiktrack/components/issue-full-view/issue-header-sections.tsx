@@ -215,7 +215,7 @@ export function IssueHeaderSections({
             </Link>
           )}
         </div>
-        <WatchButton issueId={issue.id} />
+        <WatchButton issueId={issue.id} projectId={projectId} />
       </div>
 
       {/* Title — shared editor, so the ✓/✕ behaviour is identical to the drawer. */}

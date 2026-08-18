@@ -1094,7 +1094,7 @@ export function EditIssueModal({
                     </span>
                   )}
                 </div>
-                <WatchButton issueId={issue.id} />
+                <WatchButton issueId={issue.id} projectId={projectId} />
               </div>
 
               {/* Time-exceeded banner — shows when total logged hours
