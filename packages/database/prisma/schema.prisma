@@ -28387,6 +28387,8 @@ model QiPlatformConnection {
 
 model QiDataSync {
   id           String    @id @default(cuid())
+  /// Tenant scope. NOT NULL in the table; required on create.
+  orgId        String
   userId       String
   connectionId String
   platform     String
