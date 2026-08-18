@@ -65,6 +65,10 @@ interface CaseSnapshot {
   title: string;
   description: string | null;
   preconditions: string | null;
+  /** Case-level expectation (TEXT/BDD layouts). Captured so a rollback to this
+   *  version restores it — omitting it would silently drop the expected result
+   *  of every text-template case that gets rolled back. */
+  expectedResult: string | null;
   priority: string;
   type: string;
   steps: Array<{ orderNo: number; action: string; expected: string | null }>;
@@ -74,6 +78,7 @@ function buildSnapshot(input: {
   title: string;
   description: string | null;
   preconditions: string | null;
+  expectedResult: string | null;
   priority: string;
   type: string;
   steps: TestStepInput[];
@@ -82,6 +87,7 @@ function buildSnapshot(input: {
     title: input.title,
     description: input.description,
     preconditions: input.preconditions,
+    expectedResult: input.expectedResult,
     priority: input.priority,
     type: input.type,
     steps: input.steps.map((s, i) => ({
@@ -149,10 +155,14 @@ export async function createTestCase(
           title: input.title,
           description: input.description ?? null,
           preconditions: input.preconditions ?? null,
+          expectedResult: input.expectedResult ?? null,
           priority: input.priority,
           type: input.type,
           automationStatus: input.automationStatus,
           automationId: input.automationId ?? null,
+          automationTool: input.automationTool ?? null,
+          automationCandidate: input.automationCandidate ?? null,
+          refTickets: input.refTickets ?? null,
           ownerId: input.ownerId ?? null,
           estimateMs: input.estimateMs ?? null,
           templateId: input.templateId ?? null,
@@ -183,6 +193,7 @@ export async function createTestCase(
             title: input.title,
             description: input.description ?? null,
             preconditions: input.preconditions ?? null,
+            expectedResult: input.expectedResult ?? null,
             priority: input.priority,
             type: input.type,
             steps: input.steps,
@@ -226,6 +237,7 @@ export async function updateTestCase(
       title: true,
       description: true,
       preconditions: true,
+      expectedResult: true,
       priority: true,
       type: true,
       currentVersion: true,
@@ -265,6 +277,10 @@ export async function updateTestCase(
       input.preconditions === undefined
         ? existing.preconditions
         : input.preconditions,
+    expectedResult:
+      input.expectedResult === undefined
+        ? existing.expectedResult
+        : input.expectedResult,
     priority: input.priority ?? existing.priority,
     type: input.type ?? existing.type,
   };
@@ -280,10 +296,18 @@ export async function updateTestCase(
           title: merged.title,
           description: merged.description,
           preconditions: merged.preconditions,
+          expectedResult: merged.expectedResult,
           priority: merged.priority,
           type: merged.type,
           ...(input.automationStatus ? { automationStatus: input.automationStatus } : {}),
           ...(input.automationId !== undefined ? { automationId: input.automationId } : {}),
+          ...(input.automationTool !== undefined
+            ? { automationTool: input.automationTool }
+            : {}),
+          ...(input.automationCandidate !== undefined
+            ? { automationCandidate: input.automationCandidate }
+            : {}),
+          ...(input.refTickets !== undefined ? { refTickets: input.refTickets } : {}),
           ...(input.ownerId !== undefined ? { ownerId: input.ownerId } : {}),
           ...(input.estimateMs !== undefined ? { estimateMs: input.estimateMs } : {}),
           ...(input.templateId !== undefined ? { templateId: input.templateId } : {}),
@@ -366,6 +390,9 @@ export async function rollbackTestCase(
     title: snap.title,
     description: snap.description,
     preconditions: snap.preconditions,
+    // `?? null` not `?? undefined`: an older snapshot predating this field must
+    // CLEAR the current value, not silently leave today's text in place.
+    expectedResult: snap.expectedResult ?? null,
     priority: snap.priority as UpdateTestCaseInput["priority"],
     type: snap.type as UpdateTestCaseInput["type"],
     steps: (snap.steps ?? []).map((s) => ({

@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
-import { gateProject, serverError } from "@/lib/test/gate";
+import { badRequest, gateProject, serverError } from "@/lib/test/gate";
 
 /**
- * GET /api/test/tests/{id} — one test, with the steps AS PINNED.
+ * GET   /api/test/tests/{id} — one test, with the steps AS PINNED.
+ * PATCH /api/test/tests/{id} — reassign this run-case (QUIKTR-317).
  *
- * This is the runner's per-test read, and the reason it exists rather than
+ * The GET is the runner's per-test read, and the reason it exists rather than
  * reusing `GET /api/test/cases/{id}`: a test must show the case as it was when
  * the run materialised it (`test.caseVersion`), NOT the live case. Serving live
  * steps would mean a tester follows a procedure that was edited mid-run — the
@@ -151,6 +153,87 @@ export const GET = withOrgAuth<Params>(
           caseHasNewerVersion: test.case.currentVersion > test.caseVersion,
         },
       });
+    } catch (error: unknown) {
+      return serverError(error);
+    }
+  },
+);
+
+/**
+ * Reassign a run-case (QUIKTR-317). `assigneeId: null` clears the assignee.
+ *
+ * Gated on `TestRun:update`, not `TestResult:create`: deciding WHO executes a
+ * test is run administration, whereas recording an outcome is execution. A
+ * tester who may record results is not automatically allowed to hand work to
+ * someone else.
+ *
+ * Deliberately does NOT touch status — that only ever changes by appending a
+ * result, so the append-only trail stays the single source of truth.
+ */
+const patchSchema = z.object({
+  assigneeId: z.string().min(1).nullable(),
+});
+
+export const PATCH = withOrgAuth<Params>(
+  async ({ orgId, userId }, req: NextRequest, { params }) => {
+    try {
+      const test = await db.qtTest.findFirst({
+        where: { id: params.id, orgId },
+        select: { id: true, run: { select: { projectId: true, state: true } } },
+      });
+      if (!test) {
+        return NextResponse.json(
+          { success: false, error: "Test not found" },
+          { status: 404 },
+        );
+      }
+
+      const denied = await gateProject(
+        orgId,
+        userId,
+        test.run.projectId,
+        "TestRun",
+        "update",
+      );
+      if (denied) return denied;
+
+      // A closed run is a finished record; reassigning work inside it would
+      // rewrite who was responsible after the fact.
+      if (test.run.state === "closed") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "This run is closed. Reopen it to change assignments.",
+          },
+          { status: 409 },
+        );
+      }
+
+      const parsed = patchSchema.safeParse(await req.json());
+      if (!parsed.success) {
+        return badRequest(parsed.error.issues[0]?.message ?? "Invalid body");
+      }
+      const { assigneeId } = parsed.data;
+
+      // Verify the assignee is actually a member of this project — otherwise a
+      // typo silently assigns work to a user who can never see it.
+      if (assigneeId) {
+        const member = await db.qtProjectMember.findFirst({
+          where: { projectId: test.run.projectId, userId: assigneeId, isDeleted: false },
+          select: { id: true },
+        });
+        if (!member) {
+          return badRequest("That user is not a member of this project.");
+        }
+      }
+
+      const updated = await db.qtTest.update({
+        where: { id: params.id },
+        data: { assigneeId },
+        select: { id: true, refId: true, assigneeId: true },
+      });
+
+      return NextResponse.json({ success: true, data: updated });
     } catch (error: unknown) {
       return serverError(error);
     }

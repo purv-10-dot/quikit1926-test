@@ -1,15 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Field,
-  Input,
-  RightPanel,
-  RightPanelCancelButton,
-  RightPanelFooter,
-  RightPanelSubmitButton,
-  Textarea,
-} from "@quikit/ui";
+import { Field, Input, RightPanel, Textarea } from "@quikit/ui";
+import { PanelFooter } from "@/components/test/panel-footer";
 
 /**
  * Small create/rename panel for suites and folders.
@@ -87,14 +80,26 @@ export function NamePromptPanel({
       title={config.title}
       subtitle={config.subtitle}
       footer={
-        <RightPanelFooter>
-          <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
+        <PanelFooter>
+          {/* Primary action FIRST (left): the panel's bottom-right corner is
+              covered by the floating chat bubble. */}
+          <button
+            type="button"
             onClick={submit}
             disabled={saving}
-            label={saving ? "Saving…" : (config.submitLabel ?? "Create")}
-          />
-        </RightPanelFooter>
+            className="rounded-lg bg-accent-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent-700 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : (config.submitLabel ?? "Create")}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </PanelFooter>
       }
     >
       <div className="space-y-4">

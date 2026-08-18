@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import {
+  ensureTestStatusesTx,
+  ensureTestTemplatesTx,
+} from "./testStatusProvisioning";
+import {
   allPermissionPairs,
   SPACE_ADMIN_ROLE_NAME,
 } from "@/lib/api/permissionsRegistry";
@@ -494,6 +498,23 @@ export async function seedProjectDefaults(
   // workflow via /api/projects/[id]/workflow-scheme/enable. That's the owner
   // rule: "no workflow until you turn it on."
   await seedBoardColumns(tx, projectId);
+
+  // QuikTest's status catalogue is ORG-scoped, not per project — so this is
+  // "ensure the org has it", not "create a set for this project". Done here because
+  // every route into QuikTest goes through a project, so the nine statuses are
+  // guaranteed to exist before any suite, case or run can need one.
+  //
+  // Without this, an org created after the QuikTest migration ran had NO statuses
+  // (that seed was a CROSS JOIN over then-existing orgs), and the first "Create
+  // run" failed with "No default test status is configured for this organisation."
+  // Gap-filling only: an org that renamed a status keeps its label.
+  await ensureTestStatusesTx(tx, orgId);
+
+  // Same story for the four case templates (Steps / Text / BDD / Exploratory),
+  // seeded by the parity migration with the same one-shot CROSS JOIN. Missing
+  // templates fail QUIETLY — the editor falls back to STEPS — so an org without them
+  // silently loses the text-based layouts rather than seeing an error.
+  await ensureTestTemplatesTx(tx, orgId);
 
   // Seed the 3 starter project roles + their grants. Idempotent: if a role
   // with the same name already exists for this project, skip both the role

@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
+import { notifyDirect, notifyWatchers, isEmailEnabled } from "@/lib/notifications/notify";
 import {
   executeTransition,
   postFunctionPatchToPrisma,
@@ -398,6 +399,7 @@ async function notifyOnUpdate(args: {
     const userIds = new Set<string>();
     if (args.actorUserId) userIds.add(args.actorUserId);
     if (args.assigneeChanged && args.after.assigneeId) userIds.add(args.after.assigneeId);
+    if (args.assigneeChanged && args.before.assigneeId) userIds.add(args.before.assigneeId);
     if (args.statusChanged && args.after.assigneeId) userIds.add(args.after.assigneeId);
 
     const [users, project, statusesNeeded] = await Promise.all([
@@ -434,21 +436,47 @@ async function notifyOnUpdate(args: {
       projectName: project?.name ?? null,
     };
 
+    const directRecipients: string[] = [];
+
     if (args.assigneeChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
-      if (a?.email) {
+      let emailSent = false;
+      if (a?.email && (await isEmailEnabled(args.after.assigneeId))) {
         await emailIssueAssigned({
           to: a.email,
           assigneeName: [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || null,
           issue: issueRef,
           reassignedBy: actorName,
         });
+        emailSent = true;
       }
+      directRecipients.push(args.after.assigneeId);
+      // Auto-watch: a newly assigned person starts watching, matching Jira.
+      // skipDuplicates so re-assigning back to an existing (manual or auto)
+      // watcher is a no-op rather than an error.
+      await db.qtIssueWatcher
+        .createMany({
+          data: [{ orgId: args.orgId, issueId: issueRef.id, userId: args.after.assigneeId, source: "AUTO" }],
+          skipDuplicates: true,
+        })
+        .catch((e) => console.error("[watch] auto-watch on assign failed:", e));
+      await notifyDirect({
+        orgId: args.orgId,
+        recipientId: args.after.assigneeId,
+        actorId: args.actorUserId,
+        type: "ASSIGNED",
+        projectId: issueRef.projectId,
+        issueId: issueRef.id,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        emailSent,
+      });
     }
 
     if (args.statusChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
-      if (a?.email) {
+      let emailSent = false;
+      if (a?.email && (await isEmailEnabled(args.after.assigneeId))) {
         await emailIssueStatusChanged({
           to: a.email,
           recipientName: [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || null,
@@ -457,7 +485,57 @@ async function notifyOnUpdate(args: {
           toStatus: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
           changedBy: actorName,
         });
+        emailSent = true;
       }
+      directRecipients.push(args.after.assigneeId);
+      await notifyDirect({
+        orgId: args.orgId,
+        recipientId: args.after.assigneeId,
+        actorId: args.actorUserId,
+        type: "STATUS_CHANGED",
+        projectId: issueRef.projectId,
+        issueId: issueRef.id,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: statusById.get(args.before.statusId)?.name ?? null,
+        toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
+        emailSent,
+      });
+    }
+
+    if (args.assigneeChanged) {
+      const nameOf = (id: string | null) => {
+        if (!id) return "Unassigned";
+        const u = userById.get(id);
+        return u ? [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email : "Unassigned";
+      };
+      await notifyWatchers({
+        orgId: args.orgId,
+        issueId: issueRef.id,
+        actorId: args.actorUserId,
+        type: "REASSIGNED",
+        projectId: issueRef.projectId,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: nameOf(args.before.assigneeId),
+        toValue: nameOf(args.after.assigneeId),
+        skipRecipientIds: directRecipients,
+      });
+    }
+
+    if (args.statusChanged) {
+      await notifyWatchers({
+        orgId: args.orgId,
+        issueId: issueRef.id,
+        actorId: args.actorUserId,
+        type: "STATUS_CHANGED",
+        projectId: issueRef.projectId,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: statusById.get(args.before.statusId)?.name ?? null,
+        toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
+        skipRecipientIds: directRecipients,
+      });
     }
   } catch (e) {
     console.error("[email] notifyOnUpdate failed:", e instanceof Error ? e.message : e);

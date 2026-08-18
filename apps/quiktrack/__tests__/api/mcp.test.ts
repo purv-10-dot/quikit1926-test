@@ -1549,7 +1549,7 @@ describe("POST /api/mcp", () => {
     );
   });
 
-  it("adds a comment to an issue", async () => {
+  it("adds a comment to an issue, attributed to actorType 'agent' + the PAT's own name as actingAgentId", async () => {
     mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
       id: "pat_1",
       orgId: ORG,
@@ -1560,6 +1560,7 @@ describe("POST /api/mcp", () => {
       revokedAt: null,
       lastUsedAt: new Date(),
       createdAt: new Date(),
+      name: "Claude Code — laptop",
     } as never);
     mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
@@ -1601,7 +1602,13 @@ describe("POST /api/mcp", () => {
     });
     expect(mockDb.qtIssueComment.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ issueId: "issue_1", userId: CREATED_BY, body: "On it" }),
+        data: expect.objectContaining({
+          issueId: "issue_1",
+          userId: CREATED_BY,
+          body: "On it",
+          actorType: "agent",
+          actingAgentId: "Claude Code — laptop",
+        }),
       }),
     );
   });
