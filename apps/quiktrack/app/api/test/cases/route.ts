@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { createTestCase, TestCaseError } from "@/lib/services/testCases";
+import { buildCaseWhere } from "@/lib/test/caseFilterQuery";
 import { badRequest, gateProjectResolved, serverError } from "@/lib/test/gate";
 import {
   createTestCaseSchema,
@@ -47,27 +48,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     }
     const q = parsed.data;
 
-    const where = {
-      orgId,
-      projectId,
-      // A switch, not an include — see listTestCasesSchema. The deleted view is how
-      // restore is reached; deleted rows never appear in the normal list.
-      isDeleted: q.deleted === "true",
-      ...(q.sectionId ? { sectionId: q.sectionId } : {}),
-      ...(q.suiteId ? { section: { suiteId: q.suiteId } } : {}),
-      ...(q.priority ? { priority: q.priority } : {}),
-      ...(q.type ? { type: q.type } : {}),
-      ...(q.automationStatus ? { automationStatus: q.automationStatus } : {}),
-      ...(q.approvalState ? { approvalState: q.approvalState } : {}),
-      ...(q.query
-        ? {
-            OR: [
-              { title: { contains: q.query, mode: "insensitive" as const } },
-              { automationId: { contains: q.query, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    };
+    // Filter → Prisma mapping lives in lib/test/caseFilterQuery.ts, so the
+    // cross-table filters (execution status, run, defect, coverage) are testable
+    // without building a NextRequest.
+    const where = buildCaseWhere(orgId, projectId, q);
 
     const [total, rows] = await Promise.all([
       db.qtTestCase.count({ where }),

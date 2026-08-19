@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { Layers, Plus, Upload } from "lucide-react";
@@ -9,22 +9,21 @@ import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { CaseDetailPanel } from "./case-detail-panel";
 import { CaseEditorPanel } from "./case-editor-panel";
+import { CaseFilterBar } from "./case-filter-bar";
 import { CaseTable } from "./case-table";
 import { loadColumns } from "./columns-menu";
 import { ImportCasesPanel } from "./import-cases-panel";
 import { BulkNotice } from "./bulk-notice";
 import { RepositoryHeader } from "./repository-header";
+import { useCaseFilters } from "./use-case-filters";
+import { useCaseList } from "./use-case-list";
 import { useCaseSelection } from "./use-case-selection";
 import { useInlineEdit } from "./use-inline-edit";
 import { useSuitePrompt } from "./use-suite-prompt";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
 import { useCasePanels } from "./use-case-panels";
-import {
-  DEFAULT_CASE_COLUMNS,
-  type CaseColumnKey,
-  type TestCaseRow,
-} from "./case-meta";
+import { DEFAULT_CASE_COLUMNS, type CaseColumnKey } from "./case-meta";
 
 /**
  * The test case repository — suite tree on the left, case list on the right,
@@ -45,11 +44,6 @@ interface SuiteResponse {
     orderNo: number;
     caseCount?: number;
   }>;
-}
-
-interface CaseListResponse {
-  items: TestCaseRow[];
-  total: number;
 }
 
 export function RepositoryView({ projectId }: { projectId: string }) {
@@ -96,29 +90,16 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   /** "Deleted" view — how restore is reached. */
   const [showDeleted, setShowDeleted] = useState(false);
 
-  const caseQuery = useMemo(() => {
-    const scope = activeSectionId
-      ? `sectionId=${activeSectionId}`
-      : activeSuiteId
-        ? `suiteId=${activeSuiteId}`
-        : null;
-    if (!scope) return null;
-    return `${scope}&deleted=${showDeleted ? "true" : "false"}`;
-  }, [activeSectionId, activeSuiteId, showDeleted]);
+  // Filter state lives in the URL (QUIKTR-341) — see use-case-filters.ts.
+  const caseFilters = useCaseFilters();
 
-  // showDeleted is part of the cache key: the two lists are different data, and
-  // sharing one key would show live cases in the deleted view until a refetch.
-  const casesKey = [
-    "quiktrack",
-    "test-cases",
+  const { cases, loading: casesLoading } = useCaseList({
     projectId,
-    activeSectionId ?? activeSuiteId ?? "none",
-    showDeleted ? "deleted" : "live",
-  ] as const;
-  const { data: cases, isLoading: casesLoading } = useApiData<CaseListResponse>(
-    casesKey,
-    caseQuery ? `/api/test/cases?projectId=${projectId}&${caseQuery}` : null,
-  );
+    activeSectionId,
+    activeSuiteId,
+    showDeleted,
+    toQueryString: caseFilters.toQueryString,
+  });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["quiktrack", "test-cases"] });
@@ -180,6 +161,14 @@ export function RepositoryView({ projectId }: { projectId: string }) {
           setShowDeleted(v);
           selection.clear();
         }}
+      />
+
+      <CaseFilterBar
+        projectId={projectId}
+        filters={caseFilters.filters}
+        activeCount={caseFilters.activeCount}
+        onSetFilter={caseFilters.setFilter}
+        onClearAll={caseFilters.clearAll}
       />
 
       <BulkNotice
