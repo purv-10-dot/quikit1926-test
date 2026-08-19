@@ -74,7 +74,7 @@ beforeEach(() => {
 describe("withOrgAuth({ allowPat: true })", () => {
   it("resolves a valid PAT to projectId + actorType 'agent' + actingAgentId (the PAT's own name)", async () => {
     mockValidPat();
-    const seen: { projectId?: string; actorType?: string; actingAgentId?: string } = {};
+    const seen: { projectId?: string | null; actorType?: string; actingAgentId?: string } = {};
     const handler = withOrgAuth(
       async (ctx) => {
         seen.projectId = ctx.projectId;
@@ -197,7 +197,7 @@ describe("withOrgAuth({ allowAgentJwt: true })", () => {
       actingAs: "ai_agent",
       actingAgentId: "ai-runtime",
     });
-    const seen: { userId?: string; orgId?: string; actorType?: string; actingAgentId?: string; projectId?: string } = {};
+    const seen: { userId?: string; orgId?: string; actorType?: string; actingAgentId?: string; projectId?: string | null } = {};
     const handler = withOrgAuth(
       async (ctx) => {
         seen.userId = ctx.userId;
