@@ -19,6 +19,8 @@ export function RepositoryHeader({
   hasSuites,
   onCreate,
   onImport,
+  showDeleted,
+  onShowDeleted,
 }: {
   projectId: string;
   canCreate: boolean;
@@ -26,6 +28,9 @@ export function RepositoryHeader({
   hasSuites: boolean;
   onCreate: () => void;
   onImport: () => void;
+  /** Undefined hides the Active/Deleted switch. */
+  showDeleted?: boolean;
+  onShowDeleted?: (next: boolean) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2.5">
@@ -40,6 +45,27 @@ export function RepositoryHeader({
           Test runs
         </Link>
       </nav>
+
+      {/* Deleted view — undefined hides it entirely (users who cannot delete have
+          nothing to restore, so the tab would be an empty dead end). */}
+      {showDeleted !== undefined && hasSuites && (
+        <div className="ml-auto mr-2 flex items-center gap-1 rounded-md border border-gray-200 p-0.5">
+          {([false, true] as const).map((v) => (
+            <button
+              key={String(v)}
+              type="button"
+              onClick={() => onShowDeleted?.(v)}
+              className={`rounded px-2 py-1 text-[11px] ${
+                showDeleted === v
+                  ? "bg-accent-50 font-medium text-accent-800"
+                  : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              {v ? "Deleted" : "Active"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Hidden with no suites: the empty state's own button is then the single call
           to action, so the two no longer compete. */}

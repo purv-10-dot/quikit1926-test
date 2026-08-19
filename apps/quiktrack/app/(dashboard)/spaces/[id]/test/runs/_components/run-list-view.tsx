@@ -42,12 +42,54 @@ export function RunListView({ projectId }: { projectId: string }) {
   const [closingId, setClosingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const runsKey = ["quiktrack", "test-runs", projectId] as const;
+  /** "Deleted" view — how restore is reached. */
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  // showDeleted is part of the key: the two lists are different data.
+  const runsKey = [
+    "quiktrack",
+    "test-runs",
+    projectId,
+    showDeleted ? "deleted" : "live",
+  ] as const;
   const { data, isLoading } = useApiData<{ items: RunRowData[]; total: number }>(
     runsKey,
-    `/api/test/runs?projectId=${projectId}`,
+    `/api/test/runs?projectId=${projectId}&deleted=${showDeleted ? "true" : "false"}`,
     { staleTime: 0 },
   );
+
+  /**
+   * Soft-delete a run. Results are KEPT — stated in the confirmation with the real
+   * count, because "delete" reads as destroying the execution history and here it
+   * does not.
+   */
+  const mutateRun = async (
+    action: "delete" | "restore",
+    ids: string[],
+    confirmText?: string,
+  ) => {
+    if (confirmText && !window.confirm(confirmText)) return;
+    setPendingId(ids[0] ?? null);
+    setError(null);
+    try {
+      const res = await fetch("/api/test/runs/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action, ids }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!json.success) {
+        setError(json.error ?? `Could not ${action} the run.`);
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["quiktrack", "test-runs"] });
+    } catch {
+      setError(`Could not ${action} the run.`);
+    } finally {
+      setPendingId(null);
+    }
+  };
 
   // Memoised off `data` rather than a fresh `?? []` literal: the fallback array
   // has a new identity every render, so the grouping would re-run each time.
@@ -92,16 +134,37 @@ export function RunListView({ projectId }: { projectId: string }) {
             Each run is an immutable record of one execution pass.
           </p>
         </div>
-        {canCreate && (
-          <Button
-            size="sm"
-            className="bg-accent-600 text-white hover:bg-accent-700"
-            onClick={() => setPanelOpen(true)}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            New run
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Only for users who can delete: nobody else has anything to restore. */}
+          {canClose && (
+            <div className="flex items-center gap-1 rounded-md border border-gray-200 p-0.5">
+              {([false, true] as const).map((v) => (
+                <button
+                  key={String(v)}
+                  type="button"
+                  onClick={() => setShowDeleted(v)}
+                  className={`rounded px-2 py-1 text-[11px] ${
+                    showDeleted === v
+                      ? "bg-accent-50 font-medium text-accent-800"
+                      : "text-gray-500 hover:text-gray-800"
+                  }`}
+                >
+                  {v ? "Deleted" : "Active"}
+                </button>
+              ))}
+            </div>
+          )}
+          {canCreate && !showDeleted && (
+            <Button
+              size="sm"
+              className="bg-accent-600 text-white hover:bg-accent-700"
+              onClick={() => setPanelOpen(true)}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              New run
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -155,7 +218,18 @@ export function RunListView({ projectId }: { projectId: string }) {
                     canClose={canClose}
                     onClose={closeRun}
                     onEdit={setEditingRun}
+                    onDelete={(r) =>
+                      void mutateRun(
+                        "delete",
+                        [r.id],
+                        `Delete "${r.name}"?\n\nIt will be hidden from the runs list. ` +
+                          `Its ${r.testCount} test${r.testCount === 1 ? "" : "s"} and any recorded ` +
+                          `results are KEPT — the execution history stays intact, and you can restore the run later.`,
+                      )
+                    }
+                    onRestore={(id) => void mutateRun("restore", [id])}
                     closing={closingId === run.id}
+                    busy={pendingId === run.id}
                   />
                 ))}
               </section>

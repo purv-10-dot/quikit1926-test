@@ -198,6 +198,13 @@ export const attachTestTagSchema = z
 export const listTestCasesSchema = z.object({
   sectionId: z.string().min(1).optional(),
   suiteId: z.string().min(1).optional(),
+  /**
+   * Show soft-deleted cases instead of live ones — the "Deleted" view that makes
+   * restore reachable. Deliberately a SWITCH, not an include: mixing deleted rows
+   * into the normal list would let someone run a suite that quietly contains
+   * deleted cases.
+   */
+  deleted: z.enum(["true", "false"]).default("false"),
   query: z.string().trim().max(255).optional(),
   priority: testCasePriorityEnum.optional(),
   type: testCaseTypeEnum.optional(),

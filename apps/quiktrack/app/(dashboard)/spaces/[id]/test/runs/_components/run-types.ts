@@ -16,6 +16,8 @@ export interface RunRow {
   /** Needed by the edit panel so it can prefill rather than blank the field. */
   description: string | null;
   refTickets: string | null;
+  /** True in the "Deleted" view — drives Restore instead of Delete. */
+  isDeleted: boolean;
   testCount: number;
   counts: StatusCounts;
   createdByUser: { id: string; firstName: string; lastName: string } | null;

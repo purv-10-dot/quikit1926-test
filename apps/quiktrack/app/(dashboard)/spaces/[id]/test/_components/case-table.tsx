@@ -10,8 +10,10 @@ import {
   type CaseColumnKey,
   type TestCaseRow,
 } from "./case-meta";
+import { BulkActionsBar } from "./bulk-actions-bar";
 import { CaseCell } from "./case-row-cells";
 import { ColumnsMenu } from "./columns-menu";
+import { TriCheckbox } from "../runs/_components/tri-checkbox";
 
 /**
  * Right pane: the case list for the selected folder.
@@ -36,6 +38,23 @@ interface CaseTableProps {
   projectId: string;
   columns: CaseColumnKey[];
   onColumns: (next: CaseColumnKey[]) => void;
+  /**
+   * Bulk selection. Omit to render no checkboxes at all — the column only appears
+   * for users who can actually delete, so a read-only viewer gets no dead controls.
+   */
+  selection?: {
+    selectedIds: Set<string>;
+    count: number;
+    allSelected: boolean;
+    someSelected: boolean;
+    busy: boolean;
+    mode: "live" | "deleted";
+    onToggle: (id: string, on: boolean) => void;
+    onToggleAll: (on: boolean) => void;
+    onDelete: () => void;
+    onRestore: () => void;
+    onClear: () => void;
+  };
 }
 
 /**
@@ -85,6 +104,7 @@ export function CaseTable({
   projectId,
   columns,
   onColumns,
+  selection,
 }: CaseTableProps) {
   // Forecast over the rows on screen. Stated as such in the footer: it covers
   // this page, not the whole suite, and saying "suite forecast" over a paginated
@@ -159,10 +179,32 @@ export function CaseTable({
         onColumns={onColumns}
       />
 
+      {selection && (
+        <BulkActionsBar
+          count={selection.count}
+          mode={selection.mode}
+          busy={selection.busy}
+          onDelete={selection.onDelete}
+          onRestore={selection.onRestore}
+          onClear={selection.onClear}
+        />
+      )}
+
       <div className="flex-1 overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0">
             <tr className="text-left">
+              {selection && (
+                <th className="w-9 bg-accent-50 px-3 py-2">
+                  <TriCheckbox
+                    checked={selection.allSelected}
+                    indeterminate={selection.someSelected}
+                    disabled={selection.busy}
+                    onChange={selection.onToggleAll}
+                    ariaLabel="Select all cases on this page"
+                  />
+                </th>
+              )}
               <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">ID</th>
               <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Title</th>
               {shown.map((c) => (
@@ -182,6 +224,21 @@ export function CaseTable({
                 className="cursor-pointer border-b border-gray-100 hover:bg-blue-50"
                 onClick={() => onOpen(row.id)}
               >
+                {selection && (
+                  // stopPropagation: the row opens the case on click, and ticking a
+                  // checkbox must not also open it.
+                  <td
+                    className="w-9 px-3 py-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <TriCheckbox
+                      checked={selection.selectedIds.has(row.id)}
+                      disabled={selection.busy}
+                      onChange={(on) => selection.onToggle(row.id, on)}
+                      ariaLabel={`Select ${caseRef(row.refId)}`}
+                    />
+                  </td>
+                )}
                 <td className="whitespace-nowrap px-4 py-2 text-gray-900">
                   {caseRef(row.refId)}
                 </td>

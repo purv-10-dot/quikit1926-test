@@ -50,7 +50,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     const where = {
       orgId,
       projectId,
-      isDeleted: false,
+      // A switch, not an include — see listTestCasesSchema. The deleted view is how
+      // restore is reached; deleted rows never appear in the normal list.
+      isDeleted: q.deleted === "true",
       ...(q.sectionId ? { sectionId: q.sectionId } : {}),
       ...(q.suiteId ? { section: { suiteId: q.suiteId } } : {}),
       ...(q.priority ? { priority: q.priority } : {}),

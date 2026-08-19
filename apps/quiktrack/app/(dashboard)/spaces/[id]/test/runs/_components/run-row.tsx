@@ -30,14 +30,22 @@ export function RunRow({
   canClose,
   onClose,
   onEdit,
+  onDelete,
+  onRestore,
   closing,
+  busy = false,
 }: {
   run: RunRowData;
   projectId: string;
   canClose: boolean;
   onClose: (runId: string) => void;
   onEdit: (run: RunRowData) => void;
+  /** Takes the whole run so the confirmation can name it and count its results. */
+  onDelete: (run: RunRowData) => void;
+  onRestore: (runId: string) => void;
   closing: boolean;
+  /** True while a delete/restore is in flight for this row. */
+  busy?: boolean;
 }) {
   const phase = runLifecycle(run);
   const Icon = ICON[phase];
@@ -108,7 +116,34 @@ export function RunRow({
         <p className="text-[11px] text-gray-400">
           {executed} / {total} run
         </p>
-        {canClose && run.state !== "closed" && (
+        {/* Delete/restore is offered on ANY run, closed or not — unlike Edit, which
+            is open-runs-only. Hiding a closed run is exactly what a QA lead wants
+            after a release ships, and the delete is reversible. */}
+        {canClose && (
+          <div className="mt-1 flex items-center justify-end gap-2">
+            {run.isDeleted ? (
+              <button
+                type="button"
+                onClick={() => onRestore(run.id)}
+                disabled={busy}
+                className="text-[11px] text-gray-500 hover:text-gray-800 hover:underline disabled:opacity-50"
+              >
+                Restore
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onDelete(run)}
+                disabled={busy}
+                className="text-[11px] text-rose-600 hover:text-rose-800 hover:underline disabled:opacity-50"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        )}
+
+        {canClose && run.state !== "closed" && !run.isDeleted && (
           <div className="mt-1 flex items-center justify-end gap-2">
             {/* Edit is offered only on an OPEN run: a closed run's metadata is part
                 of a signed-off record. The server enforces this too. */}

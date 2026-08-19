@@ -87,6 +87,8 @@ export const recordResultSchema = z.object({
 
 export const listRunsSchema = z.object({
   projectId: z.string().min(1).optional(),
+  /** Show soft-deleted runs instead of live ones — the "Deleted" view. */
+  deleted: z.enum(["true", "false"]).default("false"),
   state: runStateEnum.optional(),
   source: runSourceEnum.optional(),
   milestoneId: z.string().min(1).optional(),
