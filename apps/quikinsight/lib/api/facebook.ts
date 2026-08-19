@@ -1,5 +1,9 @@
+import { withSample } from "./sample";
+import { FACEBOOK_SAMPLE } from "@/lib/mock/platformSamples";
 export interface FacebookData {
   connected: boolean;
+  /** Set when these are sample figures, not the workspace's own. */
+  isSampleData?: boolean;
   pageName?: string;
   fans?: number;
   reach?: number;
@@ -21,5 +25,7 @@ export interface FacebookData {
 export async function getFacebookData(): Promise<FacebookData> {
   const res = await fetch("/api/facebook", { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load Facebook data (${res.status})`);
-  return (await res.json()) as FacebookData;
+  const live = (await res.json()) as FacebookData;
+  // Not connected -> representative sample data + a banner on the page.
+  return withSample<FacebookData>(live, FACEBOOK_SAMPLE);
 }

@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { hasPermission, type Permission } from "@/lib/rbac";
+import { hasPermission, sessionRole, type Permission } from "@/lib/rbac";
 
 // The request object handed to a guarded handler, with the validated session attached.
 export type AuthedRequest = NextRequest & { session: Awaited<ReturnType<typeof getServerSession>> };
@@ -24,7 +24,7 @@ export function withAuth(handler: AuthedHandler, requiredPermission?: Permission
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    if (requiredPermission && !hasPermission(session.user.role, requiredPermission)) {
+    if (requiredPermission && !hasPermission(sessionRole(session), requiredPermission)) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 

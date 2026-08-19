@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import { useRouter } from "next/navigation";
 import { getLinkedInData, type LinkedInData } from "@/lib/api/linkedin";
 import Kpi from "@/components/ui/Kpi";
@@ -123,6 +124,7 @@ export default function LinkedInPage() {
 
   return (
     <div>
+      {data.isSampleData && <SampleDataBanner platform="LinkedIn" />}
       {/* ── Header ── */}
       <div className="greet-row">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

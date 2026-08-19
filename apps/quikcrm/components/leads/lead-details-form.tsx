@@ -40,6 +40,9 @@ export function LeadDetailsForm({
     ownerName?: string | null;
     accountId?: string | null;
     account?: { id: string; name: string } | null;
+    /** ICP reference + joined name. Read-only in the form (no control). */
+    icpId?: string | null;
+    icp?: { id: string; name: string } | null;
     dynamicFields?: Record<string, unknown> | null;
   };
 }) {
@@ -81,6 +84,10 @@ export function LeadDetailsForm({
         ownerName: lead.ownerName ?? "",
         accountId: lead.accountId ?? "",
         accountName: lead.account?.name ?? "",
+        // Reference is forwarded so a save round-trips it unchanged; the name is
+        // display-only for the read-only Lead Information field.
+        icpId: lead.icpId ?? null,
+        icpName: lead.icp?.name ?? null,
         dynamicFields: lead.dynamicFields ?? null,
       }}
     />

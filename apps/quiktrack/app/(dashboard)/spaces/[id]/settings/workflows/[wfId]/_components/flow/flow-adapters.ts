@@ -88,13 +88,19 @@ export function draftToNodes(
   for (const { s } of ordered) {
     const meta = statusMeta.get(s.statusId);
     const col = colOf.get(s.statusId) ?? 0;
-    // Classic layout: statuses always sit on one left→right row (Jira ignores
-    // saved scatter positions in this view). Drag still pans a node within the
-    // session via React Flow's own store.
+    // Retain the user's saved arrangement (Jira Workflow Designer parity): use
+    // the persisted x/y when the node has been positioned. Only nodes that were
+    // never dragged (x/y null — e.g. freshly seeded) fall back to the default
+    // left→right row so a new workflow still opens tidy. Positions persist via
+    // moveNode → draft save/publish → QtWorkflowStatus.x/y.
+    const position =
+      s.x != null && s.y != null
+        ? { x: s.x, y: s.y }
+        : { x: FIRST_X + col * COL_GAP, y: ROW_Y };
     nodes.push({
       id: s.statusId,
       type: "statusNode",
-      position: { x: FIRST_X + col * COL_GAP, y: ROW_Y },
+      position,
       data: {
         statusId: s.statusId,
         name: meta?.name ?? s.statusId,

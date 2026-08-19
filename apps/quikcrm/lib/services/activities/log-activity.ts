@@ -12,6 +12,7 @@
 // must be refreshed by the caller when a user is renamed.
 import type { CrmActivity, Prisma, PrismaClient } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
+import type { ActivityKind } from "@/lib/services/activities/target-existence";
 
 type Tx = PrismaClient | Prisma.TransactionClient;
 
@@ -20,8 +21,10 @@ export type LogActivityInput = {
   userId?: string;
   ownerId?: string;
   type: string;
-  // "None" = standalone (unlinked) activity. See target-existence.ts.
-  relatedKind: "Lead" | "Opportunity" | "Contact" | "Account" | "None";
+  // Every kind the composer/API accept, including the "None" standalone
+  // sentinel. Derived from the registry rather than re-spelled here, so adding a
+  // kind in target-existence.ts does not need a matching edit in this file.
+  relatedKind: ActivityKind;
   relatedObjectId: string;
   subject?: string;
   outcome?: string;

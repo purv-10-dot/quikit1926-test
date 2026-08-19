@@ -194,6 +194,8 @@ export async function recordIssueChanges(args: {
   before: IssueHistorySnapshot;
   after: IssueHistorySnapshot;
   actorType?: "user" | "agent";
+  /** Which agent, when actorType is "agent" — ignored/omitted for "user". */
+  actingAgentId?: string | null;
 }): Promise<void> {
   const changedFields: (keyof IssueHistorySnapshot)[] = [];
   for (const f of TRACKED_FIELDS) {
@@ -212,6 +214,7 @@ export async function recordIssueChanges(args: {
         oldValue: renderValue(f, args.before[f], names),
         newValue: renderValue(f, args.after[f], names),
         actorType: args.actorType ?? "user",
+        actingAgentId: args.actorType === "agent" ? args.actingAgentId ?? null : null,
       })),
     });
   } catch (error: unknown) {
@@ -232,6 +235,8 @@ export async function recordIssueEvent(args: {
   oldValue: string | null;
   newValue: string | null;
   actorType?: "user" | "agent";
+  /** Which agent, when actorType is "agent" — ignored/omitted for "user". */
+  actingAgentId?: string | null;
 }): Promise<void> {
   try {
     await db.qtIssueHistory.create({
@@ -244,6 +249,7 @@ export async function recordIssueEvent(args: {
         oldValue: args.oldValue,
         newValue: args.newValue,
         actorType: args.actorType ?? "user",
+        actingAgentId: args.actorType === "agent" ? args.actingAgentId ?? null : null,
       },
     });
   } catch (error: unknown) {

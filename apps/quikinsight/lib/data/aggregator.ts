@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { getGA4Data, getGA4WeekOverWeek, getYouTubeData } from "@/lib/connectors/google";
+import { periodCacheKey, trailingWindow, windowToDays } from "@/lib/period/resolve";
+import type { DateWindow, PeriodSelection } from "@/lib/period/types";
+import { compositeDelta, NO_COMPARISON, type CompositePart } from "@/lib/data/compare";
+import { getGA4Data, getYouTubeData } from "@/lib/connectors/google";
 import { getAllMetaInsights } from "@/lib/connectors/metaConnector";
 import { getLinkedInOrgStats } from "@/lib/connectors/linkedin";
 import { getHubSpotCRMStats } from "@/lib/connectors/hubspot";
@@ -118,6 +121,24 @@ function buildConnectionsMeta(
   return meta;
 }
 
+/** Capability keys (lib/period/capability.ts) → Prisma platform enum values. */
+const PRISMA_PLATFORM: Record<string, string> = {
+  ga4: "GOOGLE_ANALYTICS",
+  gsc: "GOOGLE_SEARCH_CONSOLE",
+  youtube: "YOUTUBE",
+  gbp: "GOOGLE_BUSINESS_PROFILE",
+  meta: "META_FACEBOOK",
+  linkedin: "LINKEDIN",
+  hubspot: "HUBSPOT",
+  salesforce: "SALESFORCE",
+  dynamics: "DYNAMICS",
+  zoho: "ZOHO",
+  quikcrm: "QUIKCRM",
+  mailchimp: "MAILCHIMP",
+  googleAds: "GOOGLE_ADS",
+  metaAds: "META_ADS",
+};
+
 // ─── Per-connector timeout ───────────────────────────────────────────────────
 // Platform APIs are fetched concurrently, but some (e.g. a slow/unreachable
 // QuikCRM host, or GBP with no request timeout) can otherwise hang for 90s+ and
@@ -140,17 +161,104 @@ function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
 
 // ─── Main aggregator ─────────────────────────────────────────────────────────
 
+/**
+ * A baseline pass gets a tighter deadline than the current window.
+ *
+ * The current numbers are the product; the comparison is an enhancement. A slow
+ * baseline must degrade to "comparison unavailable" rather than hold up the
+ * whole dashboard behind the full 15s connector timeout.
+ */
+const COMPARISON_TIMEOUT_MS = 8_000;
+
+function withCompareTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} baseline timed out after ${COMPARISON_TIMEOUT_MS}ms`)),
+      COMPARISON_TIMEOUT_MS,
+    );
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/**
+ * Totals for the baseline window, for comparable platforms only.
+ *
+ * Deliberately NOT a second full aggregation. Tier-C connectors (social, CRM,
+ * email) would return their current snapshot again, so calling them a second
+ * time would cost quota to learn nothing — and worse, would produce a 0% delta
+ * that looks like a real finding. They are skipped entirely; anything they feed
+ * reports `null`. See lib/period/capability.ts.
+ */
+interface Baseline {
+  gaUsers: number | null;
+  gaSessions: number | null;
+  gaEngagement: number | null;
+  ytViews: number | null;
+}
+
+const EMPTY_BASELINE: Baseline = {
+  gaUsers: null, gaSessions: null, gaEngagement: null, ytViews: null,
+};
+
+async function fetchBaseline(
+  userId: string,
+  connected: Set<string>,
+  window: DateWindow,
+  workspaceId?: string,
+): Promise<Baseline> {
+  const [gaRes, ytRes] = await Promise.allSettled([
+    connected.has("GOOGLE_ANALYTICS")
+      ? withCompareTimeout(getGA4Data(userId, window, workspaceId), "GA4")
+      : Promise.reject("not connected"),
+    connected.has("YOUTUBE")
+      ? withCompareTimeout(getYouTubeData(userId, window, workspaceId), "YouTube")
+      : Promise.reject("not connected"),
+  ]);
+
+  const ga = gaRes.status === "fulfilled" ? gaRes.value : null;
+  const yt = ytRes.status === "fulfilled" ? ytRes.value : null;
+
+  return {
+    gaUsers: ga ? ga.totalUsers ?? 0 : null,
+    gaSessions: ga ? ga.totalSessions ?? 0 : null,
+    gaEngagement: ga ? ((ga.keyEvents ?? 0) > 0 ? ga.keyEvents ?? 0 : ga.eventCount ?? 0) : null,
+    ytViews: yt ? yt.analytics.views ?? 0 : null,
+  };
+}
+
+/** Normalises the legacy `days` argument onto a PeriodSelection. */
+function toPeriod(period: PeriodSelection | number): PeriodSelection {
+  if (typeof period !== "number") return period;
+  const w = trailingWindow(period);
+  return { mode: "none", current: w, previous: null };
+}
+
 // Cached wrapper: collapses the burst of concurrent Overview/Insights calls (and
 // repeat loads) into one live aggregation per (user, window) for AGG_TTL.
-export async function getAggregatedDashboard(userId: string, days = 28, workspaceId?: string): Promise<DashboardData> {
-  const cached = getAggCache(userId, days, workspaceId);
+export async function getAggregatedDashboard(
+  userId: string,
+  period: PeriodSelection | number = 28,
+  workspaceId?: string,
+): Promise<DashboardData> {
+  const sel = toPeriod(period);
+  const key = periodCacheKey(sel);
+  const cached = getAggCache(userId, key, workspaceId);
   if (cached) return cached;
-  const data = await computeAggregatedDashboard(userId, days, workspaceId);
-  setAggCache(userId, days, data, workspaceId);
+  const data = await computeAggregatedDashboard(userId, sel, workspaceId);
+  setAggCache(userId, key, data, workspaceId);
   return data;
 }
 
-async function computeAggregatedDashboard(userId: string, days = 28, workspaceId?: string): Promise<DashboardData> {
+async function computeAggregatedDashboard(
+  userId: string,
+  period: PeriodSelection,
+  workspaceId?: string,
+): Promise<DashboardData> {
+  const window = period.current;
+  const days = windowToDays(window);
   // Find which platforms this user has connected (with metadata for the pickers)
   const connections = await prisma.platformConnection.findMany({
     where: { userId, status: "CONNECTED", ...(workspaceId ? { workspaceId } : {}) },
@@ -162,7 +270,7 @@ async function computeAggregatedDashboard(userId: string, days = 28, workspaceId
   // Fan out all platform fetches concurrently; failures fall back gracefully
   const [
     ga4Result,
-    ga4WoWResult,
+    baselineResult,
     metaResult,
     linkedinResult,
     hubspotResult,
@@ -177,25 +285,25 @@ async function computeAggregatedDashboard(userId: string, days = 28, workspaceId
     googleAdsResult,
     metaAdsResult,
   ] = await Promise.allSettled([
-    connected.has("GOOGLE_ANALYTICS")        ? withTimeout(getGA4Data(userId, days, workspaceId), "GA4")             : Promise.reject("not connected"),
-    connected.has("GOOGLE_ANALYTICS")        ? withTimeout(getGA4WeekOverWeek(userId, days, workspaceId), "GA4 WoW") : Promise.reject("not connected"),
+    connected.has("GOOGLE_ANALYTICS")        ? withTimeout(getGA4Data(userId, window, workspaceId), "GA4")             : Promise.reject("not connected"),
+    period.previous ? fetchBaseline(userId, connected, period.previous, workspaceId) : Promise.resolve(EMPTY_BASELINE),
     connected.has("META_FACEBOOK")           ? withTimeout(getAllMetaInsights(userId), "Meta")         : Promise.reject("not connected"),
     connected.has("LINKEDIN")                ? withTimeout(getLinkedInOrgStats(userId, workspaceId), "LinkedIn")    : Promise.reject("not connected"),
     connected.has("HUBSPOT")                 ? withTimeout(getHubSpotCRMStats(userId, workspaceId), "HubSpot")      : Promise.reject("not connected"),
     connected.has("SALESFORCE")              ? withTimeout(getSalesforcePipelineStats(userId, workspaceId), "Salesforce") : Promise.reject("not connected"),
-    connected.has("YOUTUBE")                 ? withTimeout(getYouTubeData(userId, days, workspaceId), "YouTube")     : Promise.reject("not connected"),
+    connected.has("YOUTUBE")                 ? withTimeout(getYouTubeData(userId, window, workspaceId), "YouTube")     : Promise.reject("not connected"),
     connected.has("GOOGLE_BUSINESS_PROFILE") ? withTimeout(getGbpStats(userId, workspaceId), "GBP")                 : Promise.reject("not connected"),
     connected.has("MAILCHIMP")               ? withTimeout(getMailchimpStats(userId, workspaceId), "Mailchimp")     : Promise.reject("not connected"),
     connected.has("DYNAMICS")                ? withTimeout(getDynamicsStats(userId, workspaceId), "Dynamics")       : Promise.reject("not connected"),
-    connected.has("GOOGLE_SEARCH_CONSOLE")   ? withTimeout(getSearchConsoleData(userId, days, workspaceId), "GSC")  : Promise.reject("not connected"),
+    connected.has("GOOGLE_SEARCH_CONSOLE")   ? withTimeout(getSearchConsoleData(userId, window, workspaceId), "GSC")  : Promise.reject("not connected"),
     connected.has("ZOHO")                    ? withTimeout(getZohoStats(userId, workspaceId), "Zoho")               : Promise.reject("not connected"),
     connected.has("QUIKCRM")                 ? withTimeout(getQuikCRMStats(userId, workspaceId), "QuikCRM")         : Promise.reject("not connected"),
-    connected.has("GOOGLE_ADS")              ? withTimeout(getGoogleAdsStats(userId, workspaceId), "Google Ads")    : Promise.reject("not connected"),
-    connected.has("META_ADS")                ? withTimeout(getMetaAdsStats(userId, workspaceId), "Meta Ads")        : Promise.reject("not connected"),
+    connected.has("GOOGLE_ADS")              ? withTimeout(getGoogleAdsStats(userId, workspaceId, window), "Google Ads")    : Promise.reject("not connected"),
+    connected.has("META_ADS")                ? withTimeout(getMetaAdsStats(userId, workspaceId, window), "Meta Ads")        : Promise.reject("not connected"),
   ]);
 
   const ga4       = ga4Result.status       === "fulfilled" ? ga4Result.value       : null;
-  const ga4WoW    = ga4WoWResult.status    === "fulfilled" ? ga4WoWResult.value    : null;
+  const baseline  = baselineResult.status  === "fulfilled" ? baselineResult.value  : EMPTY_BASELINE;
   const meta      = metaResult.status      === "fulfilled" ? metaResult.value      : null;
   const linkedin  = linkedinResult.status  === "fulfilled" ? linkedinResult.value  : null;
   const hubspot   = hubspotResult.status   === "fulfilled" ? hubspotResult.value   : null;
@@ -231,38 +339,72 @@ async function computeAggregatedDashboard(userId: string, days = 28, workspaceId
   const liEng  = linkedin?.engagements ?? 0;
   const totalEngagement = gaEng + fbEng + igEng + liEng;
 
-  const webSessions    = ga4?.totalSessions ?? 0;
-  const webDeltaAbs    = Math.abs(ga4WoW?.deltaPercent ?? 0);
-  const webDeltaDir    = deltaDir(ga4WoW?.deltaPercent ?? 0);
+  const webSessions = ga4?.totalSessions ?? 0;
+
+  // Comparison parts. `previous` is null for every snapshot-only source, which
+  // makes the whole composite report "unavailable" rather than silently treating
+  // an unknown baseline as unchanged. See lib/data/compare.ts.
+  const part = (platform: string, current: number, previous: number | null): CompositePart => ({
+    platform, connected: connected.has(PRISMA_PLATFORM[platform] ?? platform), current, previous,
+  });
+
+  const reachDelta = compositeDelta([
+    part("ga4", gaReach, baseline.gaUsers),
+    part("meta", fbReach + igReach, null),
+    part("linkedin", liReach, null),
+    part("youtube", ytViews, baseline.ytViews),
+  ]).delta;
+
+  const engagementDelta = compositeDelta([
+    part("ga4", gaEng, baseline.gaEngagement),
+    part("meta", fbEng + igEng, null),
+    part("linkedin", liEng, null),
+  ]).delta;
+
+  const webDelta = compositeDelta([part("ga4", webSessions, baseline.gaSessions)]).delta;
 
   const leads    = (hubspot?.leads    ?? 0) + (dynamics?.openOpportunities ?? 0) + (zoho?.leads ?? 0) + (quikcrm?.leads ?? 0);
   const pipeline = (hubspot?.pipeline ?? 0) + (salesforce?.pipeline ?? 0) + (dynamics?.pipeline ?? 0) + (zoho?.pipeline ?? 0) + (quikcrm?.pipeline ?? 0);
   const revenue  = (hubspot?.revenue  ?? 0) + (salesforce?.revenue  ?? 0) + (dynamics?.revenue  ?? 0) + (zoho?.revenue ?? 0) + (quikcrm?.revenue ?? 0);
 
+  // Leads / Pipeline / Revenue come only from CRM connectors, none of which can
+  // report a past window — so their comparison is genuinely unavailable, not 0%.
   const kpis = [
     {
-      label: "Total Reach",     value: fmtShort(totalReach),    rawValue: totalReach,
-      delta: 0, deltaDirection: "up"  as const, unit: "shortNumber" as const,
+      label: "Total Reach",     value: fmtShort(totalReach),      rawValue: totalReach,
+      delta: reachDelta.percent, deltaDirection: reachDelta.direction,
+      comparison: reachDelta.availability, previousValue: reachDelta.previousValue,
+      unit: "shortNumber" as const,
     },
     {
       label: "Engagement",      value: fmtShort(totalEngagement), rawValue: totalEngagement,
-      delta: 0, deltaDirection: "up"  as const, unit: "shortNumber" as const,
+      delta: engagementDelta.percent, deltaDirection: engagementDelta.direction,
+      comparison: engagementDelta.availability, previousValue: engagementDelta.previousValue,
+      unit: "shortNumber" as const,
     },
     {
-      label: "Web Traffic",     value: fmtShort(webSessions),   rawValue: webSessions,
-      delta: webDeltaAbs, deltaDirection: webDeltaDir,           unit: "shortNumber" as const,
+      label: "Web Traffic",     value: fmtShort(webSessions),     rawValue: webSessions,
+      delta: webDelta.percent, deltaDirection: webDelta.direction,
+      comparison: webDelta.availability, previousValue: webDelta.previousValue,
+      unit: "shortNumber" as const,
     },
     {
-      label: "Leads",           value: String(leads),           rawValue: leads,
-      delta: 0, deltaDirection: "up"  as const, unit: "number"  as const,
+      label: "Leads",           value: String(leads),             rawValue: leads,
+      delta: null, deltaDirection: null,
+      comparison: NO_COMPARISON.availability, previousValue: null,
+      unit: "number"  as const,
     },
     {
-      label: "Pipeline",        value: fmtCurrency(pipeline),   rawValue: pipeline,
-      delta: 0, deltaDirection: "up"  as const, unit: "currency" as const,
+      label: "Pipeline",        value: fmtCurrency(pipeline),     rawValue: pipeline,
+      delta: null, deltaDirection: null,
+      comparison: NO_COMPARISON.availability, previousValue: null,
+      unit: "currency" as const,
     },
     {
-      label: "Revenue",         value: fmtCurrency(revenue),    rawValue: revenue,
-      delta: 0, deltaDirection: "up"  as const, unit: "currency" as const,
+      label: "Revenue",         value: fmtCurrency(revenue),      rawValue: revenue,
+      delta: null, deltaDirection: null,
+      comparison: NO_COMPARISON.availability, previousValue: null,
+      unit: "currency" as const,
     },
   ];
 
@@ -518,7 +660,9 @@ async function computeAggregatedDashboard(userId: string, days = 28, workspaceId
     platforms: {
       ga4: ga4 ? {
         ...ga4,
-        deltaPercent: ga4WoW?.deltaPercent ?? 0,
+        // 0 when no baseline was requested — this field is a number by contract.
+        // The KPI carries the honest null via its `comparison` field instead.
+        deltaPercent: webDelta.percent ?? 0,
       } : undefined,
       gsc:        gsc       ?? undefined,
       youtube:    youtube   ? { ...youtube, source: "live" as const } : undefined,

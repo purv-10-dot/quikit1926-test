@@ -175,6 +175,10 @@ export default async function LeadDetailPage({ params }: Props) {
           ownerName: lead.ownerName,
           accountId: lead.accountId,
           account: lead.account,
+          // ICP inherited from the converted prospect (or set via the API).
+          // Read-only on this page — see LeadFormView's Lead Information section.
+          icpId: lead.icpId,
+          icp: lead.icp,
           followupPriority: lead.followupPriority,
           leadQuality: lead.leadQuality,
           // Meta

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCheck, ListChecks } from "lucide-react";
+import { CheckCheck, Link, ListChecks } from "lucide-react";
 import { ITEM_LABEL, summarise, type NotificationRow } from "@/components/shell/notifications-meta";
+import { NotificationItem } from "@/components/shell/notification-item";
 
 type Tab = "direct" | "watching" | "all";
 
@@ -15,6 +15,7 @@ interface UnreadCounts {
 
 const TABS: { value: Tab; label: string }[] = [
   { value: "direct", label: "Direct" },
+  { value: "watching", label: "Watching" },
   { value: "all", label: "All" },
 ];
 
@@ -123,7 +124,7 @@ export function NotificationsPage() {
           </div>
         )}
         {items.map((n) => (
-          <Row key={n.id} item={n} onOpen={() => markOne(n.id)} />
+          <NotificationItem key={n.id} item={n} onOpen={() => markOne(n.id)} />
         ))}
         {loading && <div className="p-4 text-center text-xs text-gray-400">Loading…</div>}
         {nextCursor && !loading && (

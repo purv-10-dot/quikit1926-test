@@ -86,6 +86,12 @@ export interface LeadFormViewProps {
   setCompany: (v: string) => void;
   industry: string;
   setIndustry: (v: string) => void;
+  /**
+   * Resolved ICP name, or null when the lead has none. Rendered READ-ONLY in
+   * Lead Information — there is deliberately no setter: the ICP is inherited from
+   * the converted prospect and is not editable from the lead detail page.
+   */
+  icpName?: string | null;
   industryOptions: readonly string[];
   annualRevenueDisplay: string;
   setAnnualRevenueDisplay: (v: string) => void;
@@ -363,6 +369,29 @@ export function LeadFormView(props: LeadFormViewProps) {
             </div>
           </Field>
         </LeadFormRow>
+
+        {/* Row 6: ICP — READ-ONLY.
+            The ICP is inherited from the prospect at conversion and is not
+            editable here (no input, no setter). Rendered as static text so the
+            value is visible without implying it can be changed; manage ICP
+            assignment via the ICP module / API instead. Hidden entirely on create
+            forms, where `icpName` is undefined and no lead exists yet. */}
+        {p.icpName !== undefined && (
+          <LeadFormRow>
+            <Field label="ICP" help="Inherited from the prospect. Not editable here.">
+              <div
+                className="flex min-h-[38px] items-center rounded-md border border-crm-border bg-crm-panel/40 px-3 py-2 text-sm"
+                aria-readonly="true"
+              >
+                {p.icpName ? (
+                  <span className="font-medium text-crm-text">{p.icpName}</span>
+                ) : (
+                  <span className="text-crm-muted">Not Assigned</span>
+                )}
+              </div>
+            </Field>
+          </LeadFormRow>
+        )}
     </LeadFormSection>
   );
 

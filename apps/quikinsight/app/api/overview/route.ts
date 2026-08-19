@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getAggregatedDashboard } from "@/lib/data/aggregator";
 import { getActiveWorkspaceId } from "@/lib/workspace";
 import type { PlatformCard } from "@/lib/api/overview";
+import { decodePeriod, resolvePeriod, comparisonLabel, periodLabel } from "@/lib/period/resolve";
+import { formatDelta } from "@/lib/data/compare";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -26,7 +28,8 @@ export async function GET(req: Request) {
 
   const userId  = session.user.id;
   const orgId   = (session.user.orgId as string) ?? "";
-  const days    = Math.min(Math.max(Number(new URL(req.url).searchParams.get("days") ?? 30), 1), 365);
+  // Accepts ?start/&end/&cmp (comparison) and the legacy ?days=N (no comparison).
+  const period  = resolvePeriod(decodePeriod(new URL(req.url).searchParams));
   const workspaceId = await getActiveWorkspaceId(userId, orgId);
 
   const connectedCount = await prisma.platformConnection.count({
@@ -37,15 +40,36 @@ export async function GET(req: Request) {
     return NextResponse.json({ connected: false, kpis: [], organicPlatforms: [], googlePlatforms: [], paidPlatforms: [], crmPlatforms: [], emailPlatforms: [], localPlatforms: [] });
   }
 
-  const data = await getAggregatedDashboard(userId, days, workspaceId);
+  const data = await getAggregatedDashboard(userId, period, workspaceId);
 
-  const kpis = (data.kpis ?? []).map((k) => ({
-    label: k.label,
-    value: k.value,
-    delta: k.delta ? `${k.deltaDirection === "up" ? "▲" : "▼"} ${Math.abs(k.delta)}%` : "",
-    trend: (k.delta ? k.deltaDirection : "flat") as "up" | "down" | "flat",
-    sub: "vs. previous period",
-  }));
+  // A null delta means no comparison was possible — distinct from a genuine 0%
+  // change, which must still render. Guarding on truthiness (the old `k.delta ?`)
+  // collapsed both cases and also hid every unchanged metric.
+  const comparing = period.previous !== null;
+  const kpis = (data.kpis ?? []).map((k) => {
+    const available = k.comparison === "available" && k.delta !== null;
+    return {
+      label: k.label,
+      value: k.value,
+      delta: available
+        ? formatDelta({
+            percent: k.delta!,
+            direction: k.deltaDirection ?? "flat",
+            availability: "available",
+            previousValue: k.previousValue ?? null,
+          })
+        : "",
+      trend: (available ? k.deltaDirection ?? "flat" : "flat") as "up" | "down" | "flat",
+      comparison: (!comparing ? "off" : available ? "available" : "unavailable") as
+        "available" | "unavailable" | "off",
+      // Only claim a comparison happened when one actually did.
+      sub: !comparing
+        ? ""
+        : available
+        ? comparisonLabel(period.mode)
+        : "no comparison available",
+    };
+  });
 
   const p = data.platforms ?? {};
 
@@ -60,7 +84,9 @@ export async function GET(req: Request) {
         { label: "Sessions",    value: fmt(ga4.totalSessions ?? 0) },
         { label: "Users",       value: fmt(ga4.totalUsers    ?? 0) },
         { label: "Bounce rate", value: ga4.bounceRate != null ? `${(ga4.bounceRate * 100).toFixed(1)}%` : "—" },
-        { label: "Avg. session",value: ga4.avgSessionDuration != null ? `${Math.round(ga4.avgSessionDuration)}s` : "—" },
+        // GA4 exposes engagement time per active user; there is no
+        // avgSessionDuration in the payload (reading it always yielded "—").
+        { label: "Avg. engagement", value: ga4.avgEngagementTime != null ? `${Math.round(ga4.avgEngagementTime)}s` : "—" },
       ],
     });
   }
@@ -260,5 +286,11 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json({ connected: true, kpis, googlePlatforms, organicPlatforms, paidPlatforms, crmPlatforms, emailPlatforms, localPlatforms });
+  return NextResponse.json({
+    connected: true,
+    // Echo the resolved windows so the UI can state exactly what was compared,
+    // rather than the user having to trust the picker.
+    period: { current: period.current, previous: period.previous, label: periodLabel(period), mode: period.mode },
+    kpis, googlePlatforms, organicPlatforms, paidPlatforms, crmPlatforms, emailPlatforms, localPlatforms,
+  });
 }

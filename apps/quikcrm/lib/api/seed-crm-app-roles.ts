@@ -45,10 +45,46 @@ const MAILBOX_GRANTS: Grant[] = [
   { resource: "mailbox", action: "delete" },
 ];
 
+/**
+ * ICP is org-level MASTER config (like price lists), not per-rep working data.
+ * Reps read it to know who they should be selling to; managers curate it. So
+ * `view` is granted broadly and write actions stop at sales-manager. Admins get
+ * everything automatically via the "all" spec.
+ */
+const ICP_VIEW_GRANT: Grant = { resource: "icp", action: "view" };
+
+const ICP_MANAGE_GRANTS: Grant[] = [
+  ICP_VIEW_GRANT,
+  { resource: "icp", action: "create" },
+  { resource: "icp", action: "edit" },
+  { resource: "icp", action: "delete" },
+];
+
+/**
+ * Upwork is per-rep PROSPECTING data, not org master config: a rep captures the
+ * jobs they found with the browser extension, and non-admins only ever see
+ * their own rows (see buildUpworkWhere). So unlike ICP, working access —
+ * view/create/edit — is granted at sales-user level; `delete` and `export` stop
+ * at sales-manager, matching how WORK_MODULES are tiered. Finance has no reason
+ * to touch it and gets nothing.
+ */
+const UPWORK_WORK_GRANTS: Grant[] = [
+  { resource: "upwork", action: "view" },
+  { resource: "upwork", action: "create" },
+  { resource: "upwork", action: "edit" },
+];
+
+const UPWORK_MANAGE_GRANTS: Grant[] = [
+  { resource: "upwork", action: "delete" },
+  { resource: "upwork", action: "export" },
+];
+
 const SALES_USER_GRANTS: Grant[] = [
   { resource: "dashboard", action: "view" },
   ...grants(WORK_MODULES, WORK_ACTIONS),
   ...MAILBOX_GRANTS,
+  ICP_VIEW_GRANT,
+  ...UPWORK_WORK_GRANTS,
 ];
 
 const SALES_MANAGER_GRANTS: Grant[] = [
@@ -61,6 +97,8 @@ const SALES_MANAGER_GRANTS: Grant[] = [
   { resource: "quotes", action: "create" },
   { resource: "quotes", action: "edit" },
   { resource: "documents", action: "view" },
+  ...ICP_MANAGE_GRANTS,
+  ...UPWORK_MANAGE_GRANTS,
 ];
 
 const MARKETING_USER_GRANTS: Grant[] = [
@@ -74,6 +112,9 @@ const MARKETING_USER_GRANTS: Grant[] = [
   { resource: "activities", action: "view" },
   { resource: "activities", action: "create" },
   ...MAILBOX_GRANTS,
+  // Marketing typically OWNS the ideal-customer definition, so they curate it.
+  ...ICP_MANAGE_GRANTS,
+  ...UPWORK_WORK_GRANTS,
 ];
 
 const FINANCE_USER_GRANTS: Grant[] = [
@@ -87,6 +128,7 @@ const FINANCE_USER_GRANTS: Grant[] = [
   { resource: "reports", action: "view" },
   { resource: "reports", action: "export" },
   ...MAILBOX_GRANTS,
+  ICP_VIEW_GRANT,
 ];
 
 interface RoleSpec {
@@ -219,6 +261,97 @@ async function backfillMailboxPermissions(orgId: string, appId: string): Promise
   await client.crmRolePermission.createMany({ data: missing, skipDuplicates: true });
 }
 
+/**
+ * Backfill the `icp` grants onto the seeded non-admin roles.
+ *
+ * Same reasoning as backfillMailboxPermissions: `seedRole` only writes grants
+ * when a role has NONE, so every org seeded before the ICP module shipped has
+ * roles with grants but no `icp` rows — their users would get a 403 on /icp.
+ * This adds ONLY the missing icp pairs for each role's intended level (manage
+ * for sales-manager/marketing-user, view-only for sales-user/finance-user) and
+ * leaves every other resource untouched, so admin customisation is preserved.
+ */
+async function backfillIcpPermissions(orgId: string, appId: string): Promise<void> {
+  const client = rbacDb();
+  if (!client) return;
+
+  // Per-role intent, so a backfill never over-grants a read-only role.
+  const wantByRole = new Map<string, Grant[]>([
+    ["sales-user", [ICP_VIEW_GRANT]],
+    ["sales-manager", ICP_MANAGE_GRANTS],
+    ["marketing-user", ICP_MANAGE_GRANTS],
+    ["finance-user", [ICP_VIEW_GRANT]],
+  ]);
+
+  const roles = await client.crmAppRole.findMany({
+    where: { orgId, appId, name: { in: [...wantByRole.keys()] } },
+    select: {
+      id: true,
+      name: true,
+      permissions: { where: { resource: "icp" }, select: { action: true } },
+    },
+  });
+
+  if (!Array.isArray(roles) || roles.length === 0) return;
+
+  const missing = roles.flatMap((role) => {
+    const want = wantByRole.get(role.name) ?? [];
+    const have = new Set((role.permissions ?? []).map((p) => p.action));
+    return want
+      .filter((g) => !have.has(g.action))
+      .map((g) => ({ roleId: role.id, resource: g.resource, action: g.action }));
+  });
+  if (missing.length === 0) return;
+
+  await client.crmRolePermission.createMany({ data: missing, skipDuplicates: true });
+}
+
+/**
+ * Backfill the `upwork` grants onto the seeded non-admin roles.
+ *
+ * Same reasoning as backfillIcpPermissions: `seedRole` only writes grants when a
+ * role has NONE, so every org seeded before the Upwork module shipped has roles
+ * with grants but no `upwork` rows — their users would get a 403 on /upwork and,
+ * worse, a silent failure when the browser extension POSTs "Add to CRM". This
+ * adds ONLY the missing upwork pairs for each role's intended level and leaves
+ * every other resource untouched, so admin customisation is preserved.
+ *
+ * finance-user is deliberately absent: they get no upwork access at all.
+ */
+async function backfillUpworkPermissions(orgId: string, appId: string): Promise<void> {
+  const client = rbacDb();
+  if (!client) return;
+
+  // Per-role intent, so a backfill never over-grants a role.
+  const wantByRole = new Map<string, Grant[]>([
+    ["sales-user", UPWORK_WORK_GRANTS],
+    ["sales-manager", [...UPWORK_WORK_GRANTS, ...UPWORK_MANAGE_GRANTS]],
+    ["marketing-user", UPWORK_WORK_GRANTS],
+  ]);
+
+  const roles = await client.crmAppRole.findMany({
+    where: { orgId, appId, name: { in: [...wantByRole.keys()] } },
+    select: {
+      id: true,
+      name: true,
+      permissions: { where: { resource: "upwork" }, select: { action: true } },
+    },
+  });
+
+  if (!Array.isArray(roles) || roles.length === 0) return;
+
+  const missing = roles.flatMap((role) => {
+    const want = wantByRole.get(role.name) ?? [];
+    const have = new Set((role.permissions ?? []).map((p) => p.action));
+    return want
+      .filter((g) => !have.has(g.action))
+      .map((g) => ({ roleId: role.id, resource: g.resource, action: g.action }));
+  });
+  if (missing.length === 0) return;
+
+  await client.crmRolePermission.createMany({ data: missing, skipDuplicates: true });
+}
+
 async function backfillAdminPermissions(orgId: string, appId: string): Promise<void> {
   const client = rbacDb();
   if (!client) return;
@@ -308,6 +441,8 @@ async function runSeed(orgId: string): Promise<SeedResult> {
   await Promise.all([
     backfillAdminPermissions(orgId, appId),
     backfillMailboxPermissions(orgId, appId),
+    backfillIcpPermissions(orgId, appId),
+    backfillUpworkPermissions(orgId, appId),
   ]);
 
   seededOrgs.set(orgId, now);

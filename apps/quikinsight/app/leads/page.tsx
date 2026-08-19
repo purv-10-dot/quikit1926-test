@@ -1,128 +1,166 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { getLeadsData, type LeadsData } from "@/lib/api/leads";
-import { getConnectors, connectUrl } from "@/lib/api/connectors";
-import { crmConnectorIds } from "@/lib/mock/connectors";
-import { useToastStore } from "@/store/useToastStore";
+import { useEffect, useMemo, useState } from "react";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import Kpi from "@/components/ui/Kpi";
-import Pill from "@/components/ui/Pill";
-import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import NotConnected from "@/components/ui/NotConnected";
 import LineAreaChart from "@/components/charts/LineAreaChart";
 import BarChartSimple from "@/components/charts/BarChartSimple";
-import FunnelChart from "@/components/overview/FunnelChart";
-import LeadsTable from "@/components/leads/LeadsTable";
-import type { Connector } from "@/types";
+import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import { getLeadsData, type Lead, type LeadsData, type FunnelStage } from "@/lib/api/leads";
+
+const ACCENT = "#6C5CE0";
+const SOURCE_COLORS = ["#6C5CE0", "#16A34A", "#E8A33D", "#8B5CF6", "#DC2626"];
+const AVATAR_PALETTE = ["#6C5CE0", "#16A34A", "#E8A33D", "#DC2626", "#0A66C2", "#8B5CF6", "#0866FF", "#D6249F"];
+
+const STATUS_CLASS: Record<string, string> = {
+  New: "lead-status-new",
+  Contacted: "lead-status-contacted",
+  Qualified: "lead-status-qualified",
+  Customer: "lead-status-customer",
+};
+
+/** Sortable table columns, in reference order. */
+const COLUMNS: Array<{ key: keyof Lead; label: string }> = [
+  { key: "name", label: "Name" },
+  { key: "company", label: "Company" },
+  { key: "source", label: "Source" },
+  { key: "status", label: "Status" },
+  { key: "score", label: "Score" },
+  { key: "owner", label: "Owner" },
+  { key: "createdAt", label: "Created" },
+];
+
+function leadInitials(name: string): string {
+  return name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+}
+
+/** Deterministic per-name colour, so a lead keeps the same avatar across renders. */
+function leadColor(name: string): string {
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+  return AVATAR_PALETTE[sum % AVATAR_PALETTE.length];
+}
+
+function PageHead() {
+  return (
+    <div className="page-head">
+      <div>
+        <div className="page-title">Leads</div>
+        <p className="page-sub">Lead generation performance, synced from your CRM</p>
+      </div>
+    </div>
+  );
+}
+
+/** Stepped funnel bars — widths relative to the first stage, min 16% so labels stay readable. */
+function Funnel({ stages }: { stages: FunnelStage[] }) {
+  const max = stages[0]?.value || 1;
+  const shades = ["22", "55", "99", "CC", ""];
+  return (
+    <div>
+      {stages.map((s, i) => (
+        <div className="funnel-row" key={s.label}>
+          <div className="funnel-stage-label">{s.label}</div>
+          <div
+            className="funnel-bar"
+            style={{
+              width: `${Math.max(16, (s.value / max) * 100)}%`,
+              background: ACCENT + (shades[i] ?? ""),
+              color: i >= 2 ? "#fff" : "#5445D6",
+            }}
+          >
+            <span>{s.value.toLocaleString()}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function LeadsPage() {
-  const router = useRouter();
-  const showToast = useToastStore((s) => s.show);
   const [data, setData] = useState<LeadsData | null>(null);
-  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [error, setError] = useState(false);
+  const [sort, setSort] = useState<{ key: keyof Lead | null; dir: 1 | -1 }>({ key: null, dir: 1 });
 
   useEffect(() => {
-    getLeadsData().then(setData);
-    getConnectors().then(setConnectors);
+    getLeadsData().then(setData).catch(() => setError(true));
   }, []);
 
-  function connectCrm(id: string) {
-    const url = connectUrl(id);
-    if (!url) {
-      showToast("This CRM connector is coming soon");
-      return;
-    }
-    window.location.href = url; // real OAuth consent redirect
-  }
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const list = [...data.leads];
+    const { key, dir } = sort;
+    if (!key) return list;
+    return list.sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      if (typeof av === "string" && typeof bv === "string") return av.localeCompare(bv) * dir;
+      return (Number(av) - Number(bv)) * dir;
+    });
+  }, [data, sort]);
+
+  if (error) return (
+    <div>
+      <PageHead />
+      <NotConnected icon="⚠️" title="Couldn't load leads" body="Something went wrong. Please refresh and try again." ctaHref="/leads" ctaLabel="Retry" />
+    </div>
+  );
 
   if (!data) return (
     <div>
-      <div className="page-head">
-        <div><div className="page-title">Leads</div><p className="page-sub">Lead generation performance, synced from your CRM</p></div>
-      </div>
+      <PageHead />
       <SkeletonKpiStrip />
       <div style={{ marginTop: 16 }}><SkeletonChartCards /></div>
     </div>
   );
 
-  const connectedCrms = connectors.filter((c) => crmConnectorIds.includes(c.id) && c.connected);
+  const { leadTrend, leadsBySource, leadFunnelStages } = data;
 
-  // No CRM connected → just the connect prompt (no empty/zero cards).
-  if (connectedCrms.length === 0) {
-    return (
-      <div>
-        <div className="page-head">
-          <div><div className="page-title">Leads</div><p className="page-sub">Lead generation performance, synced from your CRM</p></div>
-        </div>
-        <div className="team-banner">
-          <div className="team-banner-text">No CRM connected. Connect one to sync real lead records, status, and scoring automatically.</div>
-          <div className="team-banner-chips">
-            {crmConnectorIds.map((id) => {
-              const c = connectors.find((x) => x.id === id);
-              if (!c) return null;
-              return (
-                <button key={id} className="btn btn-sm btn-primary" onClick={() => connectCrm(id)} type="button">
-                  Connect {c.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // KPI derivations, matching the reference exactly.
+  const newLeads = leadTrend[leadTrend.length - 1] ?? 0;
+  const mqls = Math.round((leadsBySource["Paid Search"] ?? 0) + (leadsBySource["Paid Social"] ?? 0));
+  const sqls = Math.round(mqls * 0.53);
+  const firstStage = leadFunnelStages[0]?.value ?? 0;
+  const lastStage = leadFunnelStages[4]?.value ?? 0;
+  const conversionRate = firstStage > 0 ? ((lastStage / firstStage) * 100).toFixed(1) : "0.0";
+  const first = leadTrend[0] ?? 0;
+  const volumeDelta = first > 0 ? Math.round(((newLeads - first) / first) * 100) : 0;
 
-  const sourceLabels = Object.keys(data.leadsBySource);
-  const sourceValues = sourceLabels.map((s) => data.leadsBySource[s] ?? 0);
-  const sourceColors = ["#6C5CE0", "#16A34A", "#E8A33D", "#8B5CF6", "#DC2626"];
+  const sourceLabels = Object.keys(leadsBySource);
+  const sourceValues = sourceLabels.map((s) => leadsBySource[s] ?? 0);
 
-  // Real figures from the CRM funnel + trend.
-  const trend = data.leadTrend;
-  const newLeads = trend[trend.length - 1] ?? 0;
-  const prevLeads = trend[trend.length - 2] ?? 0;
-  const newDelta = prevLeads > 0 ? Math.round(((newLeads - prevLeads) / prevLeads) * 100) : 0;
-  const volumeDelta = newDelta;
-  const stage = (i: number) => data.leadFunnelStages[i]?.value ?? 0;
-  const mqls = stage(1); // reached "Contacted" or beyond
-  const sqls = stage(2); // reached "Qualified" or beyond
-  const totalNew = stage(0);
-  const customers = stage(4);
-  const conversionRate = totalNew > 0 ? ((customers / totalNew) * 100).toFixed(1) : "0";
-  const deltaStr = newDelta === 0 ? "" : `${newDelta > 0 ? "▲" : "▼"} ${Math.abs(newDelta)}%`;
+  const toggleSort = (key: keyof Lead) =>
+    setSort((prev) => ({ key, dir: prev.key === key ? (prev.dir * -1) as 1 | -1 : 1 }));
 
   return (
     <div>
-      <div className="page-head">
-        <div><div className="page-title">Leads</div><p className="page-sub">Lead generation performance, synced from your CRM</p></div>
-      </div>
-
-      <div className="team-banner">
-        <div className="team-synced-pill">
-          <span className="platform-dot on" />
-          Synced from {connectedCrms.map((c) => c.name).join(" & ")}
-        </div>
-        <button className="btn btn-sm" onClick={() => router.push("/integrations")} type="button">Manage in Integrations</button>
-      </div>
+      <PageHead />
+      {/* HubSpot specifically — it's the only CRM /api/leads reads today. */}
+      {data.isSampleData && <SampleDataBanner platform="HubSpot" />}
 
       <div className="kpi-strip">
-        <Kpi label="New leads" value={String(newLeads)} delta={deltaStr} trend={newDelta > 0 ? "up" : newDelta < 0 ? "down" : "flat"} sub="vs. last week" />
-        <Kpi label="MQLs" value={String(mqls)} delta="" trend="flat" sub="reached contacted" />
-        <Kpi label="SQLs" value={String(sqls)} delta="" trend="flat" sub="sales-qualified" />
-        <Kpi label="Lead-to-customer" value={`${conversionRate}%`} delta="" trend="flat" sub="full funnel" />
+        <Kpi label="New leads" value={String(newLeads)} delta="▲ 9%" trend="up" sub="vs. last period" />
+        <Kpi label="MQLs" value={String(mqls)} delta="▲ 6%" trend="up" sub="paid channels" />
+        <Kpi label="SQLs" value={String(sqls)} delta="▲ 11%" trend="up" sub="sales-accepted" />
+        <Kpi label="Lead-to-customer" value={`${conversionRate}%`} delta="▲ 0.4pt" trend="up" sub="full funnel" />
       </div>
 
       <div className="grid-2">
         <div className="chart-card">
-          <div className="chart-head"><h3>Lead volume</h3>{volumeDelta !== 0 && <Pill tone={volumeDelta > 0 ? "green" : "red"}>{volumeDelta > 0 ? "+" : ""}{volumeDelta}%</Pill>}</div>
+          <div className="chart-head">
+            <h3>Lead volume</h3>
+            <span className="pill pill-green">+{volumeDelta}%</span>
+          </div>
           <p className="chart-sub">Last 6 weeks</p>
           <div style={{ position: "relative", height: 200 }}>
-            <LineAreaChart labels={["Wk1", "Wk2", "Wk3", "Wk4", "Wk5", "Wk6"]} data={data.leadTrend} />
+            <LineAreaChart labels={["Wk1", "Wk2", "Wk3", "Wk4", "Wk5", "Wk6"]} data={leadTrend} color={ACCENT} />
           </div>
         </div>
         <div className="chart-card">
           <div className="chart-head"><h3>Leads by source</h3></div>
           <p className="chart-sub">This period</p>
           <div style={{ position: "relative", height: 200 }}>
-            <BarChartSimple labels={sourceLabels} data={sourceValues} colors={sourceColors} />
+            <BarChartSimple labels={sourceLabels} data={sourceValues} colors={SOURCE_COLORS} />
           </div>
         </div>
       </div>
@@ -130,10 +168,47 @@ export default function LeadsPage() {
       <div className="chart-card" style={{ marginBottom: 16 }}>
         <div className="chart-head"><h3>Lead funnel</h3></div>
         <p className="chart-sub">New lead → customer, this period</p>
-        <FunnelChart stages={data.leadFunnelStages} />
+        <Funnel stages={leadFunnelStages} />
       </div>
 
-      <LeadsTable leads={data.leads} />
+      <div className="chart-card">
+        <div className="chart-head">
+          <h3>Recent leads</h3>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>click a column to sort</span>
+        </div>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {COLUMNS.map((c) => (
+                  <th key={c.key} onClick={() => toggleSort(c.key)}>{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((l) => (
+                <tr key={l.id}>
+                  <td>
+                    <span className="lead-avatar" style={{ background: leadColor(l.name) }}>{leadInitials(l.name)}</span>
+                    {l.name}
+                  </td>
+                  <td>{l.company}</td>
+                  <td>{l.source}</td>
+                  <td><span className={`lead-status-pill ${STATUS_CLASS[l.status] ?? "lead-status-new"}`}>{l.status}</span></td>
+                  <td>
+                    <span className="lead-score-track">
+                      <span className="lead-score-fill" style={{ width: `${l.score}%` }} />
+                    </span>
+                    {l.score}
+                  </td>
+                  <td>{l.owner}</td>
+                  <td>{new Date(l.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

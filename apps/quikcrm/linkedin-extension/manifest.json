@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn to Email Marketing CRM ",
-  "version": "2.0.9",
+  "version": "2.1.1",
   "description": "Send LinkedIn prospects directly to your email marketing automation system.",
   "permissions": ["scripting", "activeTab", "sidePanel", "tabs", "storage", "identity"],
   "host_permissions": [
@@ -23,6 +23,14 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/in/*"],
+      "js": ["connect-button.js", "verify-live.js"],
+      "css": ["connect-button.css"],
+      "run_at": "document_idle"
+    }
+  ],
   "icons": {
     "16": "assets/icon16.png"
   }
