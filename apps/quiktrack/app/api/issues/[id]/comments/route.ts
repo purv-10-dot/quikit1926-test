@@ -123,4 +123,5 @@ export const POST = withOrgAuth<{ id: string }>(
       { status: 201 },
     );
   },
+  { allowAgentJwt: true },
 );

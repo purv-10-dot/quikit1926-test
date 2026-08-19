@@ -307,4 +307,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   );
 
   return NextResponse.json({ success: true, data: project }, { status: 201 });
-});
+}, { allowAgentJwt: true });

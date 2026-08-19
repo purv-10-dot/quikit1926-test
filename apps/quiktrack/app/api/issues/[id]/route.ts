@@ -383,6 +383,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
 
     return NextResponse.json({ success: true, data: updated });
   },
+  { allowAgentJwt: true },
 );
 
 /**
@@ -631,4 +632,5 @@ export const DELETE = withOrgAuth<{ id: string }>(
       },
     });
   },
+  { allowAgentJwt: true },
 );
