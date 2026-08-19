@@ -11,7 +11,6 @@ import { db } from "@/lib/db";
 import { enqueueEvent } from "@/lib/queue/queue";
 import { DATE_RULES, dateRuleFor, type DateRule } from "@/lib/schedule/date-rules";
 
-
 const DAY_MS = 86_400_000;
 const MAX_ROWS = 500;
 
