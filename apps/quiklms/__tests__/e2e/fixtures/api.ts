@@ -10,7 +10,7 @@
 import { request, type APIRequestContext } from "@playwright/test";
 import { mintSessionToken, type RoleKey } from "./auth";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 
 /**
  * `timeout` sets the default per-request timeout for every call made through the

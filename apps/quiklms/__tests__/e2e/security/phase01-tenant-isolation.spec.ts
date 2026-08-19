@@ -125,7 +125,7 @@ test.describe("Phase 01 — cross-tenant writes", () => {
     const { request } = await import("@playwright/test");
     const token = await mintSessionToken("tenantAdmin", { orgId: OTHER_ORG });
     const ctx = await request.newContext({
-      baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3014",
+      baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3016",
       extraHTTPHeaders: { Cookie: `next-auth.session-token=${token}` },
     });
     const res = await ctx.get(`/api/courses/${OTHER_COURSE}`);

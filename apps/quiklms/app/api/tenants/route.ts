@@ -76,6 +76,6 @@ export const POST = route(async (req) => {
   // var and is ALWAYS set in prod (NextAuth cannot boot without it), so the
   // localhost fallback only ever applies in local dev — a prod deploy can never
   // hand a tenant a localhost clientUrl.
-  const base = process.env.NEXTAUTH_URL || 'http://localhost:3014';
+  const base = process.env.NEXTAUTH_URL || 'http://localhost:3016';
   return json({ success: true, data: tenant, message: 'Tenant created successfully', clientUrl: `${base}/${tenant.subdomain}` }, 201);
 });

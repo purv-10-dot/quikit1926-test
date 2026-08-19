@@ -120,7 +120,7 @@ export async function GET() {
     quikchat: "http://localhost:3011",
     quikasset: "http://localhost:3012",
     quikfinance: "http://localhost:3013",
-    quiklms: "http://localhost:3014",
+    quiklms: "http://localhost:3016",
     quikcrmexpress: "http://localhost:3017",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {

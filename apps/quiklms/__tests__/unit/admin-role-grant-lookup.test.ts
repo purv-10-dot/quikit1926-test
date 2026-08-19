@@ -63,7 +63,7 @@ import { LMS_SYSTEM_ADMIN_ROLE } from '@/lib/api/seed-lms-app-roles';
 const onboardRequest = () =>
   ({
     method: 'POST',
-    url: 'http://localhost:3014/api/tenants/onboard',
+    url: 'http://localhost:3016/api/tenants/onboard',
   }) as unknown as Parameters<typeof requireAuth>[0];
 
 beforeEach(() => {

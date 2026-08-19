@@ -22,7 +22,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { storageStateFor, type RoleKey } from "../fixtures/auth";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 
 /** Pages that should belong to exactly one role, with a marker string that
  *  only appears when the real page (not the catch-all placeholder) renders. */

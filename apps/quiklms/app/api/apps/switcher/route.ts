@@ -87,7 +87,7 @@ const DEV_FALLBACKS: Record<string, string> = {
   quiksupport: 'http://localhost:3010',
   quikasset: 'http://localhost:3012',
   quikfinance: 'http://localhost:3013',
-  quiklms: 'http://localhost:3014',
+  quiklms: 'http://localhost:3016',
 };
 
 const LOCALHOST = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i;
