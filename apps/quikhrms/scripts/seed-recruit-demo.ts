@@ -4,10 +4,10 @@
  *   • Candidates              → Candidate rows (varied source / status / experience)
  *   • Pipeline                → HiringPipeline + JobApplications spread across stages
  *   • Interviews              → Interview rows (scheduled + completed w/ scorecards)
- *   • Candidate Document Types → CandidateDocumentType rows (PreOffer + PostOffer)
+ *   • Candidate Document Types → CandidateDocumentType rows
  *
  * Idempotent: requisitions (by number), candidates (by email), applications
- * (by candidate+req) and doc types (by code+bundle) are upserted; demo
+ * (by candidate+req) and doc types (by code) are upserted; demo
  * interviews are wiped for the demo applications before reinsert.
  *
  * Run:  npm run seed:recruit
@@ -206,22 +206,22 @@ async function main() {
   console.log(`Interviews created: ${interviewsCreated}`);
 
   // ── 6. Candidate Document Types (Candidate Document Types page) ─────────
-  const DOC_TYPES: { code: string; name: string; bundle: "PreOffer" | "PostOffer"; required: boolean; help?: string }[] = [
-    { code: "PAN", name: "PAN Card", bundle: "PreOffer", required: true, help: "Clear scan of your PAN card." },
-    { code: "AADHAAR", name: "Aadhaar Card", bundle: "PreOffer", required: true, help: "Front and back." },
-    { code: "RESUME", name: "Updated Resume", bundle: "PreOffer", required: true },
-    { code: "PAYSLIP", name: "Last 3 Payslips", bundle: "PreOffer", required: false, help: "Most recent 3 months." },
-    { code: "OFFER_PREV", name: "Previous Offer Letter", bundle: "PostOffer", required: false },
-    { code: "RELIEVING", name: "Relieving Letter", bundle: "PostOffer", required: true },
-    { code: "EDU_CERT", name: "Education Certificates", bundle: "PostOffer", required: true, help: "10th, 12th, Graduation." },
-    { code: "BANK", name: "Cancelled Cheque / Passbook", bundle: "PostOffer", required: true },
+  const DOC_TYPES: { code: string; name: string; required: boolean; help?: string }[] = [
+    { code: "PAN", name: "PAN Card", required: true, help: "Clear scan of your PAN card." },
+    { code: "AADHAAR", name: "Aadhaar Card", required: true, help: "Front and back." },
+    { code: "RESUME", name: "Updated Resume", required: true },
+    { code: "PAYSLIP", name: "Last 3 Payslips", required: false, help: "Most recent 3 months." },
+    { code: "OFFER_PREV", name: "Previous Offer Letter", required: false },
+    { code: "RELIEVING", name: "Relieving Letter", required: true },
+    { code: "EDU_CERT", name: "Education Certificates", required: true, help: "10th, 12th, Graduation." },
+    { code: "BANK", name: "Cancelled Cheque / Passbook", required: true },
   ];
   let docTypes = 0;
   for (const [i, d] of DOC_TYPES.entries()) {
     await prisma.candidateDocumentType.upsert({
-      where: { orgId_code_bundle: { orgId, code: d.code, bundle: d.bundle } },
+      where: { orgId_code: { orgId, code: d.code } },
       update: { name: d.name, isRequired: d.required, helpText: d.help ?? null, sortOrder: i, isActive: true, updatedBy: me.id },
-      create: { orgId, code: d.code, name: d.name, bundle: d.bundle, isRequired: d.required, helpText: d.help ?? null, sortOrder: i, isActive: true, createdBy: me.id, updatedBy: me.id },
+      create: { orgId, code: d.code, name: d.name, isRequired: d.required, helpText: d.help ?? null, sortOrder: i, isActive: true, createdBy: me.id, updatedBy: me.id },
     });
     docTypes++;
   }

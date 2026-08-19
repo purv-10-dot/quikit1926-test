@@ -30,11 +30,11 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       prisma.jobApplication.count({ where }),
     ]);
 
-    // Attach PostOffer doc request status per offer (for UI button gating)
+    // Attach doc request status per offer (for UI button gating)
     const appIds = apps.map((a) => a.id);
     const docRequests = appIds.length
       ? await prisma.candidateDocumentRequest.findMany({
-          where: { orgId, applicationId: { in: appIds }, bundle: "PostOffer", deletedAt: null },
+          where: { orgId, applicationId: { in: appIds }, deletedAt: null },
           select: { applicationId: true, status: true, lastReminderAt: true, reminderCount: true },
         })
       : [];

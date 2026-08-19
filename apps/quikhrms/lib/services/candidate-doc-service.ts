@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import type { DocumentBundle } from "@quikit/database";
 import { generateCandidateDocToken, CANDIDATE_DOC_EXPIRY_DAYS } from "@/lib/services/candidate-doc-token";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildCandidateDocRequestEmail } from "@/lib/email-templates/candidate-document-request";
@@ -14,10 +13,9 @@ export interface TriggerResult {
   mailError?: string;
 }
 
-export async function triggerCandidateDocBundle(
+export async function triggerCandidateDocRequest(
   orgId: string,
   applicationId: string,
-  bundle: DocumentBundle,
   actorUserId?: string | null,
   documentTypeIds?: string[] | null,
   submissionDeadline?: Date | string | null,
@@ -42,7 +40,7 @@ export async function triggerCandidateDocBundle(
 
   // Reuse existing pending request or create new
   let request = await prisma.candidateDocumentRequest.findFirst({
-    where: { orgId, applicationId, bundle, deletedAt: null },
+    where: { orgId, applicationId, deletedAt: null },
   });
   let reused = false;
 
@@ -88,7 +86,7 @@ export async function triggerCandidateDocBundle(
         })
       : await prisma.candidateDocumentRequest.create({
           data: {
-            orgId, applicationId, bundle,
+            orgId, applicationId,
             status: "Pending",
             token: placeholder,
             tokenExpiresAt: new Date(Date.now() + CANDIDATE_DOC_EXPIRY_DAYS * 86400000),
@@ -103,7 +101,7 @@ export async function triggerCandidateDocBundle(
 
   // Bind real token keyed to the record id
   const { token, expiresAt } = generateCandidateDocToken({
-    requestId: request.id, orgId, applicationId, bundle,
+    requestId: request.id, orgId, applicationId,
   });
   await prisma.candidateDocumentRequest.update({
     where: { id: request.id },
@@ -114,7 +112,7 @@ export async function triggerCandidateDocBundle(
   const selectedIds = Array.isArray(request.selectedDocTypeIds) ? (request.selectedDocTypeIds as unknown as string[]) : null;
   const docs = await prisma.candidateDocumentType.findMany({
     where: {
-      orgId, bundle, isActive: true, deletedAt: null,
+      orgId, isActive: true, deletedAt: null,
       ...(selectedIds && selectedIds.length ? { id: { in: selectedIds } } : {}),
     },
     orderBy: { sortOrder: "asc" },
@@ -142,7 +140,6 @@ export async function triggerCandidateDocBundle(
   const docData = {
     candidateName: `${app.candidate.firstName} ${app.candidate.lastName}`.trim(),
     jobTitle: app.requisition.title,
-    bundle,
     portalUrl,
     expiryDays: CANDIDATE_DOC_EXPIRY_DAYS,
     docs: docs.map((d) => ({ name: d.name, isRequired: d.isRequired, helpText: d.helpText })),
@@ -168,7 +165,6 @@ export async function triggerCandidateDocBundle(
       vars: {
         candidateName: docData.candidateName,
         jobTitle: docData.jobTitle,
-        bundle: docData.bundle,
         portalUrl: docData.portalUrl,
         expiryDays: docData.expiryDays,
         senderName: docData.senderName,
@@ -199,7 +195,6 @@ export interface ReminderResult {
 export async function sendCandidateDocReminder(
   orgId: string,
   applicationId: string,
-  bundle: DocumentBundle,
   actorUserId?: string | null,
 ): Promise<ReminderResult> {
   const app = await prisma.jobApplication.findFirst({
@@ -213,7 +208,7 @@ export async function sendCandidateDocReminder(
   if (!app.candidate?.email) throw new Error("Candidate email missing");
 
   const request = await prisma.candidateDocumentRequest.findFirst({
-    where: { orgId, applicationId, bundle, deletedAt: null },
+    where: { orgId, applicationId, deletedAt: null },
     include: {
       uploads: {
         where: { deletedAt: null },
@@ -228,7 +223,7 @@ export async function sendCandidateDocReminder(
   const selectedIds = Array.isArray(request.selectedDocTypeIds) ? (request.selectedDocTypeIds as unknown as string[]) : null;
   const docTypes = await prisma.candidateDocumentType.findMany({
     where: {
-      orgId, bundle, isActive: true, deletedAt: null,
+      orgId, isActive: true, deletedAt: null,
       ...(selectedIds && selectedIds.length ? { id: { in: selectedIds } } : {}),
     },
     orderBy: { sortOrder: "asc" },
@@ -243,7 +238,7 @@ export async function sendCandidateDocReminder(
   let token = request.token;
   let tokenExpiresAt = request.tokenExpiresAt;
   if (!tokenExpiresAt || tokenExpiresAt.getTime() < Date.now()) {
-    const fresh = generateCandidateDocToken({ requestId: request.id, orgId, applicationId, bundle });
+    const fresh = generateCandidateDocToken({ requestId: request.id, orgId, applicationId });
     token = fresh.token;
     tokenExpiresAt = fresh.expiresAt;
   }
@@ -279,7 +274,6 @@ export async function sendCandidateDocReminder(
   const docData = {
     candidateName: `${app.candidate.firstName} ${app.candidate.lastName}`.trim(),
     jobTitle: app.requisition.title,
-    bundle,
     portalUrl,
     expiryDays: CANDIDATE_DOC_EXPIRY_DAYS,
     docs: pendingDocs.map((d) => ({ name: d.name, isRequired: d.isRequired, helpText: d.helpText })),
@@ -308,7 +302,6 @@ export async function sendCandidateDocReminder(
       vars: {
         candidateName: docData.candidateName,
         jobTitle: docData.jobTitle,
-        bundle: docData.bundle,
         portalUrl: docData.portalUrl,
         expiryDays: docData.expiryDays,
         reminderLevel,

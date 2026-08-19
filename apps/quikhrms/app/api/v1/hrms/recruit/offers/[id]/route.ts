@@ -5,6 +5,7 @@ import { successResponse, notFound, validationError, internalError } from "@/lib
 import { updateOfferSchema } from "@/lib/validations/recruit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { offerSelect, offerFromApplication, buildOfferMeta } from "@/lib/recruit/offer-shape";
+import { convertApplicationToEmployee } from "@/lib/services/onboard-application";
 
 // The offer is now part of JobApplication (1:1), so an offer's :id IS its
 // application id.
@@ -44,10 +45,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       updateData.offerStatus = data.status;
       if (data.status === "OfferSent") updateData.offerSentAt = new Date();
       if (data.status === "OfferAccepted" || data.status === "OfferDeclined") updateData.offerRespondedAt = new Date();
-      // Accepting does NOT mark the app AppHired — that terminal state is set only
-      // when HR clicks Onboard (which creates the Employee + onboarding record).
-      // Instead we move the candidate to the "Hired" stage so they stay on the
-      // pipeline board's Hired column, ready to be onboarded from there.
+      // Accepting moves the candidate to the "Hired" stage, which in turn
+      // auto-converts the application to an Employee (see below) — no manual
+      // "Onboard" click anywhere anymore.
       if (data.status === "OfferAccepted" && existing.currentStage !== "Hired") {
         updateData.currentStage = "Hired";
         const hist = Array.isArray(existing.stageHistory) ? (existing.stageHistory as unknown[]) : [];
@@ -83,6 +83,19 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       select: offerSelect,
     });
     const offer = offerFromApplication(updatedApp)!;
+
+    // Auto-convert to Employee the moment HR marks the offer accepted
+    // (manual override — e.g. phone acceptance). Awaited so the Employee
+    // exists by the time this response returns, but a failure here still
+    // doesn't fail the offer-status update itself — the fallback manual
+    // retry (POST .../onboard) covers that rare case.
+    if (data.status === "OfferAccepted") {
+      try {
+        await convertApplicationToEmployee(orgId, userId, params.id);
+      } catch (e) {
+        console.error("auto-onboard on HR offer-accept failed:", e);
+      }
+    }
 
     if (data.status) {
       const statusEventMap: Record<string, string> = {

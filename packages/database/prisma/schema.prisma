@@ -12752,6 +12752,8 @@ model Employee {
   requisitionsRaised      JobRequisition[]      @relation("RequisitionRaiser")
   requisitionRecruiterSplits RequisitionRecruiter[]
   requisitionApprovals    RequisitionApproval[] @relation("RequisitionApprover")
+  assignedApplications    JobApplication[]      @relation("ApplicationRecruiter")
+  allocatedPositions      RequisitionPosition[]
   interviewsAsInterviewer Interview[]           @relation("Interviewer")
   candidateReferrals      Candidate[]           @relation("CandidateReferrer")
 
@@ -14021,6 +14023,7 @@ enum CandidateStatus {
   Hired
   CandRejected
   CandOnHold
+  CandParked
   Withdrawn
   Blacklisted
 
@@ -14032,9 +14035,21 @@ enum ApplicationStatus {
   AppHired
   AppRejected
   AppOnHold
+  AppParked
   AppWithdrawn
   AppOffered
   AppDeclined
+
+  @@schema("app_quikhrms")
+}
+
+// Why a "Park Candidate" application was set aside — not rejected, just not a
+// fit for the CURRENT role; kept for future reference.
+enum ParkedReason {
+  LessExperience
+  HighBudget
+  NonRelevant
+  Other
 
   @@schema("app_quikhrms")
 }
@@ -14197,6 +14212,7 @@ model JobRequisition {
   pipeline      HiringPipeline?       @relation(fields: [pipelineId], references: [id])
   applications  JobApplication[]
   recruiterSplits RequisitionRecruiter[]
+  positionRecords RequisitionPosition[]
 
   @@unique([orgId, requisitionNumber])
   @@index([orgId])
@@ -14265,9 +14281,65 @@ model RequisitionRecruiter {
   @@schema("app_quikhrms")
 }
 
+enum RequisitionPositionStatus {
+  Open
+  Filled
+  Cancelled
+
+  @@schema("app_quikhrms")
+}
+
+// Recruiter & Position Tracking (Phase 1). One row per individual opening on
+// a requisition — created up front the moment the requisition itself is
+// created (5 positions → 5 rows), each with its own short, readable code
+// (e.g. "REQ-20260817-AB12-01"). The requisition itself is never duplicated —
+// one JD, one budget, one approval chain, one careers-page listing — only
+// these lightweight per-seat rows exist underneath it.
+//
+// `recruiterId` is a capacity ALLOCATION ("this seat is Ravi's to fill"), set
+// via the positions/allocate endpoint. It is intentionally separate from
+// JobApplication.assignedRecruiterId (which recruiter is working a given
+// CANDIDATE day to day) — a position is only marked Filled, and linked to the
+// application that filled it, the moment that candidate is actually hired.
+model RequisitionPosition {
+  id            String @id @default(cuid())
+  orgId         String
+  requisitionId String
+
+  positionCode String // e.g. "REQ-20260817-AB12-01" — stable once generated
+  sequenceNo   Int // 1, 2, 3... within this requisition
+
+  recruiterId String?
+  status      RequisitionPositionStatus @default(Open)
+
+  filledByApplicationId String?
+  filledAt              DateTime?
+
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  requisition JobRequisition   @relation(fields: [requisitionId], references: [id])
+  recruiter   Employee?        @relation(fields: [recruiterId], references: [id])
+  applications JobApplication[]
+
+  @@unique([orgId, requisitionId, sequenceNo])
+  @@index([orgId])
+  @@index([orgId, requisitionId])
+  @@index([orgId, recruiterId])
+  @@index([orgId, status])
+  @@schema("app_quikhrms")
+}
+
 model Candidate {
   id    String @id @default(cuid())
   orgId String
+
+  // Human-readable ID, e.g. "MY-CAN-0387-K2P9". Only set on candidates created
+  // after this field was introduced — older rows stay null (no backfill).
+  candidateCode String?
 
   firstName String
   lastName  String
@@ -14391,6 +14463,14 @@ model JobApplication {
   // confirmation â€” they only re-enter the pipeline after clicking "Yes".
   reconfirmSentAt DateTime?
 
+  // "Park Candidate" â€” profile isn't a fit for THIS role (not rejected outright),
+  // set aside with a reason for future reference. Distinct from AppOnHold, which
+  // is the requisition-hold-resume flow.
+  parkedReason ParkedReason?
+  parkedNote   String? // free-text detail, required when parkedReason = Other
+  parkedAt     DateTime?
+  parkedBy     String?
+
   // Offer â€” formerly the separate OfferDetail table (1:1, keyed by
   // applicationId). Folded in here. offerStatus = null means no offer exists
   // for this application yet.
@@ -14414,14 +14494,24 @@ model JobApplication {
   offerCreatedAt        DateTime?
   offerCreatedBy        String?
 
+  // Recruiter & Position Tracking (Phase 1) — the recruiter personally
+  // responsible for this candidate, set when they're added/claimed (manually
+  // or from the Unassigned queue for website applicants — never auto-set).
+  // `positionId` is stamped only at hire time, once a specific open seat is
+  // consumed — see RequisitionPosition.
+  assignedRecruiterId String?
+  positionId           String?
+
   createdBy String?
   updatedBy String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  candidate   Candidate                  @relation(fields: [candidateId], references: [id])
-  requisition JobRequisition             @relation(fields: [requisitionId], references: [id])
+  candidate        Candidate                  @relation(fields: [candidateId], references: [id])
+  requisition      JobRequisition             @relation(fields: [requisitionId], references: [id])
+  assignedRecruiter Employee?                 @relation("ApplicationRecruiter", fields: [assignedRecruiterId], references: [id])
+  position         RequisitionPosition?       @relation(fields: [positionId], references: [id])
   interviews  Interview[]
   docRequests CandidateDocumentRequest[]
 
@@ -14430,6 +14520,7 @@ model JobApplication {
   @@index([orgId, deletedAt])
   @@index([orgId, requisitionId])
   @@index([orgId, status])
+  @@index([orgId, assignedRecruiterId])
   // Performance: pipeline views + candidate lookup
   @@index([orgId, candidateId, status])
   @@index([orgId, requisitionId, currentStage])
@@ -14981,6 +15072,11 @@ model CompanySettings {
   orgId String @unique
 
   companyName String
+  // Auto-derived initials from companyName (e.g. "MoreYeahs" -> "MY"), used as
+  // the ID prefix for requisitions/positions/candidates. Generated once, on
+  // first use, and cached here — never recomputed even if companyName changes
+  // later, so existing IDs never shift.
+  shortCode   String?
   legalName   String?
   logo        String?
   website     String?
@@ -17670,13 +17766,6 @@ enum WfhGroupMode {
   @@schema("app_quikhrms")
 }
 
-enum DocumentBundle {
-  PreOffer
-  PostOffer
-
-  @@schema("app_quikhrms")
-}
-
 enum CandidateDocRequestStatus {
   Pending
   Completed
@@ -17695,15 +17784,14 @@ enum CandidateDocUploadStatus {
 }
 
 model CandidateDocumentType {
-  id         String         @id @default(cuid())
+  id         String  @id @default(cuid())
   orgId      String
   name       String
   code       String
-  bundle     DocumentBundle
-  isRequired Boolean        @default(true)
-  isActive   Boolean        @default(true)
-  isDefault  Boolean        @default(false)
-  sortOrder  Int            @default(0)
+  isRequired Boolean @default(true)
+  isActive   Boolean @default(true)
+  isDefault  Boolean @default(false)
+  sortOrder  Int     @default(0)
   helpText   String?
 
   createdBy String?
@@ -17714,9 +17802,9 @@ model CandidateDocumentType {
 
   uploads CandidateDocumentUpload[]
 
-  @@unique([orgId, code, bundle])
+  @@unique([orgId, code])
   @@index([orgId])
-  @@index([orgId, bundle, isActive])
+  @@index([orgId, isActive])
   @@schema("app_quikhrms")
 }
 
@@ -17724,7 +17812,6 @@ model CandidateDocumentRequest {
   id            String                    @id @default(cuid())
   orgId         String
   applicationId String
-  bundle        DocumentBundle
   status        CandidateDocRequestStatus @default(Pending)
 
   token              String    @unique
@@ -17748,10 +17835,9 @@ model CandidateDocumentRequest {
   application JobApplication            @relation(fields: [applicationId], references: [id])
   uploads     CandidateDocumentUpload[]
 
-  @@unique([orgId, applicationId, bundle])
+  @@unique([orgId, applicationId])
   @@index([orgId])
   @@index([orgId, status])
-  @@index([orgId, applicationId])
   @@schema("app_quikhrms")
 }
 

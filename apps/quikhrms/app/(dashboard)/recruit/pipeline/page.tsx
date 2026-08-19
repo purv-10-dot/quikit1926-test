@@ -11,7 +11,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { User, Users, ArrowRight, ArrowRightLeft, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
+import { User, Users, ArrowRight, ArrowRightLeft, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save, HelpCircle, ClipboardList, MoreHorizontal } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
@@ -67,6 +67,10 @@ interface ApplicationItem {
     lastReminderAt: string | null; reminderCount: number | null;
   } | null;
   docGate: { blocking: boolean; pending: string[] } | null;
+  // Recruiter & Position Tracking (Phase 1) — who's personally handling this
+  // candidate; null means it's sitting in the Unassigned claim queue.
+  assignedRecruiterId: string | null;
+  assignedRecruiterName: string | null;
 }
 
 // A sourced candidate with no requisition link yet (Candidate Pool). Shown as a
@@ -253,6 +257,11 @@ export default function PipelinePage() {
   const [requisitionFilters, setRequisitionFilters] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  // Recruiter & Position Tracking (Phase 1) — claim queue for candidates no
+  // one has picked up yet (mainly website/career-page applicants).
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [assignRecruiterTarget, setAssignRecruiterTarget] = useState<ApplicationItem | null>(null);
+  const [assignRecruiterId, setAssignRecruiterId] = useState("");
 
   const [feedbackApp, setFeedbackApp] = useState<ApplicationItem | null>(null);
   const [feedback, setFeedback] = useState({ overallRating: 7, recommendation: "" as string, strengths: "", concerns: "", overallComments: "" });
@@ -283,7 +292,7 @@ export default function PipelinePage() {
   // plus viewport coordinates.
   const [menu, setMenu] = useState<{ id: string; top: number; left: number } | null>(null);
 
-  const [docRequestApp, setDocRequestApp] = useState<{ app: ApplicationItem; bundle: "PreOffer" | "PostOffer" } | null>(null);
+  const [docRequestApp, setDocRequestApp] = useState<{ app: ApplicationItem } | null>(null);
   const [docRequestSelected, setDocRequestSelected] = useState<Set<string>>(new Set());
   const [docRequestDeadline, setDocRequestDeadline] = useState("");
 
@@ -383,16 +392,37 @@ export default function PipelinePage() {
   const [assignReqId, setAssignReqId] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["pipeline-apps", reqFilter, showClosed],
+    queryKey: ["pipeline-apps", reqFilter, showClosed, unassignedOnly],
     // Include offered / on-hold candidates so the Offer stage shows the whole
     // offer lifecycle (Draft → Sent → Accept/Decline), not just AppActive.
     // "Show closed" also pulls declined + rejected candidates onto the board.
+    // AppHired is always included — once someone starts/finishes onboarding
+    // they must keep showing in the Hired column, not vanish from the board.
     queryFn: () => {
       const statuses = showClosed
-        ? "AppActive,AppOffered,AppOnHold,AppDeclined,AppRejected"
-        : "AppActive,AppOffered,AppOnHold";
-      return api.get<ApplicationItem[]>(`/api/v1/hrms/recruit/applications?status=${statuses}&limit=200${reqFilter ? `&requisitionId=${reqFilter}` : ""}`);
+        ? "AppActive,AppOffered,AppOnHold,AppDeclined,AppRejected,AppHired"
+        : "AppActive,AppOffered,AppOnHold,AppHired";
+      return api.get<ApplicationItem[]>(`/api/v1/hrms/recruit/applications?status=${statuses}&limit=200${reqFilter ? `&requisitionId=${reqFilter}` : ""}${unassignedOnly ? "&assignedRecruiterId=unassigned" : ""}`);
     },
+  });
+
+  const { data: recruitersForAssignData } = useQuery({
+    queryKey: ["employees-picker"],
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?picker=1&limit=200"),
+    enabled: !!assignRecruiterTarget,
+  });
+  const recruiterAssignOptions = (recruitersForAssignData?.data ?? []).map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() }));
+
+  const assignRecruiterMut = useMutation({
+    mutationFn: ({ id, recruiterId }: { id: string; recruiterId: string }) =>
+      api.patch(`/api/v1/hrms/recruit/applications/${id}`, { assignedRecruiterId: recruiterId }),
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Recruiter assigned");
+      setAssignRecruiterTarget(null);
+      setAssignRecruiterId("");
+    },
+    onError: (e: unknown) => toast.error("Couldn't assign recruiter", e instanceof Error ? e.message : undefined),
   });
 
   const { data: pipelinesData } = useQuery({
@@ -627,16 +657,6 @@ export default function PipelinePage() {
     },
   });
 
-  const onboardMut = useMutation({
-    mutationFn: (id: string) => api.post<{ employee: { id: string }; redirectUrl: string }>(`/api/v1/hrms/recruit/applications/${id}/onboard`, {}),
-    onSuccess: (res) => {
-      invalidateAll();
-      qc.invalidateQueries({ queryKey: ["requisitions"] });
-      toast.success("Onboarding started", "Redirecting to onboarding page...");
-      if (res.data?.redirectUrl) router.push(res.data.redirectUrl);
-    },
-  });
-
   const feedbackMut = useMutation({
     mutationFn: ({ id, body }: { id: string; body: typeof feedback & { deferStageMove?: boolean } }) =>
       api.post(`/api/v1/hrms/recruit/applications/${id}/stage-feedback`, body),
@@ -660,22 +680,20 @@ export default function PipelinePage() {
     },
   });
 
-  const { data: preOfferDocTypes } = useQuery({
-    queryKey: ["candidate-doc-types", "PreOffer"],
-    queryFn: () => api.get<Array<{ id: string; code: string; name: string; isRequired: boolean; sortOrder: number; helpText: string | null }>>("/api/v1/hrms/recruit/candidate-document-types?bundle=PreOffer"),
-    enabled: docRequestApp?.bundle === "PreOffer",
+  // All active document types — no Before/After Offer split, HR can request
+  // any of these at any time.
+  const { data: allDocTypesData } = useQuery({
+    queryKey: ["candidate-doc-types"],
+    queryFn: () => api.get<Array<{ id: string; code: string; name: string; isRequired: boolean; sortOrder: number; helpText: string | null }>>("/api/v1/hrms/recruit/candidate-document-types"),
+    enabled: !!docRequestApp,
   });
-  const { data: postOfferDocTypes } = useQuery({
-    queryKey: ["candidate-doc-types", "PostOffer"],
-    queryFn: () => api.get<Array<{ id: string; code: string; name: string; isRequired: boolean; sortOrder: number; helpText: string | null }>>("/api/v1/hrms/recruit/candidate-document-types?bundle=PostOffer"),
-    enabled: docRequestApp?.bundle === "PostOffer",
-  });
-  const docTypesForBundle = docRequestApp?.bundle === "PreOffer" ? (preOfferDocTypes?.data ?? []) : (postOfferDocTypes?.data ?? []);
+  const docTypesAvailable = allDocTypesData?.data ?? [];
 
-  // Existing request for THIS bundle — drives the modal's "already requested"
-  // state (status pill, pre-checked docs, Update vs Send, in-modal reminder).
-  const { data: docBundleStatus, refetch: refetchDocBundle } = useQuery({
-    queryKey: ["doc-bundle-status", docRequestApp?.app.id, docRequestApp?.bundle],
+  // Existing request — drives the modal's "already requested" state (status
+  // pill, pre-checked docs, Update vs Send, in-modal reminder). One request
+  // per application now, not one per bundle.
+  const { data: docRequestStatus, refetch: refetchDocRequest } = useQuery({
+    queryKey: ["doc-request-status", docRequestApp?.app.id],
     queryFn: () => api.get<{
       request: {
         status: "Pending" | "Completed" | "Cancelled" | "Expired";
@@ -686,13 +704,13 @@ export default function PipelinePage() {
         reminderCount: number | null;
         uploads: Array<{ documentTypeId: string | null }>;
       } | null;
-    }>(`/api/v1/hrms/recruit/applications/${docRequestApp!.app.id}/documents/${docRequestApp!.bundle}`),
+    }>(`/api/v1/hrms/recruit/applications/${docRequestApp!.app.id}/documents`),
     enabled: !!docRequestApp,
   });
-  const existingReq = docBundleStatus?.data?.request ?? null;
+  const existingReq = docRequestStatus?.data?.request ?? null;
   // Enhanced "update / re-request" state applies to a still-Pending request — the
-  // service can refresh + resend those. Completed bundles fall back to the plain
-  // flow (they can't be re-sent).
+  // service can refresh + resend those. A Completed request falls back to the
+  // plain flow (it can't be re-sent).
   const alreadyRequested = existingReq?.status === "Pending";
   const receivedCount = existingReq
     ? new Set(existingReq.uploads.filter((u) => u.documentTypeId).map((u) => u.documentTypeId)).size
@@ -701,7 +719,7 @@ export default function PipelinePage() {
   const docRequestMut = useMutation({
     mutationFn: () => {
       if (!docRequestApp) throw new Error("No application selected");
-      return api.post(`/api/v1/hrms/recruit/applications/${docRequestApp.app.id}/documents/${docRequestApp.bundle}`, {
+      return api.post(`/api/v1/hrms/recruit/applications/${docRequestApp.app.id}/documents`, {
         documentTypeIds: Array.from(docRequestSelected),
         submissionDeadline: docRequestDeadline ? new Date(docRequestDeadline).toISOString() : null,
       });
@@ -717,23 +735,22 @@ export default function PipelinePage() {
     },
   });
 
-  const openDocRequest = (app: ApplicationItem, bundle: "PreOffer" | "PostOffer") => {
-    setDocRequestApp({ app, bundle });
+  const openDocRequest = (app: ApplicationItem) => {
+    setDocRequestApp({ app });
     setDocRequestSelected(new Set());
     setDocRequestDeadline("");
   };
 
-  // In-modal reminder — re-sends the reminder email for the CURRENT bundle
-  // (the card button hardcodes PostOffer; this respects the open bundle).
+  // In-modal reminder — re-sends the reminder email for the request.
   const remindDocModalMut = useMutation({
     mutationFn: () => {
       if (!docRequestApp) throw new Error("No application selected");
       return api.post<{ reminderCount: number; mailed: boolean; pendingDocs: string[]; mailError?: string }>(
-        `/api/v1/hrms/recruit/applications/${docRequestApp.app.id}/documents/${docRequestApp.bundle}/remind`, {},
+        `/api/v1/hrms/recruit/applications/${docRequestApp.app.id}/documents/remind`, {},
       );
     },
     onSuccess: () => {
-      refetchDocBundle();
+      refetchDocRequest();
       invalidateAll();
     },
   });
@@ -742,18 +759,18 @@ export default function PipelinePage() {
   // present, else all previously-requested, else the required defaults.
   useEffect(() => {
     if (!docRequestApp) return;
-    if (docTypesForBundle.length === 0) return;
-    if (docBundleStatus === undefined) return; // wait for the existing-request lookup
+    if (docTypesAvailable.length === 0) return;
+    if (docRequestStatus === undefined) return; // wait for the existing-request lookup
     if (docRequestSelected.size > 0) return;
     const sel = existingReq && Array.isArray(existingReq.selectedDocTypeIds) ? existingReq.selectedDocTypeIds : null;
     if (existingReq && sel && sel.length) {
       setDocRequestSelected(new Set(sel));
     } else if (existingReq && !sel) {
-      setDocRequestSelected(new Set(docTypesForBundle.map((d) => d.id)));
+      setDocRequestSelected(new Set(docTypesAvailable.map((d) => d.id)));
     } else {
-      setDocRequestSelected(new Set(docTypesForBundle.filter((d) => d.isRequired).map((d) => d.id)));
+      setDocRequestSelected(new Set(docTypesAvailable.filter((d) => d.isRequired).map((d) => d.id)));
     }
-  }, [docRequestApp, docTypesForBundle, docBundleStatus, existingReq, docRequestSelected.size]);
+  }, [docRequestApp, docTypesAvailable, docRequestStatus, existingReq, docRequestSelected.size]);
 
   // Prime the deadline field from an existing request (only while still empty).
   useEffect(() => {
@@ -831,11 +848,11 @@ export default function PipelinePage() {
     onError: (e: unknown) => toast.error("Couldn't extend offer", e instanceof Error ? e.message : undefined),
   });
 
-  // Re-send the pending post-offer document request reminder email.
+  // Re-send the pending document request reminder email.
   const remindMut = useMutation({
     mutationFn: (app: ApplicationItem) =>
       api.post<{ reminderCount: number; mailed: boolean; pendingDocs: string[]; mailError?: string }>(
-        `/api/v1/hrms/recruit/applications/${app.id}/documents/PostOffer/remind`, {},
+        `/api/v1/hrms/recruit/applications/${app.id}/documents/remind`, {},
       ),
     onSuccess: () => {
       invalidateAll();
@@ -1097,6 +1114,11 @@ export default function PipelinePage() {
           <span className="text-[11.5px] font-semibold text-green-700 bg-green-50 rounded-full px-2 py-0.5">
             {apps.length} candidate{apps.length === 1 ? "" : "s"}
           </span>
+          <label className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-amber-700 cursor-pointer select-none">
+            <input type="checkbox" checked={unassignedOnly} onChange={(e) => setUnassignedOnly(e.target.checked)}
+              className="rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+            Unassigned only (needs a recruiter)
+          </label>
           <label className="ml-auto inline-flex items-center gap-1.5 text-[11.5px] font-medium text-gray-600 cursor-pointer select-none">
             <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}
               className="rounded border-gray-300 text-green-600 focus:ring-green-500" />
@@ -1228,6 +1250,23 @@ export default function PipelinePage() {
                     </td>
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        {/* Recruiter & Position Tracking (Phase 1) — unassigned candidates
+                            (mainly website applicants) sit in a claim queue until a human
+                            manually picks one up; never auto-assigned. */}
+                        {app.assignedRecruiterId ? (
+                          <span title={`Assigned to ${app.assignedRecruiterName}`}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium bg-slate-50 text-slate-500 ring-1 ring-slate-200 truncate max-w-[90px]">
+                            <User size={9} /> {app.assignedRecruiterName}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => { setAssignRecruiterTarget(app); setAssignRecruiterId(""); }}
+                            title="Claim / assign a recruiter"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold ring-1 bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
+                          >
+                            <User size={10} /> Unassigned
+                          </button>
+                        )}
                         {/* Offer stage — the full offer lifecycle lives here in the
                             List view: Send → Pending/Expired → candidate responds
                             (email link) → Accepted/Declined. Resend/Extend and a
@@ -1290,10 +1329,10 @@ export default function PipelinePage() {
                           );
                         })() : null}
                         {isHired && (
-                          <button onClick={() => onboardMut.mutate(app.id)} disabled={onboardMut.isPending}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-md text-[11px] font-semibold shadow-sm disabled:opacity-50">
-                            <UserPlus size={11} /> Onboard
-                          </button>
+                          <Link href={`/recruit/candidates/${app.candidate.id}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100">
+                            <CheckCircle size={10} /> Employee
+                          </Link>
                         )}
                         <button
                           onClick={(e) => {
@@ -1380,10 +1419,14 @@ export default function PipelinePage() {
                     </div>
 
                     {stage === "Hired" ? (
-                      <button onClick={() => onboardMut.mutate(app.id)} disabled={onboardMut.isPending}
-                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl text-xs font-medium shadow-sm disabled:opacity-50">
-                        <UserPlus size={13} /> {onboardMut.isPending ? "Onboarding..." : "Onboard"}
-                      </button>
+                      // Onboarding now starts automatically on offer-accept, and the
+                      // backend only shows a Hired row here once HR has clicked
+                      // "Confirm Employee" — so anything visible in this column is
+                      // already a confirmed employee.
+                      <Link href={`/recruit/candidates/${app.candidate.id}`}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition">
+                        <CheckCircle size={13} /> Employee
+                      </Link>
                     ) : /offer/i.test(stage) ? (() => {
                       // Offer-stage lifecycle — the full flow relocated from the old
                       // /recruit/offers page: create → send → accept/decline.
@@ -1481,7 +1524,7 @@ export default function PipelinePage() {
                         </button>
                       )}
                       {app.docRequest?.status !== "Completed" && (
-                        <button onClick={() => openDocRequest(app, /offer/i.test(stage) ? "PreOffer" : "PostOffer")} title="Request documents"
+                        <button onClick={() => openDocRequest(app)} title="Request documents"
                           className="inline-flex items-center justify-center w-8 h-8 bg-violet-50 text-violet-600 ring-1 ring-violet-200 hover:bg-violet-100 rounded-lg transition">
                           <FileText size={13} />
                         </button>
@@ -1543,12 +1586,13 @@ export default function PipelinePage() {
               )}
               {/* Documents — the request flow's only live entry point (the card
                   view that used to host it never renders; viewMode is fixed to
-                  "list"). Hired candidates get the post-offer bundle. */}
+                  "list"). One unified request per application — HR can pick any
+                  document type at any time, no Before/After Offer split. */}
               {app.docRequest?.status !== "Completed" && (
                 <>
                   <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Documents</div>
                   <MenuItem icon={<FileText size={14} />} label={app.docRequest?.status === "Pending" ? "Update doc request" : "Request documents"}
-                    onClick={() => { setMenu(null); openDocRequest(app, isHired ? "PostOffer" : "PreOffer"); }} />
+                    onClick={() => { setMenu(null); openDocRequest(app); }} />
                 </>
               )}
               <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.09em] uppercase text-gray-400">Review</div>
@@ -1599,6 +1643,38 @@ export default function PipelinePage() {
               <button type="submit" disabled={!assignReqId || assignPoolMut.isPending}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold disabled:opacity-50">
                 <Briefcase size={13} /> {assignPoolMut.isPending ? "Assigning…" : "Assign"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Recruiter & Position Tracking (Phase 1) — claim/assign a recruiter for
+          an unassigned candidate (website applicants land here; never auto-set). */}
+      <Modal open={!!assignRecruiterTarget} onClose={() => !assignRecruiterMut.isPending && setAssignRecruiterTarget(null)} title="Assign Recruiter" size="md">
+        {assignRecruiterTarget && (
+          <form onSubmit={(e) => { e.preventDefault(); if (assignRecruiterId) assignRecruiterMut.mutate({ id: assignRecruiterTarget.id, recruiterId: assignRecruiterId }); }} className="space-y-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+              <span className="font-semibold text-slate-900">{assignRecruiterTarget.candidate.firstName} {assignRecruiterTarget.candidate.lastName}</span>
+              <span className="text-slate-500"> · {assignRecruiterTarget.candidate.email}</span>
+              <p className="text-slate-400 mt-0.5">{assignRecruiterTarget.requisition.title} · {assignRecruiterTarget.requisition.requisitionNumber}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Recruiter <span className="text-red-500">*</span></label>
+              <Select
+                value={assignRecruiterId}
+                onChange={setAssignRecruiterId}
+                searchable
+                placeholder="Select a recruiter"
+                options={recruiterAssignOptions}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setAssignRecruiterTarget(null)} disabled={assignRecruiterMut.isPending}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={!assignRecruiterId || assignRecruiterMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50">
+                <User size={13} /> {assignRecruiterMut.isPending ? "Assigning…" : "Assign"}
               </button>
             </div>
           </form>
@@ -1831,7 +1907,7 @@ export default function PipelinePage() {
       <Modal
         open={!!docRequestApp}
         onClose={() => !docRequestMut.isPending && setDocRequestApp(null)}
-        title={docRequestApp?.bundle === "PreOffer" ? "Request Before-Offer Documents" : "Request After-Offer Documents"}
+        title="Request Documents"
         maxWidthClass="ds-modal-wide"
         maxHeightClass="max-h-[80vh]"
         bodyClassName="p-4 overflow-y-auto"
@@ -1850,8 +1926,8 @@ export default function PipelinePage() {
             className="space-y-3"
           >
             {(() => {
-              const requiredTypes = docTypesForBundle.filter((d) => d.isRequired);
-              const allOn = docTypesForBundle.length > 0 && docRequestSelected.size === docTypesForBundle.length;
+              const requiredTypes = docTypesAvailable.filter((d) => d.isRequired);
+              const allOn = docTypesAvailable.length > 0 && docRequestSelected.size === docTypesAvailable.length;
               const requiredOnlyOn = !allOn && requiredTypes.length > 0
                 && docRequestSelected.size === requiredTypes.length
                 && requiredTypes.every((d) => docRequestSelected.has(d.id));
@@ -1869,9 +1945,6 @@ export default function PipelinePage() {
                       <span className="text-[13px] font-semibold text-slate-900 truncate">
                         {docRequestApp.app.candidate.firstName} {docRequestApp.app.candidate.lastName}
                       </span>
-                      <span className="text-[11px] font-semibold text-violet-600 shrink-0">
-                        {docRequestApp.bundle === "PreOffer" ? "Before Offer" : "After Offer"} bundle
-                      </span>
                       <span className="text-[11px] text-slate-500 truncate">
                         {docRequestApp.app.requisition.title} · {docRequestApp.app.candidate.email}
                       </span>
@@ -1881,7 +1954,7 @@ export default function PipelinePage() {
                   {alreadyRequested && (
                     <div className="flex items-center gap-2 rounded-lg bg-blue-50 ring-1 ring-blue-100 px-3 py-2 text-xs text-blue-700">
                       <Clock size={14} className="shrink-0" />
-                      <span>Requested {relativeTime(existingReq!.requestSentAt)} · <strong>{receivedCount}/{docTypesForBundle.length}</strong> received</span>
+                      <span>Requested {relativeTime(existingReq!.requestSentAt)} · <strong>{receivedCount}/{docTypesAvailable.length}</strong> received</span>
                     </div>
                   )}
 
@@ -1902,7 +1975,7 @@ export default function PipelinePage() {
                     <p className="text-[13px] font-semibold text-slate-800">{alreadyRequested ? "Request more documents" : "Select documents to request"}</p>
                     <div className="flex items-center gap-4 text-xs">
                       <button type="button"
-                        onClick={() => setDocRequestSelected(new Set(docTypesForBundle.map((d) => d.id)))}
+                        onClick={() => setDocRequestSelected(new Set(docTypesAvailable.map((d) => d.id)))}
                         className={tabCls(allOn)}>All</button>
                       <button type="button"
                         onClick={() => setDocRequestSelected(new Set(requiredTypes.map((d) => d.id)))}
@@ -1913,11 +1986,11 @@ export default function PipelinePage() {
                     </div>
                   </div>
 
-                  {docTypesForBundle.length === 0 ? (
+                  {docTypesAvailable.length === 0 ? (
                     <div className="p-6 text-center text-xs text-slate-400">Loading doc list…</div>
                   ) : (
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                      {docTypesForBundle.map((d) => {
+                      {docTypesAvailable.map((d) => {
                         const on = docRequestSelected.has(d.id);
                         return (
                           <label key={d.id} className={clsx(
@@ -2313,7 +2386,7 @@ export default function PipelinePage() {
             e.preventDefault();
             if (!moveTarget || targetIdx === curIdx) return;
             if (blockedTarget) {
-              toast.error("Use the dedicated action instead", moveTarget === "Hired" ? "Use \"Onboard\" to move a candidate to Hired." : "Use \"Send Offer\" to move a candidate to Offer.");
+              toast.error("Use the dedicated action instead", moveTarget === "Hired" ? "Hired is set automatically once the candidate accepts their offer." : "Use \"Send Offer\" to move a candidate to Offer.");
               return;
             }
             if (isForward) {
@@ -2370,7 +2443,9 @@ export default function PipelinePage() {
 
                 {blockedTarget && (
                   <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-                    {moveTarget === "Hired" ? "Hired" : "Offer"} can&apos;t be set directly here — use the {moveTarget === "Hired" ? "Onboard" : "Send Offer"} action for this candidate instead.
+                    {moveTarget === "Hired"
+                      ? "Hired can't be set directly here — it's set automatically once the candidate accepts their offer."
+                      : "Offer can't be set directly here — use the \"Send Offer\" action for this candidate instead."}
                   </div>
                 )}
 
@@ -2863,6 +2938,10 @@ function prettyStage(stage: string): string {
   // "Screening" is the stage's internal name (required, matched elsewhere via
   // showScreening()/REQUIRED_STAGES) — only the displayed label reads "Source".
   if (stage === "Screening") return "Source";
+  // Same idea — "Offer" stays the internal/stored name (REQUIRED_STAGES,
+  // existing pipelines' JSON, /offer/i checks all key off it), only the
+  // label shown to users reads "Offered".
+  if (stage === "Offer") return "Offered";
   return stage.replace(/([A-Z])/g, " $1").trim();
 }
 

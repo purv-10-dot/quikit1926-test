@@ -8,10 +8,10 @@ import { DEFAULT_CANDIDATE_DOC_TYPES } from "@/lib/data/candidate-doc-defaults";
 export async function ensureCandidateDocDefaults(orgId: string, userId?: string | null): Promise<number> {
   const existing = await prisma.candidateDocumentType.findMany({
     where: { orgId, deletedAt: null },
-    select: { code: true, bundle: true },
+    select: { code: true },
   });
-  const existingKey = new Set(existing.map((e) => `${e.bundle}:${e.code}`));
-  const toCreate = DEFAULT_CANDIDATE_DOC_TYPES.filter((d) => !existingKey.has(`${d.bundle}:${d.code}`));
+  const existingCodes = new Set(existing.map((e) => e.code));
+  const toCreate = DEFAULT_CANDIDATE_DOC_TYPES.filter((d) => !existingCodes.has(d.code));
   if (!toCreate.length) return 0;
 
   await prisma.candidateDocumentType.createMany({
@@ -19,7 +19,6 @@ export async function ensureCandidateDocDefaults(orgId: string, userId?: string 
       orgId,
       name: d.name,
       code: d.code,
-      bundle: d.bundle,
       isRequired: d.isRequired,
       isDefault: true,
       isActive: true,
