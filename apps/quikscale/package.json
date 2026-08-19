@@ -6,6 +6,7 @@
     "dev": "next dev -p 3003",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
+    "build:local": "next build --distDir .next-build",
     "start": "next start -p 3002",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
