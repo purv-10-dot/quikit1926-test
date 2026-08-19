@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import "./marketing.css";
 
+
 /**
  * Marketing layout for the public landing page at `/`.
  *
