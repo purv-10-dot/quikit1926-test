@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, Loader2, FileText, RotateCcw } from "lucide-react";
+import { Save, Loader2, FileText, RotateCcw, Eye } from "lucide-react";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { PageBackground } from "@/components/hrms/page-background";
@@ -16,6 +16,23 @@ export default function AppraisalLetterSettingsPage() {
   const toast = useToast();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [body, setBody] = useState("");
+  const [previewing, setPreviewing] = useState(false);
+
+  // Render a sample PDF (dummy employee data) with the current, unsaved template.
+  const previewSample = async () => {
+    setPreviewing(true);
+    try {
+      await api.downloadPost(
+        "/api/v1/hrms/settings/branding/preview",
+        { type: "appraisal", body },
+        "Appraisal-Letter-Sample.pdf",
+      );
+    } catch {
+      toast.error("Preview failed", "Could not generate the sample letter.");
+    } finally {
+      setPreviewing(false);
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings", "appraisal-letter"],
@@ -85,6 +102,10 @@ export default function AppraisalLetterSettingsPage() {
           <button type="button" onClick={() => setBody(DEFAULT_APPRAISAL_LETTER_BODY)}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             <RotateCcw size={13} /> Reset to default
+          </button>
+          <button type="button" onClick={previewSample} disabled={previewing}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-green-700 border border-green-200 rounded-lg hover:bg-green-50 disabled:opacity-60">
+            {previewing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} Preview sample
           </button>
           <button type="button" onClick={() => saveMut.mutate({ appraisalLetterBody: body || null })} disabled={saveMut.isPending}
             className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-60">

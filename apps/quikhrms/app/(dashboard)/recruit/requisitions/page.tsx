@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
@@ -277,6 +278,8 @@ export default function RequisitionsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { hasPermission } = useDashboardConfig();
   // Creating / editing / deleting requisitions requires recruit write (also
   // enforced by the API). Viewers reach this page via the dashboard "View All".
@@ -287,6 +290,25 @@ export default function RequisitionsPage() {
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
   // Requisition-detail accordion: only one section open at a time (null = first).
   const [openSec, setOpenSec] = useState<string | null>(null);
+
+  // Deep-link support (?view=<id>) — e.g. from Recruiter Performance's "Active
+  // Requisitions" detail list, so it can open the SAME view modal here rather
+  // than duplicating this detail UI elsewhere. Fetched independently of the
+  // list's own filters/pagination so it opens even if the row isn't on the
+  // currently-visible page.
+  const viewParamId = searchParams.get("view");
+  const { data: viewParamData } = useQuery({
+    queryKey: ["requisition-detail", viewParamId],
+    queryFn: () => api.get<ReqItem>(`/api/v1/hrms/recruit/requisitions/${viewParamId}`),
+    enabled: !!viewParamId,
+  });
+  useEffect(() => {
+    if (viewParamData?.data) {
+      setViewReq(viewParamData.data);
+      router.replace("/recruit/requisitions");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewParamData]);
   const [statusFilter, setStatusFilter] = useState("ReqOpen"); // default to Open; chips switch to All/others
   const [priorityFilter, setPriorityFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -298,6 +320,11 @@ export default function RequisitionsPage() {
   const [reviewTarget, setReviewTarget] = useState<ReqItem | null>(null);
   const [decisions, setDecisions] = useState<Record<string, HeldAction>>({});
   const [openFeedback, setOpenFeedback] = useState<Set<string>>(new Set());
+
+  // ── Recruiter & Position Tracking (Phase 1) — allocate positions to recruiters ──
+  const [assignRecruiterReq, setAssignRecruiterReq] = useState<ReqItem | null>(null);
+  const [allocRecruiterId, setAllocRecruiterId] = useState("");
+  const [allocCount, setAllocCount] = useState("1");
   const emptyForm = emptyReqForm;
   const [form, setForm] = useState<ReqFormShape>(emptyForm);
 
@@ -335,6 +362,32 @@ export default function RequisitionsPage() {
     queryFn: () => api.get<JobLevelOption[]>("/api/v1/hrms/settings/job-levels"),
   });
   const jobLevels = jobLevelsData?.data ?? [];
+
+  // ── Recruiter & Position Tracking (Phase 1) ──────────────────────────────
+  interface PositionRow {
+    id: string; positionCode: string; sequenceNo: number; status: "Open" | "Filled" | "Cancelled";
+    recruiterId: string | null; recruiterName: string | null;
+    filledByApplicationId: string | null; filledAt: string | null;
+  }
+  const { data: positionsData } = useQuery({
+    queryKey: ["req-positions", assignRecruiterReq?.id],
+    queryFn: () => api.get<PositionRow[]>(`/api/v1/hrms/recruit/requisitions/${assignRecruiterReq!.id}/positions`),
+    enabled: !!assignRecruiterReq,
+  });
+  const positions = positionsData?.data ?? [];
+  const openPositionsCount = positions.filter((p) => p.status === "Open" && !p.recruiterId).length;
+
+  const allocateMut = useMutation({
+    mutationFn: ({ id, recruiterId, count }: { id: string; recruiterId: string; count: number }) =>
+      api.post(`/api/v1/hrms/recruit/requisitions/${id}/positions/allocate`, { recruiterId, count }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["req-positions", assignRecruiterReq?.id] });
+      setAllocRecruiterId("");
+      setAllocCount("1");
+      toast.success("Positions allocated");
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed to allocate positions"),
+  });
 
   const createMut = useMutation({
     mutationFn: (body: ReqFormShape) => api.post("/api/v1/hrms/recruit/requisitions", toReqPayload(body)),
@@ -629,6 +682,15 @@ export default function RequisitionsPage() {
                               setShowCreate(true);
                             },
                           });
+                          // Recruiter & Position Tracking (Phase 1) — own dedicated modal,
+                          // separate from the general "View" details modal.
+                          menuActions.push({
+                            label: "Assign Recruiter", icon: <Users size={13} />, onClick: () => {
+                              setAllocRecruiterId("");
+                              setAllocCount("1");
+                              setAssignRecruiterReq(r);
+                            },
+                          });
                         }
                         if (r.status === "ReqDraft") {
                           menuActions.push({ label: "Open", icon: <Check size={13} />, onClick: () => updateMut.mutate({ id: r.id, status: "ReqOpen" }) });
@@ -864,12 +926,67 @@ export default function RequisitionsPage() {
                 className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
                 Close
               </button>
-              {canManage && viewReq.status !== "ReqCancelled" && viewReq.status !== "ReqClosed" && (
-                <button type="button" onClick={() => { setForm(reqToForm(viewReq)); setEditId(viewReq.id); setShowCreate(true); setViewReq(null); }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-green-300 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-50">
-                  <Pencil size={12} /> Edit Requisition
-                </button>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* Recruiter & Position Tracking (Phase 1) — dedicated modal, separate from
+          the general "View" details modal. */}
+      {assignRecruiterReq && (() => {
+        const recruiterOptions = employees.map((e) => ({
+          value: e.id,
+          label: e.displayName || `${e.firstName} ${e.lastName}`.trim(),
+        }));
+        const positionStatusPill: Record<PositionRow["status"], string> = {
+          Open: "bg-gray-100 text-gray-600",
+          Filled: "bg-green-50 text-green-700",
+          Cancelled: "bg-red-50 text-red-600",
+        };
+        return (
+          <Modal open onClose={() => setAssignRecruiterReq(null)} size="md"
+            headerIcon={<Users size={16} />}
+            title="Assign Recruiter" subtitle={`${assignRecruiterReq.title} · ${assignRecruiterReq.requisitionNumber}`}>
+            <div className="space-y-3 text-xs">
+              {positions.length === 0 ? (
+                <p className="text-gray-400">No position records yet.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+                  {positions.map((p) => (
+                    <li key={p.id} className="flex items-center gap-2 px-2.5 py-2">
+                      <span className="font-mono text-[11px] text-gray-700">{p.positionCode}</span>
+                      <span className={clsx("inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-medium", positionStatusPill[p.status])}>{p.status}</span>
+                      <span className="flex-1 text-gray-500 truncate">{p.recruiterName || "Unallocated"}</span>
+                    </li>
+                  ))}
+                </ul>
               )}
+              {canManage && openPositionsCount > 0 && (
+                <div className="rounded-lg bg-teal-50/60 ring-1 ring-teal-100 p-2.5 flex items-end gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10.5px] font-semibold uppercase tracking-wide text-teal-700 mb-1">Allocate to recruiter</p>
+                    <Select value={allocRecruiterId} onChange={setAllocRecruiterId} searchable
+                      placeholder="— Select recruiter —" options={recruiterOptions} />
+                  </div>
+                  <input type="number" min={1} max={openPositionsCount} value={allocCount}
+                    onChange={(e) => setAllocCount(e.target.value)}
+                    className="w-16 h-8 rounded-lg border border-gray-300 px-2 text-xs" />
+                  <button type="button" disabled={!allocRecruiterId || allocateMut.isPending}
+                    onClick={() => allocateMut.mutate({ id: assignRecruiterReq.id, recruiterId: allocRecruiterId, count: Math.max(1, Math.min(openPositionsCount, Number(allocCount) || 1)) })}
+                    className="h-8 px-3 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-xs font-semibold disabled:opacity-50 shrink-0">
+                    Allocate
+                  </button>
+                </div>
+              )}
+              {openPositionsCount === 0 && positions.length > 0 && (
+                <p className="text-[11px] text-gray-400">All positions are allocated or filled.</p>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setAssignRecruiterReq(null)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+                  Close
+                </button>
+              </div>
             </div>
           </Modal>
         );

@@ -62,10 +62,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
   if (documentTypeId) {
     const dt = await prisma.candidateDocumentType.findFirst({
-      where: { id: documentTypeId, orgId: payload.orgId, bundle: payload.bundle, isActive: true, deletedAt: null },
+      where: { id: documentTypeId, orgId: payload.orgId, isActive: true, deletedAt: null },
       select: { id: true },
     });
-    if (!dt) return err("VALIDATION", "Invalid document type for this bundle", 422);
+    if (!dt) return err("VALIDATION", "Invalid document type", 422);
   }
 
   // Cap total uploads per request — stop unbounded storage writes / abuse.
