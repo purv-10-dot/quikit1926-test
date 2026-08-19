@@ -348,7 +348,9 @@ export async function computeWidget(
         if (bi !== -1) return 1;
         return a.localeCompare(b);
       });
-      return { type, pie: sorted.map(([name, value]) => ({ name, value })) };
+      // "Offer" stays the stored/internal stage name (sort order, JobApplication
+      // rows) — only the displayed label reads "Offered".
+      return { type, pie: sorted.map(([name, value]) => ({ name: name === "Offer" ? "Offered" : name, value })) };
     }
     case "aging-requisitions": {
       // Open reqs bucketed by how long they've been open. Anything 60+ days

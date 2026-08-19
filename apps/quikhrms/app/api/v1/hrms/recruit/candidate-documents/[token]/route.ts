@@ -44,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const selectedIds = Array.isArray(request.selectedDocTypeIds) ? (request.selectedDocTypeIds as unknown as string[]) : null;
   const docTypes = await prisma.candidateDocumentType.findMany({
     where: {
-      orgId: payload.orgId, bundle: payload.bundle, isActive: true, deletedAt: null,
+      orgId: payload.orgId, isActive: true, deletedAt: null,
       ...(selectedIds && selectedIds.length ? { id: { in: selectedIds } } : {}),
     },
     orderBy: { sortOrder: "asc" },
@@ -56,7 +56,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
   return ok({
     companyName: company?.companyName ?? "Our Company",
-    bundle: payload.bundle,
     candidate: {
       name: `${request.application.candidate.firstName} ${request.application.candidate.lastName}`.trim(),
       email: request.application.candidate.email,

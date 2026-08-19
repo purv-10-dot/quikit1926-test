@@ -6,19 +6,17 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { Modal } from "@/components/hrms/modal";
-import { Select } from "@/components/hrms/select";
 import { PageBackground } from "@/components/hrms/page-background";
 import { FileCheck2, Plus, Pencil, Trash2, Power, PowerOff, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 
-type Bundle = "PreOffer" | "PostOffer";
 interface DocType {
-  id: string; orgId: string; code: string; name: string; bundle: Bundle;
+  id: string; orgId: string; code: string; name: string;
   isRequired: boolean; isActive: boolean; isDefault: boolean;
   sortOrder: number; helpText: string | null;
 }
 
-const emptyForm = { name: "", bundle: "PreOffer" as Bundle, isRequired: true, helpText: "", sortOrder: 999 };
+const emptyForm = { name: "", isRequired: true, helpText: "", sortOrder: 999 };
 
 export default function CandidateDocumentsSettings() {
   const api = useApiClient();
@@ -30,9 +28,8 @@ export default function CandidateDocumentsSettings() {
     queryKey: ["candidate-doc-types", "all"],
     queryFn: () => api.get<DocType[]>("/api/v1/hrms/recruit/candidate-document-types?includeInactive=1"),
   });
-  const items = data?.data ?? [];
+  const items = (data?.data ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
 
-  const [bundleTab, setBundleTab] = useState<Bundle>("PreOffer");
   const [editing, setEditing] = useState<DocType | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -71,16 +68,9 @@ export default function CandidateDocumentsSettings() {
     onError: (e: unknown) => toast.error("Delete failed", e instanceof Error ? e.message : undefined),
   });
 
-  const preOffer = items.filter((i) => i.bundle === "PreOffer").sort((a, b) => a.sortOrder - b.sortOrder);
-  const postOffer = items.filter((i) => i.bundle === "PostOffer").sort((a, b) => a.sortOrder - b.sortOrder);
-  const list = bundleTab === "PreOffer" ? preOffer : postOffer;
-
-  // New types append after the current highest in that bundle so ordering is
-  // predictable (instead of everything tying at the old 999 default).
-  const nextSortOrder = (bundle: Bundle) => {
-    const inBundle = items.filter((i) => i.bundle === bundle);
-    return inBundle.length ? Math.max(...inBundle.map((i) => i.sortOrder)) + 1 : 0;
-  };
+  // New types append after the current highest so ordering is predictable
+  // (instead of everything tying at the old 999 default).
+  const nextSortOrder = items.length ? Math.max(...items.map((i) => i.sortOrder)) + 1 : 0;
 
   return (
     <div className="bg-slate-50 -m-6 p-6">
@@ -91,10 +81,10 @@ export default function CandidateDocumentsSettings() {
           <h1 className="text-base font-semibold text-slate-900 flex items-center gap-2">
             <FileCheck2 size={22} className="text-[#22c55e]" /> Document Types
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">Define which documents candidates must upload before &amp; after offer.</p>
+          <p className="text-xs text-slate-500 mt-0.5">Define which documents HR can request from candidates — any of these can be requested at any time.</p>
         </div>
         <button
-          onClick={() => { setForm({ ...emptyForm, bundle: bundleTab, sortOrder: nextSortOrder(bundleTab) }); setShowCreate(true); }}
+          onClick={() => { setForm({ ...emptyForm, sortOrder: nextSortOrder }); setShowCreate(true); }}
           className="btn btn-primary"
         >
           <Plus size={13} /> Add Document Type
@@ -102,28 +92,12 @@ export default function CandidateDocumentsSettings() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 flex-wrap">
-          {(["PreOffer", "PostOffer"] as const).map((b) => (
-            <button
-              key={b}
-              onClick={() => setBundleTab(b)}
-              className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-semibold ring-1 transition",
-                bundleTab === b ? "bg-green-600 text-white ring-[#22c55e] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}>
-              {b === "PreOffer" ? "Before Offer" : "After Offer"}
-              <span className={clsx("ml-1 px-1.5 py-0.5 rounded-full text-[11px] font-semibold",
-                bundleTab === b ? "bg-white/20" : "bg-slate-100 text-slate-500")}>
-                {b === "PreOffer" ? preOffer.length : postOffer.length}
-              </span>
-            </button>
-          ))}
-        </div>
-
         {isLoading ? (
           <div className="p-8 text-center text-slate-400 text-xs">Loading…</div>
-        ) : list.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <FileCheck2 size={36} className="mx-auto mb-2 text-slate-300" />
-            <p className="text-[13px] font-semibold">No documents in this bundle</p>
+            <p className="text-[13px] font-semibold">No document types yet</p>
             <p className="text-xs text-slate-400 mt-0.5">Click &quot;Add Document Type&quot; to create one.</p>
           </div>
         ) : (
@@ -140,7 +114,7 @@ export default function CandidateDocumentsSettings() {
               </tr>
             </thead>
             <tbody>
-              {list.map((d) => (
+              {items.map((d) => (
                 <tr key={d.id} className={clsx("border-b border-slate-100 hover:bg-slate-50/60", !d.isActive && "opacity-50")}>
                   <td className="px-4 py-2.5 text-[11px] text-slate-500 font-mono">{d.sortOrder}</td>
                   <td className="px-4 py-2.5">
@@ -222,7 +196,6 @@ export default function CandidateDocumentsSettings() {
               updateMut.mutate({
                 id: editing.id,
                 name: editing.name,
-                bundle: editing.bundle,
                 isRequired: editing.isRequired,
                 helpText: editing.helpText,
                 sortOrder: editing.sortOrder,
@@ -233,15 +206,12 @@ export default function CandidateDocumentsSettings() {
             <FormFields
               form={{
                 name: editing.name,
-                bundle: editing.bundle,
                 isRequired: editing.isRequired,
                 helpText: editing.helpText ?? "",
                 sortOrder: editing.sortOrder,
               }}
               onChange={(patch) => setEditing({ ...editing, ...patch, helpText: patch.helpText ?? null })}
-              lockBundle={editing.isDefault}
             />
-            {editing.isDefault && <p className="text-[11px] text-green-600 bg-green-50 border border-green-200 rounded px-2 py-1.5">This is a seeded default. Bundle cannot be moved.</p>}
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setEditing(null)} disabled={updateMut.isPending}
                 className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
@@ -257,10 +227,9 @@ export default function CandidateDocumentsSettings() {
   );
 }
 
-function FormFields({ form, onChange, lockBundle }: {
-  form: { name: string; bundle: Bundle; isRequired: boolean; helpText: string; sortOrder: number };
-  onChange: (next: { name: string; bundle: Bundle; isRequired: boolean; helpText: string; sortOrder: number }) => void;
-  lockBundle?: boolean;
+function FormFields({ form, onChange }: {
+  form: { name: string; isRequired: boolean; helpText: string; sortOrder: number };
+  onChange: (next: { name: string; isRequired: boolean; helpText: string; sortOrder: number }) => void;
 }) {
   return (
     <>
@@ -276,28 +245,15 @@ function FormFields({ form, onChange, lockBundle }: {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Bundle *</label>
-          <Select
-            className="w-full"
-            disabled={lockBundle}
-            value={form.bundle}
-            onChange={(v) => onChange({ ...form, bundle: v as Bundle })}
-            options={[
-              { value: "PreOffer", label: "Before Offer" },
-              { value: "PostOffer", label: "After Offer" },
-            ]}
+          <label className="block text-sm font-medium text-gray-700 mb-1">Display order</label>
+          <input
+            type="number"
+            min={0}
+            value={form.sortOrder}
+            onChange={(e) => onChange({ ...form, sortOrder: Number(e.target.value) || 0 })}
+            className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
         </div>
-      </div>
-      <div className="w-32">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Display order</label>
-        <input
-          type="number"
-          min={0}
-          value={form.sortOrder}
-          onChange={(e) => onChange({ ...form, sortOrder: Number(e.target.value) || 0 })}
-          className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
-        />
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input

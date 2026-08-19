@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, forbidden, internalError } from "@/lib/api-response";
@@ -47,6 +48,18 @@ interface RecruiterRow {
   slaAging: number;
   slaOverdue: number;
   slaCompliancePct: number | null;
+  // Recruiter & Position Tracking (Phase 1) additions.
+  positionsClosed: number;
+  avgTimeToClosePositionDays: number | null;
+  escalations: number;
+  dateRevisions: number;
+  // Exactly which seats are allocated to this recruiter — not just a count.
+  positions: { id: string; positionCode: string; status: string; requisitionTitle: string; requisitionNumber: string }[];
+  // Backing detail lists for the clickable stat cards — always just THIS
+  // recruiter's own items, never someone else's or the full org list.
+  activeRequisitionsList: { id: string; title: string; requisitionNumber: string; status: string; filledPositions: number; positions: number }[];
+  activeCandidatesList: { id: string; candidateId: string; name: string; requisitionTitle: string; currentStage: string | null; appliedDate: Date }[];
+  hiresThisMonthList: { id: string; candidateId: string; name: string; requisitionTitle: string; hiredAt: Date | null }[];
 }
 
 export const GET = withAuth(async (req: NextRequest, ctx) => {
@@ -120,12 +133,57 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     const nameById = new Map(recruiterEmployees.map((e) => [e.id, `${e.firstName} ${e.lastName}`.trim()]));
 
     const requisitionIds = requisitions.map((r) => r.id);
+    const reqById = new Map(requisitions.map((r) => [r.id, r]));
+
+    // Recruiter & Position Tracking (Phase 1) — Positions Closed + Time to
+    // Close, per recruiter. RequisitionPosition isn't in the generated Prisma
+    // client yet, so it's fetched via raw SQL. Includes positionCode +
+    // requisitionId so a recruiter can see exactly WHICH seats are theirs
+    // (not just a count) — see the "My Assigned Positions" list below.
+    const positionRows = recruiterIds.length
+      ? await prisma.$queryRaw<{ id: string; recruiterId: string; requisitionId: string; positionCode: string; createdAt: Date; filledAt: Date | null; status: string }[]>`
+          SELECT id, "recruiterId", "requisitionId", "positionCode", "createdAt", "filledAt", status FROM "app_quikhrms"."RequisitionPosition"
+          WHERE "orgId" = ${orgId} AND "recruiterId" IN (${Prisma.join(recruiterIds)}) AND "deletedAt" IS NULL
+          ORDER BY "sequenceNo" ASC`
+      : [];
+    const positionsByRecruiter = new Map<string, typeof positionRows>();
+    for (const p of positionRows) {
+      if (!positionsByRecruiter.has(p.recruiterId)) positionsByRecruiter.set(p.recruiterId, []);
+      positionsByRecruiter.get(p.recruiterId)!.push(p);
+    }
+
+    // Escalations — SLA-breach notifications the recruit-sla-check cron already
+    // fires to each assigned recruiter (see cron/recruit-sla-check/route.ts).
+    const escalationNotifs = recruiterIds.length
+      ? await prisma.hrmsNotification.findMany({
+          where: { orgId, employeeId: { in: recruiterIds }, entityType: "JobRequisition", title: { in: ["SLA breached", "SLA breach escalation"] } },
+          select: { employeeId: true },
+        })
+      : [];
+    const escalationsByRecruiter = new Map<string, number>();
+    for (const n of escalationNotifs) escalationsByRecruiter.set(n.employeeId, (escalationsByRecruiter.get(n.employeeId) ?? 0) + 1);
+
+    // Date Revisions — how often "Revise Date" was used on requisitions this
+    // recruiter is on (same audit-log signal as requisitions/:id/date-history).
+    const dateRevisionLogs = requisitionIds.length
+      ? await prisma.hrmsAuditLog.findMany({
+          where: { orgId, entityType: "Requisition", entityId: { in: requisitionIds }, action: "Update" },
+          select: { entityId: true, changes: true },
+        })
+      : [];
+    const dateRevisionsByReq = new Map<string, number>();
+    for (const l of dateRevisionLogs) {
+      const c = l.changes as unknown as Record<string, unknown> | null;
+      if (!l.entityId || !c || (!("closedDate" in c) && !("targetJoiningDate" in c))) continue;
+      dateRevisionsByReq.set(l.entityId, (dateRevisionsByReq.get(l.entityId) ?? 0) + 1);
+    }
     const applications = requisitionIds.length
       ? await prisma.jobApplication.findMany({
           where: { orgId, deletedAt: null, requisitionId: { in: requisitionIds } },
           select: {
-            id: true, requisitionId: true, status: true, currentStage: true, appliedDate: true,
+            id: true, requisitionId: true, candidateId: true, status: true, currentStage: true, appliedDate: true,
             offerStatus: true, offerSentAt: true, updatedAt: true, hiredAt: true, stageHistory: true,
+            candidate: { select: { firstName: true, lastName: true } },
           },
         })
       : [];
@@ -188,12 +246,51 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       const slaRated = slaOnTrack + slaAging + slaOverdue;
       const slaCompliancePct = slaRated ? Math.round(((slaOnTrack + slaAging) / slaRated) * 100) : null;
 
+      // Recruiter & Position Tracking (Phase 1) — positions this recruiter
+      // actually closed (hired into), and how long each took, seat to hire.
+      const myPositions = positionsByRecruiter.get(employeeId) ?? [];
+      const filledPositions = myPositions.filter((p) => p.status === "Filled" && p.filledAt);
+      const positionsClosed = filledPositions.length;
+      const closeDays = filledPositions.map((p) => countBusinessDays(p.createdAt, p.filledAt!, holidayDates));
+      const avgTimeToClosePositionDays = closeDays.length ? Math.round(closeDays.reduce((s, d) => s + d, 0) / closeDays.length) : null;
+
+      const escalations = escalationsByRecruiter.get(employeeId) ?? 0;
+      const dateRevisions = myReqs.reduce((sum, r) => sum + (dateRevisionsByReq.get(r.id) ?? 0), 0);
+
+      const positionsList = myPositions.map((p) => ({
+        id: p.id, positionCode: p.positionCode, status: p.status,
+        requisitionTitle: reqById.get(p.requisitionId)?.title ?? "Unknown",
+        requisitionNumber: reqById.get(p.requisitionId)?.requisitionNumber ?? "",
+      }));
+
+      // Detail lists for the clickable stat cards — this recruiter's own
+      // requisitions/candidates only, never the whole org's.
+      const activeRequisitionsList = myOpenReqs.map((r) => ({
+        id: r.id, title: r.title, requisitionNumber: r.requisitionNumber, status: r.status,
+        filledPositions: r.filledPositions, positions: r.positions,
+      }));
+      const activeCandidatesApps = myApps.filter((a) => ACTIVE_APP_STATUSES.has(a.status));
+      const activeCandidatesList = activeCandidatesApps.map((a) => ({
+        id: a.id, candidateId: a.candidateId, name: `${a.candidate.firstName} ${a.candidate.lastName}`.trim(),
+        requisitionTitle: reqById.get(a.requisitionId)?.title ?? "Unknown",
+        currentStage: a.currentStage, appliedDate: a.appliedDate,
+      }));
+      const hiresThisMonthApps = myApps.filter((a) => a.status === "AppHired" && a.hiredAt && a.hiredAt >= monthStart);
+      const hiresThisMonthList = hiresThisMonthApps.map((a) => ({
+        id: a.id, candidateId: a.candidateId, name: `${a.candidate.firstName} ${a.candidate.lastName}`.trim(),
+        requisitionTitle: reqById.get(a.requisitionId)?.title ?? "Unknown",
+        hiredAt: a.hiredAt,
+      }));
+
       return {
         employeeId, name: nameById.get(employeeId) ?? "Unknown",
         activeRequisitions: myOpenReqs.length, positionsAssigned, activeCandidates,
         interviewsThisWeek, offersSentThisWeek, hiresThisMonth,
         avgTimeToFillDays, medianTimeToFillDays, avgTimeToHireDays, medianTimeToHireDays,
         slaOnTrack, slaAging, slaOverdue, slaCompliancePct,
+        positionsClosed, avgTimeToClosePositionDays, escalations, dateRevisions,
+        positions: positionsList,
+        activeRequisitionsList, activeCandidatesList, hiresThisMonthList,
       };
     }
 

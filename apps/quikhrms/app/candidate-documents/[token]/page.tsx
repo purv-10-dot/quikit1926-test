@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, FileText, Loader2, Paperclip, Plus, RefreshCw, Upload, XCircle } from "lucide-react";
 import { clsx } from "clsx";
 
-type Bundle = "PreOffer" | "PostOffer";
 type UploadStatus = "Pending" | "Approved" | "Rejected";
 
 interface DocType { id: string; code: string; name: string; isRequired: boolean; helpText: string | null; sortOrder: number }
@@ -23,7 +22,6 @@ interface UploadRow {
 }
 interface Detail {
   companyName: string;
-  bundle: Bundle;
   candidate: { name: string; email: string };
   jobTitle: string;
   status: string;
@@ -144,7 +142,7 @@ export default function CandidateDocPortal({ params }: { params: { token: string
   return (
     <Shell>
       <header className="mb-5">
-        <p className="text-xs uppercase tracking-widest text-blue-600 font-semibold mb-1">{detail.bundle === "PreOffer" ? "Before Offer" : "After Offer"} — Document Submission</p>
+        <p className="text-xs uppercase tracking-widest text-blue-600 font-semibold mb-1">Document Submission</p>
         <h1 className="text-2xl font-bold text-gray-900">Welcome, {detail.candidate.name}</h1>
         <p className="text-sm text-gray-600 mt-1">Role: <strong>{detail.jobTitle}</strong> · {detail.companyName}</p>
         {detail.submissionDeadline && (
