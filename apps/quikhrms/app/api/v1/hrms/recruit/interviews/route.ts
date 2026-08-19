@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
+import { successResponse, validationError, conflict, internalError, forbidden } from "@/lib/api-response";
 import { createInterviewSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { stageNames } from "@/lib/services/pipeline-stages";
@@ -14,14 +14,28 @@ import { appBaseUrl } from "@/lib/utils/app-url";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
 import { generateTakeHomeToken } from "@/lib/services/take-home-token";
 import { buildTakeHomeTaskEmail } from "@/lib/email-templates/take-home-task";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getMyJobRequisitionIds } from "@/lib/recruit/my-jobs";
 import type { Prisma } from "@quikit/database";
 
 // Interview types that warrant an auto-generated video meeting link.
 // Easy to extend (e.g. add "GroupDiscussion") if those go virtual.
 const VIRTUAL_INTERVIEW_TYPES = new Set(["Video", "Panel"]);
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
+    const canSeeAll = permissions.includes("*") || permissions.includes("hrms.recruit.read");
+    const canSeeSelf = canSeeAll || permissions.includes("hrms.recruit.read_self");
+    if (!canSeeSelf) return forbidden("No recruitment read permission");
+
+    // Recruiter (self-only) scope — same rule as Job Openings/Candidates/
+    // Pipeline: only interviews for candidates applying to their own jobs.
+    let myJobIds: string[] | null = null;
+    if (!canSeeAll) {
+      const employeeId = await resolveEmployeeId(orgId, userId);
+      myJobIds = employeeId ? await getMyJobRequisitionIds(orgId, employeeId) : [];
+    }
+
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const applicationId = searchParams.get("applicationId");
@@ -35,6 +49,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       application: {
         status: { in: ["AppActive", "AppOffered", "AppOnHold"] },
         candidate: { isBlacklisted: false, isArchived: false },
+        ...(myJobIds !== null && { requisitionId: { in: myJobIds } }),
       },
       ...(applicationId && { applicationId }),
       ...(interviewerId && { interviewerId }),
@@ -101,7 +116,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     }));
     return successResponse(shaped, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/interviews error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.read"] });
+});
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {

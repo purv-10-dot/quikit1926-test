@@ -3,12 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound } from "@/lib/api-response";
 import { sendCandidateDocReminder } from "@/lib/services/candidate-doc-service";
-import type { DocumentBundle } from "@quikit/database";
-
-const VALID_BUNDLES: DocumentBundle[] = ["PreOffer", "PostOffer"];
-function isBundle(v: string): v is DocumentBundle {
-  return (VALID_BUNDLES as string[]).includes(v);
-}
 
 /**
  * POST — HR re-requests documents after rejecting one or more uploads.
@@ -21,13 +15,11 @@ function isBundle(v: string): v is DocumentBundle {
  */
 export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
   try {
-    if (!isBundle(params.bundle)) return validationError("Invalid bundle");
-
     const request = await prisma.candidateDocumentRequest.findFirst({
-      where: { orgId, applicationId: params.id, bundle: params.bundle, deletedAt: null },
+      where: { orgId, applicationId: params.id, deletedAt: null },
       select: { id: true },
     });
-    if (!request) return notFound("No document request exists for this bundle.");
+    if (!request) return notFound("No document request exists for this application.");
 
     // Re-open: clear the submit lock + completion so the portal accepts a fresh
     // upload for the rejected slot (re-uploading resets that doc to Pending).
@@ -36,10 +28,10 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
       data: { submittedAt: null, status: "Pending", completedAt: null, updatedBy: userId },
     });
 
-    const r = await sendCandidateDocReminder(orgId, params.id, params.bundle, userId);
+    const r = await sendCandidateDocReminder(orgId, params.id, userId);
     return successResponse(r, undefined, 201);
   } catch (e) {
-    console.error("POST docs bundle reopen", e);
+    console.error("POST docs reopen", e);
     const msg = e instanceof Error ? e.message : "Re-request failed";
     return validationError(msg);
   }

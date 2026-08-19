@@ -372,7 +372,8 @@ export function BoardView({ projectId }: { projectId: string }) {
     // size to content. With many columns + parallel sprints in play the
     // board easily exceeds the viewport width, so we let the inner column
     // strip own the horizontal scrollbar.
-    <div className="px-6 py-4 min-w-0">
+    // No top padding — the sticky Toolbar owns it (see Toolbar below).
+    <div className="px-6 pb-4 min-w-0">
       {screenModal}
       <Toolbar
         searchInput={searchInput}
@@ -606,7 +607,11 @@ function Toolbar({
     }));
 
   return (
-    <div className="flex items-center justify-between mb-4">
+    // Pinned to the top of SpaceLayout's scroll container so search / assignee
+    // / filter controls stay reachable while the board scrolls underneath.
+    // `-mx-6 px-6` widens the opaque background across the parent's padding;
+    // z-20 stays below the column menus (z-30) so those open over the bar.
+    <div className="sticky top-0 z-20 -mx-6 flex items-center justify-between bg-white px-6 pt-4 pb-4">
       <div className="flex items-center gap-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />

@@ -104,7 +104,11 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
         }),
         ...(department && { departmentId: department }),
         ...(designationId && { designationId }),
-        ...(status && { status: status as Prisma.EmployeeWhereInput["status"] }),
+        // "PreBoarding" employees are hidden from the directory by default —
+        // they're only real/visible once HR clicks "Confirm Employee" at the
+        // end of the Onboarding checklist (status flips to "Active"). An
+        // explicit ?status= still works (e.g. a future "who's mid-onboarding" view).
+        ...(status ? { status: status as Prisma.EmployeeWhereInput["status"] } : { status: { not: "PreBoarding" } }),
         ...(employmentType && { employmentType: employmentType as Prisma.EmployeeWhereInput["employmentType"] }),
         ...(workLocation && { workLocation: workLocation as Prisma.EmployeeWhereInput["workLocation"] }),
         ...(officeLocationId && { officeLocationId }),
@@ -202,12 +206,19 @@ export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
         }),
       };
 
+      // The shared pagination helper caps `limit` at 100 — correct for real
+      // list pages, but a "pick a person" dropdown needs the WHOLE org in one
+      // shot (an org with 191+ employees would otherwise silently lose
+      // everyone past the 100th, alphabetically — no error, just missing
+      // names). picker mode uses its own much higher ceiling instead.
+      const pickerTake = picker ? Math.min(2000, Math.max(limit, parseInt(searchParams.get("limit") ?? "500", 10) || 500)) : limit;
+
       const [employees, total] = await Promise.all([
         prisma.employee.findMany({
           where,
           orderBy,
-          skip: (page - 1) * limit,
-          take: limit,
+          skip: picker ? 0 : (page - 1) * limit,
+          take: pickerTake,
           select,
         }),
         prisma.employee.count({ where }),

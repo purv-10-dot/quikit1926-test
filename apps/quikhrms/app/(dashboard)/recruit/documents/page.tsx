@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
-import { FileCheck2, Clock, CheckCircle2, XCircle, Inbox, Paperclip, Filter as FilterIcon, ChevronRight, ChevronDown, User } from "lucide-react";
+import { FileCheck2, Clock, CheckCircle2, XCircle, Inbox, Paperclip, ChevronRight, ChevronDown, User } from "lucide-react";
 import { clsx } from "clsx";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
@@ -17,12 +17,9 @@ const DOC_EXPORT_COLUMNS = [
   { header: "Stage", key: "stage", width: 16 },
   { header: "Document", key: "document", width: 24 },
   { header: "File", key: "fileName", width: 26 },
-  { header: "Bundle", key: "bundle", width: 14 },
   { header: "Status", key: "status", width: 12 },
   { header: "Uploaded", key: "uploaded", width: 14 },
 ];
-
-type Bundle = "PreOffer" | "PostOffer";
 
 interface PendingUpload {
   id: string;
@@ -36,7 +33,6 @@ interface PendingUpload {
   documentType: { id: string; name: string; code: string; isRequired: boolean } | null;
   request: {
     id: string;
-    bundle: Bundle;
     status: string;
     application: {
       id: string;
@@ -52,7 +48,6 @@ export default function DocumentReviewQueue() {
   const qc = useQueryClient();
   const toast = useToast();
 
-  const [bundleFilter, setBundleFilter] = useState<"all" | Bundle>("all");
   const [decision, setDecision] = useState<{ kind: "approve" | "reject"; row: PendingUpload } | null>(null);
   const [reason, setReason] = useState("");
   // Track which candidate rows are expanded. Auto-expand first candidate on load.
@@ -69,17 +64,15 @@ export default function DocumentReviewQueue() {
     queryFn: () => api.get<PendingUpload[]>("/api/v1/hrms/recruit/document-reviews/pending"),
   });
   const items = data?.data ?? [];
-  const filtered = bundleFilter === "all" ? items : items.filter((i) => i.request.bundle === bundleFilter);
 
-  // Flat row-per-document export of the currently filtered documents.
-  const docExportRows = filtered.map((i) => ({
+  // Flat row-per-document export of the pending documents.
+  const docExportRows = items.map((i) => ({
     candidate: `${i.request.application.candidate.firstName} ${i.request.application.candidate.lastName}`.trim(),
     email: i.request.application.candidate.email,
     role: i.request.application.requisition.title,
     stage: i.request.application.currentStage ?? "",
     document: i.documentType?.name ?? i.customLabel ?? "Other",
     fileName: i.fileName,
-    bundle: i.request.bundle === "PreOffer" ? "Before Offer" : "After Offer",
     status: i.status,
     uploaded: new Date(i.uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
   }));
@@ -92,12 +85,10 @@ export default function DocumentReviewQueue() {
     role: string;
     stage: string | null;
     docs: PendingUpload[];
-    pre: number;
-    post: number;
   }
   const groups: CandidateGroup[] = (() => {
     const map = new Map<string, CandidateGroup>();
-    for (const i of filtered) {
+    for (const i of items) {
       const appId = i.request.application.id;
       const g = map.get(appId);
       if (g) {
@@ -110,14 +101,8 @@ export default function DocumentReviewQueue() {
           role: i.request.application.requisition.title,
           stage: i.request.application.currentStage,
           docs: [i],
-          pre: 0,
-          post: 0,
         });
       }
-    }
-    for (const g of map.values()) {
-      g.pre = g.docs.filter((d) => d.request.bundle === "PreOffer").length;
-      g.post = g.docs.filter((d) => d.request.bundle === "PostOffer").length;
     }
     // Sort: most pending first
     return Array.from(map.values()).sort((a, b) => b.docs.length - a.docs.length);
@@ -134,11 +119,7 @@ export default function DocumentReviewQueue() {
     onError: (e: unknown) => toast.error("Action failed", e instanceof Error ? e.message : undefined),
   });
 
-  const stats = {
-    total: items.length,
-    pre:  items.filter((i) => i.request.bundle === "PreOffer").length,
-    post: items.filter((i) => i.request.bundle === "PostOffer").length,
-  };
+  const stats = { total: items.length };
 
   return (
     <div className="w-full px-5 py-4">
@@ -160,26 +141,11 @@ export default function DocumentReviewQueue() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 max-w-xs mb-4">
         <StatCard label="Total Pending" value={stats.total} icon={<Clock size={18} />} color="amber" />
-        <StatCard label="Pre-offer" value={stats.pre} icon={<FileCheck2 size={18} />} color="blue" />
-        <StatCard label="Post-offer" value={stats.post} icon={<FileCheck2 size={18} />} color="emerald" />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 flex-wrap">
-          <FilterIcon size={14} className="text-slate-400" />
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide mr-2">Bundle</span>
-          {(["all", "PreOffer", "PostOffer"] as const).map((b) => (
-            <button key={b}
-              onClick={() => setBundleFilter(b)}
-              className={clsx("px-2.5 py-1 rounded-full text-[13px] font-semibold ring-1 transition",
-                bundleFilter === b ? "bg-green-600 text-white ring-[#22c55e] shadow-sm" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}>
-              {b === "all" ? "All" : b === "PreOffer" ? "Before Offer" : "After Offer"}
-            </button>
-          ))}
-        </div>
-
         {isLoading ? (
           <div className="p-8 text-center text-slate-400 text-xs">Loading…</div>
         ) : groups.length === 0 ? (
@@ -212,16 +178,6 @@ export default function DocumentReviewQueue() {
                       </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1.5">
-                      {g.pre > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200">
-                          {g.pre} Before
-                        </span>
-                      )}
-                      {g.post > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
-                          {g.post} After
-                        </span>
-                      )}
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">
                         {g.docs.length} pending
                       </span>
@@ -236,7 +192,6 @@ export default function DocumentReviewQueue() {
                           <tr className="bg-slate-50/80 border-b border-slate-200">
                             <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Document</th>
                             <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">File</th>
-                            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Bundle</th>
                             <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Uploaded</th>
                             <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Action</th>
                           </tr>
@@ -255,12 +210,6 @@ export default function DocumentReviewQueue() {
                                   <Paperclip size={12} /> {i.fileName}
                                 </a>
                                 {i.fileSize != null && <p className="text-[11px] text-slate-400">{Math.round(i.fileSize / 1024)} KB</p>}
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium ring-1",
-                                  i.request.bundle === "PreOffer" ? "bg-green-50 text-green-700 ring-green-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200")}>
-                                  {i.request.bundle === "PreOffer" ? "Before Offer" : "After Offer"}
-                                </span>
                               </td>
                               <td className="px-4 py-2.5 text-[11px] text-slate-500">
                                 {new Date(i.uploadedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
@@ -296,7 +245,7 @@ export default function DocumentReviewQueue() {
           <form onSubmit={(e) => { e.preventDefault(); decideMut.mutate({ id: decision.row.id, kind: decision.kind }); }} className="space-y-4">
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
               <div className="font-semibold">{decision.row.request.application.candidate.firstName} {decision.row.request.application.candidate.lastName}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{decision.row.documentType?.name ?? decision.row.customLabel} · {decision.row.request.bundle === "PreOffer" ? "Before Offer" : "After Offer"}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{decision.row.documentType?.name ?? decision.row.customLabel}</div>
               <a href={decision.row.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#22c55e] hover:underline inline-flex items-center gap-1 mt-1"><Paperclip size={10} /> {decision.row.fileName}</a>
             </div>
             <div>

@@ -12,7 +12,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
         documentType: { select: { id: true, name: true, code: true, isRequired: true } },
         request: {
           select: {
-            id: true, bundle: true, status: true, applicationId: true,
+            id: true, status: true, applicationId: true,
             application: {
               select: {
                 id: true,

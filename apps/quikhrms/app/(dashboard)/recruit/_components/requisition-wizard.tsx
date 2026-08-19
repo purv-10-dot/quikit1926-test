@@ -7,7 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon } from "lucide-react";
+import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon, GripVertical } from "lucide-react";
 import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 export interface DeptOption { id: string; name: string; code?: string | null; }
@@ -846,39 +846,42 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             <div className={reqDivider}>
               <p className={clsx(reqSectionAccent, "mb-2")}>Requirements &amp; Posting</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <BulletListField label="Requirements" placeholder="e.g. 5+ yrs building distributed systems"
+                <BulletListField label="Requirements (must-have)" accent="violet" placeholder="e.g. 5+ yrs building distributed systems"
                   items={form.requirements} onChange={(v) => setForm({ ...form, requirements: v })} />
-                <BulletListField label="Nice to have" placeholder="e.g. Open-source contributions"
+                <BulletListField label="Nice to have" accent="green" placeholder="e.g. Open-source contributions"
                   items={form.niceToHave} onChange={(v) => setForm({ ...form, niceToHave: v })} />
                 {!showJustification && (
-                  <BulletListField label="Benefits &amp; Perks" placeholder="e.g. Health insurance, ESOPs, flexible hours"
+                  <BulletListField label="Benefits &amp; Perks" accent="sky" placeholder="e.g. Health insurance, ESOPs, flexible hours"
                     items={form.benefits} onChange={(v) => setForm({ ...form, benefits: v })} />
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-                <BulletListField label="Responsibilities" placeholder="e.g. Run discovery workshops and consulting discussions"
+              <p className="text-[11px] text-gray-400 mt-1.5">Drag to reorder · Click × to remove.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                <BulletListField label="Responsibilities" accent="amber" placeholder="e.g. Run discovery workshops and consulting discussions"
                   items={form.responsibilities} onChange={(v) => setForm({ ...form, responsibilities: v })} />
-                <div>
-                  <label className={reqLabel}>Education qualification required</label>
-                  <Select
-                    value={form.education}
-                    onChange={(v) => setForm({ ...form, education: v })}
-                    placeholder="Select minimum qualification"
-                    options={[
-                      "Class 10 (Secondary)",
-                      "Class 12 (Intermediate)",
-                      "Diploma",
-                      "Graduation/Diploma",
-                      "Post Graduation",
-                      "Doctorate/PhD",
-                    ].map((q) => ({ value: q, label: q }))}
-                  />
-                </div>
-                <div>
-                  <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
-                    onChange={(v) => setForm({ ...form, passingYear: v })}
-                    placeholder="e.g. 2020" className={reqInput} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={reqLabel}>Education qualification required</label>
+                    <Select
+                      value={form.education}
+                      onChange={(v) => setForm({ ...form, education: v })}
+                      placeholder="Select minimum qualification"
+                      options={[
+                        "Class 10 (Secondary)",
+                        "Class 12 (Intermediate)",
+                        "Diploma",
+                        "Graduation/Diploma",
+                        "Post Graduation",
+                        "Doctorate/PhD",
+                      ].map((q) => ({ value: q, label: q }))}
+                    />
+                  </div>
+                  <div>
+                    <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
+                      onChange={(v) => setForm({ ...form, passingYear: v })}
+                      placeholder="e.g. 2020" className={reqInput} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -966,6 +969,8 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               </p>
               <BulletListField
                 label="Questions"
+                accent="rose"
+                max={20}
                 placeholder="e.g. Explain the difference between useMemo and useCallback"
                 items={form.technicalQuestions}
                 onChange={(v) => setForm({ ...form, technicalQuestions: v })}
@@ -1006,61 +1011,125 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 }
 
 
+const BULLET_ACCENTS = {
+  violet: { text: "text-violet-700", badge: "bg-violet-50 text-violet-700 ring-violet-200", ghost: "text-violet-600 hover:bg-violet-50" },
+  green: { text: "text-green-700", badge: "bg-green-50 text-green-700 ring-green-200", ghost: "text-green-600 hover:bg-green-50" },
+  sky: { text: "text-sky-700", badge: "bg-sky-50 text-sky-700 ring-sky-200", ghost: "text-sky-600 hover:bg-sky-50" },
+  amber: { text: "text-amber-700", badge: "bg-amber-50 text-amber-700 ring-amber-200", ghost: "text-amber-600 hover:bg-amber-50" },
+  rose: { text: "text-rose-700", badge: "bg-rose-50 text-rose-700 ring-rose-200", ghost: "text-rose-600 hover:bg-rose-50" },
+} as const;
+
 function BulletListField({
-  label, placeholder, items, onChange,
+  label, placeholder, items, onChange, accent = "violet", max = 10,
 }: {
   label: string;
   placeholder: string;
   items: string[];
   onChange: (next: string[]) => void;
+  accent?: keyof typeof BULLET_ACCENTS;
+  max?: number;
 }) {
   const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dragFrom = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const colors = BULLET_ACCENTS[accent];
+  const atMax = items.length >= max;
+
   const add = () => {
     const v = draft.trim();
-    if (!v) return;
+    if (!v || atMax) return;
     onChange([...items, v]);
     setDraft("");
   };
+
+  const reorder = (from: number, to: number) => {
+    if (from === to) return;
+    const next = items.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onChange(next);
+  };
+
   return (
-    <div>
-      <label className="block text-gray-700 mb-1 text-xs font-bold uppercase tracking-wide">{label}</label>
+    <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-col">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className={clsx("text-[11px] font-bold uppercase tracking-wide", colors.text)}>{label}</span>
+          <span className={clsx("inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ring-1 tabular-nums", colors.badge)}>
+            {items.length}/{max}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => { if (draft.trim()) add(); else inputRef.current?.focus(); }}
+          disabled={atMax}
+          className={clsx("inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed", colors.ghost)}
+        >
+          <Plus size={11} /> Add
+        </button>
+      </div>
+
       {items.length > 0 && (
-        <ul className="space-y-1 mb-1.5">
+        <ul className="space-y-1.5 mb-2 max-h-[168px] overflow-y-auto pr-0.5">
           {items.map((it, i) => (
-            <li key={i} className="flex items-center gap-2 bg-gray-50 ring-1 ring-gray-100 rounded px-2 py-1 text-xs text-gray-800">
-              <span className="text-gray-300">•</span>
-              <span className="flex-1">{it}</span>
+            <li
+              key={i}
+              draggable
+              onDragStart={() => { dragFrom.current = i; }}
+              onDragOver={(e) => { e.preventDefault(); setDragOverIdx(i); }}
+              onDragLeave={() => setDragOverIdx((cur) => (cur === i ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragFrom.current != null) reorder(dragFrom.current, i);
+                dragFrom.current = null;
+                setDragOverIdx(null);
+              }}
+              onDragEnd={() => { dragFrom.current = null; setDragOverIdx(null); }}
+              className={clsx(
+                "flex items-center gap-2 bg-gray-50/70 ring-1 rounded-lg px-2 py-1.5 text-xs text-gray-800",
+                dragOverIdx === i ? "ring-2 ring-offset-1 ring-gray-300" : "ring-gray-100",
+              )}
+            >
+              <span className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder">
+                <GripVertical size={13} />
+              </span>
+              <span className="flex-1 min-w-0 break-words">{it}</span>
               <button
                 type="button"
                 onClick={() => onChange(items.filter((_, idx) => idx !== i))}
-                className="text-gray-400 hover:text-red-600"
+                className="text-gray-400 hover:text-red-600 shrink-0"
                 aria-label="Remove"
               >
-                <X size={11} />
+                <X size={12} />
               </button>
             </li>
           ))}
         </ul>
       )}
-      <div className="flex gap-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          // Commit only on Enter or the "+" button — no onBlur add, so clicking
-          // Next doesn't silently push a half-typed entry.
-          placeholder={placeholder}
-          className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="px-2.5 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md text-xs font-semibold"
-        >
-          <Plus size={11} />
-        </button>
-      </div>
+
+      {atMax ? (
+        <p className="text-[11px] text-gray-400 text-center py-1.5">Maximum {max} reached</p>
+      ) : (
+        <div className="flex items-center gap-1.5 border border-dashed border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50/40 focus-within:border-solid focus-within:border-green-400 focus-within:bg-white transition-colors">
+          <Plus size={12} className="text-gray-400 shrink-0" />
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            // Commit only on Enter or the "+" button — no onBlur add, so clicking
+            // Next doesn't silently push a half-typed entry.
+            placeholder={placeholder}
+            className="flex-1 min-w-0 bg-transparent text-xs focus:outline-none placeholder:text-gray-400"
+          />
+          {draft.trim() && (
+            <button type="button" onClick={add} className="shrink-0 text-green-600 hover:text-green-700" aria-label="Add">
+              <Check size={14} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
