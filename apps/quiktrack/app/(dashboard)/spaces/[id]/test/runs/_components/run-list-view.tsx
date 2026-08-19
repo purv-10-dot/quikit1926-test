@@ -1,50 +1,80 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ClipboardList, Plus } from "lucide-react";
 import { Button, EmptyState, TableSkeleton } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
-import { passRate, totalTests, type StatusCounts } from "@/lib/test/statuses";
+import {
+  groupByLifecycle,
+  LIFECYCLE_HINT,
+  LIFECYCLE_LABEL,
+  LIFECYCLE_ORDER,
+} from "@/lib/test/runLifecycle";
+import { EditRunPanel } from "./edit-run-panel";
 import { NewRunPanel } from "./new-run-panel";
+import { RunRow } from "./run-row";
+import type { RunRow as RunRowData } from "./run-types";
 
 /**
- * Runs list — the way into the runner.
+ * Runs list, grouped by lifecycle (QUIKTR-338).
  *
- * Shows pass rate per run computed with the SAME helpers the runner and the
- * work-item panel use, so a number never differs between screens.
+ * Open · Completion Pending · Completed. Only the last is stored; "Completion
+ * Pending" is derived (`state=open` AND nothing untested) — see
+ * `lib/test/runLifecycle.ts`. It is the section that earns its keep: those runs
+ * are the ones waiting to be signed off, and in the old flat table they were
+ * indistinguishable from runs still in progress.
+ *
+ * Rates come from the same helpers the runner and the work-item panel use, so a
+ * number never differs between screens.
  */
-
-interface RunRow {
-  id: string;
-  refId: number;
-  name: string;
-  source: string;
-  state: string;
-  build: string | null;
-  environment: string | null;
-  createdAt: string;
-  closedAt: string | null;
-  testCount: number;
-  counts: StatusCounts;
-}
-
 export function RunListView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canCreate = perms.loading || perms.has("TestRun", "create");
+  const canClose = perms.loading || perms.has("TestRun", "update");
+
   const [panelOpen, setPanelOpen] = useState(false);
+  /** The run being edited; null closes the edit panel. */
+  const [editingRun, setEditingRun] = useState<RunRowData | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const runsKey = ["quiktrack", "test-runs", projectId] as const;
-  const { data, isLoading } = useApiData<{ items: RunRow[]; total: number }>(
+  const { data, isLoading } = useApiData<{ items: RunRowData[]; total: number }>(
     runsKey,
     `/api/test/runs?projectId=${projectId}`,
     { staleTime: 0 },
   );
 
-  const runs = data?.items ?? [];
+  // Memoised off `data` rather than a fresh `?? []` literal: the fallback array
+  // has a new identity every render, so the grouping would re-run each time.
+  const runs = useMemo(() => data?.items ?? [], [data]);
+  const groups = useMemo(() => groupByLifecycle(runs), [runs]);
+
+  const closeRun = async (runId: string) => {
+    setClosingId(runId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/test/runs/${runId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "close" }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!json.success) {
+        setError(json.error ?? "Could not close the run.");
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: runsKey });
+    } catch {
+      setError("Could not close the run.");
+    } finally {
+      setClosingId(null);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -74,6 +104,12 @@ export function RunListView({ projectId }: { projectId: string }) {
         )}
       </div>
 
+      {error && (
+        <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="p-4">
@@ -93,66 +129,38 @@ export function RunListView({ projectId }: { projectId: string }) {
             />
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0">
-              <tr className="text-left">
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Run</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Name</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Source</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Tests</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Passed</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => {
-                const total = totalTests(run.counts);
-                return (
-                  <tr
+          LIFECYCLE_ORDER.map((phase) => {
+            const list = groups[phase];
+            // Empty sections are hidden rather than shown with a 0: three
+            // headings over one run is noise, and "Completion Pending (0)" is not
+            // information a QA lead needs.
+            if (list.length === 0) return null;
+
+            return (
+              <section key={phase}>
+                <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-gray-200 bg-accent-50 px-4 py-1.5">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+                    {LIFECYCLE_LABEL[phase]}
+                  </h2>
+                  <span className="text-[11px] text-gray-500">{list.length}</span>
+                  <span className="truncate text-[11px] text-gray-400">
+                    {LIFECYCLE_HINT[phase]}
+                  </span>
+                </div>
+                {list.map((run) => (
+                  <RunRow
                     key={run.id}
-                    className="border-b border-gray-100 hover:bg-blue-50"
-                  >
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-900">
-                      R{run.refId}
-                    </td>
-                    <td className="px-4 py-2">
-                      <Link
-                        href={`/spaces/${projectId}/test/runs/${run.id}`}
-                        className="text-gray-900 hover:underline"
-                      >
-                        {run.name}
-                      </Link>
-                      {run.build && (
-                        <span className="ml-2 text-[11px] text-gray-400">
-                          build {run.build}
-                        </span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-500">
-                      {run.source}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-500">
-                      {run.testCount}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-700">
-                      {total === 0 ? "—" : `${passRate(run.counts)}%`}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          run.state === "closed"
-                            ? "bg-gray-100 text-gray-600"
-                            : "bg-green-100 text-green-800"
-                        }`}
-                      >
-                        {run.state}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    run={run}
+                    projectId={projectId}
+                    canClose={canClose}
+                    onClose={closeRun}
+                    onEdit={setEditingRun}
+                    closing={closingId === run.id}
+                  />
+                ))}
+              </section>
+            );
+          })
         )}
       </div>
 
@@ -161,6 +169,16 @@ export function RunListView({ projectId }: { projectId: string }) {
         onClose={() => setPanelOpen(false)}
         projectId={projectId}
         onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: runsKey });
+        }}
+      />
+
+      <EditRunPanel
+        open={editingRun !== null}
+        run={editingRun}
+        projectId={projectId}
+        onClose={() => setEditingRun(null)}
+        onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: runsKey });
         }}
       />

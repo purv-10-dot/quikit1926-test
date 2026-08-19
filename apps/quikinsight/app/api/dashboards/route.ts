@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/withAuth";
-import { canViewAllTeams, getTeamFilter } from "@/lib/rbac";
+import { sessionRole, canViewAllTeams, getTeamFilter } from "@/lib/rbac";
 
 // GET /api/dashboards — team-scoped list of dashboards.
 //   • view-all roles (SUPER_ADMIN / MANAGEMENT) → every dashboard
@@ -9,7 +9,7 @@ import { canViewAllTeams, getTeamFilter } from "@/lib/rbac";
 //   • unassigned users                          → none
 // The scope is applied in the Prisma `where`, never filtered post-fetch.
 export const GET = withAuth(async (req) => {
-  const role = req.session.user.role;
+  const role = sessionRole(req.session);
 
   let where: { teamId?: string } | undefined;
   if (canViewAllTeams(role)) {

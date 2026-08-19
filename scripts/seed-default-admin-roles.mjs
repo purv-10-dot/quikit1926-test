@@ -1,6 +1,10 @@
 // Seeds a default "Admin" AppRole (system + default, manage-everything)
 // for every (org, app) tuple where OrgAppAccess.enabled = true, scoped to
-// apps that have RBAC v2 tables (quikscale, quiktrack).
+// apps that have RBAC v2 tables (quikscale, quiktrack) via raw SQL below.
+//
+// QuikInfra, QuikSupport, and QuikFlow have a differently-shaped RBAC (see
+// their own notes further down) and are seeded by delegating to each app's
+// own /api/internal/provision-roles endpoint instead of raw SQL here.
 //
 // Idempotent: safe to re-run. Uses ON CONFLICT DO NOTHING on the unique
 // indexes.
@@ -237,11 +241,60 @@ async function seedQuikSupport() {
   }
 }
 
+/* ────────────────────────── QuikFlow (own provision endpoint) ──────────────────────────
+ * QuikFlow is NOT in REGISTRIES for the same reason as QuikInfra/QuikSupport:
+ * its RBAC (apps/quikflow/lib/api/seedAdminAppRole.ts) seeds a lowercase
+ * "admin" system role (isDefault=true, full access) plus a narrower
+ * "Member" role — not the generic capital-"Admin" single role this script's
+ * seedAdminRoleFor() would insert. QuikFlow also has no RoleNavigation table
+ * (sidebar visibility derives from `view` grants) — inserting into
+ * "RoleNavigation" here would 42P01 against its schema. Delegate to
+ * QuikFlow's own /api/internal/provision-roles endpoint, which seeds both
+ * roles + permissions correctly and assigns each org's admins — the exact
+ * call apps/quikit's provisionAppRoles() fires on app-grant.
+ */
+async function seedQuikFlow() {
+  const base = (process.env.QUIKFLOW_URL ?? "http://localhost:3014").replace(/\/+$/, "");
+  const secret = process.env.INTERNAL_SECRET;
+  if (!secret) {
+    console.log("⏭️  QuikFlow skipped — INTERNAL_SECRET not set");
+    return;
+  }
+  const orgs = await db.$queryRaw`
+    SELECT oaa."orgId", o.name AS org_name
+    FROM "quikit"."OrgAppAccess" oaa
+    JOIN "quikit"."App" a ON a.id = oaa."appId"
+    JOIN "quikit"."Org" o ON o.id = oaa."orgId"
+    WHERE oaa.enabled = true AND a.slug = 'quikflow'
+    ORDER BY o.name`;
+  for (const org of orgs) {
+    const admins = await db.$queryRaw`
+      SELECT "userId" FROM "quikit"."OrgMember"
+      WHERE "orgId" = ${org.orgId}
+        AND lower("role") IN ('org_admin','super_admin','platform_super_admin','admin')`;
+    const adminUserIds = admins.map((a) => a.userId);
+    try {
+      const res = await fetch(`${base}/api/internal/provision-roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-internal-secret": secret },
+        body: JSON.stringify({ orgId: org.orgId, adminUserIds }),
+      });
+      console.log(
+        `${res.ok ? "✅" : "❌"} ${org.org_name} × QuikFlow  ` +
+        `(provision-roles HTTP ${res.status}, admins=${adminUserIds.length})`,
+      );
+    } catch (e) {
+      console.log(`❌ ${org.org_name} × QuikFlow  (fetch failed: ${e.message})`);
+    }
+  }
+}
+
 async function main() {
-  // QuikInfra + QuikSupport seed via their own provision-roles endpoints
-  // (different RBAC shape — see notes above each function).
+  // QuikInfra + QuikSupport + QuikFlow seed via their own provision-roles
+  // endpoints (different RBAC shape — see notes above each function).
   await seedQuikInfra();
   await seedQuikSupport();
+  await seedQuikFlow();
 
   // Find every (org, app) where the app is enabled AND has a registry.
   const rows = await db.$queryRaw`

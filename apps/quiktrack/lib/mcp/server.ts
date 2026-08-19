@@ -57,20 +57,20 @@ const BUILTIN_CREATE_FIELDS: {
   dataType: "string" | "number" | "datetime" | "enum";
   allowedValues?: string[];
 }[] = [
-  { key: "title", label: "Title", required: true, dataType: "string" },
-  { key: "type", label: "Type", required: false, dataType: "enum", allowedValues: [...issueTypeEnum.options] },
-  { key: "priority", label: "Priority", required: false, dataType: "enum", allowedValues: [...issuePriorityEnum.options] },
-  { key: "description", label: "Description", required: false, dataType: "string" },
-  { key: "statusId", label: "Status", required: false, dataType: "string" },
-  { key: "parentId", label: "Parent issue", required: false, dataType: "string" },
-  { key: "epicId", label: "Epic", required: false, dataType: "string" },
-  { key: "sprintId", label: "Sprint", required: false, dataType: "string" },
-  { key: "assigneeId", label: "Assignee", required: false, dataType: "string" },
-  { key: "startDate", label: "Start date", required: false, dataType: "datetime" },
-  { key: "dueDate", label: "Due date", required: false, dataType: "datetime" },
-  { key: "eta", label: "Estimate (hours)", required: false, dataType: "number" },
-  { key: "storyPoints", label: "Story points", required: false, dataType: "number" },
-];
+    { key: "title", label: "Title", required: true, dataType: "string" },
+    { key: "type", label: "Type", required: false, dataType: "enum", allowedValues: [...issueTypeEnum.options] },
+    { key: "priority", label: "Priority", required: false, dataType: "enum", allowedValues: [...issuePriorityEnum.options] },
+    { key: "description", label: "Description", required: false, dataType: "string" },
+    { key: "statusId", label: "Status", required: false, dataType: "string" },
+    { key: "parentId", label: "Parent issue", required: false, dataType: "string" },
+    { key: "epicId", label: "Epic", required: false, dataType: "string" },
+    { key: "sprintId", label: "Sprint", required: false, dataType: "string" },
+    { key: "assigneeId", label: "Assignee", required: false, dataType: "string" },
+    { key: "startDate", label: "Start date", required: false, dataType: "datetime" },
+    { key: "dueDate", label: "Due date", required: false, dataType: "datetime" },
+    { key: "eta", label: "Estimate (hours)", required: false, dataType: "number" },
+    { key: "storyPoints", label: "Story points", required: false, dataType: "number" },
+  ];
 
 // createSprintSchema requires a full ISO 8601 datetime, but callers (LLMs in
 // particular) naturally send a bare date like "2026-08-03". Widen just the
@@ -253,6 +253,9 @@ export interface McpAuthExtra {
   userId: string;
   /** Always "agent" — every MCP caller is a PAT-authenticated tool, never a human session. */
   actorType: "user" | "agent";
+
+  /** The PAT's own name — identifies which tool/token acted. */
+  actingAgentId: string;
 }
 
 /**
@@ -379,7 +382,7 @@ async function checkWritePermission(params: {
 }
 
 export const mcpHandler = createMcpHandler(({ authInfo }) => {
-  const { orgId, projectId: tokenProjectId, userId, actorType } = authInfo?.extra as unknown as McpAuthExtra;
+  const { orgId, projectId: tokenProjectId, userId, actorType, actingAgentId } = authInfo?.extra as unknown as McpAuthExtra;
   const server = new McpServer({ name: "quiktrack", version: "1.0.0" });
 
   server.registerTool(
@@ -392,9 +395,9 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
     async () => {
       const projects = tokenProjectId
         ? await db.qtProject.findMany({
-            where: { id: tokenProjectId, orgId, isDeleted: false },
-            select: { id: true, projectKey: true, name: true },
-          })
+          where: { id: tokenProjectId, orgId, isDeleted: false },
+          select: { id: true, projectKey: true, name: true },
+        })
         : await loadAccessibleProjects(orgId, userId);
       return { content: [{ type: "text", text: JSON.stringify(projects) }] };
     },
@@ -684,12 +687,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           id: { in: memberUserIds },
           ...(trimmedQuery
             ? {
-                OR: [
-                  { email: { contains: trimmedQuery, mode: "insensitive" } },
-                  { firstName: { contains: trimmedQuery, mode: "insensitive" } },
-                  { lastName: { contains: trimmedQuery, mode: "insensitive" } },
-                ],
-              }
+              OR: [
+                { email: { contains: trimmedQuery, mode: "insensitive" } },
+                { firstName: { contains: trimmedQuery, mode: "insensitive" } },
+                { lastName: { contains: trimmedQuery, mode: "insensitive" } },
+              ],
+            }
             : {}),
         },
         take: 50,
@@ -837,9 +840,9 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const commentUserIds = Array.from(new Set(comments.map((c) => c.userId)));
       const users = commentUserIds.length
         ? await db.user.findMany({
-            where: { id: { in: commentUserIds } },
-            select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
-          })
+          where: { id: { in: commentUserIds } },
+          select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+        })
         : [];
       const userById = new Map(users.map((u) => [u.id, u] as const));
       const data = comments.map((c) => ({ ...c, user: userById.get(c.userId) ?? null }));
@@ -1065,6 +1068,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               toStatusId: parsed.data.statusId as string,
               actorId: userId,
               actorType,
+              actingAgentId,
             },
           });
         }
@@ -1077,6 +1081,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               userId,
               body,
               actorType,
+              actingAgentId,
             })),
           });
         }
@@ -1090,6 +1095,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         before: issue,
         after: updated,
         actorType,
+        actingAgentId,
       });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
@@ -1135,10 +1141,10 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const normalizedArgs =
         args && typeof args === "object"
           ? {
-              ...(args as Record<string, unknown>),
-              startDate: normalizeDateOnly((args as Record<string, unknown>).startDate),
-              endDate: normalizeDateOnly((args as Record<string, unknown>).endDate),
-            }
+            ...(args as Record<string, unknown>),
+            startDate: normalizeDateOnly((args as Record<string, unknown>).startDate),
+            endDate: normalizeDateOnly((args as Record<string, unknown>).endDate),
+          }
           : args;
       const parsed = createSprintInput.safeParse(normalizedArgs);
       if (!parsed.success) {
@@ -1218,8 +1224,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       }
 
       const created = await db.qtIssueComment.create({
-        data: { orgId, projectId, issueId: issue.id, userId, body: parsed.data.body, actorType },
-        select: { id: true, userId: true, body: true, createdAt: true, editedAt: true, actorType: true },
+        data: { orgId, projectId, issueId: issue.id, userId, body: parsed.data.body, actorType, actingAgentId },
+        select: {
+          id: true,
+          userId: true,
+          body: true,
+          createdAt: true,
+          editedAt: true,
+          actorType: true,
+          actingAgentId: true,
+        },
       });
       const author = await db.user.findUnique({
         where: { id: userId },
@@ -1551,12 +1565,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         ...(a.epicId === undefined ? {} : { epicId: a.epicId }),
         ...(a.search
           ? {
-              OR: [
-                { title: { contains: a.search, mode: "insensitive" as const } },
-                { description: { contains: a.search, mode: "insensitive" as const } },
-                { key: { contains: a.search, mode: "insensitive" as const } },
-              ],
-            }
+            OR: [
+              { title: { contains: a.search, mode: "insensitive" as const } },
+              { description: { contains: a.search, mode: "insensitive" as const } },
+              { key: { contains: a.search, mode: "insensitive" as const } },
+            ],
+          }
           : {}),
       };
       const select = {
@@ -1802,6 +1816,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               toStatusId: allowedFields.statusId as string,
               actorId: userId,
               actorType,
+              actingAgentId,
             },
           });
         }
@@ -1814,12 +1829,22 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               userId,
               body,
               actorType,
+              actingAgentId,
             })),
           });
         }
         return issueAfter;
       });
-      void recordIssueChanges({ orgId, projectId, issueId: issue.id, userId, before: issue, after: updated, actorType });
+      void recordIssueChanges({
+        orgId,
+        projectId,
+        issueId: issue.id,
+        userId,
+        before: issue,
+        after: updated,
+        actorType,
+        actingAgentId,
+      });
 
       if (customFields) {
         const res = await writeIssueValues({
@@ -1840,6 +1865,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
               oldValue: renderCfValue(c.oldValue),
               newValue: renderCfValue(c.newValue),
               actorType,
+              actingAgentId,
             });
           }
         }

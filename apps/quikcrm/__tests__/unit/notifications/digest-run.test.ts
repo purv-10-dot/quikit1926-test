@@ -41,13 +41,15 @@ vi.mock("@/lib/services/notifications/digest-recipients", () => ({
   listActiveDigestOrgs: vi.fn(),
 }));
 vi.mock("@/lib/services/notifications/digest-email", () => ({ sendDigestEmail: vi.fn() }));
-// Window helper mocked to FIXED bounds — the rolling-window math is the helper's
-// own test (digest-window.test.ts). Here we only assert the range is WIRED into the
-// calls. rollingWindowUtc returns distinct fixed bounds per `days` so the daily
-// (1) and weekly (7) ranges are distinguishable in assertions.
-const FIXED_RANGE = { from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") }; // days=1
+// Window helpers mocked to FIXED bounds — the window math is each helper's own test
+// (digest-window.test.ts). Here we only assert the range is WIRED into the calls.
+// The DAILY digest uses previousIstCalendarDayUtc; the WEEKLY summary uses
+// rollingWindowUtc(days=7). Each returns distinct fixed bounds so the daily and
+// weekly ranges stay distinguishable in assertions.
+const FIXED_RANGE = { from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") }; // daily (IST calendar day)
 const FIXED_RANGE_7D = { from: new Date("2026-06-18T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") }; // days=7
 vi.mock("@/lib/services/notifications/digest-window", () => ({
+  previousIstCalendarDayUtc: vi.fn(() => ({ from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") })),
   rolling24hRangeUtc: vi.fn(() => ({ from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") })),
   rollingWindowUtc: vi.fn((_now: Date, days: number) =>
     days === 7

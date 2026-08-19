@@ -139,33 +139,40 @@ export function TransitionPanel({
             <span className="text-xs font-medium text-gray-700">Rules</span>
           </div>
           <div className="space-y-3">
-            <RuleBucket
-              title="Restrict transition"
-              subtitle="Hide this transition when these aren't met"
-              count={conditions.length}
-              onAdd={() => onOpenAddRule("CONDITION")}
-              groupControl={
-                conditions.length > 0 ? (
-                  <ConditionModeSelect mode={conditionsMode} onChange={onSetConditionsMode} />
-                ) : null
-              }
-            >
-              {conditions.map(({ rule, index }) => (
-                <RuleCard key={index} rule={rule} onEdit={() => onEditRule(index)} onRemove={() => onRemoveRule(index)} />
-              ))}
-            </RuleBucket>
+            {/* The Create (INITIAL) transition can't be restricted or gated for
+                user input — everyone creates work items — so Jira offers only
+                Validate details and Perform actions on it. */}
+            {!isInitial && (
+              <RuleBucket
+                title="Restrict transition"
+                subtitle="Hide this transition when these aren't met"
+                count={conditions.length}
+                onAdd={() => onOpenAddRule("CONDITION")}
+                groupControl={
+                  conditions.length > 0 ? (
+                    <ConditionModeSelect mode={conditionsMode} onChange={onSetConditionsMode} />
+                  ) : null
+                }
+              >
+                {conditions.map(({ rule, index }) => (
+                  <RuleCard key={index} rule={rule} onEdit={() => onEditRule(index)} onRemove={() => onRemoveRule(index)} />
+                ))}
+              </RuleBucket>
+            )}
 
-            <RuleBucket
-              title="Request input"
-              subtitle="Request input from the user"
-              count={requestInput.length}
-              onAdd={() => onOpenAddRule("REQUEST_INPUT")}
-              addLabel="Add request input rule"
-            >
-              {requestInput.map(({ rule, index }) => (
-                <RuleCard key={index} rule={rule} onEdit={() => onEditRule(index)} onRemove={() => onRemoveRule(index)} />
-              ))}
-            </RuleBucket>
+            {!isInitial && (
+              <RuleBucket
+                title="Request input"
+                subtitle="Request input from the user"
+                count={requestInput.length}
+                onAdd={() => onOpenAddRule("REQUEST_INPUT")}
+                addLabel="Add request input rule"
+              >
+                {requestInput.map(({ rule, index }) => (
+                  <RuleCard key={index} rule={rule} onEdit={() => onEditRule(index)} onRemove={() => onRemoveRule(index)} />
+                ))}
+              </RuleBucket>
+            )}
 
             <RuleBucket
               title="Validate details"
@@ -193,30 +200,44 @@ export function TransitionPanel({
           </div>
         </div>
 
-        {/* Triggers — GitHub dev events that auto-fire this transition. */}
-        <div>
-          <div className="flex items-center justify-between">
+        {/* The Create transition fires once, on issue creation — it has no
+            GitHub dev triggers. Jira shows a read-only EVENT (Issue Created)
+            instead of the Triggers control there. */}
+        {isInitial ? (
+          <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-gray-800">Triggers</span>
-              {transition.triggers.length > 0 && (
-                <span className="rounded bg-blue-50 px-1.5 text-[11px] font-medium text-blue-700">{transition.triggers.length}</span>
-              )}
+              <span className="text-sm font-medium text-gray-800">Event</span>
             </div>
-            <button type="button" onClick={onOpenTriggers} className="text-gray-400 hover:text-gray-700" aria-label="Add triggers">
-              <Plus className="h-4 w-4" />
-            </button>
+            <div className="mt-2 flex items-center gap-2 rounded border border-gray-200 bg-gray-50 px-2.5 py-2 text-sm text-gray-600">
+              <Zap className="h-3.5 w-3.5 text-gray-400" fill="currentColor" /> Issue Created
+            </div>
           </div>
-          {transition.triggers.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {transition.triggers.map((event) => (
-                <div key={event} className="flex items-center gap-2 rounded border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700">
-                  <GitBranch className="h-3.5 w-3.5 text-gray-400" />
-                  {triggerLabel(event)}
-                </div>
-              ))}
+        ) : (
+          /* Triggers — GitHub dev events that auto-fire this transition. */
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium text-gray-800">Triggers</span>
+                {transition.triggers.length > 0 && (
+                  <span className="rounded bg-blue-50 px-1.5 text-[11px] font-medium text-blue-700">{transition.triggers.length}</span>
+                )}
+              </div>
+              <button type="button" onClick={onOpenTriggers} className="text-gray-400 hover:text-gray-700" aria-label="Add triggers">
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
-          )}
-        </div>
+            {transition.triggers.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {transition.triggers.map((event) => (
+                  <div key={event} className="flex items-center gap-2 rounded border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700">
+                    <GitBranch className="h-3.5 w-3.5 text-gray-400" />
+                    {triggerLabel(event)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {!isInitial && (

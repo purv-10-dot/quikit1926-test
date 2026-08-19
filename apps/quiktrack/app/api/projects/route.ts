@@ -10,6 +10,7 @@ import { seedDiscoveryDefaults } from "@/lib/services/discoveryDefaults";
 import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
 import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 import { PROJECT_TAB_PATHS } from "@/lib/projectTabs";
+import { listStarredProjectIds } from "@/lib/services/projectStars";
 
 // The "functional" (Kanban) template starts with Epics, List and Task Table
 // hidden — a Space Admin can re-enable them later via the tab customizer (+).
@@ -124,6 +125,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     styleById = new Map(rows.map((r) => [r.id, r.managementStyle ?? "team-managed"]));
   }
 
+  // Per-user starred set — drives the list's star toggle + the sidebar's
+  // "Starred" group. Raw SQL (stale client doesn't know QtProjectStar).
+  const starredIds = new Set(await listStarredProjectIds(orgId, userId));
+
   const leadIds = Array.from(
     new Set(
       projects
@@ -164,6 +169,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const data = projects.map((p) => ({
     ...p,
     managementStyle: styleById.get(p.id) ?? "team-managed",
+    starred: starredIds.has(p.id),
     lead: p.leadUserId ? leadById.get(p.leadUserId) ?? null : null,
     canArchive: isAdmin || spaceAdminIds.has(p.id),
   }));

@@ -1,12 +1,35 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import { PortalDropdown, type DropdownOption } from "./portal-dropdown";
 import { DatePickerInput } from "./date-picker-input";
-import { FIELD_OPTIONS, fieldKind } from "./restrict-options";
+import { FIELD_OPTIONS, fieldKind, REFERENCE_FIELDS } from "./restrict-options";
 
 /** Fields a post-function can WRITE (excludes read-only type/status). */
 const WRITABLE_FIELDS = FIELD_OPTIONS.filter((f) => f.value !== "type" && f.value !== "status");
 const WRITABLE_KEYS = new Set(WRITABLE_FIELDS.map((f) => f.value));
+
+/**
+ * A copy is only meaningful between fields of the same "shape": a reference
+ * field (users / resolutions / …) can only sensibly receive another reference of
+ * the SAME source, and a scalar can only receive a scalar of the same kind.
+ * Returns the comparable category token for a field, or null if unknown.
+ */
+function copyCategory(field: string): string | null {
+  if (!field) return null;
+  const ref = REFERENCE_FIELDS[field];
+  if (ref) return `ref:${ref}`;
+  const k = fieldKind(field);
+  return k ? `kind:${k}` : null;
+}
+
+/** True when a copy from→to is between compatible field categories. */
+function copyCompatible(from: string, to: string): boolean {
+  const a = copyCategory(from);
+  const b = copyCategory(to);
+  if (!a || !b) return true; // unknown → don't nag
+  return a === b;
+}
 
 /* ── "Assign a work item" ────────────────────────────────────────────────── */
 
@@ -124,6 +147,18 @@ export function CopyFieldForm({
         </div>
       </div>
       {to && <p className="text-[11px] text-gray-500">This field&apos;s value will replace the destination field&apos;s value.</p>}
+      {from && to && !copyCompatible(from, to) && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <div>
+            <p className="font-medium">Make sure your fields are compatible</p>
+            <p className="mt-0.5 text-amber-700">
+              These fields hold different kinds of values, so this rule may not
+              work as expected.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

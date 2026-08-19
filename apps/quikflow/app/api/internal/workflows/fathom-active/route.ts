@@ -24,7 +24,7 @@ export const GET = withServiceAuth(async (req) => {
   }
 
   const rows = await db.wfWorkflow.findMany({
-    where: { orgId, status: "Active" },
+    where: { orgId, status: "Active", deletedAt: null },
     select: { trigger: true },
   });
 

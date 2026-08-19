@@ -16,6 +16,10 @@
  *   4. Ineligible "not-eligible-role"→ toggle DISABLED + tooltip "Role not eligible…".
  *   5. Toggling fires PATCH /api/settings/digest-recipients { userId, enabled:<new> }.
  *   6. An ineligible toggle does NOT fire a PATCH (can't be interacted).
+ *
+ * ADMIN-ONLY TOGGLE (spec 2026-08-11): interacting requires canToggle. A viewer
+ * sees the real ON/OFF state but a DISABLED control that fires no PATCH. The
+ * interactive cases therefore pass canToggle; see the "non-admin" block below.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -36,6 +40,8 @@ const baseProps = {
   digestEligible: true,
   digestEnabled: false,
   digestReason: undefined as string | undefined,
+  // Only admins may flip the toggle; the interactive cases assume an admin viewer.
+  canToggle: true,
 };
 
 describe("<DigestToggle> — Settings→Users daily-digest toggle (Stage 4)", () => {
@@ -82,5 +88,39 @@ describe("<DigestToggle> — Settings→Users daily-digest toggle (Stage 4)", ()
     render(<DigestToggle {...baseProps} digestEligible={false} digestReason="no-team" />);
     fireEvent.click(screen.getByRole("switch"));
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("<DigestToggle> — admin-only toggle (spec 2026-08-11)", () => {
+  it("non-admin → DISABLED even though eligible", () => {
+    render(<DigestToggle {...baseProps} canToggle={false} />);
+    const toggle = screen.getByRole("switch");
+    expect(toggle.hasAttribute("disabled")).toBe(true);
+    expect(toggle.getAttribute("title")).toMatch(/only an administrator/i);
+  });
+
+  it("non-admin → click fires NO PATCH", () => {
+    render(<DigestToggle {...baseProps} canToggle={false} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("non-admin still SEES the real ON state (read-only, not blanked)", () => {
+    render(<DigestToggle {...baseProps} canToggle={false} digestEnabled />);
+    const toggle = screen.getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(toggle.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("omitting canToggle defaults to read-only (fail-closed)", () => {
+    render(
+      <DigestToggle userId="u1" digestEligible digestEnabled={false} />,
+    );
+    expect(screen.getByRole("switch").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("admin + eligible → interactive", () => {
+    render(<DigestToggle {...baseProps} canToggle />);
+    expect(screen.getByRole("switch").hasAttribute("disabled")).toBe(false);
   });
 });

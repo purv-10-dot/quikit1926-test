@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { RolesPanel } from "@/components/settings/roles/roles-panel";
 
-const TABS = ["Usage", "Members", "API & webhooks", "Audit log"] as const;
+const TABS = ["Usage", "Members", "Roles & Permissions", "API & webhooks", "Audit log"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function SettingsPage() {
@@ -45,8 +46,9 @@ export default function SettingsPage() {
       ) : null}
 
       {tab === "Members" ? (
-        <Panel text="Member management is inherited from your QuikIT org. Manage roles in the Admin Portal." />
+        <Panel text="Who has QuikFlow access is inherited from your QuikIT org — grant/revoke app access in the Admin Portal. What each member can do inside QuikFlow is configured in the Roles & Permissions tab." />
       ) : null}
+      {tab === "Roles & Permissions" ? <RolesPanel /> : null}
       {tab === "API & webhooks" ? (
         <Panel text="API keys and inbound webhook endpoints arrive in Phase 2 (webhook trigger support)." />
       ) : null}

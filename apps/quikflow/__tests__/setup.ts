@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { vi, beforeEach } from "vitest";
+import { vi, beforeEach, afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
 
 /**
  * Global test setup for QuikFlow. Mirrors the pattern used across the repo
@@ -78,4 +79,12 @@ export function setOrgId(orgId: string | null) {
 beforeEach(() => {
   _state.user = null;
   _state.orgId = null;
+});
+
+// Testing Library auto-cleanup: unmount React trees between tests so queries
+// only see the currently-mounted component. Required for jsdom tests; a no-op
+// in node environment (where cleanup just short-circuits). Mirrors
+// apps/quikscale/__tests__/setup.ts.
+afterEach(() => {
+  cleanup();
 });

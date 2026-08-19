@@ -63,23 +63,25 @@ export async function buildSummary(
   filters: Filters,
 ): Promise<DashboardSummaryDto> {
   // ───────────────────────────────────────────────────────────────────
-  // KPI classification (Bug 1):
+  // KPI windowing — FULLY WINDOWED (Option A, product decision 2026-08-17).
   //
-  //   FLOW (period-bound, has delta vs prior period):
-  //     - Total Leads             — crmLead.count gte+lte
-  //     - Activities              — crmActivity.count via occurredAt
-  //     - Leads-by-stage bar      — crmLead.groupBy gte+lte
+  // Every metric on this dashboard is bounded by the selected range on its own
+  // business date, so changing a date chip visibly moves the whole page:
+  //     - Total Leads             — crmLead.createdAt
+  //     - Accounts                — crmAccount.createdAt
+  //     - Activities              — crmActivity.occurredAt
+  //     - Open tasks              — crmTask.createdAt
+  //     - Pipeline (open)         — crmOpportunity.createdAt
+  //     - Open opportunities      — crmOpportunity.createdAt
+  //     - Leads/opps-by-stage     — same createdAt bound as their parent counts
+  //     - Won revenue / wins      — closeDate → lastStageChangeAt (executive-metrics)
   //
-  //   STOCK (point-in-time snapshot, NO delta, NO createdAt filter):
-  //     - Accounts                — crmAccount.count, no createdAt
-  //     - Open tasks              — crmTask.count, no createdAt
-  //     - Pipeline (open)         — crmOpportunity.groupBy currency, no createdAt
-  //     - Open opportunities      — crmOpportunity.count, no createdAt
-  //     - Opps-by-stage bar       — crmOpportunity.groupBy stage, no createdAt
+  // This REPLACES the earlier flow-vs-stock split: "Accounts" and "Pipeline"
+  // now mean "created in the selected period", not "as of now". The Owner
+  // dropdown intersects on top via resolveDashboardScope.
   //
-  //   The date-range filter ONLY gates flow metrics. Stock KPI cards
-  //   render with an "(as of now)" subtitle and no delta pill so users
-  //   understand the chip doesn't move them.
+  // Exception, by design: My Work Today (tasks due today / today's follow-ups)
+  // stays anchored to the actual current day — see buildExecutiveSummary.
   // ───────────────────────────────────────────────────────────────────
   const { range, resolvedOwnerId } = filters;
   const prior = priorRange(range);
@@ -102,9 +104,14 @@ export async function buildSummary(
   const oppWhereBase = { ...scope.recordWhere(resolvedOwnerId), deletedAt: null };
   const taskWhereBase = scope.taskWhere(resolvedOwnerId);
 
+  // Selected-range bound reused by every windowed metric below.
+  const inRange = { gte: range.from, lte: range.to };
+
   const oppOpenWhere = {
     ...oppWhereBase,
     stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
+    // Option A: pipeline/forecast reflect opportunities RAISED in the period.
+    createdAt: inRange,
   };
 
   // TZ-aware per CLAUDE.md § "Timezone correctness"
@@ -141,25 +148,30 @@ export async function buildSummary(
     prisma.crmLead.count({
       where: { ...leadWhereBase, createdAt: { gte: prior.from, lte: prior.to } },
     }),
-    // STOCK: total accounts right now. Bug 1 dropped createdAt (stock
-    // semantics); Bug 3 added deletedAt: null (defense in depth on top
-    // of the SOFT_DELETE_MODELS middleware). Now role-scoped on the account's
-    // own id (accountWhere) so non-admins only count accounts they can see.
+    // WINDOWED (Option A): accounts CREATED in the selected range. deletedAt:
+    // null is defense in depth on top of the SOFT_DELETE_MODELS middleware.
+    // Role-scoped on the account's own id (accountWhere) so non-admins only
+    // count accounts they can see.
     prisma.crmAccount.count({
-      where: { ...scope.accountWhere(resolvedOwnerId), deletedAt: null },
+      where: {
+        ...scope.accountWhere(resolvedOwnerId),
+        deletedAt: null,
+        createdAt: inRange,
+      },
     }),
-    // STOCK: open tasks right now (no createdAt clause)
+    // WINDOWED: open tasks raised in the selected range.
     prisma.crmTask.count({
       where: {
         ...taskWhereBase,
         status: { not: "Completed" as CrmTaskStatus },
+        createdAt: inRange,
       },
     }),
-    // STOCK: open opportunities right now (no createdAt clause)
+    // WINDOWED: open opportunities raised in the range (createdAt on oppOpenWhere)
     prisma.crmOpportunity.count({
       where: oppOpenWhere,
     }),
-    // STOCK: pipeline value by currency right now (no createdAt clause)
+    // WINDOWED: pipeline value by currency for opps raised in the range
     prisma.crmOpportunity.groupBy({
       by: ["currency"],
       where: oppOpenWhere,
@@ -182,7 +194,7 @@ export async function buildSummary(
       _count: true,
       orderBy: { _count: { stage: "desc" } },
     }),
-    // STOCK: open opps grouped by stage right now (no createdAt clause)
+    // WINDOWED: open opps raised in the range, grouped by stage
     prisma.crmOpportunity.groupBy({
       by: ["stage"],
       where: oppOpenWhere,
@@ -263,7 +275,7 @@ export async function buildSummary(
   }));
 
   const [teamDashboard, executivePack] = await Promise.all([
-    buildTeamDashboard(user, range),
+    buildTeamDashboard(user, range, resolvedOwnerId),
     buildExecutiveSummary(range, resolvedOwnerId, prior, scope),
   ]);
 
@@ -300,6 +312,7 @@ export async function buildSummary(
 async function buildTeamDashboard(
   user: SessionUser,
   range: DateRange,
+  resolvedOwnerId: string | null,
 ): Promise<TeamDashboard | undefined> {
   const team = await resolveManagerTeam(user);
   if (!team) return undefined;
@@ -313,12 +326,30 @@ async function buildTeamDashboard(
     };
   }
 
+  // Owner dropdown INTERSECTS the manager's team (never widens): a selected
+  // owner outside the team yields no rows. Previously this widget ignored the
+  // dropdown entirely, so it kept showing whole-team numbers while every other
+  // widget narrowed to one rep.
+  const inTeam = resolvedOwnerId ? team.memberIds.includes(resolvedOwnerId) : false;
+  const memberIds = resolvedOwnerId
+    ? inTeam
+      ? [resolvedOwnerId]
+      : ["__none__"]
+    : team.memberIds;
+  // The ownerName fallback branch (rows with a null FK) is only sound for the
+  // whole team; when a single owner is selected, match that owner's name only.
+  const memberNames = resolvedOwnerId
+    ? inTeam
+      ? team.memberNames.filter((_, i) => team.memberIds[i] === resolvedOwnerId)
+      : ["__none__"]
+    : team.memberNames;
+
   const callWhere = {
     orgId: user.orgId,
     createdAt: { gte: range.from, lte: range.to },
     OR: [
-      { agentUserId: { in: team.memberIds } },
-      { agentUserId: null, ownerName: { in: team.memberNames } },
+      { agentUserId: { in: memberIds } },
+      { agentUserId: null, ownerName: { in: memberNames } },
     ],
   };
 
@@ -326,8 +357,8 @@ async function buildTeamDashboard(
     orgId: user.orgId,
     occurredAt: { gte: range.from, lte: range.to },
     OR: [
-      { ownerId: { in: team.memberIds } },
-      { ownerId: null, ownerName: { in: team.memberNames } },
+      { ownerId: { in: memberIds } },
+      { ownerId: null, ownerName: { in: memberNames } },
     ],
   };
 

@@ -570,6 +570,7 @@ needs its own deployment/scaling:
 | quikcrm | `npm run worker` (BullMQ) | Imports, SLA checks, notification crons — requires `REDIS_URL` |
 | quiksupport | email worker (`workers/email-worker.ts`) | Async ticket email; without it, email is a no-op (ticket still saves) |
 | quikflow | **separate image** — `apps/quikflow/Dockerfile.worker` | Workflow execution + 60s scheduler tick (mail / Fathom / date scans). Without it, workflows queue but never run |
+| quikflow | **separate image** — `apps/quikflow/Dockerfile.worker` | Workflow execution + 60s scheduler tick (mail / Fathom / date scans). Without it, workflows queue but never run |
 
 When deploying these apps, confirm the worker Deployment exists and points at
 the same image tag as the web Deployment.

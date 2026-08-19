@@ -25,6 +25,15 @@ export const createTestRunSchema = z
     environment: z.string().trim().max(255).optional(),
     assigneeId: z.string().min(1).optional(),
     /**
+     * Planned execution window (QUIKTR-320). Both optional — a CI run has no
+     * planned dates. Date-only strings from an <input type="date">; the DB also
+     * enforces endDate >= startDate.
+     */
+    startDate: z.string().date().optional(),
+    endDate: z.string().date().optional(),
+    /** Free-text ticket references for the run, e.g. "JIRA-1, JIRA-3". */
+    refTickets: z.string().trim().max(2_000).optional(),
+    /**
      * Draft cases are excluded by default (the approval workflow's whole
      * point). Set true to include them anyway — useful for a smoke run over
      * work-in-progress cases.
@@ -34,6 +43,12 @@ export const createTestRunSchema = z
   .refine((v) => Boolean(v.suiteId) !== Boolean(v.caseIds?.length), {
     message: "Provide either a suiteId or a non-empty caseIds list, not both.",
     path: ["suiteId"],
+  })
+  // Caught here as well as by the DB CHECK, so the form can show the error on
+  // the End date field instead of surfacing a raw constraint violation.
+  .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
+    message: "End date cannot be before the start date.",
+    path: ["endDate"],
   });
 
 /**

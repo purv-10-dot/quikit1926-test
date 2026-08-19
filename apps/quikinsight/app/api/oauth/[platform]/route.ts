@@ -5,7 +5,15 @@ import type { Platform } from "@/lib/types/connections";
 import { signOAuthState } from "@/lib/oauthState";
 import crypto from "crypto";
 
-const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3011";
+/**
+ * This app's own origin. Every OAuth `redirect_uri` is built from it, and the
+ * provider rejects the flow if the value does not byte-match what is registered
+ * — so the local fallback must be this app's real dev port (3015, see
+ * package.json), not another app's. It previously read 3011, which would have
+ * produced an unexplainable "redirect_uri mismatch" from every provider the
+ * moment NEXTAUTH_URL was absent.
+ */
+const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3015";
 
 // API-key based platforms (e.g. QuikCRM) have no OAuth endpoint and are omitted.
 const OAUTH_ENDPOINTS: Partial<Record<Platform, { authUrl: string; clientId: string }>> = {

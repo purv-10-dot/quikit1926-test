@@ -33,6 +33,17 @@ describe("GET /api/workflows", () => {
     expect(where?.OR).toEqual([{ scope: "org" }, { scope: "personal", ownerId: "u_member" }]);
   });
 
+  it("excludes soft-deleted workflows from the list", async () => {
+    setSession(MEMBER);
+    mockDb.wfWorkflow.findMany.mockResolvedValue([]);
+    mockDb.user.findMany.mockResolvedValue([]);
+
+    await GET(req("/api/workflows"), { params: {} });
+
+    const where = mockDb.wfWorkflow.findMany.mock.calls[0][0]?.where;
+    expect(where?.deletedAt).toBeNull();
+  });
+
   it("returns mapped workflows on the happy path", async () => {
     setSession(ADMIN);
     mockDb.wfWorkflow.findMany.mockResolvedValue([

@@ -2,6 +2,30 @@ import Link from "next/link";
 
 // Public, first-contact marketing page (server component). Uses the design-system
 // tokens in globals.css (.lp-* classes) so it respects light/dark automatically.
+//
+// ── GOOGLE OAUTH VERIFICATION ────────────────────────────────────────────────
+// This page is the homepage submitted for Google OAuth app verification, so a
+// reviewer must be able to confirm three things WITHOUT signing in:
+//
+//   1. The application name matches the OAuth consent screen EXACTLY
+//      ("QuikInsight"). Google rejected a previous attempt for a name mismatch,
+//      so APP_NAME below is the single source of truth for every visible
+//      occurrence — do not hardcode the name anywhere else on this page, and do
+//      not change it without changing the consent screen in the same PR.
+//   2. Who operates the app, and how to reach them.
+//   3. What the app does with Google user data — reviewers look for an explicit
+//      statement of the scopes' purpose on the homepage itself.
+//
+// The "home page URL is not registered to you" rejection is NOT fixable here:
+// it needs domain ownership verified in Google Search Console under the same
+// account that owns the Cloud project. See the notes at the bottom of this file.
+
+/** Must match the OAuth consent screen's "App name" byte for byte. */
+const APP_NAME = "QuikInsight";
+
+/** Legal operator shown for verification. Confirm before submitting. */
+const OPERATOR = "QuikIT";
+const CONTACT_EMAIL = "support@quikit.ai";
 
 const FEATURES = [
   { icon: "📊", title: "Every channel, one view", body: "GA4, Search Console, Meta, LinkedIn, YouTube, HubSpot and more — unified into a single live dashboard." },
@@ -22,7 +46,7 @@ function Brand() {
           <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
         </svg>
       </span>
-      QuikInsight
+      {APP_NAME}
     </div>
   );
 }
@@ -39,9 +63,13 @@ export default function Landing() {
 
       <header className="lp-hero">
         <span className="lp-eyebrow">✨ AI Growth OS for Marketing</span>
-        <h1 className="lp-h1">See every marketing channel clearly — and know what to do next.</h1>
+        {/* The app name leads the H1 so a verification reviewer sees it as the
+            page's primary heading, matching the OAuth consent screen. */}
+        <h1 className="lp-h1">
+          {APP_NAME} — see every marketing channel clearly, and know what to do next.
+        </h1>
         <p className="lp-sub">
-          QuikInsight unifies your analytics, ads, social, and CRM into one live dashboard,
+          {APP_NAME} unifies your analytics, ads, social, and CRM into one live dashboard,
           then uses AI grounded in your real numbers to tell you where to grow.
         </p>
         <div className="lp-cta-row">
@@ -88,6 +116,44 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Google OAuth verification: a reviewer must be able to read, without
+          signing in, which Google data the app requests and why. Keep this in
+          sync with the scopes on the consent screen — a scope listed there but
+          not explained here is a rejection reason. */}
+      <section className="lp-section" id="google-data">
+        <h2 className="lp-section-title">How {APP_NAME} uses your Google data</h2>
+        <p className="lp-section-sub">
+          {APP_NAME} only requests read access to the accounts you explicitly connect, and
+          only to display your own analytics back to you.
+        </p>
+        <div className="lp-features">
+          <div className="lp-feature">
+            <div className="lp-feature-ic">📈</div>
+            <h3>Google Analytics</h3>
+            <p>
+              Read-only access to your GA4 property so {APP_NAME} can show sessions, users,
+              traffic sources and conversions in your dashboard.
+            </p>
+          </div>
+          <div className="lp-feature">
+            <div className="lp-feature-ic">🔍</div>
+            <h3>Search Console</h3>
+            <p>
+              Read-only access to your verified site&apos;s search performance — clicks,
+              impressions, queries and pages.
+            </p>
+          </div>
+          <div className="lp-feature">
+            <div className="lp-feature-ic">🔒</div>
+            <h3>What we never do</h3>
+            <p>
+              {APP_NAME} never modifies or deletes data in your Google account, never sells
+              your data, and never shares it with third parties for advertising.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section className="lp-band">
         <h2>Ready to see your growth clearly?</h2>
         <p>Connect your first platform in minutes. No credit card required.</p>
@@ -96,8 +162,35 @@ export default function Landing() {
 
       <footer className="lp-footer">
         <Brand />
-        <span>© {new Date().getFullYear()} QuikInsight · AI Growth OS for Marketing</span>
+        {/* Operator + contact are verification requirements: a reviewer must be
+            able to tell who runs the app and how to reach them. */}
+        <span>
+          © {new Date().getFullYear()} {APP_NAME} · Operated by {OPERATOR} ·{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+        </span>
       </footer>
     </div>
   );
 }
+
+/*
+ * ── REMAINING VERIFICATION STEPS (not fixable in this file) ──────────────────
+ *
+ * 1. "The website of your home page URL https://quikit.ai/ is not registered
+ *    to you."
+ *    Verify domain ownership in Google Search Console using the SAME Google
+ *    account that owns the Cloud project, then add it under
+ *    APIs & Services → OAuth consent screen → Authorized domains.
+ *
+ * 2. "The app name QuikInsight ... does not match the app name on your home
+ *    page."
+ *    The submitted home page is https://quikit.ai/ — the QuikIT LAUNCHER, which
+ *    is a different product and does not carry the QuikInsight name. This page
+ *    does. Point the consent screen's home page at this app's own origin
+ *    (https://insights.quikit.ai/) so the names line up, rather than trying to
+ *    rename the launcher.
+ *
+ * 3. Expect Privacy Policy and Terms URLs to be required next — Google asks for
+ *    both on the consent screen and they must be reachable without signing in.
+ *    Neither page exists in this app yet.
+ */

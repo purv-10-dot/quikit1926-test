@@ -13,13 +13,29 @@ export const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 // collapses that burst into one aggregation per (user, window).
 const agg = new Map<string, { data: DashboardData; ts: number }>();
 export const AGG_TTL = 60 * 1000; // 60s
+const MAX_AGG_ENTRIES = 200;
 
-export function getAggCache(userId: string, days: number, workspaceId?: string): DashboardData | null {
-  const e = agg.get(`${userId}:${days}:${workspaceId ?? ""}`);
+/**
+ * Keyed on the RESOLVED PERIOD, not a day count.
+ *
+ * A comparison request and a plain request can cover the same current window
+ * but must not share an entry — otherwise turning comparison on would serve a
+ * cached payload with no deltas (or worse, deltas from a different baseline).
+ * Build the key with periodCacheKey() from lib/period/resolve.ts.
+ */
+export function getAggCache(userId: string, periodKey: string, workspaceId?: string): DashboardData | null {
+  const e = agg.get(`${userId}:${periodKey}:${workspaceId ?? ""}`);
   return e && Date.now() - e.ts < AGG_TTL ? e.data : null;
 }
-export function setAggCache(userId: string, days: number, data: DashboardData, workspaceId?: string): void {
-  agg.set(`${userId}:${days}:${workspaceId ?? ""}`, { data, ts: Date.now() });
+export function setAggCache(userId: string, periodKey: string, data: DashboardData, workspaceId?: string): void {
+  // Custom ranges make the keyspace unbounded, so evict oldest-first once the
+  // map grows past a sane ceiling. Without this the process leaks one entry per
+  // distinct window the user ever picks.
+  if (agg.size >= MAX_AGG_ENTRIES) {
+    const oldest = [...agg.entries()].sort((a, b) => a[1].ts - b[1].ts)[0]?.[0];
+    if (oldest) agg.delete(oldest);
+  }
+  agg.set(`${userId}:${periodKey}:${workspaceId ?? ""}`, { data, ts: Date.now() });
 }
 
 // Clears both caches — called on connect/disconnect/metadata changes so the next

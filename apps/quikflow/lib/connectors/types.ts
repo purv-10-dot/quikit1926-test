@@ -127,6 +127,20 @@ export interface CalendarEventResult {
   joinUrl?: string | null;
 }
 
+/**
+ * Thrown by `updateEvent`/`deleteEvent` when the provider reports the target
+ * event no longer exists (Graph: ErrorItemNotFound "The specified object was
+ * not found in the store"). Distinguishes "stale link, recreate" from any
+ * other failure (auth, throttling, bad payload) which should still surface as
+ * a real run failure instead of silently recreating the event.
+ */
+export class CalendarEventNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CalendarEventNotFoundError";
+  }
+}
+
 /** A normalized calendar event surfaced by a calendar-view read. */
 export interface CalendarEventView {
   id: string;

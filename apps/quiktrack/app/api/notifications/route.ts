@@ -40,6 +40,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
         toValue: true,
         isRead: true,
         readAt: true,
+        emailSent: true,
         createdAt: true,
       },
     });
