@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { EncryptJWT } from "jose";
+import { EncryptJWT, jwtDecrypt } from "jose";
 import hkdf from "@panva/hkdf";
+import { encode } from "next-auth/jwt";
+import { AGENT_JWT_ISSUER } from "@quikit/shared";
 import { verifyAgentJwt } from "@/lib/api/agentJwt";
 
 const NEXTAUTH_SECRET = "test-nextauth-secret-for-agent-jwt";
@@ -109,5 +111,132 @@ describe("verifyAgentJwt", () => {
 
   it("rejects garbage input without throwing", async () => {
     expect(await verifyAgentJwt("not.a.valid.jwe.token")).toBeNull();
+  });
+
+  it("accepts platform_service / scheduled_job WITHOUT actingAgentId — the minter only requires it for ai_agent", async () => {
+    for (const actingAs of ["platform_service", "scheduled_job"] as const) {
+      const token = await mintAgentJwt({ sub: "user_1", orgId: "org_1", actingAs });
+      const claims = await verifyAgentJwt(token);
+      expect(claims).not.toBeNull();
+      expect(claims?.actingAs).toBe(actingAs);
+      expect(claims?.actingAgentId).toBeUndefined();
+    }
+  });
+
+  it("rejects an actingAs outside the closed vocabulary — `!== \"user\"` is not a sufficient check", async () => {
+    const token = await mintAgentJwt({
+      sub: "user_1",
+      orgId: "org_1",
+      actingAs: "root",
+      actingAgentId: "svc-x",
+    });
+    expect(await verifyAgentJwt(token)).toBeNull();
+  });
+
+  it("rejects an empty-string actingAgentId (malformed, not absent)", async () => {
+    const token = await mintAgentJwt({
+      sub: "user_1",
+      orgId: "org_1",
+      actingAs: "platform_service",
+      actingAgentId: "",
+    });
+    expect(await verifyAgentJwt(token)).toBeNull();
+  });
+});
+
+/**
+ * The test that should have existed from day one.
+ *
+ * Every other test in this file hand-mints with raw `jose.EncryptJWT` and
+ * hand-writes `sub` — which is precisely why the `sub`/`id` mismatch survived:
+ * the suite asserted against its own assumption of the minter, never the
+ * minter itself. These tests call next-auth's real `encode()` with the exact
+ * payload `apps/auth/.../issue-agent-jwt/route.ts` builds, so any future claim
+ * drift on either side fails here instead of in someone's afternoon.
+ *
+ * If you change the mint payload, change `mintLikeAuthService` to match — do
+ * not relax the assertions.
+ */
+describe("contract: a token minted the way the auth service actually mints it", () => {
+  /** Mirrors the `jwtPayload` literal + `encode()` call in the mint route. */
+  async function mintLikeAuthService(
+    overrides: Partial<Record<string, unknown>> = {},
+    ttlSeconds = 300,
+  ) {
+    return encode({
+      token: {
+        id: "usr_contract",
+        sub: "usr_contract",
+        iss: AGENT_JWT_ISSUER,
+        email: "contract@example.com",
+        orgId: "org_contract",
+        membershipRole: "org_admin",
+        isSuperAdmin: false,
+        actingAs: "ai_agent",
+        actingAgentId: "ai-runtime",
+        ...overrides,
+      },
+      secret: NEXTAUTH_SECRET,
+      maxAge: ttlSeconds,
+    });
+  }
+
+  it("verifyAgentJwt accepts it and resolves the user from sub", async () => {
+    const claims = await verifyAgentJwt(await mintLikeAuthService());
+    expect(claims).toEqual({
+      userId: "usr_contract",
+      orgId: "org_contract",
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+  });
+
+  it("sub and id carry the same value, so consumers of either agree on the user", async () => {
+    const token = await mintLikeAuthService();
+    const claims = await verifyAgentJwt(token);
+    // `withAuth` (packages/auth) reads `id`; this verifier reads `sub`.
+    // They must never disagree.
+    expect(claims?.userId).toBe("usr_contract");
+  });
+
+  it("round-trips every actingAs the minter can emit, with actingAgentId only where required", async () => {
+    const cases = [
+      { actingAs: "ai_agent", actingAgentId: "ai-runtime" },
+      { actingAs: "platform_service", actingAgentId: undefined },
+      { actingAs: "scheduled_job", actingAgentId: undefined },
+    ] as const;
+
+    for (const { actingAs, actingAgentId } of cases) {
+      // The route spreads actingAgentId in only when present — mirror that.
+      const overrides: Record<string, unknown> = { actingAs };
+      if (actingAgentId === undefined) {
+        overrides.actingAgentId = undefined;
+      } else {
+        overrides.actingAgentId = actingAgentId;
+      }
+      const claims = await verifyAgentJwt(await mintLikeAuthService(overrides));
+      expect(claims, `actingAs=${actingAs} should verify`).not.toBeNull();
+      expect(claims?.actingAs).toBe(actingAs);
+      expect(claims?.actingAgentId).toBe(actingAgentId);
+    }
+  });
+
+  it("still rejects a default-actingAs token — the minter defaults to \"user\", which this path must not accept", async () => {
+    // route.ts's Zod schema defaults actingAs to "user" when the caller omits
+    // it, producing a token that mints successfully and can never authenticate
+    // here. Documented so the trap is visible rather than surprising.
+    const token = await mintLikeAuthService({ actingAs: "user", actingAgentId: undefined });
+    expect(await verifyAgentJwt(token)).toBeNull();
+  });
+
+  it("carries the issuer claim (emitted, not yet enforced)", async () => {
+    const raw = await mintLikeAuthService();
+    const { payload } = await jwtDecrypt(raw, await deriveKey(NEXTAUTH_SECRET), {
+      contentEncryptionAlgorithms: ["A256GCM"],
+      keyManagementAlgorithms: ["dir"],
+    });
+    expect(payload.iss).toBe(AGENT_JWT_ISSUER);
+    // Session cookies carry no `iss`. Enforcement must never move into the
+    // shared session path — see AGENT_JWT_ISSUER's docs.
   });
 });

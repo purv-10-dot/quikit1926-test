@@ -32,11 +32,27 @@ const NEXTAUTH_HKDF_SALT = "";
 /** `actingAs` values the auth service can mint. All non-"user" values collapse to `actorType: "agent"` at the call site — see withOrgAuth.ts. */
 export type ActingAs = "user" | "ai_agent" | "platform_service" | "scheduled_job";
 
+/** The three non-`"user"` values the auth service can mint. */
+const AGENT_ACTING_AS: ReadonlySet<string> = new Set<ActingAs>([
+  "ai_agent",
+  "platform_service",
+  "scheduled_job",
+]);
+
 export interface AgentJwtClaims {
   userId: string;
   orgId: string;
   actingAs: ActingAs;
-  actingAgentId: string;
+  /**
+   * Present for `ai_agent`, which the minter requires it for. Undefined is
+   * legitimate for `platform_service` / `scheduled_job` — the minter only
+   * enforces the field when `actingAs === "ai_agent"`
+   * (`issue-agent-jwt/route.ts`), and both
+   * docs/12-auth-service-integration-response.md §3 and QuikScale's RBAC doc
+   * document it as optional. Requiring it here rejected every token those two
+   * values can produce.
+   */
+  actingAgentId?: string;
 }
 
 async function getDerivedKey(): Promise<Uint8Array> {
@@ -51,20 +67,34 @@ function isAgentJwtPayload(payload: unknown): payload is {
   sub: string;
   orgId: string;
   actingAs: ActingAs;
-  actingAgentId: string;
+  actingAgentId?: string;
 } {
   if (!payload || typeof payload !== "object") return false;
   const p = payload as Record<string, unknown>;
-  return (
-    typeof p.sub === "string" &&
-    p.sub.length > 0 &&
-    typeof p.orgId === "string" &&
-    p.orgId.length > 0 &&
-    typeof p.actingAs === "string" &&
-    p.actingAs !== "user" &&
-    typeof p.actingAgentId === "string" &&
-    p.actingAgentId.length > 0
-  );
+
+  if (typeof p.sub !== "string" || p.sub.length === 0) return false;
+  if (typeof p.orgId !== "string" || p.orgId.length === 0) return false;
+
+  // Validate against the closed vocabulary rather than merely `!== "user"`.
+  // The old check let ANY non-"user" string through and straight into audit
+  // rows — `actingAs` is the whole human-vs-agent boundary here, since agent
+  // JWTs share a signing key with ordinary session cookies.
+  if (typeof p.actingAs !== "string" || !AGENT_ACTING_AS.has(p.actingAs)) {
+    return false;
+  }
+
+  // Required for `ai_agent` (the minter guarantees it), optional for the other
+  // two. Reject an empty string either way — a blank agent id is malformed,
+  // not absent.
+  if (p.actingAgentId !== undefined) {
+    if (typeof p.actingAgentId !== "string" || p.actingAgentId.length === 0) {
+      return false;
+    }
+  } else if (p.actingAs === "ai_agent") {
+    return false;
+  }
+
+  return true;
 }
 
 /**
