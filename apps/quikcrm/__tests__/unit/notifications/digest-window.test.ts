@@ -5,15 +5,20 @@
  * At the 20:30 IST cron this = [yesterday 20:30 IST, today 20:30 IST) — back-to-
  * back daily windows, no gap/overlap.
  *
- * NO IST / calendar math: from/to are plain UTC instants (now and now−24h), and
- * CrmActivity.occurredAt is UTC, so the window is timezone-INDEPENDENT. IST only
- * anchors the cron TIME (when it runs), not the window math. This replaces the
- * earlier yesterdayIstRangeUtc (calendar-day) helper, which is removed.
+ * The rolling helpers do NO IST / calendar math: from/to are plain UTC instants
+ * (now and now−24h). These now back the WEEKLY summary (days=7) only.
+ *
+ * The DAILY digest uses previousIstCalendarDayUtc — covered by its own describe
+ * block at the bottom of this file.
  *
  * `now` is injected for determinism. Half-open [from, to): gte from, lt to.
  */
 import { describe, it, expect } from "vitest";
-import { rolling24hRangeUtc, rollingWindowUtc } from "@/lib/services/notifications/digest-window";
+import {
+  previousIstCalendarDayUtc,
+  rolling24hRangeUtc,
+  rollingWindowUtc,
+} from "@/lib/services/notifications/digest-window";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -70,7 +75,7 @@ describe("rolling24hRangeUtc — [now − 24h, now), pure UTC", () => {
 });
 
 describe("rollingWindowUtc(now, days) — parameterized window (weekly summary)", () => {
-  it("days=1 is byte-identical to the existing 24h behavior (re-pin: daily unchanged)", () => {
+  it("days=1 is byte-identical to the 24h alias (helper contract; daily no longer calls it)", () => {
     const now = new Date("2026-06-25T15:00:00.000Z");
     const param = rollingWindowUtc(now, 1);
     const legacy = rolling24hRangeUtc(now);
@@ -90,5 +95,90 @@ describe("rollingWindowUtc(now, days) — parameterized window (weekly summary)"
   it("rolling24hRangeUtc is the days=1 alias (delegates to rollingWindowUtc)", () => {
     const now = new Date("2026-06-25T20:30:45.123Z");
     expect(rolling24hRangeUtc(now)).toEqual(rollingWindowUtc(now, 1));
+  });
+});
+
+describe("previousIstCalendarDayUtc — previous IST calendar day (DAILY digest)", () => {
+  // IST midnight = 18:30 UTC the previous day. The 10:00 IST cron = 04:30 UTC.
+  const at10amIst = (date: string) => new Date(`${date}T04:30:00.000Z`);
+
+  it("19 Aug 10:00 IST run → covers 18 Aug 00:00 IST to 19 Aug 00:00 IST", () => {
+    const { from, to } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    expect(from.toISOString()).toBe("2026-08-17T18:30:00.000Z"); // 18 Aug 00:00 IST
+    expect(to.toISOString()).toBe("2026-08-18T18:30:00.000Z"); // 19 Aug 00:00 IST
+  });
+
+  it("20 Aug 10:00 IST run → covers 19 Aug", () => {
+    const { from, to } = previousIstCalendarDayUtc(at10amIst("2026-08-20"));
+    expect(from.toISOString()).toBe("2026-08-18T18:30:00.000Z"); // 19 Aug 00:00 IST
+    expect(to.toISOString()).toBe("2026-08-19T18:30:00.000Z"); // 20 Aug 00:00 IST
+  });
+
+  it("21 Aug 10:00 IST run → covers 20 Aug", () => {
+    const { from, to } = previousIstCalendarDayUtc(at10amIst("2026-08-21"));
+    expect(from.toISOString()).toBe("2026-08-19T18:30:00.000Z"); // 20 Aug 00:00 IST
+    expect(to.toISOString()).toBe("2026-08-20T18:30:00.000Z"); // 21 Aug 00:00 IST
+  });
+
+  it("window is exactly 24h wide", () => {
+    const { from, to } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    expect(to.getTime() - from.getTime()).toBe(DAY_MS);
+  });
+
+  it("EDGE: 18 Aug 00:00:00.000 IST is INSIDE (from inclusive, gte)", () => {
+    const { from } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    const act = new Date("2026-08-17T18:30:00.000Z"); // 18 Aug 00:00 IST
+    expect(act.getTime() >= from.getTime()).toBe(true);
+  });
+
+  it("EDGE: 18 Aug 23:59:59.999 IST is INSIDE (last instant of the day)", () => {
+    const { from, to } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    const act = new Date("2026-08-18T18:29:59.999Z"); // 18 Aug 23:59:59.999 IST
+    expect(act.getTime() >= from.getTime() && act.getTime() < to.getTime()).toBe(true);
+  });
+
+  it("EDGE: 19 Aug 00:00:00.000 IST is OUTSIDE (to exclusive — belongs to next digest)", () => {
+    const { to } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    const act = new Date("2026-08-18T18:30:00.000Z"); // 19 Aug 00:00 IST
+    expect(act.getTime() < to.getTime()).toBe(false);
+  });
+
+  it("EXCLUDES same-day activity: a 19 Aug 09:00 IST call is not in the 19 Aug run", () => {
+    const { to } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    const act = new Date("2026-08-19T03:30:00.000Z"); // 19 Aug 09:00 IST
+    expect(act.getTime() < to.getTime()).toBe(false);
+  });
+
+  it("EXCLUDES the prior day: a 17 Aug 23:00 IST call is not in the 19 Aug run", () => {
+    const { from } = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    const act = new Date("2026-08-17T17:30:00.000Z"); // 17 Aug 23:00 IST
+    expect(act.getTime() < from.getTime()).toBe(true);
+  });
+
+  it("STABLE across fire time: any run on the same IST day yields the same window", () => {
+    // 10:00 IST (on time), 10:47 IST (delayed retry), 23:30 IST (late manual re-fire)
+    const base = previousIstCalendarDayUtc(at10amIst("2026-08-19"));
+    for (const iso of ["2026-08-19T05:17:00.000Z", "2026-08-19T18:00:00.000Z"]) {
+      const other = previousIstCalendarDayUtc(new Date(iso));
+      expect(other.from.toISOString()).toBe(base.from.toISOString());
+      expect(other.to.toISOString()).toBe(base.to.toISOString());
+    }
+  });
+
+  it("EDGE: a run just after IST midnight still reports the day that just closed", () => {
+    // 2026-08-19T18:35Z = 20 Aug 00:05 IST → previous IST day is 19 Aug
+    const { from, to } = previousIstCalendarDayUtc(new Date("2026-08-19T18:35:00.000Z"));
+    expect(from.toISOString()).toBe("2026-08-18T18:30:00.000Z"); // 19 Aug 00:00 IST
+    expect(to.toISOString()).toBe("2026-08-19T18:30:00.000Z"); // 20 Aug 00:00 IST
+  });
+
+  it("EDGE: month and year boundaries roll correctly", () => {
+    const month = previousIstCalendarDayUtc(at10amIst("2026-09-01")); // → 31 Aug
+    expect(month.from.toISOString()).toBe("2026-08-30T18:30:00.000Z");
+    expect(month.to.toISOString()).toBe("2026-08-31T18:30:00.000Z");
+
+    const year = previousIstCalendarDayUtc(at10amIst("2027-01-01")); // → 31 Dec 2026
+    expect(year.from.toISOString()).toBe("2026-12-30T18:30:00.000Z");
+    expect(year.to.toISOString()).toBe("2026-12-31T18:30:00.000Z");
   });
 });
