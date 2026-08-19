@@ -1,5 +1,6 @@
 ﻿"use client";
 import { useEffect, useState } from "react";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import { useRouter } from "next/navigation";
 import { getInstagramData, type InstagramData } from "@/lib/api/instagram";
 import Kpi from "@/components/ui/Kpi";
@@ -73,6 +74,7 @@ export default function InstagramPage() {
 
   return (
     <div>
+      {data.isSampleData && <SampleDataBanner platform="Instagram" />}
       {/* Header */}
       <div className="greet-row">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

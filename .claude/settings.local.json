@@ -14,8 +14,7 @@
       "Bash(sort -t: -k2)"
     ],
     "additionalDirectories": [
-      "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me",
-      "c:\\Users\\Adarsh.Jain\\Desktop\\Quikcrm_clone_16-07\\apps\\quikcrm\\linkedin-extension"
+      "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
     ]
   }
 }

@@ -1,5 +1,9 @@
+import { withSample } from "./sample";
+import { GOOGLE_ADS_SAMPLE } from "@/lib/mock/platformSamples";
 export interface GoogleAdsData {
   connected: boolean;
+  /** Set when these are sample figures, not the workspace's own. */
+  isSampleData?: boolean;
   accountName?: string;
   spend?: number;
   impressions?: number;
@@ -25,5 +29,7 @@ export interface GoogleAdsData {
 export async function getGoogleAdsData(): Promise<GoogleAdsData> {
   const res = await fetch("/api/google-ads", { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load Google Ads data (${res.status})`);
-  return (await res.json()) as GoogleAdsData;
+  const live = (await res.json()) as GoogleAdsData;
+  // Not connected -> representative sample data + a banner on the page.
+  return withSample<GoogleAdsData>(live, GOOGLE_ADS_SAMPLE);
 }

@@ -28387,6 +28387,8 @@ model QiPlatformConnection {
 
 model QiDataSync {
   id           String    @id @default(cuid())
+  /// Tenant scope. NOT NULL in the table; required on create.
+  orgId        String
   userId       String
   connectionId String
   platform     String
@@ -28401,11 +28403,14 @@ model QiDataSync {
 
   @@index([userId, connectionId])
   @@index([connectionId, startedAt(sort: Desc)])
+  @@index([orgId])
   @@schema("app_quikinsight")
 }
 
 model QiConnectedAccount {
   id          String   @id @default(cuid())
+  /// Tenant scope. NOT NULL in the table; required on create.
+  orgId      String
   userId      String
   teamId      String
   provider    String
@@ -28415,11 +28420,14 @@ model QiConnectedAccount {
 
   @@index([teamId])
   @@index([userId])
+  @@index([orgId])
   @@schema("app_quikinsight")
 }
 
 model QiDashboard {
   id        String   @id @default(cuid())
+  /// Tenant scope. NOT NULL in the table; required on create.
+  orgId      String
   teamId    String
   name      String   @default("Dashboard")
   config    Json     @default("{}")
@@ -28429,29 +28437,89 @@ model QiDashboard {
   snapshots QiDashboardSnapshot[]
 
   @@index([teamId])
+  @@index([orgId])
   @@schema("app_quikinsight")
 }
 
 model QiDashboardSnapshot {
   id          String   @id @default(cuid())
+  /// NOT NULL in the table; all four were missing from this model.
+  userId     String
+  orgId      String
+  weekNumber Int
+  year       Int
   dashboardId String
   data        Json
   snapshotAt  DateTime @default(now())
 
   dashboard QiDashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, weekNumber, year])
   @@index([dashboardId, snapshotAt(sort: Desc)])
+  @@index([orgId])
   @@schema("app_quikinsight")
 }
 
+/// A saved, shareable QuikInsight report.
+///
+/// Distinct from QiEmailReportSettings, which is the single legacy per-user
+/// schedule the crons read. A QiReport is a first-class document: it has its
+/// own brand (workspace), date range, channel mix and recipients, and there can
+/// be many per org. Wiring the crons to these rows is a follow-up — until then
+/// `frequency` records intent and sending stays on-demand.
+model QiReport {
+  id            String   @id @default(cuid())
+  orgId         String
+  /// Creator. Reports are org-visible; this is for attribution, not scoping.
+  userId        String
+  name          String
+  /// "executive" | "custom".
+  type          String   @default("executive")
+  /// QiWorkspace id the report is scoped to — the "Brand" column in the UI.
+  workspaceId   String?
+  /// "7" | "30" | "90" | "365", matching the range picker.
+  dateRange     String   @default("30")
+  /// Channel keys to include: paid | organic | email | leads.
+  channels      String[] @default([])
+  /// "internal" | "client" — client-facing reports omit internal commentary.
+  audience      String   @default("internal")
+  /// Free-text summary, used when type = "custom".
+  customSummary String?
+  /// Metric ids to include, used when type = "custom".
+  customMetrics String[] @default([])
+  recipients    String[] @default([])
+  /// "none" | "daily" | "weekly" | "monthly".
+  frequency     String   @default("none")
+  status        String   @default("Ready")
+  lastSentAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, createdAt])
+  @@schema("app_quikinsight")
+}
+
+/// Per-user email report schedule for QuikInsight.
+///
+/// The model previously omitted `orgId`, `createdAt` and `updatedAt` even
+/// though all three exist in app_quikinsight."QiEmailReportSettings" and orgId
+/// is NOT NULL — so every create through Prisma failed with P2011 (null
+/// constraint on orgId) while updates of existing rows worked. Keep this in
+/// step with the table.
 model QiEmailReportSettings {
   id         String    @id @default(cuid())
   userId     String    @unique
+  /// Tenant scope. NOT NULL in the table; must be set on create.
+  orgId      String
   enabled    Boolean   @default(false)
   recipients String[]  @default([])
   frequency  String    @default("WEEKLY")
   lastSentAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
+  @@index([orgId])
   @@schema("app_quikinsight")
 }
 
@@ -28469,17 +28537,22 @@ model QiAiInsightCache {
 
 model QiUserRole {
   id        String   @id @default(cuid())
+  /// Tenant scope. NOT NULL in the table; required on create.
+  orgId      String
   userId    String   @unique
   role      String
   teamId    String?
   createdAt DateTime @default(now())
 
   @@index([teamId])
+  @@index([orgId])
   @@schema("app_quikinsight")
 }
 
 model QiInvitation {
   id         String    @id @default(cuid())
+  /// User id of whoever sent the invite. NOT NULL in the table.
+  invitedBy  String
   email      String
   orgId      String
   role       String    @default("MEMBER")

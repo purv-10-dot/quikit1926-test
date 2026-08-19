@@ -1,3 +1,5 @@
+import { withSample } from "./sample";
+import { GA4_SAMPLE } from "@/lib/mock/platformSamples";
 export interface GA4ChannelBreakdown {
   channel: string;
   sessions: number;
@@ -15,6 +17,8 @@ export interface GA4DailyPoint {
 
 export interface GoogleAnalyticsData {
   connected: boolean;
+  /** Set when these are sample figures, not the workspace's own. */
+  isSampleData?: boolean;
   totalSessions?: number;
   totalUsers?: number;
   activeUsers?: number;
@@ -30,8 +34,11 @@ export interface GoogleAnalyticsData {
   realtime?: { activeUsers: number; byCountry: Array<{ country: string; activeUsers: number }>; perMinute: number[] };
 }
 
-export async function getGoogleAnalyticsData(): Promise<GoogleAnalyticsData> {
-  const res = await fetch("/api/google-analytics", { cache: "no-store" });
+export async function getGoogleAnalyticsData(days?: number): Promise<GoogleAnalyticsData> {
+  const qs = days ? `?days=${days}` : "";
+  const res = await fetch(`/api/google-analytics${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load Google Analytics data (${res.status})`);
-  return (await res.json()) as GoogleAnalyticsData;
+  const live = (await res.json()) as GoogleAnalyticsData;
+  // Not connected -> representative sample data + a banner on the page.
+  return withSample<GoogleAnalyticsData>(live, GA4_SAMPLE);
 }
