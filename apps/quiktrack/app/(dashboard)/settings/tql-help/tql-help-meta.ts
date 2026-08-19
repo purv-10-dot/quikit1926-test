@@ -84,38 +84,171 @@ export const FUNCTIONS: { fn: string; returns: string }[] = [
   { fn: "startOfYear() / endOfYear()", returns: "Start/end of the current year (UTC)." },
 ];
 
-export const EXAMPLES: { query: string; description: string }[] = [
+export interface ExampleQuery {
+  query: string;
+  description: string;
+}
+
+export interface ExampleCategory {
+  category: string;
+  examples: ExampleQuery[];
+}
+
+/**
+ * Worked examples grouped by what they exercise, from single-clause basics
+ * up to composite real-world queries and deliberately-invalid ones (so the
+ * error-message behavior is documented, not just the happy path).
+ */
+export const EXAMPLE_CATEGORIES: ExampleCategory[] = [
   {
-    query: 'status != "Done" AND assignee = currentUser() ORDER BY updated DESC',
-    description: "Your own open work, most recently updated first.",
+    category: "Basic comparisons",
+    examples: [
+      { query: 'status = "Done"', description: "Exact status match." },
+      { query: 'status != "Done"', description: "Everything except one status." },
+      { query: 'priority = "HIGH"', description: "Exact priority match." },
+      { query: "assignee = currentUser()", description: "Assigned to the logged-in user." },
+      { query: "reporter = currentUser()", description: "Reported by the logged-in user." },
+      { query: 'type = "BUG"', description: "Exact work-item type match." },
+      { query: 'key = "QT-1"', description: "A single work item by key." },
+    ],
   },
   {
-    query: 'project = "<project id>" AND priority IN ("HIGH", "HIGHEST")',
-    description: "High-priority work in a specific project.",
+    category: "IN / NOT IN",
+    examples: [
+      { query: 'status IN ("To Do", "In Progress")', description: "Matches any of several statuses." },
+      { query: 'status NOT IN ("Done")', description: "Excludes one or more statuses." },
+      { query: 'priority IN ("HIGH", "HIGHEST")', description: "Either of the two highest priorities." },
+      { query: 'type IN ("BUG", "TASK", "STORY")', description: "Any of three work-item types." },
+      { query: 'type NOT IN ("SUBTASK")', description: "Everything except subtasks." },
+    ],
   },
   {
-    query: 'created >= startOfWeek() AND type != "SUBTASK"',
-    description: "Everything created so far this week, excluding subtasks.",
+    category: "IS EMPTY / IS NOT EMPTY",
+    examples: [
+      { query: "assignee IS EMPTY", description: "Unassigned work." },
+      { query: "assignee IS NOT EMPTY", description: "Assigned to someone." },
+      { query: "resolution IS EMPTY", description: "Unresolved work." },
+      { query: "resolution IS NOT EMPTY", description: "Resolved work, any resolution." },
+      { query: "due IS EMPTY", description: "No due date set." },
+      { query: "attachments IS EMPTY", description: "No files attached." },
+      { query: "attachments IS NOT EMPTY", description: "Has at least one attachment." },
+    ],
   },
   {
-    query: "assignee IS EMPTY AND resolution IS EMPTY",
-    description: "Unassigned, unresolved work — a common triage view.",
+    category: "Text search",
+    examples: [
+      { query: 'summary ~ "login"', description: 'Summary contains "login".' },
+      { query: 'summary !~ "login"', description: 'Summary does not contain "login".' },
+      { query: 'description ~ "timeout"', description: 'Description contains "timeout".' },
+      { query: 'text ~ "checkout"', description: "Searches title, description, and key at once." },
+    ],
   },
   {
-    query: 'cf["Customer Tier"] = "Gold" AND status != "Done"',
-    description: 'Open work where the "Customer Tier" custom field is "Gold".',
+    category: "Dates — literal and relative",
+    examples: [
+      { query: 'created >= "2026-01-01"', description: "Created on/after a fixed ISO date." },
+      { query: "created >= startOfWeek()", description: "Created since the start of this week." },
+      { query: "created >= startOfMonth()", description: "Created since the start of this month." },
+      { query: "created >= startOfYear()", description: "Created since the start of this year." },
+      { query: "due <= endOfDay()", description: "Due today or earlier." },
+      { query: 'due <= endOfDay("3")', description: "Due within the next 3 days." },
+      { query: 'updated >= startOfDay("-7")', description: "Updated in the last 7 days." },
+      {
+        query: "created >= startOfMonth() AND created <= endOfMonth()",
+        description: "Created within the current month, bounded on both ends.",
+      },
+    ],
   },
   {
-    query: 'summary ~ "login" OR description ~ "login"',
-    description: "Free-text search across summary and description independently.",
+    category: "AND / OR / NOT / grouping",
+    examples: [
+      { query: 'status = "Done" AND assignee = currentUser()', description: "Both conditions must hold." },
+      { query: 'status = "Done" OR status = "Resolved"', description: "Either condition holds." },
+      {
+        query: '(status = "Done" OR status = "Resolved") AND assignee = currentUser()',
+        description: "Parentheses group the OR before ANDing with assignee.",
+      },
+      { query: 'NOT (priority = "LOW" OR priority = "LOWEST")', description: "Negates an entire group." },
+      { query: 'NOT (status = "Done")', description: "Negates a single parenthesized clause." },
+      {
+        query: "((status != \"Done\") AND (assignee IS EMPTY OR reporter = currentUser()))",
+        description: "Nested groups for more complex logic.",
+      },
+    ],
   },
   {
-    query: 'due <= endOfDay("3") AND resolution IS EMPTY',
-    description: "Unresolved work due within the next 3 days.",
+    category: "ORDER BY",
+    examples: [
+      { query: "ORDER BY updated DESC", description: "Sort only, no filter — most recently updated first." },
+      { query: "ORDER BY created DESC", description: "Newest first." },
+      { query: 'status != "Done" ORDER BY priority DESC', description: "Filter, then sort by one field." },
+      {
+        query: 'status != "Done" ORDER BY priority DESC, updated DESC',
+        description: "Sort by multiple fields — priority first, then updated as a tiebreaker.",
+      },
+      { query: "ORDER BY key ASC", description: "Ascending sort (the default direction if omitted)." },
+    ],
   },
   {
-    query: 'labels = "urgent"',
-    description:
-      'Will error — "labels" has no native column. If this org has a Labels-type custom field, use cf["Labels"] = "urgent" instead.',
+    category: 'Custom fields — cf[...]',
+    examples: [
+      { query: 'cf["Customer Tier"] = "Gold"', description: "Custom field matched by name." },
+      { query: 'cf["Customer Tier"] != "Gold"', description: "Custom field, negated." },
+      { query: 'cf[42] = "Gold"', description: "Custom field matched by its id instead of name." },
+      { query: 'cf["Customer Tier"] IN ("Gold", "Silver")', description: "Custom field with a value list." },
+      { query: 'cf["Customer Tier"] IS EMPTY', description: "Custom field has no value set." },
+      { query: 'cf["Story Points Estimate"] > 5', description: "Numeric comparison on a Number-type custom field." },
+      { query: 'cf["Story Points Estimate"] >= 3', description: "Inclusive numeric comparison." },
+      { query: 'cf["Due Reminder"] < "2026-12-31"', description: "Date comparison on a Date-type custom field." },
+    ],
+  },
+  {
+    category: "Relationship fields",
+    examples: [
+      { query: 'parent = "QT-10"', description: "Subtasks of a specific parent issue." },
+      { query: 'sprint = "sprint-id-or-name"', description: "Work items in a specific sprint." },
+      { query: 'workItemLink IN ("blocks")', description: "Work items linked with a given link type." },
+    ],
+  },
+  {
+    category: "Real-world composite queries",
+    examples: [
+      {
+        query: 'status != "Done" AND assignee = currentUser() ORDER BY updated DESC',
+        description: "Your own open work, most recently updated first.",
+      },
+      { query: "assignee IS EMPTY AND resolution IS EMPTY", description: "Unassigned, unresolved work — a common triage view." },
+      { query: "reporter = currentUser() AND created >= startOfMonth()", description: "Things you reported this month." },
+      {
+        query: 'priority IN ("HIGH", "HIGHEST") AND resolution IS EMPTY ORDER BY priority DESC',
+        description: "Unresolved high-priority work, most urgent first.",
+      },
+      {
+        query: 'type != "SUBTASK" AND (summary ~ "crash" OR description ~ "crash")',
+        description: 'Non-subtask work mentioning "crash" in either field.',
+      },
+      {
+        query: 'cf["Customer Tier"] = "Gold" AND status != "Done" AND assignee IS NOT EMPTY',
+        description: "Open, assigned work for Gold-tier customers.",
+      },
+    ],
+  },
+  {
+    category: "Deliberately invalid — confirms error handling",
+    examples: [
+      { query: "status =", description: "Dangling operator with no value — a clear parse error." },
+      {
+        query: '(status = "Done" AND assignee = currentUser()',
+        description: "Unmatched opening parenthesis.",
+      },
+      { query: 'status NOT = "Done"', description: '"NOT" must be followed by "IN", not another operator.' },
+      {
+        query: 'labels = "urgent"',
+        description:
+          'Errors — "labels" has no native column. If this org has a Labels-type custom field, use cf["Labels"] = "urgent" instead.',
+      },
+      { query: 'cf["Nonexistent Field"] = "x"', description: "Errors clearly when the custom field name doesn't exist." },
+      { query: 'status > "Done"', description: "Errors — status only supports =, !=, IN, NOT IN, IS EMPTY, IS NOT EMPTY." },
+    ],
   },
 ];

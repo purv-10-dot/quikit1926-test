@@ -8,8 +8,8 @@ import {
   OPERATORS,
   KEYWORDS,
   FUNCTIONS,
-  EXAMPLES,
 } from "./tql-help-meta";
+import { TqlExamplesSection } from "./tql-examples-section";
 
 const th = "text-left text-xs font-semibold uppercase tracking-wide text-gray-500 px-3 py-2 border-b border-gray-200";
 const td = "text-sm text-gray-700 px-3 py-2 border-b border-gray-100 align-top";
@@ -175,17 +175,7 @@ export default function TqlHelpSettingsPage() {
           </div>
         </section>
 
-        <section className="mt-8 mb-10">
-          <h2 className="text-lg font-semibold text-gray-900">Examples</h2>
-          <ul className="mt-2 space-y-3">
-            {EXAMPLES.map((ex) => (
-              <li key={ex.query} className="rounded border border-gray-200 p-3">
-                <pre className="text-xs font-mono bg-gray-50 rounded p-2 overflow-x-auto">{ex.query}</pre>
-                <p className="mt-1.5 text-xs text-gray-600">{ex.description}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <TqlExamplesSection />
       </div>
     </RequirePerm>
   );
