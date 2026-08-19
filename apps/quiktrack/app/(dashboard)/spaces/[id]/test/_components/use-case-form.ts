@@ -171,19 +171,26 @@ export function useCaseForm({
     };
   }, [open, caseId, isEdit, templateList]);
 
-  /** Returns true on success. */
-  const save = async (): Promise<boolean> => {
+/**
+   * Result of a save. `caseId` is the case's id on ANY success (create or edit) —
+   * callers that need to act on a freshly-created case (e.g. linking coverage,
+   * QUIKTR-341) read it off a create; edit callers can ignore it since they
+   * already hold the id.
+   */
+  const save = async (): Promise<{ ok: boolean; caseId: string | null }> => {
+    const fail = (): { ok: false; caseId: null } => ({ ok: false, caseId: null });
+
     if (!title.trim()) {
       setError("A title is required.");
-      return false;
+      return fail();
     }
     if (!isEdit && !sectionId) {
       setError("Choose a folder for this case first.");
-      return false;
+      return fail();
     }
     if (estimateError) {
       setError(estimateError);
-      return false;
+      return fail();
     }
 
     setSaving(true);
@@ -229,15 +236,19 @@ export function useCaseForm({
           body: JSON.stringify(payload),
         },
       );
-      const json = (await res.json()) as { success: boolean; error?: string };
+      const json = (await res.json()) as {
+        success: boolean;
+        error?: string;
+        data?: { id: string };
+      };
       if (!json.success) {
         setError(json.error ?? "Could not save this case.");
-        return false;
+        return fail();
       }
-      return true;
+      return { ok: true, caseId: isEdit ? caseId : (json.data?.id ?? null) };
     } catch {
       setError("Could not save this case.");
-      return false;
+      return fail();
     } finally {
       setSaving(false);
     }

@@ -35,6 +35,14 @@ interface NewRunPanelProps {
   onClose: () => void;
   projectId: string;
   onCreated: () => void;
+  /**
+   * Pre-fills References on open — set when this panel was opened via
+   * "QuikTest: Runs" on a work item (QUIKTR-341). Runs have no structured
+   * Coverage relation (only cases do), so References — the same free-text
+   * mechanism cases already use for "mentioned in another tracker" — is the
+   * closest existing association. Still a plain editable field, not a link.
+   */
+  prefillRefTickets?: string;
 }
 
 export function NewRunPanel({
@@ -42,6 +50,7 @@ export function NewRunPanel({
   onClose,
   projectId,
   onCreated,
+  prefillRefTickets,
 }: NewRunPanelProps) {
   const router = useRouter();
   const { data: suites } = useApiData<SuiteLite[]>(
@@ -82,11 +91,11 @@ export function NewRunPanel({
     setEnvironment("");
     setStartDate("");
     setEndDate("");
-    setRefTickets("");
+    setRefTickets(prefillRefTickets ?? "");
     setIncludeDrafts(false);
     setMode("suite");
     setPicked(new Set());
-  }, [open]);
+  }, [open, prefillRefTickets]);
 
   // Switching suite invalidates the selection — those case ids belong to the
   // suite that was open when they were ticked.

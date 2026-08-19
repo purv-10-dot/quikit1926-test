@@ -1,6 +1,7 @@
 "use client";
 
 import { SlidePanel } from "@quikit/ui";
+import { PanelFooter } from "@/components/test/panel-footer";
 import { CASE_FILTERS } from "@/lib/test/caseFilters";
 import { FilterField } from "./filter-field";
 import { useFilterSources } from "./use-filter-sources";
@@ -52,7 +53,17 @@ export function CaseFilterPanel({
           : "No filters applied"
       }
       footer={
-        <div className="flex items-center justify-between">
+        // Left-aligned with a reserved right gutter — the floating support-chat
+        // bubble sits over the panel's bottom-right corner and cannot be
+        // restyled or moved (it is an external widget). See PanelFooter.
+        <PanelFooter>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700"
+          >
+            Done
+          </button>
           <button
             type="button"
             onClick={onClearAll}
@@ -61,14 +72,7 @@ export function CaseFilterPanel({
           >
             Clear all
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700"
-          >
-            Done
-          </button>
-        </div>
+        </PanelFooter>
       }
     >
       <div className="space-y-4">

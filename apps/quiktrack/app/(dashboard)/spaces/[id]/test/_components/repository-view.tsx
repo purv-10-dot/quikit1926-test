@@ -23,6 +23,7 @@ import { useSuitePrompt } from "./use-suite-prompt";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
 import { useCasePanels } from "./use-case-panels";
+import { useLinkIssueDeeplink } from "./use-link-issue-deeplink";
 import { DEFAULT_CASE_COLUMNS, type CaseColumnKey } from "./case-meta";
 
 /**
@@ -145,6 +146,13 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   // active suite so the button works straight after suite creation.
   const targetSectionId =
     activeSectionId ?? activeSuite?.sections[0]?.id ?? null;
+
+  // "QuikTest: Cases" opened from a work item (QUIKTR-341) — auto-open "New test
+  // case" pre-linked to it, once a destination folder is resolvable.
+  useLinkIssueDeeplink({
+    ready: !suitesLoading && targetSectionId !== null,
+    onOpen: (link) => openCreate(link),
+  });
 
   return (
     <div className="flex h-full flex-col">
@@ -297,6 +305,7 @@ export function RepositoryView({ projectId }: { projectId: string }) {
         sectionId={targetSectionId}
         projectId={projectId}
         onSaved={refresh}
+        linkToIssue={panels.linkToIssue}
       />
 
       <NamePromptPanel

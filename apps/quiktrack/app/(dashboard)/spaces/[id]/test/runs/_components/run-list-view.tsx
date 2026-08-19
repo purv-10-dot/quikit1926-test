@@ -17,6 +17,7 @@ import { EditRunPanel } from "./edit-run-panel";
 import { NewRunPanel } from "./new-run-panel";
 import { RunRow } from "./run-row";
 import type { RunRow as RunRowData } from "./run-types";
+import { useLinkIssueRunDeeplink } from "./use-link-issue-run-deeplink";
 
 /**
  * Runs list, grouped by lifecycle (QUIKTR-338).
@@ -37,6 +38,15 @@ export function RunListView({ projectId }: { projectId: string }) {
   const canClose = perms.loading || perms.has("TestRun", "update");
 
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Seeded from "QuikTest: Runs" on a work item (QUIKTR-341); see the hook below. */
+  const [prefillRefTickets, setPrefillRefTickets] = useState<string | undefined>();
+
+  useLinkIssueRunDeeplink({
+    onOpen: (issueKey) => {
+      setPrefillRefTickets(issueKey);
+      setPanelOpen(true);
+    },
+  });
   /** The run being edited; null closes the edit panel. */
   const [editingRun, setEditingRun] = useState<RunRowData | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
@@ -240,11 +250,15 @@ export function RunListView({ projectId }: { projectId: string }) {
 
       <NewRunPanel
         open={panelOpen}
-        onClose={() => setPanelOpen(false)}
+        onClose={() => {
+          setPanelOpen(false);
+          setPrefillRefTickets(undefined);
+        }}
         projectId={projectId}
         onCreated={() => {
           void queryClient.invalidateQueries({ queryKey: runsKey });
         }}
+        prefillRefTickets={prefillRefTickets}
       />
 
       <EditRunPanel
