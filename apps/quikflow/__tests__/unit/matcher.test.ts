@@ -28,4 +28,13 @@ describe("matchWorkflows", () => {
     expect(where?.status).toBe("Active");
     expect(matched.map((m) => m.id)).toEqual(["wf1"]);
   });
+
+  it("excludes soft-deleted workflows so a deleted automation never fires again", async () => {
+    mockDb.wfWorkflow.findMany.mockResolvedValue([]);
+
+    await matchWorkflows(event);
+
+    const where = mockDb.wfWorkflow.findMany.mock.calls[0][0]?.where;
+    expect(where?.deletedAt).toBeNull();
+  });
 });

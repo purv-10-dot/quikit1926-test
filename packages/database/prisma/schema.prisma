@@ -30,6 +30,7 @@ model App {
   cnAppRoles       CnAppRole[]
   qsAppRoles       QsAppRole[]
   qcAppRoles       QcAppRole[]
+  wfAppRoles       WfAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClients     OAuthClient[]
@@ -276,6 +277,8 @@ model Org {
   qcAppRoles               QcAppRole[]
   qcUserAppRoles           QcUserAppRole[]
   qcUserPermissionExtras   QcUserPermissionExtra[]
+  wfAppRoles               WfAppRole[]
+  wfUserAppRoles           WfUserAppRole[]
   vcApplications           VCApplication[]
   vcAuditLogs              VCAuditLog[]
   vcCapitalCalls           VCCapitalCall[]
@@ -485,6 +488,7 @@ model User {
   lmsUserAppRoles         LmsUserAppRole[]
   lmsPermissionExtras     LmsUserPermissionExtra[]
   qcPermissionExtras      QcUserPermissionExtra[]
+  wfUserAppRoles          WfUserAppRole[]
   cnUserProfiles          CnUserProfile[]
   cnUserProjectAccess     CnUserProjectAccess[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -25044,9 +25048,14 @@ model WfWorkflow {
   graphEdges Json          @default("[]") // edges incl. branch labels
   version    Int           @default(1)
   lastRunAt  DateTime?
+  // Outcome of the most recent run, so the Workflows list can flag a workflow
+  // that's silently failing on every trigger — WfStatus (Draft/Active/Paused/
+  // Archived) tracks whether it's *enabled*, not whether it's *working*.
+  lastRunStatus WfRunStatus?
   createdBy  String
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime? // soft-delete (recoverable); null = active. Filter this out of every read.
   runs       WfRun[]
   versions   WfVersion[]
   schedules  WfSchedule[]
@@ -25056,6 +25065,7 @@ model WfWorkflow {
   @@index([orgId, app])
   @@index([orgId, scope])
   @@index([orgId, ownerId])
+  @@index([orgId, deletedAt])
   @@schema("app_quikflow")
 }
 
@@ -25245,6 +25255,65 @@ model WfTemplate {
 
   @@index([app])
   @@index([category])
+  @@schema("app_quikflow")
+}
+
+/// App-wide role for QuikFlow RBAC v2 (Roles & Permissions). Org-scoped;
+/// "admin" is seeded as isSystem so it can't be renamed/deleted.
+model WfAppRole {
+  id          String             @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean            @default(false)
+  isDefault   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdBy   String?
+  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions WfRolePermission[]
+  members     WfUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikflow")
+}
+
+/// User → WfAppRole assignment. One role per user per org (per app).
+model WfUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       WfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikflow")
+}
+
+/// (resource, action) grant on a WfAppRole. `resource` is a dot-namespaced
+/// key from permissionsRegistry.ts's PERMISSION_TREE (e.g. "Workflows",
+/// "Connections", "Approvals"); `action` is one of view/create/update/delete.
+model WfRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     WfAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
   @@schema("app_quikflow")
 }
 
@@ -25529,6 +25598,8 @@ model QcMeeting {
   description      String?
   location         String?
   allDay           Boolean             @default(false)
+  location         String?
+  allDay           Boolean             @default(false)
   start            DateTime // stored UTC; rendered local client-side
   end              DateTime
   joinUrl          String? // conferencing (Meet) link, if requested
@@ -25551,6 +25622,7 @@ model QcMeetingAttendee {
   userId    String
   email     String
   rsvp      String    @default("needs_action") // needs_action | accepted | declined | tentative
+  optional  Boolean   @default(false) // Graph attendee type: false=required, true=optional
   optional  Boolean   @default(false) // Graph attendee type: false=required, true=optional
   meeting   QcMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 

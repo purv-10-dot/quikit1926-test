@@ -3,7 +3,8 @@
  * (users.messages.send, users.messages.list/get). No `googleapis` dependency:
  * everything is a plain fetch, matching the lean engine.
  *
- * Env: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (OAuth 2.0 Web client).
+ * Env: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (OAuth 2.0 Web client) — shared
+ * with the rest of the monorepo's Google OAuth client (see .env.example).
  * Inbound watermark (`cursor`) = the newest message's internalDate in epoch
  * SECONDS, which Gmail search accepts directly via `after:<unix>`.
  */

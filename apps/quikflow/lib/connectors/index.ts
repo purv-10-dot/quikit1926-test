@@ -9,6 +9,7 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import { GMAIL } from "./gmail";
 import { OUTLOOK } from "./microsoft";
 import { TEAMS } from "./teams";
+import { CalendarEventNotFoundError } from "./types";
 import type {
   CalendarEventInput,
   CalendarEventResult,
@@ -444,17 +445,38 @@ export async function createCalendarEventForOrg(
     }
 
     if (claim.mode === "existing") {
-      const updated = await found.provider.updateEvent(accessToken, claim.row.externalEventId, payload);
-      await db.wfCalendarLink.update({
-        where: { id: claim.row.id },
-        data: {
-          connectionId: found.conn.id,
-          provider: found.conn.provider as never,
-          webLink: updated.webLink ?? null,
-          joinUrl: updated.joinUrl ?? null,
-        },
-      });
-      return { ...updated, organizer: found.conn.label, updated: true };
+      try {
+        const updated = await found.provider.updateEvent(accessToken, claim.row.externalEventId, payload);
+        await db.wfCalendarLink.update({
+          where: { id: claim.row.id },
+          data: {
+            connectionId: found.conn.id,
+            provider: found.conn.provider as never,
+            webLink: updated.webLink ?? null,
+            joinUrl: updated.joinUrl ?? null,
+          },
+        });
+        return { ...updated, organizer: found.conn.label, updated: true };
+      } catch (e) {
+        // Stale link: the stored event id no longer exists on the connected
+        // calendar (deleted manually, or orphaned by a Teams reconnect since
+        // this link was created). Self-heal by recreating the event and
+        // re-pointing the link at the new id, instead of failing every run
+        // forever on a dead reference.
+        if (!(e instanceof CalendarEventNotFoundError)) throw e;
+        const recreated = await found.provider.createEvent(accessToken, payload);
+        await db.wfCalendarLink.update({
+          where: { id: claim.row.id },
+          data: {
+            connectionId: found.conn.id,
+            provider: found.conn.provider as never,
+            externalEventId: recreated.id,
+            webLink: recreated.webLink ?? null,
+            joinUrl: recreated.joinUrl ?? null,
+          },
+        });
+        return { ...recreated, organizer: found.conn.label, updated: false };
+      }
     }
 
     // claim.mode === "claimed" — we alone own creating this event.
