@@ -107,7 +107,7 @@ export function useCaseSelection({
     [effective, projectId, onDone],
   );
 
-  return {
+  const api = {
     selectedIds: selected,
     count: effective.length,
     allSelected: visibleIds.length > 0 && effective.length === visibleIds.length,
@@ -121,5 +121,30 @@ export function useCaseSelection({
     clear,
     deleteSelected: () => run("delete"),
     restoreSelected: () => run("restore"),
+  };
+
+  return {
+    ...api,
+    /**
+     * The exact shape `CaseTable` wants, so the caller does not restate twelve
+     * fields inline. `enabled` is the permission gate: pass false and the table
+     * renders no checkboxes at all rather than controls that fail on click.
+     */
+    tableProps: (opts: { enabled: boolean; mode: "live" | "deleted" }) =>
+      opts.enabled
+        ? {
+            selectedIds: api.selectedIds,
+            count: api.count,
+            allSelected: api.allSelected,
+            someSelected: api.someSelected,
+            busy: api.busy,
+            mode: opts.mode,
+            onToggle: api.toggle,
+            onToggleAll: api.toggleAll,
+            onDelete: api.deleteSelected,
+            onRestore: api.restoreSelected,
+            onClear: api.clear,
+          }
+        : undefined,
   };
 }

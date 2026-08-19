@@ -12,6 +12,8 @@ import {
 } from "./case-meta";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { CaseCell } from "./case-row-cells";
+import { CaseTitleCell } from "./case-title-cell";
+import type { InlinePatch } from "./inline-cell-types";
 import { ColumnsMenu } from "./columns-menu";
 import { TriCheckbox } from "../runs/_components/tri-checkbox";
 
@@ -38,6 +40,14 @@ interface CaseTableProps {
   projectId: string;
   columns: CaseColumnKey[];
   onColumns: (next: CaseColumnKey[]) => void;
+  /**
+   * Inline (grid) editing. Omit to render read-only cells — a viewer gets no edit
+   * affordances at all rather than controls that fail on click.
+   *
+   * These edits deliberately do NOT bump the case version: see
+   * `lib/services/testCaseInline.ts`.
+   */
+  onInlineEdit?: (caseId: string, patch: InlinePatch) => Promise<boolean>;
   /**
    * Bulk selection. Omit to render no checkboxes at all — the column only appears
    * for users who can actually delete, so a read-only viewer gets no dead controls.
@@ -104,6 +114,7 @@ export function CaseTable({
   projectId,
   columns,
   onColumns,
+  onInlineEdit,
   selection,
 }: CaseTableProps) {
   // Forecast over the rows on screen. Stated as such in the footer: it covers
@@ -243,15 +254,21 @@ export function CaseTable({
                   {caseRef(row.refId)}
                 </td>
                 <td className="px-4 py-2">
-                  <span className="text-gray-900 hover:underline">{row.title}</span>
-                  {row.currentVersion > 1 && (
-                    <span className="ml-2 text-[11px] text-gray-400">
-                      v{row.currentVersion}
-                    </span>
-                  )}
+                  <CaseTitleCell
+                    caseId={row.id}
+                    title={row.title}
+                    currentVersion={row.currentVersion}
+                    onInlineEdit={onInlineEdit}
+                  />
                 </td>
                 {shown.map((c) => (
-                  <CaseCell key={c.key} column={c.key} row={row} meanMs={meanMs} />
+                  <CaseCell
+                    key={c.key}
+                    column={c.key}
+                    row={row}
+                    meanMs={meanMs}
+                    onInlineEdit={onInlineEdit}
+                  />
                 ))}
               </tr>
             ))}

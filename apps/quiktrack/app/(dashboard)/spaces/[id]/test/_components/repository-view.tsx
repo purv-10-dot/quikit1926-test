@@ -15,6 +15,7 @@ import { ImportCasesPanel } from "./import-cases-panel";
 import { BulkNotice } from "./bulk-notice";
 import { RepositoryHeader } from "./repository-header";
 import { useCaseSelection } from "./use-case-selection";
+import { useInlineEdit } from "./use-inline-edit";
 import { useSuitePrompt } from "./use-suite-prompt";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
@@ -59,6 +60,9 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   // NOT `perms.loading ||` — unlike a read affordance, a destructive control must
   // not appear optimistically while permissions are still loading.
   const canDelete = !perms.loading && perms.has("TestCase", "delete");
+  // Inline editing writes, so like delete it must not appear optimistically while
+  // permissions are still loading.
+  const canEdit = !perms.loading && perms.has("TestCase", "update");
 
   const [activeSuiteId, setActiveSuiteId] = useState<string | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
@@ -122,6 +126,8 @@ export function RepositoryView({ projectId }: { projectId: string }) {
     void queryClient.invalidateQueries({ queryKey: suitesKey });
   };
 
+  const inline = useInlineEdit({ onSaved: refresh });
+
   const caseRows = cases?.items ?? [];
   const selection = useCaseSelection({
     projectId,
@@ -178,13 +184,19 @@ export function RepositoryView({ projectId }: { projectId: string }) {
 
       <BulkNotice
         notice={selection.notice}
-        error={selection.error}
+        // A failed inline edit reuses this banner rather than inventing a second
+        // error surface. Selection errors take precedence — they follow an explicit
+        // bulk action, so they are the more urgent of the two.
+        error={selection.error ?? inline.error}
         showingDeleted={showDeleted}
         onViewDeleted={() => {
           setShowDeleted(true);
           selection.dismissNotice();
         }}
-        onDismiss={selection.dismissNotice}
+        onDismiss={() => {
+          selection.dismissNotice();
+          inline.dismissError();
+        }}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -249,25 +261,15 @@ export function RepositoryView({ projectId }: { projectId: string }) {
               onColumns={setColumns}
               canCreate={canCreate}
               onCreate={openCreate}
+              // Inline edit needs Issue-style update rights, and is pointless in the
+              // deleted view (you restore a case before editing it).
+              onInlineEdit={canEdit && !showDeleted ? inline.save : undefined}
               // Checkboxes only for users who can actually delete — a read-only
               // viewer gets no dead controls.
-              selection={
-                canDelete
-                  ? {
-                      selectedIds: selection.selectedIds,
-                      count: selection.count,
-                      allSelected: selection.allSelected,
-                      someSelected: selection.someSelected,
-                      busy: selection.busy,
-                      mode: showDeleted ? "deleted" : "live",
-                      onToggle: selection.toggle,
-                      onToggleAll: selection.toggleAll,
-                      onDelete: selection.deleteSelected,
-                      onRestore: selection.restoreSelected,
-                      onClear: selection.clear,
-                    }
-                  : undefined
-              }
+              selection={selection.tableProps({
+                enabled: canDelete,
+                mode: showDeleted ? "deleted" : "live",
+              })}
               // QUIKTR-336 — a row click now READS the case. Editing is an
               // explicit action from the detail panel: opening the editor to look
               // at a case invited a pointless version bump, since every save mints
