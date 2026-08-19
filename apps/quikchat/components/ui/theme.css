@@ -3563,6 +3563,212 @@ body {
   margin-top: 8px;
 }
 
+/* ============================================================================
+ * Approval card (Phase 3) — one card, two hosts.
+ *
+ * `.qc-approval` is host-agnostic on purpose: it renders identically inside the
+ * live-turn bubble (`.qc-assist-approval`, below) and inside the Activity
+ * section (`.qc-approvals`). Only the wrapper differs, which is the CSS half of
+ * "one component, two sources".
+ *
+ * Risk drives the accent via `data-risk`, and the SELECTORS ARE EXHAUSTIVE over
+ * the known union with high risk as the base rule — so a class this stylesheet
+ * has never heard of inherits the high-risk treatment rather than falling back
+ * to an unstyled (and therefore mild-looking) card. Same rule as the adapter's
+ * normalisation, enforced a second time here because a `data-risk` value that
+ * matched no selector would silently undo it.
+ * ========================================================================== */
+
+.qc-approval {
+  border: 0.5px solid var(--qc-border-strong);
+  border-left: 3px solid var(--qc-danger);
+  border-radius: var(--qc-r-md);
+  background: var(--qc-surface);
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.qc-approval[data-risk="soft_write"] {
+  border-left-color: var(--qc-accent);
+}
+.qc-approval[data-risk="medium_write"] {
+  border-left-color: var(--qc-warn);
+}
+/* Terminal rows read as history, not as something awaiting an answer. */
+.qc-approval:not([data-status="pending"]) {
+  background: var(--qc-surface-2);
+  border-left-color: var(--qc-border-strong);
+}
+.qc-approval__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.qc-approval__risk {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--qc-danger);
+}
+.qc-approval[data-risk="soft_write"] .qc-approval__risk {
+  color: var(--qc-accent);
+}
+.qc-approval[data-risk="medium_write"] .qc-approval__risk {
+  color: var(--qc-warn);
+}
+/* Which app is about to change — always visible, never behind the expander. */
+.qc-approval__app {
+  padding: 1px 6px;
+  border-radius: var(--qc-r-pill);
+  background: var(--qc-bg);
+  border: 0.5px solid var(--qc-border);
+  color: var(--qc-text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.qc-approval__expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  color: var(--qc-text-2);
+}
+.qc-approval__expiry[data-expired="true"] {
+  color: var(--qc-danger);
+  font-weight: 600;
+}
+.qc-approval__summary {
+  font-size: 13px;
+  color: var(--qc-text);
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* The ledger carries no summary, so this is the tool's raw name standing in —
+   marked as machine text so it never reads as a sentence we wrote. */
+.qc-approval__summary--fallback code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.qc-approval__note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--qc-text-2);
+  margin: 6px 0 0;
+}
+.qc-approval__details {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.qc-approval__details > summary {
+  cursor: pointer;
+  color: var(--qc-text-2);
+  user-select: none;
+}
+.qc-approval__kv {
+  margin: 6px 0 0;
+  display: grid;
+  gap: 2px;
+}
+.qc-approval__kvrow {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.qc-approval__kv dt {
+  color: var(--qc-text-2);
+  /* Keys are the target app's own naming and are rendered exactly as received —
+     no text-transform, no capitalize. A CSS rule is as capable of "normalising"
+     an interior key as a JS one, and would be harder to spot. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  flex-shrink: 0;
+}
+.qc-approval__kv dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+.qc-approval__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.qc-approval__outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--qc-text-2);
+}
+.qc-approval__err {
+  font-size: 12px;
+  color: var(--qc-danger);
+  margin: 6px 0 0;
+}
+
+/* Live-turn host: the assistant bubble that carries the card. */
+.qc-assist-approval {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 12px 8px;
+}
+.qc-assist-approval__body {
+  flex: 1;
+  min-width: 0;
+}
+.qc-assist-approval__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qc-assist-approval__name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.qc-assist-approval__dismiss {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+/* Activity host: the "Your approvals" section. Scroll-capped so a long ledger
+   cannot push the notification feed below the fold — this section sits ABOVE
+   the feed's search and filters (it is not subject to them) and must not grow
+   without bound there. */
+.qc-approvals {
+  padding: 0 12px 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+.qc-approvals__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--qc-text-2);
+  margin: 4px 0 0;
+}
+.qc-approvals__err {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--qc-danger);
+}
+.qc-approvals__more {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--qc-text-2);
+}
+
 /* "New messages" pill — appears when an incoming message lands while scrolled up. */
 .qc-new-messages {
   position: sticky;

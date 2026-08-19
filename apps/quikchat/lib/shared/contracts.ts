@@ -192,6 +192,225 @@ export interface AssistSource {
   snippet: string;
 }
 
+/**
+ * How dangerous the proposed write is, as classified by the runtime.
+ *
+ * ⚠️ **AN UNRECOGNISED VALUE MUST BE TREATED AS THE HIGHEST RISK.** This union
+ * exists for consumer DX and is deliberately **NOT** validated at runtime: the
+ * runtime may add a fourth class before this type learns about it, and rejecting
+ * an entire write proposal because of an unfamiliar label is a worse outcome
+ * than rendering it conservatively. So a value outside this union will reach the
+ * UI — whatever renders the approval card must default unknown to the
+ * most-restrictive treatment (explicit confirmation, no one-click accept), never
+ * to `soft_write`.
+ *
+ * Stated here rather than only in the card's brief, because the card is where
+ * it would be forgotten.
+ */
+export type AssistRiskClass = "soft_write" | "medium_write" | "high_risk";
+
+/**
+ * A write the assistant proposes but will not perform without human approval.
+ *
+ * Arrives on the assist SSE stream as `{ type: "approval_needed", ... }` and is
+ * **terminal** — one per stream, then the stream closes, exactly like `done` and
+ * `error`.
+ *
+ * Single source of truth: both the runtime seam (`lib/server/runtime/types.ts`)
+ * and the client reader (`lib/assist-client.ts`) import this. It previously
+ * existed as a payload-less placeholder on the server and nothing on the client,
+ * which is two descriptions of one frame waiting to drift.
+ *
+ * Field names are frozen camelCase, per the runtime contract.
+ */
+export interface AssistApprovalRequest {
+  /** Runtime-owned id for this pending request. The only field we hard-require. */
+  requestId: string;
+  /** Which app the write targets, e.g. "quiktrack". */
+  appId: string;
+  /** The tool the assistant wants to run, e.g. "create_issue". */
+  toolName: string;
+  riskClass: AssistRiskClass;
+  /**
+   * Human-readable description of the proposed write, composed by the runtime.
+   * Passed through UNTOUCHED — never interpreted, truncated or reformatted.
+   */
+  summary: string;
+  /**
+   * The tool's arguments. Arbitrary by design and typed loosely on purpose: we
+   * relay it, we do not read it.
+   */
+  toolInput: Record<string, unknown>;
+  /** ISO instant after which the request can no longer be approved. */
+  expiresAt: string;
+}
+
+/**
+ * One row from the runtime's approval ledger (`GET /ai/requests`).
+ *
+ * ── THREE THINGS THAT ARE EASY TO GET WRONG ────────────────────────────────
+ *
+ * 1. `toolInput` / `proposedOutput` / `result` are **NOT camelCased inside.**
+ *    The KEY is camelCase; the OBJECT is the target app's own argument naming
+ *    (`projectId`, `assigneeId`, whatever QuikTrack calls things). They are
+ *    relayed byte-identical — never normalised, never reshaped — and typed no
+ *    deeper than `Record<string, unknown>` on purpose. Typing the interior would
+ *    be inventing a contract we do not own.
+ *
+ * 2. `mode` is **dead**. It is always `'copilot'` and carries no information.
+ *    Typed so the payload round-trips honestly, and deliberately never surfaced
+ *    or filtered on. Do not build a mode switch on it.
+ *
+ * 3. The list returns **terminal rows, not just pending** — `expired`,
+ *    `rejected`, `executed` and `failed` from the last 24h, alongside all
+ *    pending. Every row carries `status`, so one payload renders live and dead
+ *    cards together. Filtering to `pending` in a consumer would reinstate the
+ *    trace gap this change exists to close: a write that expired unactioned
+ *    would vanish rather than showing as expired.
+ *
+ * `riskClass` reuses `AssistRiskClass` — see its note: an unrecognised value
+ * must be treated as the HIGHEST risk, never as `soft_write`.
+ */
+export interface AssistApprovalRow {
+  id: string;
+  orgId: string;
+  userId: string;
+  appId: string;
+  useCase: string;
+  toolName: string;
+  /** Target app's own argument names. Pass through untouched. */
+  toolInput: Record<string, unknown>;
+  /** Target app's own shape. Pass through untouched. */
+  proposedOutput: Record<string, unknown> | null;
+  riskClass: AssistRiskClass;
+  /** Always "copilot". Dead field — never surface or filter on it. */
+  mode: string;
+  status: AssistApprovalStatus;
+  decisionBy: string | null;
+  decisionAt: string | null;
+  executedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  error: string | null;
+  traceId: string | null;
+  /** Present once executed. Target app's own shape; pass through untouched. */
+  result?: Record<string, unknown> | null;
+  /**
+   * The runtime's own sentence for what HAPPENED — "Created QTRK-903". Generated
+   * deterministically (no LLM) and persisted on the row, so it is identical from
+   * the list, the fetch-one and the approve response.
+   *
+   * ⚠️ OPTIONAL, and the optionality is not decoration. Rows created before the
+   * runtime shipped this field do not have it, and they are exactly the rows
+   * most likely to be read (a 24h ledger spans the deploy). A consumer that
+   * assumes it is present renders a blank outcome on real historical data. Every
+   * read site must fall back to the status-derived line, never to empty.
+   *
+   * Distinct from the proposal `summary`, which describes what is ABOUT to
+   * happen and is still missing from this row — see the note on `toolName`.
+   */
+  outcomeSummary?: string | null;
+}
+
+/**
+ * Lifecycle of an approval request.
+ *
+ * Same leniency rule as `AssistRiskClass`: NOT validated at runtime, because the
+ * runtime may add a state before this type learns about it, and dropping a row
+ * whose status we do not recognise would hide a real parked write. A consumer
+ * seeing an unfamiliar status should render it as non-actionable rather than
+ * discard it.
+ *
+ * ── WHY THIS UNION NEEDS NO NORMALISER, UNLIKE `AssistRiskClass` ────────────
+ * The two leniency rules read alike and are enforced completely differently,
+ * and the difference is structural rather than incidental.
+ *
+ * For `riskClass` the SAFE value lives inside the known set (`high_risk`), so an
+ * unfamiliar value has to be actively MAPPED onto it — do nothing and it renders
+ * unstyled, which reads as mild. It needs a normaliser, and it has one.
+ *
+ * For `status` the safe behaviour is "not actionable", and every gate is a
+ * POSITIVE check for `"pending"` rather than a denylist of terminal states. An
+ * unfamiliar value therefore falls to the safe side by construction: it is not
+ * `"pending"`, so it is not actionable, at every gate independently. Adding a
+ * state to this union is purely additive — nothing has to learn to reject it
+ * first.
+ *
+ * Keep it that way. The moment a consumer switches to `status !== "executed" &&
+ * status !== "rejected" && …`, an unknown state starts rendering as live and a
+ * request nobody can action grows Approve/Reject buttons.
+ */
+export type AssistApprovalStatus =
+  | "pending"
+  | "expired"
+  | "rejected"
+  | "executed"
+  | "failed"
+  /**
+   * The request was withdrawn out from under the user — the tenant disabled the
+   * assistant module while it was parked. NOT `rejected`: a human declining and
+   * a request being cancelled are different facts about different actors, and
+   * the ledger's entire purpose is recording who decided what. Collapsing them
+   * would attribute an administrative action to the requester.
+   */
+  | "cancelled";
+
+/** One page of the approval ledger. `total` is the unpaged count. */
+export interface AssistApprovalListPage {
+  requests: AssistApprovalRow[];
+  total: number;
+}
+
+/**
+ * The runtime's answer to `POST /ai/requests/{id}/approve` or `.../reject`.
+ *
+ * ── THE ONE THING TO GET RIGHT ─────────────────────────────────────────────
+ * `status: "failed"` comes back on **HTTP 200**, and that is not a bug to route
+ * around. The approval itself succeeded — the human decision was recorded and
+ * the runtime attempted the write — and then the TARGET APP rejected it. Two
+ * different things failed in two different systems, and only one of them is a
+ * transport problem. Rendering this as a network error would tell the user to
+ * retry a decision that has already been consumed (approval is deliberately not
+ * idempotent, so the retry lands on 409) and would hide the target app's actual
+ * complaint, which is the only part that says what to fix.
+ *
+ * So: 200 + `failed` is an OUTCOME, rendered as an outcome. Only a non-2xx is a
+ * failure to decide.
+ *
+ * Field names are frozen camelCase, per the runtime contract.
+ */
+export interface AssistApprovalDecision {
+  requestId: string;
+  /**
+   * Terminal state after the decision. `executed` / `failed` follow an approve;
+   * `rejected` follows a reject. Typed as the full union rather than a narrowed
+   * literal for the same leniency reason as `AssistApprovalStatus` — the runtime
+   * may answer with a state this build does not know, and a card that renders it
+   * as "unrecognised, not actionable" beats one that throws.
+   */
+  status: AssistApprovalStatus;
+  /** Present on `executed`. The target app's own shape — pass through untouched. */
+  result?: Record<string, unknown> | null;
+  /** Present on `failed`. The target app's own code, e.g. "APP_API_ERROR". */
+  errorCode?: string;
+  /** Present on `failed`. The target app's own message. Never rewritten by us. */
+  error?: string;
+  /**
+   * The same generated sentence the ledger row carries — served here too, so the
+   * card that just took the decision can show the outcome WITHOUT a refetch.
+   *
+   * Optional for the same reason as on the row, plus one of its own: this is the
+   * runtime's newest field on its newest endpoint, and a card that renders blank
+   * when it is absent fails on exactly the deploy skew it exists to survive.
+   *
+   * ⚠️ On a `failed` decision this does NOT replace `error`. The sentence is
+   * deterministic and may say "Could not create the issue" without saying why;
+   * `error` is the target app's own words and the only actionable text on the
+   * card. Both render.
+   */
+  outcomeSummary?: string | null;
+}
+
 export interface SendMessageInput {
   content: string;
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";

@@ -612,7 +612,7 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
 
 ## 10. Structural
 
-- **🔴 vitest is split 4.1.10 / 3.2.4, and neither of our two suites can start.**
+- **⚠️ vitest is split 4.1.10 / 3.2.4, and it is fragile but NOT blocking.**
   `common_setup89` upgraded nine-plus workspaces to vitest **4.1.10**
   (`packages/ai-sdk`, `packages/auth`, `packages/shared`, `admin`, `auth`,
   `quikasset`, others) but left `apps/quikchat` and `services/realtime` on
@@ -627,8 +627,15 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   `resolvePlugins`, most likely the `yamlRaw()` plugin), or a root `overrides`
   entry pinning 3.2.4 (which drags nine workspaces backwards and is outside our
   scope line). **This belongs to whoever owns 89.**
-  Last verified baseline is **140 files / 1288 tests** at `63735b13`, pre-merge.
-  Everything after that merge is unverified by tests.
+  Last verified baseline is **142 files / 1318 tests**, post-`common_setup96`.
+  **CORRECTED (18 Aug):** an earlier revision of this row said neither suite
+  could start. That was wrong. The `ERR_MODULE_NOT_FOUND` failures were a broken
+  *install* — incremental `npm install`s layered onto 89's lockfile during the
+  merge — not an inherent consequence of the version split. A clean `npm ci`
+  repairs it; `node_modules/loupe` is keyed in `package-lock.json` and installed
+  at the hoisted root. What remains true: we are the only two workspaces still on
+  vitest 3, which makes the nested tree fragile across merges. Worth aligning
+  when convenient; the ask upstream is small, not urgent.
 - **A lock-file conflict on a merge is not a conflict to resolve — it is a
   question of whose dependency graph you want.** `--theirs` on
   `package-lock.json` imports the other branch's entire resolution, including
@@ -640,6 +647,47 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   one non-excluded test; the 30 remain. Blocked on a decision: re-home to
   Playwright, or add a test database. **CI has no Postgres service**, so
   un-excluding them would pass locally and fail there.
+- **🔴 RAISE WITH THE RUNTIME TEAM: disabling the assistant module orphans
+  in-flight approval requests, and it is the trace gap arriving through a
+  different door.** `GET /api/ai/requests` is gated on `moduleKey: "assistant"`
+  and 404s when the module is off — correct, since an approval request is an
+  artefact of the assistant and the only rows a disabled tenant could see are
+  historical. But a request already **pending** when the module is switched off
+  becomes unactionable: nobody in that tenant can list it, so nobody can approve
+  or reject it, **the proposed write executes nothing, and it expires silently.**
+  No one in the tenant ever learns it happened.
+  That is precisely the gap the terminal-rows change closed from the other
+  direction — an unactioned write must remain *visible as unactioned* rather than
+  vanishing. Here it vanishes because the surface is gone rather than because the
+  list filtered it out.
+  **Not only ours to fix, and not only to record:** expiry is the runtime's
+  sweep, so the runtime team needs to decide what a disabled consumer means for
+  requests already in their ledger — reject-on-disable, notify the requester, or
+  hold and surface on re-enable. Weakening our module gate to leak the list is
+  the wrong answer; the question belongs upstream. Loosening the gate for
+  *pending rows only* is a possible middle path if they want one.
+- **The `@sentry/node` v8 pin — the partial-bump pattern, second instance.**
+  `common_setup96` moved `@sentry/nextjs` to 10.69.0, hoisting `@sentry/node`
+  v10, while `apps/quikchat` still pinned `@sentry/node` 8.26.0. npm nested the
+  pin and `tsc` resolved the nested copy — whose declared dependency
+  `@sentry/types` was **absent from the tree entirely**, since v9+ folded it into
+  `@sentry/core` and nothing in the new tree asks for it. With `Options`
+  unresolvable, `NodeOptions` collapsed to `BaseNodeOptions`, and
+  `init({ dsn })` failed typecheck. **The error named a type that was not the
+  problem**, and `error-tracking.ts` was never wrong — fixed by dropping the pin.
+  Same shape as the vitest split: a shared dependency moves for some workspaces
+  and not others, and the failure surfaces somewhere unrelated to the cause.
+  Two instances in two merges. Worth a dependency check after every
+  `common_setup` merge rather than waiting for a symptom.
+- **`vitest.config.ts` documents a mechanism that has never existed.** A comment
+  states quikchat is "pinned via root package.json overrides". Root `overrides`
+  holds only `react`/`react-dom`; what actually pins it is the ordinary exact
+  `"vitest": "3.2.4"` in this app's own `package.json`, nested by npm because the
+  root hoists 4.1.10. That comment is the origin of the false "local patch"
+  belief corrected above. **Third comment this cycle asserting something untrue**
+  — `seedRole`'s docblock and the Dockerfile cache-bust note were the others. A
+  comment that states a safety or mechanism property is worth verifying, not
+  trusting. One-line fix, in scope, not yet done.
 - **CI never builds QuikChat — only quikscale.** `ci.yml` runs lint, typecheck
   and test across all apps via turbo, then builds **one** app
   (`cd apps/quikscale && npm run build`, line 109). `next build` for QuikChat runs
@@ -724,3 +772,152 @@ which model a ticket means before estimating it.
 `joinUrl: "https://meet.quikchat.dev/new"` on an event that creates no meeting
 and notifies nobody. Same fabrication pattern the calendar stub was cleaned up
 to avoid.
+---
+
+## Approval card + decision relays (18 Aug 2026) — what shipped and what did not
+
+Shipped: `ApprovalCard` (one component, two adapters in `lib/approval-card.ts`),
+the "Your approvals" section in Activity, `POST /api/ai/requests/{id}/approve`
+and `.../reject`, and the live-turn wiring for `approval_needed`.
+
+### 🔴 RAISE WITH THE RUNTIME TEAM: two gaps, one fix — a generated string persisted on the ledger row
+
+Both need the same thing from the runtime, and neither is a nice-to-have.
+
+1. **`AssistApprovalRow` carries no `summary`.** The SSE frame has one; the
+   ledger row does not. The consequence is not cosmetic: **the Activity card is
+   the only surface a user reaches after the turn ends**, and it is the one
+   showing `quiktrack_create_issue` where the live card showed a sentence. The
+   card that survives is the worse card.
+   We are NOT synthesising one from `toolName` + `toolInput`. That is precisely
+   the coupling `summary` exists to prevent — it would put our guess at another
+   app's semantics in front of the user at the moment they authorise a write, and
+   it would silently rot every time QuikTrack renamed an argument. So the card
+   falls back to the raw tool name, which is honest and poor.
+2. **There is no outcome string.** A terminal row renders its `status` and, on
+   `failed`, the target app's `error`. What it should say is what actually
+   happened — "Created QTRK-902". It must come from the **list**, not only from
+   the approve response: a decision answered on one device would otherwise show
+   nothing on another, and nothing at all after a reload.
+
+Seams are left for both in `ApprovalCardModel` and `SettledLine`, and **no field
+names were invented** — when the runtime ships them, the adapters gain two lines.
+Documented as an open ask at the foot of `docs/RUNTIME.md`.
+
+### Activity is not a paginating surface, and this did not make it one
+
+`GET /api/ai/requests` carries `limit`/`offset` and returns `total`, but Activity
+has no pagination anywhere (the feed's "See all activity" belongs to the
+notification store, not to a page cursor). `ApprovalsSection` asks for the
+relay's default page and, when `total` exceeds what came back, renders
+`Showing N of M` — no load-more control. **If that caption starts appearing
+routinely, that is the signal to give Activity real paging, not to raise the
+limit.** Silent truncation was the alternative and it reads as "these are all of
+them", which on a list of pending writes is the one thing it must not say.
+
+### Fixed here: the stub's `toolInput` had no snake_case key
+
+`stub.ts` was written so "a consumer that normalises interiors breaks against the
+stub rather than only against UAT" — but every fixture interior was already
+camelCase (`projectId`, `assigneeId`), so the guard was decorative and a
+normalising consumer passed every local run. `custom_field_7` is now on the
+pending fixture and asserted. A fifth fixture row was also added whose approval
+answers `status: "failed"` at HTTP 200 (`STUB_FAILING_REQUEST_ID`) — that is the
+single most misreadable response on this surface and it was previously
+unreachable locally. The stub also latches decisions per instance so a second tap
+gets a real 409; approval is deliberately not idempotent and had no local
+expression of that before.
+
+### Still open
+
+- **The persisted channel-visible card** — the fast-follow. Today the live card
+  is ephemeral: dismissing it, reloading, or opening the channel on another
+  device leaves Activity as the only route back to the request. That is
+  deliberate for v1 (a card in history would outlive the request it describes),
+  but it means the chat transcript has no trace that a write was ever proposed.
+- **`RATE.approvalDecision` is a flood ceiling, not a concurrency guard.** 30/60s.
+  The double-tap guard is the card's synchronous ref latch plus the runtime's
+  409 — a rate limit that let the second tap through 29 times before refusing
+  would be no guard at all. Do not "harden" one by tightening the other.
+- **Module-gate consequence, unchanged and still upstream:** a request already
+  pending when the assistant module is switched off is now unactionable through
+  three routes rather than one. Same question, same owner — see the row above.
+
+---
+
+## Approvals, follow-up (18 Aug 2026) — outcomeSummary, cancelled, unknown-status audit
+
+Three runtime changes landed the day after the card shipped. Wired
+`outcomeSummary`, added `cancelled`, and audited unknown-`status` handling.
+
+### The unknown-`status` audit came back better than expected — and the reason is reusable
+
+The worry was that `status` might have the same hole `riskClass` had: an
+unrecognised value falling through to a pending-shaped card, so `cancelled`
+arriving before we knew about it would have shown Approve/Reject on a request
+nobody can action. **It would not have.** Verified by driving raw rows through
+the adapter into rendered DOM: `cancelled`, `quarantined`, `PENDING`, `pending `
+and `""` were all non-actionable already.
+
+The reason is structural, and worth remembering because it decides how much
+defensive code a future field needs:
+
+- **`riskClass` needed a normaliser** because the safe value (`high_risk`) lives
+  *inside* the known set. An unfamiliar value has to be actively mapped onto it;
+  left alone it renders unstyled, which reads as mild. So: normalise, plus a CSS
+  base rule as the second enforcement.
+- **`status` needed nothing** because the safe behaviour is "not actionable", and
+  every gate is a *positive check for `"pending"`* rather than a denylist of
+  terminal states. Unknown values fall safe by construction, at each gate
+  independently.
+
+Rule of thumb: when the safe default is inside the known set, you need a
+normaliser; when it is outside, a positive check for the one live value gets it
+free. Written up next to both gates in `lib/approval-card.ts` and
+`contracts.ts`.
+
+Two real findings survived the audit:
+
+1. **`status: ""` rendered a blank outcome box.** Small, and worse than it
+   sounds: an empty bordered box reads as a rendering bug rather than a data
+   problem, and sends whoever hits it looking in the wrong place. Now
+   `String(status).trim() || "Unrecognised state"` — `String()` because the
+   switch is exhaustive over the union so TS narrows to `never`, while the whole
+   point is that non-union values (including non-strings) arrive at runtime.
+2. **No test drove the property end-to-end.** Two existed and each assumed the
+   other's guarantee — the adapter test checked `viewerMayAct === false`, the
+   card test handed the card a model already marked terminal. Neither would catch
+   a regression loosening both. **This is a repeat pattern here** (the
+   `olderThanCursor` composition test, the `ensureSeeded` ordering,
+   `SettingsModule.test.tsx`). Now covered raw-row → adapter → DOM, including a
+   positive control asserting a `pending` row still *gets* buttons — otherwise
+   "no buttons" passes trivially forever.
+
+### 🔴 NOT OURS: cancel-pending
+
+The runtime exposes an endpoint to cancel a pending request, and we are not
+calling it. It needs an **org-admin user token**, and QuikChat reads module state
+but does not own toggling it — that is the admin portal's job. Wiring a cancel
+button here would put an administrative action behind a chat surface with the
+wrong credential, and would imply QuikChat can disable a module it cannot
+disable. If cancel-on-disable is wanted, it belongs next to the toggle that
+causes it. Related: the pending-requests-orphaned-on-disable row above, which is
+the same question from the other side.
+
+### `total` was correct code that could never fire
+
+`ApprovalsSection`'s "Showing N of M" footer is driven by
+`total - requests.length`. The live endpoint used to return the **page size** as
+`total`, so that was always 0 and the footer never rendered. Our stub modelled it
+as the unpaged count from the start, so the behaviour was right locally and
+unreachable in UAT — a case where the stub being stricter than the real service
+hid nothing but also proved nothing. The runtime now returns a real `COUNT(*)`
+and the footer starts working with no client change. Asserted explicitly in
+`approvals.test.ts` so the stub cannot drift back.
+
+### Still open
+
+- **The proposal `summary` on the ledger row** — the last remaining runtime ask,
+  down from two. Generator exists, unwired, ships with emission. Until then the
+  Activity card shows a raw `toolName`. Not synthesising one; see RUNTIME.md.
+- **The persisted channel-visible card** — unchanged, still the fast-follow.

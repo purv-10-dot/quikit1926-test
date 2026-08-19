@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AssistApprovalRequest,
   AssistSource,
   ChannelList,
   ChannelListItem,
@@ -12,6 +13,8 @@ import type {
 import { Avatar, Pin, Segmented, Spinner, useToast } from "@/components/ui";
 import {
   addMember,
+  APPROVALS_QUERY_KEY,
+  decideApproval,
   deleteMessageApi,
   editMessageApi,
   fetchChannelDetail,
@@ -39,6 +42,8 @@ import {
 import { whoIsTyping, type TypingState } from "@/lib/typing-store";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { useProfile } from "@/components/profile/ProfileProvider";
+import { fromApprovalRequest } from "@/lib/approval-card";
+import { ApprovalCard } from "./ApprovalCard";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { ForwardModal } from "./ForwardModal";
@@ -98,6 +103,17 @@ export interface ConversationViewProps {
   onRetryAssist?: () => void;
   /** Dismiss the assistant error bubble. */
   onDismissAssistError?: () => void;
+  /**
+   * A write the assistant parked for approval on THIS channel's turn (null when
+   * none). Terminal in the same way `assistError` is — the stream emitted it
+   * instead of `done`, so there is no answer bubble and this card IS the turn's
+   * result. Rendered from the same `ApprovalCard` the Activity list uses; the
+   * shape difference between an SSE frame and a ledger row is absorbed by
+   * `lib/approval-card.ts`, not by this view.
+   */
+  assistApproval?: AssistApprovalRequest | null;
+  /** Dismiss the live approval card (the request stays in Activity either way). */
+  onDismissAssistApproval?: () => void;
   /** Start a call in the current channel. */
   onCall?: () => void;
   /** Start a call linked to a meeting card. */
@@ -165,6 +181,8 @@ export function ConversationView({
   assistError,
   onRetryAssist,
   onDismissAssistError,
+  assistApproval,
+  onDismissAssistApproval,
   onCall,
   onStartMeetingCall,
   liveSources,
@@ -519,6 +537,42 @@ export function ConversationView({
                   Dismiss
                 </button>
               </div>
+            </div>
+          </div>
+        ) : null}
+        {assistApproval ? (
+          <div className="qc-assist-approval" data-testid="assist-approval">
+            <Avatar name="Assistant" id="quikchat-assistant-bot" size={28} />
+            <div className="qc-assist-approval__body">
+              <div className="qc-assist-approval__head">
+                <span className="qc-assist-approval__name">Assistant</span>
+                <span className="qc-ai-badge">AI</span>
+                <button
+                  type="button"
+                  className="qc-link qc-assist-approval__dismiss"
+                  onClick={onDismissAssistApproval}
+                >
+                  Dismiss
+                </button>
+              </div>
+              {/*
+                Dismiss hides the bubble; it does NOT withdraw the request. The
+                write stays parked on the runtime either way, which is exactly
+                why "Your approvals" in Activity exists — closing this must not
+                be a way to lose track of something that will still execute if
+                approved elsewhere, or expire unanswered if not.
+              */}
+              <ApprovalCard
+                model={fromApprovalRequest(assistApproval)}
+                onDecide={decideApproval}
+                // Answering here moves the same row Activity is listing. Without
+                // this the two surfaces disagree for as long as that query stays
+                // fresh, and "Your approvals" keeps offering buttons on a
+                // request already decided one pane over.
+                onSettled={() => {
+                  void qc.invalidateQueries({ queryKey: APPROVALS_QUERY_KEY });
+                }}
+              />
             </div>
           </div>
         ) : null}
