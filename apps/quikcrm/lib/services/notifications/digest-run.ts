@@ -32,7 +32,10 @@ import {
   resolveDigestRecipients,
 } from "@/lib/services/notifications/digest-recipients";
 import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
-import { rollingWindowUtc } from "@/lib/services/notifications/digest-window";
+import {
+  previousIstCalendarDayUtc,
+  rollingWindowUtc,
+} from "@/lib/services/notifications/digest-window";
 import type { SessionUser } from "@/types/permission";
 import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-field-aggregates";
 import type { RoleMetricsDto } from "@/lib/dashboard/role-metrics-types";
@@ -193,9 +196,11 @@ async function assembleAndSendDigests(
   return { digests, isDemo: false, sentCount, errorCount }; // GO-LIVE: no longer demo
 }
 
-/** Daily digest — rolling 24h window. Fires daily (20:30 IST cron). */
+/** Daily digest — the PREVIOUS IST CALENDAR DAY, [prev 00:00 IST, today 00:00 IST).
+ *  Fires daily at 10:00 IST, so each email reports one complete, already-closed day
+ *  (the 19 Aug 10:00 run covers 18 Aug only; 19 Aug activity waits for tomorrow). */
 export function runDailyDigest(): Promise<DigestRunResult> {
-  return assembleAndSendDigests(rollingWindowUtc(new Date(), 1), { variant: "daily" });
+  return assembleAndSendDigests(previousIstCalendarDayUtc(new Date()), { variant: "daily" });
 }
 
 /** Weekly summary — rolling 7-day window. Fires Friday (20:30 IST cron). Full

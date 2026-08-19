@@ -91,10 +91,10 @@ export async function draftProspectEmail(
   getToken: () => Promise<string | null>,
   log: DraftLogger = createDraftLogger("unknown"),
 ): Promise<EmailDraft> {
-  const baseUrl = process.env.QUIKIT_AI_RUNTIME_URL;
+  const baseUrl = process.env.RUNTIME_BASE_URL;
   if (!baseUrl) {
     // Not an error — an org that has not enabled AI still gets a usable draft.
-    log.fail("ai:skipped", { why: "QUIKIT_AI_RUNTIME_URL is not set" });
+    log.fail("ai:skipped", { why: "RUNTIME_BASE_URL is not set" });
     const template = buildTemplateDraft(ctx);
     log.done("template", { subject: template.subject });
     return { ...template, fallbackReason: "AI runtime is not configured." };
