@@ -338,6 +338,21 @@ export const GET = withProjectAccess<{ id: string }>(
       },
     });
   },
+  // `ProjectSummary:view` is what the manifest declares as this operation's
+  // requiredPermission (see lib/api/aiManifest.ts, summarize_project). It was
+  // declared before it was enforced — the route checked project MEMBERSHIP
+  // only, so any member saw the summary whether or not their role granted it,
+  // while the Summary tab's client gate hid it. Enforcing it here makes the
+  // declaration true and closes that UI-only gap.
+  //
+  // Applies to both identity sources: `requirePermission` is evaluated inside
+  // withProjectAccess after identity resolution, so a session caller and an
+  // agent-JWT caller are gated identically.
+  //
   // AI Runtime: agent-JWT opt-in (manifest read op `summarize_project`).
-  { paramKey: "id", allowAgentJwt: true },
+  {
+    paramKey: "id",
+    requirePermission: { resource: "ProjectSummary", action: "view" },
+    allowAgentJwt: true,
+  },
 );
