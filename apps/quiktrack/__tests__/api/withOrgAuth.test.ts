@@ -243,8 +243,19 @@ describe("withOrgAuth({ allowAgentJwt: true })", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 401 when there's no bearer token at all, without falling back to a session cookie", async () => {
-    setSession({ id: CREATED_BY, orgId: ORG, role: "owner" }); // present, but must never be consulted
+  // allowAgentJwt is ADDITIVE, not exclusive. This test previously asserted the
+  // opposite — that a session caller with no bearer got 401 — which is what
+  // made b9d6dfc82 ship: opting the eight read routes in silently turned them
+  // agent-JWT-only and 401'd every logged-in user of the browser app.
+  it("falls through to the session cookie when no bearer token is present", async () => {
+    setSession({ id: CREATED_BY, orgId: ORG, role: "owner" });
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest());
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 401 when there is neither a bearer token nor a session", async () => {
+    setSession(null);
     const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
     const res = await handler(buildRequest());
     expect(res.status).toBe(401);

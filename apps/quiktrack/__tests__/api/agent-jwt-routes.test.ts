@@ -25,10 +25,12 @@ import { GET as summarizeProject } from "@/app/api/projects/[id]/summary/route";
  * covers is that each individual route opted in, and that opting in did not
  * make it accept anything else.
  *
- * Each route is asserted three ways:
- *   1. valid agent JWT   → NOT 401 (the handler ran)
- *   2. no Authorization  → 401     (still closed to anonymous callers)
- *   3. expired agent JWT → 401     (verification still applies)
+ * Each route is asserted four ways:
+ *   1. valid agent JWT          → NOT 401 (the handler ran)
+ *   2. session, no bearer       → NOT 401 (opting in did not remove the
+ *                                 browser app's access — see b9d6dfc82)
+ *   3. no session, no bearer    → 401     (still closed to anonymous callers)
+ *   4. expired agent JWT        → 401     (verification still applies)
  *
  * On (1): most routes are driven to their own early 404 by mocking the first
  * lookup to null, because a full happy path would need per-route fixtures that
@@ -182,8 +184,9 @@ function request(url: string, token?: string): NextRequest {
 
 beforeEach(() => {
   resetMockDb();
-  // Present but must never be consulted: the agent-JWT branch never falls back
-  // to a cookie session, so an anonymous request has to 401 even with one set.
+  // The default identity for these cases. It is deliberately NOT consulted on
+  // the agent-JWT cases (a bearer token short-circuits to that branch), and IS
+  // the identity for the session case. The anonymous case clears it.
   setSession({ id: USER, orgId: ORG, role: "owner" });
   process.env.NEXTAUTH_SECRET = AGENT_NEXTAUTH_SECRET;
 });
@@ -204,7 +207,23 @@ describe.each(CASES)("$op — agent JWT opt-in", (route) => {
     expect(res.status).toBe(route.accepted);
   });
 
-  it("still rejects an unauthenticated request", async () => {
+  // REGRESSION GUARD. Opting a route into allowAgentJwt must not take its
+  // session away. The first version of this suite set a session, sent no
+  // bearer, asserted 401, and called it "still rejects an unauthenticated
+  // request" — but the request was authenticated, and the assertion pinned
+  // the b9d6dfc82 regression that 401'd the entire browser app in place.
+  it("still serves a logged-in session caller with no bearer token", async () => {
+    route.arrange();
+    const res = await route.handler(
+      request(route.url),
+      route.params ? { params: route.params } : undefined,
+    );
+    expect(res.status).not.toBe(401);
+    expect(res.status).toBe(route.accepted);
+  });
+
+  it("rejects a genuinely anonymous request — no session, no bearer", async () => {
+    setSession(null);
     route.arrange();
     const res = await route.handler(
       request(route.url),
