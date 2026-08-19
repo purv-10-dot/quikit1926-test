@@ -15,6 +15,14 @@ import { labelOf } from "./case-meta";
 
 const MAX_ROWS_SHOWN = 50;
 
+/** Short labels for the preview's Layout column. */
+const LAYOUT_LABEL: Record<string, string> = {
+  STEPS: "Steps",
+  TEXT: "Text",
+  BDD: "BDD",
+  EXPLORATORY: "Exploratory",
+};
+
 export function ImportPreview({
   fileName,
   cases,
@@ -127,6 +135,9 @@ export function ImportPreview({
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Row</th>
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Title</th>
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Folder</th>
+                {/* Shown because the layout decides which body the case DISPLAYS —
+                    getting it wrong is how imported text ends up invisible. */}
+                <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Layout</th>
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Priority</th>
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Steps</th>
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Est.</th>
@@ -147,6 +158,9 @@ export function ImportPreview({
                     ) : (
                       <span className="text-gray-400">(selected folder)</span>
                     )}
+                  </td>
+                  <td className="px-3 py-1.5 text-xs text-gray-500">
+                    {LAYOUT_LABEL[c.templateKind] ?? c.templateKind}
                   </td>
                   <td className="px-3 py-1.5 text-xs text-gray-500">
                     {labelOf(c.priority)}
