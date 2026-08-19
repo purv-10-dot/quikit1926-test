@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useApiData } from "@/lib/hooks/useApiData";
+import { PREFERRED_NEW_CASE_KIND } from "@/lib/test/caseLayout";
 import { formatEstimate, parseEstimate } from "@/lib/test/estimate";
 import type { TemplateKind } from "./case-body-fields";
 import type { MetaValues, TemplateOption } from "./case-meta-fields";
@@ -80,9 +81,17 @@ export function useCaseForm({
   );
   const templateList = useMemo(() => templates ?? [], [templates]);
 
-  /** Body layout to render. Falls back to STEPS, matching the seeded default. */
+  /**
+   * Body layout to render.
+   *
+   * On CREATE the fallback matches what the form will pre-select, so the body does
+   * not render the step grid for a moment and then snap to the text field once the
+   * template list arrives. On EDIT it stays STEPS, which is what a case with no
+   * template was authored as (the migration backfilled those to STEPS).
+   */
   const kind: TemplateKind =
-    templateList.find((t) => t.id === meta.templateId)?.kind ?? "STEPS";
+    templateList.find((t) => t.id === meta.templateId)?.kind ??
+    (isEdit ? "STEPS" : PREFERRED_NEW_CASE_KIND);
 
   const estimateError =
     meta.estimate.trim() && parseEstimate(meta.estimate) === null
@@ -103,7 +112,17 @@ export function useCaseForm({
       setSteps([]);
       setVersion(null);
       setRefId(null);
-      const dflt = templateList.find((t) => t.kind === "STEPS");
+      // A new case opens on "Test Case (Text)" — a UI preference, so no database
+      // change is involved (every provisioned org still has STEPS flagged as its
+      // `isDefault`, and that is left alone).
+      //
+      // Three-step fallback so the form never opens with nothing selected: the
+      // preferred kind, then whatever the ORG marks default, then the first template.
+      const dflt =
+        templateList.find((t) => t.kind === PREFERRED_NEW_CASE_KIND) ??
+        templateList.find((t) => t.isDefault) ??
+        templateList[0] ??
+        null;
       setMeta({ ...EMPTY_META, templateId: dflt?.id ?? "" });
       return;
     }
