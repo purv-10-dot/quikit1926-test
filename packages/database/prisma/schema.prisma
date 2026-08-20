@@ -6837,7 +6837,7 @@ model QtMcpActionLog {
   tool         String
   /// "CREATE" | "UPDATE" | "MOVE" | "DELETE"
   action       String
-  /// "issue" | "sprint" | "comment" | "worklog" | "remote_link" | "issue_link"
+  /// "issue" | "sprint" | "comment" | "worklog" | "remote_link" | "issue_link" | "test_case"
   entityType   String
   entityId     String?
   /// Human-readable key when one exists, e.g. "QUIKTR-121". Null for

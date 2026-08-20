@@ -59,10 +59,14 @@ a table that can legitimately hold two rows per call for unrelated reasons.
 
 QUIKTR-121's acceptance criteria ask for either full read-tool coverage or
 "an explicitly documented decision" to exclude them. This implementation
-takes the latter: **only the 10 mutating MCP tools write to
+takes the latter: **only the mutating MCP tools write to
 `QtMcpActionLog`.** The 15 read-only tools remain covered exclusively by
 the existing `QtMcpAccessLog`, which already logs every read call's
 allow/deny decision, actor, tool name, and timestamp.
+
+(Originally 10 write tools; QUIKTR-122 added `create_test_case` as the
+11th, plus bundled test-case creation inside `create_issue` — both write
+`entityType: "test_case"` rows, see below.)
 
 Reasoning: read tools have no before/after state by definition (a lookup
 isn't a diff), so the only fields a read-tool `QtMcpActionLog` row would
@@ -86,7 +90,7 @@ change — `entityId`/`before`/`after` would simply stay null.
 | `projectId` | The resolved project the mutation targeted. Nullable only for the theoretical case where a tool call somehow succeeds without one (none do today). |
 | `tool` | The MCP tool name (`"create_issue"`, `"move_issue"`, etc.). |
 | `action` | `"CREATE"` \| `"UPDATE"` \| `"MOVE"` \| `"DELETE"` (the last is unused today — no MCP tool deletes anything, per QUIKTR-118 — but kept in the enum for completeness/future-proofing). |
-| `entityType` | `"issue"` \| `"sprint"` \| `"comment"` \| `"worklog"` \| `"remote_link"` \| `"issue_link"`. |
+| `entityType` | `"issue"` \| `"sprint"` \| `"comment"` \| `"worklog"` \| `"remote_link"` \| `"issue_link"` \| `"test_case"` (QUIKTR-122). |
 | `entityId` / `entityKey` | The affected record. `entityKey` is null for entity types without a human-readable key (sprint, comment, worklog, remote_link, issue_link). |
 | `payload` | The tool's (sanitized — see `lib/mcp/actionLog.ts`'s `sanitize()`) input args. |
 | `before` / `after` | Field-level snapshots. `before` is null for pure creates; `after` is null when `result = "error"` and the mutation never ran. |
@@ -105,13 +109,19 @@ integration owner applies it, same as QUIKTR-118/119.
 
 `apps/quiktrack/lib/mcp/actionLog.ts` exports `logMcpAction()`, called from
 `apps/quiktrack/lib/mcp/server.ts` at every success and failure branch of
-the 10 write tools (`create_issue`, `start_sprint`, `move_issue`,
+the 11 write tools (`create_issue`, `start_sprint`, `move_issue`,
 `create_sprint`, `add_comment`, `add_worklog`, `complete_sprint`,
-`quiktrack_update_issue`, `add_remote_link`, `link_issues`) — after
+`quiktrack_update_issue`, `add_remote_link`, `link_issues`,
+`create_test_case` — the last added by QUIKTR-122) — after
 `checkWritePermission` passes, mirroring where `QtMcpAccessLog`'s own
 "allow" row is written. A logging failure (e.g. the migration not yet
 applied) never breaks the actual tool call — same never-throws pattern as
 `accessLog.ts`.
+
+`create_issue`'s bundled test-case creation (QUIKTR-122) writes its own
+`entityType: "test_case"` row per test case, in addition to the
+`entityType: "issue"` row for the issue itself — see
+`apps/quiktrack/lib/mcp/testCaseBundle.ts`.
 
 Surfaced via `apps/quiktrack/app/api/mcp-audit-log/route.ts` in two places:
 a project-level, admin/Space-Admin-gated "Audit Log" page under Settings,
