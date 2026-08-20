@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
-import { getInitialStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
+import { getInitialStatusId, getWorkflowInitialStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
@@ -503,11 +503,16 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const issue = await db.$transaction(async (tx) => {
-    // New issues start on the workflow's INITIAL status (e.g. classic "Open")
-    // when a published workflow governs the project; otherwise the first status
-    // by order. A client-supplied status still wins.
-    const statusId =
-      parsed.data.statusId ?? (await getInitialStatusId(tx, project.id));
+    // A work item is CREATED via the workflow's "Create" transition, so its only
+    // legal starting status is the workflow's INITIAL status. When a published
+    // workflow governs the project we force that status and ignore any other
+    // client-supplied value (the Create modal / API must not bypass the workflow
+    // — Jira parity). Only when the project is UNGATED (no active workflow) do we
+    // honor a client status, falling back to the first status by order.
+    const gatedInitial = await getWorkflowInitialStatusId(tx, project.id);
+    const statusId = gatedInitial
+      ? gatedInitial
+      : (parsed.data.statusId ?? (await getInitialStatusId(tx, project.id)));
     if (!statusId) throw new Error("Project has no statuses");
 
     // Derive the key from the MAX existing suffix, not count()+1 — the latter

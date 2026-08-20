@@ -222,7 +222,9 @@ export function CreateIssueModal({
     if (!open || !projectId) return;
     let alive = true;
     Promise.all([
-      fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
+      // creatable=1 → only statuses a new item may start in (the workflow's
+      // initial status when the project is gated; the full list otherwise).
+      fetch(`/api/projects/${projectId}/statuses?creatable=1`).then((r) => r.json()),
       fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
       fetch(`/api/sprints?projectId=${projectId}&limit=50`).then((r) => r.json()),
       fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=100`).then((r) => r.json()),

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { getWorkflowInitialStatusId } from "@/lib/services/projectDefaults";
 
 export const GET = withProjectAccess<{ id: string }>(
   async ({ projectId }, req) => {
@@ -9,6 +10,18 @@ export const GET = withProjectAccess<{ id: string }>(
       where: { projectId, isDeleted: false },
       orderBy: { orderIndex: "asc" },
     });
+
+    // ?creatable=1 — the statuses a NEW work item may be created in. Under a
+    // published workflow that's ONLY the initial status (the "Create" transition
+    // target), matching the create API's gate; ungated projects return the full
+    // list. Used by the Create-work-item modal's Status field.
+    if (new URL(req.url).searchParams.get("creatable") === "1") {
+      const initial = await getWorkflowInitialStatusId(db, projectId);
+      if (initial) {
+        return NextResponse.json({ success: true, data: statuses.filter((s) => s.id === initial) });
+      }
+      return NextResponse.json({ success: true, data: statuses });
+    }
 
     // A workflow can be attached as an UNPUBLISHED DRAFT that introduces new
     // statuses (e.g. the classic Open/Resolved/Reopened/Closed). Those must NOT
