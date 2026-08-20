@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ClipboardList, Plus } from "lucide-react";
 import { Button, EmptyState, TableSkeleton } from "@quikit/ui";
+import { confirmDialog } from "@/lib/ui/confirm";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import {
@@ -70,16 +71,21 @@ export function RunListView({ projectId }: { projectId: string }) {
   );
 
   /**
-   * Soft-delete a run. Results are KEPT — stated in the confirmation with the real
-   * count, because "delete" reads as destroying the execution history and here it
-   * does not.
+   * Soft-delete or restore a run. Results are KEPT on delete — stated in the
+   * confirmation with the real count, because "delete" reads as destroying the
+   * execution history and here it does not.
+   *
+   * `confirm` is a `confirmDialog()` options object rather than a raw string:
+   * the app-wide confirm host (lib/ui/confirm.ts + <ConfirmHost/>, mounted in
+   * dashboard-shell.tsx) replaces the native `window.confirm` everywhere in
+   * this app, not just here.
    */
   const mutateRun = async (
     action: "delete" | "restore",
     ids: string[],
-    confirmText?: string,
+    confirm?: Parameters<typeof confirmDialog>[0],
   ) => {
-    if (confirmText && !window.confirm(confirmText)) return;
+    if (confirm && !(await confirmDialog(confirm))) return;
     setPendingId(ids[0] ?? null);
     setError(null);
     try {
@@ -229,13 +235,16 @@ export function RunListView({ projectId }: { projectId: string }) {
                     onClose={closeRun}
                     onEdit={setEditingRun}
                     onDelete={(r) =>
-                      void mutateRun(
-                        "delete",
-                        [r.id],
-                        `Delete "${r.name}"?\n\nIt will be hidden from the runs list. ` +
-                          `Its ${r.testCount} test${r.testCount === 1 ? "" : "s"} and any recorded ` +
-                          `results are KEPT — the execution history stays intact, and you can restore the run later.`,
-                      )
+                      void mutateRun("delete", [r.id], {
+                        title: `Delete "${r.name}"?`,
+                        message:
+                          `It will be hidden from the runs list. Its ${r.testCount} ` +
+                          `test${r.testCount === 1 ? "" : "s"} and any recorded results ` +
+                          `are KEPT — the execution history stays intact, and you can ` +
+                          `restore the run later.`,
+                        confirmText: "Delete",
+                        danger: true,
+                      })
                     }
                     onRestore={(id) => void mutateRun("restore", [id])}
                     closing={closingId === run.id}

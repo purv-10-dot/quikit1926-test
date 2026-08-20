@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Tag, Trash2, User, X } from "lucide-react";
 import { FilterPicker, type FilterOption } from "@quikit/ui";
+import { confirmDialog } from "@/lib/ui/confirm";
 import type { RunnerCaseLabel, TestStatusLite } from "./runner-types";
 import type { MemberOption } from "./assignee-picker";
 
@@ -13,6 +14,15 @@ import type { MemberOption } from "./assignee-picker";
  * Each action opens a small picker rather than acting immediately on click: a
  * bulk action needs a VALUE (which assignee, which status, which label) before
  * it can run, unlike the case grid's bulk delete/restore which take none.
+ *
+ * Remove's confirmation uses the app-wide `confirmDialog()` (lib/ui/confirm.ts
+ * + the globally-mounted `<ConfirmHost/>`) rather than `window.confirm` — a
+ * native browser dialog reads as a broken/unstyled page. `confirmDialog` was
+ * chosen over the two OTHER confirm patterns already in this app
+ * (`components/confirm-dialog.tsx`'s controlled `<ConfirmDialog>`, which needs
+ * local open-state per call site) because it is promise-based (drops straight
+ * into an existing async handler with one `await`) and already mounted
+ * app-wide in `dashboard-shell.tsx` — no new state, no new provider.
  */
 export function RunnerBulkBar({
   count,
@@ -127,12 +137,18 @@ export function RunnerBulkBar({
 
       <button
         type="button"
-        onClick={() => {
+        onClick={async () => {
           // Untested-only is enforced server-side and reported via the skip
           // summary; this confirms the destructive part up front.
-          if (window.confirm(`Remove ${count} test${count === 1 ? "" : "s"} from this run? Only untested tests can be removed.`)) {
-            onRemove();
-          }
+          const ok = await confirmDialog({
+            title: `Remove ${count} test${count === 1 ? "" : "s"} from this run?`,
+            message:
+              "Only untested tests can be removed — any selected test that already " +
+              "has a recorded result is skipped and reported, not deleted.",
+            confirmText: "Remove",
+            danger: true,
+          });
+          if (ok) onRemove();
         }}
         disabled={busy}
         className="inline-flex items-center gap-1.5 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"

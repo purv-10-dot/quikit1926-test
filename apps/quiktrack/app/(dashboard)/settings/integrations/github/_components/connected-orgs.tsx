@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, Github, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 export interface Installation {
   id: string;
@@ -34,11 +35,14 @@ export function ConnectedOrgs({
   const [error, setError] = useState<string | null>(null);
 
   async function disconnect(inst: Installation) {
-    const ok = window.confirm(
-      `Disconnect ${inst.githubAccountLogin || "this organization"}? ` +
+    const ok = await confirmDialog({
+      title: `Disconnect ${inst.githubAccountLogin || "this organization"}?`,
+      message:
         "This removes its linked repositories and development data from QuikTrack. " +
         "It does not uninstall the app on GitHub.",
-    );
+      confirmText: "Disconnect",
+      danger: true,
+    });
     if (!ok) return;
     setError(null);
     setDisconnectingId(inst.id);
