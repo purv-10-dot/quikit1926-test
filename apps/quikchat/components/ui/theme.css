@@ -1303,6 +1303,16 @@ body {
   flex: 1;
   min-height: 0;
 }
+/* Body copy inside a modal (confirm dialogs). The Modal primitive carries no
+   prose styling of its own; this is paragraph rhythm and nothing else. */
+.qc-modal-text {
+  margin: 0 0 10px;
+  color: var(--qc-text-2);
+  font-size: 13px;
+}
+.qc-modal-text:last-child {
+  margin-bottom: 0;
+}
 .qc-modal-foot {
   flex: none;
   display: flex;

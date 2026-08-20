@@ -16,6 +16,35 @@ export const ASSISTANT_BOT_NAME = "Assistant";
 export const ASSIST_HISTORY_LIMIT = 25;
 
 /**
+ * `data.kind` on the "New chat" marker — an ordinary `SystemActivity` message
+ * row, deliberately NOT a new column.
+ *
+ * The AI chat is a find-or-create singleton per user, so "New chat" cannot mint a
+ * second conversation without changing that contract. It does not need to: the
+ * runtime holds no conversation state of its own (`channelId` is telemetry only —
+ * see docs/RUNTIME.md), so everything the model can see arrives in the pushed
+ * `history` built below. Starting that window at a marker is therefore a complete
+ * context reset, while the transcript itself survives untouched.
+ *
+ * A message row rather than a column because it needs no migration, it already
+ * fans out to every member, `MessageRow` already renders `SystemActivity` as a
+ * centred divider, and `buildHistory` already drops it from the context. Deleting
+ * the rows instead would also strand this channel's KB scope, which is derived
+ * from ingest markers on Media messages (kb.service#listChannelKbSourceFileIds) —
+ * the documents stay in the runtime's KB while the chat silently loses every
+ * pointer to them.
+ */
+export const AI_CONTEXT_RESET_KIND = "ai_context_reset";
+
+/** The user-visible divider text carried on a reset marker. */
+export const AI_CONTEXT_RESET_TEXT = "New chat started";
+
+/** Is this row a context-reset marker? */
+export function isContextResetMarker(m: MessageDto): boolean {
+  return m.type === "SystemActivity" && m.data?.kind === AI_CONTEXT_RESET_KIND;
+}
+
+/**
  * Ensure the bot exists as a User and is a member of the channel so its posted
  * reply attributes correctly (senderId = bot) and serializes a display name.
  * Idempotent.
@@ -82,9 +111,23 @@ export async function setAssistantEnabled(
  * caller passes the prompt, drop a trailing `user` turn whose text matches it so
  * the current turn is sent exactly once. Normal `/ai` never persists the prompt,
  * so the trailing item is genuine prior context and nothing is dropped.
+ *
+ * A "New chat" marker truncates the window: nothing at or before the NEWEST one
+ * is sent. Newest, not first — resetting several times in one conversation is the
+ * normal case, and anchoring on the first would re-admit everything the later
+ * resets existed to hide. `messages` arrives newest-first, so the newest marker is
+ * simply the first one found and `slice(0, idx)` keeps what came after it.
+ *
+ * The cut happens BEFORE the filter below, because the marker is itself a
+ * `SystemActivity` row that the filter would otherwise remove. A marker older than
+ * the fetched window needs no handling: every row in the window is then newer than
+ * it, which is already the right answer.
  */
 export function buildHistory(messages: MessageDto[], currentPrompt?: string): AssistHistoryItem[] {
-  const items = messages
+  const resetAt = messages.findIndex(isContextResetMarker);
+  const sinceReset = resetAt === -1 ? messages : messages.slice(0, resetAt);
+
+  const items = sinceReset
     .filter(
       (m) => m.type !== "Delete" && m.type !== "SystemActivity" && m.content.trim().length > 0,
     )

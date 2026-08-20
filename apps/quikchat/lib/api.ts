@@ -212,6 +212,17 @@ export function openAiChat(): Promise<ChannelListItem> {
 }
 
 /**
+ * "New chat": reset what the assistant can see in this AI chat.
+ *
+ * Resolves with the context-reset marker — an ordinary SystemActivity MessageDto —
+ * so the caller can put it straight into the message cache instead of refetching.
+ * Nothing is deleted server-side; the transcript and the KB scope both survive.
+ */
+export function resetAiChat(channelId: string): Promise<MessageDto> {
+  return send<MessageDto>(`/api/channels/${channelId}/ai-reset`, "POST");
+}
+
+/**
  * Stage 3 "Add to KB": ingest an attached document into the knowledge base. The
  * client sends the durable `storageKey` it owns (the relay authorizes it to the
  * channel + sets sourceFileId). Throws an Error carrying the server `code` on

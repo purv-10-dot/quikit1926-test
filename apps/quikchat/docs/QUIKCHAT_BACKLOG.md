@@ -921,3 +921,49 @@ and the footer starts working with no client change. Asserted explicitly in
   down from two. Generator exists, unwired, ships with emission. Until then the
   Activity card shows a raw `toolName`. Not synthesising one; see RUNTIME.md.
 - **The persisted channel-visible card** — unchanged, still the fast-follow.
+
+---
+
+## New chat for the AI conversation (20 Aug 2026) — what shipped, and two findings
+
+Shipped: a context-reset marker. `POST /api/channels/[id]/ai-reset` writes one
+`SystemActivity` row carrying `data.kind = "ai_context_reset"`, and `buildHistory`
+stops the pushed `history` at the NEWEST such row. Nothing is deleted.
+
+The option was chosen on one measurement, not on taste: the runtime holds no
+conversation state of its own. `docs/RUNTIME.md` says `channelId` is telemetry
+only, the wire body carries no thread handle, and the runtime team has been
+getting clean runs all week by hand-deleting `QcMessage` rows — which only works
+if pushed `history` is the entire context. A marker can therefore express
+everything deleting the rows expressed, and costs no migration: the row type,
+the fanout, the `SystemActivity` divider renderer and the `buildHistory` filter
+all already existed.
+
+### 🔴 TELL THE RUNTIME TEAM: hand-deleting QcMessage rows strands the KB scope
+
+The week-long workaround has a cost nobody would predict from "clear the chat".
+An AI chat's retrieval scope is not stored as conversation state — it is derived
+by `kb.service#listChannelKbSourceFileIds`, which queries **Media messages** in
+the channel carrying an ingest marker. Delete the messages and the documents stay
+ingested in the runtime's KB while the chat silently loses every pointer to them:
+the "This chat / All my docs" control empties, and scoped retrieval quietly
+becomes a plain turn with no error anywhere.
+
+This is the strongest argument for the marker over clear-in-place, and it applies
+retroactively — any AI chat cleared by hand this week has lost its doc scope and
+will need those documents re-added. Worth checking before anyone else reaches for
+`DELETE FROM`.
+
+### Unreachable: `leave()`'s AI-chat branch
+
+`channels.service#leave` has a `channel?.type === "ai"` branch that deletes the
+channel, its members and all its messages. Nothing can reach it: `InfoDrawer`
+gates both **Leave** and **Delete** on `isGroup`, so an AI chat exposes neither
+control. Server code with no caller — the same family as the thirteen the sweep
+found, and found the same way (reading the server while costing a feature, not by
+any test).
+
+Filed, deliberately not wired. "New chat" is the reset users actually asked for,
+and wiring a delete-everything button next to it would offer a destructive
+shortcut to a problem that no longer needs one. If it is ever wired, the KB-scope
+consequence above applies to it too.

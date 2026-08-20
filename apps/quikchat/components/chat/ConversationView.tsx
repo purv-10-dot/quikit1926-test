@@ -10,7 +10,7 @@ import type {
   MentionRefInput,
   MessageDto,
 } from "@/lib/shared";
-import { Avatar, Pin, Segmented, Spinner, useToast } from "@/components/ui";
+import { Avatar, Modal, Pin, Segmented, Spinner, useToast } from "@/components/ui";
 import {
   addMember,
   APPROVALS_QUERY_KEY,
@@ -25,6 +25,7 @@ import {
   forwardMessageApi,
   pinChannel,
   removeMember,
+  resetAiChat,
   setMemberRole,
   updateChannel,
   deleteChannel,
@@ -40,6 +41,7 @@ import {
   updateInList,
 } from "@/lib/message-actions";
 import { whoIsTyping, type TypingState } from "@/lib/typing-store";
+import { mergeMessageEvent } from "@/lib/realtime-cache";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { useProfile } from "@/components/profile/ProfileProvider";
 import { fromApprovalRequest } from "@/lib/approval-card";
@@ -214,6 +216,11 @@ export function ConversationView({
   // Scheduling modal (S15a). Seeded with channel members (header button) or one
   // user (profile card "Schedule meeting"), which registers the opener below.
   const [scheduleSeed, setScheduleSeed] = useState<string[] | null>(null);
+  // "New chat" confirm (AI chat only). Two-step, matching InfoDrawer's Leave
+  // rather than its typed "DELETE": a reset destroys nothing, so the heavier
+  // ceremony would misrepresent what the button does.
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newChatBusy, setNewChatBusy] = useState(false);
 
   // Pane-wide file drop (Slack/Teams/WhatsApp accept a drop anywhere over the
   // conversation, not just the composer). This view owns the drag listeners
@@ -287,6 +294,35 @@ export function ConversationView({
     }
     return out;
   }, [messages]);
+
+  /**
+   * Reset what the assistant can see. The server drops a marker row and deletes
+   * nothing; `buildHistory` stops at it on the next turn.
+   *
+   * The marker is merged into the cache here rather than left to the `system`
+   * fanout. The echo does arrive (the actor is in the channel room), but it is a
+   * second, unordered transport — waiting on it leaves the user staring at an
+   * unchanged transcript after pressing the button, and leaves nothing at all if
+   * the socket is down. `mergeMessageEvent` keys on id, so the echo is a no-op
+   * when it lands.
+   */
+  const startNewChat = async () => {
+    setNewChatBusy(true);
+    try {
+      const marker = await resetAiChat(channelId);
+      qc.setQueryData<MessageDto[]>(["messages", channelId], (old) =>
+        mergeMessageEvent(old ?? [], marker, currentUserId),
+      );
+      setNewChatOpen(false);
+    } catch (e) {
+      toast.error({
+        title: "Couldn't start a new chat",
+        body: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setNewChatBusy(false);
+    }
+  };
 
   const refetchMembers = () => qc.invalidateQueries({ queryKey: ["members", channelId] });
 
@@ -457,6 +493,7 @@ export function ConversationView({
           onSchedule={isAiChat ? undefined : () => setScheduleSeed(channel.members.map((m) => m.id))}
           onCall={isAiChat ? undefined : onCall}
           onTogglePin={() => void togglePin()}
+          onNewChat={isAiChat ? () => setNewChatOpen(true) : undefined}
         />
         <PinnedBanner count={pinnedQuery.data?.length ?? 0} onOpen={() => setInfoOpen(true)} />
         {loadingMessages && !messages ? (
@@ -715,6 +752,49 @@ export function ConversationView({
           onCreated={() => toast.success({ title: "Meeting scheduled" })}
         />
       ) : null}
+
+      {/*
+        The copy states BOTH halves on purpose. "New chat" reasonably reads as
+        "drop everything", and two of the three things a user might expect to lose
+        are not lost: the transcript stays, and so do their knowledge-base
+        documents. Saying only what is reset would leave them guessing about the
+        rest — and a reset they think is destructive is one they won't use.
+      */}
+      <Modal
+        open={newChatOpen}
+        onClose={() => setNewChatOpen(false)}
+        title="Start a new chat?"
+        footer={
+          <>
+            <button
+              type="button"
+              className="qc-btn qc-btn--ghost"
+              onClick={() => setNewChatOpen(false)}
+              disabled={newChatBusy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="qc-btn qc-btn--primary"
+              data-testid="new-chat-confirm"
+              onClick={() => void startNewChat()}
+              disabled={newChatBusy}
+            >
+              {newChatBusy ? "Starting…" : "Start new chat"}
+            </button>
+          </>
+        }
+      >
+        <p className="qc-modal-text">
+          The assistant will stop seeing everything above this point, so it starts
+          fresh instead of carrying this conversation forward.
+        </p>
+        <p className="qc-modal-text">
+          Nothing is deleted — your messages stay in this chat, and your documents stay
+          in the knowledge base.
+        </p>
+      </Modal>
 
       <ForwardModal
         open={!!forwardTarget}
