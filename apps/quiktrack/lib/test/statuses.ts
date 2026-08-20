@@ -184,6 +184,7 @@ export const MANUAL_STATUS_ORDER: readonly TestStatusKey[] = [
   "blocked",
   "skipped",
   "failed",
+  "retest",
 ];
 
 /** The automation column of the run summary, in reference-UI order. */
@@ -267,7 +268,6 @@ export function donutSegments(
   const order: TestStatusKey[] = [
     ...MANUAL_STATUS_ORDER,
     ...AUTOMATION_STATUS_ORDER,
-    "retest",
     "untested",
   ];
 

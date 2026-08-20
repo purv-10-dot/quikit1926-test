@@ -94,7 +94,13 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   // Filter state lives in the URL (QUIKTR-341) — see use-case-filters.ts.
   const caseFilters = useCaseFilters();
 
-  const { cases, loading: casesLoading } = useCaseList({
+  const {
+    cases,
+    loading: casesLoading,
+    hasMore: casesHasMore,
+    loadingMore: casesLoadingMore,
+    loadMore: loadMoreCases,
+  } = useCaseList({
     projectId,
     activeSectionId,
     activeSuiteId,
@@ -252,12 +258,16 @@ export function RepositoryView({ projectId }: { projectId: string }) {
               rows={caseRows}
               total={cases?.total ?? 0}
               loading={casesLoading}
+              hasMore={casesHasMore}
+              loadingMore={casesLoadingMore}
+              onLoadMore={loadMoreCases}
               sectionName={activeSectionName}
               projectId={projectId}
               columns={columns}
               onColumns={setColumns}
               canCreate={canCreate}
               onCreate={openCreate}
+              showDeleted={showDeleted}
               // Inline edit needs Issue-style update rights, and is pointless in the
               // deleted view (you restore a case before editing it).
               onInlineEdit={canEdit && !showDeleted ? inline.save : undefined}

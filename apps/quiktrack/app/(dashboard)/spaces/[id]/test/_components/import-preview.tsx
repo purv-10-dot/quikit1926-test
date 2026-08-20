@@ -130,7 +130,7 @@ export function ImportPreview({
       <div className="overflow-hidden rounded-lg border border-gray-200">
         <div className="max-h-80 overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0">
+            <thead className="sticky top-0 z-10">
               <tr className="text-left">
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Row</th>
                 <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Title</th>

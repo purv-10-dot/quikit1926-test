@@ -100,7 +100,7 @@ export function TestsGridPane({
   return (
     <div className="min-w-0 flex-1 overflow-auto">
       <table className="w-full text-sm">
-        <thead className="sticky top-0">
+        <thead className="sticky top-0 z-10">
           <tr className="text-left">
             {selection && (
               <th className="w-9 bg-accent-50 px-3 py-2">

@@ -39,11 +39,11 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
   return (
     <div className="flex h-full flex-col p-4">
       <Link
-        href={`/spaces/${projectId}/test`}
+        href={`/spaces/${projectId}/test/runs`}
         className="mb-3 inline-flex w-fit items-center gap-1 text-xs text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-3 w-3" />
-        Test cases
+        Test runs
       </Link>
 
       {/* QUIKTR-341 — the reference UI frames the whole run (header, summary,

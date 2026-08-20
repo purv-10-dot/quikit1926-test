@@ -147,7 +147,7 @@ export function CaseEditorPanel({
           </FormSection>
 
           <FormSection title="What to test">
-            <Field label="Description">
+            <Field label={f.kind === "TEXT" ? "Steps" : "Description"}>
               <Textarea
                 rows={3}
                 value={f.description}

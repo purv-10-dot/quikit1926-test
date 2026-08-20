@@ -104,7 +104,7 @@ export function SelectCasesList({
           <p className="p-4 text-sm text-gray-500">No cases match.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white">
+            <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-gray-200 text-left text-[11px] text-gray-500">
                 <th className="w-9 px-2 py-1.5" />
                 <th className="px-2 py-1.5">Title</th>

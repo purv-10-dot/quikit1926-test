@@ -11,10 +11,11 @@ import {
   type TestCaseRow,
 } from "./case-meta";
 import { BulkActionsBar } from "./bulk-actions-bar";
+import { CaseTableHeader } from "./case-table-header";
+import { CaseTableLoadMore } from "./case-table-load-more";
 import { CaseCell } from "./case-row-cells";
 import { CaseTitleCell } from "./case-title-cell";
 import type { InlinePatch } from "./inline-cell-types";
-import { ColumnsMenu } from "./columns-menu";
 import { TriCheckbox } from "../runs/_components/tri-checkbox";
 
 /**
@@ -32,9 +33,21 @@ interface CaseTableProps {
   rows: TestCaseRow[];
   loading: boolean;
   total: number;
+  /** True while more pages exist beyond what `rows` currently holds. */
+  hasMore?: boolean;
+  /** True while the NEXT page is in flight (distinct from `loading`, which is
+   *  only the first page). */
+  loadingMore?: boolean;
+  /** Fetches the next page — called on scroll-near-bottom and by the
+   *  fallback "Load more" button. Omit to disable pagination (e.g. every row
+   *  already fits in one page and there's nothing more to load). */
+  onLoadMore?: () => void;
   onOpen: (caseId: string) => void;
   onCreate: () => void;
   canCreate: boolean;
+  /** True on the "Deleted" tab — swaps the empty state's copy/CTA so an empty
+   *  trash reads as "nothing deleted" rather than "no cases exist yet". */
+  showDeleted?: boolean;
   /** Null when viewing the whole suite. */
   sectionName: string | null;
   projectId: string;
@@ -67,49 +80,17 @@ interface CaseTableProps {
   };
 }
 
-/**
- * Shared header for both the populated and empty states.
- *
- * Rendered in the empty case too, so an empty folder reads as "this folder is
- * empty" rather than "the page failed to load" — and so you can still see WHERE
- * you are while it is empty.
- */
-function TableHeader({
-  sectionName,
-  total,
-  projectId,
-  columns,
-  onColumns,
-}: {
-  sectionName: string | null;
-  total: number;
-  projectId: string;
-  columns: CaseColumnKey[];
-  onColumns: (next: CaseColumnKey[]) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2.5">
-      <h2 className="min-w-0 truncate text-sm font-semibold text-gray-900">
-        {/* "All cases in this suite" spelled out: the old label said "All cases in
-            suite" while a FOLDER was named "All test cases", and the two read as
-            the same thing. */}
-        {sectionName ?? "All cases in this suite"}
-        <span className="ml-2 font-normal tabular-nums text-gray-400">
-          {total} {total === 1 ? "case" : "cases"}
-        </span>
-      </h2>
-      <ColumnsMenu projectId={projectId} visible={columns} onChange={onColumns} />
-    </div>
-  );
-}
-
 export function CaseTable({
   rows,
   loading,
   total,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onOpen,
   onCreate,
   canCreate,
+  showDeleted,
   sectionName,
   projectId,
   columns,
@@ -145,7 +126,7 @@ export function CaseTable({
     // "the page failed to load", and so the location is still visible.
     return (
       <div className="flex h-full flex-col">
-        <TableHeader
+        <CaseTableHeader
           sectionName={sectionName}
           total={0}
           projectId={projectId}
@@ -156,16 +137,20 @@ export function CaseTable({
           <div className="max-w-sm text-center">
             <FileText className="mx-auto h-8 w-8 text-gray-300" />
             <h3 className="mt-3 text-sm font-semibold text-gray-800">
-              {sectionName
-                ? `Nothing in “${sectionName}” yet`
-                : "This suite has no test cases yet"}
+              {showDeleted
+                ? sectionName
+                  ? `Nothing deleted in “${sectionName}”`
+                  : "Nothing deleted in this suite"
+                : sectionName
+                  ? `Nothing in “${sectionName}” yet`
+                  : "This suite has no test cases yet"}
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-gray-500">
-              A test case describes one thing to check — the steps to follow and
-              what should happen. Once cases exist, you group them into a test run
-              to execute them.
+              {showDeleted
+                ? "Deleted test cases show up here and can be restored at any time."
+                : "A test case describes one thing to check — the steps to follow and what should happen. Once cases exist, you group them into a test run to execute them."}
             </p>
-            {canCreate && (
+            {canCreate && !showDeleted && (
               <button
                 type="button"
                 onClick={onCreate}
@@ -182,7 +167,7 @@ export function CaseTable({
 
   return (
     <div className="flex h-full flex-col">
-      <TableHeader
+      <CaseTableHeader
         sectionName={sectionName}
         total={total}
         projectId={projectId}
@@ -201,9 +186,20 @@ export function CaseTable({
         />
       )}
 
-      <div className="flex-1 overflow-auto">
+      <div
+        className="flex-1 overflow-auto"
+        onScroll={(e) => {
+          if (!onLoadMore || !hasMore || loadingMore) return;
+          const el = e.currentTarget;
+          // Fire a little before the true bottom so the next page is already
+          // loading by the time the user actually reaches it.
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+            onLoadMore();
+          }
+        }}
+      >
         <table className="w-full text-sm">
-          <thead className="sticky top-0">
+          <thead className="sticky top-0 z-10">
             <tr className="text-left">
               {selection && (
                 <th className="w-9 bg-accent-50 px-3 py-2">
@@ -274,6 +270,15 @@ export function CaseTable({
             ))}
           </tbody>
         </table>
+
+        {hasMore && (
+          <CaseTableLoadMore
+            shown={rows.length}
+            total={total}
+            loading={Boolean(loadingMore)}
+            onLoadMore={onLoadMore}
+          />
+        )}
       </div>
 
       {columns.includes("forecast") && (
