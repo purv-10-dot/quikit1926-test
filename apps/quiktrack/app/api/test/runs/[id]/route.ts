@@ -4,7 +4,13 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
-import { rerunTests, setRunState, TestRunError } from "@/lib/services/testRuns";
+import {
+  addCasesToRun,
+  removeUntestedCasesFromRun,
+  rerunTests,
+  setRunState,
+  TestRunError,
+} from "@/lib/services/testRuns";
 import { badRequest, gateProject, serverError } from "@/lib/test/gate";
 
 /**
@@ -45,6 +51,23 @@ const patchSchema = z.discriminatedUnion("action", [
     startDate: z.string().date().nullish(),
     endDate: z.string().date().nullish(),
     refTickets: z.string().trim().max(2_000).nullish(),
+  }),
+  /**
+   * ADD cases to an existing run (QUIKTR-341). Deliberately separate from
+   * `edit` — a case that was never in the run has no results to lose, so
+   * adding is unconditionally safe.
+   */
+  z.object({ action: z.literal("addCases") }).extend({
+    caseIds: z.array(z.string().min(1)).min(1).max(500),
+  }),
+  /**
+   * REMOVE untested cases from a run (QUIKTR-341's "Select cases" modal
+   * supports unticking a not-yet-executed case). Still never removes a case
+   * with a recorded result — `removeUntestedCasesFromRun` independently
+   * re-verifies that server-side rather than trusting this list.
+   */
+  z.object({ action: z.literal("removeCases") }).extend({
+    caseIds: z.array(z.string().min(1)).min(1).max(500),
   }),
 ]);
 
@@ -257,6 +280,16 @@ export const PATCH = withOrgAuth<Params>(
           body.action === "close" ? "closed" : "open",
         );
         return NextResponse.json({ success: true, data: updated });
+      }
+
+      if (body.action === "addCases") {
+        const result = await addCasesToRun(orgId, params.id, body.caseIds);
+        return NextResponse.json({ success: true, data: result });
+      }
+
+      if (body.action === "removeCases") {
+        const result = await removeUntestedCasesFromRun(orgId, params.id, body.caseIds);
+        return NextResponse.json({ success: true, data: result });
       }
 
       const created = await rerunTests(

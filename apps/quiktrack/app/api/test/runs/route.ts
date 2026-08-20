@@ -75,6 +75,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           // does not know about.
           description: true,
           refTickets: true,
+          // QUIKTR-341 — the edit panel's "Include test cases" picker needs to
+          // know whether the run already has a suite to browse.
+          suiteId: true,
           // Lets the row render Restore instead of Delete in the deleted view.
           isDeleted: true,
           _count: { select: { tests: true } },

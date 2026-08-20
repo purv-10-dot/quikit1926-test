@@ -35,6 +35,11 @@ export interface RunnerTest {
     section: { id: string; name: string };
   };
   config: { id: string; name: string } | null;
+  /** True once ANY result has ever been recorded for this test — QUIKTR-341's
+   *  edit-run "Select cases" modal uses this to decide whether the case can be
+   *  removed. The server independently re-verifies this before deleting; it
+   *  is not itself trusted for that decision. */
+  hasResults?: boolean;
 }
 
 export interface RunnerStep {

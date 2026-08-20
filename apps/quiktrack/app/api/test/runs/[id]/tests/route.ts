@@ -104,6 +104,13 @@ export const GET = withOrgAuth<Params>(
               },
             },
             config: { select: { id: true, name: true } },
+            // QUIKTR-341 — the edit-run "Select cases" modal needs to know
+            // which of the run's current cases are safe to remove: only a
+            // test with ZERO recorded results can ever be removed
+            // (`removeUntestedCasesFromRun` independently re-verifies this
+            // server-side before deleting; this count only drives the UI's
+            // lock icon, it is not itself trusted for the delete decision).
+            _count: { select: { results: true } },
           },
           orderBy: ORDER_BY[q.sort],
           skip: (q.page - 1) * q.pageSize,
@@ -116,7 +123,12 @@ export const GET = withOrgAuth<Params>(
       // {...} } }` nesting in the payload would push unwrapping onto the client.
       const items = tests.map((t) => {
         const { tags, ...caseRest } = t.case;
-        return { ...t, case: { ...caseRest, labels: tags.map((tt) => tt.tag) } };
+        const { _count, ...testRest } = t;
+        return {
+          ...testRest,
+          hasResults: _count.results > 0,
+          case: { ...caseRest, labels: tags.map((tt) => tt.tag) },
+        };
       });
 
       return NextResponse.json({
