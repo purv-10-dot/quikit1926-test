@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Search, MoreHorizontal } from "lucide-react";
 import { ScreenNameDialog } from "./screen-name-dialog";
 import { useClickOutside } from "./use-click-outside";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 interface ScreenRow {
   id: string;
@@ -157,7 +158,15 @@ export function ScreensOverview({ projectId }: { projectId: string }) {
                       onDelete={
                         s.isDefault
                           ? undefined
-                          : () => { if (confirm(`Delete "${s.name}"?`)) remove.mutate(s.id); }
+                          : async () => {
+                              const ok = await confirmDialog({
+                                title: "Delete screen?",
+                                message: `"${s.name}" will be permanently deleted. This can't be undone.`,
+                                confirmText: "Delete",
+                                danger: true,
+                              });
+                              if (ok) remove.mutate(s.id);
+                            }
                       }
                     />
                   </td>

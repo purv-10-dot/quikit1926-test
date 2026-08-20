@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -12,6 +12,7 @@ import {
   Loader2,
   PlayCircle,
   Sparkles,
+  X,
 } from "lucide-react";
 import { Button, Input } from "@quikit/ui";
 import { RequirePerm } from "@/components/shell/require-perm";
@@ -89,6 +90,16 @@ function MigrationView() {
   >([]);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  // Clear the selected mapping file: reset parsed rows, name, error, AND the
+  // native input's value (so re-selecting the same file fires onChange again).
+  function clearCsv() {
+    setUserMappings([]);
+    setCsvFileName(null);
+    setCsvError(null);
+    if (csvInputRef.current) csvInputRef.current.value = "";
+  }
 
   function parseCsv(text: string): {
     rows: typeof userMappings;
@@ -274,7 +285,9 @@ function MigrationView() {
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-      <div className="px-8 py-8 space-y-8">
+      {/* Extra bottom padding (pb-28) keeps the Back/Next footer clear of the
+          floating chat-support bubble that's fixed to the bottom-right. */}
+      <div className="px-8 pt-8 pb-28 space-y-8">
         {/* Hero */}
         <header className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div
@@ -470,6 +483,7 @@ function MigrationView() {
                   </span>
                 </span>
                 <input
+                  ref={csvInputRef}
                   type="file"
                   accept=".csv,text/csv"
                   onChange={handleCsvUpload}
@@ -484,27 +498,76 @@ function MigrationView() {
                 <code className="font-mono">User id, User name, email, ...</code>) —
                 extra columns are ignored. Run a dry-run first to get the
                 unresolved <code className="font-mono">accountId</code>s, then
-                upload either format. See{" "}
-                <a
-                  href="/apps/quiktrack/docs/jira-migration-csv-users.md"
-                  className="underline text-accent-600 dark:text-accent-400"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  docs/jira-migration-csv-users.md
-                </a>
-                .
+                upload either format.
               </p>
+              {/* Inline format help — the old link pointed at a raw .md file
+                  that isn't served in-app (it resolved to the deployment host).
+                  Show the guidance right here instead. */}
+              <details className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                <summary className="cursor-pointer select-none text-accent-600 hover:underline dark:text-accent-400">
+                  CSV format &amp; examples
+                </summary>
+                <div className="mt-2 space-y-2 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700/50 dark:bg-gray-900/20">
+                  <p>
+                    Two header layouts are accepted. Header names are
+                    case-insensitive; extra columns are ignored.
+                  </p>
+                  <div>
+                    <p className="font-semibold text-gray-700 dark:text-gray-300">
+                      QuikTrack format
+                    </p>
+                    <pre className="mt-1 overflow-x-auto rounded bg-white p-2 font-mono text-[11px] text-gray-700 dark:bg-gray-950 dark:text-gray-200">
+{`accountId,email,firstName,lastName
+5b10a2...,jane@acme.com,Jane,Doe`}
+                    </pre>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-700 dark:text-gray-300">
+                      Atlassian Org export
+                    </p>
+                    <pre className="mt-1 overflow-x-auto rounded bg-white p-2 font-mono text-[11px] text-gray-700 dark:bg-gray-950 dark:text-gray-200">
+{`User id,User name,email
+5b10a2...,Jane Doe,jane@acme.com`}
+                    </pre>
+                  </div>
+                  <p>
+                    Required columns: an account-id (<code className="font-mono">accountId</code>{" "}
+                    or <code className="font-mono">User id</code>) and{" "}
+                    <code className="font-mono">email</code>. A single{" "}
+                    <code className="font-mono">User name</code> is split into
+                    first/last on the first space when separate name columns
+                    aren&apos;t given.
+                  </p>
+                </div>
+              </details>
               {csvFileName && !csvError && (
-                <p className="mt-1.5 text-[12px] text-green-700 dark:text-green-300">
-                  ✓ {userMappings.length} mapping{userMappings.length === 1 ? "" : "s"} loaded from{" "}
-                  <span className="font-mono">{csvFileName}</span>
-                </p>
+                <div className="mt-1.5 flex items-center gap-2 text-[12px] text-green-700 dark:text-green-300">
+                  <span>
+                    ✓ {userMappings.length} mapping{userMappings.length === 1 ? "" : "s"} loaded from{" "}
+                    <span className="font-mono">{csvFileName}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearCsv}
+                    className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  >
+                    <X className="h-3 w-3" />
+                    Remove
+                  </button>
+                </div>
               )}
               {csvError && (
-                <p className="mt-1.5 text-[12px] text-red-700 dark:text-red-300">
-                  ⚠ {csvError}
-                </p>
+                <div className="mt-1.5 flex items-center gap-2 text-[12px] text-red-700 dark:text-red-300">
+                  <span>⚠ {csvError}</span>
+                  <button
+                    type="button"
+                    onClick={clearCsv}
+                    className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  >
+                    <X className="h-3 w-3" />
+                    Clear
+                  </button>
+                </div>
               )}
             </div>
 
@@ -593,8 +656,9 @@ function MigrationView() {
           </StepCard>
         )}
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between">
+        {/* Navigation — extra right padding keeps the Next button clear of the
+            floating chat-support bubble pinned to the bottom-right corner. */}
+        <div className="flex items-center justify-between pr-20">
           <Button
             onClick={goBack}
             disabled={step === 1 || run.isPending}

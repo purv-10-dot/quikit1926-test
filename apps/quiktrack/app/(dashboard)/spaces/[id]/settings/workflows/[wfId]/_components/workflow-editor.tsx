@@ -590,17 +590,25 @@ function EditorBody({
             }}
             onRemoveRule={(i) => ed.removeRule(selectedTransition.id, i)}
             conditionsMode={
-              // ANY = all conditions share one group; ALL = distinct groups.
+              // groupNo semantics: same group = OR (ANY), distinct groups = AND
+              // (ALL). ANY keeps every condition in group 0; ALL puts each in its
+              // own group starting at 1. With a SINGLE condition distinct-group
+              // counting can't tell the modes apart, so we read the intent from
+              // whether its group is 0 (ANY) or non-zero (ALL) — that's what lets
+              // the toggle actually stick for one condition.
               (() => {
                 const groups = selectedTransition.rules
                   .filter((r) => r.kind === "CONDITION")
                   .map((r) => r.groupNo ?? 0);
+                if (groups.length <= 1) return (groups[0] ?? 0) === 0 ? "ANY" : "ALL";
                 return new Set(groups).size <= 1 ? "ANY" : "ALL";
               })()
             }
             onSetConditionsMode={(mode) => {
-              // ALL → each condition its own group; ANY → all share group 0.
-              let g = 0;
+              // ANY → all conditions share group 0 (OR). ALL → each gets its own
+              // group starting at 1 (AND); starting at 1 (not 0) means a single
+              // ALL condition has a non-zero group, so the mode reads back as ALL.
+              let g = 1;
               const remapped = selectedTransition.rules.map((r) =>
                 r.kind === "CONDITION" ? { ...r, groupNo: mode === "ANY" ? 0 : g++ } : r,
               );

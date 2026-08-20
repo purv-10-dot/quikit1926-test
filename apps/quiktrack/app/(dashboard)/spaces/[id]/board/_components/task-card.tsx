@@ -9,6 +9,8 @@ import {
   Zap,
   ExternalLink,
   Trash2,
+  Check,
+  Search,
 } from "lucide-react";
 import type { BoardIssue, BoardStatus, EpicLite } from "./board-meta";
 import { typeMeta, priorityMeta } from "./board-meta";
@@ -71,7 +73,37 @@ export function TaskCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  // Local optimistic assignee so the avatar updates instantly on pick, before
+  // the board's refetch lands.
+  const [assigneeId, setAssigneeId] = useState<string | null>(task.assigneeId ?? null);
+  useEffect(() => setAssigneeId(task.assigneeId ?? null), [task.assigneeId]);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const assigneeBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  async function assign(next: string | null) {
+    const prev = assigneeId;
+    setAssigneeId(next); // optimistic
+    setAssigneeOpen(false);
+    try {
+      const res = await fetch(`/api/issues/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeId: next }),
+      }).then((r) => r.json());
+      if (!res?.success) {
+        setAssigneeId(prev); // rollback
+        showToast(res?.error ?? "Failed to update assignee", "error");
+        return;
+      }
+      window.dispatchEvent(
+        new CustomEvent("quiktrack:issue-updated", { detail: { projectId, issueId: task.id } }),
+      );
+    } catch (error: unknown) {
+      setAssigneeId(prev);
+      showToast(error instanceof Error ? error.message : "Failed to update assignee", "error");
+    }
+  }
 
   async function confirmDelete() {
     if (deleting) return;
@@ -246,22 +278,37 @@ export function TaskCard({
               </span>
             )}
             <P.Icon className={`h-3.5 w-3.5 ${P.color}`} />
-            {task.assigneeId ? (
-              <span
-                className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0"
-                style={{ background: memberColor(task.assigneeId) }}
-                title={memberDisplayName(membersById?.[task.assigneeId])}
-              >
-                {memberInitials(membersById?.[task.assigneeId])}
-              </span>
-            ) : (
-              <span
-                className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0"
-                title="No assignee"
-              >
-                <User className="w-3.5 h-3.5 text-gray-500" />
-              </span>
-            )}
+            {/* Assignee — click to open a searchable picker (keep it clickable
+                under the drag sensor via stopPropagation on pointerdown). */}
+            <button
+              ref={assigneeBtnRef}
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAssigneeOpen((v) => !v);
+              }}
+              className="rounded-full flex-shrink-0 hover:ring-2 hover:ring-blue-200"
+              aria-label="Change assignee"
+              title={
+                assigneeId
+                  ? memberDisplayName(membersById?.[assigneeId])
+                  : "Assign"
+              }
+            >
+              {assigneeId ? (
+                <span
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
+                  style={{ background: memberColor(assigneeId) }}
+                >
+                  {memberInitials(membersById?.[assigneeId])}
+                </span>
+              ) : (
+                <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
+                  <User className="w-3.5 h-3.5 text-gray-500" />
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -306,6 +353,22 @@ export function TaskCard({
             Delete
           </button>
         </div>
+      </PopoverPanel>
+
+      {/* Assignee picker — searchable list of project members + Unassigned. */}
+      <PopoverPanel
+        anchorRef={assigneeBtnRef}
+        open={assigneeOpen}
+        onClose={() => setAssigneeOpen(false)}
+        align="right"
+        width={240}
+        estimatedHeight={300}
+      >
+        <AssigneePicker
+          members={membersById ? Object.values(membersById) : []}
+          value={assigneeId}
+          onPick={(id) => void assign(id)}
+        />
       </PopoverPanel>
 
       {confirmOpen && (
@@ -436,6 +499,85 @@ function SubtaskTree({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Searchable assignee picker rendered inside the card's PopoverPanel. Lists
+ * "Unassigned" plus every project member (filtered live by the search box) and
+ * calls `onPick` with the chosen userId (or null for Unassigned).
+ */
+function AssigneePicker({
+  members,
+  value,
+  onPick,
+}: {
+  members: ColumnInlineCreateMember[];
+  value: string | null;
+  onPick: (userId: string | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => searchRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? members.filter((m) => memberDisplayName(m).toLowerCase().includes(q))
+    : members;
+  return (
+    <div className="py-1" onClick={(e) => e.stopPropagation()}>
+      <div className="px-2 pb-1">
+        <div className="flex items-center gap-1.5 border border-gray-200 rounded px-2 h-7 focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400">
+          <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search for people…"
+            className="flex-1 text-xs bg-transparent focus:outline-none"
+          />
+        </div>
+      </div>
+      <div className="max-h-56 overflow-y-auto">
+        {!q && (
+          <button
+            type="button"
+            onClick={() => onPick(null)}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-left text-gray-700 hover:bg-gray-50"
+          >
+            <span className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center">
+              <User className="h-3.5 w-3.5 text-gray-500" />
+            </span>
+            Unassigned
+            {value === null && <Check className="h-3.5 w-3.5 ml-auto text-blue-600" />}
+          </button>
+        )}
+        {filtered.map((m) => (
+          <button
+            key={m.userId}
+            type="button"
+            onClick={() => onPick(m.userId)}
+            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-gray-50 ${
+              m.userId === value ? "bg-blue-50 text-blue-700" : "text-gray-700"
+            }`}
+          >
+            <span
+              className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
+              style={{ background: memberColor(m.userId) }}
+            >
+              {memberInitials(m)}
+            </span>
+            <span className="truncate">{memberDisplayName(m)}</span>
+            {m.userId === value && <Check className="h-3.5 w-3.5 ml-auto shrink-0 text-blue-600" />}
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <div className="px-2.5 py-2 text-xs text-gray-400">No matches</div>
+        )}
+      </div>
     </div>
   );
 }

@@ -227,6 +227,7 @@ function InlineCreatorInner({
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
   const assigneeRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 0);
@@ -241,10 +242,23 @@ function InlineCreatorInner({
         setDatePopoverOpen(false);
       if (assigneePopoverOpen && assigneeRef.current && !assigneeRef.current.contains(t))
         setAssigneePopoverOpen(false);
+      // Close the whole inline creator when clicking outside it. Only when the
+      // title is empty and nothing is submitting — so a click-away never
+      // discards text the user has started typing.
+      if (
+        open &&
+        rootRef.current &&
+        !rootRef.current.contains(t) &&
+        !title.trim() &&
+        !submitting
+      ) {
+        setError(null);
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [typeMenuOpen, datePopoverOpen, assigneePopoverOpen]);
+  }, [typeMenuOpen, datePopoverOpen, assigneePopoverOpen, open, title, submitting]);
 
   async function submit() {
     const t = title.trim();
@@ -314,7 +328,7 @@ function InlineCreatorInner({
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
-    <div className="mx-3 my-2">
+    <div className="mx-3 my-2" ref={rootRef}>
     <div className={`flex items-center h-9 px-1.5 border rounded-md bg-white ${error ? "border-red-500" : "border-blue-500"}`}>
       <div className="relative" ref={typeMenuRef}>
         <button

@@ -31,23 +31,9 @@ export function IntroductionWidget() {
             Welcome to QuikTrack
           </h4>
           <p className="text-sm text-gray-700 leading-snug">
-            Not sure where to start? Check out the{" "}
-            <Link href="/dashboard" className="text-blue-600 hover:underline">
-              QuikTrack 101 guide
-            </Link>{" "}
-            and{" "}
-            <Link href="/dashboard" className="text-blue-600 hover:underline">
-              training course
-            </Link>
-            .
+            Plan, track, and ship your team&apos;s work — all in one place.
           </p>
-          <p className="mt-2 text-sm text-gray-700">
-            You can{" "}
-            <Link href="/settings" className="text-blue-600 hover:underline">
-              customize this text
-            </Link>{" "}
-            in the Administration section.
-          </p>
+       
         </div>
       </div>
       <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-500 inline-flex items-center gap-1">
