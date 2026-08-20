@@ -85,11 +85,20 @@ const idParam = (description: string) => ({
  * These constants exist so the wording cannot drift between the sites that
  * share a source — `id` (issue) appears on eight operations.
  *
- * NOTE the id/key asymmetry, stated per-parameter below because it is the
- * next failure of this shape waiting to happen: PROJECTS resolve either an id
- * or a projectKey; ISSUES and SPRINTS resolve an id only, with no key form at
- * all (every issue/sprint route looks up `where: { id }`, no key fallback).
- * A model that generalises "keys work" from one to the other gets a 404.
+ * NOTE the id/key asymmetry, stated per-parameter below. PROJECTS and ISSUES
+ * both resolve either an id or a human-readable key. SPRINTS remain id-only —
+ * every sprint route still looks up `where: { id }` with no key fallback — so
+ * a model that generalises "keys work" from issues to sprints gets a 404.
+ *
+ * Issues used to be id-only too, and this comment used to say so. That
+ * asymmetry was the failure it predicted: the runtime created `QUIKSC-290`,
+ * called `GET /api/issues/QUIKSC-290`, got a 404, correctly diagnosed "it
+ * might be a key instead of an ID" — and had no way to act on that, because
+ * nothing converted one into the other. The eight issue operations sharing
+ * ISSUE_ID_DESC below now resolve either form through
+ * `lib/mcp/resolveIssue.ts` (one indexed lookup matching either column, not a
+ * format sniff). Sprint lookup fails in the same shape and is a known
+ * follow-up — see docs/Quikpilot_docs/AI-Runtime-Enabler-Decisions.md.
  *
  * `assigneeId` and `statusId` are deliberately left without a provenance note:
  * no operation in this manifest produces a user id or a status id, so a note
@@ -99,7 +108,7 @@ const PROJECT_ID_DESC =
   'The project\'s `id` from `list_projects` — a cuid such as `cmsrjonuq00624tfmmcsxac23`. Not the project name. A projectKey (e.g. "WST") is also accepted, but prefer `id` when chaining from `list_projects`.';
 
 const ISSUE_ID_DESC =
-  'The issue\'s `id` from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. Not the issue key (e.g. "WST-42"): unlike `projectId`, this parameter does not accept a key.';
+  'The issue\'s `id` from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. An issue key (e.g. "WST-42", case-insensitive) is also accepted, including the key returned by `create_issue`; prefer `id` when chaining from another call. Not the issue title.';
 
 const SPRINT_ID_DESC =
   "The sprint's `id` from `list_sprints` — a cuid such as `cmsrk3v6y000a1tfm2b7ndq5f`. Not the sprint name.";
@@ -145,6 +154,20 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
         assigneeId: { type: "string" },
         sprintId: { type: "string", description: SPRINT_ID_DESC },
         limit: { type: "integer", maximum: 100 },
+        // Documented, not added: this parameter already backs the board,
+        // backlog, list and saved-filter search boxes. The description states
+        // its real scope INCLUDING description-matching, rather than narrowing
+        // a filter humans already use. Saying what it does not guarantee is as
+        // load-bearing as saying what it does — a description hit is a weak
+        // signal (a hundred issues mention "login redirect" in their body; one
+        // is titled it), and the model cannot tell a good match from a
+        // plausible one. Hence the explicit "not a lookup" steer: key
+        // resolution is `get_issue`'s job now, and it is exact.
+        search: {
+          type: "string",
+          description:
+            "Free-text filter over this project's issues. Matches a substring of the issue key, title, OR description, case-insensitively. NOT an exact lookup: a description match can return an issue that merely mentions the phrase, so do not assume a single result is the issue you meant — check the returned `key` and `title` before acting on it. If you already know the issue key, call `get_issue` with it instead; that resolves exactly.",
+        },
       },
     },
     outputSchema: { type: "object", description: "{data: QtIssue[], nextCursor, total}" },
@@ -281,7 +304,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
         targetIssueId: {
           type: "string",
           description:
-            "The `id` of the issue to link to, from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. Not the issue key.",
+            'The `id` of the issue to link to, from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. An issue key (e.g. "WST-42") is also accepted. May be in a different project; cross-project links are intentional.',
         },
       },
     },

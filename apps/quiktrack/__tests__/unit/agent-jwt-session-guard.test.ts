@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { stripComments } from "../helpers/stripComments";
 
 /**
  * GUARD TEST — a route that accepts an agent JWT must not read `ctx.session`.
@@ -80,82 +81,11 @@ const SESSION_ACCESS = /\bsession\s*\./;
 const FORBIDDEN_FIELDS = ["isSuperAdmin", "membershipRole"];
 
 /**
- * Remove `//` line comments and block comments, leaving everything else —
- * including newlines — in place so line structure survives.
- *
- * String and template literals are tracked so a `//` inside a URL string does
- * not swallow the rest of the line. That direction matters: over-stripping
- * would drop a real `allowAgentJwt: true` and silently exclude a route from
- * the scan, which is the failure this guard exists to prevent.
+ * `stripComments` moved to __tests__/helpers/stripComments.ts when
+ * issue-id-resolution-guard.test.ts became its second caller. Its own
+ * behavioural tests stay below, in "the selector ignores commented-out
+ * occurrences" — they assert the property THIS guard depends on.
  */
-export function stripComments(src: string): string {
-  type State = "code" | "line" | "block" | "single" | "double" | "template";
-  let state: State = "code";
-  let out = "";
-  let i = 0;
-
-  while (i < src.length) {
-    const c = src[i];
-    const next = src[i + 1];
-
-    if (state === "code") {
-      if (c === "/" && next === "/") {
-        state = "line";
-        i += 2;
-        continue;
-      }
-      if (c === "/" && next === "*") {
-        state = "block";
-        i += 2;
-        continue;
-      }
-      if (c === "'") state = "single";
-      else if (c === '"') state = "double";
-      else if (c === "`") state = "template";
-      out += c;
-      i++;
-      continue;
-    }
-
-    if (state === "line") {
-      if (c === "\n") {
-        state = "code";
-        out += c;
-      }
-      i++;
-      continue;
-    }
-
-    if (state === "block") {
-      if (c === "*" && next === "/") {
-        state = "code";
-        i += 2;
-        continue;
-      }
-      if (c === "\n") out += c; // keep line numbers honest
-      i++;
-      continue;
-    }
-
-    // Inside a string or template literal — copy verbatim, honour escapes.
-    if (c === "\\") {
-      out += c + (next ?? "");
-      i += 2;
-      continue;
-    }
-    if (
-      (state === "single" && c === "'") ||
-      (state === "double" && c === '"') ||
-      (state === "template" && c === "`")
-    ) {
-      state = "code";
-    }
-    out += c;
-    i++;
-  }
-
-  return out;
-}
 
 function walk(dir: string): string[] {
   let out: string[] = [];

@@ -4,7 +4,12 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
 import { createCommentSchema } from "@/lib/validation/comment";
+import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
 
+// `[id]` accepts the cuid or the issue key — see the resolution note in
+// app/api/issues/[id]/route.ts. `loadAccessibleIssue` below takes an already
+// resolved cuid; the raw path param must not reach it, or the GET's
+// `issueId`-filtered comment query returns an empty list inside a 200.
 async function loadAccessibleIssue(
   orgId: string,
   userId: string,
@@ -25,12 +30,16 @@ async function loadAccessibleIssue(
 
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
-    const issue = await loadAccessibleIssue(orgId, userId, params.id);
+    const resolved = await resolveIssueIdOrKey(orgId, params.id);
+    if (!resolved) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const issue = await loadAccessibleIssue(orgId, userId, resolved.id);
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const comments = await db.qtIssueComment.findMany({
-      where: { orgId: orgId, issueId: params.id, isDeleted: false },
+      where: { orgId: orgId, issueId: issue.id, isDeleted: false },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -68,7 +77,11 @@ export const GET = withOrgAuth<{ id: string }>(
 
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
-    const issue = await loadAccessibleIssue(orgId, userId, params.id);
+    const resolved = await resolveIssueIdOrKey(orgId, params.id);
+    if (!resolved) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const issue = await loadAccessibleIssue(orgId, userId, resolved.id);
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
