@@ -32,6 +32,8 @@ function model(over: Partial<ApprovalCardModel> = {}): ApprovalCardModel {
     viewerMayAct: true,
     blockedReason: null,
     error: null,
+    // Default to the requester’s view; the observer tests flip it.
+    showToolInput: true,
     ...over,
   };
 }

@@ -19,6 +19,7 @@ import { getRuntimeClient } from "@/lib/server/runtime";
 import { ApprovalDecisionError } from "@/lib/server/runtime/types";
 import type { ApprovalDecisionErrorCode } from "@/lib/server/runtime/types";
 import { userCan } from "@/lib/authz/permissions";
+import { applyApprovalDecision } from "@/lib/server/approval-message.service";
 
 export type ApprovalAction = "approve" | "reject";
 
@@ -167,6 +168,26 @@ export async function decideApprovalRequest(
         "approvals: decision recorded, target app refused the write",
       );
     }
+
+    /**
+     * Carry the outcome onto the persisted card and fan it out, so the channel
+     * — including everyone who was never in the turn — sees the state change
+     * live rather than on their next reload.
+     *
+     * AWAITED but never able to fail this response. The decision is already
+     * recorded on the runtime by now; reporting an error because our own copy
+     * could not be updated would tell the user their approval failed when it
+     * did not. `applyApprovalDecision` swallows and logs its own failures, and
+     * a missed patch is repaired by the next reconcile.
+     *
+     * This route is NOT channel-scoped — it has a requestId and nothing else —
+     * which is why the card is stored under a `clientMessageId` derived from
+     * that id and found by an indexed lookup rather than a JSON-path scan.
+     */
+    await applyApprovalDecision(ctx.orgId, requestId, decision, {
+      decisionBy: ctx.userId,
+    });
+
     return Response.json(decision);
   } catch (e) {
     const code = e instanceof ApprovalDecisionError ? e.code : "unavailable";

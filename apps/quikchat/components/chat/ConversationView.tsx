@@ -24,6 +24,7 @@ import {
   fetchPinned,
   forwardMessageApi,
   pinChannel,
+  reconcileChannelApprovals,
   removeMember,
   resetAiChat,
   setMemberRole,
@@ -44,7 +45,7 @@ import { whoIsTyping, type TypingState } from "@/lib/typing-store";
 import { mergeMessageEvent } from "@/lib/realtime-cache";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { useProfile } from "@/components/profile/ProfileProvider";
-import { fromApprovalRequest } from "@/lib/approval-card";
+import { fromApprovalRequest, readApprovalMessageData } from "@/lib/approval-card";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
@@ -272,6 +273,79 @@ export function ConversationView({
     return () => registerScheduleWith(null);
   }, [registerScheduleWith, channelId]);
 
+  /**
+   * Is there anything for the reconcile pass to do here? True when a loaded
+   * message is an approval card that is MINE and still reads `pending`.
+   *
+   * Someone else's card is excluded because the ledger is token-scoped — we
+   * could not read its row even if we asked — and terminal cards are excluded
+   * because a decided card cannot become undecided.
+   */
+  /**
+   * Has the PERSISTED card for the live turn's request landed in the message
+   * list yet?
+   *
+   * Both cards exist on purpose — the ephemeral one appears the instant the
+   * `approval_needed` frame arrives, with no server round trip, and the
+   * persisted one is what survives a reload, a channel switch and a second
+   * device. What must NOT happen is both rendering at once: the same request,
+   * twice, one above the composer and one in the transcript, each with its own
+   * Approve button.
+   *
+   * So they hand over rather than stack. The ephemeral bubble covers the gap
+   * until the persisted message arrives over the socket, then stands down.
+   * Matching on `requestId` and not merely on “any approval card exists”, so an
+   * older card in the same channel cannot suppress a live one.
+   */
+  const liveApprovalIsPersisted = useMemo(() => {
+    const liveId = assistApproval?.requestId;
+    if (!liveId) return false;
+    return (messages ?? []).some((m) => {
+      if (m.type !== "ApprovalRequest") return false;
+      return readApprovalMessageData(m.data)?.requestId === liveId;
+    });
+  }, [messages, assistApproval]);
+
+  const hasReconcilableApproval = useMemo(
+    () =>
+      (messages ?? []).some((m) => {
+        if (m.type !== "ApprovalRequest") return false;
+        const d = readApprovalMessageData(m.data);
+        return !!d && d.requesterId === currentUserId && d.status === "pending";
+      }),
+    [messages, currentUserId],
+  );
+
+  /**
+   * LAYER 2 of the approval-drift bound: repair this channel's persisted cards
+   * against the runtime's ledger when the conversation is opened.
+   *
+   * A decision taken outside our relay — a direct runtime call, another device,
+   * the expiry sweep, a module-disable cancel — never reaches the patch in
+   * `decideApprovalRequest`, so our snapshot would say `pending` forever. The
+   * requester is the only person the token-scoped ledger will answer for, and
+   * running it repairs the card for every observer in the channel because the
+   * fanout goes to the channel.
+   *
+   * Deliberately fire-and-forget and deliberately silent: anything that moved
+   * arrives as `message_update`, and a failed background repair is not something
+   * to interrupt the reader about. The server refuses to conclude anything from
+   * a failed or partial ledger read, so a quiet failure changes nothing.
+   *
+   * Gated on there actually being one of MY still-pending cards in the loaded
+   * messages, so opening an ordinary channel costs nothing. The dependency is
+   * the derived boolean rather than `messages`, so this fires once when such a
+   * card first appears — including when scrolling back reveals one in an older
+   * page — and not again on every arrival.
+   *
+   * Not on an interval: the card's own expiry clock covers the common case with
+   * no server at all.
+   */
+  useEffect(() => {
+    if (!hasReconcilableApproval) return;
+    void reconcileChannelApprovals(channelId).catch(() => undefined);
+  }, [channelId, hasReconcilableApproval]);
+
   // Previewable attachments (image/video + PDF) in the loaded thread → the
   // lightbox gallery. PDFs render in an iframe; the rest as media.
   const gallery = useMemo<LightboxItem[]>(() => {
@@ -460,6 +534,13 @@ export function ConversationView({
         }
       : undefined,
     liveSourcesById: liveSources,
+    // The persisted approval card answers through the SAME relay the live turn
+    // and Activity use. Answering here moves the same row Activity is listing,
+    // so the ledger is invalidated on settle exactly as it is there.
+    onDecideApproval: decideApproval,
+    onApprovalSettled: () => {
+      void qc.invalidateQueries({ queryKey: APPROVALS_QUERY_KEY });
+    },
   };
 
   const typingUsers: TypingUser[] = (typing ? whoIsTyping(typing, channelId, Date.now()) : [])
@@ -577,7 +658,7 @@ export function ConversationView({
             </div>
           </div>
         ) : null}
-        {assistApproval ? (
+        {assistApproval && !liveApprovalIsPersisted ? (
           <div className="qc-assist-approval" data-testid="assist-approval">
             <Avatar name="Assistant" id="quikchat-assistant-bot" size={28} />
             <div className="qc-assist-approval__body">

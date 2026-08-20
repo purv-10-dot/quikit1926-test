@@ -18,7 +18,20 @@ export interface UiPrefsDto {
 
 export type ChannelType = "dm" | "group" | "ai";
 export type ChannelVisibility = "public" | "private";
-export type MessageType = "Text" | "Media" | "SystemActivity" | "Delete" | "Meeting" | "Call";
+export type MessageType =
+  | "Text"
+  | "Media"
+  | "SystemActivity"
+  | "Delete"
+  | "Meeting"
+  | "Call"
+  /**
+   * A write the assistant parked for approval, persisted so the channel keeps a
+   * trace of it. SERVER-WRITTEN ONLY — deliberately absent from
+   * `SendMessageInput.type` below, and rejected by `messages.send`. See the
+   * allow-list there for why that matters more for this type than the others.
+   */
+  | "ApprovalRequest";
 export type ActorType = "human" | "ai_agent";
 export type MemberRole = "admin" | "member";
 
@@ -411,8 +424,97 @@ export interface AssistApprovalDecision {
   outcomeSummary?: string | null;
 }
 
+/**
+ * `data` on an `ApprovalRequest` message — our own shape, not the runtime's.
+ *
+ * ── WHY THIS IS A SNAPSHOT AND NOT JUST A POINTER ──────────────────────────
+ * The obvious design is `{ requestId }` hydrated server-side on read, the way a
+ * `Meeting` message carries `meetingId`. It does not work here, for two reasons
+ * that are both properties of the runtime's ledger rather than choices:
+ *
+ *  1. `GET /ai/requests` is scoped to the CALLER by the minted token, and there
+ *     is no fetch-one endpoint. An observer's ledger does not contain the
+ *     requester's row, so hydrating for the channel is not slow — it is
+ *     impossible. The channel-visible card is the whole point of persisting.
+ *  2. The ledger keeps terminal rows for 24h. The message is permanent. A card
+ *     that goes blank a day later is worse than the ephemeral one it replaced.
+ *
+ * So the message carries the facts. The cost is that two places hold one fact
+ * and can diverge — see `status` below, and `unconfirmedAt` for what happens
+ * when they do.
+ */
+export interface ApprovalMessageData {
+  /** Runtime-owned request id. Also the `clientMessageId` suffix — see the writer. */
+  requestId: string;
+  /** Who asked. Drives `viewerMayAct`: everyone else gets a read-only card. */
+  requesterId: string;
+  appId: string;
+  toolName: string;
+  /** Runtime's sentence for the PROPOSED write. Rendered verbatim. */
+  summary: string | null;
+  /**
+   * Raw wire value, NOT normalised here. `normaliseRisk` in the adapter owns
+   * that, so an unknown class renders at the highest risk on this path exactly
+   * as it does on the other two.
+   */
+  riskClass: string;
+  /**
+   * The tool's arguments, verbatim.
+   *
+   * Persisted in full even though the OBSERVER card does not render them: the
+   * requester's own card still shows the Details expander, and that is the
+   * surface where rule 2 (`toolInput` renders verbatim) has to hold. Which
+   * viewer sees it is decided at render time by `fromApprovalMessage`, not by
+   * what we chose to persist.
+   */
+  toolInput: Record<string, unknown>;
+  expiresAt: string | null;
+  /** When WE wrote the proposal. Our clock, not a runtime field. */
+  proposedAt: string;
+  /**
+   * OUR copy of the lifecycle state. Authoritative for DISPLAY only.
+   *
+   * The runtime remains authoritative for decisions — every Approve/Reject goes
+   * to it and it answers 409 if this row is stale, so divergence can produce a
+   * wrong screen and never a wrong write.
+   */
+  status: AssistApprovalStatus;
+  outcomeSummary?: string | null;
+  error?: string | null;
+  /** Who decided, when known. A raw id — resolved to a name only for display. */
+  decisionBy?: string | null;
+  decisionAt?: string | null;
+  /**
+   * Set when reconciliation looked for this request and the ledger no longer
+   * had it — it aged out of the 24h window while our copy still said `pending`.
+   *
+   * This is the honest end state of the divergence bound: we cannot learn what
+   * happened and will never be able to. The card says so rather than continuing
+   * to offer buttons for a decision that may not exist. Reachable in the stub
+   * via STUB_AGED_REQUEST_ID — a state only visible in a unit test is one
+   * nobody notices rendering wrong.
+   */
+  unconfirmedAt?: string | null;
+  /**
+   * When our copy was last known to match the runtime — stamped by the decision
+   * patch and by a reconcile that had to correct something.
+   *
+   * NOT written when a reconcile merely agrees: nothing renders it on a pending
+   * card, and a write per card per channel open with no reader is load nobody
+   * would attribute to opening a conversation. Kept because it is the audit
+   * trail for when a card last moved, and it costs nothing on writes that were
+   * happening anyway.
+   */
+  confirmedAt?: string | null;
+}
 export interface SendMessageInput {
   content: string;
+  /**
+   * ⚠️ NOT the same union as `MessageType`, and the gap is the point. `Delete`
+   * is a tombstone the delete path writes, and `ApprovalRequest` is written only
+   * by the assist relay. Neither may arrive from a client. Enforced at runtime
+   * by `messages.send` — this type alone would not stop a hand-rolled POST.
+   */
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";
   data?: Record<string, unknown>;
   parentMessageId?: string;

@@ -21,6 +21,7 @@
  */
 
 import type {
+  ApprovalMessageData,
   AssistApprovalRequest,
   AssistApprovalRow,
   AssistApprovalStatus,
@@ -31,7 +32,17 @@ import type {
 const KNOWN_RISK: readonly AssistRiskClass[] = ["soft_write", "medium_write", "high_risk"];
 
 /** Why the viewer cannot act, when they cannot. `null` = they can (clock aside). */
-export type ApprovalBlockedReason = "terminal" | "not-requester";
+/**
+ * Why the viewer cannot act, when they cannot. `null` = they can (clock aside).
+ *
+ * `unconfirmed` is the persisted card's own state and exists nowhere else: our
+ * snapshot still says `pending`, and reconciliation found the request gone from
+ * the runtime's 24h ledger, so we cannot learn what happened and never will.
+ * NOT folded into `terminal` — terminal means we know the answer, this means we
+ * know we don't, and offering buttons for a decision that may already exist is
+ * exactly what it prevents.
+ */
+export type ApprovalBlockedReason = "terminal" | "not-requester" | "unconfirmed";
 
 export interface ApprovalCardModel {
   /** Runtime-owned id. The list calls it `id`, the stream calls it `requestId`. */
@@ -123,6 +134,17 @@ export interface ApprovalCardModel {
    */
   error: string | null;
   /**
+   * Should the card show `toolInput`?
+   *
+   * True for anyone who can act, false for a channel observer. Rule 2 —
+   * `toolInput` renders VERBATIM — is untouched by this: it governs HOW the
+   * arguments render, and this governs WHO sees them at all. They exist so the
+   * person authorising a write can verify what will actually be sent; an
+   * observer is not verifying anything, and via `/ai` in a shared channel the
+   * arguments can carry text the requester typed to the assistant privately.
+   */
+  showToolInput: boolean;
+  /**
    * ── SEAM: the PROPOSAL summary, still missing ───────────────────────────
    * The outcome half of this seam closed — `outcomeSummary` above is the
    * runtime's sentence for what happened, served from the list and the decision
@@ -149,6 +171,27 @@ export function isApprovalExpired(expiresAt: string | null, now: number): boolea
   if (!expiresAt) return false;
   const t = Date.parse(expiresAt);
   return Number.isFinite(t) && t <= now;
+}
+
+/**
+ * Narrow a persisted message's `data` to an approval payload, or null.
+ *
+ * Lives here, beside the adapter that consumes it, so the client renderer and
+ * the server writer agree on what counts as a readable card by construction
+ * rather than by convention — the server imports this rather than keeping its
+ * own copy of the shape check.
+ *
+ * Checks only the two fields the card cannot work without: an id to decide on
+ * and a requester to compare the viewer against. Everything else has a
+ * rendering fallback already (unknown risk → highest, missing summary →
+ * toolName, unknown status → not actionable), so a stricter gate here would
+ * blank a card the component can render honestly.
+ */
+export function readApprovalMessageData(data: unknown): ApprovalMessageData | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.requestId !== "string" || typeof d.requesterId !== "string") return null;
+  return d as unknown as ApprovalMessageData;
 }
 
 /** Normalise a wire risk value, flagging anything outside the known union. */
@@ -189,6 +232,8 @@ export function fromApprovalRequest(req: AssistApprovalRequest): ApprovalCardMod
     viewerMayAct: true,
     blockedReason: null,
     error: null,
+    // The live turn is the requester's own stream by definition.
+    showToolInput: true,
   };
 }
 
@@ -247,5 +292,81 @@ export function fromApprovalRow(row: AssistApprovalRow, viewerId: string): Appro
     viewerMayAct: isPending && isRequester,
     blockedReason: !isPending ? "terminal" : !isRequester ? "not-requester" : null,
     error: row.error,
+    // The ledger is token-scoped, so a row reaching this adapter is the
+    // viewer's own. `isRequester` is checked anyway, for the same reason
+    // `viewerMayAct` checks it — see this function's header.
+    showToolInput: isRequester,
+  };
+}
+
+/**
+ * Persisted message → card model. The THIRD source, and the only one that can
+ * be read by someone who is not the requester.
+ *
+ * ── WHY A THIRD ADAPTER AND NOT A THIRD CARD ───────────────────────────────
+ * Same reason there are two already: the three rules (unknown risk renders
+ * highest, `toolInput` verbatim, an aged-out card disables visibly) live in the
+ * component, and every shape difference is absorbed here. This path adds two
+ * genuinely new pieces of DATA — an observer who may not act, and a state where
+ * we do not know the answer — and both come out as ordinary model fields.
+ *
+ * ── THE ORDER OF THE BLOCKED REASONS IS LOAD-BEARING ───────────────────────
+ * `terminal`, then `unconfirmed`, then `not-requester` — and the middle one
+ * outranking the last is the deliberate part.
+ *
+ * `terminal` first: a decided card is an outcome for everyone, and reads the
+ * same to requester and observer alike.
+ *
+ * `unconfirmed` before `not-requester` because it describes THE REQUEST, not
+ * the viewer. Telling an observer “only the person who asked can answer this”
+ * about a request that may already be gone implies someone still can, which is
+ * the one thing we know we cannot promise. “We couldn't confirm what happened”
+ * is true for whoever is reading it. The observer still loses the arguments —
+ * `showToolInput` keys off `isRequester` alone and is unaffected by this order.
+ */
+export function fromApprovalMessage(
+  data: ApprovalMessageData,
+  viewerId: string,
+): ApprovalCardModel {
+  const { risk, riskIsUnrecognised } = normaliseRisk(data.riskClass);
+  // The same POSITIVE check for pending that `fromApprovalRow` makes, and for
+  // the same reason: an unfamiliar status must fall out as not-actionable
+  // without this function having heard of it.
+  const isPending = data.status === "pending";
+  const isRequester = data.requesterId === viewerId;
+  const isUnconfirmed = !!data.unconfirmedAt;
+
+  const blockedReason: ApprovalBlockedReason | null = !isPending
+    ? "terminal"
+    : isUnconfirmed
+      ? "unconfirmed"
+      : !isRequester
+        ? "not-requester"
+        : null;
+
+  return {
+    requestId: data.requestId,
+    appId: data.appId,
+    toolName: data.toolName,
+    // Unlike the ledger row, the persisted card DOES carry the proposal
+    // sentence — it was captured off the SSE frame at proposal time, which is
+    // the one moment it exists. So this surface never falls back to the raw
+    // tool name the Activity card is stuck with.
+    summary: data.summary || null,
+    toolInput: data.toolInput,
+    risk,
+    riskIsUnrecognised,
+    expiresAt: data.expiresAt || null,
+    status: data.status,
+    // `||` folds an empty string into absent, same as the other two adapters:
+    // the card branches on presence and `""` would win that branch and render
+    // a blank outcome.
+    outcomeSummary: data.outcomeSummary || null,
+    decidedByViewer: data.decisionBy != null && data.decisionBy === viewerId,
+    viewerMayAct: isPending && isRequester && !isUnconfirmed,
+    blockedReason,
+    error: data.error || null,
+    // The observer rule. Everything else on the card is identical for both.
+    showToolInput: isRequester,
   };
 }

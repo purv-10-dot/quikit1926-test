@@ -258,38 +258,47 @@ export function ApprovalCard({ model, onDecide, onSettled }: ApprovalCardProps) 
         </p>
       ) : null}
 
-      <details className="qc-approval__details">
-        <summary>Details</summary>
-        <dl className="qc-approval__kv" data-testid="approval-tool-input">
-          <dt>tool</dt>
-          <dd>
-            <code>{model.toolName}</code>
-          </dd>
-          {/*
-            VERBATIM. Keys are the target app's own naming — `projectId`,
-            `custom_field_7`, whatever QuikTrack calls things — and are rendered
-            exactly as received: no camelCasing, no prettifying, no title-casing,
-            no reordering. Typing or normalising the interior would be inventing a
-            contract we do not own, and the person approving a write needs to see
-            what will actually be sent, not our rendering of it.
-          */}
-          {entries.length === 0 ? (
-            <>
-              <dt>arguments</dt>
-              <dd>none</dd>
-            </>
-          ) : (
-            entries.map(([key, value]) => (
-              <div className="qc-approval__kvrow" key={key}>
-                <dt>{key}</dt>
-                <dd>
-                  <code>{typeof value === "string" ? value : JSON.stringify(value)}</code>
-                </dd>
-              </div>
-            ))
-          )}
-        </dl>
-      </details>
+      {/*
+        WHO sees the arguments, not HOW they render. Rule 2 is untouched: when
+        this block renders, `toolInput` is verbatim. An observer in a shared
+        channel is not authorising anything, and the arguments can carry text
+        the requester typed to the assistant — so they get the header, the
+        sentence and the outcome, and nothing else.
+      */}
+      {model.showToolInput ? (
+        <details className="qc-approval__details">
+          <summary>Details</summary>
+          <dl className="qc-approval__kv" data-testid="approval-tool-input">
+            <dt>tool</dt>
+            <dd>
+              <code>{model.toolName}</code>
+            </dd>
+            {/*
+              VERBATIM. Keys are the target app's own naming — `projectId`,
+              `custom_field_7`, whatever QuikTrack calls things — and are rendered
+              exactly as received: no camelCasing, no prettifying, no title-casing,
+              no reordering. Typing or normalising the interior would be inventing a
+              contract we do not own, and the person approving a write needs to see
+              what will actually be sent, not our rendering of it.
+            */}
+            {entries.length === 0 ? (
+              <>
+                <dt>arguments</dt>
+                <dd>none</dd>
+              </>
+            ) : (
+              entries.map(([key, value]) => (
+                <div className="qc-approval__kvrow" key={key}>
+                  <dt>{key}</dt>
+                  <dd>
+                    <code>{typeof value === "string" ? value : JSON.stringify(value)}</code>
+                  </dd>
+                </div>
+              ))
+            )}
+          </dl>
+        </details>
+      ) : null}
 
       {phase.kind === "settled" ? (
         <SettledLine decision={phase.decision} />
@@ -319,6 +328,23 @@ export function ApprovalCard({ model, onDecide, onSettled }: ApprovalCardProps) 
             text on the card a user can act on. Mild duplication beats dropping it.
           */}
           {model.error ? <span className="qc-approval__err">{model.error}</span> : null}
+        </div>
+      ) : model.blockedReason === "unconfirmed" ? (
+        /*
+         * WE DO NOT KNOW, and this says so rather than guessing.
+         *
+         * Our snapshot still reads `pending`, and reconciliation found the
+         * request gone from the runtime's 24h ledger — so it was answered,
+         * expired or cancelled somewhere we never saw, and no future read can
+         * tell us which. Rendering `expired` here would be inventing an outcome;
+         * leaving the buttons up would offer a decision that probably no longer
+         * exists and would land on a 409.
+         *
+         * This is the honest end of the divergence bound — the card admits the
+         * gap instead of the user discovering it by tapping.
+         */
+        <div className="qc-approval__outcome" data-testid="approval-unconfirmed">
+          This may already have been answered — we couldn&apos;t confirm what happened.
         </div>
       ) : model.blockedReason === "not-requester" ? (
         <div className="qc-approval__outcome">Only the person who asked can answer this.</div>

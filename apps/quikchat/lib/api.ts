@@ -624,3 +624,32 @@ export async function decideApproval(
   }
   return (await res.json()) as AssistApprovalDecision;
 }
+
+export interface ApprovalReconcileResult {
+  checked: number;
+  patched: number;
+  unconfirmed: number;
+  /** False when only part of the ledger was read — see the route. */
+  ledgerComplete: boolean;
+}
+
+/**
+ * Repair this channel's persisted approval cards against the runtime's ledger.
+ *
+ * Sends NOTHING but the channel id: the new state is read server-side with the
+ * caller's own token. A body carrying a status would let any channel member
+ * assert what an approval card says.
+ *
+ * Fire-and-forget from the caller's point of view — any card that actually moved
+ * arrives over the socket as `message_update`. Failures are deliberately quiet:
+ * this is a background repair, and a toast for it would interrupt the user about
+ * something they did not ask for and cannot fix.
+ */
+export async function reconcileChannelApprovals(
+  channelId: string,
+): Promise<ApprovalReconcileResult> {
+  return send<ApprovalReconcileResult>(
+    `/api/channels/${channelId}/approvals/reconcile`,
+    "POST",
+  );
+}

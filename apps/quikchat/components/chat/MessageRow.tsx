@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type {
+  AssistApprovalDecision,
   AssistSource,
   IngestResult,
   MeetingDto,
@@ -44,8 +45,10 @@ import {
   VideoOff,
 } from "@/components/ui";
 import { useProfile } from "@/components/profile/ProfileProvider";
+import { ApprovalCard } from "./ApprovalCard";
 import { MeetingCard } from "./MeetingCard";
 import { VoiceNotePlayer } from "./VoiceNotePlayer";
+import { fromApprovalMessage, readApprovalMessageData } from "@/lib/approval-card";
 import { formatMessageTime } from "@/lib/format";
 import { computeMentions } from "@/lib/mentions";
 import { canEditMessage } from "@/lib/message-actions";
@@ -105,6 +108,29 @@ export interface MessageRowActions {
    * bot messages render no chips (decision 3).
    */
   liveSourcesById?: Record<string, AssistSource[]>;
+  /**
+   * Answer a persisted approval card. The SAME function the live turn and
+   * Activity use (`decideApproval`), threaded through actions so this component
+   * stays presentational — and so a row rendered without it degrades to a
+   * read-only card rather than to buttons that cannot work.
+   */
+  onDecideApproval?: (
+    requestId: string,
+    action: "approve" | "reject",
+  ) => Promise<AssistApprovalDecision>;
+  /** Fired once a decision settles, so the caller can refetch the ledger. */
+  onApprovalSettled?: () => void;
+}
+
+/**
+ * `onDecide` when no handler was supplied. Never actually invoked — the card
+ * only calls it from a button, and `viewerMayAct` already gates those — so this
+ * exists to keep the prop required (one contract for all three surfaces) rather
+ * than optional-and-forgotten. Module scope, not an inline arrow, so it does
+ * not change identity on every render.
+ */
+function rejectUnavailableDecision(): Promise<never> {
+  return Promise.reject(new Error("Approvals aren't available here."));
 }
 
 function formatBytes(n?: number): string {
@@ -631,6 +657,32 @@ export function MessageRow({
         </div>
       </div>
     );
+  }
+
+  /**
+   * Persisted approval card — the channel's durable trace that a write was
+   * proposed, and later what happened to it.
+   *
+   * ONE card, a third data source. `fromApprovalMessage` decides what THIS
+   * viewer may do and see (an observer gets no buttons and no arguments); the
+   * three rules stay in `ApprovalCard`. A row whose `data` is not a readable
+   * payload falls through to the ordinary text bubble instead of rendering an
+   * empty card — the same degradation the Meeting branch takes when its
+   * projection is missing.
+   */
+  if (message.type === "ApprovalRequest") {
+    const approval = readApprovalMessageData(message.data);
+    if (approval) {
+      return (
+        <div className="qc-row qc-row--approval" data-message-id={message.id}>
+          <ApprovalCard
+            model={fromApprovalMessage(approval, currentUserId)}
+            onDecide={actions?.onDecideApproval ?? rejectUnavailableDecision}
+            onSettled={actions?.onApprovalSettled}
+          />
+        </div>
+      );
+    }
   }
 
   const isOwn = message.senderId === currentUserId;

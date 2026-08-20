@@ -53,6 +53,29 @@ export class StubRuntimeClient implements RuntimeClient {
       return;
     }
 
+    /**
+     * PARK A WRITE instead of answering, on a deterministic prompt trigger.
+     *
+     * Until now the stub could not emit `approval_needed` at all, so the entire
+     * proposal path — the live card, and now the persisted one — was reachable
+     * only from UAT or a unit test. Same reasoning as the snake_case
+     * `custom_field_7` key and the summary-less `cancelled` fixture: a state
+     * only a test can reach is one nobody notices rendering wrong.
+     *
+     * Two triggers, because they exercise different halves:
+     *   /approve … → an ordinary parked write whose row IS in the ledger, so
+     *                reconciliation confirms it and a decision patches it.
+     *   /approve-aged … → a write whose row is deliberately ABSENT from the
+     *                ledger (see STUB_AGED_REQUEST_ID). Reconciling it is how
+     *                the `unconfirmed` card is reached in seconds rather than
+     *                by waiting a day for a real row to age out.
+     */
+    const parked = parkedRequestFor(input.prompt);
+    if (parked) {
+      yield parked;
+      return;
+    }
+
     const count = input.history.length;
     const trimmedPrompt = input.prompt.trim().slice(0, 120);
     const chunks = [
@@ -205,6 +228,54 @@ const STUB_NOW = "2026-08-14T09:00:00.000Z";
 export const STUB_FAILING_REQUEST_ID = "stub-req-pending-failing";
 
 /**
+ * The parked write whose ledger row is DELIBERATELY MISSING.
+ *
+ * `listApprovalRequests` never returns it, which is exactly what a request
+ * looks like once it has aged out of the runtime's 24h window: our persisted
+ * card still says `pending`, the ledger has no opinion, and we can no longer
+ * find out what happened. Reconciling a card built from this id is what marks
+ * it `unconfirmedAt` and renders the "may already have been answered" state.
+ *
+ * It exists so that state is reachable BY HAND — propose one with
+ * `/approve-aged something`, reopen the channel — instead of only in a unit
+ * test or after a real 24 hours.
+ */
+export const STUB_AGED_REQUEST_ID = "stub-req-aged-out";
+
+/** The ordinary parked write the `/approve` trigger produces. */
+export const STUB_PARKED_REQUEST_ID = "stub-req-pending";
+
+/**
+ * Map a prompt to a parked-write frame, or null for a normal answer. Trigger
+ * words rather than randomness so a local run is repeatable.
+ */
+function parkedRequestFor(prompt: string): RuntimeEvent | null {
+  const p = prompt.trim().toLowerCase();
+  const aged = p.startsWith("/approve-aged");
+  if (!aged && !p.startsWith("/approve")) return null;
+  return {
+    type: "approval_needed",
+    requestId: aged ? STUB_AGED_REQUEST_ID : STUB_PARKED_REQUEST_ID,
+    appId: "quiktrack",
+    toolName: "create_issue",
+    riskClass: "soft_write",
+    summary: aged
+      ? "Create a QuikTrack issue that will age out of the ledger."
+      : "Create a QuikTrack issue titled “Login fails on Safari”.",
+    toolInput: {
+      projectId: "QTRK",
+      title: "Login fails on Safari",
+      assigneeId: "u-priya",
+      // Same snake_case guard the ledger fixture carries: a consumer that
+      // normalises interiors must break here, locally.
+      custom_field_7: { nested: ["a", 1, null] },
+    },
+    // Far enough out that the card is actionable while a developer looks at it.
+    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+  };
+}
+
+/**
  * The fixture rows. `toolInput` interiors deliberately use the TARGET app's
  * naming (`projectId`, `assigneeId`, and a snake_case `custom_field_7`) — not
  * camelCased by us — so a consumer that wrongly normalises them fails against the
@@ -215,6 +286,13 @@ export const STUB_FAILING_REQUEST_ID = "stub-req-pending-failing";
  * every local run and would have broken on first contact with a real QuikTrack
  * payload. That is exactly the failure these fixtures exist to prevent, so the
  * key is now present on the row a card is most likely to be built against.
+ */
+/**
+ * ⚠️ `STUB_AGED_REQUEST_ID` IS ABSENT FROM THIS LIST ON PURPOSE. Do not add a
+ * row for it to make the set look complete — its absence IS the fixture. It
+ * models a request that has aged out of the runtime's 24h window, which is the
+ * only way a persisted card can reach the `unconfirmed` state, and adding a row
+ * would silently delete that path from every local run.
  */
 function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
   const base = {

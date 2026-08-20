@@ -26,6 +26,34 @@ const MAX_CONTENT = 8000;
  */
 export const EDIT_WINDOW_MS = 15 * 60_000;
 
+/**
+ * Types `send()` will accept. Mirrors `SendMessageInput.type` — the TYPE-level
+ * statement of the same rule — because a type alone stops nothing: this
+ * function's `dto` arrives from `POST /api/channels/[id]/messages` as an
+ * unvalidated `readJson` body, so a hand-rolled request can name any string.
+ *
+ * ⚠️ TWO TYPES ARE MISSING FROM THIS LIST ON PURPOSE.
+ *
+ * `Delete` is a tombstone written by the delete path, never sent.
+ *
+ * `ApprovalRequest` is the one that turns this from tidiness into a security
+ * boundary. That card renders from a `data` SNAPSHOT — it has to, because the
+ * runtime's ledger is requester-scoped and 24h — so an accepted client-sent
+ * one would render a fully convincing “Priya approved — QUIKSC-290 created” in
+ * any channel the sender belongs to. The buttons would 404 (the runtime scopes
+ * decisions on its own token), so nothing would be WRITTEN; the lie is the
+ * outcome line, and that is enough. Compare `Meeting`, which is safe to accept
+ * only because its card needs a server-hydrated projection and a forged one
+ * renders empty — an accident of that design, not a rule this list can rely on.
+ */
+const CLIENT_SENDABLE_TYPES: ReadonlySet<string> = new Set([
+  "Text",
+  "Media",
+  "SystemActivity",
+  "Meeting",
+  "Call",
+]);
+
 /** How a message was authored — defaults to a human; agents stamp ai_agent. */
 export interface SendActor {
   actorType?: "human" | "ai_agent";
@@ -206,6 +234,13 @@ export async function send(
   if (typeof dto.content !== "string") throw new HttpError(400, "content is required");
   if (dto.content.length > MAX_CONTENT) throw new HttpError(400, "content too long");
   const type = dto.type ?? "Text";
+  // Every writer goes through here, so the check lives here rather than at the
+  // route — a second route added later inherits it instead of forgetting it.
+  // Server-written types that are not client-sendable (ApprovalRequest) use
+  // their own writer, the way `emitSystemMessage` already does.
+  if (!CLIENT_SENDABLE_TYPES.has(type)) {
+    throw new HttpError(400, `Unsupported message type: ${type}`);
+  }
 
   if (dto.parentMessageId) {
     const parent = await prisma.qcMessage.findFirst({
@@ -370,7 +405,15 @@ export async function forward(
   note?: string,
 ): Promise<{ delivered: string[] }> {
   const source = await getMessageOr404(ctx, sourceMessageId);
-  if (source.type === "Delete" || source.type === "SystemActivity") {
+  // `ApprovalRequest` joins the unforwardable list: the card is bound to the
+  // request that produced it, so a copy would put a live-looking proposal in a
+  // channel where it means nothing — and would show Approve buttons there to
+  // whoever originally asked, since `viewerMayAct` keys off the snapshot.
+  if (
+    source.type === "Delete" ||
+    source.type === "SystemActivity" ||
+    source.type === "ApprovalRequest"
+  ) {
     throw new HttpError(403, "Cannot forward this message");
   }
   await assertMembership(ctx.orgId, source.channelId, ctx.userId);

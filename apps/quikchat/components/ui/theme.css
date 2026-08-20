@@ -4222,6 +4222,20 @@ body {
   justify-content: center;
   padding: 6px 0;
 }
+/* Persisted approval card row. Centred and width-capped like the meeting
+   card — it is a standalone card in the transcript, not a chat bubble. The
+   card's own chrome (risk stripe, padding) is .qc-approval; this is only the
+   row it sits in. `margin-top: 0` cancels the card's bubble-context spacing,
+   which the row's own padding replaces here. */
+.qc-row--approval {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+}
+.qc-row--approval .qc-approval {
+  width: min(420px, 100%);
+  margin-top: 0;
+}
 .qc-meeting {
   display: flex;
   flex-direction: column;

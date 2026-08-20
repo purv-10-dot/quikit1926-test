@@ -967,3 +967,108 @@ Filed, deliberately not wired. "New chat" is the reset users actually asked for,
 and wiring a delete-everything button next to it would offer a destructive
 shortcut to a problem that no longer needs one. If it is ever wired, the KB-scope
 consequence above applies to it too.
+
+---
+
+## Persisted approval card (20 Aug 2026) — what shipped, and the one fact in two places
+
+The approval card is now a real message (`MessageType: "ApprovalRequest"`),
+written at proposal time by the assist relay and patched when a decision lands.
+The ephemeral live-turn card is unchanged and still there; the two **hand over**
+rather than stack — see `liveApprovalIsPersisted` in `ConversationView`.
+Collapsing them into one is still the follow-up.
+
+### The finding that decided the design
+
+`GET /ai/requests` is scoped to the caller by the minted token and there is no
+fetch-one endpoint. **An observer's ledger does not contain the requester's row.**
+So "store a pointer, render from the ledger" — the obvious design, and the one
+`Meeting` uses via `injectMeetingData` — was never available for the
+channel-visible card. Not slow: absent. The 24h terminal-row retention rules it
+out a second time, since the message outlives the ledger entry.
+
+Hence a snapshot in `data`, and hence the section below.
+
+### 🔒 Security: `messages.send` had no type allow-list
+
+`POST /api/channels/[id]/messages` hands its `readJson` body straight to
+`send()`, which did `dto.type ?? "Text"` with no validation. That was harmless
+only by accident: a forged `Meeting` renders empty because its card needs a
+server-hydrated projection. A card rendering from a client-supplied `data`
+snapshot removes the accident — an accepted forged `ApprovalRequest` would show
+"Priya approved — QUIKSC-290 created" in any channel the sender belongs to. The
+buttons would 404 (the runtime scopes decisions on its own token) so nothing
+would be written; the outcome line is the lie, and that is enough.
+
+`CLIENT_SENDABLE_TYPES` now gates `send()`, which also closes `Delete`.
+`forward()` refuses `ApprovalRequest` for the same reason. Both are pinned by
+`lib/server/messages-type-guard.test.ts` — that file IS the enforcement; delete
+it and a one-line change can reopen the hole silently.
+
+### Which copy of `status` is authoritative
+
+The message is authoritative for **display**; the runtime stays authoritative
+for **decisions**. That asymmetry is forced, not chosen, and it is what makes
+divergence produce a wrong screen and never a wrong write — every approve/reject
+still goes to the runtime, which 409s a stale one.
+
+They CAN diverge: any decision not taken through our relay (a direct runtime
+call, another client, the expiry sweep, a module-disable cancel). Three layers
+bound it:
+
+1. **The card's expiry clock** — off `expiresAt`, no server involved. Covers the
+   commonest case (expired unactioned) for free.
+2. **`POST /api/channels/[id]/approvals/reconcile`** on channel open, gated on
+   one of the viewer's own still-pending cards being loaded. The requester is
+   the only person the token-scoped ledger answers for, and running it repairs
+   the card for every observer, because the fanout goes to the channel.
+3. **`unconfirmedAt`** — set when reconciliation sees the whole ledger and the
+   request is not in it. The card then says "This may already have been
+   answered — we couldn't confirm what happened" instead of offering buttons.
+
+Bound: drift lasts until the requester next opens the channel, and at most the
+24h the ledger retains. Past that the card says it does not know. **It never
+guesses `expired`** — that would be the plausible-looking wrong value nobody
+notices, which is the `isDefault` shape this whole design is avoiding.
+
+⚠️ The reconciler concludes "gone" from ABSENCE, so absence has to be real. A
+failed ledger read never reaches it (the route throws first) and a partial page
+sets `ledgerComplete: false`, which permits repairs but forbids conclusions. Two
+tests in the route suite and one in the service suite exist only for this.
+
+### Reachable in the stub, not only in a test
+
+`assist()` could not emit `approval_needed` at all before, so the entire
+proposal path was UAT-or-unit-test only. It now parks a write on a `/approve`
+prompt. `STUB_AGED_REQUEST_ID` (`/approve-aged`) parks one whose ledger row is
+**deliberately missing** — its absence IS the fixture, modelling a request aged
+out of the 24h window, which is the only route to the `unconfirmed` card. Do not
+"complete" the fixture set by adding a row for it; `parked.test.ts` guards that.
+
+### 🔴 STILL WITH THE RUNTIME TEAM — one ask, now three fields
+
+Unchanged and still blocking a sentence the runtime themselves asked for
+("Priya approved — QUIKSC-290 created"):
+
+- **proposal `summary` on `AssistApprovalRow`** — the original ask. The persisted
+  card sidesteps it (it captures the sentence off the SSE frame, the one moment
+  it exists), so **Activity is now the only surface still showing a raw
+  `toolName`.** Narrower than before, not fixed.
+- **an actor display name.** `decisionBy` is a raw user id, which is why
+  `decidedByViewer` is a boolean — printing `u-7f3a91` at someone is worse than
+  the passive voice. Nothing here can name Priya.
+- **`decisionAgentId`.** Named as live in the brief but **present nowhere in our
+  tree** — not on `AssistApprovalRow`, not on `AssistApprovalDecision`. It is the
+  missing divergence DETECTOR: a decision carrying no QuikChat agent id is known
+  to have been taken elsewhere, which would turn layer 2 from a blind sweep into
+  a positive signal.
+
+### Still open
+
+- **Collapsing the two cards.** They hand over correctly; one of them should
+  eventually stop existing.
+- **The double unread.** A proposal and its decision are a message and a patch,
+  so only the proposal bumps `unreadCount` — but it does bump it, for every
+  observer. Accepted; bound it later rather than lose the proposal trace.
+- **`RUNTIME_TOKEN_DEBUG`** — still dormant in the tree, left until the runtime
+  team confirms the tool-catalog question is closed. Removing it drops 5 tests.

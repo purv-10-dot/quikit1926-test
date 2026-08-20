@@ -268,12 +268,17 @@ user is told to refresh and check, never to try again.
 
 ---
 
-## 🔴 Open ask for the runtime team — the PROPOSAL summary on the ledger row
+## 🔴 Open ask for the runtime team — enough on the ledger row to name who did what
 
-**One remaining item.** This section previously listed two; the second — an
-outcome string — shipped on 18 Aug 2026 as `outcomeSummary`, served from the
-list, the fetch-one and the decision response. It is wired and documented above.
-What follows is what is left.
+**Three fields, one ask.** The outcome string shipped on 18 Aug as
+`outcomeSummary` and is wired. What is left is everything needed to render one
+sentence the runtime team themselves proposed — *"Priya approved — QUIKSC-290
+created"* — which is **not renderable today**, on any surface, for want of the
+second and third items below.
+
+Updated 20 Aug 2026, after the approval card was persisted as a message.
+
+### 1. A proposal `summary` on `AssistApprovalRow`
 
 **`AssistApprovalRow` still carries no `summary`.** The SSE frame has one; the
 ledger row does not. So the Activity card — the only surface a user reaches after
@@ -297,6 +302,39 @@ things worth stating while it is still in flight:
 The seam is left in `ApprovalCardModel.summary` and no field name has been
 invented for it. When it lands, `fromApprovalRow` gains one line and the
 `toolName` fallback stops firing.
+
+**Narrower than it was, in one respect.** The channel-visible approval card now
+captures the proposal sentence off the SSE frame at proposal time — the one
+moment it exists — and persists it, so that surface no longer falls back.
+**Activity is now the only place still showing a raw `toolName`.**
+
+### 2. An actor display name for `decisionBy`
+
+`decisionBy` is a raw user id. QuikChat has no directory lookup for it, which is
+why `ApprovalCardModel.decidedByViewer` is a BOOLEAN: the card can truthfully
+say "you" or stay passive ("Rejected"), and printing `u-7f3a91` at someone is
+worse than the passive voice.
+
+So no card can currently name a third party. Either a display name alongside
+`decisionBy`, or the name folded into `outcomeSummary` by the generator that
+already has the directory — we do not mind which, and will not bolt a lookup on
+here for the same reason we will not synthesise `summary`.
+
+### 3. `decisionAgentId` on `AssistApprovalRow`
+
+Described to us as live, but **present nowhere in the payloads we receive** —
+not on the ledger row, not on the decision response. Grep of our tree finds it
+only in this paragraph.
+
+It matters more than a provenance nicety. A persisted approval card holds a
+snapshot of the request, patched by our own decision relay; a decision taken any
+OTHER way (a direct API call, another client, the expiry sweep, a
+module-disable cancel) never reaches that patch, and our copy would read
+`pending` forever. Today we bound that by re-reading the ledger on channel open
+and comparing every field. `decisionAgentId` would replace that comparison with
+a positive signal — a decision carrying no QuikChat agent id was, by
+definition, taken somewhere we could not see — and would let the card say so
+instead of merely admitting it cannot confirm.
 
 ---
 
