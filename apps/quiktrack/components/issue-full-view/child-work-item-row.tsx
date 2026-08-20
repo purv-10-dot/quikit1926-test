@@ -172,7 +172,7 @@ export function ChildWorkItemRow({
       className={`group grid ${CHILD_GRID_COLS} border-b border-gray-100 last:border-b-0 text-sm hover:bg-gray-50/60`}
     >
       <Link
-        href={`/spaces/${projectId}/work/${c.id}`}
+        href={`/browse/${c.key}`}
         className="flex items-center gap-1.5 px-3 py-2 min-w-0"
       >
         <T.Icon className={`h-3.5 w-3.5 shrink-0 ${T.color}`} />

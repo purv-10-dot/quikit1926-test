@@ -32,10 +32,13 @@ type Member = FieldMember;
  */
 export function IssueDetailsPanel({
   issue,
+  projectKey,
   members,
   onPatch,
 }: {
   issue: IssuePageData;
+  /** Readable project key for links, so URLs don't expose the project UUID. */
+  projectKey: string;
   // Members are fetched once by the parent (IssueFullView) and passed down so
   // the panel doesn't fire a duplicate /api/projects/[id]/members request.
   members: Member[];
@@ -185,7 +188,7 @@ export function IssueDetailsPanel({
             (runs) for how the receiving page consumes them. */}
         <Row label="QuikTest: Cases">
           <Link
-            href={`/spaces/${issue.projectId}/test?createCase=1&linkIssueId=${encodeURIComponent(issue.id)}&linkIssueKey=${encodeURIComponent(issue.key)}`}
+            href={`/spaces/${projectKey}/test?createCase=1&linkIssueId=${encodeURIComponent(issue.id)}&linkIssueKey=${encodeURIComponent(issue.key)}`}
             className="text-blue-700 hover:underline dark:text-blue-400"
           >
             Open QuikTest: Cases
@@ -193,7 +196,7 @@ export function IssueDetailsPanel({
         </Row>
         <Row label="QuikTest: Runs">
           <Link
-            href={`/spaces/${issue.projectId}/test/runs?createRun=1&linkIssueKey=${encodeURIComponent(issue.key)}`}
+            href={`/spaces/${projectKey}/test/runs?createRun=1&linkIssueKey=${encodeURIComponent(issue.key)}`}
             className="text-blue-700 hover:underline dark:text-blue-400"
           >
             Open QuikTest: Runs

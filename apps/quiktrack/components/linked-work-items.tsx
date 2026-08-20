@@ -107,7 +107,7 @@ export function LinkedWorkItems({
 }: {
   issueId: string;
   projectId: string;
-  onOpenIssue?: (id: string) => void;
+  onOpenIssue?: (id: string, key: string) => void;
 }) {
   const queryClient = useQueryClient();
   const linksKey = ["quiktrack", "issue-links", issueId];
@@ -252,7 +252,7 @@ export function LinkedWorkItems({
                   <LinkRowCard
                     key={link.id}
                     link={link}
-                    onOpen={() => onOpenIssue?.(link.otherIssue.id)}
+                    onOpen={() => onOpenIssue?.(link.otherIssue.id, link.otherIssue.key)}
                     onUnlink={() => unlink(link.id)}
                   />
                 ))}

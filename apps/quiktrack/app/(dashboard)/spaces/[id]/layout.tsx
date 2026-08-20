@@ -47,6 +47,28 @@ export default function SpaceLayout({
   );
   const configLoaded = tabConfig !== undefined;
 
+  // Canonicalize the URL to the readable project KEY. Any link that still uses
+  // the project UUID (or a deep-link that resolved to an id) is rewritten in
+  // place to /spaces/<KEY>/... so the address bar never exposes the UUID and
+  // navigation from that page stays on the readable key. Routes accept either
+  // form, so this is purely cosmetic + keeps the URL stable.
+  const { data: projectKey } = useApiData<string | null>(
+    ["quiktrack", "project-key", params.id],
+    `/api/projects/${params.id}`,
+    { select: (d) => (d as { projectKey?: string | null } | null)?.projectKey ?? null },
+  );
+  useEffect(() => {
+    if (!projectKey || !pathname) return;
+    // params.id is the raw URL segment; if it isn't already the key, swap it.
+    // Read the query string from the live location (avoids useSearchParams,
+    // which can suspend a client layout without a Suspense boundary).
+    if (params.id !== projectKey) {
+      const rest = pathname.split("/").slice(3).join("/"); // segment after /spaces/<id>
+      const qs = typeof window !== "undefined" ? window.location.search : "";
+      router.replace(`/spaces/${projectKey}${rest ? `/${rest}` : ""}${qs}`);
+    }
+  }, [projectKey, params.id, pathname, router]);
+
   // Tabs valid for this project's template — a discovery-only tab (Ideas) is not
   // a real destination on a non-discovery space even via direct URL.
   const templateAllows = (path: string) =>
