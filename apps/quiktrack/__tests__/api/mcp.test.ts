@@ -15,6 +15,11 @@ const ORG = "org_1";
 const PROJECT = "proj_1";
 const CREATED_BY = "user_1";
 const RAW_TOKEN = "test-raw-token-value";
+// assertResolvedProjectId (lib/test/projectId.ts) rejects anything that
+// doesn't look like a real cuid — QUIKTR-122's test-case write path is the
+// first MCP code path to call it, so tests that reach it need a cuid-shaped
+// resolved project id, not the file's plain "proj_1" placeholder.
+const RESOLVED_PROJECT_ID = "ctestproject0000000000001";
 
 async function readMcpJsonRpcResponse(res: Response): Promise<any> {
   const contentType = res.headers.get("content-type") ?? "";
@@ -4376,6 +4381,471 @@ describe("POST /api/mcp", () => {
       const data = JSON.parse(body.result.content[0].text);
       expect(data.links.outward).toEqual([]);
       expect(data.links.inward).toEqual([]);
+    });
+  });
+
+  describe("QUIKTR-122 — create_test_case", () => {
+    function mockPatAndOwner(projectKey = "PRJ") {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        // Must match qtProject.findFirst's resolved id below — a
+        // project-scoped PAT's live recheck rejects any mismatch as
+        // "scoped to a single project", and assertResolvedProjectId
+        // separately requires a cuid-shaped value, so both need to agree
+        // on the same cuid-looking id.
+        projectId: RESOLVED_PROJECT_ID,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: RESOLVED_PROJECT_ID, projectKey } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      // create_test_case opens its own transaction (no caller-owned tx to
+      // join) — every test needs this even ones that error out inside it.
+      mockDb.$transaction.mockImplementation((cb: unknown) => (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb));
+    }
+
+    function mockSectionResolvable() {
+      // Serves both resolveMcpTestCaseSection's own lookup AND
+      // createTestCaseInTransaction's later assertSectionInProject re-check.
+      mockDb.qtTestSection.findFirst.mockResolvedValue({
+        id: "sec_1",
+        suiteId: "suite_1",
+        suite: { projectId: RESOLVED_PROJECT_ID },
+      } as never);
+    }
+
+    function mockWriteCore(overrides: Record<string, unknown> = {}) {
+      mockDb.$queryRaw.mockResolvedValue([{ n: 1 }] as never);
+      mockDb.qtTestCase.create.mockResolvedValue({
+        id: "tc_1",
+        refId: 1,
+        title: "Login works",
+        sectionId: "sec_1",
+        createdAt: new Date(),
+        ...overrides,
+      } as never);
+    }
+
+    function callCreateTestCase(args: Record<string, unknown>) {
+      return POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_test_case", arguments: args } },
+          RAW_TOKEN,
+        ),
+      );
+    }
+
+    it("creates a test case with an explicit sectionId", async () => {
+      mockPatAndOwner();
+      mockSectionResolvable();
+      mockWriteCore();
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+      const created = JSON.parse(body.result.content[0].text);
+      expect(created).toMatchObject({ id: "tc_1", refId: 1, sectionId: "sec_1", issue: null });
+      expect(mockDb.qtTestCase.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("creates a test case and links it to an existing issue in the same project", async () => {
+      mockPatAndOwner();
+      mockSectionResolvable();
+      mockWriteCore();
+      mockDb.qtIssue.findFirst.mockResolvedValue({
+        id: "issue_1",
+        key: "PRJ-1",
+        title: "Fix the bug",
+      } as never);
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+        issueId: "issue_1",
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      const created = JSON.parse(body.result.content[0].text);
+      expect(created.issue).toMatchObject({ id: "issue_1", key: "PRJ-1" });
+      expect(mockDb.qtTestCaseIssueLink.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { caseId_issueId_type: { caseId: "tc_1", issueId: "issue_1", type: "covers" } },
+          create: expect.objectContaining({ orgId: ORG, caseId: "tc_1", issueId: "issue_1", type: "covers" }),
+        }),
+      );
+    });
+
+    it("falls back to the first section of a given suiteId", async () => {
+      mockPatAndOwner();
+      mockDb.qtTestSuite.findFirst.mockResolvedValue({ id: "suite_1" } as never);
+      mockSectionResolvable();
+      mockWriteCore();
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        suiteId: "suite_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+    });
+
+    it("auto-resolves the section when the project has exactly one suite and neither sectionId nor suiteId is given", async () => {
+      mockPatAndOwner();
+      mockDb.qtTestSuite.findMany.mockResolvedValue([{ id: "suite_solo" }] as never);
+      mockSectionResolvable();
+      mockWriteCore();
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+    });
+
+    it("returns a clear error when the project has multiple suites and neither sectionId nor suiteId is given", async () => {
+      mockPatAndOwner();
+      mockDb.qtTestSuite.findMany.mockResolvedValue([{ id: "suite_1" }, { id: "suite_2" }] as never);
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an empty steps array", async () => {
+      mockPatAndOwner();
+
+      const res = await callCreateTestCase({ title: "Login works", sectionId: "sec_1", steps: [] });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a step with blank action or expected text, not just a non-empty array", async () => {
+      mockPatAndOwner();
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "  ", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a missing title", async () => {
+      mockPatAndOwner();
+
+      const res = await callCreateTestCase({
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a sectionId that belongs to a different project", async () => {
+      mockPatAndOwner();
+      mockDb.qtTestSection.findFirst.mockResolvedValue({
+        id: "sec_1",
+        suiteId: "suite_1",
+        suite: { projectId: "other_project" },
+      } as never);
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("returns an MCP error when the caller lacks TestCase:create", async () => {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProjectMember.findFirst.mockResolvedValue({ role: "MEMBER" } as never);
+      mockDb.qtProjectUserRole.findUnique.mockResolvedValue({
+        projectRoleId: "viewer_role",
+        projectRole: { name: "Viewer" },
+      } as never);
+      mockDb.qtProjectRolePermission.findFirst.mockResolvedValue(null);
+      mockDb.qtUserPermissionExtra.findFirst.mockResolvedValue(null);
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("returns 'Work item not found' when issueId doesn't resolve in this project", async () => {
+      mockPatAndOwner();
+      mockDb.qtIssue.findFirst.mockResolvedValue(null);
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+        issueId: "issue_other_project",
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(JSON.stringify(body.result.content)).toContain("Work item not found");
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("writes a success QtMcpActionLog entry with entityType test_case (QUIKTR-121)", async () => {
+      mockPatAndOwner();
+      mockSectionResolvable();
+      mockWriteCore();
+
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "Open login page", expected: "Login form is shown" }],
+      });
+      await readMcpJsonRpcResponse(res);
+
+      expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tool: "create_test_case",
+          action: "CREATE",
+          entityType: "test_case",
+          entityId: "tc_1",
+          entityKey: "TC-1",
+          result: "success",
+        }),
+      });
+    });
+
+    it("writes an error QtMcpActionLog entry when validation fails", async () => {
+      mockPatAndOwner();
+
+      // A blank step (not an empty array) — the MCP SDK's own JSON-Schema
+      // check (minItems: 1) would intercept an empty array before the
+      // handler runs at all, never reaching our Zod validation or its
+      // logMcpAction call. Blank step text passes the SDK's plain
+      // `type: "string"` check and only fails our content-quality Zod rule.
+      const res = await callCreateTestCase({
+        title: "Login works",
+        sectionId: "sec_1",
+        steps: [{ action: "  ", expected: "Login form is shown" }],
+      });
+      await readMcpJsonRpcResponse(res);
+
+      expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tool: "create_test_case",
+          entityType: "test_case",
+          entityId: null,
+          result: "error",
+        }),
+      });
+    });
+  });
+
+  describe("QUIKTR-122 — create_issue bundled testCases", () => {
+    function mockPatAndOwner() {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        // Must match qtProject.findFirst's resolved id below — see the
+        // matching comment in the create_test_case describe block above.
+        projectId: RESOLVED_PROJECT_ID,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: RESOLVED_PROJECT_ID, projectKey: "PRJ" } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+    }
+
+    function mockIssueTransaction() {
+      mockDb.$transaction.mockImplementation((cb: unknown) => (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb));
+      mockDb.qtIssue.count.mockResolvedValue(0 as never);
+      mockDb.qtIssue.create.mockResolvedValue({
+        id: "issue_1",
+        key: "PRJ-1",
+        title: "New issue",
+        description: undefined,
+        type: "TASK",
+        priority: "MEDIUM",
+        statusId: "status_1",
+        assigneeId: null,
+      } as never);
+    }
+
+    function callCreateIssue(args: Record<string, unknown>) {
+      return POST(
+        mcpRequest(
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_issue", arguments: args } },
+          RAW_TOKEN,
+        ),
+      );
+    }
+
+    it("omitting testCases leaves create_issue's behavior unchanged, with testCases: [] in the response", async () => {
+      mockPatAndOwner();
+      mockIssueTransaction();
+
+      const res = await callCreateIssue({ title: "New issue", statusId: "status_1" });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      const created = JSON.parse(body.result.content[0].text);
+      expect(created.testCases).toEqual([]);
+      expect(mockDb.qtTestSection.findFirst).not.toHaveBeenCalled();
+      expect(mockDb.qtTestCase.create).not.toHaveBeenCalled();
+    });
+
+    it("creates and links bundled test cases atomically with the issue", async () => {
+      mockPatAndOwner();
+      mockIssueTransaction();
+      mockDb.qtTestSection.findFirst.mockResolvedValue({
+        id: "sec_1",
+        suiteId: "suite_1",
+        suite: { projectId: RESOLVED_PROJECT_ID },
+      } as never);
+      mockDb.$queryRaw.mockResolvedValue([{ n: 1 }] as never);
+      mockDb.qtTestCase.create.mockResolvedValue({
+        id: "tc_1",
+        refId: 1,
+        title: "Login works",
+        sectionId: "sec_1",
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtIssue.findFirst.mockResolvedValue({ id: "issue_1", key: "PRJ-1", title: "New issue" } as never);
+
+      const res = await callCreateIssue({
+        title: "New issue",
+        statusId: "status_1",
+        testCases: [
+          {
+            title: "Login works",
+            sectionId: "sec_1",
+            steps: [{ action: "Open login page", expected: "Login form is shown" }],
+          },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      const created = JSON.parse(body.result.content[0].text);
+      expect(created.id).toBe("issue_1");
+      expect(created.testCases).toHaveLength(1);
+      expect(created.testCases[0]).toMatchObject({ id: "tc_1", issue: { id: "issue_1" } });
+      expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockDb.qtTestCaseIssueLink.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { caseId_issueId_type: { caseId: "tc_1", issueId: "issue_1", type: "covers" } },
+        }),
+      );
+    });
+
+    it("rolls the issue back atomically when a bundled test case fails (invalid sectionId)", async () => {
+      mockPatAndOwner();
+      mockIssueTransaction();
+      mockDb.qtTestSection.findFirst.mockResolvedValue({
+        id: "sec_foreign",
+        suiteId: "suite_1",
+        suite: { projectId: "other_project" },
+      } as never);
+
+      const res = await callCreateIssue({
+        title: "New issue",
+        statusId: "status_1",
+        testCases: [
+          {
+            title: "Login works",
+            sectionId: "sec_foreign",
+            steps: [{ action: "Open login page", expected: "Login form is shown" }],
+          },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(JSON.stringify(body.result.content)).not.toContain("\"key\":\"PRJ-1\"");
+      expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledTimes(1);
+      expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ tool: "create_issue", entityType: "issue", result: "error" }),
+      });
+    });
+
+    it("rejects a testCases array over the 20-item cap without touching the database", async () => {
+      mockPatAndOwner();
+
+      const testCases = Array.from({ length: 21 }, (_, i) => ({
+        title: `Case ${i}`,
+        steps: [{ action: "a", expected: "b" }],
+      }));
+
+      const res = await callCreateIssue({ title: "New issue", testCases });
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
     });
   });
 });

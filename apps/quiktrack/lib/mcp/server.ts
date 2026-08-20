@@ -1,5 +1,6 @@
 import { createMcpHandler, fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
 import type { Prisma } from "@prisma/client";
+import { z } from "zod";
 // QUIKTR-118: every Prisma call in this file must go through the guarded
 // client — it throws before any delete or deleteMany call reaches the
 // database. See docs/mcp-security.md.
@@ -11,6 +12,8 @@ import type { Action, Resource } from "@/lib/api/permissionsRegistry";
 import { logAccessDecision } from "@/lib/mcp/accessLog";
 import { logMcpAction } from "@/lib/mcp/actionLog";
 import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
+import { createMcpTestCase, type McpTestCaseResult } from "@/lib/mcp/testCaseBundle";
+import { TestCaseError } from "@/lib/services/testCases";
 import {
   createIssueSchema,
   issuePriorityEnum,
@@ -18,6 +21,11 @@ import {
   moveIssueSchema,
   updateIssueSchema,
 } from "@/lib/validation/issue";
+import {
+  mcpCreateTestCaseSchema,
+  testCasePriorityEnum,
+  testCaseTypeEnum,
+} from "@/lib/validation/testCase";
 import { ISSUE_LINK_TYPES } from "@/lib/services/issueLinkTypes";
 import { createSprintSchema } from "@/lib/validation/sprint";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
@@ -41,7 +49,13 @@ import {
 } from "@/lib/services/workflow";
 import { recordSprintVelocity } from "@/lib/reports/sprint-snapshot";
 
-const createIssueInput = createIssueSchema.omit({ projectId: true });
+const createIssueInput = createIssueSchema.omit({ projectId: true }).extend({
+  // QUIKTR-122 — optional test case(s) created + linked atomically with the
+  // issue. `issueId` is deliberately not part of each nested item's schema:
+  // it's the new issue's own id, filled in after creation, never
+  // caller-supplied.
+  testCases: z.array(mcpCreateTestCaseSchema.omit({ issueId: true })).max(20).optional(),
+});
 const createSprintInput = createSprintSchema.omit({ projectId: true });
 const updateIssueInput = updateIssueSchema;
 
@@ -720,6 +734,30 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           sprintId: { type: "string" },
           assigneeId: { type: "string" },
           projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
+          testCases: {
+            type: "array",
+            maxItems: 20,
+            description: "QUIKTR-122 — optional test case(s) to create and link to this issue in the same operation. All-or-nothing: if any test case fails, the issue is not created either.",
+            items: {
+              type: "object",
+              required: ["title", "steps"],
+              properties: {
+                title: { type: "string" },
+                steps: {
+                  type: "array", minItems: 1,
+                  items: {
+                    type: "object", required: ["action", "expected"],
+                    properties: { action: { type: "string" }, expected: { type: "string" } },
+                  },
+                },
+                preconditions: { type: "string" },
+                priority: { type: "string", enum: [...testCasePriorityEnum.options] },
+                type: { type: "string", enum: [...testCaseTypeEnum.options] },
+                sectionId: { type: "string" },
+                suiteId: { type: "string" },
+              },
+            },
+          },
         },
         required: ["title"],
       }),
@@ -771,43 +809,72 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
 
-      const issue = await db.$transaction(async (tx) => {
-        const statusId = parsed.data.statusId ?? (await getDefaultStatusId(tx, projectId));
-        if (!statusId) throw new Error("Project has no statuses");
+      let issue;
+      try {
+        issue = await db.$transaction(async (tx) => {
+          const statusId = parsed.data.statusId ?? (await getDefaultStatusId(tx, projectId));
+          if (!statusId) throw new Error("Project has no statuses");
 
-        const seq = await tx.qtIssue.count({ where: { projectId } });
-        const key = `${project.projectKey}-${seq + 1}`;
+          const seq = await tx.qtIssue.count({ where: { projectId } });
+          const key = `${project.projectKey}-${seq + 1}`;
 
-        return tx.qtIssue.create({
-          data: {
-            orgId,
-            projectId,
-            key,
-            title: parsed.data.title,
-            description: parsed.data.description,
-            type: parsed.data.type,
-            statusId,
-            priority: parsed.data.priority,
-            parentId: parsed.data.parentId,
-            epicId: parsed.data.epicId,
-            sprintId: parsed.data.sprintId,
-            assigneeId: parsed.data.assigneeId,
-            reporterId: userId,
-            createdBy: userId,
-            updatedBy: userId,
-          },
-          select: {
-            id: true,
-            key: true,
-            title: true,
-            description: true,
-            type: true,
-            priority: true,
-            statusId: true,
-            assigneeId: true,
-          },
-        });
-      }, { timeout: 20_000, maxWait: 5_000 });
+          const createdIssue = await tx.qtIssue.create({
+            data: {
+              orgId,
+              projectId,
+              key,
+              title: parsed.data.title,
+              description: parsed.data.description,
+              type: parsed.data.type,
+              statusId,
+              priority: parsed.data.priority,
+              parentId: parsed.data.parentId,
+              epicId: parsed.data.epicId,
+              sprintId: parsed.data.sprintId,
+              assigneeId: parsed.data.assigneeId,
+              reporterId: userId,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+            select: {
+              id: true,
+              key: true,
+              title: true,
+              description: true,
+              type: true,
+              priority: true,
+              statusId: true,
+              assigneeId: true,
+            },
+          });
+
+          // QUIKTR-122 — bundled test cases share this transaction: any
+          // failure here rolls the issue creation back too, so an issue is
+          // never left half-linked to the coverage it was meant to have.
+          const testCases: McpTestCaseResult[] = [];
+          for (const tc of parsed.data.testCases ?? []) {
+            testCases.push(
+              await createMcpTestCase({
+                orgId, projectId, userId, tx,
+                input: { ...tc, issueId: createdIssue.id },
+              }),
+            );
+          }
+
+          return { ...createdIssue, testCases };
+        }, { timeout: 20_000, maxWait: 5_000 });
+      } catch (error: unknown) {
+        if (error instanceof TestCaseError) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "create_issue", action: "CREATE",
+            entityType: "issue", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: error.message,
+          });
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
 
       void logMcpAction({
         orgId, userId, actorType, projectId,
@@ -815,7 +882,118 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         entityType: "issue", entityId: issue.id, entityKey: issue.key,
         payload: parsed.data, after: issue, result: "success",
       });
+      for (const tc of issue.testCases) {
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_issue", action: "CREATE",
+          entityType: "test_case", entityId: tc.id, entityKey: `TC-${tc.refId}`,
+          payload: { issueId: issue.id, ...tc }, after: tc, result: "success",
+        });
+      }
       return { content: [{ type: "text", text: JSON.stringify(issue) }] };
+    },
+  );
+
+  server.registerTool(
+    "create_test_case",
+    {
+      description:
+        "Create a QuikTest test case. Steps are required — each needs both step text and an expected result; if the user hasn't given you concrete steps, ask them rather than inventing placeholder content. Pass sectionId or suiteId to say where it's filed; if the project has exactly one suite you may omit both. Pass issueId to link the new case to an existing issue in the same project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          steps: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              required: ["action", "expected"],
+              properties: { action: { type: "string" }, expected: { type: "string" } },
+            },
+          },
+          preconditions: { type: "string" },
+          priority: { type: "string", enum: [...testCasePriorityEnum.options] },
+          type: { type: "string", enum: [...testCaseTypeEnum.options] },
+          sectionId: { type: "string" },
+          suiteId: { type: "string" },
+          issueId: { type: "string", description: "Issue id or its human-readable key — links the new case to it. Must be in the same project." },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
+        },
+        required: ["title", "steps"],
+      }),
+    },
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "create_test_case" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "create_test_case",
+        access: membership.access,
+        resource: "TestCase",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
+
+      const parsed = mcpCreateTestCaseSchema.safeParse(args);
+      if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_test_case", action: "CREATE",
+          entityType: "test_case", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
+      }
+
+      let issueId = parsed.data.issueId;
+      if (issueId) {
+        const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+        if (!issueRef) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "create_test_case", action: "CREATE",
+            entityType: "test_case", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: "Work item not found",
+          });
+          return { content: [{ type: "text", text: "Work item not found" }], isError: true };
+        }
+        issueId = issueRef.id;
+      }
+
+      let result: McpTestCaseResult;
+      try {
+        result = await createMcpTestCase({ orgId, projectId, userId, input: { ...parsed.data, issueId } });
+      } catch (error: unknown) {
+        if (error instanceof TestCaseError) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "create_test_case", action: "CREATE",
+            entityType: "test_case", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: error.message,
+          });
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
+
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_test_case", action: "CREATE",
+        entityType: "test_case", entityId: result.id, entityKey: `TC-${result.refId}`,
+        payload: parsed.data, after: result, result: "success",
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );
 
