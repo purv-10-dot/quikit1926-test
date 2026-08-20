@@ -2671,6 +2671,115 @@ body {
   font-size: 12.5px;
   color: var(--qc-text-2);
 }
+.qc-set-note--danger {
+  border-color: var(--qc-danger);
+  color: var(--qc-danger);
+  background: transparent;
+}
+
+/* Small status pill (Settings → Users & Invites: Active / Invite pending). */
+.qc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--qc-r-pill);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.qc-status-pill--active {
+  background: color-mix(in srgb, var(--qc-presence) 18%, transparent);
+  color: var(--qc-presence);
+}
+.qc-status-pill--pending {
+  background: color-mix(in srgb, var(--qc-warn) 18%, transparent);
+  color: var(--qc-warn);
+}
+
+/* Settings → Users & Invites: aligned-column member list. Grid (not the
+   generic .qc-set-row) because each row carries five independent fields
+   (name, email, role, sign-in method, status) that must line up under the
+   header labels rather than run together as one sentence. */
+.qc-user-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) 110px 150px 100px 32px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+}
+.qc-user-row + .qc-user-row {
+  border-top: 0.5px solid var(--qc-border);
+}
+.qc-user-row--header {
+  padding: 0 2px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--qc-text-3);
+}
+.qc-user-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--qc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qc-user-email {
+  font-size: 12.5px;
+  color: var(--qc-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qc-user-cell {
+  font-size: 12.5px;
+  color: var(--qc-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qc-user-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Selectable option row (radio/checkbox + title + description) — e.g. the
+   invite-method choice in Settings → Users & Invites. */
+.qc-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-md);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.qc-option input {
+  margin-top: 3px;
+  accent-color: var(--qc-accent);
+  flex: none;
+}
+.qc-option--active {
+  border-color: var(--qc-accent);
+  background: var(--qc-accent-soft);
+}
+.qc-option__title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--qc-text);
+}
+.qc-option__desc {
+  display: block;
+  font-size: 11.5px;
+  color: var(--qc-text-3);
+  margin-top: 2px;
+}
+
 /* Window-choice cards */
 .qc-set-cards {
   display: flex;
