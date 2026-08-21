@@ -612,7 +612,7 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
 
 ## 10. Structural
 
-- **🔴 vitest is split 4.1.10 / 3.2.4, and neither of our two suites can start.**
+- **⚠️ vitest is split 4.1.10 / 3.2.4, and it is fragile but NOT blocking.**
   `common_setup89` upgraded nine-plus workspaces to vitest **4.1.10**
   (`packages/ai-sdk`, `packages/auth`, `packages/shared`, `admin`, `auth`,
   `quikasset`, others) but left `apps/quikchat` and `services/realtime` on
@@ -627,8 +627,15 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   `resolvePlugins`, most likely the `yamlRaw()` plugin), or a root `overrides`
   entry pinning 3.2.4 (which drags nine workspaces backwards and is outside our
   scope line). **This belongs to whoever owns 89.**
-  Last verified baseline is **140 files / 1288 tests** at `63735b13`, pre-merge.
-  Everything after that merge is unverified by tests.
+  Last verified baseline is **142 files / 1318 tests**, post-`common_setup96`.
+  **CORRECTED (18 Aug):** an earlier revision of this row said neither suite
+  could start. That was wrong. The `ERR_MODULE_NOT_FOUND` failures were a broken
+  *install* — incremental `npm install`s layered onto 89's lockfile during the
+  merge — not an inherent consequence of the version split. A clean `npm ci`
+  repairs it; `node_modules/loupe` is keyed in `package-lock.json` and installed
+  at the hoisted root. What remains true: we are the only two workspaces still on
+  vitest 3, which makes the nested tree fragile across merges. Worth aligning
+  when convenient; the ask upstream is small, not urgent.
 - **A lock-file conflict on a merge is not a conflict to resolve — it is a
   question of whose dependency graph you want.** `--theirs` on
   `package-lock.json` imports the other branch's entire resolution, including
@@ -640,6 +647,47 @@ cleared in the dead-controls sweep, `1b311ed3`. The reported duplicate
   one non-excluded test; the 30 remain. Blocked on a decision: re-home to
   Playwright, or add a test database. **CI has no Postgres service**, so
   un-excluding them would pass locally and fail there.
+- **🔴 RAISE WITH THE RUNTIME TEAM: disabling the assistant module orphans
+  in-flight approval requests, and it is the trace gap arriving through a
+  different door.** `GET /api/ai/requests` is gated on `moduleKey: "assistant"`
+  and 404s when the module is off — correct, since an approval request is an
+  artefact of the assistant and the only rows a disabled tenant could see are
+  historical. But a request already **pending** when the module is switched off
+  becomes unactionable: nobody in that tenant can list it, so nobody can approve
+  or reject it, **the proposed write executes nothing, and it expires silently.**
+  No one in the tenant ever learns it happened.
+  That is precisely the gap the terminal-rows change closed from the other
+  direction — an unactioned write must remain *visible as unactioned* rather than
+  vanishing. Here it vanishes because the surface is gone rather than because the
+  list filtered it out.
+  **Not only ours to fix, and not only to record:** expiry is the runtime's
+  sweep, so the runtime team needs to decide what a disabled consumer means for
+  requests already in their ledger — reject-on-disable, notify the requester, or
+  hold and surface on re-enable. Weakening our module gate to leak the list is
+  the wrong answer; the question belongs upstream. Loosening the gate for
+  *pending rows only* is a possible middle path if they want one.
+- **The `@sentry/node` v8 pin — the partial-bump pattern, second instance.**
+  `common_setup96` moved `@sentry/nextjs` to 10.69.0, hoisting `@sentry/node`
+  v10, while `apps/quikchat` still pinned `@sentry/node` 8.26.0. npm nested the
+  pin and `tsc` resolved the nested copy — whose declared dependency
+  `@sentry/types` was **absent from the tree entirely**, since v9+ folded it into
+  `@sentry/core` and nothing in the new tree asks for it. With `Options`
+  unresolvable, `NodeOptions` collapsed to `BaseNodeOptions`, and
+  `init({ dsn })` failed typecheck. **The error named a type that was not the
+  problem**, and `error-tracking.ts` was never wrong — fixed by dropping the pin.
+  Same shape as the vitest split: a shared dependency moves for some workspaces
+  and not others, and the failure surfaces somewhere unrelated to the cause.
+  Two instances in two merges. Worth a dependency check after every
+  `common_setup` merge rather than waiting for a symptom.
+- **`vitest.config.ts` documents a mechanism that has never existed.** A comment
+  states quikchat is "pinned via root package.json overrides". Root `overrides`
+  holds only `react`/`react-dom`; what actually pins it is the ordinary exact
+  `"vitest": "3.2.4"` in this app's own `package.json`, nested by npm because the
+  root hoists 4.1.10. That comment is the origin of the false "local patch"
+  belief corrected above. **Third comment this cycle asserting something untrue**
+  — `seedRole`'s docblock and the Dockerfile cache-bust note were the others. A
+  comment that states a safety or mechanism property is worth verifying, not
+  trusting. One-line fix, in scope, not yet done.
 - **CI never builds QuikChat — only quikscale.** `ci.yml` runs lint, typecheck
   and test across all apps via turbo, then builds **one** app
   (`cd apps/quikscale && npm run build`, line 109). `next build` for QuikChat runs
@@ -724,3 +772,391 @@ which model a ticket means before estimating it.
 `joinUrl: "https://meet.quikchat.dev/new"` on an event that creates no meeting
 and notifies nobody. Same fabrication pattern the calendar stub was cleaned up
 to avoid.
+---
+
+## Approval card + decision relays (18 Aug 2026) — what shipped and what did not
+
+Shipped: `ApprovalCard` (one component, two adapters in `lib/approval-card.ts`),
+the "Your approvals" section in Activity, `POST /api/ai/requests/{id}/approve`
+and `.../reject`, and the live-turn wiring for `approval_needed`.
+
+### 🔴 RAISE WITH THE RUNTIME TEAM: two gaps, one fix — a generated string persisted on the ledger row
+
+Both need the same thing from the runtime, and neither is a nice-to-have.
+
+1. **`AssistApprovalRow` carries no `summary`.** The SSE frame has one; the
+   ledger row does not. The consequence is not cosmetic: **the Activity card is
+   the only surface a user reaches after the turn ends**, and it is the one
+   showing `quiktrack_create_issue` where the live card showed a sentence. The
+   card that survives is the worse card.
+   We are NOT synthesising one from `toolName` + `toolInput`. That is precisely
+   the coupling `summary` exists to prevent — it would put our guess at another
+   app's semantics in front of the user at the moment they authorise a write, and
+   it would silently rot every time QuikTrack renamed an argument. So the card
+   falls back to the raw tool name, which is honest and poor.
+2. **There is no outcome string.** A terminal row renders its `status` and, on
+   `failed`, the target app's `error`. What it should say is what actually
+   happened — "Created QTRK-902". It must come from the **list**, not only from
+   the approve response: a decision answered on one device would otherwise show
+   nothing on another, and nothing at all after a reload.
+
+Seams are left for both in `ApprovalCardModel` and `SettledLine`, and **no field
+names were invented** — when the runtime ships them, the adapters gain two lines.
+Documented as an open ask at the foot of `docs/RUNTIME.md`.
+
+### Activity is not a paginating surface, and this did not make it one
+
+`GET /api/ai/requests` carries `limit`/`offset` and returns `total`, but Activity
+has no pagination anywhere (the feed's "See all activity" belongs to the
+notification store, not to a page cursor). `ApprovalsSection` asks for the
+relay's default page and, when `total` exceeds what came back, renders
+`Showing N of M` — no load-more control. **If that caption starts appearing
+routinely, that is the signal to give Activity real paging, not to raise the
+limit.** Silent truncation was the alternative and it reads as "these are all of
+them", which on a list of pending writes is the one thing it must not say.
+
+### Fixed here: the stub's `toolInput` had no snake_case key
+
+`stub.ts` was written so "a consumer that normalises interiors breaks against the
+stub rather than only against UAT" — but every fixture interior was already
+camelCase (`projectId`, `assigneeId`), so the guard was decorative and a
+normalising consumer passed every local run. `custom_field_7` is now on the
+pending fixture and asserted. A fifth fixture row was also added whose approval
+answers `status: "failed"` at HTTP 200 (`STUB_FAILING_REQUEST_ID`) — that is the
+single most misreadable response on this surface and it was previously
+unreachable locally. The stub also latches decisions per instance so a second tap
+gets a real 409; approval is deliberately not idempotent and had no local
+expression of that before.
+
+### Still open
+
+- **The persisted channel-visible card** — the fast-follow. Today the live card
+  is ephemeral: dismissing it, reloading, or opening the channel on another
+  device leaves Activity as the only route back to the request. That is
+  deliberate for v1 (a card in history would outlive the request it describes),
+  but it means the chat transcript has no trace that a write was ever proposed.
+- **`RATE.approvalDecision` is a flood ceiling, not a concurrency guard.** 30/60s.
+  The double-tap guard is the card's synchronous ref latch plus the runtime's
+  409 — a rate limit that let the second tap through 29 times before refusing
+  would be no guard at all. Do not "harden" one by tightening the other.
+- **Module-gate consequence, unchanged and still upstream:** a request already
+  pending when the assistant module is switched off is now unactionable through
+  three routes rather than one. Same question, same owner — see the row above.
+
+---
+
+## Approvals, follow-up (18 Aug 2026) — outcomeSummary, cancelled, unknown-status audit
+
+Three runtime changes landed the day after the card shipped. Wired
+`outcomeSummary`, added `cancelled`, and audited unknown-`status` handling.
+
+### The unknown-`status` audit came back better than expected — and the reason is reusable
+
+The worry was that `status` might have the same hole `riskClass` had: an
+unrecognised value falling through to a pending-shaped card, so `cancelled`
+arriving before we knew about it would have shown Approve/Reject on a request
+nobody can action. **It would not have.** Verified by driving raw rows through
+the adapter into rendered DOM: `cancelled`, `quarantined`, `PENDING`, `pending `
+and `""` were all non-actionable already.
+
+The reason is structural, and worth remembering because it decides how much
+defensive code a future field needs:
+
+- **`riskClass` needed a normaliser** because the safe value (`high_risk`) lives
+  *inside* the known set. An unfamiliar value has to be actively mapped onto it;
+  left alone it renders unstyled, which reads as mild. So: normalise, plus a CSS
+  base rule as the second enforcement.
+- **`status` needed nothing** because the safe behaviour is "not actionable", and
+  every gate is a *positive check for `"pending"`* rather than a denylist of
+  terminal states. Unknown values fall safe by construction, at each gate
+  independently.
+
+Rule of thumb: when the safe default is inside the known set, you need a
+normaliser; when it is outside, a positive check for the one live value gets it
+free. Written up next to both gates in `lib/approval-card.ts` and
+`contracts.ts`.
+
+Two real findings survived the audit:
+
+1. **`status: ""` rendered a blank outcome box.** Small, and worse than it
+   sounds: an empty bordered box reads as a rendering bug rather than a data
+   problem, and sends whoever hits it looking in the wrong place. Now
+   `String(status).trim() || "Unrecognised state"` — `String()` because the
+   switch is exhaustive over the union so TS narrows to `never`, while the whole
+   point is that non-union values (including non-strings) arrive at runtime.
+2. **No test drove the property end-to-end.** Two existed and each assumed the
+   other's guarantee — the adapter test checked `viewerMayAct === false`, the
+   card test handed the card a model already marked terminal. Neither would catch
+   a regression loosening both. **This is a repeat pattern here** (the
+   `olderThanCursor` composition test, the `ensureSeeded` ordering,
+   `SettingsModule.test.tsx`). Now covered raw-row → adapter → DOM, including a
+   positive control asserting a `pending` row still *gets* buttons — otherwise
+   "no buttons" passes trivially forever.
+
+### 🔴 NOT OURS: cancel-pending
+
+The runtime exposes an endpoint to cancel a pending request, and we are not
+calling it. It needs an **org-admin user token**, and QuikChat reads module state
+but does not own toggling it — that is the admin portal's job. Wiring a cancel
+button here would put an administrative action behind a chat surface with the
+wrong credential, and would imply QuikChat can disable a module it cannot
+disable. If cancel-on-disable is wanted, it belongs next to the toggle that
+causes it. Related: the pending-requests-orphaned-on-disable row above, which is
+the same question from the other side.
+
+### `total` was correct code that could never fire
+
+`ApprovalsSection`'s "Showing N of M" footer is driven by
+`total - requests.length`. The live endpoint used to return the **page size** as
+`total`, so that was always 0 and the footer never rendered. Our stub modelled it
+as the unpaged count from the start, so the behaviour was right locally and
+unreachable in UAT — a case where the stub being stricter than the real service
+hid nothing but also proved nothing. The runtime now returns a real `COUNT(*)`
+and the footer starts working with no client change. Asserted explicitly in
+`approvals.test.ts` so the stub cannot drift back.
+
+### Still open
+
+- **The proposal `summary` on the ledger row** — the last remaining runtime ask,
+  down from two. Generator exists, unwired, ships with emission. Until then the
+  Activity card shows a raw `toolName`. Not synthesising one; see RUNTIME.md.
+- **The persisted channel-visible card** — unchanged, still the fast-follow.
+
+---
+
+## New chat for the AI conversation (20 Aug 2026) — what shipped, and two findings
+
+Shipped: a context-reset marker. `POST /api/channels/[id]/ai-reset` writes one
+`SystemActivity` row carrying `data.kind = "ai_context_reset"`, and `buildHistory`
+stops the pushed `history` at the NEWEST such row. Nothing is deleted.
+
+The option was chosen on one measurement, not on taste: the runtime holds no
+conversation state of its own. `docs/RUNTIME.md` says `channelId` is telemetry
+only, the wire body carries no thread handle, and the runtime team has been
+getting clean runs all week by hand-deleting `QcMessage` rows — which only works
+if pushed `history` is the entire context. A marker can therefore express
+everything deleting the rows expressed, and costs no migration: the row type,
+the fanout, the `SystemActivity` divider renderer and the `buildHistory` filter
+all already existed.
+
+### 🔴 TELL THE RUNTIME TEAM: hand-deleting QcMessage rows strands the KB scope
+
+The week-long workaround has a cost nobody would predict from "clear the chat".
+An AI chat's retrieval scope is not stored as conversation state — it is derived
+by `kb.service#listChannelKbSourceFileIds`, which queries **Media messages** in
+the channel carrying an ingest marker. Delete the messages and the documents stay
+ingested in the runtime's KB while the chat silently loses every pointer to them:
+the "This chat / All my docs" control empties, and scoped retrieval quietly
+becomes a plain turn with no error anywhere.
+
+This is the strongest argument for the marker over clear-in-place, and it applies
+retroactively — any AI chat cleared by hand this week has lost its doc scope and
+will need those documents re-added. Worth checking before anyone else reaches for
+`DELETE FROM`.
+
+### Unreachable: `leave()`'s AI-chat branch
+
+`channels.service#leave` has a `channel?.type === "ai"` branch that deletes the
+channel, its members and all its messages. Nothing can reach it: `InfoDrawer`
+gates both **Leave** and **Delete** on `isGroup`, so an AI chat exposes neither
+control. Server code with no caller — the same family as the thirteen the sweep
+found, and found the same way (reading the server while costing a feature, not by
+any test).
+
+Filed, deliberately not wired. "New chat" is the reset users actually asked for,
+and wiring a delete-everything button next to it would offer a destructive
+shortcut to a problem that no longer needs one. If it is ever wired, the KB-scope
+consequence above applies to it too.
+
+---
+
+## Persisted approval card (20 Aug 2026) — what shipped, and the one fact in two places
+
+The approval card is now a real message (`MessageType: "ApprovalRequest"`),
+written at proposal time by the assist relay and patched when a decision lands.
+The ephemeral live-turn card is unchanged and still there; the two **hand over**
+rather than stack — see `liveApprovalIsPersisted` in `ConversationView`.
+Collapsing them into one is still the follow-up.
+
+### The finding that decided the design
+
+`GET /ai/requests` is scoped to the caller by the minted token and there is no
+fetch-one endpoint. **An observer's ledger does not contain the requester's row.**
+So "store a pointer, render from the ledger" — the obvious design, and the one
+`Meeting` uses via `injectMeetingData` — was never available for the
+channel-visible card. Not slow: absent. The 24h terminal-row retention rules it
+out a second time, since the message outlives the ledger entry.
+
+Hence a snapshot in `data`, and hence the section below.
+
+### 🔒 Security: `messages.send` had no type allow-list
+
+`POST /api/channels/[id]/messages` hands its `readJson` body straight to
+`send()`, which did `dto.type ?? "Text"` with no validation. That was harmless
+only by accident: a forged `Meeting` renders empty because its card needs a
+server-hydrated projection. A card rendering from a client-supplied `data`
+snapshot removes the accident — an accepted forged `ApprovalRequest` would show
+"Priya approved — QUIKSC-290 created" in any channel the sender belongs to. The
+buttons would 404 (the runtime scopes decisions on its own token) so nothing
+would be written; the outcome line is the lie, and that is enough.
+
+`CLIENT_SENDABLE_TYPES` now gates `send()`, which also closes `Delete`.
+`forward()` refuses `ApprovalRequest` for the same reason. Both are pinned by
+`lib/server/messages-type-guard.test.ts` — that file IS the enforcement; delete
+it and a one-line change can reopen the hole silently.
+
+### Which copy of `status` is authoritative
+
+The message is authoritative for **display**; the runtime stays authoritative
+for **decisions**. That asymmetry is forced, not chosen, and it is what makes
+divergence produce a wrong screen and never a wrong write — every approve/reject
+still goes to the runtime, which 409s a stale one.
+
+They CAN diverge: any decision not taken through our relay (a direct runtime
+call, another client, the expiry sweep, a module-disable cancel). Three layers
+bound it:
+
+1. **The card's expiry clock** — off `expiresAt`, no server involved. Covers the
+   commonest case (expired unactioned) for free.
+2. **`POST /api/channels/[id]/approvals/reconcile`** on channel open, gated on
+   one of the viewer's own still-pending cards being loaded. The requester is
+   the only person the token-scoped ledger answers for, and running it repairs
+   the card for every observer, because the fanout goes to the channel.
+3. **`unconfirmedAt`** — set when reconciliation sees the whole ledger and the
+   request is not in it. The card then says "This may already have been
+   answered — we couldn't confirm what happened" instead of offering buttons.
+
+Bound: drift lasts until the requester next opens the channel, and at most the
+24h the ledger retains. Past that the card says it does not know. **It never
+guesses `expired`** — that would be the plausible-looking wrong value nobody
+notices, which is the `isDefault` shape this whole design is avoiding.
+
+⚠️ The reconciler concludes "gone" from ABSENCE, so absence has to be real. A
+failed ledger read never reaches it (the route throws first) and a partial page
+sets `ledgerComplete: false`, which permits repairs but forbids conclusions. Two
+tests in the route suite and one in the service suite exist only for this.
+
+### Reachable in the stub, not only in a test
+
+`assist()` could not emit `approval_needed` at all before, so the entire
+proposal path was UAT-or-unit-test only. It now parks a write on a `/approve`
+prompt. `STUB_AGED_REQUEST_ID` (`/approve-aged`) parks one whose ledger row is
+**deliberately missing** — its absence IS the fixture, modelling a request aged
+out of the 24h window, which is the only route to the `unconfirmed` card. Do not
+"complete" the fixture set by adding a row for it; `parked.test.ts` guards that.
+
+### 🔴 STILL WITH THE RUNTIME TEAM — one ask, now three fields
+
+Unchanged and still blocking a sentence the runtime themselves asked for
+("Priya approved — QUIKSC-290 created"):
+
+- **proposal `summary` on `AssistApprovalRow`** — the original ask. The persisted
+  card sidesteps it (it captures the sentence off the SSE frame, the one moment
+  it exists), so **Activity is now the only surface still showing a raw
+  `toolName`.** Narrower than before, not fixed.
+- **an actor display name.** `decisionBy` is a raw user id, which is why
+  `decidedByViewer` is a boolean — printing `u-7f3a91` at someone is worse than
+  the passive voice. Nothing here can name Priya.
+- **`decisionAgentId`.** Named as live in the brief but **present nowhere in our
+  tree** — not on `AssistApprovalRow`, not on `AssistApprovalDecision`. It is the
+  missing divergence DETECTOR: a decision carrying no QuikChat agent id is known
+  to have been taken elsewhere, which would turn layer 2 from a blind sweep into
+  a positive signal.
+
+### Still open
+
+- **Collapsing the two cards.** They hand over correctly; one of them should
+  eventually stop existing.
+- **The double unread.** A proposal and its decision are a message and a patch,
+  so only the proposal bumps `unreadCount` — but it does bump it, for every
+  observer. Accepted; bound it later rather than lose the proposal trace.
+- **`RUNTIME_TOKEN_DEBUG`** — still dormant in the tree, left until the runtime
+  team confirms the tool-catalog question is closed. Removing it drops 5 tests.
+
+---
+
+## Naming the approver, `decisionAgentId`, and the debug flag (21 Aug 2026)
+
+### The runtime cannot name people, and should not learn how
+
+Approvals reach the runtime on an agent JWT carrying only `userId`/`orgId`;
+naming a person means a lookup against a platform table they do not own. Line
+drawn: **they say what happened, we say who.** `decisionBy` is resolved against
+the channel roster the card already holds.
+
+Only ONE of the three card surfaces needed it, and the reason the other two did
+not is worth keeping:
+
+| Surface | Roster? | Third-party name reachable? |
+|---|---|---|
+| Live turn | yes (`channel.members`) | No — the actor is always the viewer; "you" wins |
+| Activity | **no**, and no channel either (`AssistApprovalRow` has no `channelId`) | No — the ledger is token-scoped and v1 has requester == approver, so `decisionBy` is the viewer or null. A name would be unreachable code, not a gap. |
+| Persisted card | yes (`actions.members`) | **Yes — the only one.** |
+
+When approver ≠ requester ships, Activity becomes reachable and has no channel
+to resolve from. Seam left in `fromApprovalRow`; deliberately not built for.
+
+`decidedByViewer` stayed a boolean and gained `decidedByName` beside it, so the
+precedence is viewer → name → passive. The rule the boolean existed to enforce —
+**never print the raw id** — is unchanged and now covers three more ways to fail:
+a departed member, no roster at all (`MessageRowActions` is optional the whole
+way down from `MessageList`), and a blank `displayName`.
+
+The assistant bot is excluded explicitly. It IS in `channel.members`, so an
+agent-decided row would otherwise render as a colleague named "Assistant" on the
+one surface whose entire purpose is who-decided-what.
+
+### The subtlety that took two attempts: `withOutcome`
+
+The actor line suppresses the fallback `statusLabel`, or the card states one fact
+twice. But suppressing a line only works if something still carries what it said,
+and **approving is not the same event as executing** — the whole reason `failed`
+exists is that the first can succeed and the second fail. So `"X approved this"`
+alone silently drops the outcome on exactly the rows with no `outcomeSummary`.
+
+First fix folded the outcome in unconditionally — which put our generic wording
+back on every row the runtime had already described properly, the same redundancy
+one layer along. A pre-existing test caught it (`not.toMatch(/action completed/i)`
+when a summary is present). The clause now appears only when the sentence is
+standing in for the suppressed label:
+
+```
+no outcomeSummary → "You approved this — the action completed"
+   outcomeSummary → "You approved this"  +  "Created QTRK-903 in QuikTrack."
+```
+
+One wording change to an existing assertion: the settled line for your own
+rejection now reads "You declined this" rather than the passive "Rejected". The
+state is pinned by `data-outcome` instead, so that test no longer depends on
+wording at all.
+
+### `decisionAgentId` is not a divergence detector
+
+We asked for it as one. It cannot be one, and the reason is structural: the
+reconcile pass only examines cards where OUR copy is still `pending`, and a
+pending card has no decision on our side to compare against. The field can only
+be populated on the ledger copy of a row we have **already decided to patch**, so
+it changes no repair, no PATCH count, and no `unconfirmed` trigger (that fires on
+a row's absence; this is a field on a present row).
+
+Wired anyway, for the thing it IS good for: at the moment we patch, it separates
+"our own `applyApprovalDecision` failed silently" (our bug) from "decided
+elsewhere" (expected). Those were indistinguishable in the logs. **A log
+dimension, never control flow** — see the note on the contract, which exists so
+nobody wires it as a branch later.
+
+### Reachable in the stub
+
+`STUB_DEPARTED_REQUEST_ID` / `/approve-departed` parks a write whose ledger row
+is decided by `u-departed-9f21` — a user in no roster anywhere. Reconcile patches
+the card from it, the name fails to resolve, and the passive fallback renders.
+That path is now reachable by hand in seconds instead of requiring someone to
+actually leave the org. It joins the other two shaped-by-what-they-lack fixtures;
+`parked.test.ts` guards all three against being "completed".
+
+### Removed
+
+`RUNTIME_TOKEN_DEBUG` and `logRuntimeTokenPayload` are gone — flag, helper, call
+site, the 5-test describe, and the now-unused `errorFields` import. The 4 claim
+assertions in `token.test.ts` stay; they were always the durable half, and the
+comment there now says so without pointing at a flag that no longer exists.

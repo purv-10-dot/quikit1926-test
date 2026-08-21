@@ -41,6 +41,19 @@ interface Options {
   requirePermission?: { resource: Resource; action: Action };
   /** @deprecated Legacy enum gate — use `requirePermission`. Kept for BC. */
   requireRoles?: ProjectRole[];
+  /**
+   * Opt-in: accept the platform auth service's short-lived agent JWT as an
+   * identity source, forwarded verbatim to `withOrgAuth`. Off by default —
+   * every existing caller is unaffected.
+   *
+   * There is deliberately NO `allowPat` counterpart here, and adding one would
+   * be a bug rather than a feature: `resolveIdentity` checks `allowPat` FIRST
+   * and returns, so a route setting both flags silently becomes PAT-only and
+   * rejects every agent JWT with the MCP-style 401. The way to make that
+   * combination unrepresentable is for the option not to exist on this wrapper.
+   * A route that genuinely needs PAT auth calls `withOrgAuth` directly.
+   */
+  allowAgentJwt?: boolean;
 }
 
 async function isTenantAdmin(userId: string, orgId: string): Promise<boolean> {
@@ -141,7 +154,11 @@ export function withProjectAccess<Params extends Record<string, string>>(
       req,
       routeCtx,
     );
-  });
+    },
+    // Only `allowAgentJwt` is forwarded — see the Options docblock for why
+    // `allowPat` must not be.
+    { allowAgentJwt: options.allowAgentJwt ?? false },
+  );
 }
 
 export interface LoadedProjectAccess {

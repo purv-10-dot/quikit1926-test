@@ -19,6 +19,27 @@ export const INTERNAL_SERVICE_ALLOWLIST = new Set<string>([
   "launcher",
 ]);
 
+/**
+ * `iss` stamped on every agent JWT minted by
+ * `POST /api/auth/internal/issue-agent-jwt`.
+ *
+ * Lives here rather than in the route so the minter and every future verifier
+ * read the same string instead of hand-copying it — the `actingAs` vocabulary
+ * is already restated in four places, and that duplication is what let the
+ * `sub`/`id` mismatch survive undetected.
+ *
+ * Agent JWTs are minted with the same `NEXTAUTH_SECRET`-derived key as ordinary
+ * session cookies, so claim shape — not key separation — is what distinguishes
+ * the two. `iss` exists to make that boundary explicit rather than implicit.
+ *
+ * NOTE: emitted only, not yet enforced. Nothing minted before this claim shipped
+ * carries it, so a verifier that *requires* `iss` would reject in-flight tokens.
+ * Enforce only after emit has been observed in logs (emit → verify-and-log →
+ * enforce), and never inside the shared session path: `verifyJWT`/`getToken`
+ * serves session cookies too, and no session cookie carries `iss`.
+ */
+export const AGENT_JWT_ISSUER = "auth-service-internal";
+
 export type InternalService = "ai-runtime" | "search" | "comms" | "launcher";
 
 export function isAllowedInternalService(service: string): boolean {

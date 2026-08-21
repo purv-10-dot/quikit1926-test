@@ -62,6 +62,14 @@ declare module "next-auth/jwt" {
     impersonatorEmail?: string;
     impersonationExpiresAt?: string;
     /**
+     * Issuer. Set only on agent JWTs (`AGENT_JWT_ISSUER`, minted by
+     * `/api/auth/internal/issue-agent-jwt`). Session cookies — whether minted
+     * by next-auth's sign-in flow or by an `auth-handoff` route — carry no
+     * `iss` at all, so this is a positive marker for "this is an agent token",
+     * never a required claim on the session path.
+     */
+    iss?: string;
+    /**
      * Identifies the principal "behind" the token. Absent on legacy tokens —
      * `withAuth` defaults to `'user'`. Set to a non-`'user'` value only by
      * the agent JWT issuance endpoint.

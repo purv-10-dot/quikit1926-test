@@ -19,6 +19,7 @@ export {
   Pin,
   PinOff,
   MessageSquare,
+  MessageSquarePlus,
   LogOut,
   WifiOff,
   FileText,

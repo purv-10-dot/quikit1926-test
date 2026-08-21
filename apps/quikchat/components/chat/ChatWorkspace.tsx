@@ -58,7 +58,7 @@ import {
 import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
 import { useOlderMessages } from "@/lib/use-older-messages";
 import { streamAssist } from "@/lib/assist-client";
-import type { AssistSource } from "@/lib/shared";
+import type { AssistApprovalRequest, AssistSource } from "@/lib/shared";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { CallHandler } from "../calling/CallHandler";
@@ -141,6 +141,22 @@ export function ChatWorkspace({
     channelId: string;
     prompt: string;
     message: string;
+  } | null>(null);
+  /**
+   * A write the assistant parked instead of answering. TERMINAL, like `done` and
+   * `error` — the stream closes after it, so this card is the turn's result and
+   * there is no answer bubble to reconcile.
+   *
+   * Channel-scoped like the other two so a card from one conversation cannot
+   * render over another. Until this existed, `onApprovalNeeded` was unhandled
+   * and the client's guard fell through to "the assistant proposed an action
+   * that needs approval, but this view can't show it yet" — technically honest
+   * and useless: the write was genuinely parked and the user had no way to reach
+   * it.
+   */
+  const [assistApproval, setAssistApproval] = useState<{
+    channelId: string;
+    request: AssistApprovalRequest;
   } | null>(null);
   const [rejoinCall, setRejoinCall] = useState<ActiveCallInfo | null>(null);
   const assistAbort = useRef<AbortController | null>(null);
@@ -826,6 +842,10 @@ export function ChatWorkspace({
       assistAbort.current = controller;
       setAssist({ channelId, text: "" });
       setAssistError((e) => (e && e.channelId === channelId ? null : e));
+      // A new turn supersedes the previous turn's card. The request itself is
+      // NOT withdrawn — it stays parked on the runtime and visible in "Your
+      // approvals"; only this channel's bubble is cleared.
+      setAssistApproval((a) => (a && a.channelId === channelId ? null : a));
       const clearIfCurrent = () => setAssist((s) => (s && s.channelId === channelId ? null : s));
       // A superseded turn (aborted at the top of this callback) can still have a
       // callback in flight. It carries the SAME channelId as the turn that
@@ -891,6 +911,23 @@ export function ChatWorkspace({
             clearIfCurrent();
             setAssistError({ channelId, prompt, message });
           },
+          /**
+           * Terminal, exactly like `done` and `error`: drop the loader and put
+           * the card up in the same commit, so there is no frame where the turn
+           * looks abandoned.
+           *
+           * Nothing is written to the message list. A parked write is not an
+           * assistant reply — persisting one would put a card in history that
+           * outlives the request it describes, and the durable record of it
+           * already exists in the runtime's ledger, which is what Activity
+           * reads. The persisted channel-visible card is a separate, deliberate
+           * piece of work; this is the ephemeral live-turn one.
+           */
+          onApprovalNeeded: (request) => {
+            if (!live()) return;
+            clearIfCurrent();
+            setAssistApproval({ channelId, request });
+          },
         },
         controller.signal,
       );
@@ -910,6 +947,9 @@ export function ChatWorkspace({
     handleAssist(p, undefined, buildKnowledgeBase());
   }, [assistError, handleAssist, buildKnowledgeBase]);
   const dismissAssistError = useCallback(() => setAssistError(null), []);
+  // Hides the bubble only. The request stays parked on the runtime and listed in
+  // Activity — dismissing must never be a way to make a pending write disappear.
+  const dismissAssistApproval = useCallback(() => setAssistApproval(null), []);
 
   // Entry point: open (find-or-create) the caller's AI-chat singleton, then land
   // on it. Idempotent server-side, so reopening reuses the same conversation.
@@ -1081,6 +1121,12 @@ export function ChatWorkspace({
             }
             onRetryAssist={retryAssist}
             onDismissAssistError={dismissAssistError}
+            assistApproval={
+              assistApproval && assistApproval.channelId === activeChannel.channelId
+                ? assistApproval.request
+                : null
+            }
+            onDismissAssistApproval={dismissAssistApproval}
             liveSources={liveSources}
             onKbIngested={appendKbSource}
             kbWiden={kbWiden}

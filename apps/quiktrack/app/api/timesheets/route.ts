@@ -120,4 +120,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   return NextResponse.json({ success: true, data: entry }, { status: 201 });
-});
+}, { allowAgentJwt: true });
