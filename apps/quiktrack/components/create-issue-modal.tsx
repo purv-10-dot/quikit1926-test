@@ -182,9 +182,18 @@ export function CreateIssueModal({
         if (!alive) return;
         const data: Project[] = j?.data ?? [];
         setProjects(data);
-        if (!projectId) {
-          setProjectId(initialProjectId ?? data[0]?.id ?? "");
-        }
+        // Normalize the current projectId against the loaded list. The value may
+        // be a project KEY (the URL is canonicalized to /spaces/<KEY>/…) rather
+        // than a cuid; if it doesn't match any p.id, try p.projectKey and swap in
+        // the resolved cuid so the picker highlights the right project instead of
+        // silently falling back to the first one.
+        setProjectId((cur) => {
+          const wanted = cur || initialProjectId || "";
+          const match = wanted
+            ? data.find((p) => p.id === wanted || p.projectKey === wanted)
+            : undefined;
+          return match?.id ?? (cur ? cur : data[0]?.id ?? "");
+        });
       })
       .catch(() => undefined);
     return () => {
@@ -193,10 +202,16 @@ export function CreateIssueModal({
   }, [open, initialProjectId, projectId]);
 
   // When opened with an explicit initialProjectId, honor it (callers like the
-  // discovery Create dispatcher pass the chosen space).
+  // discovery Create dispatcher pass the chosen space). Resolve key-or-id against
+  // the loaded list when it's available so a KEY doesn't get stored raw (the
+  // list-load effect above also normalizes as a backstop).
   useEffect(() => {
-    if (open && initialProjectId) setProjectId(initialProjectId);
-  }, [open, initialProjectId]);
+    if (!open || !initialProjectId) return;
+    const match = projects.find(
+      (p) => p.id === initialProjectId || p.projectKey === initialProjectId,
+    );
+    setProjectId(match?.id ?? initialProjectId);
+  }, [open, initialProjectId, projects]);
 
   // Reset form whenever modal opens fresh.
   useEffect(() => {
