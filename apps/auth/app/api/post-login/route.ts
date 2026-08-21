@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { getToken } from "next-auth/jwt";
-import { SignJWT } from "jose";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { publicBaseUrl } from "@quikit/auth/public-url";
 import { clearSessionCookies } from "@quikit/auth/session-cookies";
+import {
+  allowedTargetOrigins,
+  mintHandoffToken,
+  resolveOrgContext,
+} from "@quikit/auth/mobile";
 
 /**
  * GET /api/post-login?callbackUrl=<absolute-url>
@@ -36,47 +39,6 @@ import { clearSessionCookies } from "@quikit/auth/session-cookies";
  * the target host's handoff route to verify, never long enough to ride
  * around in a clipboard.
  */
-
-const DEFAULT_ALLOWED_ORIGINS = [
-  "https://quik-it-auth.vercel.app",
-  "https://quikscale.vercel.app",
-  "https://quik-it-admin.vercel.app",
-  "https://quiktrack.vercel.app",
-  "https://quikvc.vercel.app",
-  "https://quiksocial.vercel.app",
-  "https://quikinfra.vercel.app",
-  "https://apps.quikit.ai",
-  "https://scale.quikit.ai",
-  "https://orgadmin.quikit.ai",
-  "https://track.quikit.ai",
-  "https://crm.quikit.ai",
-  "https://social.quikit.ai",
-  "https://quikinfra.quikit.ai",
-  "https://quikhrms.vercel.app",
-  "https://people.quikit.ai",
-  "https://support.quikit.ai",
-  "https://asset.quikit.ai",
-  // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
-  "https://uatapps.quikit.ai",
-  "https://uatscale.quikit.ai",
-  "https://uatorgadmin.quikit.ai",
-  "https://uattrack.quikit.ai",
-  "https://uatcrm.quikit.ai",
-  "https://uatsocial.quikit.ai",
-  "https://uatinfra.quikit.ai",
-  "https://uatpeople.quikit.ai",
-  "https://uatsupport.quikit.ai",
-  "https://uatasset.quikit.ai",
-  "https://uatlms.quikit.ai",
-];
-
-function allowedOrigins(): Set<string> {
-  const extra = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
-    .split(",")
-    .map((s) => s.trim().replace(/\/$/, ""))
-    .filter(Boolean);
-  return new Set([...DEFAULT_ALLOWED_ORIGINS, ...extra]);
-}
 
 function launcherFallback(): string {
   const launcherUrl =
@@ -118,7 +80,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(launcherFallback());
   }
 
-  if (!allowedOrigins().has(target.origin)) {
+  if (!allowedTargetOrigins().has(target.origin)) {
     return NextResponse.redirect(launcherFallback());
   }
 
@@ -134,63 +96,35 @@ export async function GET(request: NextRequest) {
   const jwt = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   const sessionId = (jwt?.sessionId as string | undefined) ?? null;
 
-  let orgId = sessionOrgId ?? null;
-  let membershipRole: string | null =
-    (session.user.membershipRole as string | undefined) ?? null;
-  if (orgId && !membershipRole) {
-    const member = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    membershipRole = member?.role ?? null;
-  }
-  if (!orgId) {
-    // Fall back to first active membership so the target app's middleware
-    // doesn't bounce the user to the launcher's org-picker. The launcher's
-    // /apps page is the canonical picker; sub-apps inherit a working org.
-    const first = await db.orgMember.findFirst({
-      where: { userId, status: "active" },
-      orderBy: { createdAt: "asc" },
-      select: { orgId: true, role: true },
-    });
-    orgId = first?.orgId ?? null;
-    membershipRole = membershipRole ?? first?.role ?? null;
-  }
-
-  const userRow = await db.user.findUnique({
-    where: { id: userId },
-    select: { email: true, firstName: true, lastName: true },
+  // Resolve org/role/name. Falls back to the user's first active
+  // membership so the target app's middleware doesn't bounce them to the
+  // launcher's org-picker — the launcher's /apps page is the canonical
+  // picker; sub-apps inherit a working org. Shared with the native mobile
+  // sign-in endpoint (packages/auth/mobile.ts).
+  const orgContext = await resolveOrgContext({
+    userId,
+    knownOrgId: sessionOrgId ?? null,
+    knownMembershipRole:
+      (session.user.membershipRole as string | undefined) ?? null,
+    knownEmail: session.user.email ?? null,
   });
-  const email = userRow?.email ?? session.user.email ?? null;
-  const firstName = userRow?.firstName ?? null;
-  const lastName = userRow?.lastName ?? null;
-  const name =
-    firstName || lastName
-      ? `${firstName ?? ""} ${lastName ?? ""}`.trim()
-      : null;
 
   // Mint the handoff token. `to` carries the path the user originally
   // wanted on the target host (so /auth-handoff lands them there after
   // setting the cookie).
   const to = `${target.pathname}${target.search}` || "/";
-  const key = new TextEncoder().encode(internalSecret);
-  const token = await new SignJWT({
-    sub: userId,
-    orgId: orgId ?? null,
-    to,
+  const token = await mintHandoffToken(internalSecret, {
+    userId,
+    orgId: orgContext.orgId,
     isSuperAdmin,
-    membershipRole,
-    email,
-    firstName,
-    lastName,
-    name,
+    membershipRole: orgContext.membershipRole,
+    email: orgContext.email,
+    firstName: orgContext.firstName,
+    lastName: orgContext.lastName,
+    name: orgContext.name,
     sessionId,
-  })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuedAt()
-    .setExpirationTime("120s")
-    .setJti(crypto.randomUUID())
-    .sign(key);
+    to,
+  });
 
   const handoff = new URL("/auth-handoff", target.origin);
   handoff.searchParams.set("token", token);
