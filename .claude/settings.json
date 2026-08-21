@@ -1,9 +1,9 @@
+
 {
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem \"c:\\\\workStation_3\\\\QuikIT\\\\packages\\\\database\\\\prisma\" -Filter \"*.prisma\")",
-      "Bash(Select-Object FullName)",
-      "Bash(npx vitest *)"
+      "Bash(Select-Object FullName)"
     ],
     "additionalDirectories": [
       "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
@@ -23,3 +23,4 @@
     ]
   }
 }
+ 
