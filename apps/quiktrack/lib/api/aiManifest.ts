@@ -71,6 +71,48 @@ const idParam = (description: string) => ({
   properties: { id: { type: "string", description } },
 });
 
+/* ──────────────── Chained-parameter provenance ────────────────
+ *
+ * A parameter whose value comes from ANOTHER operation's output must say so:
+ * which operation, which field, what the value looks like, and what it is not.
+ * Without that, a model chaining two calls picks a plausible-looking field and
+ * fails — the AI Runtime hit exactly this, passing a project NAME from
+ * `list_projects` into `list_sprints`:
+ *
+ *     GET /api/sprints?projectId=Core+API  →  404
+ *
+ * Correct behaviour on our side, and undiagnosable from the manifest alone.
+ * These constants exist so the wording cannot drift between the sites that
+ * share a source — `id` (issue) appears on eight operations.
+ *
+ * NOTE the id/key asymmetry, stated per-parameter below. PROJECTS and ISSUES
+ * both resolve either an id or a human-readable key. SPRINTS remain id-only —
+ * every sprint route still looks up `where: { id }` with no key fallback — so
+ * a model that generalises "keys work" from issues to sprints gets a 404.
+ *
+ * Issues used to be id-only too, and this comment used to say so. That
+ * asymmetry was the failure it predicted: the runtime created `QUIKSC-290`,
+ * called `GET /api/issues/QUIKSC-290`, got a 404, correctly diagnosed "it
+ * might be a key instead of an ID" — and had no way to act on that, because
+ * nothing converted one into the other. The eight issue operations sharing
+ * ISSUE_ID_DESC below now resolve either form through
+ * `lib/mcp/resolveIssue.ts` (one indexed lookup matching either column, not a
+ * format sniff). Sprint lookup fails in the same shape and is a known
+ * follow-up — see docs/Quikpilot_docs/AI-Runtime-Enabler-Decisions.md.
+ *
+ * `assigneeId` and `statusId` are deliberately left without a provenance note:
+ * no operation in this manifest produces a user id or a status id, so a note
+ * would send the model looking for a tool call that does not exist.
+ */
+const PROJECT_ID_DESC =
+  'The project\'s `id` from `list_projects` — a cuid such as `cmsrjonuq00624tfmmcsxac23`. Not the project name. A projectKey (e.g. "WST") is also accepted, but prefer `id` when chaining from `list_projects`.';
+
+const ISSUE_ID_DESC =
+  'The issue\'s `id` from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. An issue key (e.g. "WST-42", case-insensitive) is also accepted, including the key returned by `create_issue`; prefer `id` when chaining from another call. Not the issue title.';
+
+const SPRINT_ID_DESC =
+  "The sprint's `id` from `list_sprints` — a cuid such as `cmsrk3v6y000a1tfm2b7ndq5f`. Not the sprint name.";
+
 export const MANIFEST_OPERATIONS: ManifestOperation[] = [
   // ── Issue ────────────────────────────────────────────────────────────────
   {
@@ -81,7 +123,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     riskClass: "read",
     requiredPermission: null,
     isSummary: true,
-    inputSchema: idParam("QtIssue id"),
+    inputSchema: idParam(ISSUE_ID_DESC),
     outputSchema: { type: "object", description: "See summary contract §3.2" },
   },
   {
@@ -92,7 +134,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     riskClass: "read",
     requiredPermission: null,
     isSummary: false,
-    inputSchema: idParam("QtIssue id"),
+    inputSchema: idParam(ISSUE_ID_DESC),
     outputSchema: { type: "object", description: "{data: QtIssue & detail joins}" },
   },
   {
@@ -107,11 +149,25 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["projectId"],
       properties: {
-        projectId: { type: "string", description: "QtProject id or projectKey" },
+        projectId: { type: "string", description: PROJECT_ID_DESC },
         statusCategory: { enum: ["BACKLOG", "IN_PROGRESS", "DONE"] },
         assigneeId: { type: "string" },
-        sprintId: { type: "string" },
+        sprintId: { type: "string", description: SPRINT_ID_DESC },
         limit: { type: "integer", maximum: 100 },
+        // Documented, not added: this parameter already backs the board,
+        // backlog, list and saved-filter search boxes. The description states
+        // its real scope INCLUDING description-matching, rather than narrowing
+        // a filter humans already use. Saying what it does not guarantee is as
+        // load-bearing as saying what it does — a description hit is a weak
+        // signal (a hundred issues mention "login redirect" in their body; one
+        // is titled it), and the model cannot tell a good match from a
+        // plausible one. Hence the explicit "not a lookup" steer: key
+        // resolution is `get_issue`'s job now, and it is exact.
+        search: {
+          type: "string",
+          description:
+            "Free-text filter over this project's issues. Matches a substring of the issue key, title, OR description, case-insensitively. NOT an exact lookup: a description match can return an issue that merely mentions the phrase, so do not assume a single result is the issue you meant — check the returned `key` and `title` before acting on it. If you already know the issue key, call `get_issue` with it instead; that resolves exactly.",
+        },
       },
     },
     outputSchema: { type: "object", description: "{data: QtIssue[], nextCursor, total}" },
@@ -128,14 +184,14 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["projectId", "title"],
       properties: {
-        projectId: { type: "string" },
+        projectId: { type: "string", description: PROJECT_ID_DESC },
         title: { type: "string" },
         description: { type: "string" },
         type: { enum: ["TASK", "BUG", "EPIC", "SUBTASK"] },
         statusId: { type: "string" },
         priority: { enum: ["LOW", "MEDIUM", "HIGH", "URGENT"] },
         assigneeId: { type: "string" },
-        sprintId: { type: "string" },
+        sprintId: { type: "string", description: SPRINT_ID_DESC },
       },
     },
     outputSchema: { type: "object", description: "{data: QtIssue}" },
@@ -152,7 +208,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string" },
+        id: { type: "string", description: ISSUE_ID_DESC },
         statusId: { type: "string" },
         assigneeId: { type: "string" },
         priority: { enum: ["LOW", "MEDIUM", "HIGH", "URGENT"] },
@@ -173,9 +229,9 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string" },
+        id: { type: "string", description: ISSUE_ID_DESC },
         statusId: { type: "string" },
-        sprintId: { type: "string", nullable: true },
+        sprintId: { type: "string", nullable: true, description: SPRINT_ID_DESC },
         parentId: { type: "string", nullable: true },
         orderInColumn: { type: "integer" },
       },
@@ -193,7 +249,10 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: { id: { type: "string" }, subtaskMode: { enum: ["cascade", "detach"] } },
+      properties: {
+        id: { type: "string", description: ISSUE_ID_DESC },
+        subtaskMode: { enum: ["cascade", "detach"] },
+      },
     },
     outputSchema: { type: "object", description: "{success: true}" },
   },
@@ -206,7 +265,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     riskClass: "read",
     requiredPermission: null,
     isSummary: false,
-    inputSchema: idParam("QtIssue id"),
+    inputSchema: idParam(ISSUE_ID_DESC),
     outputSchema: { type: "object", description: "{data: QtIssueComment[]}" },
   },
   {
@@ -220,7 +279,10 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     inputSchema: {
       type: "object",
       required: ["id", "body"],
-      properties: { id: { type: "string" }, body: { type: "string", maxLength: 20000 } },
+      properties: {
+        id: { type: "string", description: ISSUE_ID_DESC },
+        body: { type: "string", maxLength: 20000 },
+      },
     },
     outputSchema: { type: "object", description: "{data: QtIssueComment}" },
   },
@@ -237,7 +299,14 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     inputSchema: {
       type: "object",
       required: ["id", "targetIssueId"],
-      properties: { id: { type: "string" }, targetIssueId: { type: "string" } },
+      properties: {
+        id: { type: "string", description: ISSUE_ID_DESC },
+        targetIssueId: {
+          type: "string",
+          description:
+            'The `id` of the issue to link to, from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. An issue key (e.g. "WST-42") is also accepted. May be in a different project; cross-project links are intentional.',
+        },
+      },
     },
     outputSchema: { type: "object", description: "{data: QtIssueLink}" },
   },
@@ -250,7 +319,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     riskClass: "read",
     requiredPermission: null,
     isSummary: true,
-    inputSchema: idParam("QtSprint id"),
+    inputSchema: idParam(SPRINT_ID_DESC),
     outputSchema: { type: "object", description: "See summary contract §3.3" },
   },
   {
@@ -264,7 +333,10 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     inputSchema: {
       type: "object",
       required: ["projectId"],
-      properties: { projectId: { type: "string" }, limit: { type: "integer", maximum: 50 } },
+      properties: {
+        projectId: { type: "string", description: PROJECT_ID_DESC },
+        limit: { type: "integer", maximum: 50 },
+      },
     },
     outputSchema: { type: "object", description: "{data: QtSprint[]}" },
   },
@@ -280,7 +352,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["projectId", "name"],
       properties: {
-        projectId: { type: "string" },
+        projectId: { type: "string", description: PROJECT_ID_DESC },
         name: { type: "string", maxLength: 120 },
         goal: { type: "string", maxLength: 2000 },
         startDate: { type: "string", format: "date-time" },
@@ -300,7 +372,11 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: { id: { type: "string" }, name: { type: "string" }, goal: { type: "string" } },
+      properties: {
+        id: { type: "string", description: SPRINT_ID_DESC },
+        name: { type: "string" },
+        goal: { type: "string" },
+      },
     },
     outputSchema: { type: "object", description: "{data: QtSprint}" },
   },
@@ -312,7 +388,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     riskClass: "medium_write",
     requiredPermission: "Sprint:update",
     isSummary: false,
-    inputSchema: idParam("QtSprint id"),
+    inputSchema: idParam(SPRINT_ID_DESC),
     outputSchema: { type: "object", description: "{data: QtSprint}" },
   },
   {
@@ -333,7 +409,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["id"],
       properties: {
-        id: { type: "string" },
+        id: { type: "string", description: SPRINT_ID_DESC },
         moveOpenTo: { type: "string", nullable: true, description: '"backlog" | "new" | <sprintId> | null' },
       },
     },
@@ -351,7 +427,7 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
     // "declare the intended pair" case in the doc, not an oversight.
     requiredPermission: "ProjectSummary:view",
     isSummary: true,
-    inputSchema: idParam("QtProject id"),
+    inputSchema: idParam(PROJECT_ID_DESC),
     outputSchema: { type: "object", description: "Dashboard aggregate — heavier than a token-budgeted AI summary; see project-summary route" },
   },
   {
@@ -398,7 +474,11 @@ export const MANIFEST_OPERATIONS: ManifestOperation[] = [
       type: "object",
       required: ["issueId", "entryDate", "hours"],
       properties: {
-        issueId: { type: "string" },
+        issueId: {
+          type: "string",
+          description:
+            'The issue\'s `id` from `list_issues` or `get_issue` — a cuid such as `cmsrk1p2h00071tfm9x8lqe4d`. Not the issue key (e.g. "WST-42").',
+        },
         entryDate: { type: "string", format: "date-time" },
         hours: { type: "number", minimum: 0.0166, maximum: 24 },
         description: { type: "string", maxLength: 2000 },

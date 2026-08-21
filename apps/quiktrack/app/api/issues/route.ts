@@ -26,6 +26,8 @@ async function userIsProjectMember(
   return !!pm;
 }
 
+// AI Runtime: agent-JWT opt-in (manifest read op `list_issues`). Reads only —
+// the POST below deliberately stays session/API-token.
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const idOrKey = url.searchParams.get("projectId");
@@ -456,7 +458,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     total,
     ...(statusCounts ? { statusCounts } : {}),
   });
-});
+}, { allowAgentJwt: true });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = createIssueSchema.safeParse(await req.json());
@@ -628,4 +630,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });
-});
+}, { allowAgentJwt: true });

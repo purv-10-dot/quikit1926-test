@@ -18,6 +18,29 @@ export const RATE = {
   uploadSign: { bucket: "upload_sign", limit: 30, windowMs: 60_000 },
   // AI assistant (S12): conservative — "be polite" to the runtime.
   assist: { bucket: "assist", limit: 10, windowMs: 60_000 },
+  /**
+   * Listing approvals — a READ, sized like the other reads, NOT like `assist`.
+   *
+   * Worth stating because the endpoint's capability check is
+   * `userCan("Assistant", "create")` while its path has no "assist" in it, so
+   * `RATE.assist` looks like the obvious neighbour. It is not: 10/60s is sized
+   * for LLM turns, and this is a list a surface may poll or refetch on focus.
+   * Shaped after `notifyRead` instead.
+   */
+  approvalsList: { bucket: "approvals_list", limit: 120, windowMs: 10_000 },
+  /**
+   * Approving or rejecting — a WRITE, and deliberately not sized like the list
+   * it sits next to. `approvalsList` is 120/10s because a surface may poll it;
+   * a decision is a deliberate button press that performs a real write in
+   * another app, and there is no legitimate reason for one person to make
+   * dozens of them per minute.
+   *
+   * NOT the double-tap guard. That is the card's synchronous latch plus the
+   * runtime's 409 — a rate limit that let the second tap through 29 times before
+   * refusing would be no guard at all. This is a flood ceiling; shaped after
+   * `meetingCreate`, the other "deliberate action with real consequences".
+   */
+  approvalDecision: { bucket: "approval_decision", limit: 30, windowMs: 60_000 },
   // KB ingest (Stage 3): explicit "Add to KB" button — deliberate + rare + heavy
   // (indexing on the runtime), so tight.
   ingest: { bucket: "ingest", limit: 10, windowMs: 60_000 },

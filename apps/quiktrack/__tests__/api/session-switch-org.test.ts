@@ -57,6 +57,14 @@ describe("GET /api/session/switch-org", () => {
     resetMockDb();
     getToken.mockReset();
     getAppAccess.mockClear();
+    // Re-establish the default EXPLICITLY rather than relying on mockClear:
+    // the "isn't granted in the target org" test installs a persistent
+    // `mockResolvedValue({ hasAccess: false })`, and mockClear only wipes call
+    // records, not the implementation. Without this line that false leaks into
+    // every later test — which is what made the open-redirect test below
+    // assert `/` (the no-app-access denial page) instead of `/dashboard` (the
+    // safeInternalPath fallback it is actually there to check).
+    getAppAccess.mockResolvedValue({ hasAccess: true, otherAppsCount: 2 });
     getToken.mockResolvedValue({ id: USER, sub: USER, orgId: ORG_A, sessionId: "sess_1" });
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
   });

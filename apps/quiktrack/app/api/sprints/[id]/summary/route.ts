@@ -20,6 +20,7 @@ const PRIORITY_ORDER: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, 
  * exact same scope rule (`computeSprintVelocity`, EPIC/SUBTASK/BUG excluded)
  * the completion step will eventually freeze.
  */
+// AI Runtime: agent-JWT opt-in (manifest read op `summarize_sprint`).
 export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const sprint = await db.qtSprint.findFirst({
     where: { id: params.id, isDeleted: false, project: { orgId, isDeleted: false } },
@@ -135,4 +136,4 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, {
       url: `${process.env.NEXT_PUBLIC_QUIKIT_URL ?? ""}${manifest.routePrefix}/spaces/${sprint.projectId}/sprints/${sprint.id}`,
     },
   });
-});
+}, { allowAgentJwt: true });

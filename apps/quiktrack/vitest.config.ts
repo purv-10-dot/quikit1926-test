@@ -11,7 +11,10 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],
     include: ["__tests__/**/*.test.{ts,tsx}"],
-    exclude: ["__tests__/e2e/**", "node_modules/**"],
+    // `__tests__/integration/**` needs a real Postgres and runs from
+    // `vitest.integration.config.ts` (npm run test:integration). Excluded here
+    // so `npm run test` stays runnable on CI, which has no database.
+    exclude: ["__tests__/e2e/**", "__tests__/integration/**", "node_modules/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

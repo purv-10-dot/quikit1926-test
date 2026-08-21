@@ -6,6 +6,7 @@ import {
   CalendarPlus,
   IconButton,
   Info,
+  MessageSquarePlus,
   Phone,
   Pin,
   PinOff,
@@ -37,6 +38,11 @@ export interface ConversationHeaderProps {
   onCall?: () => void;
   /** Pin / unpin this conversation in the viewer's own list (QC_010). */
   onTogglePin?: () => void;
+  /**
+   * Start a new chat (AI chat only) — resets what the assistant can see. Absent
+   * on every other channel type, where the notion has no meaning.
+   */
+  onNewChat?: () => void;
 }
 
 export function ConversationHeader({
@@ -49,6 +55,7 @@ export function ConversationHeader({
   onSchedule,
   onCall,
   onTogglePin,
+  onNewChat,
 }: ConversationHeaderProps) {
   const { openProfile } = useProfile();
   const isGroup = channel.type === "group";
@@ -130,6 +137,11 @@ export function ConversationHeader({
         {onSchedule ? (
           <IconButton label="Schedule meeting" onClick={onSchedule}>
             <CalendarPlus size={18} />
+          </IconButton>
+        ) : null}
+        {onNewChat ? (
+          <IconButton label="New chat" onClick={onNewChat}>
+            <MessageSquarePlus size={18} />
           </IconButton>
         ) : null}
         {onTogglePin ? (
