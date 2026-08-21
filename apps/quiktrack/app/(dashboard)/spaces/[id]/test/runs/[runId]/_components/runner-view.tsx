@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useProjectMembers } from "../../../_components/use-project-members";
 import Link from "next/link";
-import { ArrowLeft, Lock, Unlock } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, X } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { RunSummary } from "@/components/test/run-summary";
 import { CaseDetailPane } from "./case-detail-pane";
@@ -45,6 +45,20 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
         <ArrowLeft className="h-3 w-3" />
         Test runs
       </Link>
+
+      {d.resultError && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <span>{d.resultError}</span>
+          <button
+            type="button"
+            onClick={d.dismissResultError}
+            aria-label="Dismiss"
+            className="shrink-0 rounded p-0.5 hover:bg-rose-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* QUIKTR-341 — the reference UI frames the whole run (header, summary,
           tabs, grid) as ONE bordered card, with the detail panel as a SEPARATE

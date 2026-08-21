@@ -33,6 +33,11 @@ export function useRunnerData({ runId, tab }: { runId: string; tab: RunTab }) {
   // very next render.
   const [panelClosed, setPanelClosed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Surfaces the server's actual validation message when a status/result write
+  // fails — previously the failure was swallowed to a bare `false`, so a 400
+  // (e.g. a malformed body) looked identical to "nothing happened" with no way
+  // to tell why short of opening DevTools' Network tab.
+  const [resultError, setResultError] = useState<string | null>(null);
 
   const openTest = (id: string) => {
     setPanelClosed(false);
@@ -199,14 +204,18 @@ export function useRunnerData({ runId, tab }: { runId: string; tab: RunTab }) {
     input: { statusId: string; comment?: string; elapsedMs?: number },
   ): Promise<boolean> => {
     setSubmitting(true);
+    setResultError(null);
     try {
       const res = await fetch(`/api/test/tests/${testId}/results`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const json = (await res.json()) as { success: boolean };
-      if (!json.success) return false;
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!json.success) {
+        setResultError(json.error ?? "Could not record the result.");
+        return false;
+      }
 
       // Refresh the grid (status pills) and the run summary (donut + counts).
       // The detail pane's cached status is stale too, so drop it.
@@ -229,6 +238,7 @@ export function useRunnerData({ runId, tab }: { runId: string; tab: RunTab }) {
       ]);
       return true;
     } catch {
+      setResultError("Network error — the result was not saved. Please retry.");
       return false;
     } finally {
       setSubmitting(false);
@@ -290,6 +300,8 @@ export function useRunnerData({ runId, tab }: { runId: string; tab: RunTab }) {
     setCaseField,
     onLabelsChanged,
     submitResult,
+    resultError,
+    dismissResultError: () => setResultError(null),
     toggleRunState,
   };
 }
