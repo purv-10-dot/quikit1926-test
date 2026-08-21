@@ -1,6 +1,8 @@
 import { createMiddleware } from "@quikit/auth/middleware";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { buildCsp, generateNonce } from "@/lib/csp";
 
 /**
@@ -60,6 +62,11 @@ export async function middleware(request: NextRequest) {
         "to",
         request.nextUrl.pathname + request.nextUrl.search,
       );
+      // Cross-org deep link from a signed-out click: tell the launcher which
+      // org to select before it mints the hand-off token, so the session lands
+      // on the org that owns the record instead of the user's default one.
+      const deepLinkOrg = request.nextUrl.searchParams.get("org");
+      if (deepLinkOrg) handoff.searchParams.set("org", deepLinkOrg);
       const redirect = NextResponse.redirect(handoff);
       redirect.headers.set("Content-Security-Policy", csp);
       return redirect;
@@ -70,6 +77,33 @@ export async function middleware(request: NextRequest) {
   if (res.status === 307 || res.status === 308 || res.headers.has("location")) {
     res.headers.set("Content-Security-Policy", csp);
     return res;
+  }
+
+  // Cross-org deep link. Notification emails link to `/browse/<KEY>?org=<orgId>`
+  // (see lib/email/sendEmail.ts). The session carries exactly one active org, so
+  // a recipient who belongs to several orgs clicks that link in whichever org
+  // they last opened the app in — and every org-scoped lookup on the page misses
+  // when it isn't the org the record lives in (the "Something went wrong" 404).
+  // Hand the request to /api/session/switch-org, which validates membership +
+  // entitlement, re-mints the session cookie on the named org and redirects back
+  // to this path (minus `org`). Runs AFTER the auth factory, so an unauthenticated
+  // user still goes through login/handoff first — `?org=` survives on the
+  // callbackUrl and this check fires on the way back in.
+  const orgParam = request.nextUrl.searchParams.get("org");
+  if (orgParam) {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    const userId = token?.id ?? token?.sub;
+    if (userId && token?.orgId !== orgParam) {
+      const base = publicBaseUrl(request);
+      const dest = new URL(request.nextUrl.pathname + request.nextUrl.search, base);
+      dest.searchParams.delete("org");
+      const target = new URL("/api/session/switch-org", base);
+      target.searchParams.set("orgId", orgParam);
+      target.searchParams.set("to", `${dest.pathname}${dest.search}`);
+      const redirect = NextResponse.redirect(target);
+      redirect.headers.set("Content-Security-Policy", csp);
+      return redirect;
+    }
   }
 
   // Pass-through (the page will render): re-issue `next()` with the nonce on the

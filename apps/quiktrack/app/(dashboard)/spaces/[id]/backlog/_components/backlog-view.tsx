@@ -12,6 +12,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
+import {
+  localInputsToISO,
+  toLocalDateInput,
+  toLocalTimeInput,
+} from "@/lib/utils/datetime-input";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
 import { BulkEditPopover } from "./bulk-edit-popover";
@@ -564,27 +569,14 @@ function EditSprintModal({
 }) {
   const [name, setName] = useState(sprint.name);
   const [duration, setDuration] = useState<string>("custom");
-  const [startDate, setStartDate] = useState(
-    sprint.startDate ? sprint.startDate.slice(0, 10) : "",
-  );
-  const [startTime, setStartTime] = useState(
-    sprint.startDate ? sprint.startDate.slice(11, 16) : "",
-  );
-  const [endDate, setEndDate] = useState(
-    sprint.endDate ? sprint.endDate.slice(0, 10) : "",
-  );
-  const [endTime, setEndTime] = useState(
-    sprint.endDate ? sprint.endDate.slice(11, 16) : "",
-  );
+  // Stored dates are UTC instants; the date/time inputs are local wall clock.
+  const [startDate, setStartDate] = useState(toLocalDateInput(sprint.startDate));
+  const [startTime, setStartTime] = useState(toLocalTimeInput(sprint.startDate));
+  const [endDate, setEndDate] = useState(toLocalDateInput(sprint.endDate));
+  const [endTime, setEndTime] = useState(toLocalTimeInput(sprint.endDate));
   const [goal, setGoal] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  function combine(date: string, time: string) {
-    if (!date) return undefined;
-    const t = time && /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : "09:00:00";
-    return new Date(`${date}T${t}`).toISOString();
-  }
 
   async function submit() {
     if (!name.trim()) {
@@ -600,8 +592,8 @@ function EditSprintModal({
         body: JSON.stringify({
           name: name.trim(),
           goal: goal || undefined,
-          startDate: combine(startDate, startTime),
-          endDate: combine(endDate, endTime),
+          startDate: localInputsToISO(startDate, startTime),
+          endDate: localInputsToISO(endDate, endTime),
         }),
       });
       const json = await res.json();
@@ -786,12 +778,6 @@ function StartSprintModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function combine(date: string, time: string) {
-    if (!date) return undefined;
-    const t = time && /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : "09:00:00";
-    return new Date(`${date}T${t}`).toISOString();
-  }
-
   function onDurationChange(d: string) {
     setDuration(d);
     if (d !== "custom") {
@@ -823,8 +809,8 @@ function StartSprintModal({
         body: JSON.stringify({
           name: name.trim(),
           goal: goal || undefined,
-          startDate: combine(startDate, startTime),
-          endDate: combine(endDate, endTime),
+          startDate: localInputsToISO(startDate, startTime),
+          endDate: localInputsToISO(endDate, endTime),
         }),
       }).then((r) => r.json());
       if (!patchRes.success) {
@@ -3184,9 +3170,16 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const totalAll = Object.values(sectionStates).reduce((acc, s) => acc + s.total, 0);
 
   return (
-    <div className="px-6 py-4">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4">
+    // No top padding here — the sticky toolbar below owns it, so the bar sits
+    // flush against the top of the tab's scroll container once it pins.
+    <div className="px-6 pb-4">
+      {/* Toolbar — pinned to the top of SpaceLayout's scroll container so the
+          search / assignee / filter controls stay reachable while the sprint
+          and backlog lists scroll underneath. `-mx-6 px-6` widens the opaque
+          background to the full content width (the parent's horizontal padding
+          would otherwise leave rows visible sliding past its edges). z-20 sits
+          below the row/column menus (z-30) so those still open over it. */}
+      <div className="sticky top-0 z-20 -mx-6 flex items-center justify-between bg-white px-6 pt-4 pb-4">
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />

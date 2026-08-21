@@ -11,8 +11,12 @@ import { NextResponse } from "next/server";
  * through the launcher's hand-off flow instead of a same-domain login.
  * Cookies don't cross *.vercel.app subdomains, so the launcher mints a
  * short-lived JWT and `/auth-handoff` exchanges it for our session cookie.
- * Mirrors apps/quikscale/middleware.ts (QuikFlow has no marketing landing,
- * so `/` is protected and the root page redirects to /dashboard).
+ * Mirrors apps/quikscale/middleware.ts.
+ *
+ * `/` is a public marketing landing page (see
+ * app/(marketing)/page.tsx) — 200 OK for everyone. The page component
+ * itself server-redirects authed users to /dashboard, so logged-in users
+ * never see the brochure.
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
 const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
@@ -20,7 +24,7 @@ const APP_SLUG = "quikflow";
 
 const factory = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/invitations", "/auth-handoff", "/api/health"],
+  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff", "/api/health"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
   enforceRemoteSessionValidation: process.env.NODE_ENV === "production",
@@ -39,10 +43,12 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
-  // Same-host redirect to /login* → send to central login (or /login locally).
+  // Same-host redirect to /login* → send to central login, or fall back to
+  // the local marketing landing page ("/") when no central auth host is
+  // configured (local dev without QuikIT running).
   if (locUrl.host === new URL(base).host && locUrl.pathname.startsWith("/login")) {
     if (AUTH_URL) return NextResponse.redirect(new URL("/login", AUTH_URL));
-    return res;
+    return NextResponse.redirect(new URL("/", base));
   }
 
   // Cross-host bounce to central auth with reason=session_expired → clear the

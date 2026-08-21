@@ -8,6 +8,8 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionApprovalRequest } from "@/lib/services/requisition-approval-service";
 import { notifyRequisitionNextApprover } from "@/lib/services/requisition-notifications";
 import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
+import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
+import { generateRequisitionNumber } from "@/lib/utils/requisition-number";
 
 const schema = z.object({
   title: z.string().min(2).max(200),
@@ -55,11 +57,6 @@ const schema = z.object({
   priority: z.enum(["Low", "Medium", "High", "Urgent"]).default("Medium"),
 });
 
-function reqNumber(): string {
-  const d = new Date();
-  return `REQ-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const raiserId = await resolveEmployeeId(orgId, userId);
@@ -89,10 +86,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       });
     }
 
+    const requisitionNumber = await generateRequisitionNumber(orgId);
     const requisition = await prisma.jobRequisition.create({
       data: {
         orgId,
-        requisitionNumber: reqNumber(),
+        requisitionNumber,
         title: data.title,
         jobOpeningName: data.jobOpeningName,
         departmentId: deptId ?? undefined,
@@ -143,6 +141,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         createdBy: userId, updatedBy: userId,
       },
     });
+
+    // Recruiter & Position Tracking (Phase 1) — one RequisitionPosition row per
+    // opening, generated up front. The requisition itself is never duplicated.
+    await generatePositionsForRequisition(orgId, requisition.id, requisitionNumber, data.positions, userId);
 
     if (data.recruiterId) {
       await prisma.requisitionRecruiter.create({

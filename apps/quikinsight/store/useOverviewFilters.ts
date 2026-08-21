@@ -1,13 +1,18 @@
 import { create } from "zustand";
 import type { PerformanceView } from "@/lib/api/overview";
+import { DEFAULT_PERIOD, type PeriodSpec } from "@/lib/period/types";
 
 interface OverviewFiltersState {
   performanceView: PerformanceView;
-  range: number;
+  /**
+   * Range + comparison. Deliberately the SPEC, not resolved windows — a stored
+   * window would go stale across midnight; resolvePeriod() runs at render time.
+   */
+  period: PeriodSpec;
   checkedChannels: string[];
   checkedOrganicPlatforms: string[];
   setPerformanceView: (v: PerformanceView) => void;
-  setRange: (r: number) => void;
+  setPeriod: (p: PeriodSpec) => void;
   toggleChannel: (name: string) => void;
   toggleOrganicPlatform: (name: string) => void;
 }
@@ -17,11 +22,11 @@ const allOrganicPlatforms = ["Facebook", "Instagram", "LinkedIn Company Page", "
 
 export const useOverviewFilters = create<OverviewFiltersState>((set) => ({
   performanceView: "all",
-  range: 30,
+  period: DEFAULT_PERIOD,
   checkedChannels: allChannels,
   checkedOrganicPlatforms: allOrganicPlatforms,
   setPerformanceView: (v) => set({ performanceView: v }),
-  setRange: (r) => set({ range: r }),
+  setPeriod: (p) => set({ period: p }),
   toggleChannel: (name) =>
     set((s) => ({
       checkedChannels: s.checkedChannels.includes(name)

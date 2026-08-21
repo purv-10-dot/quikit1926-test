@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
@@ -23,6 +24,10 @@ import {
   isStandaloneKind,
   STANDALONE_RELATED_ID,
 } from "@/lib/services/activities/target-existence";
+import {
+  UPWORK_SOURCE_SYSTEM,
+  buildManualUpworkActivityExternalId,
+} from "@/lib/services/activities/upwork-activity-types";
 import { assertAccountAccess } from "@/lib/auth/account-acl";
 import { buildActivityAclWhere } from "@/lib/services/activities/activity-acl";
 import { logActivity } from "@/lib/services/activities/log-activity";
@@ -44,6 +49,15 @@ export async function GET(req: NextRequest) {
     const leadId = searchParams.get("leadId");
     const relatedKind = searchParams.get("relatedKind");
     const relatedObjectId = searchParams.get("relatedObjectId");
+    // Timeline for a record that stores its activities as STANDALONE rows
+    // (relatedKind "None") keyed by externalId — currently the Upwork module.
+    // Such rows cannot be found by relatedObjectId (it is the "standalone"
+    // sentinel), so they are addressed by their source system plus the
+    // per-record externalId prefix the writer guarantees. Both params are
+    // required together; either one alone is ignored, so this cannot widen an
+    // existing query.
+    const sourceSystem = searchParams.get("sourceSystem");
+    const externalIdPrefix = searchParams.get("externalIdPrefix");
     const pageSize = Math.min(
       Math.max(parseInt(searchParams.get("pageSize") ?? searchParams.get("limit") ?? "100", 10) || 100, 1),
       500,
@@ -79,6 +93,8 @@ export async function GET(req: NextRequest) {
           { relatedKind: "Lead", relatedObjectId: leadId },
         ],
       });
+    } else if (sourceSystem && externalIdPrefix) {
+      baseAnd.push({ sourceSystem, externalId: { startsWith: externalIdPrefix } });
     }
     const acl = await buildActivityAclWhere(user);
     if (acl) baseAnd.push(acl);
@@ -198,6 +214,30 @@ export async function POST(req: NextRequest) {
       outreach: dto.outreach as Parameters<typeof logActivity>[0]["outreach"],
     };
 
+    // Link to → Upwork: the job's timeline is addressed by
+    // (sourceSystem, externalId startsWith "<jobId>:") rather than by
+    // relatedObjectId, because the Upwork module's own activities are written as
+    // standalone rows. A user-logged activity therefore has to carry that same
+    // pair to show up on the job, so we stamp it after the row exists (the key
+    // is derived from the activity id — see buildManualUpworkActivityExternalId).
+    //
+    // Only applied when the client did NOT supply its own externalId/sourceSystem,
+    // so an integration that manages its own dedupe keys keeps control of them.
+    const stampUpworkTimelineKey =
+      dto.relatedKind === "Upwork" && !dto.externalId && !dto.sourceSystem;
+    if (stampUpworkTimelineKey) {
+      logInput.sourceSystem = UPWORK_SOURCE_SYSTEM;
+    }
+    // Returns the UPDATED row so the response/`toListRow` reflect the stamped
+    // externalId rather than the pre-update snapshot.
+    const linkUpworkTimeline = (tx: Prisma.TransactionClient, activityId: string) =>
+      tx.crmActivity.update({
+        where: { id: activityId },
+        data: {
+          externalId: buildManualUpworkActivityExternalId(relatedObjectId, activityId),
+        },
+      });
+
     let created;
     if (dto.activityTypeId) {
       // Option A: the route orchestrates one transaction so the activity row
@@ -213,7 +253,17 @@ export async function POST(req: NextRequest) {
           activityTypeId: dto.activityTypeId!,
           values: dto.fieldValues,
         });
-        return activity;
+        return stampUpworkTimelineKey
+          ? await linkUpworkTimeline(tx, activity.id)
+          : activity;
+      });
+    } else if (stampUpworkTimelineKey) {
+      // Same atomicity guarantee as the field-values path: the row and its
+      // timeline key are written together, so a failure can't leave an Upwork
+      // activity that never appears on its job.
+      created = await prisma.$transaction(async (tx) => {
+        const activity = await logActivity({ ...logInput, tx });
+        return linkUpworkTimeline(tx, activity.id);
       });
     } else {
       created = await logActivity(logInput);

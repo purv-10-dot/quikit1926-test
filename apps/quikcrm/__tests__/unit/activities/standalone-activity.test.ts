@@ -17,8 +17,16 @@ import {
 } from "@/lib/services/activities/target-existence";
 
 describe("standalone activity sentinels", () => {
-  it("exposes the four primary kinds plus the standalone 'None' kind", () => {
-    expect(ACTIVITY_KINDS).toEqual(["None", "Lead", "Opportunity", "Contact", "Account"]);
+  it("exposes every primary kind plus the standalone 'None' kind", () => {
+    expect(ACTIVITY_KINDS).toEqual([
+      "None",
+      "Lead",
+      "Opportunity",
+      "Contact",
+      "Account",
+      "Prospect",
+      "Upwork",
+    ]);
     expect(isStandaloneKind(STANDALONE_KIND)).toBe(true);
     expect(isStandaloneKind("Lead")).toBe(false);
     // "None" is the standalone sentinel, NOT a primary (linkable) kind.

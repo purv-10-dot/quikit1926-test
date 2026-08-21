@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { stageNames } from "@/lib/services/pipeline-stages";
+import { generateCandidateCode } from "@/lib/utils/candidate-code";
 
 // One candidate row from the uploaded CSV/Excel (client maps headers → these keys).
 const rowSchema = z.object({
@@ -119,6 +120,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             createdBy: userId, updatedBy: userId,
           },
         });
+        const candidateCode = await generateCandidateCode(orgId);
+        await prisma.$executeRaw`UPDATE "app_quikhrms"."Candidate" SET "candidateCode" = ${candidateCode} WHERE id = ${candidate.id}`;
         created++;
 
         if (requisitionId) {

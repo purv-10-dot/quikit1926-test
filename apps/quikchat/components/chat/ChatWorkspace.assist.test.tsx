@@ -10,7 +10,7 @@
 // driven in jsdom (see Composer.assist.test.tsx). The stub exposes the assist
 // props ChatWorkspace owns, which is exactly the surface under test.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ChannelListItem, MessageDto } from "@/lib/shared";
+import type { AssistApprovalRequest, ChannelListItem, MessageDto } from "@/lib/shared";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +24,7 @@ interface AssistHandlerSet {
     sources?: unknown[];
   }) => void;
   onError: (m: string) => void;
+  onApprovalNeeded?: (r: AssistApprovalRequest) => void;
 }
 interface AssistTurn {
   channelId: string;
@@ -40,6 +41,8 @@ interface StubProps {
   assistError?: string | null;
   onAssist?: (prompt: string) => void;
   onStopAssist?: () => void;
+  assistApproval?: AssistApprovalRequest | null;
+  onDismissAssistApproval?: () => void;
 }
 
 const { clientHandlers, fireClientEvent, joinSpy, turns, frames } = vi.hoisted(() => {
@@ -79,6 +82,10 @@ vi.mock("./ConversationView", () => ({
         </button>
         <div data-testid="loader">{streaming === null ? "off" : `on:${streaming}`}</div>
         <div data-testid="assist-err">{props.assistError ?? ""}</div>
+        <div data-testid="assist-approval">{props.assistApproval?.requestId ?? ""}</div>
+        <button type="button" onClick={() => props.onDismissAssistApproval?.()}>
+          dismiss approval
+        </button>
         <ul data-testid="messages">
           {(props.messages ?? []).map((m) => (
             <li key={m.id} data-id={m.id} data-cmid={m.clientMessageId ?? ""}>
@@ -341,5 +348,76 @@ describe("ChatWorkspace assist supersede guard", () => {
     act(() => turns[1]!.handlers.onDone(DONE));
     expect(loader()).toBe("off");
     expect(rows().map((li) => li.textContent)).toEqual([DONE.text]);
+  });
+});
+
+/**
+ * `approval_needed` is TERMINAL — the stream emits it INSTEAD of `done` and then
+ * closes. Before this was wired, the client's guard fell through to "the
+ * assistant proposed an action that needs approval, but this view can't show it
+ * yet": technically honest and useless, because the write was genuinely parked
+ * and the user had no way to reach it.
+ */
+describe("ChatWorkspace assist — a parked write ends the turn", () => {
+  const request: AssistApprovalRequest = {
+    requestId: "req-7",
+    appId: "quiktrack",
+    toolName: "create_issue",
+    riskClass: "soft_write",
+    summary: "Create a QuikTrack issue.",
+    toolInput: { projectId: "QTRK" },
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+
+  it("clears the loader and shows the card in one commit, with no answer merged", async () => {
+    await openChannel();
+    fireEvent.click(screen.getByRole("button", { name: "ask" }));
+    act(() => turns[0]!.handlers.onDelta("thinking "));
+    expect(loader()).toBe("on:thinking ");
+
+    act(() => turns[0]!.handlers.onApprovalNeeded!(request));
+
+    expect(loader()).toBe("off");
+    expect(screen.getByTestId("assist-approval").textContent).toBe("req-7");
+    // A parked write is not an assistant reply — nothing goes into history.
+    expect(rows()).toHaveLength(0);
+    // And it is not an error, so the error bubble stays empty.
+    expect(screen.getByTestId("assist-err").textContent).toBe("");
+  });
+
+  it("dismiss hides the bubble only — it does not withdraw the request", async () => {
+    await openChannel();
+    fireEvent.click(screen.getByRole("button", { name: "ask" }));
+    act(() => turns[0]!.handlers.onApprovalNeeded!(request));
+    expect(screen.getByTestId("assist-approval").textContent).toBe("req-7");
+
+    fireEvent.click(screen.getByRole("button", { name: "dismiss approval" }));
+
+    // Gone from the turn. Still parked on the runtime, and still listed in
+    // "Your approvals" — dismissing must never make a pending write disappear.
+    expect(screen.getByTestId("assist-approval").textContent).toBe("");
+  });
+
+  it("a new turn clears the previous turn's card", async () => {
+    await openChannel();
+    fireEvent.click(screen.getByRole("button", { name: "ask" }));
+    act(() => turns[0]!.handlers.onApprovalNeeded!(request));
+    expect(screen.getByTestId("assist-approval").textContent).toBe("req-7");
+
+    fireEvent.click(screen.getByRole("button", { name: "ask" }));
+    expect(screen.getByTestId("assist-approval").textContent).toBe("");
+    expect(loader()).toBe("on:");
+  });
+
+  it("a superseded turn's late approval frame cannot touch the live turn", async () => {
+    await openChannel();
+    fireEvent.click(screen.getByRole("button", { name: "ask" }));
+    fireEvent.click(screen.getByRole("button", { name: "ask" }));
+    expect(turns[0]!.signal.aborted).toBe(true);
+
+    act(() => turns[0]!.handlers.onApprovalNeeded!(request));
+
+    expect(screen.getByTestId("assist-approval").textContent).toBe("");
+    expect(loader()).toBe("on:");
   });
 });

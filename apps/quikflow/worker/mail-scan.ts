@@ -20,7 +20,7 @@ const CURSOR_PREFIX = "mail:cursor:";
 /** Orgs with at least one Active workflow triggering on a received email. */
 async function orgsWithMailWorkflows(): Promise<Set<string>> {
   const workflows = await db.wfWorkflow.findMany({
-    where: { status: "Active" },
+    where: { status: "Active", deletedAt: null },
     select: { orgId: true, trigger: true },
   });
   const orgs = new Set<string>();

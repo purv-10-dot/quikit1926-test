@@ -199,7 +199,7 @@ export async function buildEmailReport(opts: {
     generatedAt: new Date().toISOString(),
   }, {
     recipientName,
-    appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3011",
+    appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3015",
   });
 }
 

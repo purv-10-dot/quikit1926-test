@@ -25,6 +25,8 @@ export const CRM_MODULES = [
   "quotes",
   "documents",
   "mailbox",
+  "icp",
+  "upwork",
 ] as const;
 
 export type CrmModule = (typeof CRM_MODULES)[number];

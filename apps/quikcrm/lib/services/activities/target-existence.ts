@@ -1,7 +1,27 @@
 import { prisma } from "@/lib/db/prisma";
 
-export const ACTIVITY_PRIMARY_KINDS = ["Lead", "Opportunity", "Contact", "Account"] as const;
+export const ACTIVITY_PRIMARY_KINDS = [
+  "Lead",
+  "Opportunity",
+  "Contact",
+  "Account",
+  "Prospect",
+  "Upwork",
+] as const;
 export type ActivityPrimaryKind = (typeof ACTIVITY_PRIMARY_KINDS)[number];
+
+/**
+ * Kinds whose parent record has no `accountId` column, so they sit outside the
+ * account-scope ACL entirely (see activity-acl.ts). A Prospect is a pre-lead
+ * capture and an Upwork job is an external posting — neither belongs to a CRM
+ * Account, so `getRelatedAccountId` returns null for both and account-scope
+ * checks are a no-op rather than a rejection.
+ */
+export const ACCOUNTLESS_KINDS = ["Prospect", "Upwork"] as const;
+
+export function isAccountlessKind(v: string): boolean {
+  return (ACCOUNTLESS_KINDS as readonly string[]).includes(v);
+}
 
 /**
  * Standalone (unlinked) activities. `CrmActivity.relatedKind`/`relatedObjectId`
@@ -50,6 +70,10 @@ export async function assertActivityTargetExists(
     exists = await prisma.crmContact.findFirst({ where: { id, orgId }, select: { id: true } });
   } else if (kind === "Account") {
     exists = await prisma.crmAccount.findFirst({ where: { id, orgId }, select: { id: true } });
+  } else if (kind === "Prospect") {
+    exists = await prisma.crmProspect.findFirst({ where: { id, orgId }, select: { id: true } });
+  } else if (kind === "Upwork") {
+    exists = await prisma.crmUpworkJob.findFirst({ where: { id, orgId }, select: { id: true } });
   }
   if (!exists) {
     const err = new Error(`${kind} not found`) as Error & { statusCode?: number };
@@ -64,6 +88,9 @@ export async function getRelatedAccountId(
   id: string,
 ): Promise<string | null> {
   if (isStandaloneKind(kind)) return null; // no account scope for standalone
+  // Prospect / Upwork have no accountId column — they are not account-owned
+  // records, so there is no account to scope against.
+  if (isAccountlessKind(kind)) return null;
   if (kind === "Account") return id;
   if (kind === "Lead") {
     const r = await prisma.crmLead.findFirst({

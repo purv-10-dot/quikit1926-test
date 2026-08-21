@@ -43,14 +43,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   }
 
   // Verify every REQUIRED document type has at least one upload. Respect
-  // selectedDocTypeIds if HR narrowed the bundle for this candidate.
+  // selectedDocTypeIds if HR narrowed the list for this candidate.
   const selectedIds = Array.isArray(request.selectedDocTypeIds)
     ? (request.selectedDocTypeIds as unknown as string[])
     : null;
 
   const requiredTypes = await prisma.candidateDocumentType.findMany({
     where: {
-      orgId: payload.orgId, bundle: payload.bundle, isActive: true, deletedAt: null,
+      orgId: payload.orgId, isActive: true, deletedAt: null,
       isRequired: true,
       ...(selectedIds && selectedIds.length ? { id: { in: selectedIds } } : {}),
     },

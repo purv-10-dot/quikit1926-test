@@ -72,7 +72,10 @@ export default function QuikProjectPage() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>QuikProject</h1>
           <p style={{ color: "var(--text-secondary)", margin: "4px 0 0", fontSize: 14 }}>
             Team timesheet — daily, weekly &amp; monthly view
-            {isDummy && <span style={{ color: "var(--text-muted)", marginLeft: 8 }}>(sample data)</span>}
+            {/* One stamp vocabulary across the app: "Mock", never "dummy data"
+                or "(sample data)". Mixing labels made a single card look like
+                it carried two different warnings. */}
+            {isDummy && <span className="mock-badge mock-badge-inline" aria-label="Mock data">Mock</span>}
           </p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, background: "var(--bg-secondary)", borderRadius: 8, padding: 3 }}>

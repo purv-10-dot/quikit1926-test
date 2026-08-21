@@ -6,7 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
-import { Plus, Trash2, Pencil, Star, GripVertical, X, AlertTriangle, ChevronRight, Mail, MailX } from "lucide-react";
+import { Plus, Trash2, Pencil, Star, GripVertical, X, AlertTriangle, ChevronRight, Mail } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { PageBackground } from "@/components/hrms/page-background";
@@ -60,6 +60,7 @@ const isRequiredStage = (name: string) => REQUIRED_STAGES.some((r) => r.toLowerC
 function stageLabel(name: string): string {
   if (name === "HRInterview") return "HR Interview";
   if (name === "Screening") return "Source";
+  if (name === "Offer") return "Offered";
   return name.replace(/([A-Z])/g, " $1").trim();
 }
 
@@ -68,26 +69,6 @@ function inferTemplate(name: string): MailTemplate {
   if (/offer/i.test(name)) return "offer-branded";
   if (/hired/i.test(name)) return "welcome";
   return null;
-}
-
-function canHaveMail(stageName: string): boolean {
-  return /interview|phonescreen|assessment|finalround|offer|hired/i.test(stageName);
-}
-
-function templateOptions(stageName: string): { value: NonNullable<MailTemplate>; label: string }[] {
-  if (/offer/i.test(stageName)) {
-    return [
-      { value: "offer-branded", label: "My Branded PDF (from Branding settings)" },
-      { value: "offer-default", label: "Default Content Letter" },
-    ];
-  }
-  if (/hired/i.test(stageName)) {
-    return [
-      { value: "welcome", label: "Welcome / Onboarding" },
-    ];
-  }
-  if (/interview|phonescreen|assessment|finalround/i.test(stageName)) return [{ value: "interview", label: "Interview Invite" }];
-  return [];
 }
 
 export default function PipelinesPage() {
@@ -327,36 +308,17 @@ export default function PipelinesPage() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-gray-600">Stages <span className="text-red-500">*</span></label>
-              <span className="text-[11px] text-gray-400">{form.stages.length} stage{form.stages.length !== 1 ? "s" : ""} · toggle mail per stage</span>
+              <span className="text-[11px] text-gray-400">{form.stages.length} stage{form.stages.length !== 1 ? "s" : ""}</span>
             </div>
 
             <div className="space-y-2 mb-3">
               {form.stages.map((s, i) => {
-                const mailAllowed = canHaveMail(s.name);
-                const opts = templateOptions(s.name);
                 return (
                   <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <GripVertical size={14} className="text-slate-400" />
                       <span className="w-6 h-6 rounded-full bg-[#dcfce7] text-[#16a34a] text-[11px] font-medium inline-flex items-center justify-center">{i + 1}</span>
                       <span className="flex-1 text-[13px] text-gray-800 font-semibold">{stageLabel(s.name)}</span>
-
-                      {mailAllowed ? (
-                        <label className={clsx(
-                          "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-semibold cursor-pointer ring-1",
-                          s.sendMail ? "bg-emerald-50 text-emerald-700 ring-emerald-300" : "bg-slate-100 text-slate-500 ring-slate-200 hover:bg-slate-200")}>
-                          <input type="checkbox" className="hidden" checked={s.sendMail}
-                            onChange={(e) => updateStage(i, {
-                              sendMail: e.target.checked,
-                              mailTemplate: e.target.checked ? (s.mailTemplate ?? inferTemplate(s.name)) : s.mailTemplate,
-                            })} />
-                          {s.sendMail ? <><Mail size={11} /> Mail ON</> : <><MailX size={11} /> Mail OFF</>}
-                        </label>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-slate-400 bg-slate-100 ring-1 ring-slate-200" title="Mail only available for interview, offer, hired or joining-letter stages">
-                          No mail
-                        </span>
-                      )}
 
                       <button type="button" onClick={() => moveStage(i, -1)} disabled={i === 0}
                         className="p-1 hover:bg-slate-200 rounded disabled:opacity-30">▲</button>
@@ -371,38 +333,6 @@ export default function PipelinesPage() {
                           className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={12} /></button>
                       )}
                     </div>
-
-                    {mailAllowed && s.sendMail && opts.length > 0 && (
-                      <div className="mt-2 pl-8">
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">Template</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {opts.map((o) => {
-                            const brandedLocked = o.value === "offer-branded" && !hasBranding;
-                            return (
-                              <label key={o.value} className={clsx(
-                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium ring-1",
-                                brandedLocked && "opacity-60 cursor-not-allowed",
-                                !brandedLocked && "cursor-pointer",
-                                s.mailTemplate === o.value
-                                  ? "bg-[#dcfce7] text-[#16a34a] ring-[#22c55e]"
-                                  : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}
-                                title={brandedLocked ? "Set up letterhead / signature in Settings → Branding first" : undefined}>
-                                <input type="radio" name={`tmpl-${i}`} className="hidden" checked={s.mailTemplate === o.value}
-                                  disabled={brandedLocked}
-                                  onChange={() => !brandedLocked && updateStage(i, { mailTemplate: o.value })} />
-                                {o.label}
-                                {brandedLocked && <span className="text-[10px] text-red-500">· not set</span>}
-                              </label>
-                            );
-                          })}
-                        </div>
-                        {s.mailTemplate === "offer-branded" && !hasBranding && (
-                          <div className="mt-1.5 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">
-                            Branding not configured. <a href="/settings/branding" className="underline font-semibold">Set up branding →</a>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 );
               })}

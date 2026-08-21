@@ -28,7 +28,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }) => {
       take: 5,
     }),
     db.wfWorkflow.findMany({
-      where: { orgId, ...visibleWf },
+      where: { orgId, deletedAt: null, ...visibleWf },
       select: { id: true, name: true, app: true },
     }),
   ]);

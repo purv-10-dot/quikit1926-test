@@ -15,7 +15,8 @@
       "@quikit/ui": ["../../packages/ui"],
       "@quikit/ui/*": ["../../packages/ui/*"],
       "@quikit/shared": ["../../packages/shared"],
-      "@quikit/shared/*": ["../../packages/shared/*"]
+      "@quikit/shared/*": ["../../packages/shared/*"],
+      "@quikit/ai-sdk": ["../../packages/ai-sdk"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "../../packages/auth/types.ts"],

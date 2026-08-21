@@ -1,14 +1,33 @@
-﻿"use client";
+"use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
+import MockBadge from "@/components/ui/MockBadge";
 import { getGoogleAnalyticsData, type GoogleAnalyticsData } from "@/lib/api/google-analytics";
 import Kpi from "@/components/ui/Kpi";
+import LineAreaChart from "@/components/charts/LineAreaChart";
+import BarChartSimple from "@/components/charts/BarChartSimple";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
 
-const GA_BLUE  = "#4285F4";
+/**
+ * Google Analytics — layout ported from the v15 preview's platform-detail view
+ * (PLATFORM_DETAILS.ga4): header + connection banner, a 4-card KPI strip, a
+ * trend chart beside a channel breakdown, then a top-pages table.
+ *
+ * WIRED TO REAL DATA. Every card reads GoogleAnalyticsData from
+ * /api/google-analytics. Where the preview showed a metric GA4 does not give us
+ * per-row, the column is dropped rather than filled with an invented number —
+ * see the table below. When the property is not connected, lib/api/sample.ts
+ * substitutes GA4_SAMPLE and flags it, and the page carries the Mock stamp.
+ *
+ * Sections after the table (Top countries, Top events) are NOT in the preview.
+ * They are backed by real API fields and predate this port, so they were kept
+ * rather than deleted — deleting working, real-data sections was not part of a
+ * layout change.
+ */
+const GA_BLUE = "#4285F4";
 const GA_GREEN = "#34A853";
-const GA_RED   = "#EA4335";
-const GA_YELLOW = "#FBBC04";
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -22,10 +41,40 @@ function fmtTime(s: number): string {
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
 
+/** GA4 daily keys arrive as YYYYMMDD or YYYY-MM-DD; render as DD/MM. */
 function fmtDate(d: string): string {
-  // Input is YYYYMMDD
-  if (d.length !== 8) return d;
-  return `${d.slice(6)}/${d.slice(4, 6)}`;
+  const digits = d.replace(/-/g, "");
+  if (digits.length !== 8) return d;
+  return `${digits.slice(6)}/${digits.slice(4, 6)}`;
+}
+
+function Header({ live }: { live?: number }) {
+  return (
+    <div className="page-head">
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: GA_BLUE, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <svg width="22" height="22" viewBox="0 0 192 192" fill="none">
+            <path d="M150 24h-24a12 12 0 0 0-12 12v120a12 12 0 0 0 12 12h24a12 12 0 0 0 12-12V36a12 12 0 0 0-12-12Z" fill="#F9AB00" />
+            <path d="M66 96H42a12 12 0 0 0-12 12v48a12 12 0 0 0 12 12h24a12 12 0 0 0 12-12v-48a12 12 0 0 0-12-12Z" fill="#E37400" />
+            <circle cx="108" cy="144" r="24" fill="#E37400" />
+          </svg>
+        </div>
+        <div>
+          <div className="page-title">Google Analytics</div>
+          <p className="page-sub">Website &amp; audience analytics</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+        {(live ?? 0) > 0 && (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--green-soft)", borderRadius: 20, padding: "6px 14px" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: GA_GREEN, display: "inline-block" }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: GA_GREEN }}>{live} live right now</span>
+          </span>
+        )}
+        <Link href="/integrations" className="btn">Manage in Integrations</Link>
+      </div>
+    </div>
+  );
 }
 
 export default function GoogleAnalyticsPage() {
@@ -38,180 +87,164 @@ export default function GoogleAnalyticsPage() {
 
   if (error) return (
     <div>
-      <div className="page-head"><div><div className="page-title">Google Analytics 4</div><p className="page-sub">Website traffic & audience</p></div></div>
-      <NotConnected icon="âš ï¸" title="Couldn't load GA4 data" body="Something went wrong. Please refresh and try again." ctaHref="/google-analytics" ctaLabel="Retry" />
+      <Header />
+      <NotConnected icon="⚠️" title="Couldn't load GA4 data" body="Something went wrong. Please refresh and try again." ctaHref="/google-analytics" ctaLabel="Retry" />
     </div>
   );
 
   if (!data) return (
     <div>
-      <div className="page-head"><div><div className="page-title">Google Analytics 4</div><p className="page-sub">Website traffic & audience</p></div></div>
+      <Header />
       <SkeletonKpiStrip />
       <div style={{ marginTop: 16 }}><SkeletonChartCards /></div>
     </div>
   );
 
-  if (!data.connected) return (
-    <div>
-      <div className="page-head"><div><div className="page-title">Google Analytics 4</div><p className="page-sub">Website traffic & audience</p></div></div>
-      <NotConnected
-        icon="ðŸ“Š"
-        title="Google Analytics 4 not connected"
-        body="Connect your GA4 property to see sessions, users, page views, engagement time, and traffic source breakdowns."
-        ctaHref="/integrations"
-        ctaLabel="Connect Google Analytics 4"
-      />
-    </div>
-  );
+  const mock = Boolean(data.isSampleData);
+  const sessions = data.totalSessions ?? 0;
+  const trend = data.dailyTrend ?? [];
+  const channels = data.channelBreakdown ?? [];
+  const pages = data.topPages ?? [];
+  const countries = data.topCountries ?? [];
+  const events = data.topEvents ?? [];
 
-  const maxChannel = Math.max(...(data.channelBreakdown ?? []).map((c) => c.sessions), 1);
-  const maxCountry = Math.max(...(data.topCountries ?? []).map((c) => c.activeUsers), 1);
-  const maxEvent   = Math.max(...(data.topEvents ?? []).map((e) => e.value), 1);
-  const maxTrend   = Math.max(...(data.dailyTrend ?? []).map((d) => d.activeUsers), 1);
+  // Conversion rate is derived, not returned: GA4 gives key events and sessions
+  // separately. Guarded so an empty property shows "—" rather than NaN%.
+  const conversionRate = sessions > 0 ? ((data.keyEvents ?? 0) / sessions) * 100 : null;
 
   return (
     <div>
-      {/* â”€â”€ Header â”€â”€ */}
-      <div className="greet-row">
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: GA_BLUE, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <svg width="22" height="22" viewBox="0 0 192 192" fill="none">
-              <path d="M150 24h-24a12 12 0 0 0-12 12v120a12 12 0 0 0 12 12h24a12 12 0 0 0 12-12V36a12 12 0 0 0-12-12Z" fill="#F9AB00"/>
-              <path d="M66 96H42a12 12 0 0 0-12 12v48a12 12 0 0 0 12 12h24a12 12 0 0 0 12-12v-48a12 12 0 0 0-12-12Z" fill="#E37400"/>
-              <circle cx="108" cy="144" r="24" fill="#E37400"/>
-            </svg>
+      <Header live={data.realtime?.activeUsers} />
+
+      {/* Connection banner — the preview's "synced / connect" strip. */}
+      {mock ? (
+        <SampleDataBanner platform="Google Analytics" />
+      ) : (
+        <div className="team-banner">
+          <div className="team-synced-pill">
+            <span className="platform-dot on" />
+            Synced from Google Analytics
           </div>
-          <div>
-            <div className="page-title">Google Analytics 4</div>
-            <p className="page-sub">Website traffic &amp; audience Â· last 28 days</p>
+          <Link href="/integrations" className="btn btn-sm">Manage connection</Link>
+        </div>
+      )}
+
+      <div className={`kpi-strip${mock ? " mock-wrap" : ""}`}>
+        {mock && <MockBadge />}
+        <Kpi label="Sessions" value={fmt(sessions)} delta="" trend="flat" sub="vs. last period" />
+        <Kpi label="Users" value={fmt(data.totalUsers ?? 0)} delta="" trend="flat" sub="unique visitors" />
+        <Kpi label="Avg. session" value={fmtTime(data.avgEngagementTime ?? 0)} delta="" trend="flat" sub="engagement time" />
+        <Kpi
+          label="Conversion rate"
+          value={conversionRate === null ? "—" : `${conversionRate.toFixed(1)}%`}
+          delta=""
+          trend="flat"
+          sub="key events ÷ sessions"
+        />
+      </div>
+
+      <div className="grid-2">
+        <div className={`chart-card${mock ? " mock-wrap" : ""}`}>
+          {mock && <MockBadge />}
+          {/* The preview plotted "Sessions trend". GA4's daily series carries
+              ACTIVE USERS, not sessions, so the title says what is actually
+              plotted rather than inheriting the preview's label. */}
+          <div className="chart-head"><h3>Active users trend</h3></div>
+          <p className="chart-sub">Daily, current period</p>
+          <div style={{ position: "relative", height: 200 }}>
+            {trend.length > 0 ? (
+              <LineAreaChart
+                labels={trend.map((d) => fmtDate(d.date))}
+                data={trend.map((d) => d.activeUsers)}
+                color={GA_BLUE}
+              />
+            ) : (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>No daily data for this period.</p>
+            )}
           </div>
         </div>
-        {(data.realtime?.activeUsers ?? 0) > 0 && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, background: "#dcfce7", borderRadius: 20, padding: "6px 14px" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: GA_GREEN, display: "inline-block", animation: "pulse 2s infinite" }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: GA_GREEN }}>{data.realtime?.activeUsers} live right now</span>
+
+        <div className={`chart-card${mock ? " mock-wrap" : ""}`}>
+          {mock && <MockBadge />}
+          <div className="chart-head"><h3>Top channels by sessions</h3></div>
+          <p className="chart-sub">This period</p>
+          <div style={{ position: "relative", height: 200 }}>
+            {channels.length > 0 ? (
+              <BarChartSimple
+                labels={channels.map((c) => c.channel)}
+                data={channels.map((c) => c.sessions)}
+                colors={GA_BLUE}
+              />
+            ) : (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>No channel data for this period.</p>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* â”€â”€ KPI strip â”€â”€ */}
-      <div className="kpi-strip">
-        <Kpi label="Sessions"         value={fmt(data.totalSessions ?? 0)}            delta="" trend="flat" sub="" />
-        <Kpi label="Users"            value={fmt(data.totalUsers ?? 0)}               delta="" trend="flat" sub="" />
-        <Kpi label="New Users"        value={fmt(data.newUsers ?? 0)}                 delta="" trend="flat" sub="" />
-        <Kpi label="Events"           value={fmt(data.eventCount ?? 0)}               delta="" trend="flat" sub="" />
-        <Kpi label="Key Events"       value={fmt(data.keyEvents ?? 0)}                delta="" trend="flat" sub="" />
-        <Kpi label="Avg. Engagement"  value={fmtTime(data.avgEngagementTime ?? 0)}    delta="" trend="flat" sub="" />
-      </div>
-
-      <div className="chart-grid" style={{ marginTop: 16 }}>
-
-        {/* â”€â”€ Daily trend sparkline â”€â”€ */}
-        {(data.dailyTrend?.length ?? 0) > 0 && (
-          <div className="chart-card" style={{ gridColumn: "1 / -1" }}>
-            <div className="chart-head">
-              <h3>Daily Active Users</h3>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>last 28 days</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 80, marginTop: 14 }}>
-              {data.dailyTrend!.map((d) => {
-                const h = Math.max(4, Math.round((d.activeUsers / maxTrend) * 80));
-                return (
-                  <div
-                    key={d.date}
-                    title={`${fmtDate(d.date)}: ${d.activeUsers} users`}
-                    style={{ flex: 1, height: h, background: GA_BLUE, borderRadius: "3px 3px 0 0", opacity: 0.85, cursor: "default", transition: "opacity .15s" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
-                  />
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fmtDate(data.dailyTrend![0].date)}</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fmtDate(data.dailyTrend![data.dailyTrend!.length - 1].date)}</span>
-            </div>
-          </div>
-        )}
-
-        {/* â”€â”€ Traffic channels â”€â”€ */}
-        {(data.channelBreakdown?.length ?? 0) > 0 && (
-          <div className="chart-card">
-            <div className="chart-head"><h3>Traffic Channels</h3></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-              {data.channelBreakdown!.map((c) => (
-                <div key={c.channel}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500 }}>{c.channel}</span>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{fmt(c.sessions)} sessions Â· {(c.bounceRate * 100).toFixed(0)}% bounce</span>
-                  </div>
-                  <div style={{ height: 8, borderRadius: 4, background: "var(--canvas)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(c.sessions / maxChannel) * 100}%`, borderRadius: 4, background: GA_BLUE }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* â”€â”€ Top countries â”€â”€ */}
-        {(data.topCountries?.length ?? 0) > 0 && (
-          <div className="chart-card">
-            <div className="chart-head"><h3>Top Countries</h3></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-              {data.topCountries!.map((c) => (
-                <div key={c.country} style={{ display: "grid", gridTemplateColumns: "130px 1fr 36px", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.country}</span>
-                  <div style={{ height: 8, borderRadius: 4, background: "var(--canvas)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(c.activeUsers / maxCountry) * 100}%`, borderRadius: 4, background: GA_GREEN }} />
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "right" }}>{fmt(c.activeUsers)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* â”€â”€ Top pages â”€â”€ */}
-        {(data.topPages?.length ?? 0) > 0 && (
-          <div className="chart-card">
-            <div className="chart-head"><h3>Top Pages</h3></div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 12 }}>
-              <thead><tr style={{ borderBottom: "1px solid var(--border)" }}>
-                <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 600, color: "var(--text-secondary)", fontSize: 12 }}>Page</th>
-                <th style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, color: "var(--text-secondary)", fontSize: 12 }}>Views</th>
-              </tr></thead>
-              <tbody>
-                {data.topPages!.map((p, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={{ padding: "7px 8px", color: "var(--text-primary)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.title}>{p.title}</td>
-                    <td style={{ padding: "7px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(p.views)}</td>
+      {/* Top landing pages. The preview's mock table also had Bounce rate and
+          Conversions per page; GA4's topPages response carries neither, so
+          those columns are omitted rather than filled with invented values. */}
+      <div className={`chart-card${mock ? " mock-wrap" : ""}`} style={{ marginTop: 16 }}>
+        {mock && <MockBadge />}
+        <div className="chart-head"><h3>Top landing pages</h3></div>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>Page</th><th>Views</th></tr></thead>
+            <tbody>
+              {pages.length === 0 ? (
+                <tr><td colSpan={2} style={{ color: "var(--text-muted)", padding: "16px 0" }}>No page data for this period.</td></tr>
+              ) : (
+                pages.map((p) => (
+                  <tr key={p.title}>
+                    <td>{p.title}</td>
+                    <td>{p.views.toLocaleString()}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* â”€â”€ Top events â”€â”€ */}
-        {(data.topEvents?.length ?? 0) > 0 && (
-          <div className="chart-card">
-            <div className="chart-head"><h3>Top Events</h3></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-              {data.topEvents!.map((e) => (
-                <div key={e.name} style={{ display: "grid", gridTemplateColumns: "140px 1fr 44px", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span>
-                  <div style={{ height: 8, borderRadius: 4, background: "var(--canvas)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(e.value / maxEvent) * 100}%`, borderRadius: 4, background: GA_YELLOW }} />
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "right" }}>{fmt(e.value)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* ── Beyond the preview: real GA4 fields kept from the previous page ── */}
+      {(countries.length > 0 || events.length > 0) && (
+        <div className="grid-2" style={{ marginTop: 16 }}>
+          {countries.length > 0 && (
+            <div className={`chart-card${mock ? " mock-wrap" : ""}`}>
+              {mock && <MockBadge />}
+              <div className="chart-head"><h3>Top countries</h3></div>
+              <p className="chart-sub">By active users</p>
+              <div style={{ position: "relative", height: 200 }}>
+                <BarChartSimple
+                  labels={countries.map((c) => c.country)}
+                  data={countries.map((c) => c.activeUsers)}
+                  colors={GA_BLUE}
+                />
+              </div>
+            </div>
+          )}
+          {events.length > 0 && (
+            <div className={`chart-card${mock ? " mock-wrap" : ""}`}>
+              {mock && <MockBadge />}
+              <div className="chart-head"><h3>Top events</h3></div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Event</th><th>Count</th></tr></thead>
+                  <tbody>
+                    {events.map((e) => (
+                      <tr key={e.name}>
+                        <td>{e.name}</td>
+                        <td>{e.value.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * Applies account-scope ACL so a restricted user only sees their allowed set.
  */
 export async function GET(req: NextRequest) {
-  try {
+  try {     
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "accounts", "view");

@@ -30,7 +30,7 @@ vi.mock("../../lib/connectors/teams", () => ({
   },
 }));
 
-import { createCalendarEventForOrg } from "@/lib/connectors";
+import { createCalendarEventForOrg, CalendarEventNotFoundError } from "@/lib/connectors";
 
 const CONN = {
   id: "conn_1",
@@ -117,6 +117,39 @@ describe("createCalendarEventForOrg — link idempotency", () => {
     expect(updateEvent).toHaveBeenCalledTimes(1);
     expect(updateEvent.mock.calls[0][1]).toBe("evt_real_1");
     expect(result?.updated).toBe(true);
+  });
+
+  it("a stale event id (Graph 404): recreates the event and re-points the link, instead of failing the run", async () => {
+    // Regression: the stored externalEventId was deleted on the Teams side (or
+    // orphaned by a calendar reconnect) — updateEvent throws
+    // CalendarEventNotFoundError. Before this fix that error propagated to
+    // runWorkflow and failed the run on every retrigger forever.
+    mockDb.wfCalendarLink.findUnique.mockResolvedValue(linkRow({ externalEventId: "evt_stale_gone" }) as never);
+    mockDb.wfCalendarLink.update.mockResolvedValue({} as never);
+    updateEvent.mockRejectedValueOnce(
+      new CalendarEventNotFoundError("Teams calendar update failed: The specified object was not found in the store."),
+    );
+
+    const result = await createCalendarEventForOrg("org_A", baseEvent, { link: LINK });
+
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(updateEvent.mock.calls[0][1]).toBe("evt_stale_gone");
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(mockDb.wfCalendarLink.update).toHaveBeenCalledWith({
+      where: { id: "link_1" },
+      data: { connectionId: "conn_1", provider: "teams", externalEventId: "evt_new_1", webLink: null, joinUrl: null },
+    });
+    expect(result?.updated).toBe(false);
+    expect(result?.id).toBe("evt_new_1");
+  });
+
+  it("a real (non-404) update failure: still fails the run, does not recreate", async () => {
+    mockDb.wfCalendarLink.findUnique.mockResolvedValue(linkRow({ externalEventId: "evt_real_1" }) as never);
+    updateEvent.mockRejectedValueOnce(new Error("Teams calendar update failed: HTTP 429"));
+
+    await expect(createCalendarEventForOrg("org_A", baseEvent, { link: LINK })).rejects.toThrow(/HTTP 429/);
+
+    expect(createEvent).not.toHaveBeenCalled();
   });
 
   it("a fresh in-flight PENDING claim: bails without creating a second event", async () => {

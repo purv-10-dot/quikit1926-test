@@ -52,7 +52,7 @@ export async function runDateScan(now: Date = new Date()): Promise<{ fired: numb
   // Only Active workflows whose trigger is one of the date-rule events.
   const events = DATE_RULES.map((r) => r.event);
   const workflows = await db.wfWorkflow.findMany({
-    where: { status: "Active" },
+    where: { status: "Active", deletedAt: null },
     select: { id: true, orgId: true, trigger: true },
   });
 

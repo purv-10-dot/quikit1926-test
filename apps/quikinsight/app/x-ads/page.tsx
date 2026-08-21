@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import { getXAdsData, type XAdsData } from "@/lib/api/x-ads";
 import Kpi from "@/components/ui/Kpi";
 import NotConnected from "@/components/ui/NotConnected";
@@ -63,6 +64,7 @@ export default function XAdsPage() {
 
   return (
     <div>
+      {data.isSampleData && <SampleDataBanner platform="X Ads" />}
       <div className="greet-row">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: X_BLACK, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>

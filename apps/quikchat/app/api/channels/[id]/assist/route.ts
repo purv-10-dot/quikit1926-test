@@ -13,6 +13,7 @@ import {
   isAssistantEnabled,
 } from "@/lib/server/assistant.service";
 import { getRuntimeClient } from "@/lib/server/runtime";
+import { writeApprovalProposal } from "@/lib/server/approval-message.service";
 import type { RuntimeEvent } from "@/lib/server/runtime";
 import { listChannelKbSourceFileIds } from "@/lib/server/kb.service";
 import { getStorage } from "@/lib/server/storage";
@@ -178,6 +179,26 @@ export const POST = withOrgAuth(
                 }),
               );
               break;
+            }
+            /**
+             * A parked write gets a PERSISTED card as well as the live one.
+             *
+             * Written at proposal time, not at decision time, because the trace
+             * the channel needs includes that a write was PROPOSED — a request
+             * that was rejected or expired unanswered renders nothing at all if
+             * the row only appears once something completes.
+             *
+             * Awaited before the frame is relayed so the message exists by the
+             * time the client can react to it, and best-effort inside (it
+             * returns null rather than throwing) so a failed write cannot take
+             * down the turn it describes. The ephemeral card still renders and
+             * the request is still parked on the runtime either way.
+             *
+             * Idempotent on `clientMessageId`, so a re-delivered frame returns
+             * the existing row instead of a second card.
+             */
+            if (evt.type === "approval_needed") {
+              await writeApprovalProposal(ctx, channelId, evt, { threadRootId });
             }
             controller.enqueue(sse(evt));
             if (evt.type === "error") break;

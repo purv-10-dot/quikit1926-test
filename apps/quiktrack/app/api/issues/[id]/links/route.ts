@@ -37,31 +37,30 @@ const issueSelect = {
 } as const;
 
 /**
- * Verify the caller can see this source issue (project member or tenant admin)
- * and return the issue. Used by both GET and POST.
+ * Verify the caller can see the project an already-resolved issue lives in
+ * (project member or tenant admin). Used by both GET and POST.
+ *
+ * Takes the projectId rather than re-fetching the issue: `resolveIssueIdOrKey`
+ * already returned it, and fetching the same row twice per request bought
+ * nothing.
  */
-async function loadAccessibleIssue(
+async function canAccessProject(
   orgId: string,
   userId: string,
-  issueId: string,
-) {
-  const issue = await db.qtIssue.findFirst({
-    where: { id: issueId, orgId: orgId, isDeleted: false },
-    select: { id: true, projectId: true, orgId: true },
-  });
-  if (!issue) return null;
+  projectId: string,
+): Promise<boolean> {
   const access = await db.qtProjectMember.findFirst({
-    where: { projectId: issue.projectId, userId, isDeleted: false },
+    where: { projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  if (!access && !(await hasAdminAccess(userId, orgId))) return null;
-  return issue;
+  if (access) return true;
+  return hasAdminAccess(userId, orgId);
 }
 
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
-    const issue = await loadAccessibleIssue(orgId, userId, params.id);
-    if (!issue) {
+    const issue = await resolveIssueIdOrKey(orgId, params.id);
+    if (!issue || !(await canAccessProject(orgId, userId, issue.projectId))) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     // Fetch BOTH directions so a link created as "is blocked by X" (stored as
@@ -107,8 +106,8 @@ export const GET = withOrgAuth<{ id: string }>(
 
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
-    const issue = await loadAccessibleIssue(orgId, userId, params.id);
-    if (!issue) {
+    const issue = await resolveIssueIdOrKey(orgId, params.id);
+    if (!issue || !(await canAccessProject(orgId, userId, issue.projectId))) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const parsed = createLinkSchema.safeParse(await req.json());
@@ -121,7 +120,16 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
-    if (parsed.data.targetIssueId === params.id) {
+    // Target must live in the same tenant. We don't require the same project
+    // — cross-project "relates to" is a useful pattern. Org-scoped by `orgId`,
+    // never a request value.
+    const target = await resolveIssueIdOrKey(orgId, parsed.data.targetIssueId);
+    if (!target) {
+      return NextResponse.json({ success: false, error: "Target issue not found" }, { status: 404 });
+    }
+    // Compared AFTER both sides are resolved — "WST-42" and its cuid are the
+    // same issue, and a raw comparison would not catch that.
+    if (target.id === issue.id) {
       return NextResponse.json(
         { success: false, error: "Cannot link an issue to itself" },
         { status: 400 },

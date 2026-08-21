@@ -6,6 +6,8 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { logApiCall } from "@quikit/shared/apiLogging";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { isOrgAppAdmin } from "@/lib/api/appRole";
+import { userCan, forbidden } from "@/lib/api/permissions";
+import type { Resource, Action } from "@/lib/api/permissionsRegistry";
 
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
@@ -31,6 +33,14 @@ export interface WithOrgAuthOptions {
    * workflows or manage org connections (PRD FR-E1, FR-F1).
    */
   requireAdmin?: boolean;
+  /**
+   * RBAC v2 permission gate. When set, the wrapper calls `userCan(userId,
+   * orgId, resource, action)` after the admin gate (if any). If the user
+   * lacks the permission, returns 403. Use the per-resource curry
+   * (`withOrgAuthForResource`) for the common case of one resource per
+   * route with verb → action mapping.
+   */
+  permission?: { resource: Resource; action: Action };
 }
 
 /**
@@ -89,6 +99,11 @@ export function withOrgAuth<Params = Record<string, never>>(
               { success: false, error: "Admin access required" },
               { status: 403 },
             );
+          } else if (
+            options.permission &&
+            !(await userCan(session.user.id, orgId, options.permission.resource, options.permission.action))
+          ) {
+            response = forbidden();
           } else {
             response = await handler(
               { session, userId: session.user.id, orgId, isAdmin },
@@ -122,5 +137,29 @@ export function withOrgAuth<Params = Record<string, never>>(
     });
 
     return response;
+  };
+}
+
+/**
+ * Per-resource curry factory. Each method-bound wrapper hard-codes the RBAC
+ * v2 action so route files don't have to repeat it per handler:
+ *
+ *   const auth = withOrgAuthForResource("Workflows");
+ *   export const GET    = auth.view(async ({ orgId }, req) => { ... });
+ *   export const POST   = auth.create(async ({ orgId }, req) => { ... });
+ *   export const PATCH  = auth.update(async ({ orgId }, req) => { ... });
+ *   export const DELETE = auth.delete(async ({ orgId }, req) => { ... });
+ */
+export function withOrgAuthForResource(resource: Resource) {
+  const wrap = (action: Action) =>
+    <Params = Record<string, never>>(
+      handler: Parameters<typeof withOrgAuth<Params>>[0],
+      options: WithOrgAuthOptions = {},
+    ) => withOrgAuth<Params>(handler, { permission: { resource, action }, ...options });
+  return {
+    view: wrap("view"),
+    create: wrap("create"),
+    update: wrap("update"),
+    delete: wrap("delete"),
   };
 }

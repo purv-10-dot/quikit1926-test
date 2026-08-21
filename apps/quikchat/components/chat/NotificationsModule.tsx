@@ -42,6 +42,7 @@ import {
 } from "@/lib/realtime-cache";
 import { actorName, channelLabel, metaOf, relativeTime, summaryText } from "@/lib/notif-format";
 import { useNotifications } from "@/components/notifications/NotificationProvider";
+import { ApprovalsSection } from "./ApprovalsSection";
 import { ConversationView } from "./ConversationView";
 
 const TYPE_ICON: Record<NotificationType, ReactNode> = {
@@ -291,6 +292,16 @@ export function NotificationsModule({ currentUserId, onOpenSettings }: Notificat
               </div>
             )}
           </div>
+
+          {/*
+            Above the search and the filter chips, deliberately. Those belong to
+            the notification feed — putting approvals below them would imply the
+            filters apply here too, and "Unread"/"@Mentions" mean nothing for a
+            parked write. Self-hides when there is nothing, so it costs no space
+            on the turns that never produce one, and scroll-caps in CSS so a long
+            ledger cannot push the feed off screen.
+          */}
+          <ApprovalsSection currentUserId={currentUserId} />
 
           <div className="qc-act-search">
             <Search size={15} aria-hidden />

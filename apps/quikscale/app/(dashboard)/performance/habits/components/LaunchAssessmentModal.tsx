@@ -128,6 +128,33 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
     };
   }
 
+  // Per-quarter round context ("1 round done" / "Open campaign" / "Not started")
+  // from existing campaigns — unchanged semantics, layered under the period tag.
+  const quarterStatus = useMemo(() => {
+    const map: Record<string, { closed: number; open: number }> = {};
+    for (const r of existingRows) {
+      if (r.isLegacy || r.year !== year) continue;
+      const entry = (map[r.quarter] ??= { closed: 0, open: 0 });
+      if (r.status === "closed") entry.closed += 1;
+      else entry.open += 1;
+    }
+    return map;
+  }, [existingRows, year]);
+
+  // A quarter that already has an open (draft/active) round can't take a new
+  // one — the API enforces this (409) but the modal should refuse the click
+  // itself rather than round-trip to a foregone rejection. Takes an explicit
+  // year (rather than reading `quarterStatus`, which is memoized for the
+  // *current* `year` state) so a year switch can check the target year
+  // synchronously, before the memo has re-run for it.
+  function hasOpenRound(y: number, q: QuarterKey): boolean {
+    return existingRows.some(
+      (r) => !r.isLegacy && r.year === y && r.quarter === q && r.status !== "closed",
+    );
+  }
+  const isSelectableQuarter = (y: number, q: QuarterKey) =>
+    periodFor(y, q).selectable && !hasOpenRound(y, q);
+
   // One-time default: once the configured quarters settle, jump to the quarter
   // that contains today; if today is outside every configured quarter, land on
   // the latest fiscal year's first selectable quarter. Never overrides a manual
@@ -149,36 +176,23 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
 
     const latestYear = Math.max(...configuredQuarters.map((q) => q.fiscalYear));
     setYear(latestYear);
-    setQuarter(ALL_QUARTERS.find((q) => periodFor(latestYear, q).selectable) ?? null);
+    setQuarter(ALL_QUARTERS.find((q) => isSelectableQuarter(latestYear, q)) ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quartersLoading, configuredQuarters]);
-
-  // Per-quarter round context ("1 round done" / "Open campaign" / "Not started")
-  // from existing campaigns — unchanged semantics, layered under the period tag.
-  const quarterStatus = useMemo(() => {
-    const map: Record<string, { closed: number; open: number }> = {};
-    for (const r of existingRows) {
-      if (r.isLegacy || r.year !== year) continue;
-      const entry = (map[r.quarter] ??= { closed: 0, open: 0 });
-      if (r.status === "closed") entry.closed += 1;
-      else entry.open += 1;
-    }
-    return map;
-  }, [existingRows, year]);
 
   function handleYearChange(nextYear: number) {
     userTouched.current = true;
     setYear(nextYear);
     // Keep the current quarter if it's still selectable for the new year,
     // otherwise move to the first selectable one (or none).
-    const stillOk = quarter ? periodFor(nextYear, quarter).selectable : false;
+    const stillOk = quarter ? isSelectableQuarter(nextYear, quarter) : false;
     if (!stillOk) {
-      setQuarter(ALL_QUARTERS.find((q) => periodFor(nextYear, q).selectable) ?? null);
+      setQuarter(ALL_QUARTERS.find((q) => isSelectableQuarter(nextYear, q)) ?? null);
     }
   }
 
   function handleQuarterClick(q: QuarterKey) {
-    if (!periodFor(year, q).selectable) return;
+    if (!isSelectableQuarter(year, q)) return;
     userTouched.current = true;
     setQuarter(q);
   }
@@ -186,8 +200,12 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
   const selectedInfo = quarter ? periodFor(year, quarter) : null;
   // Owners are mandatory — an assessment must name who is being asked to fill
   // it. The server enforces the same rule (launchCampaignSchema).
-  const canCreate = !!quarter && !!selectedInfo?.selectable && ownerIds.length > 0;
-  const noneSelectable = ALL_QUARTERS.every((q) => !periodFor(year, q).selectable);
+  const canCreate =
+    !!quarter && !!selectedInfo?.selectable && !hasOpenRound(year, quarter) && ownerIds.length > 0;
+  const noneSelectable = ALL_QUARTERS.every((q) => !isSelectableQuarter(year, q));
+  // Distinguishes *why* nothing's selectable, so the banner doesn't blame
+  // "every quarter has ended" when the real reason is open rounds.
+  const noneSelectableDueToPeriod = ALL_QUARTERS.every((q) => !periodFor(year, q).selectable);
 
   async function handleSave() {
     if (!quarter || !canCreate) return;
@@ -247,7 +265,13 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
                 const info = periodFor(year, q);
                 const stat = quarterStatus[q];
                 const isSelected = quarter === q;
-                const disabled = !info.selectable;
+                const openRound = hasOpenRound(year, q);
+                const disabled = !info.selectable || openRound;
+                const disabledReason = openRound
+                  ? "This quarter already has an open campaign — close it before starting a new round."
+                  : !info.selectable
+                    ? "This quarter has ended — enable 'Add Past Quarter Habit' in Settings to assess it."
+                    : undefined;
                 return (
                   <button
                     key={q}
@@ -255,7 +279,7 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
                     onClick={() => handleQuarterClick(q)}
                     disabled={disabled}
                     aria-disabled={disabled}
-                    title={disabled ? "This quarter has ended — enable 'Add Past Quarter Habit' in Settings to assess it." : undefined}
+                    title={disabledReason}
                     className={`relative text-left p-3 rounded-lg border transition-all ${
                       isSelected
                         ? "border-accent-500 ring-1 ring-accent-200 bg-accent-50/40 shadow-sm"
@@ -292,11 +316,17 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
                 );
               })}
             </div>
-            {noneSelectable && (
+            {noneSelectable && noneSelectableDueToPeriod && (
               <p className="mt-2 text-[11px] text-amber-600 leading-relaxed">
                 Every quarter in {year} has ended. Enable{" "}
                 <span className="font-semibold">Add Past Quarter Habit</span> in Settings →
                 Configurations to assess a past quarter.
+              </p>
+            )}
+            {noneSelectable && !noneSelectableDueToPeriod && (
+              <p className="mt-2 text-[11px] text-amber-600 leading-relaxed">
+                Every quarter in {year} already has an open campaign. Close one before starting a
+                new round.
               </p>
             )}
           </div>

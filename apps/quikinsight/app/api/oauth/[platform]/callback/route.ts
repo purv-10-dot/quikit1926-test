@@ -8,7 +8,13 @@ import { verifyOAuthState } from "@/lib/oauthState";
 import { getActiveWorkspaceId } from "@/lib/workspace";
 import axios from "axios";
 
-const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3011";
+/**
+ * Must stay identical to the BASE_URL in ../route.ts — the token exchange sends
+ * `redirect_uri` again and the provider compares it byte-for-byte with the one
+ * from the authorize step. 3015 is this app's dev port (package.json); the
+ * previous 3011 belonged to another app.
+ */
+const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3015";
 
 // Map lowercase connection platform keys → Prisma enum values
 const PLATFORM_TO_PRISMA: Record<string, string> = {

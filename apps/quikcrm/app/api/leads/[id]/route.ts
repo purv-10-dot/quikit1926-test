@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule, maskHiddenLeadFields, filterRestrictedLeadFields } from "@/lib/auth/permissions";
 import { assertAccountAccess } from "@/lib/auth/account-acl";
+import { assertIcpInOrg } from "@/lib/services/icp/assert-icp";
 import { updateLeadSchema } from "@/lib/validators/lead";
 import { onLeadUpdated } from "@/lib/services/automation/triggers";
 import { publishLeadEvent } from "@/lib/services/leads/realtime";
@@ -72,6 +73,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     const data = await filterRestrictedLeadFields(user, parsed.data);
     if (data.accountId) await assertAccountAccess(user, data.accountId);
+    // Org-scope the ICP reference. A null clears it, which needs no lookup.
+    if (data.icpId) await assertIcpInOrg(user.orgId, data.icpId);
 
     // Validate owner reassignment when ownerId is explicitly included and is
     // being changed to a different, non-null user.

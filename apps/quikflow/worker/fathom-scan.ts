@@ -22,7 +22,7 @@ const CURSOR_PREFIX = "fathom:cursor:";
 /** Orgs with at least one Active workflow triggering on a Fathom meeting. */
 async function orgsWithFathomWorkflows(): Promise<Set<string>> {
   const workflows = await db.wfWorkflow.findMany({
-    where: { status: "Active" },
+    where: { status: "Active", deletedAt: null },
     select: { orgId: true, trigger: true },
   });
   const orgs = new Set<string>();

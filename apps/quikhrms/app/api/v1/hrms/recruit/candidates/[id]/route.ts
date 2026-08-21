@@ -1,16 +1,34 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
+import { successResponse, notFound, validationError, internalError, forbidden } from "@/lib/api-response";
 import { updateCandidateSchema } from "@/lib/validations/recruit";
 import { offerFromApplication } from "@/lib/recruit/offer-shape";
 import { liftExpiredBlacklists } from "@/lib/recruit/blacklist";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getMyJobRequisitionIds } from "@/lib/recruit/my-jobs";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
+    const canSeeAll = permissions.includes("*") || permissions.includes("hrms.recruit.read");
+    const canSeeSelf = canSeeAll || permissions.includes("hrms.recruit.read_self");
+    if (!canSeeSelf) return forbidden("No recruitment read permission");
+
+    // Recruiter (self-only) scope: block a direct link/URL to a candidate
+    // with no application to one of their own requisitions — same rule as
+    // the Candidates list (which also hides Candidate Pool from them).
+    let myJobIds: string[] | null = null;
+    if (!canSeeAll) {
+      const employeeId = await resolveEmployeeId(orgId, userId);
+      myJobIds = employeeId ? await getMyJobRequisitionIds(orgId, employeeId) : [];
+    }
+
     await liftExpiredBlacklists(orgId);
     const c = await prisma.candidate.findFirst({
-      where: { id: params.id, orgId, deletedAt: null },
+      where: {
+        id: params.id, orgId, deletedAt: null,
+        ...(myJobIds !== null && { applications: { some: { deletedAt: null, requisitionId: { in: myJobIds } } } }),
+      },
       include: {
         applications: { where: { deletedAt: null }, include: {
           requisition: { select: { id: true, title: true, requisitionNumber: true } },
@@ -19,14 +37,18 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!c) return notFound("Candidate not found");
+    // candidateCode isn't in the generated Prisma client yet — merged in via raw SQL.
+    const codeRows = await prisma.$queryRaw<{ candidateCode: string | null }[]>`
+      SELECT "candidateCode" FROM "app_quikhrms"."Candidate" WHERE id = ${params.id}`;
     // Offer fields live on the application row now; re-expose the historical
     // `offer` object so existing consumers keep working.
     return successResponse({
       ...c,
+      candidateCode: codeRows[0]?.candidateCode ?? null,
       applications: c.applications.map((a) => ({ ...a, offer: offerFromApplication(a) })),
     });
   } catch (error) { console.error("GET /recruit/candidates/:id error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.read"] });
+});
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {

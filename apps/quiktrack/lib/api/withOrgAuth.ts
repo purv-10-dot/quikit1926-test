@@ -199,10 +199,34 @@ async function resolveAgentJwtIdentity(req: NextRequest): Promise<ResolvedIdenti
 
 /**
  * Resolve the caller's identity from either a Bearer API token OR the NextAuth
- * session cookie (or, when `allowPat`/`allowAgentJwt` is set, a Personal
- * Access Token or platform agent JWT respectively — see
- * `resolvePatIdentity`/`resolveAgentJwtIdentity` above, each a fully separate
- * branch that never falls through into the logic below).
+ * session cookie — or, when the route opts in, a Personal Access Token or the
+ * platform's agent JWT.
+ *
+ * The two opt-ins are NOT the same shape, deliberately:
+ *
+ *   - `allowPat` is EXCLUSIVE. `resolvePatIdentity` is a fully separate branch
+ *     that never falls through to a cookie session. Only /api/mcp sets it, and
+ *     that route is bearer-only by contract (its clients have no cookie, and
+ *     they depend on its RFC 6750 / 9728 error shape rather than this file's
+ *     generic one).
+ *
+ *   - `allowAgentJwt` is ADDITIVE. The agent-JWT branch is taken only when a
+ *     bearer token is actually present; with no bearer, resolution falls
+ *     through to the normal session-cookie path below, so a route that opts in
+ *     still serves the browser app exactly as before.
+ *
+ * That distinction is load-bearing. `allowAgentJwt` was originally written as
+ * an unconditional early return, which silently made every opted-in route
+ * agent-JWT-ONLY and 401'd every logged-in user — the eight read routes of
+ * b9d6dfc82 were the whole spaces list, board and backlog. Keep the `&& bearer`
+ * guard.
+ *
+ * What the guard does NOT do is soften verification: once a bearer IS present
+ * on an agent-JWT route, a BAD one returns 401 from `resolveAgentJwtIdentity`
+ * rather than degrading to the cookie session. An attacker cannot strip a
+ * failing token's way into a weaker path, and a caller cannot accidentally
+ * authenticate as the wrong identity — presenting a token means being judged
+ * on it.
  *
  * Bearer tokens (minted by POST /api/v1/token) are how external Swagger/Scalar
  * consumers and API scripts authenticate — they have no session cookie. When a
@@ -223,9 +247,13 @@ async function resolveIdentity(
   allowAgentJwt: boolean,
 ): Promise<ResolvedIdentity | NextResponse> {
   if (allowPat) return resolvePatIdentity(req);
-  if (allowAgentJwt) return resolveAgentJwtIdentity(req);
 
   const bearer = bearerFromHeader(req.headers.get("authorization"));
+
+  // Additive, not exclusive — see the docblock. No bearer → fall through to
+  // the session path; bad bearer → 401 from inside, never a downgrade.
+  if (allowAgentJwt && bearer) return resolveAgentJwtIdentity(req);
+
   if (bearer) {
     const claims = await verifyApiToken(bearer);
     if (!claims) {

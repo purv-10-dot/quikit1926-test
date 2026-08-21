@@ -188,7 +188,6 @@ const EVENTS: EmailEvent[] = [
     key: "candidate-doc.request", label: "Candidate Document Request", group: "Recruitment",
     variables: [
       CANDIDATE, JOB_TITLE,
-      v("bundle", "Document bundle", "PreOffer"),
       v("portalUrl", "Upload portal link", "https://…"),
       v("expiryDays", "Link validity (days)", "7"),
       v("senderName", "HR contact name", "Anita Rao"),
@@ -203,7 +202,6 @@ const EVENTS: EmailEvent[] = [
     key: "candidate-doc.reminder", label: "Candidate Document Reminder", group: "Recruitment",
     variables: [
       CANDIDATE, JOB_TITLE,
-      v("bundle", "Document bundle", "PreOffer"),
       v("portalUrl", "Upload portal link", "https://…"),
       v("expiryDays", "Link validity (days)", "7"),
       v("reminderLevel", "Reminder level (1-3)", "2"),
