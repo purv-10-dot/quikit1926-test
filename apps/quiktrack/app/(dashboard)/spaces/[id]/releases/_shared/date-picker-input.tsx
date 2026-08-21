@@ -57,7 +57,11 @@ export function DatePickerInput({
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setRect({ left: r.left, top: r.bottom + 4 });
+    // Clamp so the 280px calendar never runs off the right/left of the viewport
+    // (the release right-rail sits close to the screen edge, which clipped it).
+    const CAL_W = 280;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - CAL_W - 8));
+    setRect({ left, top: r.bottom + 4 });
   };
   useLayoutEffect(() => { if (open) measure(); }, [open]);
   useEffect(() => {
