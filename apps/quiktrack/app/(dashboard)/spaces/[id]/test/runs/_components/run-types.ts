@@ -16,6 +16,13 @@ export interface RunRow {
   /** Needed by the edit panel so it can prefill rather than blank the field. */
   description: string | null;
   refTickets: string | null;
+  /** Null when the run was built from an explicit case list rather than a
+   *  whole suite (QUIKTR-337's "Select specific cases" mode). The edit panel's
+   *  "Include test cases" picker uses this to decide whether it already knows
+   *  which suite to browse, or needs a suite selector first (QUIKTR-341). */
+  suiteId: string | null;
+  /** True in the "Deleted" view — drives Restore instead of Delete. */
+  isDeleted: boolean;
   testCount: number;
   counts: StatusCounts;
   createdByUser: { id: string; firstName: string; lastName: string } | null;

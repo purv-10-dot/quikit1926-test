@@ -138,7 +138,7 @@ const SECTIONS: PopoverSection[] = [
     items: [
       {
         key: "user-management",
-        label: "User management",
+        label: "User management and App configuration",
         description: "Manage users, groups, and access requests",
         icon: UsersIcon,
         href: "/settings/user-management",

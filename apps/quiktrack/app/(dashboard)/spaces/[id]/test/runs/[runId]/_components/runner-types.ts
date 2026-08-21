@@ -11,7 +11,13 @@ export interface TestStatusLite {
   orderNo?: number;
 }
 
-/** A row in the runner's left-hand work list. */
+export interface RunnerCaseLabel {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+/** A row in the runner's grid (QUIKTR-341). */
 export interface RunnerTest {
   id: string;
   refId: number;
@@ -24,8 +30,16 @@ export interface RunnerTest {
     title: string;
     priority: string;
     type: string;
+    labels: RunnerCaseLabel[];
+    /** The folder this case lives in — QUIKTR-341 section grouping. */
+    section: { id: string; name: string };
   };
   config: { id: string; name: string } | null;
+  /** True once ANY result has ever been recorded for this test — QUIKTR-341's
+   *  edit-run "Select cases" modal uses this to decide whether the case can be
+   *  removed. The server independently re-verifies this before deleting; it
+   *  is not itself trusted for that decision. */
+  hasResults?: boolean;
 }
 
 export interface RunnerStep {
@@ -64,7 +78,13 @@ export interface TestDetail {
     priority: string;
     type: string;
     automationId: string | null;
+    /** MANUAL | AUTOMATED — the detail panel's "IS AUTOMATED" field. */
+    automationStatus: string;
+    /** Harness name (Playwright, Cypress, …) — "AUTOMATION TYPE". Null for a
+     *  manual case. */
+    automationTool: string | null;
     currentVersion: number;
+    labels: RunnerCaseLabel[];
   };
   steps: RunnerStep[];
   stepsSource: "pinned" | "live";

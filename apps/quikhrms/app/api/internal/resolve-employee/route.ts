@@ -15,14 +15,14 @@ export const dynamic = "force-dynamic";
  * calling any data route.
  *
  * Auth: service-to-service only — same dual-secret gate as /api/internal/manifest
- * (INTERNAL_AI_RUNTIME_SECRET or INTERNAL_SECRET via `x-internal-secret`).
+ * (INTERNAL_SECRET or INTERNAL_SECRET via `x-internal-secret`).
  *
  * Request:  header `x-org-id`, query `?userId=<central User.id>`
  * Response: { success: true, data: { employeeId, employeeCode, status,
  *            firstName, lastName } } or 404 when no active employee is linked.
  */
 export async function GET(req: NextRequest) {
-  const runtimeSecret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const runtimeSecret = process.env.INTERNAL_SECRET;
   const sharedSecret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
   const ok =

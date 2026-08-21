@@ -47,6 +47,33 @@ export default function SpaceLayout({
   );
   const configLoaded = tabConfig !== undefined;
 
+  // Canonicalize the URL to the readable project KEY. Any link that still uses
+  // the project UUID (or a deep-link that resolved to an id) is rewritten in
+  // place to /spaces/<KEY>/... so the address bar never exposes the UUID and
+  // navigation from that page stays on the readable key. Routes accept either
+  // form, so this is purely cosmetic + keeps the URL stable.
+  const { data: projectKey } = useApiData<string | null>(
+    ["quiktrack", "project-key", params.id],
+    `/api/projects/${params.id}`,
+    { select: (d) => (d as { projectKey?: string | null } | null)?.projectKey ?? null },
+  );
+  useEffect(() => {
+    if (!projectKey || !pathname) return;
+    // params.id is the raw URL segment; if it isn't already the key, swap it.
+    // IMPORTANT: use history.replaceState, NOT router.replace. router.replace
+    // triggers a real Next navigation that remounts the route subtree — which
+    // made deep-linked panels (e.g. /test/runs?createRun=1) flash closed then
+    // reopen and caused visible flicker. replaceState only rewrites the address
+    // bar (cosmetic), leaving the mounted tree untouched. Routes accept both the
+    // id and the key, so the already-rendered page keeps working unchanged.
+    if (params.id !== projectKey && typeof window !== "undefined") {
+      const rest = pathname.split("/").slice(3).join("/"); // segment after /spaces/<id>
+      const qs = window.location.search;
+      const next = `/spaces/${projectKey}${rest ? `/${rest}` : ""}${qs}`;
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [projectKey, params.id, pathname]);
+
   // Tabs valid for this project's template — a discovery-only tab (Ideas) is not
   // a real destination on a non-discovery space even via direct URL.
   const templateAllows = (path: string) =>

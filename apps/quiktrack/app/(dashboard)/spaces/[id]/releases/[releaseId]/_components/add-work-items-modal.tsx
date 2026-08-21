@@ -128,7 +128,7 @@ export function AddWorkItemsModal({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search work items…"
-            className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <div className="mt-2 max-h-72 overflow-y-auto rounded-md border border-gray-200">
             {options.length === 0 ? (
@@ -158,7 +158,7 @@ export function AddWorkItemsModal({
           <button
             type="button"
             onClick={onClose}
-            className="h-9 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded"
+            className="h-9 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
           >
             Cancel
           </button>
@@ -166,7 +166,7 @@ export function AddWorkItemsModal({
             type="button"
             disabled={selected.size === 0 || saving}
             onClick={save}
-            className="h-9 px-5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
+            className="h-9 px-5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
           >
             {saving ? "Adding…" : `Add ${selected.size > 0 ? selected.size : ""}`.trim()}
           </button>

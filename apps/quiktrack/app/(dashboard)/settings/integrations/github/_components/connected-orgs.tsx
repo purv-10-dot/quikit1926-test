@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, Github, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 export interface Installation {
   id: string;
@@ -34,11 +35,14 @@ export function ConnectedOrgs({
   const [error, setError] = useState<string | null>(null);
 
   async function disconnect(inst: Installation) {
-    const ok = window.confirm(
-      `Disconnect ${inst.githubAccountLogin || "this organization"}? ` +
+    const ok = await confirmDialog({
+      title: `Disconnect ${inst.githubAccountLogin || "this organization"}?`,
+      message:
         "This removes its linked repositories and development data from QuikTrack. " +
         "It does not uninstall the app on GitHub.",
-    );
+      confirmText: "Disconnect",
+      danger: true,
+    });
     if (!ok) return;
     setError(null);
     setDisconnectingId(inst.id);
@@ -73,11 +77,11 @@ export function ConnectedOrgs({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            <th className="bg-accent-50 px-6 py-2 font-medium dark:bg-accent-900/20">Connected organization</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Repository access</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Backfill status</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Permissions</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20"></th>
+            <th className="bg-accent-50 px-6 py-2 font-medium dark:bg-gray-900">Connected organization</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900">Repository access</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900">Backfill status</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900">Permissions</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900"></th>
           </tr>
         </thead>
         <tbody>

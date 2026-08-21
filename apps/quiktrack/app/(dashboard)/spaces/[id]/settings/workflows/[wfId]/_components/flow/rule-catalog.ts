@@ -196,20 +196,10 @@ export const RULE_TYPE_META: RuleTypeMeta[] = [
     customForm: "update_field",
   },
   // Additional actions QuikTrack supports (kept from the base engine).
-  {
-    kind: "POSTFUNCTION",
-    type: "set_resolution",
-    label: "Set resolution",
-    description: "Automatically set the resolution when the work item moves.",
-    fields: [{ key: "resolutionId", label: "Resolution", type: "resolution", required: true }],
-  },
-  {
-    kind: "POSTFUNCTION",
-    type: "clear_resolution",
-    label: "Clear resolution",
-    description: "Automatically clear the resolution field (e.g. on reopen).",
-    fields: [],
-  },
+  // NOTE: "set_resolution" / "clear_resolution" are intentionally NOT offered in
+  // the Add-rule picker (removed per product decision). The engine still handles
+  // them (lib/services/workflow/rules/post-functions.ts) so any pre-existing
+  // saved rule keeps working — they just can't be added anew.
   {
     kind: "POSTFUNCTION",
     type: "add_comment",

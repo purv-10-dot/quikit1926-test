@@ -46,6 +46,8 @@ const WORK_TYPE_LABEL: Record<IssueType, string> = {
 interface Props {
   issue: IssuePageData;
   projectId: string;
+  /** Human-readable project key for readable breadcrumb links (falls back to id). */
+  projectKey: string;
   projectName: string;
   typeIcon: { Icon: React.ElementType; color: string };
   onPatch: (data: Record<string, unknown>) => Promise<void>;
@@ -74,6 +76,7 @@ interface Props {
 export function IssueHeaderSections({
   issue,
   projectId,
+  projectKey,
   projectName,
   typeIcon: T,
   onPatch,
@@ -108,7 +111,7 @@ export function IssueHeaderSections({
           </Link>
           <span className="text-gray-300">/</span>
           <Link
-            href={`/spaces/${projectId}/board`}
+            href={`/spaces/${projectKey}/board`}
             className="hover:text-gray-800 inline-flex items-center gap-1.5 text-gray-700"
           >
             <span className="h-4 w-4 rounded bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center">
@@ -124,7 +127,7 @@ export function IssueHeaderSections({
             <>
               <span className="text-gray-300">/</span>
               <Link
-                href={`/spaces/${projectId}/work/${issue.parent.id}`}
+                href={`/browse/${issue.parent.key}`}
                 className="hover:text-gray-800 inline-flex items-center gap-1 text-gray-700"
               >
                 <Zap className="h-3 w-3 text-blue-500" />
@@ -136,7 +139,7 @@ export function IssueHeaderSections({
               <span className="text-gray-300">/</span>
               {issue.epic ? (
                 <Link
-                  href={`/spaces/${projectId}/work/${issue.epic.id}`}
+                  href={`/browse/${issue.epic.key}`}
                   className="hover:text-gray-800 inline-flex items-center gap-1 text-gray-700"
                 >
                   <Zap className="h-3 w-3 text-purple-500" />

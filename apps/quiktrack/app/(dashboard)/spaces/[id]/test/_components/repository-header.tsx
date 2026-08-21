@@ -19,6 +19,8 @@ export function RepositoryHeader({
   hasSuites,
   onCreate,
   onImport,
+  showDeleted,
+  onShowDeleted,
 }: {
   projectId: string;
   canCreate: boolean;
@@ -26,20 +28,44 @@ export function RepositoryHeader({
   hasSuites: boolean;
   onCreate: () => void;
   onImport: () => void;
+  /** Undefined hides the Active/Deleted switch. */
+  showDeleted?: boolean;
+  onShowDeleted?: (next: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2.5">
+    <div className="flex items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-2.5">
       <nav className="flex items-center gap-1">
-        <span className="rounded-md bg-accent-50 px-2.5 py-1.5 text-[13px] font-medium text-accent-800">
+        <span className="rounded-md bg-accent-50 dark:bg-gray-700 px-2.5 py-1.5 text-[13px] font-medium text-accent-800 dark:text-gray-100">
           Test cases
         </span>
         <Link
           href={`/spaces/${projectId}/test/runs`}
-          className="rounded-md px-2.5 py-1.5 text-[13px] text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          className="rounded-md px-2.5 py-1.5 text-[13px] text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
         >
           Test runs
         </Link>
       </nav>
+
+      {/* Deleted view — undefined hides it entirely (users who cannot delete have
+          nothing to restore, so the tab would be an empty dead end). */}
+      {showDeleted !== undefined && hasSuites && (
+        <div className="ml-auto mr-2 flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
+          {([false, true] as const).map((v) => (
+            <button
+              key={String(v)}
+              type="button"
+              onClick={() => onShowDeleted?.(v)}
+              className={`rounded px-2 py-1 text-[11px] ${
+                showDeleted === v
+                  ? "bg-accent-50 dark:bg-gray-700 font-medium text-accent-800 dark:text-gray-100"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              }`}
+            >
+              {v ? "Deleted" : "Active"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Hidden with no suites: the empty state's own button is then the single call
           to action, so the two no longer compete. */}

@@ -266,6 +266,158 @@ export async function findOrCreateRunForBuild(
 }
 
 /**
+ * Adds cases to an EXISTING run (QUIKTR-341 — "Include test cases" in Edit).
+ *
+ * Deliberately ADD-ONLY: a case already in the run is silently skipped rather
+ * than erroring, so re-submitting the same picker selection is a no-op. This
+ * is the other half of `EditRunPanel`'s stated rule — "which test cases are in
+ * this run cannot be changed here [meaning: removed]" — adding is safe because
+ * a case that was never in the run has no results to lose; removal is not
+ * offered anywhere, including here, because `QtTestResult` is append-only.
+ *
+ * Mirrors `createTestRun`'s materialisation exactly (one QtTest per case ×
+ * config, pinned to `currentVersion`, seeded at the org's default status) so a
+ * case added here behaves identically to one included at creation — the run's
+ * grid, filters, and progress bar cannot tell the two apart.
+ */
+export async function addCasesToRun(
+  orgId: string,
+  runId: string,
+  caseIds: string[],
+): Promise<{ added: number; skipped: number }> {
+  if (caseIds.length === 0) {
+    throw new TestRunError("No cases selected.", 400, "EMPTY_SELECTION");
+  }
+
+  const run = await db.qtTestRun.findFirst({
+    where: { id: runId, orgId, isDeleted: false },
+    select: {
+      id: true,
+      projectId: true,
+      state: true,
+      configs: { select: { configId: true } },
+    },
+  });
+  if (!run) throw new TestRunError("Run not found.", 404, "RUN_NOT_FOUND");
+  if (run.state === "closed") {
+    throw new TestRunError(
+      "This run is closed. Reopen it before adding cases.",
+      409,
+      "RUN_CLOSED",
+    );
+  }
+
+  // Cases already in the run are dropped from the selection rather than
+  // erroring — the picker pre-checks them (so they visibly can't be
+  // unchecked), and a save with no NEW cases ticked should not be a failure.
+  const existing = await db.qtTest.findMany({
+    where: { orgId, runId, caseId: { in: caseIds } },
+    select: { caseId: true },
+  });
+  const already = new Set(existing.map((t) => t.caseId));
+  const toAdd = caseIds.filter((id) => !already.has(id));
+  if (toAdd.length === 0) return { added: 0, skipped: caseIds.length };
+
+  // Cases must belong to THIS project and still be live — a stale id (case
+  // deleted after the picker loaded) is silently dropped rather than failing
+  // the whole batch.
+  const cases = await db.qtTestCase.findMany({
+    where: { id: { in: toAdd }, orgId, projectId: run.projectId, isDeleted: false },
+    select: { id: true, currentVersion: true },
+  });
+
+  await ensureTestStatusesQuietly(orgId);
+
+  const configIds: Array<string | null> =
+    run.configs.length > 0 ? run.configs.map((c) => c.configId) : [null];
+
+  const added = await db.$transaction(async (tx) => {
+    const statusId = await defaultStatusId(tx, orgId);
+
+    // Continue the run's own T1..Tn sequence rather than restarting at 1 —
+    // test refIds are per-run (see createTestRun), and QtTest has a
+    // `@@unique([runId, refId])` index that a restart would collide with.
+    const last = await tx.qtTest.aggregate({
+      where: { orgId, runId },
+      _max: { refId: true },
+    });
+    let seq = last._max.refId ?? 0;
+
+    const tests: Prisma.QtTestCreateManyInput[] = [];
+    for (const c of cases) {
+      for (const configId of configIds) {
+        seq += 1;
+        tests.push({
+          orgId,
+          runId,
+          caseId: c.id,
+          configId,
+          refId: seq,
+          caseVersion: c.currentVersion,
+          currentStatusId: statusId,
+          assigneeId: null,
+        });
+      }
+    }
+    await tx.qtTest.createMany({ data: tests });
+    return tests.length;
+  });
+
+  return { added, skipped: caseIds.length - cases.length };
+}
+
+/**
+ * Removes UNTESTED cases from a run (QUIKTR-341 — the picker's "untick an
+ * untested case" gesture). Never trusts the caller's idea of which cases are
+ * safe to remove: every `QtTest` row for the given case ids is re-checked here
+ * for `results: { none: {} }` before deletion, so a stale client-side "this
+ * looked untested" can never delete a row that actually has history — the
+ * append-only guarantee holds even if the UI's lock logic has a bug.
+ *
+ * A case with results is silently kept rather than erroring the whole batch —
+ * same "report what happened, don't fail the entire operation" shape as
+ * `addCasesToRun`.
+ */
+export async function removeUntestedCasesFromRun(
+  orgId: string,
+  runId: string,
+  caseIds: string[],
+): Promise<{ removed: number; kept: number }> {
+  if (caseIds.length === 0) return { removed: 0, kept: 0 };
+
+  const run = await db.qtTestRun.findFirst({
+    where: { id: runId, orgId, isDeleted: false },
+    select: { id: true, state: true },
+  });
+  if (!run) throw new TestRunError("Run not found.", 404, "RUN_NOT_FOUND");
+  if (run.state === "closed") {
+    throw new TestRunError(
+      "This run is closed. Reopen it before removing cases.",
+      409,
+      "RUN_CLOSED",
+    );
+  }
+
+  // The authoritative check: only tests with ZERO results anywhere are
+  // removable. `results: { none: {} }` is evaluated by the database, not
+  // inferred from a `currentStatusId` the client might have cached stale.
+  const removable = await db.qtTest.findMany({
+    where: { orgId, runId, caseId: { in: caseIds }, results: { none: {} } },
+    select: { id: true },
+  });
+
+  if (removable.length > 0) {
+    // A hard delete, not soft — an untested QtTest row carries no history to
+    // preserve, and leaving a phantom row around would make the run's own
+    // count wrong. This is safe ONLY because the query above already proved
+    // `results: none` for every id in this list.
+    await db.qtTest.deleteMany({ where: { id: { in: removable.map((t) => t.id) } } });
+  }
+
+  return { removed: removable.length, kept: caseIds.length - removable.length };
+}
+
+/**
  * THE MANUAL WRITE PATH — appends one immutable result and refreshes the
  * cached current status.
  *

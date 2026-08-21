@@ -159,11 +159,25 @@ export function WorkItemsSection({
   }, [items]);
 
   async function removeItem(issueId: string) {
+    // Optimistically drop the row so it disappears immediately, then confirm
+    // with the server. `onChanged()` refreshes the parent's progress panel, but
+    // it does NOT reload THIS section's local `items` list — so without the
+    // optimistic update (or an explicit reload) the row stayed visible and the
+    // remove looked broken.
+    const prev = items;
+    setItems((arr) => arr.filter((i) => i.id !== issueId));
     const res = await fetch(`/api/releases/${releaseId}/issues?issueId=${issueId}`, {
       method: "DELETE",
-    }).then((r) => r.json());
-    if (res?.success) onChanged();
-    else showToast(res?.error || "Couldn't remove the work item.", "error");
+    })
+      .then((r) => r.json())
+      .catch(() => null);
+    if (res?.success) {
+      onChanged();
+      void load();
+    } else {
+      setItems(prev); // rollback
+      showToast(res?.error || "Couldn't remove the work item.", "error");
+    }
   }
 
   return (

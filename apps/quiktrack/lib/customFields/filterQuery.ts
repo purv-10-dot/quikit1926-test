@@ -33,9 +33,13 @@ function valueCondition(f: CustomFilter): Prisma.QtIssueFieldValueWhereInput | n
     case "neq":
       return { valueNumber: { not: Number(v) } };
     case "lt":
-      return { valueNumber: { lt: Number(v) } };
+      return f.type === "DATE" ? { valueDate: { lt: new Date(String(v)) } } : { valueNumber: { lt: Number(v) } };
     case "gt":
-      return { valueNumber: { gt: Number(v) } };
+      return f.type === "DATE" ? { valueDate: { gt: new Date(String(v)) } } : { valueNumber: { gt: Number(v) } };
+    case "gte":
+      return f.type === "DATE" ? { valueDate: { gte: new Date(String(v)) } } : { valueNumber: { gte: Number(v) } };
+    case "lte":
+      return f.type === "DATE" ? { valueDate: { lte: new Date(String(v)) } } : { valueNumber: { lte: Number(v) } };
     case "between":
       return f.type === "DATE"
         ? { valueDate: { gte: new Date(String(v)), lte: new Date(String(f.value2)) } }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { Layers, Plus, Upload } from "lucide-react";
@@ -9,18 +9,22 @@ import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { CaseDetailPanel } from "./case-detail-panel";
 import { CaseEditorPanel } from "./case-editor-panel";
+import { CaseFilterBar } from "./case-filter-bar";
 import { CaseTable } from "./case-table";
 import { loadColumns } from "./columns-menu";
 import { ImportCasesPanel } from "./import-cases-panel";
+import { BulkNotice } from "./bulk-notice";
 import { RepositoryHeader } from "./repository-header";
+import { useCaseFilters } from "./use-case-filters";
+import { useCaseList } from "./use-case-list";
+import { useCaseSelection } from "./use-case-selection";
+import { useInlineEdit } from "./use-inline-edit";
+import { useSuitePrompt } from "./use-suite-prompt";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
 import { useCasePanels } from "./use-case-panels";
-import {
-  DEFAULT_CASE_COLUMNS,
-  type CaseColumnKey,
-  type TestCaseRow,
-} from "./case-meta";
+import { useLinkIssueDeeplink } from "./use-link-issue-deeplink";
+import { DEFAULT_CASE_COLUMNS, type CaseColumnKey } from "./case-meta";
 
 /**
  * The test case repository — suite tree on the left, case list on the right,
@@ -43,16 +47,17 @@ interface SuiteResponse {
   }>;
 }
 
-interface CaseListResponse {
-  items: TestCaseRow[];
-  total: number;
-}
-
 export function RepositoryView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canCreate = perms.loading || perms.has("TestCase", "create");
   const canEditSuite = perms.loading || perms.has("TestSuite", "create");
+  // NOT `perms.loading ||` — unlike a read affordance, a destructive control must
+  // not appear optimistically while permissions are still loading.
+  const canDelete = !perms.loading && perms.has("TestCase", "delete");
+  // Inline editing writes, so like delete it must not appear optimistically while
+  // permissions are still loading.
+  const canEdit = !perms.loading && perms.has("TestCase", "update");
 
   const [activeSuiteId, setActiveSuiteId] = useState<string | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
@@ -83,22 +88,25 @@ export function RepositoryView({ projectId }: { projectId: string }) {
     }
   }, [suites, activeSuiteId]);
 
-  const caseQuery = useMemo(() => {
-    if (activeSectionId) return `sectionId=${activeSectionId}`;
-    if (activeSuiteId) return `suiteId=${activeSuiteId}`;
-    return null;
-  }, [activeSectionId, activeSuiteId]);
+  /** "Deleted" view — how restore is reached. */
+  const [showDeleted, setShowDeleted] = useState(false);
 
-  const casesKey = [
-    "quiktrack",
-    "test-cases",
+  // Filter state lives in the URL (QUIKTR-341) — see use-case-filters.ts.
+  const caseFilters = useCaseFilters();
+
+  const {
+    cases,
+    loading: casesLoading,
+    hasMore: casesHasMore,
+    loadingMore: casesLoadingMore,
+    loadMore: loadMoreCases,
+  } = useCaseList({
     projectId,
-    activeSectionId ?? activeSuiteId ?? "none",
-  ] as const;
-  const { data: cases, isLoading: casesLoading } = useApiData<CaseListResponse>(
-    casesKey,
-    caseQuery ? `/api/test/cases?projectId=${projectId}&${caseQuery}` : null,
-  );
+    activeSectionId,
+    activeSuiteId,
+    showDeleted,
+    toQueryString: caseFilters.toQueryString,
+  });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["quiktrack", "test-cases"] });
@@ -106,79 +114,27 @@ export function RepositoryView({ projectId }: { projectId: string }) {
     void queryClient.invalidateQueries({ queryKey: suitesKey });
   };
 
-  // One panel serves both suite and folder creation; `promptMode` says which
-  // (and, for a nested folder, under which parent).
-  const [promptMode, setPromptMode] = useState<
-    { kind: "suite" } | { kind: "section"; parentId: string | null } | null
-  >(null);
+  const inline = useInlineEdit({ onSaved: refresh });
 
-  const submitPrompt = async (values: {
-    name: string;
-    description?: string;
-  }): Promise<string | null> => {
-    if (!promptMode) return "Nothing to create.";
+  const caseRows = cases?.items ?? [];
+  const selection = useCaseSelection({
+    projectId,
+    visibleIds: caseRows.map((c) => c.id),
+    onDone: refresh,
+  });
 
-    if (promptMode.kind === "suite") {
-      const res = await fetch("/api/test/suites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          name: values.name,
-          description: values.description,
-        }),
-      });
-      const json = (await res.json()) as {
-        success: boolean;
-        error?: string;
-        data?: { id: string };
-      };
-      if (!json.success || !json.data) {
-        return json.error ?? "Could not create the suite.";
-      }
-      setActiveSuiteId(json.data.id);
+  // Suite/folder creation lives in the hook; see use-suite-prompt.ts.
+  const prompt = useSuitePrompt({
+    projectId,
+    activeSuiteId,
+    onSuiteCreated: (id) => {
+      setActiveSuiteId(id);
       setActiveSectionId(null);
+    },
+    onChanged: () => {
       void queryClient.invalidateQueries({ queryKey: suitesKey });
-      return null;
-    }
-
-    if (!activeSuiteId) return "Select a suite first.";
-    const res = await fetch("/api/test/sections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        suiteId: activeSuiteId,
-        parentId: promptMode.parentId,
-        name: values.name,
-      }),
-    });
-    const json = (await res.json()) as { success: boolean; error?: string };
-    if (!json.success) return json.error ?? "Could not create the folder.";
-    void queryClient.invalidateQueries({ queryKey: suitesKey });
-    return null;
-  };
-
-  const promptConfig: NamePromptConfig | null =
-    promptMode === null
-      ? null
-      : promptMode.kind === "suite"
-        ? {
-            title: "New test suite",
-            subtitle: "A container for this project's test cases",
-            label: "Suite name",
-            placeholder: "Regression",
-            withDescription: true,
-            submitLabel: "Create suite",
-          }
-        : {
-            title: promptMode.parentId ? "New nested folder" : "New folder",
-            subtitle: promptMode.parentId
-              ? "Created inside the selected folder"
-              : "Created at the root of this suite",
-            label: "Folder name",
-            placeholder: "Login",
-            submitLabel: "Create folder",
-          };
+    },
+  });
 
   const treeSuites: SuiteOption[] = (suites ?? []).map((s) => ({
     id: s.id,
@@ -197,6 +153,13 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   const targetSectionId =
     activeSectionId ?? activeSuite?.sections[0]?.id ?? null;
 
+  // "QuikTest: Cases" opened from a work item (QUIKTR-341) — auto-open "New test
+  // case" pre-linked to it, once a destination folder is resolvable.
+  useLinkIssueDeeplink({
+    ready: !suitesLoading && targetSectionId !== null,
+    onOpen: (link) => openCreate(link),
+  });
+
   return (
     <div className="flex h-full flex-col">
       <RepositoryHeader
@@ -205,6 +168,38 @@ export function RepositoryView({ projectId }: { projectId: string }) {
         hasSuites={treeSuites.length > 0}
         onCreate={openCreate}
         onImport={() => setImportOpen(true)}
+        // Only offered to users who can delete — nobody else has anything to
+        // restore, so the tab would be an empty dead end.
+        showDeleted={canDelete ? showDeleted : undefined}
+        onShowDeleted={(v) => {
+          setShowDeleted(v);
+          selection.clear();
+        }}
+      />
+
+      <CaseFilterBar
+        projectId={projectId}
+        filters={caseFilters.filters}
+        activeCount={caseFilters.activeCount}
+        onSetFilter={caseFilters.setFilter}
+        onClearAll={caseFilters.clearAll}
+      />
+
+      <BulkNotice
+        notice={selection.notice}
+        // A failed inline edit reuses this banner rather than inventing a second
+        // error surface. Selection errors take precedence — they follow an explicit
+        // bulk action, so they are the more urgent of the two.
+        error={selection.error ?? inline.error}
+        showingDeleted={showDeleted}
+        onViewDeleted={() => {
+          setShowDeleted(true);
+          selection.dismissNotice();
+        }}
+        onDismiss={() => {
+          selection.dismissNotice();
+          inline.dismissError();
+        }}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -222,8 +217,10 @@ export function RepositoryView({ projectId }: { projectId: string }) {
               setActiveSectionId(null);
             }}
             onSelectSection={setActiveSectionId}
-            onAddSuite={() => setPromptMode({ kind: "suite" })}
-            onAddSection={(parentId) => setPromptMode({ kind: "section", parentId })}
+            onAddSuite={() => prompt.setMode({ kind: "suite" })}
+            onAddSection={(parentId) =>
+              prompt.setMode({ kind: "section", parentId })
+            }
             canEdit={canEditSuite}
           />
         )}
@@ -248,7 +245,7 @@ export function RepositoryView({ projectId }: { projectId: string }) {
                 {canEditSuite && (
                   <button
                     type="button"
-                    onClick={() => setPromptMode({ kind: "suite" })}
+                    onClick={() => prompt.setMode({ kind: "suite" })}
                     className="mt-4 rounded-lg bg-accent-600 px-3 py-2 text-xs font-medium text-white hover:bg-accent-700"
                   >
                     Create your first suite
@@ -258,15 +255,28 @@ export function RepositoryView({ projectId }: { projectId: string }) {
             </div>
           ) : (
             <CaseTable
-              rows={cases?.items ?? []}
+              rows={caseRows}
               total={cases?.total ?? 0}
               loading={casesLoading}
+              hasMore={casesHasMore}
+              loadingMore={casesLoadingMore}
+              onLoadMore={loadMoreCases}
               sectionName={activeSectionName}
               projectId={projectId}
               columns={columns}
               onColumns={setColumns}
               canCreate={canCreate}
               onCreate={openCreate}
+              showDeleted={showDeleted}
+              // Inline edit needs Issue-style update rights, and is pointless in the
+              // deleted view (you restore a case before editing it).
+              onInlineEdit={canEdit && !showDeleted ? inline.save : undefined}
+              // Checkboxes only for users who can actually delete — a read-only
+              // viewer gets no dead controls.
+              selection={selection.tableProps({
+                enabled: canDelete,
+                mode: showDeleted ? "deleted" : "live",
+              })}
               // QUIKTR-336 — a row click now READS the case. Editing is an
               // explicit action from the detail panel: opening the editor to look
               // at a case invited a pointless version bump, since every save mints
@@ -305,13 +315,14 @@ export function RepositoryView({ projectId }: { projectId: string }) {
         sectionId={targetSectionId}
         projectId={projectId}
         onSaved={refresh}
+        linkToIssue={panels.linkToIssue}
       />
 
       <NamePromptPanel
-        open={promptMode !== null}
-        config={promptConfig}
-        onClose={() => setPromptMode(null)}
-        onSubmit={submitPrompt}
+        open={prompt.mode !== null}
+        config={prompt.config}
+        onClose={prompt.close}
+        onSubmit={prompt.submit}
       />
     </div>
   );

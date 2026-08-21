@@ -247,10 +247,13 @@ export function EditableFilterTable({
                         return (
                           <td
                             key={col.key}
-                            className="px-3 py-2 align-middle"
+                            className="px-3 py-2 align-middle overflow-hidden"
                             style={cellStyle(getColWidth(col.key))}
                           >
-                            <span className="truncate text-xs text-gray-600">
+                            <span
+                              className="block truncate text-xs text-gray-600 dark:text-gray-300"
+                              title={issue.project?.name ?? undefined}
+                            >
                               {issue.project?.name ?? "—"}
                             </span>
                           </td>

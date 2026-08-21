@@ -231,7 +231,7 @@ export function DetailsForm({ projectId }: { projectId: string }) {
           <button
             type="button"
             onClick={() => setIconPickerOpen((v) => !v)}
-            className="mt-3 inline-flex items-center h-8 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+            className="mt-3 inline-flex items-center h-8 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Change icon
           </button>
@@ -264,19 +264,19 @@ export function DetailsForm({ projectId }: { projectId: string }) {
 
       <div className="space-y-5">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
             Name <span className="text-red-500">*</span>
           </label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={120}
-            className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
 
         <div>
-          <label className="flex items-center gap-1 text-xs font-medium text-gray-700 mb-1">
+          <label className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
             Project key
             <Info className="h-3 w-3 text-gray-400" />
             <span className="text-red-500">*</span>
@@ -294,8 +294,8 @@ export function DetailsForm({ projectId }: { projectId: string }) {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Project owner</label>
-          <div className="w-full h-9 px-3 flex items-center text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded">
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Project owner</label>
+          <div className="w-full h-9 px-3 flex items-center text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded">
             {lead ? fullName(lead) : "—"}
           </div>
           <p className="mt-1 text-[11px] text-gray-500">
@@ -319,7 +319,7 @@ export function DetailsForm({ projectId }: { projectId: string }) {
             type="button"
             onClick={save}
             disabled={!dirty || submitting}
-            className="h-9 px-5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
+            className="h-9 px-5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
           >
             {submitting ? "Saving…" : "Save"}
           </button>

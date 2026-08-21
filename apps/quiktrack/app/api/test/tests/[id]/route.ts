@@ -70,10 +70,17 @@ export const GET = withOrgAuth<Params>(
               priority: true,
               type: true,
               automationId: true,
+              // QUIKTR-341 — the detail panel's "IS AUTOMATED" / "AUTOMATION
+              // TYPE" fields and Labels chips.
+              automationStatus: true,
+              automationTool: true,
               currentVersion: true,
               steps: {
                 orderBy: { orderNo: "asc" },
                 select: { id: true, orderNo: true, action: true, expected: true },
+              },
+              tags: {
+                select: { tag: { select: { id: true, name: true, color: true } } },
               },
             },
           },
@@ -144,7 +151,12 @@ export const GET = withOrgAuth<Params>(
             priority: test.case.priority,
             type: test.case.type,
             automationId: test.case.automationId,
+            automationStatus: test.case.automationStatus,
+            automationTool: test.case.automationTool,
             currentVersion: test.case.currentVersion,
+            // Labels are a live case property (not versioned/pinned) — same
+            // reasoning as the grid's own Labels column.
+            labels: test.case.tags.map((t) => t.tag),
           },
           steps,
           /** "pinned" = the executed version; "live" = snapshot unavailable. */

@@ -165,10 +165,10 @@ export function SelectMenu({
         onKeyDown={onKeyDown}
         className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
           disabled
-            ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400"
+            ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500"
             : open
-              ? "border-accent-500 bg-white text-gray-900 ring-2 ring-accent-100"
-              : "border-gray-300 bg-white text-gray-900 hover:border-gray-400"
+              ? "border-accent-500 bg-white text-gray-900 ring-2 ring-accent-100 dark:bg-gray-900 dark:text-gray-100 dark:ring-accent-900/40"
+              : "border-gray-300 bg-white text-gray-900 hover:border-gray-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-gray-500"
         }`}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -195,7 +195,7 @@ export function SelectMenu({
           role="listbox"
           // z-50 clears the RightPanel's own stacking context; max-h keeps a long
           // list (e.g. every project member) from running off-screen.
-          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
         >
           {options.length === 0 && (
             <li className="px-3 py-2 text-sm text-gray-400">No options</li>
@@ -214,8 +214,8 @@ export function SelectMenu({
                   }}
                   onMouseEnter={() => setActive(i)}
                   className={`flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm ${
-                    i === active ? "bg-accent-50" : ""
-                  } ${isSelected ? "font-medium text-accent-700" : "text-gray-700"}`}
+                    i === active ? "bg-accent-50 dark:bg-gray-700" : ""
+                  } ${isSelected ? "font-medium text-accent-700 dark:text-accent-300" : "text-gray-700 dark:text-gray-300"}`}
                 >
                   {opt.color && (
                     <span

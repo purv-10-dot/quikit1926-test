@@ -49,6 +49,7 @@ import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
 import { QuikTestResultsPanel } from "@/components/issue-full-view/quiktest-results-panel";
+import { ChildWorkItems } from "@/components/issue-full-view/child-work-items";
 import { IssueTitleEditor } from "@/components/issue-title-editor";
 import {
   IssueAppsMenu,
@@ -1477,6 +1478,14 @@ export function EditIssueModal({
               })()}
               {/* end Subtasks */}
 
+              {/* Child work items — Epics group their tasks/stories/bugs via
+                  epicId (not parentId), so they get this section in place of
+                  Subtasks. Lets you create a child already attached to the epic,
+                  or attach an existing one. */}
+              {issue?.type === "EPIC" && issue.id && issue.projectId && (
+                <ChildWorkItems epicId={issue.id} projectId={issue.projectId} />
+              )}
+
               {/* Linked work items */}
               {issue?.id && issue.projectId && (
                 <LinkedWorkItems
@@ -1817,6 +1826,34 @@ export function EditIssueModal({
                         );
                       })()}
                     </DetailRow>
+
+                    {/* QuikTest deep links — same fields as the full-page Details
+                        panel (issue-full-view/issue-details-panel.tsx). The drawer
+                        had been missing these since QuikTest shipped. Carries
+                        create+link params so the destination opens a NEW case/run
+                        already associated with this work item rather than a
+                        generic list — see use-link-issue-deeplink.ts /
+                        use-link-issue-run-deeplink.ts. */}
+                    {issue?.projectId && issue.key && (
+                      <>
+                        <DetailRow label="QuikTest: Cases">
+                          <Link
+                            href={`/spaces/${issue.projectId}/test?createCase=1&linkIssueId=${encodeURIComponent(issue.id)}&linkIssueKey=${encodeURIComponent(issue.key)}`}
+                            className="text-sm text-blue-700 hover:underline dark:text-blue-400"
+                          >
+                            Open QuikTest: Cases
+                          </Link>
+                        </DetailRow>
+                        <DetailRow label="QuikTest: Runs">
+                          <Link
+                            href={`/spaces/${issue.projectId}/test/runs?createRun=1&linkIssueKey=${encodeURIComponent(issue.key)}`}
+                            className="text-sm text-blue-700 hover:underline dark:text-blue-400"
+                          >
+                            Open QuikTest: Runs
+                          </Link>
+                        </DetailRow>
+                      </>
+                    )}
 
                     {customFields.length > 0 && (
                       <CustomFieldsSection

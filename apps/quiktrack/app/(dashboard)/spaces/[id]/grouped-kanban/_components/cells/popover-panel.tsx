@@ -109,7 +109,7 @@ export function PopoverPanel({
         zIndex: 60,
         transform: coords.transform,
       }}
-      className="rounded-md border border-gray-200 bg-white shadow-lg py-1"
+      className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-lg py-1"
     >
       {children}
     </div>,

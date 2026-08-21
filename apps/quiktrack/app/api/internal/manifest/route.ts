@@ -19,12 +19,12 @@ const MANIFEST_VERSION = "1";
  *
  * Auth: shared secret via `x-internal-secret`, same pattern as
  * /api/internal/provision-roles, but validated against the AI-Runtime-
- * specific INTERNAL_AI_RUNTIME_SECRET rather than INTERNAL_SECRET. See the
+ * specific INTERNAL_SECRET rather than INTERNAL_SECRET. See the
  * manifest/summary contract doc from Suyash (AI Runtime), §1.1 — the env var
  * name is the storage name only; the wire header is always `x-internal-secret`.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const secret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
   if (!safeSecretEqual(provided, secret)) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });

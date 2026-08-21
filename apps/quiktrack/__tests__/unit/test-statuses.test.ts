@@ -109,7 +109,7 @@ describe("donut segments", () => {
     expect(segments[segments.length - 1].to).toBeCloseTo(100, 9);
   });
 
-  it("orders manual, then automation, then retest, then untested", () => {
+  it("orders manual (including retest), then automation, then untested", () => {
     const segments = donutSegments({
       untested: 1,
       automation_passed: 1,
@@ -120,8 +120,8 @@ describe("donut segments", () => {
     expect(segments.map((s) => s.key)).toEqual([
       "passed",
       "failed",
-      "automation_passed",
       "retest",
+      "automation_passed",
       "untested",
     ]);
   });

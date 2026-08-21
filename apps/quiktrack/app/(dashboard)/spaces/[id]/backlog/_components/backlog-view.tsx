@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { showToast } from "@/lib/ui/toast";
 import { confirmDialog } from "@/lib/ui/confirm";
@@ -231,6 +232,7 @@ function InlineCreatorInner({
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
   const assigneeRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 0);
@@ -245,10 +247,23 @@ function InlineCreatorInner({
         setDatePopoverOpen(false);
       if (assigneePopoverOpen && assigneeRef.current && !assigneeRef.current.contains(t))
         setAssigneePopoverOpen(false);
+      // Close the whole inline creator when clicking outside it. Only when the
+      // title is empty and nothing is submitting — so a click-away never
+      // discards text the user has started typing.
+      if (
+        open &&
+        rootRef.current &&
+        !rootRef.current.contains(t) &&
+        !title.trim() &&
+        !submitting
+      ) {
+        setError(null);
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [typeMenuOpen, datePopoverOpen, assigneePopoverOpen]);
+  }, [typeMenuOpen, datePopoverOpen, assigneePopoverOpen, open, title, submitting]);
 
   async function submit() {
     const t = title.trim();
@@ -318,7 +333,7 @@ function InlineCreatorInner({
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
-    <div className="mx-3 my-2">
+    <div className="mx-3 my-2" ref={rootRef}>
     <div className={`flex items-center h-9 px-1.5 border rounded-md bg-white ${error ? "border-red-500" : "border-blue-500"}`}>
       <div className="relative" ref={typeMenuRef}>
         <button
@@ -1190,8 +1205,9 @@ function IssueRow({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
   // Tooltip shown only when the title is actually clipped (scrollWidth >
-  // clientWidth). Recomputed on each hover so it tracks resize/zoom.
-  const [showTitleTip, setShowTitleTip] = useState(false);
+  // clientWidth). Portaled to <body> with a fixed position computed from the
+  // title's rect on hover, so a row/section with `overflow` can't clip it.
+  const [titleTip, setTitleTip] = useState<{ top: number; left: number } | null>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
@@ -1365,9 +1381,14 @@ function IssueRow({
           className="relative flex-1 flex items-center gap-1.5 min-w-0"
           onMouseEnter={() => {
             const el = titleRef.current;
-            setShowTitleTip(!!el && el.scrollWidth > el.clientWidth);
+            if (el && el.scrollWidth > el.clientWidth) {
+              const r = el.getBoundingClientRect();
+              setTitleTip({ top: r.bottom + 4, left: r.left });
+            } else {
+              setTitleTip(null);
+            }
           }}
-          onMouseLeave={() => setShowTitleTip(false)}
+          onMouseLeave={() => setTitleTip(null)}
           onClick={() => {
             setTitleDraft(issue.title);
             setTitleEditing(true);
@@ -1375,15 +1396,24 @@ function IssueRow({
         >
           <span ref={titleRef} className={`text-sm truncate cursor-text ${isDone ? "text-gray-400 line-through" : "text-gray-900"}`}>{issue.title}</span>
           <Pencil className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
-          {/* Tooltip — only when the title is truncated; full title, dark style. */}
-          {showTitleTip && (
-            <span
-              role="tooltip"
-              className="pointer-events-none absolute left-0 top-full z-50 mt-1 max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
-            >
-              {issue.title}
-            </span>
-          )}
+          {/* Tooltip — only when the title is truncated; full title, dark style.
+              Portaled so an overflow-clipped row/section can't cut it off. */}
+          {titleTip &&
+            createPortal(
+              <span
+                role="tooltip"
+                style={{
+                  position: "fixed",
+                  top: titleTip.top,
+                  left: Math.max(8, Math.min(titleTip.left, window.innerWidth - 8 - 448)),
+                  zIndex: 1000,
+                }}
+                className="pointer-events-none max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
+              >
+                {issue.title}
+              </span>,
+              document.body,
+            )}
         </div>
       )}
 

@@ -183,6 +183,13 @@ export function ImportDropzone({
             <code className="rounded bg-gray-100 px-1">Login / Errors</code> in
             Section to nest folders — missing folders are created for you.
           </p>
+          <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
+            <strong className="font-medium text-gray-700">Template</strong> accepts
+            Steps, Text, BDD or Exploratory. Leave it blank and the layout is chosen
+            from the row: steps present → Steps, otherwise an Expected Result → Text.
+            Content the chosen layout does not display is still imported, and the
+            preview says so.
+          </p>
         </details>
       </div>
     </div>

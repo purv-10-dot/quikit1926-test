@@ -32,10 +32,13 @@ type Member = FieldMember;
  */
 export function IssueDetailsPanel({
   issue,
+  projectKey,
   members,
   onPatch,
 }: {
   issue: IssuePageData;
+  /** Readable project key for links, so URLs don't expose the project UUID. */
+  projectKey: string;
   // Members are fetched once by the parent (IssueFullView) and passed down so
   // the panel doesn't fire a duplicate /api/projects/[id]/members request.
   members: Member[];
@@ -177,10 +180,15 @@ export function IssueDetailsPanel({
         </Row>
         {/* QuikTest deep links — mirror the TestRail-for-Jira sidebar fields.
             Not editable: they are navigation into the test module, filtered to
-            this work item, not properties of the issue. */}
+            this work item, not properties of the issue.
+            QUIKTR-341: also carry create+link params, so opening either one
+            drops the user straight into a NEW case/run already associated with
+            this work item, rather than a generic unfiltered list. See
+            use-link-issue-deeplink.ts (cases) / use-link-issue-run-deeplink.ts
+            (runs) for how the receiving page consumes them. */}
         <Row label="QuikTest: Cases">
           <Link
-            href={`/spaces/${issue.projectId}/test`}
+            href={`/spaces/${projectKey}/test?createCase=1&linkIssueId=${encodeURIComponent(issue.id)}&linkIssueKey=${encodeURIComponent(issue.key)}`}
             className="text-blue-700 hover:underline dark:text-blue-400"
           >
             Open QuikTest: Cases
@@ -188,7 +196,7 @@ export function IssueDetailsPanel({
         </Row>
         <Row label="QuikTest: Runs">
           <Link
-            href={`/spaces/${issue.projectId}/test/runs`}
+            href={`/spaces/${projectKey}/test/runs?createRun=1&linkIssueKey=${encodeURIComponent(issue.key)}`}
             className="text-blue-700 hover:underline dark:text-blue-400"
           >
             Open QuikTest: Runs

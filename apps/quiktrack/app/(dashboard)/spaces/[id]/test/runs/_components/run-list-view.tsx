@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ClipboardList, Plus } from "lucide-react";
 import { Button, EmptyState, TableSkeleton } from "@quikit/ui";
+import { confirmDialog } from "@/lib/ui/confirm";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import {
@@ -17,6 +18,7 @@ import { EditRunPanel } from "./edit-run-panel";
 import { NewRunPanel } from "./new-run-panel";
 import { RunRow } from "./run-row";
 import type { RunRow as RunRowData } from "./run-types";
+import { useLinkIssueRunDeeplink } from "./use-link-issue-run-deeplink";
 
 /**
  * Runs list, grouped by lifecycle (QUIKTR-338).
@@ -37,17 +39,73 @@ export function RunListView({ projectId }: { projectId: string }) {
   const canClose = perms.loading || perms.has("TestRun", "update");
 
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Seeded from "QuikTest: Runs" on a work item (QUIKTR-341); see the hook below. */
+  const [prefillRefTickets, setPrefillRefTickets] = useState<string | undefined>();
+
+  useLinkIssueRunDeeplink({
+    onOpen: (issueKey) => {
+      setPrefillRefTickets(issueKey);
+      setPanelOpen(true);
+    },
+  });
   /** The run being edited; null closes the edit panel. */
   const [editingRun, setEditingRun] = useState<RunRowData | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const runsKey = ["quiktrack", "test-runs", projectId] as const;
+  /** "Deleted" view — how restore is reached. */
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  // showDeleted is part of the key: the two lists are different data.
+  const runsKey = [
+    "quiktrack",
+    "test-runs",
+    projectId,
+    showDeleted ? "deleted" : "live",
+  ] as const;
   const { data, isLoading } = useApiData<{ items: RunRowData[]; total: number }>(
     runsKey,
-    `/api/test/runs?projectId=${projectId}`,
+    `/api/test/runs?projectId=${projectId}&deleted=${showDeleted ? "true" : "false"}`,
     { staleTime: 0 },
   );
+
+  /**
+   * Soft-delete or restore a run. Results are KEPT on delete — stated in the
+   * confirmation with the real count, because "delete" reads as destroying the
+   * execution history and here it does not.
+   *
+   * `confirm` is a `confirmDialog()` options object rather than a raw string:
+   * the app-wide confirm host (lib/ui/confirm.ts + <ConfirmHost/>, mounted in
+   * dashboard-shell.tsx) replaces the native `window.confirm` everywhere in
+   * this app, not just here.
+   */
+  const mutateRun = async (
+    action: "delete" | "restore",
+    ids: string[],
+    confirm?: Parameters<typeof confirmDialog>[0],
+  ) => {
+    if (confirm && !(await confirmDialog(confirm))) return;
+    setPendingId(ids[0] ?? null);
+    setError(null);
+    try {
+      const res = await fetch("/api/test/runs/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action, ids }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!json.success) {
+        setError(json.error ?? `Could not ${action} the run.`);
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["quiktrack", "test-runs"] });
+    } catch {
+      setError(`Could not ${action} the run.`);
+    } finally {
+      setPendingId(null);
+    }
+  };
 
   // Memoised off `data` rather than a fresh `?? []` literal: the fallback array
   // has a new identity every render, so the grouping would re-run each time.
@@ -78,7 +136,7 @@ export function RunListView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+      <div className="flex items-start justify-between gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div>
           <Link
             href={`/spaces/${projectId}/test`}
@@ -87,21 +145,42 @@ export function RunListView({ projectId }: { projectId: string }) {
             <ArrowLeft className="h-3 w-3" />
             Test cases
           </Link>
-          <h1 className="text-base font-semibold text-gray-900">Test runs</h1>
+          <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Test runs</h1>
           <p className="text-xs text-gray-500">
             Each run is an immutable record of one execution pass.
           </p>
         </div>
-        {canCreate && (
-          <Button
-            size="sm"
-            className="bg-accent-600 text-white hover:bg-accent-700"
-            onClick={() => setPanelOpen(true)}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            New run
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Only for users who can delete: nobody else has anything to restore. */}
+          {canClose && (
+            <div className="flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
+              {([false, true] as const).map((v) => (
+                <button
+                  key={String(v)}
+                  type="button"
+                  onClick={() => setShowDeleted(v)}
+                  className={`rounded px-2 py-1 text-[11px] ${
+                    showDeleted === v
+                      ? "bg-accent-100 dark:bg-gray-700 font-medium text-accent-800 dark:text-gray-100"
+                      : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                  }`}
+                >
+                  {v ? "Deleted" : "Active"}
+                </button>
+              ))}
+            </div>
+          )}
+          {canCreate && !showDeleted && (
+            <Button
+              size="sm"
+              className="bg-accent-600 text-white hover:bg-accent-700"
+              onClick={() => setPanelOpen(true)}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              New run
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -138,8 +217,8 @@ export function RunListView({ projectId }: { projectId: string }) {
 
             return (
               <section key={phase}>
-                <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-gray-200 bg-accent-50 px-4 py-1.5">
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+                <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-gray-200 dark:border-gray-700 bg-accent-50 dark:bg-gray-900 px-4 py-1.5">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
                     {LIFECYCLE_LABEL[phase]}
                   </h2>
                   <span className="text-[11px] text-gray-500">{list.length}</span>
@@ -155,7 +234,21 @@ export function RunListView({ projectId }: { projectId: string }) {
                     canClose={canClose}
                     onClose={closeRun}
                     onEdit={setEditingRun}
+                    onDelete={(r) =>
+                      void mutateRun("delete", [r.id], {
+                        title: `Delete "${r.name}"?`,
+                        message:
+                          `It will be hidden from the runs list. Its ${r.testCount} ` +
+                          `test${r.testCount === 1 ? "" : "s"} and any recorded results ` +
+                          `are KEPT — the execution history stays intact, and you can ` +
+                          `restore the run later.`,
+                        confirmText: "Delete",
+                        danger: true,
+                      })
+                    }
+                    onRestore={(id) => void mutateRun("restore", [id])}
                     closing={closingId === run.id}
+                    busy={pendingId === run.id}
                   />
                 ))}
               </section>
@@ -166,11 +259,15 @@ export function RunListView({ projectId }: { projectId: string }) {
 
       <NewRunPanel
         open={panelOpen}
-        onClose={() => setPanelOpen(false)}
+        onClose={() => {
+          setPanelOpen(false);
+          setPrefillRefTickets(undefined);
+        }}
         projectId={projectId}
         onCreated={() => {
           void queryClient.invalidateQueries({ queryKey: runsKey });
         }}
+        prefillRefTickets={prefillRefTickets}
       />
 
       <EditRunPanel

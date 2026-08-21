@@ -48,7 +48,14 @@ export function CreateIdeaModal({
         const list = (j?.data ?? []) as SpaceOption[];
         setProjects(list);
         // Default the space to the current project, else the first one.
-        setSelectedId((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id ?? cur));
+        // `cur` (the URL segment) may be a project KEY rather than a cuid —
+        // the URL is canonicalized to /spaces/<KEY>/… — so match on either the
+        // id or the projectKey and normalize to the resolved cuid. Without this,
+        // a key wouldn't match any p.id and we'd wrongly fall back to list[0].
+        setSelectedId((cur) => {
+          const match = cur ? list.find((p) => p.id === cur || p.projectKey === cur) : undefined;
+          return match?.id ?? list[0]?.id ?? cur;
+        });
       })
       .catch(() => undefined);
     return () => { alive = false; };

@@ -116,8 +116,8 @@ export function WatchButton({ issueId, projectId }: { issueId: string; projectId
         aria-expanded={open}
         className={`inline-flex items-center gap-1 h-7 px-2 rounded border text-xs font-medium transition-colors ${
           isWatching
-            ? "border-accent-300 bg-accent-50 text-accent-700 hover:bg-accent-100"
-            : "border-gray-200 text-gray-600 hover:bg-gray-100"
+            ? "border-accent-300 dark:border-gray-600 bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100 hover:bg-accent-100 dark:hover:bg-gray-600"
+            : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
         }`}
       >
         {isWatching ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -139,7 +139,7 @@ export function WatchButton({ issueId, projectId }: { issueId: string; projectId
           type="button"
           onClick={() => void call(isWatching ? "DELETE" : "POST")}
           disabled={pending}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
         >
           {isWatching ? <EyeOff className="h-4 w-4 text-gray-400" /> : <Eye className="h-4 w-4 text-gray-400" />}
           {isWatching ? "Stop watching" : "Watch"}
@@ -207,7 +207,7 @@ export function WatchButton({ issueId, projectId }: { issueId: string; projectId
                     value={memberQuery}
                     onChange={(e) => setMemberQuery(e.target.value)}
                     placeholder="Search members"
-                    className="h-8 w-full rounded border border-gray-200 pl-7 pr-2 text-sm focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-200"
+                    className="h-8 w-full rounded border border-gray-200 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 pl-7 pr-2 text-sm focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-200"
                   />
                 </div>
                 <div className="max-h-40 overflow-y-auto">
@@ -223,7 +223,7 @@ export function WatchButton({ issueId, projectId }: { issueId: string; projectId
                           closePicker(); // adding one member returns to the list
                         }}
                         disabled={pending}
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
                       >
                         <Avatar name={m.name} avatar={null} />
                         <span className="flex-1 truncate">{m.name}</span>

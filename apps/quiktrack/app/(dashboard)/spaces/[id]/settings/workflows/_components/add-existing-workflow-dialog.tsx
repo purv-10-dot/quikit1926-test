@@ -121,9 +121,9 @@ export function AddExistingWorkflowDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">Add Existing Workflow</h3>
+      <div className="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white dark:bg-gray-800 shadow-xl">
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add Existing Workflow</h3>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
@@ -131,7 +131,7 @@ export function AddExistingWorkflowDialog({
 
         <div className="flex min-h-0 flex-1">
           {/* List */}
-          <div className="w-64 shrink-0 overflow-y-auto border-r border-gray-200">
+          <div className="w-64 shrink-0 overflow-y-auto border-r border-gray-200 dark:border-gray-700">
             {isLoading ? (
               <div className="flex items-center gap-2 px-4 py-6 text-sm text-gray-500">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
@@ -148,8 +148,8 @@ export function AddExistingWorkflowDialog({
                   key={w.id}
                   type="button"
                   onClick={() => setSelectedId(w.id)}
-                  className={`block w-full border-b border-gray-100 px-4 py-3 text-left text-sm ${
-                    w.id === selectedId ? "bg-accent-50 font-medium text-accent-800" : "text-gray-700 hover:bg-gray-50"
+                  className={`block w-full border-b border-gray-100 dark:border-gray-800 px-4 py-3 text-left text-sm ${
+                    w.id === selectedId ? "bg-accent-50 dark:bg-gray-700 font-medium text-accent-800 dark:text-gray-100" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                   }`}
                 >
                   {w.name}
@@ -166,8 +166,8 @@ export function AddExistingWorkflowDialog({
               </div>
             ) : (
               <>
-                <h4 className="mb-3 text-center text-base font-semibold text-gray-900">{selected.name}</h4>
-                <div className="h-80 overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                <h4 className="mb-3 text-center text-base font-semibold text-gray-900 dark:text-gray-100">{selected.name}</h4>
+                <div className="h-80 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                   {flow ? (
                     <ReactFlow
                       key={selected.id}
@@ -211,11 +211,11 @@ export function AddExistingWorkflowDialog({
                 <dl className="mt-4 space-y-1 text-sm">
                   <div className="flex gap-2">
                     <dt className="w-24 shrink-0 text-gray-500">Description</dt>
-                    <dd className="text-gray-800">{selected.description || "—"}</dd>
+                    <dd className="text-gray-800 dark:text-gray-200">{selected.description || "—"}</dd>
                   </div>
                   <div className="flex gap-2">
                     <dt className="w-24 shrink-0 text-gray-500">Last modified</dt>
-                    <dd className="text-gray-800">{formatModified(selected.updatedAt)}</dd>
+                    <dd className="text-gray-800 dark:text-gray-200">{formatModified(selected.updatedAt)}</dd>
                   </div>
                 </dl>
                 {add.error && <p className="mt-2 text-sm text-red-600">{(add.error as Error).message}</p>}
@@ -224,7 +224,7 @@ export function AddExistingWorkflowDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-3">
+        <div className="flex items-center justify-end gap-3 border-t border-gray-200 dark:border-gray-700 px-6 py-3">
           <button type="button" onClick={onClose} className="text-sm font-medium text-accent-700 hover:text-accent-800">
             Cancel
           </button>

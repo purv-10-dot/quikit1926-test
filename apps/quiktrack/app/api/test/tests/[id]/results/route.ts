@@ -48,7 +48,14 @@ export const POST = withOrgAuth<Params>(
 
       const parsed = recordResultSchema.safeParse(await req.json());
       if (!parsed.success) {
-        return badRequest(parsed.error.issues[0]?.message ?? "Invalid body");
+        // `issues[0].message` alone is a bare "Required" with no indication of
+        // WHICH field — unusable when this fires intermittently in production
+        // and the only evidence is the response body. Prefixing the field path
+        // makes the message self-diagnosing (e.g. "statusId: Required").
+        const issue = parsed.error.issues[0];
+        const path = issue?.path.join(".");
+        const message = issue && path ? `${path}: ${issue.message}` : issue?.message;
+        return badRequest(message ?? "Invalid body");
       }
 
       const result = await recordManualResult(orgId, userId, params.id, parsed.data);

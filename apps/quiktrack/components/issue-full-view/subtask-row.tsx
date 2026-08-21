@@ -93,7 +93,7 @@ export function SubtaskRow({
   return (
     <div className="grid grid-cols-[minmax(220px,2fr)_minmax(110px,1fr)_minmax(140px,1fr)_minmax(110px,1fr)_minmax(90px,0.7fr)] border-b border-gray-100 last:border-b-0 text-sm hover:bg-gray-50/60">
       <Link
-        href={`/spaces/${projectId}/work/${s.id}`}
+        href={`/browse/${s.key}`}
         className="flex items-center gap-2 px-3 py-2 min-w-0"
       >
         <ListTree className="h-3.5 w-3.5 shrink-0 text-gray-500" />
