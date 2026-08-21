@@ -114,9 +114,12 @@ export function FilterView({ filterId }: { filterId: string }) {
   const saveCriteria = mode === "tql" ? { tql } : { ...toolbar, search };
 
   return (
-    <div className="px-6 py-4">
+    // Fixed-height column: the header + filter toolbar stay pinned (flex-shrink-0)
+    // while only the results table below scrolls (flex-1 min-h-0 overflow-y-auto).
+    <div className="flex h-full min-h-0 flex-col px-6 py-4">
+      <div className="flex-shrink-0">
       <div className="flex items-center gap-2 mb-3">
-        <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
         <Star className="h-5 w-5 text-gray-300 hover:text-yellow-400 cursor-pointer" />
       </div>
 
@@ -176,7 +179,10 @@ export function FilterView({ filterId }: { filterId: string }) {
           onSaveFilter={() => setSaveOpen(true)}
         />
       )}
+      </div>
 
+      {/* Scrolling results region — only this scrolls; the toolbar above stays put. */}
+      <div className="flex-1 min-h-0 overflow-y-auto mt-3">
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-8 text-center text-sm text-red-600">
           {error}
@@ -217,6 +223,7 @@ export function FilterView({ filterId }: { filterId: string }) {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
       />
+      </div>
     </div>
   );
 }
