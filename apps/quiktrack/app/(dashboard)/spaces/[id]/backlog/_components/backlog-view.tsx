@@ -3949,6 +3949,14 @@ export function BacklogView({ projectId }: { projectId: string }) {
               setSprintCursor(res.nextCursor ?? null);
               setSprintsHasMore(!!res.nextCursor);
             }
+            // Starting a sprint changes the shared sprint list that other tabs
+            // (Grouped Kanban, Task Table, issue panels) read via React Query.
+            // Without this invalidation those views keep a stale cached list for
+            // up to staleTime, so the new sprint intermittently fails to appear
+            // in their Sprint filter dropdown. Invalidate so they refetch.
+            void queryClient.invalidateQueries({
+              queryKey: ["quiktrack", "project-sprints", projectId],
+            });
           }}
         />
       )}
@@ -3980,6 +3988,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
               setSprintCursor(res.nextCursor ?? null);
               setSprintsHasMore(!!res.nextCursor);
             }
+            // Completing a sprint removes it from the active list other tabs read
+            // via React Query — invalidate so their Sprint filters update too.
+            void queryClient.invalidateQueries({
+              queryKey: ["quiktrack", "project-sprints", projectId],
+            });
             setSectionStates({ backlog: { ...emptySection(), expanded: true } });
           }}
         />
