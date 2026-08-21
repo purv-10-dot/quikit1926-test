@@ -41,7 +41,9 @@ function buildRequest(token?: string): NextRequest {
   return new NextRequest("http://localhost/api/mcp", { headers });
 }
 
-function mockValidPat() {
+/** `overrides` lets a test flip the token to user-scoped (`projectId: null`)
+ * or start it on a different failed-check count. Defaults are unchanged. */
+function mockValidPat(overrides: Record<string, unknown> = {}) {
   mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
     id: "pat_1",
     orgId: ORG,
@@ -56,6 +58,7 @@ function mockValidPat() {
     // One below the auto-revoke threshold, so a single failed access-recheck
     // in the "lost project access" test below crosses it and revokes.
     failedAccessChecks: 2,
+    ...overrides,
   } as never);
 }
 
@@ -177,6 +180,69 @@ describe("withOrgAuth({ allowPat: true })", () => {
     expect(seen.actorType).toBe("agent");
     expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
+    );
+  });
+
+  // The two tests above cover the legacy project-scoped branch
+  // (loadProjectAccess). A user-scoped PAT — the modern kind, and the common
+  // case — rechecks via isActiveOrgMember instead, which has identical
+  // transient-failure exposure and had no coverage at all.
+  it("rejects but does NOT revoke a user-scoped PAT when the org-membership recheck throws on every attempt", async () => {
+    mockValidPat({ projectId: null });
+    mockDb.orgMember.findFirst.mockRejectedValue(new Error("connection reset"));
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+    // Retried on this branch too, not just the project-scoped one.
+    expect(mockDb.orgMember.findFirst).toHaveBeenCalledTimes(2);
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
+    );
+  });
+
+  it("does not touch failedAccessChecks when the recheck is exhausted — neither incrementing nor resetting it", async () => {
+    mockValidPat(); // failedAccessChecks: 2 — one blip below the revoke threshold
+    mockDb.qtProject.findFirst.mockRejectedValue(new Error("connection reset"));
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+    // The load-bearing assertion: if a transient error incremented the
+    // counter, three DB blips in a row would revoke a perfectly valid token.
+    // It must not RESET the counter either — a failed check is not evidence
+    // of success.
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ failedAccessChecks: expect.anything() }),
+      }),
+    );
+    // Stronger form of the same invariant: an exhausted recheck writes nothing at all.
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalled();
+  });
+
+  it("still increments failedAccessChecks on a genuine access loss, and revokes once it hits the threshold", async () => {
+    // A real negative answer (not a throw) on a token with a clean counter:
+    // increments, but must not revoke yet.
+    mockValidPat({ failedAccessChecks: 0 });
+    mockDb.qtProjectMember.findFirst.mockResolvedValue(null as never);
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+
+    expect((await handler(buildRequest(`Bearer ${RAW_TOKEN}`))).status).toBe(401);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith({
+      where: { id: "pat_1" },
+      data: { failedAccessChecks: 1 },
+    });
+
+    // Same genuine loss with the counter already one below the threshold —
+    // proves protecting the transient path didn't weaken real auto-revoke.
+    mockDb.qtPersonalAccessToken.update.mockClear();
+    mockValidPat({ failedAccessChecks: 2 });
+
+    expect((await handler(buildRequest(`Bearer ${RAW_TOKEN}`))).status).toBe(401);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pat_1" },
+        data: expect.objectContaining({ revokedAt: expect.any(Date), failedAccessChecks: 3 }),
+      }),
     );
   });
 });
