@@ -60,14 +60,19 @@ export default function SpaceLayout({
   useEffect(() => {
     if (!projectKey || !pathname) return;
     // params.id is the raw URL segment; if it isn't already the key, swap it.
-    // Read the query string from the live location (avoids useSearchParams,
-    // which can suspend a client layout without a Suspense boundary).
-    if (params.id !== projectKey) {
+    // IMPORTANT: use history.replaceState, NOT router.replace. router.replace
+    // triggers a real Next navigation that remounts the route subtree — which
+    // made deep-linked panels (e.g. /test/runs?createRun=1) flash closed then
+    // reopen and caused visible flicker. replaceState only rewrites the address
+    // bar (cosmetic), leaving the mounted tree untouched. Routes accept both the
+    // id and the key, so the already-rendered page keeps working unchanged.
+    if (params.id !== projectKey && typeof window !== "undefined") {
       const rest = pathname.split("/").slice(3).join("/"); // segment after /spaces/<id>
-      const qs = typeof window !== "undefined" ? window.location.search : "";
-      router.replace(`/spaces/${projectKey}${rest ? `/${rest}` : ""}${qs}`);
+      const qs = window.location.search;
+      const next = `/spaces/${projectKey}${rest ? `/${rest}` : ""}${qs}`;
+      window.history.replaceState(window.history.state, "", next);
     }
-  }, [projectKey, params.id, pathname, router]);
+  }, [projectKey, params.id, pathname]);
 
   // Tabs valid for this project's template — a discovery-only tab (Ideas) is not
   // a real destination on a non-discovery space even via direct URL.
