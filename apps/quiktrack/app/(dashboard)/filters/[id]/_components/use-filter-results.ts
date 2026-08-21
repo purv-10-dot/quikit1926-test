@@ -89,7 +89,7 @@ export function useFilterResults(filterId: string) {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [toolbar, setToolbar] = useState<ToolbarState>(() => defaultToolbarStateFor(filterId));
   const isSaved = filterId.startsWith("sf_");
   // A saved filter's own criteria (loaded below) decides its mode — the

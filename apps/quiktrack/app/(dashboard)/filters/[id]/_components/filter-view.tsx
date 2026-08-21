@@ -114,10 +114,13 @@ export function FilterView({ filterId }: { filterId: string }) {
   const saveCriteria = mode === "tql" ? { tql } : { ...toolbar, search };
 
   return (
-    // Fixed-height column: the header + filter toolbar stay pinned (flex-shrink-0)
-    // while only the results table below scrolls (flex-1 min-h-0 overflow-y-auto).
-    <div className="flex h-full min-h-0 flex-col px-6 py-4">
-      <div className="flex-shrink-0">
+    // The parent shell's <main> is the scroll container, so instead of relying on
+    // a bounded flex height (which fails here — the page scrolls as one), the
+    // header + filter toolbar are made `sticky top-0` so they stay pinned to the
+    // top while the results table below scrolls under them. A solid background +
+    // z-index keep them opaque over the scrolling rows.
+    <div className="px-6 py-4">
+      <div className="sticky top-0 z-20 -mx-6 -mt-4 px-6 pt-4 pb-2 bg-white dark:bg-gray-900">
       <div className="flex items-center gap-2 mb-3">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
         <Star className="h-5 w-5 text-gray-300 hover:text-yellow-400 cursor-pointer" />
@@ -181,8 +184,9 @@ export function FilterView({ filterId }: { filterId: string }) {
       )}
       </div>
 
-      {/* Scrolling results region — only this scrolls; the toolbar above stays put. */}
-      <div className="flex-1 min-h-0 overflow-y-auto mt-3">
+      {/* Results region — scrolls with the shell's <main>; the sticky toolbar
+          above stays pinned over it. */}
+      <div className="mt-3">
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-8 text-center text-sm text-red-600">
           {error}
