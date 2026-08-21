@@ -75,6 +75,10 @@ export interface TestDetail {
     title: string;
     description: string | null;
     preconditions: string | null;
+    /** Case-level Expected Result — the TEXT/BDD templates' authored body. */
+    expectedResult: string | null;
+    /** TEXT | STEPS | BDD | EXPLORATORY — decides which body the runner shows. */
+    templateKind: string | null;
     priority: string;
     type: string;
     automationId: string | null;
