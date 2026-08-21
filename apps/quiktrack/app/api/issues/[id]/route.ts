@@ -472,6 +472,9 @@ async function notifyOnUpdate(args: {
       title: args.before.title,
       projectId: args.before.projectId,
       projectName: project?.name ?? null,
+      // Emailed deep-links carry the owning org (`?org=`) so a recipient whose
+      // session is on another org lands here instead of a 404.
+      orgId: args.orgId,
     };
 
     const directRecipients: string[] = [];

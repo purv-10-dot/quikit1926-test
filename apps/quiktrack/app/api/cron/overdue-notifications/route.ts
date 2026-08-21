@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
           title: issue.title,
           projectId: issue.projectId,
           projectName: p?.name ?? null,
+          orgId: issue.orgId,
           dueDate: issue.dueDate.toISOString(),
         },
       });
