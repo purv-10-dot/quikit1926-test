@@ -107,9 +107,26 @@ export const POST = auth.manage<{ id: string }>(async (
 
   // Invite link target — central auth app (apps/auth), NOT the launcher.
   // `/invitations/accept?token=…` lives there.
-  const authBase =
-    process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3000";
-  const inviteUrl = `${authBase}/invitations/accept?token=${centralInvitationToken}`;
+  //
+  // Exception: mobile-enabled users get QuikInfra's own `/invite/{token}`
+  // landing page instead, so Android App Links can intercept it (see
+  // /.well-known/assetlinks.json). Mirrors the same branch in
+  // app/api/settings/users/route.ts's initial-invite path — the flag isn't
+  // in the request body here, so it's read from CnUserProfile (org-scoped
+  // via the orgId_userId composite key).
+  const authBase = (
+    process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3000"
+  ).replace(/\/$/, "");
+  const quikinfraBase = (
+    process.env.NEXT_PUBLIC_QUIKINFRA_URL ?? process.env.QUIKINFRA_URL ?? authBase
+  ).replace(/\/$/, "");
+  const profile = await db.cnUserProfile.findUnique({
+    where: { orgId_userId: { orgId: ctx.orgId, userId: authUser.id } },
+    select: { mobileAccessEnabled: true },
+  });
+  const inviteUrl = profile?.mobileAccessEnabled
+    ? `${quikinfraBase}/invite/${centralInvitationToken}`
+    : `${authBase}/invitations/accept?token=${centralInvitationToken}`;
 
   // ── Re-dispatch the invitation email (matches QuikScale pattern) ──
   let mailSent = false;

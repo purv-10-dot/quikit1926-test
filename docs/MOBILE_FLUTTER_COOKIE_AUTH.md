@@ -4,6 +4,18 @@
 **Goal:** Replace JWT/Bearer-token auth with the **same NextAuth session cookie** the QuikInfra web app uses.  
 **Backend changes required:** **None.** This uses existing auth endpoints only.
 
+> **Still current.** The cookie/session architecture described here is the
+> confirmed decision — the QuikInfra session cookie remains the application
+> credential, and the **password login flow below is unchanged**.
+>
+> One thing has moved on: **Google sign-in no longer runs in an embedded
+> WebView.** It now uses the native Google Sign-In SDK plus a backend
+> endpoint that returns a handoff URL, which you follow with the same
+> `quikInfraDio` cookie jar described here to land on the same session
+> cookie. Android invite links are now App Links. See
+> [`MOBILE_NATIVE_AUTH.md`](./MOBILE_NATIVE_AUTH.md) for those two additions;
+> everything else on this page still applies.
+
 ---
 
 ## TL;DR
