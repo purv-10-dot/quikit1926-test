@@ -1,6 +1,7 @@
 // @vitest-environment node
 /**
- * The stub can park a write, and can park one whose ledger row is missing.
+ * The stub can park a write; park one whose ledger row is missing; and park one
+ * decided by somebody the channel cannot name.
  *
  * ── WHY THE STUB NEEDED THIS ───────────────────────────────────────────────
  * Until now `assist()` only ever answered — it could not emit `approval_needed`
@@ -9,18 +10,29 @@
  * worse, not better: there was a whole new surface (the channel-visible card,
  * the decision patch, the reconcile pass) that no local run could reach.
  *
- * `STUB_AGED_REQUEST_ID` is the sharper half. Its ABSENCE from the ledger is the
- * fixture: it models a request that has aged out of the runtime's 24h window,
- * which is the only way a persisted card reaches the `unconfirmed` state. These
- * tests exist mostly to stop someone "completing" the fixture set by adding a
- * row for it — same instinct as the snake_case `custom_field_7` key and the
- * summary-less `cancelled` row.
+ * Two of the three fixtures are shaped by what they LACK, which is why they need
+ * guarding:
+ *
+ *   STUB_AGED_REQUEST_ID      — absent from the ledger, modelling a request aged
+ *                               out of the 24h window. The only way a persisted
+ *                               card reaches the `unconfirmed` state.
+ *   STUB_DEPARTED_REQUEST_ID  — present and decided, but by a user in no channel
+ *                               roster. The only way the card's passive-voice
+ *                               fallback is reached without waiting for someone
+ *                               to actually leave.
+ *
+ * These tests exist mostly to stop someone "completing" the fixture set — adding
+ * a ledger row for the first, or a roster entry for the second, silently deletes
+ * the path it exists to expose. Same instinct as the snake_case `custom_field_7`
+ * key and the summary-less `cancelled` row.
  */
 import { describe, expect, it } from "vitest";
 import type { AssistInput, RuntimeEvent } from "./types";
 import {
   StubRuntimeClient,
   STUB_AGED_REQUEST_ID,
+  STUB_DEPARTED_REQUEST_ID,
+  STUB_DEPARTED_USER_ID,
   STUB_PARKED_REQUEST_ID,
 } from "./stub";
 
@@ -105,5 +117,44 @@ describe("stub ledger — the aged request is deliberately absent", () => {
         traceId: "t-1",
       }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("stub — the departed decider, so passive-voice fallback is reachable", () => {
+  const client = new StubRuntimeClient();
+  const listInput = { orgId: "org-1", userId: "u-1", botAgentId: "quikchat-assistant" };
+
+  it("parks a write on /approve-departed", async () => {
+    const [evt] = await drain(new StubRuntimeClient(), "/approve-departed file a bug");
+    expect(evt).toMatchObject({ type: "approval_needed", requestId: STUB_DEPARTED_REQUEST_ID });
+  });
+
+  it("serves it already decided, by a user in no channel roster", async () => {
+    // The reconcile pass patches the persisted card from this row; the card then
+    // fails to resolve the id and must fall back to passive voice. Without this
+    // fixture that fallback is reachable only from a unit test.
+    const page = await client.listApprovalRequests(listInput);
+    const row = page.requests.find((r) => r.id === STUB_DEPARTED_REQUEST_ID);
+    expect(row).toBeDefined();
+    expect(row!.status).toBe("executed");
+    expect(row!.decisionBy).toBe(STUB_DEPARTED_USER_ID);
+    // It still carries a real outcome sentence, so the card shows WHAT happened
+    // even though it cannot say WHO — which is exactly the state under test.
+    expect(row!.outcomeSummary).toContain("QTRK-451");
+  });
+
+  it("carries decisionAgentId, so the log dimension has something to report", async () => {
+    const page = await client.listApprovalRequests(listInput);
+    const row = page.requests.find((r) => r.id === STUB_DEPARTED_REQUEST_ID);
+    expect(row!.decisionAgentId).toBe("quikchat-assistant");
+  });
+
+  it("is decided by someone OTHER than the caller, or it would take the \"you\" path", async () => {
+    // The property that makes this fixture exercise NAME RESOLUTION at all. If
+    // `decisionBy` were the requesting user, the card would say "you" and the
+    // unresolvable-id fallback would never be reached from here.
+    const page = await client.listApprovalRequests(listInput);
+    const row = page.requests.find((r) => r.id === STUB_DEPARTED_REQUEST_ID);
+    expect(row!.decisionBy).not.toBe(listInput.userId);
   });
 });

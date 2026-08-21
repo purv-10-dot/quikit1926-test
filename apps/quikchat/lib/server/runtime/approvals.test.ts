@@ -201,10 +201,16 @@ describe("HttpRuntimeClient.listApprovalRequests", () => {
 describe("StubRuntimeClient.listApprovalRequests", () => {
   it("covers every state that renders differently", async () => {
     const page = await new StubRuntimeClient().listApprovalRequests(listInput);
-    expect(page.total).toBe(6);
-    // Two pending rows, because the second one's APPROVAL renders differently:
-    // it answers `status: "failed"` on HTTP 200, the one response most likely to
-    // be mistaken for a network error. See STUB_FAILING_REQUEST_ID.
+    expect(page.total).toBe(7);
+    // SEVEN rows, SIX states. Two pairs share a status because what differs is
+    // not the state but what the card does with it:
+    //
+    //   the second `pending` — its APPROVAL answers `status: "failed"` on HTTP
+    //     200, the one response most likely to be mistaken for a network error
+    //     (STUB_FAILING_REQUEST_ID);
+    //   the second `executed` — its `decisionBy` is a user in no channel roster,
+    //     so the card cannot name them and must fall back to passive voice
+    //     without ever printing the raw id (STUB_DEPARTED_REQUEST_ID).
     expect(page.requests.map((r) => r.status)).toEqual([
       "pending",
       "pending",
@@ -212,6 +218,7 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
       "rejected",
       "executed",
       "cancelled",
+      "executed",
     ]);
   });
 
@@ -296,7 +303,8 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
       offset: 1,
     });
     expect(page.requests.map((r) => r.status)).toEqual(["pending", "expired"]);
-    expect(page.total).toBe(6);
+    // Unpaged, so it counts the departed-decider fixture too.
+    expect(page.total).toBe(7);
   });
 
   /**
@@ -310,7 +318,7 @@ describe("StubRuntimeClient.listApprovalRequests", () => {
   it("reports total as the unpaged count, not the page size", async () => {
     const page = await new StubRuntimeClient().listApprovalRequests({ ...listInput, limit: 2 });
     expect(page.requests).toHaveLength(2);
-    expect(page.total).toBe(6);
+    expect(page.total).toBe(7);
     expect(page.total).not.toBe(page.requests.length);
   });
 

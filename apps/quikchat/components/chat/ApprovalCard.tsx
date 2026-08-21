@@ -36,21 +36,21 @@ const RISK_LABEL: Record<AssistRiskClass, string> = {
  * only ever a FALLBACK: when the row carries the runtime's `outcomeSummary`,
  * that sentence is shown instead of anything from this function.
  *
- * `byViewer` names the actor where we can do so truthfully. "Rejected" and
- * "Cancelled" are passive voice hiding a subject, and the ledger's whole purpose
- * is who-decided-what — but the only identity available here is a boolean (see
- * `decidedByViewer`), so this says "you" or says nothing. A named third party
- * comes from `outcomeSummary`, which the runtime can populate because it has the
- * directory and this component does not.
+ * DELIBERATELY PASSIVE, with no actor at all. Naming the subject is
+ * `actorSentence`'s job now, and it renders whether or not `outcomeSummary`
+ * exists — which is the point, since `outcomeSummary` is present on nearly
+ * every real terminal row and an actor woven in here would be invisible on all
+ * of them. Two mechanisms both claiming the subject is how a card ends up
+ * saying "You declined this" and "Rejected — you declined this" at once.
  */
-function statusLabel(status: AssistApprovalStatus, byViewer = false): string {
+function statusLabel(status: AssistApprovalStatus): string {
   switch (status) {
     case "executed":
       return "Approved — action completed";
     case "failed":
       return "Approved — the action failed";
     case "rejected":
-      return byViewer ? "Rejected — you declined this" : "Rejected";
+      return "Rejected";
     case "cancelled":
       /**
        * Deliberately NOT the `rejected` wording. A human declining and the
@@ -60,9 +60,7 @@ function statusLabel(status: AssistApprovalStatus, byViewer = false): string {
        * decision would attribute an administrative action to the requester —
        * who, in v1, is the person reading this card.
        */
-      return byViewer
-        ? "Cancelled — you withdrew this"
-        : "Cancelled — withdrawn before it was answered";
+      return "Cancelled — withdrawn before it was answered";
     case "expired":
       return "Expired without an answer";
     case "pending":
@@ -88,6 +86,60 @@ function statusLabel(status: AssistApprovalStatus, byViewer = false): string {
        * a blank-screen render error.
        */
       return String(status).trim() || "Unrecognised state";
+  }
+}
+
+/**
+ * Who did it, in a sentence — the half `outcomeSummary` cannot supply.
+ *
+ * The runtime cannot name anyone: approvals arrive on an agent JWT carrying
+ * only `userId`, and resolving that to a person means a lookup against a
+ * platform table they do not own. So they say what happened and we say who.
+ *
+ * ── `withOutcome` IS THE WHOLE SUBTLETY ────────────────────────────────────
+ * When this renders, the fallback `statusLabel` is suppressed — otherwise the
+ * card states one fact twice ("Priya approved this" / "Approved — action
+ * completed"). But suppressing a line only works if something still carries
+ * what it said, and approving is NOT the same event as executing — the whole
+ * reason `failed` exists is that the first can succeed and the second fail.
+ *
+ * So the outcome clause appears exactly when this sentence is standing in for
+ * the suppressed label, and not otherwise:
+ *
+ *   no `outcomeSummary` → "You approved this — the action completed"
+ *   `outcomeSummary`    → "You approved this" + "Created QTRK-903 in QuikTrack."
+ *
+ * Adding the clause unconditionally would put our generic wording back on
+ * every row the runtime already described properly, which is the redundancy
+ * this was avoiding, one layer along.
+ *
+ * Returns null for every state it cannot fully express — an unrecognised
+ * status, or one with no human actor (`cancelled` by the tenant, `expired`
+ * unanswered) — and the passive label renders instead. Falling back is the
+ * common path, not the exception.
+ */
+function actorSentence(
+  status: AssistApprovalStatus,
+  byViewer: boolean,
+  name: string | null,
+  /** True when no `outcomeSummary` will render beneath — see above. */
+  withOutcome: boolean,
+): string | null {
+  const who = byViewer ? "You" : name;
+  if (!who) return null;
+  switch (status) {
+    case "executed":
+      return withOutcome ? `${who} approved this — the action completed` : `${who} approved this`;
+    case "failed":
+      return withOutcome ? `${who} approved this — the action failed` : `${who} approved this`;
+    case "rejected":
+      // Nothing to add: declining IS the whole outcome, so the suppressed
+      // label ("Rejected") said no more than this already does.
+      return `${who} declined this`;
+    default:
+      // `cancelled`, `expired`, `pending`, and anything this build has never
+      // heard of: no actor sentence we could write truthfully.
+      return null;
   }
 }
 
@@ -209,6 +261,12 @@ export function ApprovalCard({ model, onDecide, onSettled }: ApprovalCardProps) 
   );
 
   const entries = Object.entries(model.toolInput);
+  const terminalActor = actorSentence(
+    model.status,
+    model.decidedByViewer,
+    model.decidedByName,
+    !model.outcomeSummary,
+  );
 
   return (
     <div
@@ -320,7 +378,22 @@ export function ApprovalCard({ model, onDecide, onSettled }: ApprovalCardProps) 
             ledger that spans the deploy, so the fallback is a live path, not a
             defensive gesture.
           */}
-          {model.outcomeSummary ?? statusLabel(model.status, model.decidedByViewer)}
+          {/*
+            WHO, then WHAT. Two different facts, and only the second is the
+            runtime's to tell — see `actorSentence`.
+          */}
+          {terminalActor ? (
+            <span className="qc-approval__actor" data-testid="approval-actor">
+              {terminalActor}
+            </span>
+          ) : null}
+          {/*
+            `outcomeSummary` always renders when present — it says what happened
+            and the actor line does not. The status LABEL is a fallback for when
+            it is absent, and it is suppressed once the actor line exists, which
+            already carries everything the label would have said.
+          */}
+          {model.outcomeSummary ?? (terminalActor ? null : statusLabel(model.status))}
           {/*
             `error` renders INDEPENDENTLY of which line won above. On a failed
             row the generated sentence may say "Could not create the issue"
@@ -404,6 +477,9 @@ export function ApprovalCard({ model, onDecide, onSettled }: ApprovalCardProps) 
  */
 function SettledLine({ decision }: { decision: AssistApprovalDecision }) {
   const failed = decision.status === "failed";
+  // `||` and not `??`, matching the line below: an empty summary from the wire
+  // is the runtime saying nothing useful, so the clause has to cover for it.
+  const actor = actorSentence(decision.status, true, null, !decision.outcomeSummary);
   return (
     <div
       className="qc-approval__outcome"
@@ -422,7 +498,19 @@ function SettledLine({ decision }: { decision: AssistApprovalDecision }) {
         in between, so an empty string reaches here intact — and an empty summary
         is the runtime saying nothing useful, which our own label beats.
       */}
-      {decision.outcomeSummary || statusLabel(decision.status)}
+      {/*
+        The viewer took this decision a moment ago — it is their own tap that
+        produced it — so "you" applies here exactly as it does on a persisted
+        card. Without it the live card said a passive "Rejected" for the same
+        action the persisted one attributes, and the two disagreeing about who
+        did something reads as a bug rather than as two surfaces.
+      */}
+      {actor ? (
+        <span className="qc-approval__actor" data-testid="approval-settled-actor">
+          {actor}
+        </span>
+      ) : null}
+      {decision.outcomeSummary || (actor ? null : statusLabel(decision.status))}
       {failed && decision.error ? (
         // Same rule as the terminal row: the app's own words survive whichever
         // line won above, because they are the only actionable text here.

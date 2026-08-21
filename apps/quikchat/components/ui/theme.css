@@ -3716,6 +3716,14 @@ body {
   font-size: 12px;
   color: var(--qc-text-2);
 }
+/* Who decided, above what happened. Slightly stronger than the outcome text
+   beneath it because it is the answer to the question the ledger exists for;
+   the parent .qc-approval__outcome is already a column, so this just needs
+   weight and colour. */
+.qc-approval__actor {
+  font-weight: 500;
+  color: var(--qc-text);
+}
 .qc-approval__err {
   font-size: 12px;
   color: var(--qc-danger);

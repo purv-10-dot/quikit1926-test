@@ -16,7 +16,11 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ApprovalMessageData } from "@/lib/shared";
-import { fromApprovalMessage, readApprovalMessageData } from "./approval-card";
+import {
+  fromApprovalMessage,
+  readApprovalMessageData,
+  resolveDecider,
+} from "./approval-card";
 
 const ME = "u-me";
 const THEM = "u-them";
@@ -180,5 +184,113 @@ describe("readApprovalMessageData", () => {
     // card the component could render honestly.
     const { summary: _s, expiresAt: _e, ...rest } = data();
     expect(readApprovalMessageData(rest)).not.toBeNull();
+  });
+});
+
+/** The channel roster the card resolves names against. */
+const MEMBERS = [
+  { id: ME, displayName: "Me", avatarUrl: null },
+  { id: THEM, displayName: "Priya", avatarUrl: null },
+];
+
+describe("naming the approver", () => {
+  it("names a decider the viewer is not, from the channel roster", () => {
+    const m = fromApprovalMessage(
+      data({ status: "executed", decisionBy: THEM }),
+      ME,
+      MEMBERS,
+    );
+    expect(m.decidedByName).toBe("Priya");
+    expect(m.decidedByViewer).toBe(false);
+  });
+
+  it("prefers \"you\" over the viewer’s own name", () => {
+    // The viewer is in MEMBERS and would resolve to "Me" — the boolean has to
+    // win, or the card tells you your own name instead of speaking to you.
+    const m = fromApprovalMessage(
+      data({ status: "rejected", decisionBy: ME }),
+      ME,
+      MEMBERS,
+    );
+    expect(m.decidedByViewer).toBe(true);
+    expect(m.decidedByName).toBeNull();
+  });
+
+  it("⚠️ falls back to passive voice for an id it cannot resolve, and NEVER exposes it", () => {
+    // A departed member: gone from the roster, so the id resolves to nothing.
+    // This is the rule the boolean existed to enforce and it has to survive the
+    // boolean gaining a companion.
+    const m = fromApprovalMessage(
+      data({ status: "executed", decisionBy: "u-departed-9f21" }),
+    ME,
+      MEMBERS,
+    );
+    expect(m.decidedByViewer).toBe(false);
+    expect(m.decidedByName).toBeNull();
+    // Nothing anywhere on the model carries the raw id.
+    expect(JSON.stringify(m)).not.toContain("u-departed-9f21");
+  });
+
+  it("falls back the same way when there is no roster at all", () => {
+    // `MessageRowActions` is optional all the way down from MessageList, so a row
+    // can genuinely render without members. No roster means no name — not a crash
+    // and not a raw id.
+    const m = fromApprovalMessage(data({ status: "executed", decisionBy: THEM }), ME);
+    expect(m.decidedByName).toBeNull();
+  });
+
+  it("never names the assistant bot as though it were a person", () => {
+    // The bot IS in `channel.members`, so it would otherwise resolve to
+    // "Assistant" and read as a colleague on the one surface whose entire
+    // purpose is who-decided-what.
+    const withBot = [
+      ...MEMBERS,
+      { id: "quikchat-assistant-bot", displayName: "Assistant", avatarUrl: null },
+    ];
+    const m = fromApprovalMessage(
+      data({ status: "executed", decisionBy: "quikchat-assistant-bot" }),
+      ME,
+      withBot,
+    );
+    expect(m.decidedByName).toBeNull();
+    expect(m.decidedByViewer).toBe(false);
+  });
+
+  it("names nobody on a row nobody decided", () => {
+    const m = fromApprovalMessage(
+      data({ status: "cancelled", decisionBy: null }),
+      ME,
+      MEMBERS,
+    );
+    expect(m.decidedByViewer).toBe(false);
+    expect(m.decidedByName).toBeNull();
+  });
+});
+
+describe("resolveDecider", () => {
+  it("is the whole precedence in one place", () => {
+    expect(resolveDecider(null, ME, MEMBERS)).toEqual({
+      decidedByViewer: false,
+      decidedByName: null,
+    });
+    expect(resolveDecider(ME, ME, MEMBERS)).toEqual({
+      decidedByViewer: true,
+      decidedByName: null,
+    });
+    expect(resolveDecider(THEM, ME, MEMBERS)).toEqual({
+      decidedByViewer: false,
+      decidedByName: "Priya",
+    });
+    expect(resolveDecider("u-nobody", ME, MEMBERS)).toEqual({
+      decidedByViewer: false,
+      decidedByName: null,
+    });
+  });
+
+  it("treats a blank display name as unresolved rather than rendering an empty actor", () => {
+    // An empty name would render an actor line with no subject in it — worse
+    // than the passive line, and harder to spot.
+    const blank = [{ id: THEM, displayName: "", avatarUrl: null }];
+    expect(resolveDecider(THEM, ME, blank).decidedByName).toBeNull();
   });
 });

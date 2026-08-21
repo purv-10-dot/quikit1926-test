@@ -246,22 +246,48 @@ export const STUB_AGED_REQUEST_ID = "stub-req-aged-out";
 export const STUB_PARKED_REQUEST_ID = "stub-req-pending";
 
 /**
+ * The parked write whose ledger row is decided by someone the channel roster
+ * cannot name — a DEPARTED MEMBER, which is the real-world case.
+ *
+ * `decisionBy` is a raw user id; the card resolves it against `channel.members`
+ * and, finding nothing, must fall back to passive voice and NEVER print the id.
+ * That is the rule the `decidedByViewer` boolean existed to enforce, and it has
+ * to survive the boolean gaining a name companion.
+ *
+ * Reachable by hand: `/approve-departed something`, then reopen the channel so
+ * the reconcile pass patches the card from the row below. Same reasoning as
+ * `custom_field_7` and the summary-less `cancelled` fixture — a fallback only a
+ * unit test can reach is one nobody notices breaking.
+ */
+export const STUB_DEPARTED_REQUEST_ID = "stub-req-departed-decider";
+
+/** A user id belonging to nobody in any channel — see above. */
+export const STUB_DEPARTED_USER_ID = "u-departed-9f21";
+
+/**
  * Map a prompt to a parked-write frame, or null for a normal answer. Trigger
  * words rather than randomness so a local run is repeatable.
  */
 function parkedRequestFor(prompt: string): RuntimeEvent | null {
   const p = prompt.trim().toLowerCase();
   const aged = p.startsWith("/approve-aged");
-  if (!aged && !p.startsWith("/approve")) return null;
+  const departed = p.startsWith("/approve-departed");
+  if (!aged && !departed && !p.startsWith("/approve")) return null;
   return {
     type: "approval_needed",
-    requestId: aged ? STUB_AGED_REQUEST_ID : STUB_PARKED_REQUEST_ID,
+    requestId: aged
+      ? STUB_AGED_REQUEST_ID
+      : departed
+        ? STUB_DEPARTED_REQUEST_ID
+        : STUB_PARKED_REQUEST_ID,
     appId: "quiktrack",
     toolName: "create_issue",
     riskClass: "soft_write",
     summary: aged
       ? "Create a QuikTrack issue that will age out of the ledger."
-      : "Create a QuikTrack issue titled “Login fails on Safari”.",
+      : departed
+        ? "Create a QuikTrack issue decided by someone who has since left."
+        : "Create a QuikTrack issue titled “Login fails on Safari”.",
     toolInput: {
       projectId: "QTRK",
       title: "Login fails on Safari",
@@ -415,6 +441,32 @@ function stubApprovalRows(orgId: string, userId: string): AssistApprovalRow[] {
        * "it renders" stays true locally right up until someone opens Activity in
        * UAT.
        */
+    },
+    {
+      ...base,
+      /**
+       * Terminal, and decided by a user who is in NO channel roster. The card
+       * built from this must fall back to passive voice — never `u-departed-9f21`
+       * on screen. See STUB_DEPARTED_REQUEST_ID.
+       *
+       * APPENDED, not inserted: several tests in `approvals.test.ts` assert
+       * this list POSITIONALLY (the limit/offset paging cases), and order
+       * carries no meaning here beyond what those assertions pinned first.
+       */
+      id: STUB_DEPARTED_REQUEST_ID,
+      toolName: "create_issue",
+      toolInput: { projectId: "QTRK", title: "Filed before they left" },
+      riskClass: "soft_write",
+      status: "executed",
+      decisionBy: STUB_DEPARTED_USER_ID,
+      decisionAgentId: "quikchat-assistant",
+      decisionAt: "2026-08-14T09:05:00.000Z",
+      executedAt: "2026-08-14T09:05:02.000Z",
+      expiresAt: null,
+      createdAt: STUB_NOW,
+      traceId: "stub-trace-departed",
+      result: { issueId: "QTRK-451" },
+      outcomeSummary: "Created QTRK-451 in QuikTrack.",
     },
   ];
 }

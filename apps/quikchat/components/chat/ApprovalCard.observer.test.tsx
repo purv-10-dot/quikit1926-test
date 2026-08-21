@@ -26,6 +26,7 @@ function model(over: Partial<ApprovalCardModel> = {}): ApprovalCardModel {
     status: "pending",
     outcomeSummary: null,
     decidedByViewer: false,
+    decidedByName: null,
     viewerMayAct: true,
     blockedReason: null,
     error: null,
@@ -120,5 +121,118 @@ describe("ApprovalCard — unconfirmed", () => {
     const onDecide = vi.fn();
     render(<ApprovalCard model={unconfirmed} onDecide={onDecide} />);
     expect(onDecide).not.toHaveBeenCalled();
+  });
+});
+
+describe("ApprovalCard — naming the approver", () => {
+  it("names a third party for an observer", () => {
+    render(
+      <ApprovalCard
+        model={model({
+          status: "executed",
+          outcomeSummary: "Created QUIKSC-290 in QuikTrack.",
+          decidedByName: "Priya",
+          viewerMayAct: false,
+          blockedReason: "terminal",
+          showToolInput: false,
+        })}
+        onDecide={noop}
+      />,
+    );
+    expect(screen.getByTestId("approval-actor").textContent).toBe("Priya approved this");
+    // WHO and WHAT are both present, and the what is the runtime's sentence.
+    expect(screen.getByTestId("approval-terminal").textContent).toContain(
+      "Created QUIKSC-290 in QuikTrack.",
+    );
+  });
+
+  it("says \"you\" when the viewer decided, never their own name", () => {
+    render(
+      <ApprovalCard
+        model={model({ status: "rejected", decidedByViewer: true, blockedReason: "terminal" })}
+        onDecide={noop}
+      />,
+    );
+    expect(screen.getByTestId("approval-actor").textContent).toBe("You declined this");
+  });
+
+  it("⚠️ falls back to passive voice when the id resolved to nothing", () => {
+    // The departed-member case. No actor line at all, and the passive label
+    // carries the state instead.
+    render(
+      <ApprovalCard
+        model={model({ status: "rejected", blockedReason: "terminal" })}
+        onDecide={noop}
+      />,
+    );
+    expect(screen.queryByTestId("approval-actor")).toBeNull();
+    const line = screen.getByTestId("approval-terminal").textContent ?? "";
+    expect(line).toMatch(/rejected/i);
+    expect(line).not.toMatch(/you /i);
+    // The rule the boolean existed to enforce, restated for the name era.
+    expect(line).not.toMatch(/u-/);
+  });
+
+  it("suppresses the status label once an actor line carries it", () => {
+    render(
+      <ApprovalCard
+        model={model({ status: "executed", decidedByName: "Priya", blockedReason: "terminal" })}
+        onDecide={noop}
+      />,
+    );
+    const line = screen.getByTestId("approval-terminal").textContent ?? "";
+    // One statement of one fact: the actor sentence, carrying the outcome
+    // because there is no `outcomeSummary` beneath it to do so.
+    expect(line).toContain("Priya approved this — the action completed");
+    // ...and not the generic label as well.
+    expect(line).not.toContain("Approved — action completed");
+  });
+
+  it("drops the outcome clause when the runtime already said what happened", () => {
+    render(
+      <ApprovalCard
+        model={model({
+          status: "executed",
+          decidedByName: "Priya",
+          outcomeSummary: "Created QUIKSC-290 in QuikTrack.",
+          blockedReason: "terminal",
+        })}
+        onDecide={noop}
+      />,
+    );
+    expect(screen.getByTestId("approval-actor").textContent).toBe("Priya approved this");
+    // Our generic wording stays off a row the runtime described properly.
+    expect(screen.getByTestId("approval-terminal").textContent).not.toMatch(
+      /action completed/i,
+    );
+  });
+
+  it("names the actor on a failed row without losing the failure or the app’s error", () => {
+    render(
+      <ApprovalCard
+        model={model({
+          status: "failed",
+          decidedByName: "Priya",
+          error: "dueDate is in the past",
+          blockedReason: "terminal",
+        })}
+        onDecide={noop}
+      />,
+    );
+    const line = screen.getByTestId("approval-terminal").textContent ?? "";
+    expect(line).toContain("Priya approved this — the action failed");
+    // The target app's own words are the only actionable text; they survive.
+    expect(line).toContain("dueDate is in the past");
+  });
+
+  it("has no actor line on a row nobody decided", () => {
+    render(
+      <ApprovalCard
+        model={model({ status: "cancelled", blockedReason: "terminal" })}
+        onDecide={noop}
+      />,
+    );
+    expect(screen.queryByTestId("approval-actor")).toBeNull();
+    expect(screen.getByTestId("approval-terminal").textContent).toMatch(/withdrawn/i);
   });
 });

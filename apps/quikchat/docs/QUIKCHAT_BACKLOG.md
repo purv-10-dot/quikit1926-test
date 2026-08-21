@@ -1072,3 +1072,91 @@ Unchanged and still blocking a sentence the runtime themselves asked for
   observer. Accepted; bound it later rather than lose the proposal trace.
 - **`RUNTIME_TOKEN_DEBUG`** — still dormant in the tree, left until the runtime
   team confirms the tool-catalog question is closed. Removing it drops 5 tests.
+
+---
+
+## Naming the approver, `decisionAgentId`, and the debug flag (21 Aug 2026)
+
+### The runtime cannot name people, and should not learn how
+
+Approvals reach the runtime on an agent JWT carrying only `userId`/`orgId`;
+naming a person means a lookup against a platform table they do not own. Line
+drawn: **they say what happened, we say who.** `decisionBy` is resolved against
+the channel roster the card already holds.
+
+Only ONE of the three card surfaces needed it, and the reason the other two did
+not is worth keeping:
+
+| Surface | Roster? | Third-party name reachable? |
+|---|---|---|
+| Live turn | yes (`channel.members`) | No — the actor is always the viewer; "you" wins |
+| Activity | **no**, and no channel either (`AssistApprovalRow` has no `channelId`) | No — the ledger is token-scoped and v1 has requester == approver, so `decisionBy` is the viewer or null. A name would be unreachable code, not a gap. |
+| Persisted card | yes (`actions.members`) | **Yes — the only one.** |
+
+When approver ≠ requester ships, Activity becomes reachable and has no channel
+to resolve from. Seam left in `fromApprovalRow`; deliberately not built for.
+
+`decidedByViewer` stayed a boolean and gained `decidedByName` beside it, so the
+precedence is viewer → name → passive. The rule the boolean existed to enforce —
+**never print the raw id** — is unchanged and now covers three more ways to fail:
+a departed member, no roster at all (`MessageRowActions` is optional the whole
+way down from `MessageList`), and a blank `displayName`.
+
+The assistant bot is excluded explicitly. It IS in `channel.members`, so an
+agent-decided row would otherwise render as a colleague named "Assistant" on the
+one surface whose entire purpose is who-decided-what.
+
+### The subtlety that took two attempts: `withOutcome`
+
+The actor line suppresses the fallback `statusLabel`, or the card states one fact
+twice. But suppressing a line only works if something still carries what it said,
+and **approving is not the same event as executing** — the whole reason `failed`
+exists is that the first can succeed and the second fail. So `"X approved this"`
+alone silently drops the outcome on exactly the rows with no `outcomeSummary`.
+
+First fix folded the outcome in unconditionally — which put our generic wording
+back on every row the runtime had already described properly, the same redundancy
+one layer along. A pre-existing test caught it (`not.toMatch(/action completed/i)`
+when a summary is present). The clause now appears only when the sentence is
+standing in for the suppressed label:
+
+```
+no outcomeSummary → "You approved this — the action completed"
+   outcomeSummary → "You approved this"  +  "Created QTRK-903 in QuikTrack."
+```
+
+One wording change to an existing assertion: the settled line for your own
+rejection now reads "You declined this" rather than the passive "Rejected". The
+state is pinned by `data-outcome` instead, so that test no longer depends on
+wording at all.
+
+### `decisionAgentId` is not a divergence detector
+
+We asked for it as one. It cannot be one, and the reason is structural: the
+reconcile pass only examines cards where OUR copy is still `pending`, and a
+pending card has no decision on our side to compare against. The field can only
+be populated on the ledger copy of a row we have **already decided to patch**, so
+it changes no repair, no PATCH count, and no `unconfirmed` trigger (that fires on
+a row's absence; this is a field on a present row).
+
+Wired anyway, for the thing it IS good for: at the moment we patch, it separates
+"our own `applyApprovalDecision` failed silently" (our bug) from "decided
+elsewhere" (expected). Those were indistinguishable in the logs. **A log
+dimension, never control flow** — see the note on the contract, which exists so
+nobody wires it as a branch later.
+
+### Reachable in the stub
+
+`STUB_DEPARTED_REQUEST_ID` / `/approve-departed` parks a write whose ledger row
+is decided by `u-departed-9f21` — a user in no roster anywhere. Reconcile patches
+the card from it, the name fails to resolve, and the passive fallback renders.
+That path is now reachable by hand in seconds instead of requiring someone to
+actually leave the org. It joins the other two shaped-by-what-they-lack fixtures;
+`parked.test.ts` guards all three against being "completed".
+
+### Removed
+
+`RUNTIME_TOKEN_DEBUG` and `logRuntimeTokenPayload` are gone — flag, helper, call
+site, the 5-test describe, and the now-unused `errorFields` import. The 4 claim
+assertions in `token.test.ts` stay; they were always the durable half, and the
+comment there now says so without pointing at a flag that no longer exists.

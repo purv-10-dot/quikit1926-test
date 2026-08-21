@@ -676,7 +676,10 @@ export function MessageRow({
       return (
         <div className="qc-row qc-row--approval" data-message-id={message.id}>
           <ApprovalCard
-            model={fromApprovalMessage(approval, currentUserId)}
+            // The channel roster, so a decision taken by someone else can be
+            // named. Optional all the way down from MessageList, and absent
+            // simply means passive voice — never a raw id.
+            model={fromApprovalMessage(approval, currentUserId, actions?.members)}
             onDecide={actions?.onDecideApproval ?? rejectUnavailableDecision}
             onSettled={actions?.onApprovalSettled}
           />

@@ -26,7 +26,50 @@ import type {
   AssistApprovalRow,
   AssistApprovalStatus,
   AssistRiskClass,
+  PublicUser,
 } from "@/lib/shared";
+
+/**
+ * Mirror of `ASSISTANT_BOT_USER_ID` in @quikit/shared. Defined locally, NOT
+ * value-imported, so this module — which client components pull — never drags
+ * the shared barrel's server-only deps (ioredis/sentry) into the browser
+ * bundle. Every other import here is `import type`, which erases. Kept in sync
+ * with the mirrors in ChatWorkspace.tsx / ticks.ts / SchedulingModal.tsx.
+ */
+const ASSISTANT_BOT_USER_ID = "quikchat-assistant-bot";
+
+/**
+ * Who decided, resolved for display.
+ *
+ * ── THE PRECEDENCE, AND WHY EACH STEP EXISTS ───────────────────────────────
+ *  1. Nobody decided → neither. `cancelled` and `expired` rows have no human
+ *     actor at all, and the card's passive wording exists for exactly them.
+ *  2. The VIEWER decided → "you", never their own name. It is what they would
+ *     say, and it stays right when two people share a display name.
+ *  3. The BOT decided → neither. Not reachable today (decisions carry a human
+ *     userId), but an agent-decided row rendering as a person named
+ *     "Assistant" would be a quietly wrong attribution on the one surface
+ *     whose whole purpose is who-decided-what. Excluded on purpose.
+ *  4. A member we can name → the name.
+ *  5. Anything else → NEITHER, and the card falls back to passive voice.
+ *     A departed member is the real case: they are gone from the roster, so
+ *     the id resolves to nothing. Printing the raw id is the one outcome
+ *     ruled out — it is the rule the boolean existed to enforce, and it
+ *     survives the boolean gaining a companion.
+ */
+export function resolveDecider(
+  decisionBy: string | null | undefined,
+  viewerId: string,
+  members?: readonly PublicUser[],
+): { decidedByViewer: boolean; decidedByName: string | null } {
+  if (!decisionBy) return { decidedByViewer: false, decidedByName: null };
+  if (decisionBy === viewerId) return { decidedByViewer: true, decidedByName: null };
+  if (decisionBy === ASSISTANT_BOT_USER_ID) {
+    return { decidedByViewer: false, decidedByName: null };
+  }
+  const name = members?.find((m) => m.id === decisionBy)?.displayName;
+  return { decidedByViewer: false, decidedByName: name || null };
+}
 
 /** Risk classes we know how to style, most dangerous last. */
 const KNOWN_RISK: readonly AssistRiskClass[] = ["soft_write", "medium_write", "high_risk"];
@@ -114,6 +157,16 @@ export interface ApprovalCardModel {
    * there, not from a lookup bolted on here.
    */
   decidedByViewer: boolean;
+  /**
+   * The decider's display name, when they are someone OTHER than the viewer and
+   * we can resolve them. `null` for the viewer themselves ("you" wins), for a
+   * row nobody decided, and — importantly — for an id that resolves to nothing.
+   *
+   * Only `fromApprovalMessage` can ever populate this, because it is the only
+   * adapter whose surface can show a decision the viewer did not take. See the
+   * note on each of the other two.
+   */
+  decidedByName: string | null;
   /**
    * May this viewer act — IGNORING THE CLOCK.
    *
@@ -229,6 +282,10 @@ export function fromApprovalRequest(req: AssistApprovalRequest): ApprovalCardMod
     // here; see `SettledLine`.
     outcomeSummary: null,
     decidedByViewer: false,
+    // A live frame is always `pending` — nothing has been decided yet. Once it
+    // is, the decision was the VIEWER's (it arrived on their own stream), and
+    // `SettledLine` renders "you" from the decision response. No name to find.
+    decidedByName: null,
     viewerMayAct: true,
     blockedReason: null,
     error: null,
@@ -289,6 +346,21 @@ export function fromApprovalRow(row: AssistApprovalRow, viewerId: string): Appro
     // `decisionBy` is null on rows nobody decided (pending, expired) and on a
     // `cancelled` row the runtime attributed to no one.
     decidedByViewer: row.decisionBy != null && row.decisionBy === viewerId,
+    /**
+     * ALWAYS null, and not for want of a members list.
+     *
+     * The ledger is scoped to the caller by the minted token, and in v1 the
+     * requester IS the approver — so `decisionBy` on every row this adapter can
+     * ever see is either the viewer's own id or null. "You" or passive covers
+     * 100% of it, and a name here would be unreachable code.
+     *
+     * ⚠️ SEAM, the same one `viewerMayAct` carries above: the day an approver
+     * who is not the requester ships, this becomes reachable — and Activity has
+     * no channel to resolve names from (`AssistApprovalRow` carries no
+     * `channelId`). It will need an org-level lookup or a name on the row, not
+     * a members prop threaded down. Deliberately not built for yet.
+     */
+    decidedByName: null,
     viewerMayAct: isPending && isRequester,
     blockedReason: !isPending ? "terminal" : !isRequester ? "not-requester" : null,
     error: row.error,
@@ -327,6 +399,14 @@ export function fromApprovalRow(row: AssistApprovalRow, viewerId: string): Appro
 export function fromApprovalMessage(
   data: ApprovalMessageData,
   viewerId: string,
+  /**
+   * The channel roster, for resolving `decisionBy` to a name. OPTIONAL, and the
+   * optionality is load-bearing: `MessageRowActions` is itself optional all the
+   * way down from `MessageList`, so a row can genuinely render without one. No
+   * members simply means no name, which is the same passive fallback a departed
+   * member takes — never a raw id, and never a blank where a name should be.
+   */
+  members?: readonly PublicUser[],
 ): ApprovalCardModel {
   const { risk, riskIsUnrecognised } = normaliseRisk(data.riskClass);
   // The same POSITIVE check for pending that `fromApprovalRow` makes, and for
@@ -362,7 +442,7 @@ export function fromApprovalMessage(
     // the card branches on presence and `""` would win that branch and render
     // a blank outcome.
     outcomeSummary: data.outcomeSummary || null,
-    decidedByViewer: data.decisionBy != null && data.decisionBy === viewerId,
+    ...resolveDecider(data.decisionBy, viewerId, members),
     viewerMayAct: isPending && isRequester && !isUnconfirmed,
     blockedReason,
     error: data.error || null,

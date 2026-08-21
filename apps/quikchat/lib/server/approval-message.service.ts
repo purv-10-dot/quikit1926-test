@@ -34,7 +34,11 @@ import type {
   MessageDto,
   OrgContext,
 } from "@/lib/shared";
-import { ASSISTANT_BOT_USER_ID, ensureAssistantBot } from "./assistant.service";
+import {
+  ASSISTANT_BOT_AGENT_ID,
+  ASSISTANT_BOT_USER_ID,
+  ensureAssistantBot,
+} from "./assistant.service";
 import { errorFields, logger } from "@/lib/shared/logger";
 import { toMessageDto, type MessageRow } from "./helpers";
 import { readApprovalMessageData } from "@/lib/approval-card";
@@ -208,6 +212,10 @@ export async function applyApprovalDecision(
       outcomeSummary: decision.outcomeSummary ?? null,
       error: decision.error ?? null,
       decisionBy: opts.decisionBy ?? null,
+      // This decision came through our relay, by definition — we are the code
+      // that took it. Stamped so a later reconcile comparing against the ledger
+      // is looking at the same fact from both sides.
+      decisionAgentId: ASSISTANT_BOT_AGENT_ID,
       decisionAt: at,
       confirmedAt: at,
       // A decided card is no longer waiting on anything, so any earlier
@@ -229,6 +237,7 @@ function fromLedgerRow(row: AssistApprovalRow, at: string): Partial<ApprovalMess
     outcomeSummary: row.outcomeSummary ?? null,
     error: row.error ?? null,
     decisionBy: row.decisionBy ?? null,
+    decisionAgentId: row.decisionAgentId ?? null,
     decisionAt: row.decisionAt ?? null,
     expiresAt: row.expiresAt ?? null,
     confirmedAt: at,
@@ -306,6 +315,32 @@ export async function reconcileChannelApprovals(
       // attributed to opening a conversation. If an "as of" line is ever added,
       // this is where it comes back, together with the thing that renders it.
       if (agrees(mine, theirs)) continue;
+      /**
+       * THE ONE MOMENT `decisionAgentId` IS WORTH ANYTHING.
+       *
+       * Our copy says `pending` and the ledger says otherwise, so something
+       * happened that our decision relay did not record. Two very different
+       * causes, indistinguishable in the logs until now:
+       *
+       *   - it came through US and our own `applyApprovalDecision` failed
+       *     silently (it swallows and logs by design) — OUR bug, worth an alert;
+       *   - it was taken elsewhere — a direct runtime call, another client, the
+       *     expiry sweep — which is exactly what this pass exists to repair.
+       *
+       * A DIMENSION, not a branch. The repair is identical either way, and the
+       * field cannot inform the repair decision — see the note on the contract.
+       */
+      logger.info(
+        {
+          orgId: ctx.orgId,
+          channelId,
+          requestId: mine.requestId,
+          status: theirs.status,
+          decisionAgentId: theirs.decisionAgentId ?? null,
+          decidedViaQuikchat: theirs.decisionAgentId === ASSISTANT_BOT_AGENT_ID,
+        },
+        "approval message: snapshot behind the ledger, repairing",
+      );
       await patchApprovalMessage(ctx.orgId, row as MessageRow, fromLedgerRow(theirs, at));
       result.patched += 1;
       continue;

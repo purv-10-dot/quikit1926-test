@@ -268,15 +268,23 @@ user is told to refresh and check, never to try again.
 
 ---
 
-## 🔴 Open ask for the runtime team — enough on the ledger row to name who did what
+## 🔴 Open ask for the runtime team — the PROPOSAL summary on the ledger row
 
-**Three fields, one ask.** The outcome string shipped on 18 Aug as
-`outcomeSummary` and is wired. What is left is everything needed to render one
-sentence the runtime team themselves proposed — *"Priya approved — QUIKSC-290
-created"* — which is **not renderable today**, on any surface, for want of the
-second and third items below.
+**Down to one.** This section listed three on 20 Aug. Two closed on 21 Aug and
+are recorded below so the reasoning is not re-litigated:
 
-Updated 20 Aug 2026, after the approval card was persisted as a message.
+- **`decisionAgentId` — SHIPPED and wired**, though not for the purpose it was
+  requested for. See §3.
+- **An actor display name — WITHDRAWN, and correctly so.** Approvals reach the
+  runtime on an agent JWT carrying only `userId`/`orgId`, so naming a person
+  would mean a lookup against a platform table the runtime does not own. That is
+  the right place to draw the line: **the runtime says what happened, QuikChat
+  says who.** We resolve `decisionBy` against the channel roster we already
+  hold. See §2.
+
+What remains is the original ask, unchanged.
+
+Updated 21 Aug 2026.
 
 ### 1. A proposal `summary` on `AssistApprovalRow`
 
@@ -308,33 +316,51 @@ captures the proposal sentence off the SSE frame at proposal time — the one
 moment it exists — and persists it, so that surface no longer falls back.
 **Activity is now the only place still showing a raw `toolName`.**
 
-### 2. An actor display name for `decisionBy`
+### 2. ~~An actor display name for `decisionBy`~~ — WITHDRAWN, ours to do
 
-`decisionBy` is a raw user id. QuikChat has no directory lookup for it, which is
-why `ApprovalCardModel.decidedByViewer` is a BOOLEAN: the card can truthfully
-say "you" or stay passive ("Rejected"), and printing `u-7f3a91` at someone is
-worse than the passive voice.
+Settled 21 Aug. The runtime cannot name anyone without a lookup against a table
+it does not own, and should not grow one for this. **QuikChat resolves it**:
+`decisionBy` is matched against the channel roster the card already has, so the
+persisted approval card can say *"Priya approved this"* beside the runtime's
+*"Created QUIKSC-290 in QuikTrack."*
 
-So no card can currently name a third party. Either a display name alongside
-`decisionBy`, or the name folded into `outcomeSummary` by the generator that
-already has the directory — we do not mind which, and will not bolt a lookup on
-here for the same reason we will not synthesise `summary`.
+Note what did NOT change: an id that resolves to nothing — a departed member —
+still falls back to passive voice, and **the raw id is never printed**. That was
+the rule the boolean encoded, and it survives the boolean gaining a companion.
 
-### 3. `decisionAgentId` on `AssistApprovalRow`
+The other two surfaces need nothing. The live turn's actor is always the viewer
+("you" wins), and Activity is scoped to the caller by the minted token — with
+requester == approver in v1, `decisionBy` there is the viewer or null, so a name
+would be unreachable code. **If an approver who is not the requester ever ships,
+that stops being true**, and Activity has no channel to resolve names from
+(`AssistApprovalRow` carries no `channelId`) — it would need an org-level lookup
+or a name on the row after all. Seam left in `fromApprovalRow`.
 
-Described to us as live, but **present nowhere in the payloads we receive** —
-not on the ledger row, not on the decision response. Grep of our tree finds it
-only in this paragraph.
+### 3. `decisionAgentId` — SHIPPED, and it is not the thing we asked for
 
-It matters more than a provenance nicety. A persisted approval card holds a
-snapshot of the request, patched by our own decision relay; a decision taken any
-OTHER way (a direct API call, another client, the expiry sweep, a
-module-disable cancel) never reaches that patch, and our copy would read
-`pending` forever. Today we bound that by re-reading the ledger on channel open
-and comparing every field. `decisionAgentId` would replace that comparison with
-a positive signal — a decision carrying no QuikChat agent id was, by
-definition, taken somewhere we could not see — and would let the card say so
-instead of merely admitting it cannot confirm.
+It is on the row and we now type, carry and log it. But we asked for it as a
+**divergence detector**, and it cannot be one — that is worth writing down so
+nobody wires it as one later.
+
+The reconcile pass only examines cards where OUR copy is still `pending`. A
+pending card has no decision on our side at all, so there is no
+`decisionAgentId` to compare against; the field can only ever be populated on
+the ledger's copy of a row we have **already decided to patch**. It cannot make
+a matching row mismatch or a mismatching row match, so it changes no repair, no
+PATCH count, and no `unconfirmed` trigger (that one fires on a row's ABSENCE,
+and this is a field on a present row).
+
+**What it is genuinely good for**, and what we use it for: at the moment we do
+patch, it separates two failures that were previously identical in the logs —
+
+- `decisionAgentId === ASSISTANT_BOT_AGENT_ID` → the decision came through us
+  and our own `applyApprovalDecision` failed silently (it swallows by design).
+  **That is our bug**, and worth alerting on.
+- anything else, or absent → taken elsewhere: a direct call, another client, the
+  expiry sweep. Expected, and exactly what the pass exists to repair.
+
+Logged as a dimension on `approval message: snapshot behind the ledger,
+repairing`. Deliberately **not control flow**.
 
 ---
 

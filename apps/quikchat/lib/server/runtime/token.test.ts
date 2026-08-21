@@ -48,8 +48,8 @@ describe("mintRuntimeToken", () => {
    * not an answer.
    *
    * So: pin the whole key set. This is what makes the source readable as the
-   * complete story, and it is the part that outlives the temporary
-   * `RUNTIME_TOKEN_DEBUG` logging added for the same diagnosis.
+   * complete story. The temporary decoded-payload logging added alongside it has
+   * since been removed; this assertion is the part that was worth keeping.
    */
   it("carries EXACTLY these claims — nothing extra rides along", async () => {
     const token = await mintRuntimeToken({ orgId: "o1", botAgentId: "bot-1", userId: "u1" });

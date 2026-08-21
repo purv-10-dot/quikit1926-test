@@ -29,6 +29,7 @@ function model(over: Partial<ApprovalCardModel> = {}): ApprovalCardModel {
     status: "pending",
     outcomeSummary: null,
     decidedByViewer: false,
+    decidedByName: null,
     viewerMayAct: true,
     blockedReason: null,
     error: null,
@@ -511,7 +512,16 @@ describe("ApprovalCard — deciding", () => {
 
     await waitFor(() => expect(screen.getByTestId("approval-settled")).toBeTruthy());
     expect(onDecide).toHaveBeenCalledWith("r-1", "reject");
-    expect(screen.getByTestId("approval-settled").textContent).toMatch(/rejected/i);
+    // The STATE is asserted machine-readably, so this test does not depend on
+    // wording at all.
+    expect(screen.getByTestId("approval-settled").getAttribute("data-outcome")).toBe(
+      "rejected",
+    );
+    // The WORDING is now "You declined this" — the card names the actor where it
+    // truthfully can, and "declined" is the verb it uses for a person rejecting
+    // a write. The old passive "Rejected" survives as the label for a rejection
+    // nobody can be named for; see `actorSentence` / `statusLabel`.
+    expect(screen.getByTestId("approval-settled").textContent).toMatch(/you declined this/i);
   });
 
   /**

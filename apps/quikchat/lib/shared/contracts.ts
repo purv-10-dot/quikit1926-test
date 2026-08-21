@@ -300,6 +300,24 @@ export interface AssistApprovalRow {
   mode: string;
   status: AssistApprovalStatus;
   decisionBy: string | null;
+  /**
+   * WHICH AGENT the decision came through — our bot id when it went via
+   * QuikChat's relay, something else (or absent) when it did not.
+   *
+   * ⚠️ NOT a divergence detector, despite being asked for as one. The
+   * reconciler only compares rows where OUR copy is still `pending`, and a
+   * pending row has no decision on either side — so this can never affect
+   * whether a card is patched. See `reconcileChannelApprovals`.
+   *
+   * What it IS good for: at the moment we DO patch, it separates two failures
+   * that are otherwise identical in the logs — our own `applyApprovalDecision`
+   * having silently failed (it swallows by design, and that is OUR bug) versus
+   * the decision genuinely having been taken elsewhere (expected). Logged as a
+   * dimension, never used as control flow.
+   *
+   * Optional: rows predating the field, and rows nobody decided, carry none.
+   */
+  decisionAgentId?: string | null;
   decisionAt: string | null;
   executedAt: string | null;
   expiresAt: string | null;
@@ -483,6 +501,12 @@ export interface ApprovalMessageData {
   error?: string | null;
   /** Who decided, when known. A raw id — resolved to a name only for display. */
   decisionBy?: string | null;
+  /**
+   * Which agent the decision came through, carried from the ledger (or stamped
+   * as our own when our relay took it). Kept for the log dimension described on
+   * `AssistApprovalRow.decisionAgentId`; nothing renders it.
+   */
+  decisionAgentId?: string | null;
   decisionAt?: string | null;
   /**
    * Set when reconciliation looked for this request and the ledger no longer
