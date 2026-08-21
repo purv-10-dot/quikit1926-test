@@ -77,11 +77,11 @@ export function ConnectedOrgs({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            <th className="bg-accent-50 px-6 py-2 font-medium dark:bg-accent-900/20">Connected organization</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Repository access</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Backfill status</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20">Permissions</th>
-            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-accent-900/20"></th>
+            <th className="bg-accent-50 px-6 py-2 font-medium dark:bg-gray-900">Connected organization</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900">Repository access</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900">Backfill status</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900">Permissions</th>
+            <th className="bg-accent-50 px-4 py-2 font-medium dark:bg-gray-900"></th>
           </tr>
         </thead>
         <tbody>

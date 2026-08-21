@@ -95,7 +95,7 @@ export function SuiteTree({
         <div key={node.id}>
           <div
             className={`group flex items-center rounded-md pr-1 ${
-              isActive ? "bg-accent-50" : "hover:bg-gray-50"
+              isActive ? "bg-accent-50 dark:bg-gray-700" : "hover:bg-gray-50 dark:hover:bg-gray-800"
             }`}
             style={{ paddingLeft: `${depth * 12 + 22}px` }}
           >
@@ -123,7 +123,7 @@ export function SuiteTree({
                 onSelectSection(node.id);
               }}
               className={`flex-1 truncate py-1.5 text-left text-[13px] ${
-                isActive ? "font-medium text-accent-800" : "text-gray-700"
+                isActive ? "font-medium text-accent-800 dark:text-accent-200" : "text-gray-700 dark:text-gray-300"
               }`}
             >
               {node.name}
@@ -149,7 +149,7 @@ export function SuiteTree({
                   if (suiteId !== activeSuiteId) onSelectSuite(suiteId);
                   onAddSection(node.id);
                 }}
-                className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 hover:text-gray-700 focus:opacity-100 group-hover:opacity-100"
+                className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 focus:opacity-100 group-hover:opacity-100"
                 aria-label={`Add a folder inside ${node.name}`}
                 title="Add folder inside"
               >
@@ -165,7 +165,7 @@ export function SuiteTree({
   };
 
   return (
-    <div className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50/50">
+    <div className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
           Suites &amp; folders
@@ -216,7 +216,7 @@ export function SuiteTree({
               <div key={suite.id} className="mt-0.5">
                 <div
                   className={`group flex items-center rounded-md pr-1 ${
-                    showingAll ? "bg-accent-100" : "hover:bg-gray-100"
+                    showingAll ? "bg-accent-100 dark:bg-gray-700" : "hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   <button
@@ -249,7 +249,7 @@ export function SuiteTree({
                     <span
                       className={`truncate text-[13px] ${
                         showingAll
-                          ? "font-semibold text-accent-800"
+                          ? "font-semibold text-accent-800 dark:text-accent-200"
                           : "font-medium text-gray-800"
                       }`}
                     >
@@ -268,7 +268,7 @@ export function SuiteTree({
                         onSelectSuite(suite.id);
                         onAddSection(null);
                       }}
-                      className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 hover:text-gray-700 focus:opacity-100 group-hover:opacity-100"
+                      className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 focus:opacity-100 group-hover:opacity-100"
                       aria-label={`Add a folder in ${suite.name}`}
                       title="Add folder"
                     >

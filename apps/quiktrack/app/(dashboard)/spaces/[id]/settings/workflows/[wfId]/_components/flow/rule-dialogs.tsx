@@ -66,8 +66,8 @@ function ModalShell({
 }) {
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className={`flex max-h-[85vh] w-full ${wide ? "max-w-3xl" : "max-w-2xl"} flex-col rounded-lg bg-white shadow-xl`}>
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+      <div className={`flex max-h-[85vh] w-full ${wide ? "max-w-3xl" : "max-w-2xl"} flex-col rounded-lg bg-white dark:bg-gray-800 shadow-xl`}>
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-6 py-4">
           <div className="flex items-center gap-2">
             {onBack && (
               <button
@@ -86,7 +86,7 @@ function ModalShell({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-        <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-3">{footer}</div>
+        <div className="flex items-center justify-end gap-3 border-t border-gray-200 dark:border-gray-700 px-6 py-3">{footer}</div>
       </div>
     </div>,
     document.body,
@@ -157,7 +157,7 @@ export function AddRuleDialog({
     >
       <div className="flex h-[60vh] min-h-[24rem]">
         {/* Rule-type rail */}
-        <div className="w-56 shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-4">
+        <div className="w-56 shrink-0 overflow-y-auto border-r border-gray-200 dark:border-gray-700 px-3 py-4">
           <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Rule types</div>
           {rails.map((b) => (
             <button
@@ -165,7 +165,7 @@ export function AddRuleDialog({
               type="button"
               onClick={() => { setBucket(b.id); setSelected(null); }}
               className={`flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm ${
-                b.id === bucket ? "border-l-2 border-accent-500 bg-accent-50 font-medium text-accent-800" : "text-gray-700 hover:bg-gray-50"
+                b.id === bucket ? "border-l-2 border-accent-500 bg-accent-50 dark:bg-gray-700 font-medium text-accent-800 dark:text-gray-100" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
               }`}
             >
               <BucketIcon kind={b.id} /> {b.label}
@@ -175,7 +175,7 @@ export function AddRuleDialog({
 
         {/* Search + list */}
         <div className="flex min-w-0 flex-1 flex-col px-6 py-4">
-          <div className="mb-2 flex items-center gap-2 rounded border border-gray-300 px-2.5 py-2 focus-within:border-accent-500">
+          <div className="mb-2 flex items-center gap-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 px-2.5 py-2 focus-within:border-accent-500">
             <Search className="h-4 w-4 text-gray-400" />
             <input
               value={query}
@@ -192,7 +192,7 @@ export function AddRuleDialog({
                 type="button"
                 onClick={() => setSelected(m.type)}
                 className={`flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left ${
-                  m.type === selected ? "bg-accent-50 ring-1 ring-accent-300" : "hover:bg-gray-50"
+                  m.type === selected ? "bg-accent-50 dark:bg-gray-700 ring-1 ring-accent-300 dark:ring-gray-600" : "hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
               >
                 <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded bg-gray-100 text-gray-500">

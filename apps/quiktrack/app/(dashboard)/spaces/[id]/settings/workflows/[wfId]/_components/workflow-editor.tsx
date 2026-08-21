@@ -404,19 +404,19 @@ function EditorBody({
       </div>
 
       {/* Sub-toolbar: Diagram/Text + Show transition labels */}
-      <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-1.5">
-        <div className="flex rounded border border-gray-300 text-sm">
+      <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-1.5">
+        <div className="flex rounded border border-gray-300 dark:border-gray-600 text-sm">
           <button
             type="button"
             onClick={() => setTab("diagram")}
-            className={`px-3 py-1 ${tab === "diagram" ? "bg-accent-50 text-accent-700" : "text-gray-600"}`}
+            className={`px-3 py-1 ${tab === "diagram" ? "bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"}`}
           >
             Diagram
           </button>
           <button
             type="button"
             onClick={() => setTab("text")}
-            className={`border-l border-gray-300 px-3 py-1 ${tab === "text" ? "bg-accent-50 text-accent-700" : "text-gray-600"}`}
+            className={`border-l border-gray-300 dark:border-gray-600 px-3 py-1 ${tab === "text" ? "bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"}`}
           >
             Text
           </button>

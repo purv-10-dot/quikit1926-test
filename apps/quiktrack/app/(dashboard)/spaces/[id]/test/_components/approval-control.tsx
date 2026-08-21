@@ -132,13 +132,13 @@ export function ApprovalControl({
               type="button"
               onClick={() => setOpen((v) => !v)}
               disabled={busy}
-              className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
             >
               Change
               <ChevronDown className="h-3 w-3" />
             </button>
             {open && (
-              <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
                 {data.allowedNext.map((s) => {
                   const Icon = STATE_ICON[s] ?? FileEdit;
                   return (
@@ -147,7 +147,7 @@ export function ApprovalControl({
                       type="button"
                       disabled={busy}
                       onClick={() => move(s)}
-                      className="block w-full px-3 py-2 text-left hover:bg-gray-50 disabled:opacity-50"
+                      className="block w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                     >
                       <span className="flex items-center gap-1.5 text-xs font-medium text-gray-800">
                         <Icon className="h-3.5 w-3.5" />

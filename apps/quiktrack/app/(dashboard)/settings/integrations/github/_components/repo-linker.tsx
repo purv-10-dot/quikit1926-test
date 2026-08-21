@@ -127,7 +127,7 @@ export function RepoLinker({ installationRowId }: { installationRowId: string })
                       <Button
                         onClick={() => backfill.mutate(repo.repoId)}
                         disabled={backfill.isPending}
-                        className="bg-accent-50 text-accent-700 hover:bg-accent-100 inline-flex items-center gap-1.5 text-xs dark:bg-accent-900/20 dark:text-accent-300"
+                        className="border border-gray-200 bg-transparent text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 text-xs dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                       >
                         {backfill.isPending && backfill.variables === repo.repoId ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />

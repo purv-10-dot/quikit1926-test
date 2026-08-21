@@ -81,7 +81,7 @@ export function InlineText({
               }
         }
         className={`block truncate rounded px-1 py-0.5 ${
-          disabled ? "" : "cursor-text hover:bg-white hover:ring-1 hover:ring-gray-200"
+          disabled ? "" : "cursor-text hover:bg-white dark:hover:bg-gray-800 hover:ring-1 hover:ring-gray-200 dark:hover:ring-gray-700"
         } ${saving ? "opacity-50" : ""} ${className}`}
         title={disabled ? undefined : "Click to edit"}
       >
@@ -120,7 +120,7 @@ export function InlineText({
           void commit();
         }}
         aria-label="Save"
-        className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+        className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200"
       >
         <Check className="h-3.5 w-3.5" />
       </button>
@@ -131,7 +131,7 @@ export function InlineText({
           cancel();
         }}
         aria-label="Cancel"
-        className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+        className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -191,7 +191,7 @@ export function InlineSelect({
           swallow(e);
           setOpen((v) => !v);
         }}
-        className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white hover:ring-1 hover:ring-gray-200 ${
+        className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white dark:hover:bg-gray-800 hover:ring-1 hover:ring-gray-200 dark:hover:ring-gray-700 ${
           saving ? "opacity-50" : ""
         }`}
         title="Click to change"
@@ -201,7 +201,7 @@ export function InlineSelect({
       </button>
 
       {open && (
-        <span className="absolute left-0 z-30 mt-1 block max-h-56 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+        <span className="absolute left-0 z-30 mt-1 block max-h-56 w-44 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg">
           {options.map((o) => (
             <button
               key={o.value}
@@ -210,8 +210,8 @@ export function InlineSelect({
                 e.preventDefault();
                 void pick(o.value);
               }}
-              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent-50 ${
-                o.value === value ? "font-medium text-accent-700" : "text-gray-700"
+              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent-50 dark:hover:bg-gray-700 ${
+                o.value === value ? "font-medium text-accent-700 dark:text-accent-300" : "text-gray-700 dark:text-gray-300"
               }`}
             >
               {o.color && (

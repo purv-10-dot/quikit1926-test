@@ -295,7 +295,7 @@ export function DateField({
         const v = e.target.value;
         onChange(v ? new Date(`${v}T00:00:00.000Z`).toISOString() : null);
       }}
-      className="bg-transparent text-xs text-gray-800 rounded px-1 py-0.5 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+      className="bg-transparent text-xs text-gray-800 dark:text-gray-100 dark:[color-scheme:dark] rounded px-1 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
     />
   );
 }

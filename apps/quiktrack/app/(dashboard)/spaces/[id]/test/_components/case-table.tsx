@@ -202,7 +202,7 @@ export function CaseTable({
           <thead className="sticky top-0 z-10">
             <tr className="text-left">
               {selection && (
-                <th className="w-9 bg-accent-50 px-3 py-2">
+                <th className="w-9 bg-accent-50 dark:bg-gray-900 px-3 py-2">
                   <TriCheckbox
                     checked={selection.allSelected}
                     indeterminate={selection.someSelected}
@@ -212,12 +212,12 @@ export function CaseTable({
                   />
                 </th>
               )}
-              <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">ID</th>
-              <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Title</th>
+              <th className="bg-accent-50 dark:bg-gray-900 px-4 py-2 font-medium text-gray-700 dark:text-gray-300">ID</th>
+              <th className="bg-accent-50 dark:bg-gray-900 px-4 py-2 font-medium text-gray-700 dark:text-gray-300">Title</th>
               {shown.map((c) => (
                 <th
                   key={c.key}
-                  className="bg-accent-50 px-4 py-2 font-medium text-gray-700"
+                  className="bg-accent-50 dark:bg-gray-900 px-4 py-2 font-medium text-gray-700 dark:text-gray-300"
                 >
                   {c.label}
                 </th>
@@ -228,7 +228,7 @@ export function CaseTable({
             {rows.map((row) => (
               <tr
                 key={row.id}
-                className="cursor-pointer border-b border-gray-100 hover:bg-blue-50"
+                className="cursor-pointer border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50 dark:hover:bg-gray-800"
                 onClick={() => onOpen(row.id)}
               >
                 {selection && (
@@ -282,7 +282,7 @@ export function CaseTable({
       </div>
 
       {columns.includes("forecast") && (
-        <div className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500">
+        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
           {forecast.estimated ? (
             <>
               Forecast for these {rows.length}{" "}

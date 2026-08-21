@@ -60,14 +60,14 @@ export function RunRow({
     : null;
 
   return (
-    <div className="flex items-start gap-3 border-b border-gray-100 px-4 py-3 hover:bg-blue-50">
+    <div className="flex items-start gap-3 border-b border-gray-100 dark:border-gray-800 px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-800">
       <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ICON_CLASS[phase]}`} />
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2">
           <Link
             href={`/spaces/${projectId}/test/runs/${run.id}`}
-            className="truncate font-medium text-gray-900 hover:underline"
+            className="truncate font-medium text-gray-900 dark:text-gray-100 hover:underline"
           >
             {run.name}
           </Link>

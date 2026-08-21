@@ -103,7 +103,7 @@ export function TestsGridPane({
         <thead className="sticky top-0 z-10">
           <tr className="text-left">
             {selection && (
-              <th className="w-9 bg-accent-50 px-3 py-2">
+              <th className="w-9 bg-accent-50 dark:bg-gray-900 px-3 py-2">
                 <TriCheckbox
                   checked={selection.allSelected}
                   indeterminate={selection.someSelected}
@@ -112,12 +112,12 @@ export function TestsGridPane({
                 />
               </th>
             )}
-            <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">ID</th>
-            <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Title</th>
-            <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Labels</th>
-            <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Assigned To</th>
-            <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Status</th>
-            <th className="bg-accent-50 px-3 py-2 font-medium text-gray-700">Priority</th>
+            <th className="bg-accent-50 dark:bg-gray-900 px-3 py-2 font-medium text-gray-700 dark:text-gray-300">ID</th>
+            <th className="bg-accent-50 dark:bg-gray-900 px-3 py-2 font-medium text-gray-700 dark:text-gray-300">Title</th>
+            <th className="bg-accent-50 dark:bg-gray-900 px-3 py-2 font-medium text-gray-700 dark:text-gray-300">Labels</th>
+            <th className="bg-accent-50 dark:bg-gray-900 px-3 py-2 font-medium text-gray-700 dark:text-gray-300">Assigned To</th>
+            <th className="bg-accent-50 dark:bg-gray-900 px-3 py-2 font-medium text-gray-700 dark:text-gray-300">Status</th>
+            <th className="bg-accent-50 dark:bg-gray-900 px-3 py-2 font-medium text-gray-700 dark:text-gray-300">Priority</th>
           </tr>
         </thead>
         <tbody>

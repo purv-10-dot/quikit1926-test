@@ -27,7 +27,7 @@ export function RunTabs({
   onChange: (tab: RunTab) => void;
 }) {
   return (
-    <div className="flex gap-1 border-b border-gray-200 px-4">
+    <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 px-4">
       {TABS.map(({ key, label, icon: Icon }) => {
         const isActive = key === active;
         return (
@@ -38,8 +38,8 @@ export function RunTabs({
             aria-current={isActive ? "page" : undefined}
             className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${
               isActive
-                ? "border-accent-600 font-medium text-accent-700"
-                : "border-transparent text-gray-500 hover:text-gray-800"
+                ? "border-accent-600 font-medium text-accent-700 dark:text-accent-300"
+                : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
             }`}
           >
             <Icon className="h-3.5 w-3.5" />

@@ -86,7 +86,7 @@ export function RunnerGridRow({
     <tr
       onClick={() => onOpenDetail(t.id)}
       className={`cursor-pointer border-b border-gray-100 ${
-        active ? "bg-blue-50" : "hover:bg-gray-50"
+        active ? "bg-blue-50 dark:bg-blue-900/30" : "hover:bg-gray-50 dark:hover:bg-gray-800"
       }`}
     >
       {selectable && (

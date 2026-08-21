@@ -95,7 +95,7 @@ export function ScreensOverview({ projectId }: { projectId: string }) {
     <div className="mx-auto max-w-5xl px-8 py-8">
       <div className="mb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Screens</h1>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Screens</h1>
           <p className="mt-1 max-w-2xl text-sm text-gray-600">
             A screen is an arrangement of fields that are displayed when the work item is created,
             edited or transitioned through workflow.
@@ -127,17 +127,17 @@ export function ScreensOverview({ projectId }: { projectId: string }) {
       ) : error ? (
         <div className="py-10 text-sm text-red-600">{(error as Error).message}</div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-200">
+        <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <th className="bg-accent-50 px-4 py-2.5">Name</th>
-                <th className="w-16 bg-accent-50 px-4 py-2.5 text-right">Actions</th>
+              <tr className="border-b border-gray-200 dark:border-gray-700 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <th className="bg-accent-50 dark:bg-gray-900 px-4 py-2.5">Name</th>
+                <th className="w-16 bg-accent-50 dark:bg-gray-900 px-4 py-2.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((s) => (
-                <tr key={s.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <tr key={s.id} className="border-b border-gray-100 dark:border-gray-800 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="px-4 py-3">
                     <Link
                       href={`/spaces/${projectId}/settings/screens/${s.id}`}
@@ -252,7 +252,7 @@ function RowActions({
     };
   }, [open]);
 
-  const item = "block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50";
+  const item = "block w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700";
 
   return (
     <>
@@ -260,7 +260,7 @@ function RowActions({
         ref={btnRef}
         type="button"
         onClick={onToggle}
-        className="rounded p-1 text-gray-500 hover:bg-gray-100"
+        className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
         aria-label="Actions"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -273,7 +273,7 @@ function RowActions({
             ref={menuRef}
             role="menu"
             style={{ position: "fixed", top: pos.top, left: pos.left, width: 160 }}
-            className="z-[100] rounded-md border border-gray-200 bg-white py-1 text-left shadow-lg"
+            className="z-[100] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 text-left shadow-lg"
           >
             <Link href={configureHref} className={item} onClick={onClose}>
               Configure

@@ -136,7 +136,7 @@ export function RunListView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+      <div className="flex items-start justify-between gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div>
           <Link
             href={`/spaces/${projectId}/test`}
@@ -145,7 +145,7 @@ export function RunListView({ projectId }: { projectId: string }) {
             <ArrowLeft className="h-3 w-3" />
             Test cases
           </Link>
-          <h1 className="text-base font-semibold text-gray-900">Test runs</h1>
+          <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Test runs</h1>
           <p className="text-xs text-gray-500">
             Each run is an immutable record of one execution pass.
           </p>
@@ -153,7 +153,7 @@ export function RunListView({ projectId }: { projectId: string }) {
         <div className="flex items-center gap-2">
           {/* Only for users who can delete: nobody else has anything to restore. */}
           {canClose && (
-            <div className="flex items-center gap-1 rounded-md border border-gray-200 p-0.5">
+            <div className="flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
               {([false, true] as const).map((v) => (
                 <button
                   key={String(v)}
@@ -161,8 +161,8 @@ export function RunListView({ projectId }: { projectId: string }) {
                   onClick={() => setShowDeleted(v)}
                   className={`rounded px-2 py-1 text-[11px] ${
                     showDeleted === v
-                      ? "bg-accent-50 font-medium text-accent-800"
-                      : "text-gray-500 hover:text-gray-800"
+                      ? "bg-accent-100 dark:bg-gray-700 font-medium text-accent-800 dark:text-gray-100"
+                      : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                   }`}
                 >
                   {v ? "Deleted" : "Active"}
@@ -217,8 +217,8 @@ export function RunListView({ projectId }: { projectId: string }) {
 
             return (
               <section key={phase}>
-                <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-gray-200 bg-accent-50 px-4 py-1.5">
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+                <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-gray-200 dark:border-gray-700 bg-accent-50 dark:bg-gray-900 px-4 py-1.5">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
                     {LIFECYCLE_LABEL[phase]}
                   </h2>
                   <span className="text-[11px] text-gray-500">{list.length}</span>

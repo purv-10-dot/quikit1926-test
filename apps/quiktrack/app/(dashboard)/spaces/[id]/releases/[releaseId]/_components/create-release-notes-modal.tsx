@@ -137,14 +137,14 @@ export function CreateReleaseNotesModal({
                 className={`inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium rounded border ${
                   formattingOpen
                     ? "border-blue-500 text-blue-700 bg-blue-50"
-                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                    : "border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
               >
                 Formatting options
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
               {formattingOpen && (
-                <div className="absolute right-0 top-full mt-1 z-30 w-64 rounded-md border border-gray-200 bg-white shadow-lg p-3 space-y-3">
+                <div className="absolute right-0 top-full mt-1 z-30 w-64 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-3 space-y-3">
                   <div>
                     <div className="text-xs font-semibold text-gray-700 mb-1">Include work types</div>
                     <PortalDropdown
@@ -181,7 +181,7 @@ export function CreateReleaseNotesModal({
             </div>
           </div>
 
-          <div className="max-h-80 overflow-y-auto rounded-md border border-gray-200 px-4 py-3">
+          <div className="max-h-80 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3">
             {loading ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -205,24 +205,24 @@ export function CreateReleaseNotesModal({
             <button
               type="button"
               onClick={() => setCopyMenuOpen((v) => !v)}
-              className="inline-flex items-center gap-1 h-9 px-3.5 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+              className="inline-flex items-center gap-1 h-9 px-3.5 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               Copy to clipboard
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
             {copyMenuOpen && (
-              <div className="absolute left-0 bottom-full mb-1 z-30 min-w-[140px] rounded-md border border-gray-200 bg-white shadow-lg py-1">
+              <div className="absolute left-0 bottom-full mb-1 z-30 min-w-[140px] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1">
                 <button
                   type="button"
                   onClick={() => void copy("markdown")}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   Markdown
                 </button>
                 <button
                   type="button"
                   onClick={() => void copy("html")}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   HTML
                 </button>
@@ -233,7 +233,7 @@ export function CreateReleaseNotesModal({
             type="button"
             disabled={saving || loading}
             onClick={() => void save()}
-            className="h-9 px-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
+            className="h-9 px-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
           >
             {saving ? "Saving…" : "Save release notes"}
           </button>

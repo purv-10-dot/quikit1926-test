@@ -101,7 +101,7 @@ export function ReleasesView({ projectId }: { projectId: string }) {
     <div className="p-6 space-y-5">
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Releases</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">Releases</h1>
           <p className="text-sm text-gray-500">
             Plan and track versions of this project as they move to release.
           </p>
@@ -121,8 +121,8 @@ export function ReleasesView({ projectId }: { projectId: string }) {
         )}
       </header>
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-        <div className={`${COLS} py-3 bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-200 font-semibold`}>
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+        <div className={`${COLS} py-3 bg-gray-50 dark:bg-gray-900 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 font-semibold`}>
           <div>Release</div>
           <div>Status</div>
           <div>Progress</div>
@@ -206,7 +206,7 @@ export function ReleasesView({ projectId }: { projectId: string }) {
                     <button
                       type="button"
                       onClick={() => setMenuOpenId(menuOpenId === r.id ? null : r.id)}
-                      className="p-1 hover:bg-gray-100 rounded text-gray-500"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400"
                       aria-label="More actions"
                     >
                       <MoreHorizontal className="h-4 w-4" />
@@ -215,7 +215,7 @@ export function ReleasesView({ projectId }: { projectId: string }) {
                   {menuOpenId === r.id && (
                     <div
                       ref={menuRef}
-                      className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1"
+                      className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 py-1"
                     >
                       {canUpdate && (
                         <button
@@ -225,7 +225,7 @@ export function ReleasesView({ projectId }: { projectId: string }) {
                             setEditing(r);
                             setModalOpen(true);
                           }}
-                          className="block w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50"
+                          className="block w-full px-3 py-1.5 text-sm text-left text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
                           Edit
                         </button>
@@ -234,7 +234,7 @@ export function ReleasesView({ projectId }: { projectId: string }) {
                         <button
                           type="button"
                           onClick={() => void archiveRelease(r)}
-                          className="block w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50"
+                          className="block w-full px-3 py-1.5 text-sm text-left text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
                           {r.status === "ARCHIVED" ? "Unarchive" : "Archive"}
                         </button>
@@ -243,7 +243,7 @@ export function ReleasesView({ projectId }: { projectId: string }) {
                         <button
                           type="button"
                           onClick={() => void deleteRelease(r)}
-                          className="block w-full px-3 py-1.5 text-sm text-left text-red-600 hover:bg-red-50"
+                          className="block w-full px-3 py-1.5 text-sm text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
                           Delete
                         </button>

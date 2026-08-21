@@ -85,7 +85,7 @@ export function CreateReleaseModal({
         </ModalHeader>
         <ModalBody>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               Release name<span className="text-red-500">*</span>
             </label>
             <input
@@ -93,23 +93,23 @@ export function CreateReleaseModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. 2.4.0"
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Start date</label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Start date</label>
               <DatePickerInput value={startDate} onChange={setStartDate} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Release date</label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Release date</label>
               <DatePickerInput value={releaseDate} onChange={setReleaseDate} />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Driver</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Driver</label>
             <PortalDropdown
               placeholder="Unassigned"
               options={[
@@ -122,12 +122,12 @@ export function CreateReleaseModal({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </ModalBody>
@@ -135,7 +135,7 @@ export function CreateReleaseModal({
           <button
             type="button"
             onClick={onClose}
-            className="h-9 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded"
+            className="h-9 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
           >
             Cancel
           </button>
@@ -143,7 +143,7 @@ export function CreateReleaseModal({
             type="button"
             disabled={!name.trim() || saving}
             onClick={save}
-            className="h-9 px-5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
+            className="h-9 px-5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
           >
             {saving ? "Saving…" : "Save"}
           </button>

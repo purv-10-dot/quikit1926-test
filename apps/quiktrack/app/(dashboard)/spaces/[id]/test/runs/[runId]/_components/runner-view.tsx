@@ -53,10 +53,10 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
           than a cramped detail panel — the panel wasn't too narrow, it just
           wasn't framed as a panel. */}
       <div className="flex min-h-0 flex-1 gap-4">
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold text-gray-900">
+              <h1 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
                 {d.run ? `${runRef(d.run.refId)} · ${d.run.name}` : "Loading run…"}
               </h1>
               {d.run && (
@@ -97,7 +97,7 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
           </div>
 
           {d.run && Object.keys(d.run.counts).length > 0 && (
-            <div className="border-b border-gray-200 px-4 py-3">
+            <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3">
               <RunSummary counts={d.run.counts} size="sm" />
             </div>
           )}
@@ -133,7 +133,7 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
           />
 
           {tab === "tests" && (
-            <div className="border-t border-gray-200 px-4 py-1.5 text-[11px] text-gray-400">
+            <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-1.5 text-[11px] text-gray-400 dark:text-gray-500">
               Shortcuts: 1 Passed · 2 Failed · 3 Blocked · 4 Retest · 5 Skipped
               · j/k to move
             </div>
@@ -147,7 +147,7 @@ export function RunnerView({ projectId, runId }: RunnerViewProps) {
             `panelClosed` for why "nothing selected" renders nothing rather
             than an empty card taking up width. */}
         {tab === "tests" && (d.detail || d.detailLoading) && (
-          <div className="w-80 shrink-0 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="w-80 shrink-0 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
             <CaseDetailPane
               detail={d.detail}
               loading={d.detailLoading}
