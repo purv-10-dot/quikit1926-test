@@ -93,8 +93,18 @@ describe("POST /api/org/users — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when password missing", async () => {
+  it("does not reject a create with no password", async () => {
+    // `password` has been `.optional()` in createOrgUserSchema since the
+    // temp-password feature — the server generates and emails one. The
+    // QuikScale UI never sends the field at all.
     const res = await POST(buildPOST({ email: "x@y.com", firstName: "A", lastName: "B" }), routeCtx);
+    expect(res.status).not.toBe(400);
+  });
+
+  it("returns 400 when a supplied password is shorter than 8 characters", async () => {
+    const res = await POST(buildPOST({
+      email: "x@y.com", firstName: "A", lastName: "B", password: "short",
+    }), routeCtx);
     expect(res.status).toBe(400);
   });
 });

@@ -27,6 +27,7 @@ import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { notify } from "@/lib/utils/notify";
+import { buildUserPayload } from "@/lib/utils/userPayload";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -68,7 +69,6 @@ type FormState = {
   firstName: string;
   lastName: string;
   email: string;
-  password: string;
   /** Legacy role — sent to POST/PUT for back-compat (always "member" for new users). */
   role: string;
   /** Selected AppRole.id — assigned post-create via PATCH /role. null = use server default. */
@@ -78,12 +78,13 @@ type FormState = {
   /**
    * Set when the admin picks an existing org member from the email
    * autocomplete dropdown. Triggers the "link existing user → grant
-   * QuikScale access" backend path; password field is hidden in this mode.
+   * QuikScale access" backend path.
    */
   linkExistingUserId: string | null;
   /**
-   * "native" → admin enters a password; user signs in with email+password.
-   * "sso"    → no password collected; user authenticates via Google/Microsoft.
+   * "native" → the server generates a temporary password and emails it; the
+   *            user signs in with email+password and resets it on first login.
+   * "sso"    → no password at all; user authenticates via Google/Microsoft.
    *            Server stores `auth.User.password = null` so the password
    *            credential provider can't log them in — only OAuth works.
    */
@@ -94,7 +95,6 @@ const EMPTY_FORM: FormState = {
   firstName: "",
   lastName: "",
   email: "",
-  password: "",
   role: "member",
   appRoleId: null,
   teamIds: [],
@@ -377,7 +377,6 @@ function UserPanel({
               firstName: editUser.firstName,
               lastName: editUser.lastName,
               email: editUser.email,
-              password: "",
               role: editUser.role,
               appRoleId: editUser.appRoleId,
               teamIds:
@@ -441,7 +440,6 @@ function UserPanel({
       firstName: hit.firstName,
       lastName: hit.lastName,
       email: hit.email,
-      password: "",
       linkExistingUserId: hit.userId,
     }));
     setEmailDropOpen(false);
@@ -477,31 +475,14 @@ function UserPanel({
       setError("Email is required.");
       return;
     }
-    // Native invites no longer require a typed password — when left blank,
-    // the server generates a fresh temporary password and emails it to the
-    // invitee, matching the QuikIT super-admin onboarding flow.
+    // No password is ever collected here. Native invites get a server-generated
+    // temporary password emailed to the invitee (matching the QuikIT
+    // super-admin onboarding flow); SSO invitees never have one.
 
     setSaving(true);
     setError("");
     try {
-      // Legacy `role` field still required for back-compat with OrgMember.role.
-      // The authoritative role assignment is the AppRole (PATCH below).
-      const payload: Record<string, unknown> = {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        role: "member",
-        teamIds: form.teamIds,
-      };
-      // Only attach password when the admin actually typed one. An empty
-      // string would fail Zod's min(8) on the server. For new Native users
-      // who leave it blank, the server generates a fresh temp password.
-      if (form.password.trim()) payload.password = form.password.trim();
-      if (editUser) payload.status = form.status;
-      if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
-      if (!editUser && !form.linkExistingUserId) {
-        payload.invitationMethod = form.invitationMethod;
-      }
+      const payload = buildUserPayload(form, Boolean(editUser));
 
       const url = editUser
         ? `/api/org/users/${editUser.userId}`
@@ -763,7 +744,7 @@ function UserPanel({
                 {
                   key: "native" as const,
                   title: "Native (Email + Password)",
-                  hint: "Admin sets a password. User signs in with email + password.",
+                  hint: "Temp password is emailed. User signs in with email + password.",
                 },
                 {
                   key: "sso" as const,
@@ -793,29 +774,6 @@ function UserPanel({
             })}
           </div>
         </div>
-      )}
-
-      {/* Password — only shown in Edit mode (admin can change an existing user's
-          password). For new users, Native invitees receive a freshly-generated
-          temporary password via email and reset it on first sign-in; SSO
-          invitees never have a password. Mirrors the super-admin
-          first-Org-Admin flow. */}
-      {editUser && !form.linkExistingUserId && (
-      <div>
-        <label className="text-xs font-medium text-gray-600 block mb-1.5">
-          Password{" "}
-          <span className="text-gray-400 font-normal">
-            (leave blank to keep unchanged)
-          </span>
-        </label>
-        <input
-          type="password"
-          value={form.password}
-          onChange={(e) => set("password", e.target.value)}
-          placeholder="Enter new password to change"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400"
-        />
-      </div>
       )}
 
       {/* Native-invite notice — explains the auto-generated password flow */}
