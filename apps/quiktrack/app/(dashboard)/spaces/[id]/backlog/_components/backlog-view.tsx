@@ -2297,15 +2297,55 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [sprintsHasMore, setSprintsHasMore] = useState(true);
   const [sprintsLoading, setSprintsLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
-  const [sectionStates, setSectionStates] = useState<Record<string, SectionState>>({
-    backlog: { ...emptySection(), expanded: true },
+  // Per-viewer memory of which accordion sections are expanded, so a reload keeps
+  // the same sprints/backlog open. localStorage (not the URL) because it's a set
+  // of booleans that's a viewer convenience, not shareable state. Keyed per
+  // project; guarded because storage can throw or be unavailable.
+  const expandedStorageKey = `qt:backlog:expanded:${projectId}`;
+  const readExpandedKeys = (): Set<string> | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(expandedStorageKey);
+      if (!raw) return null;
+      const arr = JSON.parse(raw) as unknown;
+      return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === "string")) : null;
+    } catch {
+      return null;
+    }
+  };
+  // Read once for this mount; sprint sections consult it as they materialise.
+  const persistedExpandedRef = useRef<Set<string> | null>(null);
+  if (persistedExpandedRef.current === null) persistedExpandedRef.current = readExpandedKeys();
+
+  const [sectionStates, setSectionStates] = useState<Record<string, SectionState>>(() => {
+    // Backlog defaults open; honor a persisted collapse of it.
+    const persisted = typeof window === "undefined" ? null : (() => {
+      try {
+        const raw = window.localStorage.getItem(`qt:backlog:expanded:${projectId}`);
+        if (!raw) return null;
+        const arr = JSON.parse(raw) as unknown;
+        return Array.isArray(arr) ? new Set(arr as string[]) : null;
+      } catch {
+        return null;
+      }
+    })();
+    const backlogExpanded = persisted ? persisted.has("backlog") : true;
+    return { backlog: { ...emptySection(), expanded: backlogExpanded } };
   });
   const [menuOpenForSprint, setMenuOpenForSprint] = useState<string | null>(null);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
   const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
   const [startingSprint, setStartingSprint] = useState<Sprint | null>(null);
   const [completingSprint, setCompletingSprint] = useState<Sprint | null>(null);
-  const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
+  // The open work-item drawer is mirrored to a `?selected=<id>` query param so a
+  // reload reopens it instead of dropping the user back to a bare backlog. Seed
+  // the initial state from that param (client-only; SSR renders it closed then
+  // hydrates to the same value). See the sync effect below that keeps the URL in
+  // step as the drawer opens/closes.
+  const [editingIssueId, setEditingIssueId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("selected");
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveOpen, setMoveOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -2775,6 +2815,56 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sectionStates]);
+
+  // Keep the URL's `?selected=<id>` in step with the open drawer so a reload
+  // restores it. history.replaceState (not router) — a real navigation would
+  // remount the backlog and reload every section; this only rewrites the address
+  // bar, leaving the mounted tree (and the just-opened drawer) untouched.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (editingIssueId) url.searchParams.set("selected", editingIssueId);
+    else url.searchParams.delete("selected");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [editingIssueId]);
+
+  // As sprint sections become known (after the sprints load), seed each one's
+  // expanded flag from the persisted set so a reload reopens the sprints that
+  // were open. Only fills gaps — never overrides a section the user has since
+  // toggled this session. Cleared once applied so it doesn't fight live toggles.
+  useEffect(() => {
+    const persisted = persistedExpandedRef.current;
+    if (!persisted || sprints.length === 0) return;
+    setSectionStates((all) => {
+      let changed = false;
+      const next = { ...all };
+      for (const s of sprints) {
+        const key = `sprint:${s.id}`;
+        if (!next[key] && persisted.has(key)) {
+          next[key] = { ...emptySection(), expanded: true };
+          changed = true;
+        }
+      }
+      return changed ? next : all;
+    });
+  }, [sprints]);
+
+  // Persist the set of currently-expanded section keys whenever it changes, so
+  // the next mount can restore them. Guarded — storage may be unavailable.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const openKeys = Object.entries(sectionStates)
+      .filter(([, s]) => s.expanded)
+      .map(([k]) => k);
+    try {
+      window.localStorage.setItem(expandedStorageKey, JSON.stringify(openKeys));
+    } catch {
+      // ignore (private mode / quota / disabled storage)
+    }
+  }, [sectionStates, expandedStorageKey]);
 
   // Boot — fetch session + first page of sprints + epics. (Statuses and
   // members are loaded via React Query above, so they're not in this batch.)

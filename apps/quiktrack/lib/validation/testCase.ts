@@ -13,14 +13,25 @@ export const testCasePriorityEnum = z.enum([
 export const testCaseTypeEnum = z.enum([
   "FUNCTIONAL",
   "REGRESSION",
-  "UAT",
-  "SECURITY",
-  "PERFORMANCE",
   "SMOKE",
+  "SANITY",
+  "INTEGRATION",
+  "UI",
+  "API",
+  "DATABASE",
+  "PERFORMANCE",
+  "SECURITY",
   "COMPATIBILITY",
+  "POSITIVE",
   "NEGATIVE",
-  "BDD",
+  "BOUNDARY_VALUE",
+  "USABILITY",
+  "ACCESSIBILITY",
   "EXPLORATORY",
+  "BDD",
+  // Kept for existing cases saved before this list widened — UAT is no longer
+  // offered in the dropdown, but a case already carrying it must still validate.
+  "UAT",
 ]);
 
 export const automationStatusEnum = z.enum(["MANUAL", "AUTOMATED"]);
