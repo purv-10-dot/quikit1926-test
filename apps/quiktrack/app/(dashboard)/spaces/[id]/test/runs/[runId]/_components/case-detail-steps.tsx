@@ -1,5 +1,6 @@
 "use client";
 
+import { layoutFor } from "@/lib/test/caseLayout";
 import type { TestDetail } from "./runner-types";
 
 /**
@@ -10,6 +11,32 @@ import type { TestDetail } from "./runner-types";
  * comment for why steps are edited via the full CaseEditorPanel, not inline.
  */
 export function CaseDetailSteps({ detail }: { detail: TestDetail }) {
+  // A TEXT / BDD case has no step grid — its procedure lives in the case-level
+  // Expected Result field (authored under the "Steps"-labelled section for the
+  // Text template). The runner previously showed only structured steps, so a
+  // Text case read as "no recorded steps" even when a body was written. Surface
+  // that body under the Steps heading for those templates.
+  const { showSteps } = layoutFor(detail.case.templateKind);
+  const textBody = detail.case.expectedResult?.trim() ?? "";
+  if (!showSteps) {
+    return (
+      <div className="mt-4">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+          Steps
+        </h3>
+        {textBody ? (
+          <p className="mt-2 whitespace-pre-line text-sm text-gray-800">
+            {textBody}
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-gray-500">
+            This case has no recorded steps — record an overall result below.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {detail.stepsSource === "live" && detail.steps.length > 0 && (

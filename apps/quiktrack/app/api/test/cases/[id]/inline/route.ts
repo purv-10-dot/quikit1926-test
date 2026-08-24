@@ -28,8 +28,13 @@ const patchSchema = z
     priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "LOWEST"]).optional(),
     type: z
       .enum([
-        "FUNCTIONAL", "REGRESSION", "SMOKE", "UAT", "SECURITY",
-        "PERFORMANCE", "COMPATIBILITY", "NEGATIVE", "BDD", "EXPLORATORY",
+        "FUNCTIONAL", "REGRESSION", "SMOKE", "SANITY", "INTEGRATION", "UI",
+        "API", "DATABASE", "PERFORMANCE", "SECURITY", "COMPATIBILITY",
+        "POSITIVE", "NEGATIVE", "BOUNDARY_VALUE", "USABILITY",
+        "ACCESSIBILITY", "EXPLORATORY", "BDD",
+        // See lib/services/testCaseInline.ts — kept for cases saved before
+        // the list widened.
+        "UAT",
       ])
       .optional(),
     automationStatus: z.enum(["MANUAL", "AUTOMATED"]).optional(),

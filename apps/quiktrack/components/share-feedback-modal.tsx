@@ -121,15 +121,7 @@ export function ShareFeedbackModal({
                     />
                     <span>
                       Yes, the QuikTrack team can contact me to learn about my experiences to improve
-                      the product. I acknowledge the{" "}
-                      <a
-                        href="#"
-                        className="text-blue-600 hover:underline inline-flex items-center gap-0.5"
-                      >
-                        Privacy Policy
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                      .
+                      the product.
                     </span>
                   </label>
                   <label className="flex items-start gap-2 text-xs text-gray-700">

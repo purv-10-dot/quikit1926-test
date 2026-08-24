@@ -10,6 +10,7 @@ import { RELATED_WORK_TEMPLATES, RELATED_WORK_CATEGORIES } from "./related-work-
 import { AddWorkItemsModal } from "./add-work-items-modal";
 import { CreateReleaseNotesModal } from "./create-release-notes-modal";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { CreateIssueModal } from "@/components/create-issue-modal";
 import type { ReleaseRelatedLink } from "./release-detail-meta";
 
 export function RelatedWorkSection({
@@ -36,6 +37,10 @@ export function RelatedWorkSection({
   // Which placeholder card's own "Link work item" button opened the picker —
   // that card is the one that gets issueId set (no separate row is created).
   const [linkTargetId, setLinkTargetId] = useState<string | null>(null);
+  // Which placeholder card's "Create work item" opened the top Create Task
+  // modal. On creation we link the new issue to this release and drop the
+  // placeholder card (see the issue-created listener below).
+  const [createForLink, setCreateForLink] = useState<ReleaseRelatedLink | null>(null);
 
   const tabs = useMemo(() => {
     const seen = new Set<string>();
@@ -129,31 +134,42 @@ export function RelatedWorkSection({
     else showToast(res?.error || "Couldn't remove the item.", "error");
   }
 
-  /** Converts a placeholder related-work card into a real, tracked work item:
-   * creates a QtIssue titled after the card, links it to this release via
-   * the normal issues endpoint, then drops the placeholder link row. */
-  async function createWorkItemFromLink(link: ReleaseRelatedLink) {
-    const created = await fetch("/api/issues", {
+  /** Attaches a freshly-created issue to the SAME placeholder card that spawned
+   * it (sets the card's issueId in place) — so the item stays in Related work
+   * showing status/assignee/Unlink, exactly like "Link work item". It must NOT
+   * create a separate release-issue link (that would move it into the Work items
+   * section below and delete the card). Called from the issue-created listener. */
+  async function linkCreatedIssue(link: ReleaseRelatedLink, issueId: string) {
+    const res = await fetch(`/api/releases/${releaseId}/links/link-work-item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, title: link.title }),
+      body: JSON.stringify({ issueId, linkId: link.id }),
     }).then((r) => r.json());
-    if (!created?.success) {
-      showToast(created?.error || "Couldn't create the work item.", "error");
+    if (!res?.success) {
+      showToast(res?.error || "Work item created, but couldn't link it to the release.", "error");
       return;
     }
-    const linked = await fetch(`/api/releases/${releaseId}/issues`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueIds: [created.data.id] }),
-    }).then((r) => r.json());
-    if (!linked?.success) {
-      showToast(linked?.error || "Work item created, but couldn't link it to the release.", "error");
-      return;
-    }
-    await fetch(`/api/releases/${releaseId}/links?linkId=${link.id}`, { method: "DELETE" }).catch(() => undefined);
     onChanged();
   }
+
+  // When the top Create Task modal (opened via "Create work item") reports a
+  // created issue, attach it to the placeholder card that opened it (keeping it
+  // in Related work). The modal communicates success via this window event, so
+  // we listen while it's open.
+  useEffect(() => {
+    if (!createForLink) return;
+    const target = createForLink;
+    function onCreated(e: Event) {
+      const detail = (e as CustomEvent<{ id?: string; projectId?: string }>).detail;
+      const newId = detail?.id;
+      if (!newId) return;
+      setCreateForLink(null);
+      void linkCreatedIssue(target, newId);
+    }
+    window.addEventListener("quiktrack:issue-created", onCreated as EventListener);
+    return () => window.removeEventListener("quiktrack:issue-created", onCreated as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createForLink, releaseId]);
 
   /** "Link work item" — attaches the picked issue to the SAME card that
    * opened the picker (sets its issueId in place), rather than creating a
@@ -299,7 +315,7 @@ export function RelatedWorkSection({
                     setLinkTargetId(l.id);
                     setPickerOpen(false);
                   }}
-                  onCreateWorkItem={() => void createWorkItemFromLink(l)}
+                  onCreateWorkItem={() => setCreateForLink(l)}
                   onUnlink={() => void unlinkWorkItem(l)}
                   onOpenIssue={() => l.issueId && setEditingIssueId(l.issueId)}
                   onOpenNotes={() => l.noteBody !== null && setNotesLinkId(l.id)}
@@ -320,6 +336,16 @@ export function RelatedWorkSection({
         title="Link work item"
         singleSelect
         onSave={linkWorkItem}
+      />
+
+      {/* "Create work item" opens the standard top Create Task modal, prefilled
+          with this release's project. On success the issue-created listener above
+          links it to the release and clears the placeholder. */}
+      <CreateIssueModal
+        open={createForLink !== null}
+        onClose={() => setCreateForLink(null)}
+        initialProjectId={projectId}
+        initialTitle={createForLink?.title ?? ""}
       />
 
       <EditIssueModal

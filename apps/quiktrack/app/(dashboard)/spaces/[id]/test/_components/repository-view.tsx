@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Layers, Plus, Upload } from "lucide-react";
-import { Button } from "@quikit/ui";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { CaseDetailPanel } from "./case-detail-panel";
@@ -14,12 +12,14 @@ import { CaseTable } from "./case-table";
 import { loadColumns } from "./columns-menu";
 import { ImportCasesPanel } from "./import-cases-panel";
 import { BulkNotice } from "./bulk-notice";
+import { RepositoryEmptyState } from "./repository-empty-state";
 import { RepositoryHeader } from "./repository-header";
 import { useCaseFilters } from "./use-case-filters";
 import { useCaseList } from "./use-case-list";
 import { useCaseSelection } from "./use-case-selection";
 import { useInlineEdit } from "./use-inline-edit";
 import { useSuitePrompt } from "./use-suite-prompt";
+import { useSuiteDelete } from "./use-suite-delete";
 import { NamePromptPanel, type NamePromptConfig } from "./name-prompt-panel";
 import { SuiteTree, type SuiteOption } from "./suite-tree";
 import { useCasePanels } from "./use-case-panels";
@@ -55,6 +55,7 @@ export function RepositoryView({ projectId }: { projectId: string }) {
   // NOT `perms.loading ||` — unlike a read affordance, a destructive control must
   // not appear optimistically while permissions are still loading.
   const canDelete = !perms.loading && perms.has("TestCase", "delete");
+  const canDeleteSuite = !perms.loading && perms.has("TestSuite", "delete");
   // Inline editing writes, so like delete it must not appear optimistically while
   // permissions are still loading.
   const canEdit = !perms.loading && perms.has("TestCase", "update");
@@ -130,6 +131,22 @@ export function RepositoryView({ projectId }: { projectId: string }) {
     onSuiteCreated: (id) => {
       setActiveSuiteId(id);
       setActiveSectionId(null);
+    },
+    onChanged: () => {
+      void queryClient.invalidateQueries({ queryKey: suitesKey });
+    },
+  });
+
+  // Suite/folder deletion lives in the hook; see use-suite-delete.ts.
+  const suiteDelete = useSuiteDelete({
+    onDeletedSuite: (suiteId) => {
+      if (activeSuiteId === suiteId) {
+        setActiveSuiteId(null);
+        setActiveSectionId(null);
+      }
+    },
+    onDeletedSection: (sectionId) => {
+      if (activeSectionId === sectionId) setActiveSectionId(null);
     },
     onChanged: () => {
       void queryClient.invalidateQueries({ queryKey: suitesKey });
@@ -222,37 +239,17 @@ export function RepositoryView({ projectId }: { projectId: string }) {
               prompt.setMode({ kind: "section", parentId })
             }
             canEdit={canEditSuite}
+            onDeleteSuite={canDeleteSuite ? suiteDelete.deleteSuite : undefined}
+            onDeleteSection={canDeleteSuite ? suiteDelete.deleteSection : undefined}
           />
         )}
 
         <div className="min-w-0 flex-1">
           {treeSuites.length === 0 && !suitesLoading ? (
-            // First-run state. Explains the two concepts in order rather than
-            // leaving one sentence floating in an empty pane.
-            <div className="flex h-full items-start justify-center px-6 py-12">
-              <div className="max-w-md text-center">
-                <Layers className="mx-auto h-8 w-8 text-gray-300" />
-                <h3 className="mt-3 text-sm font-semibold text-gray-800">
-                  Start with a suite
-                </h3>
-                <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                  A <strong className="font-medium text-gray-700">suite</strong> is
-                  a collection of test cases, like Regression or Smoke. Inside it you
-                  can add <strong className="font-medium text-gray-700">folders</strong>{" "}
-                  to group cases by area, then execute them together as a{" "}
-                  <strong className="font-medium text-gray-700">test run</strong>.
-                </p>
-                {canEditSuite && (
-                  <button
-                    type="button"
-                    onClick={() => prompt.setMode({ kind: "suite" })}
-                    className="mt-4 rounded-lg bg-accent-600 px-3 py-2 text-xs font-medium text-white hover:bg-accent-700"
-                  >
-                    Create your first suite
-                  </button>
-                )}
-              </div>
-            </div>
+            <RepositoryEmptyState
+              canEditSuite={canEditSuite}
+              onCreateSuite={() => prompt.setMode({ kind: "suite" })}
+            />
           ) : (
             <CaseTable
               rows={caseRows}

@@ -32,6 +32,7 @@ interface CaseSnapshot {
   title?: string;
   description?: string | null;
   preconditions?: string | null;
+  expectedResult?: string | null;
   steps?: SnapshotStep[];
 }
 
@@ -67,6 +68,13 @@ export const GET = withOrgAuth<Params>(
               title: true,
               description: true,
               preconditions: true,
+              // Case-level Expected Result — the authored body for the TEXT/BDD
+              // templates (which have no step grid). The runner shows this under
+              // the Steps section for those templates.
+              expectedResult: true,
+              // Template kind (TEXT | STEPS | BDD | EXPLORATORY) decides which
+              // body the runner surfaces — see lib/test/caseLayout.ts.
+              template: { select: { kind: true } },
               priority: true,
               type: true,
               automationId: true,
@@ -148,6 +156,9 @@ export const GET = withOrgAuth<Params>(
             title: snapshot?.title ?? test.case.title,
             description: snapshot?.description ?? test.case.description,
             preconditions: snapshot?.preconditions ?? test.case.preconditions,
+            expectedResult: snapshot?.expectedResult ?? test.case.expectedResult,
+            // Live case property (template can be re-picked) — not versioned.
+            templateKind: test.case.template?.kind ?? null,
             priority: test.case.priority,
             type: test.case.type,
             automationId: test.case.automationId,

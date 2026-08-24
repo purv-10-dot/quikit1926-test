@@ -46,7 +46,8 @@ export const POST = withOrgAuth<Params>(
       );
       if (denied) return denied;
 
-      const parsed = recordResultSchema.safeParse(await req.json());
+      const body: unknown = await req.json();
+      const parsed = recordResultSchema.safeParse(body);
       if (!parsed.success) {
         // `issues[0].message` alone is a bare "Required" with no indication of
         // WHICH field — unusable when this fires intermittently in production
@@ -55,6 +56,23 @@ export const POST = withOrgAuth<Params>(
         const issue = parsed.error.issues[0];
         const path = issue?.path.join(".");
         const message = issue && path ? `${path}: ${issue.message}` : issue?.message;
+
+        // This has been reported live (QUIKTR-341) with every known call site
+        // re-audited and none able to construct a body missing `statusId` —
+        // so the next occurrence needs the ACTUAL wire body, not another guess.
+        // Logs only the top-level KEYS present, never values (comment/notes may
+        // carry user text — see apps/quiktrack/CLAUDE.md's AI logging rule,
+        // applied here defensively even though this path has nothing to do
+        // with AI).
+        const keys =
+          body && typeof body === "object" ? Object.keys(body as object) : typeof body;
+        // eslint-disable-next-line no-console
+        console.error("[quiktest] recordResultSchema rejected a submission", {
+          testId: params.id,
+          message,
+          bodyKeys: keys,
+        });
+
         return badRequest(message ?? "Invalid body");
       }
 
