@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { MentionItem } from "@/components/editor/mention";
+import { CopyIssueLinkButton } from "@/components/copy-issue-link-button";
 import { IssueTitleEditor } from "@/components/issue-title-editor";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";
@@ -176,6 +177,7 @@ export function IssueHeaderSections({
               >
                 {issue.key}
               </Link>
+              <CopyIssueLinkButton issueKey={issue.key} />
               {typeMenuOpen && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
                   <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
@@ -206,16 +208,19 @@ export function IssueHeaderSections({
               )}
             </div>
           ) : (
-            <Link
-              href={`/browse/${issue.key}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-gray-800 hover:underline inline-flex items-center gap-1 text-gray-700"
-              title="Open in new tab"
-            >
-              <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
-              {issue.key}
-            </Link>
+            <span className="inline-flex items-center gap-1">
+              <Link
+                href={`/browse/${issue.key}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-gray-800 hover:underline inline-flex items-center gap-1 text-gray-700"
+                title="Open in new tab"
+              >
+                <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
+                {issue.key}
+              </Link>
+              <CopyIssueLinkButton issueKey={issue.key} />
+            </span>
           )}
         </div>
         <WatchButton issueId={issue.id} projectId={projectId} />

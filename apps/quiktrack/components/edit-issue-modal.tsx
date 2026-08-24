@@ -51,6 +51,7 @@ import { IssueDevelopment } from "@/components/issue-full-view/issue-development
 import { QuikTestResultsPanel } from "@/components/issue-full-view/quiktest-results-panel";
 import { ChildWorkItems } from "@/components/issue-full-view/child-work-items";
 import { IssueTitleEditor } from "@/components/issue-title-editor";
+import { CopyIssueLinkButton } from "@/components/copy-issue-link-button";
 import {
   IssueAppsMenu,
   loadIssueApps,
@@ -1048,6 +1049,7 @@ export function EditIssueModal({
                       >
                         {issue.key}
                       </Link>
+                      <CopyIssueLinkButton issueKey={issue.key} />
                       {typeMenuOpen && (
                         <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
                           <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
@@ -1092,6 +1094,7 @@ export function EditIssueModal({
                       >
                         {issue.key}
                       </Link>
+                      <CopyIssueLinkButton issueKey={issue.key} />
                     </span>
                   )}
                 </div>

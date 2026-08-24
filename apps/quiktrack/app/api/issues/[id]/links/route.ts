@@ -9,6 +9,7 @@ import {
   linkLabel,
   type LinkDirection,
 } from "@/lib/services/issueLinkTypes";
+import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
 
 const createLinkSchema = z.object({
   targetIssueId: z.string().min(1),
@@ -70,12 +71,12 @@ export const GET = withOrgAuth<{ id: string }>(
     // of how the edge was stored.
     const [outgoing, incoming] = await Promise.all([
       db.qtIssueLink.findMany({
-        where: { orgId: orgId, sourceIssueId: params.id },
+        where: { orgId: orgId, sourceIssueId: issue.id },
         orderBy: { createdAt: "asc" },
         select: { id: true, type: true, createdAt: true, targetIssue: { select: issueSelect } },
       }),
       db.qtIssueLink.findMany({
-        where: { orgId: orgId, targetIssueId: params.id },
+        where: { orgId: orgId, targetIssueId: issue.id },
         orderBy: { createdAt: "asc" },
         select: { id: true, type: true, createdAt: true, sourceIssue: { select: issueSelect } },
       }),
@@ -135,23 +136,14 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
-    // Target must live in the same tenant. Cross-project links are allowed.
-    const other = await db.qtIssue.findFirst({
-      where: { id: parsed.data.targetIssueId, orgId: orgId, isDeleted: false },
-      select: { id: true, projectId: true },
-    });
-    if (!other) {
-      return NextResponse.json({ success: false, error: "Target issue not found" }, { status: 404 });
-    }
-
     // Resolve the stored edge orientation. OUTWARD: this --type--> other.
     // INWARD: other --type--> this (flip), so "this is blocked by other" is
     // stored identically to someone opening `other` and picking "blocks this".
     const inward = parsed.data.direction === "INWARD";
-    const sourceIssueId = inward ? other.id : params.id;
-    const targetIssueId = inward ? params.id : other.id;
+    const sourceIssueId = inward ? target.id : issue.id;
+    const targetIssueId = inward ? issue.id : target.id;
     // The edge's project follows its source issue (the owning side).
-    const edgeProjectId = inward ? other.projectId : issue.projectId;
+    const edgeProjectId = inward ? target.projectId : issue.projectId;
 
     const existing = await db.qtIssueLink.findFirst({
       where: { sourceIssueId, targetIssueId, type: parsed.data.type },
