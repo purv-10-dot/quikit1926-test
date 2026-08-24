@@ -43,6 +43,15 @@ const bodySchema = z.object({
   attendees: z.array(attendeeSchema).optional().default([]),
   recordingUrl: z.string().nullable().optional(),
   rawText: z.string().nullable().optional(),
+  /**
+   * The structured transcript with timestamps preserved. `rawText` is a
+   * flattened "Speaker: text" rendering of the same content that drops every
+   * timestamp, so without this the meeting pipeline has no time information at
+   * all and must interpolate. Optional and loosely typed on purpose: a
+   * recorder that only returns a plain string sends nothing, and the
+   * normaliser coerces defensively rather than rejecting the ingestion.
+   */
+  rawSegments: z.array(z.any()).nullable().optional(),
   summary: z.string().nullable().optional(),
   actionItems: z.array(z.any()).optional().default([]),
   // Manual overrides (builder params) — pin the match.
@@ -218,6 +227,7 @@ export async function POST(req: NextRequest) {
       durationMinutes: b.durationMinutes ?? null,
       attendees: b.attendees ?? [],
       rawText: b.rawText ?? null,
+      rawSegments: b.rawSegments ?? undefined,
       summary: b.summary ?? null,
       actionItems: b.actionItems ?? [],
       matchStatus,

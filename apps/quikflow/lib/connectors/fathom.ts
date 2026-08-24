@@ -26,6 +26,20 @@ export interface FathomMeeting {
   attendees: { name: string | null; email: string | null }[];
   recordingUrl: string | null;
   transcriptText: string | null;
+  /**
+   * The transcript in its STRUCTURED form, timestamps intact.
+   *
+   * `transcriptText` is a flattened "Speaker: text" rendering of this, and the
+   * flattening DISCARDS every timestamp. QuikScale needs those timings for
+   * evidence anchoring, time-windowed chunking and time-weighted coverage of
+   * long meetings; without them it can only interpolate, which is honest but
+   * strictly worse. Carrying the structured form alongside costs nothing and
+   * changes no existing field — `transcriptText` is byte-for-byte unchanged,
+   * so the transcript viewer and the DOCX export are unaffected.
+   */
+  transcriptSegments:
+    | { speaker: string | null; text: string; timestamp: number | string | null }[]
+    | null;
   summary: string | null;
   actionItems: { text: string; assignee?: string | null; dueDate?: string | null }[];
 }
@@ -92,6 +106,38 @@ function speakerName(v: unknown): string | null {
     return str(pick(o, "display_name", "displayName", "name"));
   }
   return null;
+}
+
+/**
+ * Keep the transcript's structure instead of flattening it.
+ *
+ * Same input as `transcriptToText`, but preserves the per-segment timestamp
+ * that flattening throws away. Returns null when the recorder gave us a plain
+ * string (nothing structured to preserve) so callers can tell "no timings
+ * available" from "timings present but empty".
+ */
+function transcriptToSegments(
+  raw: unknown,
+): { speaker: string | null; text: string; timestamp: number | string | null }[] | null {
+  if (!Array.isArray(raw)) return null;
+
+  const segments = raw
+    .map((seg) => {
+      if (!seg || typeof seg !== "object") return null;
+      const o = seg as Record<string, unknown>;
+      const text = str(pick(o, "text", "content", "transcript"));
+      if (!text) return null;
+      const ts = pick(o, "timestamp", "start_time", "startTime", "start", "offset");
+      return {
+        speaker: speakerName(pick(o, "speaker", "speaker_name", "name")),
+        text,
+        timestamp:
+          typeof ts === "number" || typeof ts === "string" ? ts : null,
+      };
+    })
+    .filter((s): s is { speaker: string | null; text: string; timestamp: number | string | null } => s !== null);
+
+  return segments.length ? segments : null;
 }
 
 function transcriptToText(raw: unknown): string | null {
@@ -161,6 +207,9 @@ export function normalizeMeeting(raw: unknown): FathomMeeting | null {
     ),
     recordingUrl: str(pick(m, "recording_url", "recordingUrl", "url", "share_url", "shareUrl")),
     transcriptText: transcriptToText(pick(m, "transcript", "transcript_text", "transcriptText")),
+    transcriptSegments: transcriptToSegments(
+      pick(m, "transcript", "transcript_text", "transcriptText"),
+    ),
     summary,
     actionItems: normalizeActionItems(pick(m, "action_items", "actionItems")),
   };
@@ -193,6 +242,7 @@ export function meetingToEventData(m: FathomMeeting): Record<string, unknown> {
     attendeeCount: emails.length,
     recordingUrl: m.recordingUrl,
     transcriptText: m.transcriptText,
+    transcriptSegments: m.transcriptSegments,
     summary: m.summary,
     actionItems: m.actionItems,
     hasActionItems: m.actionItems.length > 0,

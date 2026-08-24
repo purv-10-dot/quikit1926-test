@@ -17,6 +17,11 @@ import {
   type ParticipantDayNote,
 } from "@/lib/ai/weeklyHuddleReport";
 import { buildMetricsSnapshot, composeWeeklyReport, computeDeterministicWeek } from "@/lib/ai/weeklyHuddleCompose";
+import {
+  computeWeeklyCacheState,
+  DH_WEEKLY_SCHEMA_VERSION,
+} from "@/lib/reports/weeklyCacheState";
+import { snapshotReportVersion } from "@/lib/reports/versions";
 import { validateWeeklyReport } from "@/lib/ai/weeklyReportValidation";
 import { loadWeekContext, toWeekStart, weekLabel } from "@/lib/services/weeklyHuddleData";
 
@@ -62,8 +67,15 @@ const bodySchema = z.object({
  *   { aiUnavailable: true }            — every Gemini key failed
  *   { reportError: string }            — model output unparseable
  *   { noData: true, sources }          — nothing to aggregate
+ *
+ * PERMISSION — `ClientMeetings.Report: update`, not `view` (doc 17 D14).
+ *   Generating spends money on the model AND overwrites the stored row for the
+ *   week, clearing any facilitator sign-off. Both are writes in every sense
+ *   that matters, so gating them on read access was wrong: a view-only user
+ *   could run up cost and destroy a validated report. Viewing the result stays
+ *   on `view`, via the sibling GET route, which never calls the model.
  */
-export const POST = auth.view(async ({ orgId, userId }, req) => {
+export const POST = auth.update(async ({ orgId, userId }, req) => {
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
@@ -87,7 +99,11 @@ export const POST = auth.view(async ({ orgId, userId }, req) => {
   }
 
   const notes: string[] = [];
-  const canSaveDaily = await userCan(userId, orgId, "ClientMeetings.Report", "update");
+  // The route itself now requires Report:update (D14), so anyone reaching this
+  // line can persist backfilled daily reports. Kept as a named constant rather
+  // than inlined so the backfill logic below reads unchanged and the intent
+  // stays explicit at its call sites.
+  const canSaveDaily = true;
 
   // --- 2. Backfill missing daily reports ------------------------------------
   const overrideReports = new Map<string, StoredMeetingReport>();
@@ -189,6 +205,11 @@ export const POST = auth.view(async ({ orgId, userId }, req) => {
     roster: context.roster,
     days: context.days,
     weekStart,
+    // Approved leave. Rung 0 of the attendance ladder renders these days NA and
+    // drops them from the member's denominator, so someone on leave is not
+    // scored as absent. The parameter has existed since the attendance rewrite
+    // but nothing populated it until now.
+    onLeave: context.onLeave,
   });
 
   // --- 4. AI prose layer ----------------------------------------------------
@@ -252,6 +273,11 @@ export const POST = auth.view(async ({ orgId, userId }, req) => {
   const metrics = buildMetricsSnapshot(report, validation);
   const now = new Date();
 
+  // Provenance for the cache key (doc 17 §L). Without these the stored report
+  // cannot prove what it was built from, so every subsequent Generate re-runs
+  // the whole pipeline and re-bills whether or not anything changed.
+  const cacheState = await computeWeeklyCacheState(orgId, clientId, context);
+
   // Regenerating replaces the week's row — the unique index makes this an
   // upsert rather than an accumulating history.
   await db.clientDailyHuddleWeeklyReport.upsert({
@@ -264,6 +290,11 @@ export const POST = auth.view(async ({ orgId, userId }, req) => {
       report: report as unknown as Prisma.InputJsonValue,
       metrics: metrics as unknown as Prisma.InputJsonValue,
       validation: validation as unknown as Prisma.InputJsonValue,
+      sourceFingerprint: cacheState.sourceFingerprint,
+      promptVersion: cacheState.promptVersion,
+      schemaVersion: DH_WEEKLY_SCHEMA_VERSION,
+      coveragePct: cacheState.coveragePct,
+      currentVersion: 1,
       reportConfidence: report.overallConfidence,
       // Only real huddle rows — a transcript-only day carries a transcript id
       // in `day.id`, which must not be recorded as a huddle reference.
@@ -278,6 +309,13 @@ export const POST = auth.view(async ({ orgId, userId }, req) => {
       report: report as unknown as Prisma.InputJsonValue,
       metrics: metrics as unknown as Prisma.InputJsonValue,
       validation: validation as unknown as Prisma.InputJsonValue,
+      sourceFingerprint: cacheState.sourceFingerprint,
+      promptVersion: cacheState.promptVersion,
+      schemaVersion: DH_WEEKLY_SCHEMA_VERSION,
+      coveragePct: cacheState.coveragePct,
+      // Each regeneration is a new version; the previous snapshot survives
+      // in MeetingReportVersion so "why did it say that?" stays answerable.
+      currentVersion: { increment: 1 },
       reportConfidence: report.overallConfidence,
       // Only real huddle rows — a transcript-only day carries a transcript id
       // in `day.id`, which must not be recorded as a huddle reference.
@@ -292,10 +330,47 @@ export const POST = auth.view(async ({ orgId, userId }, req) => {
     },
   });
 
+  // Re-read for the id and the incremented version. The upsert cannot return
+  // them directly because the branch taken depends on whether a row existed.
+  const saved = await db.clientDailyHuddleWeeklyReport.findFirst({
+    where: { orgId, clientId, weekStart },
+    select: { id: true, currentVersion: true },
+  });
+
+  if (saved) {
+    // Best-effort: a lost history entry is a nuisance, a lost report is not.
+    await snapshotReportVersion({
+      orgId,
+      clientId,
+      reportKind: "DH_WEEKLY",
+      reportId: saved.id,
+      report,
+      metrics,
+      validation,
+      sourceFingerprint: cacheState.sourceFingerprint,
+      promptVersion: cacheState.promptVersion,
+      schemaVersion: DH_WEEKLY_SCHEMA_VERSION,
+      coveragePct: cacheState.coveragePct,
+      generatedBy: userId,
+    });
+  }
+
   const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
 
   return NextResponse.json({
     success: true,
-    data: { report, metrics, validation, notes, generatedAt: now, canEdit },
+    data: {
+      report,
+      metrics,
+      validation,
+      notes,
+      generatedAt: now,
+      canEdit,
+      version: saved?.currentVersion ?? 1,
+      // Freshly generated, so by definition current. The sibling GET route
+      // compares this fingerprint against the live data on every read.
+      sourceFingerprint: cacheState.sourceFingerprint,
+      coveragePct: cacheState.coveragePct,
+    },
   });
 });

@@ -224,6 +224,23 @@ model Org {
   clientWeeklyMeetings      ClientWeeklyMeeting[]
   clientMeetingTranscripts  ClientMeetingTranscript[]
   clientHuddleWeeklyReports ClientDailyHuddleWeeklyReport[]
+  clientMonthlyReports      ClientMonthlyReport[]
+  clientWeeklyMeetingReports ClientWeeklyMeetingReport[]
+  meetingSegments           MeetingTranscriptSegment[]
+  meetingParticipantFacts   MeetingParticipantFact[]
+  meetingStuckFacts         MeetingStuckFact[]
+  meetingWwwFacts           MeetingWwwFact[]
+  meetingFactMerges         MeetingFactMerge[]
+  meetingSegmentFacts       MeetingSegmentFact[]
+  meetingKpiFacts           MeetingKpiFact[]
+  meetingGapFacts           MeetingGapFact[]
+  meetingDiscussionFacts    MeetingDiscussionFact[]
+  wwwStatusHistory          WWWStatusHistory[]
+  meetingChunks             MeetingChunk[]
+  meetingExtractionRuns     MeetingExtractionRun[]
+  meetingReportVersions     MeetingReportVersion[]
+  meetingReportJobs         MeetingReportJob[]
+  aiUsageLogs               AiUsageLog[]
   feedbackEntries           FeedbackEntry[]
   goals                     Goal[]
   habits                    HabitAssessment[]
@@ -1026,7 +1043,12 @@ model WWWItem {
   when             DateTime
   linkedPriorityId String?
   linkedKPIId      String?
-  status           String           @default("not-started")
+  /// One of the five values `lib/constants/status.ts` can render. The default
+  /// was previously "not-started", which appears in no enum here — the status
+  /// select matched no option and silently displayed such items as "Not
+  /// Applicable", while `wwwStats.ts` dropped them from every bucket.
+  /// Normalise reads through `canonicalStatus` in `lib/services/wwwLifecycle.ts`.
+  status           String           @default("not-yet-started")
   notes            String?
   category         String?
   originalDueDate  DateTime?
@@ -1036,6 +1058,14 @@ model WWWItem {
   /// `when` deliberately stays NOT NULL so every existing reader, sort and
   /// index keeps working unchanged.
   dueDateTBD       Boolean          @default(false)
+  /// Stamped when the item first reaches `completed`, and cleared if it is
+  /// reopened.
+  ///
+  /// Derivable from WWWStatusHistory, but denormalised because "average days to
+  /// close" is a headline Monthly Report metric and computing it from the
+  /// history would mean scanning every transition for every item in the period.
+  /// One subtraction against `createdAt` instead.
+  completedAt      DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   createdBy        String
@@ -1046,6 +1076,7 @@ model WWWItem {
   org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs     WWWRevisionLog[]
   noteEntries      WWWNote[]
+  statusHistory    WWWStatusHistory[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position Float?
@@ -1060,6 +1091,53 @@ model WWWItem {
   @@index([orgId, deletedAt])
   @@index([orgId, status, deletedAt])
   @@index([deletedAt])
+  @@schema("app_quikscale")
+}
+
+/// Every status transition a WWW item has made.
+///
+/// WHY NOT DERIVE THIS FROM THE AUDIT TRAIL
+/// ----------------------------------------
+/// `AuditChange` already records `status` edits, and deriving history from it
+/// would need no new table. It is the wrong source, for one decisive reason:
+/// `lib/audit/audit.ts` swallows its own failures by explicit contract, so a
+/// logging glitch silently drops a transition. That is correct for an audit
+/// trail — a telemetry problem must never fail a user's edit — and wrong for
+/// the ledger that completion rate, overdue rate and average closure time are
+/// computed from. A metric with silently missing rows is worse than no metric.
+///
+/// So this is written INSIDE the same transaction as the `WWWItem` update: the
+/// history and the status can never disagree, because either both land or
+/// neither does.
+///
+/// Historical status is never overwritten. The requirement doc asks for exactly
+/// this shape:
+///
+///     WWW #123   Aug 10 -> not-yet-started
+///                Aug 17 -> on-track
+///                Aug 24 -> completed
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` section I.2.
+model WWWStatusHistory {
+  id         String   @id @default(cuid())
+  orgId      String
+  wwwItemId  String
+  /// Null only for the row recording creation.
+  fromStatus String?
+  toStatus   String
+  changedBy  String
+  changedAt  DateTime @default(now())
+  /// Free text, e.g. a revision reason. Never inferred.
+  reason     String?
+  /// web | api | report | system — how the change arrived. Distinguishes an
+  /// owner updating their own item from a bulk or automated change.
+  source     String   @default("web")
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  wwwItem    WWWItem  @relation(fields: [wwwItemId], references: [id], onDelete: Cascade)
+
+  @@index([wwwItemId, changedAt])
+  @@index([orgId, toStatus, changedAt])
+  @@index([orgId])
   @@schema("app_quikscale")
 }
 
@@ -1444,6 +1522,19 @@ model Client {
   /// dailyDays: weekday names for the daily huddle (empty ⇒ Mon–Fri).
   /// meetingUntil: recurrence end date (null ⇒ open-ended).
   weeklyDay           String?
+  /// Per-client Weekly Meeting agenda:
+  /// `[{ key, label, order, expectedMinutes, cues[] }]`.
+  ///
+  /// Requirement doc §5.2 needs an EXPECTED duration per segment to classify
+  /// time discipline as Rushed / On Track / Over-ran. Without one, only
+  /// Done / Partial / Not Done is computable — which is what the schema could
+  /// express before this column existed.
+  ///
+  /// Null falls back to `DEFAULT_AGENDA` in `lib/meetings/agendaConfig.ts`, so
+  /// every existing client keeps working unchanged. A partial override is
+  /// enough: supplying only `expectedMinutes` for one segment leaves the rest
+  /// standard.
+  weeklyAgendaConfig  Json?
   dailyDays           String[]                        @default([])
   meetingUntil        DateTime?
   createdAt           DateTime                        @default(now())
@@ -1459,6 +1550,8 @@ model Client {
   weeklyMeetings      ClientWeeklyMeeting[]
   meetingTranscripts  ClientMeetingTranscript[]
   huddleWeeklyReports ClientDailyHuddleWeeklyReport[]
+  monthlyReports      ClientMonthlyReport[]
+  weeklyMeetingReports ClientWeeklyMeetingReport[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position Float?
@@ -1619,6 +1712,22 @@ model ClientDailyHuddle {
   format2Status       ClientMeetingFlag              @default(NA)
   stuckCallStatus     ClientMeetingFlag              @default(NA)
   punctualityOverride ClientMeetingFlag              @default(NA)
+  /// Per-occurrence planned start/end (HH:mm), when THIS day's slot differed
+  /// from the client's standing schedule.
+  ///
+  /// This answers a question the client asked directly in the requirement doc:
+  /// *"How do we capture meetings that start on time if meeting time is changed
+  /// for a particular day?"*
+  ///
+  /// Punctuality is `actualStartTime` measured against the PLANNED start. With
+  /// only `Client.dailyStartTime` to compare against, a huddle deliberately
+  /// moved from 09:30 to 10:30 is scored 60 minutes late — so a team that
+  /// communicated a change well is punished for it, and the "started on time"
+  /// figure in §4.2 becomes untrustworthy precisely when the team is being
+  /// organised. Null means the standing schedule applied, which is the normal
+  /// case and preserves today's behaviour for every existing row.
+  plannedStartOverride String?
+  plannedEndOverride   String?
   /// Snapshot of invited roster size at meeting time (used in attendance math).
   totalMembers        Int                            @default(0)
   /// Rich-text notes captured in the drawer (image 1).
@@ -1667,6 +1776,19 @@ model ClientDailyHuddleAbsence {
 model ClientDailyHuddleTeamAbsence {
   huddleId       String
   clientMemberId String
+  /// Why the member was absent: PLANNED_LEAVE | UNPLANNED | UNKNOWN.
+  ///
+  /// The requirement doc insists in five separate places that approved leave is
+  /// NOT an attendance-discipline issue, and that a member is evaluated only on
+  /// the huddles they were actually expected at. Without this column every
+  /// absence looks the same, so someone on approved leave is scored exactly
+  /// like someone who simply did not turn up.
+  ///
+  /// `weeklyHuddleAggregate.buildAttendanceMatrix` already accepts an `onLeave`
+  /// map and renders NA_LEAVE — that parameter was plumbed but had no data
+  /// source. This is it. Null reads as UNKNOWN, which preserves today's
+  /// behaviour exactly for every existing row.
+  absenceReason  String?
   member         ClientMember      @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
   huddle         ClientDailyHuddle @relation(fields: [huddleId], references: [id], onDelete: Cascade)
 
@@ -1728,6 +1850,7 @@ model ClientWeeklyMeeting {
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
   transcripts            ClientMeetingTranscript[]
+  report                 ClientWeeklyMeetingReport?
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position Float?
@@ -2429,6 +2552,57 @@ model ClientMeetingTranscript {
   reportGeneratedBy String?
   reportUpdatedAt   DateTime?
   reportUpdatedBy   String?
+
+  // ── Extraction provenance (doc 17 §E.2) ─────────────────────────────────
+  // These make extraction idempotent and one-time: a transcript is extracted
+  // once per (transcriptVersion, extractionVersion, normalizationVersion,
+  // chunkerVersion, promptVersion) and never again. Without them every
+  // regenerate re-pays for extraction, which is the single largest avoidable
+  // cost in the meeting pipeline.
+  //
+  /// sha256(rawText). `transcriptVersion` bumps only when this changes, so a
+  /// Fathom re-emit of byte-identical content costs nothing.
+  sourceHash           String?
+  /// Increments when `sourceHash` changes. Part of the extraction cache key.
+  transcriptVersion    Int      @default(1)
+  /// Estimated token count of `rawText` — drives chunk-count planning.
+  estTokens            Int?
+  /// Version of the normalizer that produced this transcript's segments.
+  normalizationVersion Int?
+  /// Counts of dropped / merged / interpolated turns, for the provenance caption.
+  normalizationStats   Json?
+  /// Bump to force fleet-wide re-extraction after an extractor change.
+  extractionVersion    Int?
+  extractedAt          DateTime?
+  /// NOT_STARTED | PROCESSING | COMPLETED | PARTIAL | FAILED | DEGRADED
+  extractionStatus     String?
+  extractionError      String?
+  /// Structured transcript as the recorder returned it:
+  /// `[{ speaker, text, timestamp }]`.
+  ///
+  /// `rawText` is a FLATTENED view of this — `transcriptToText` in the Fathom
+  /// connector joins it to "Speaker: text" lines and **discards every
+  /// timestamp**. Without the structured form there is no time information at
+  /// all on the API ingestion path, so evidence timestamps, time-windowed
+  /// chunking and the time-weighted coverage gate all degrade to interpolation.
+  /// Storing it here preserves the timings without changing `rawText`, which
+  /// the viewer and the DOCX export still render verbatim.
+  rawSegments          Json?
+  /// EXPLICIT | INTERPOLATED | MIXED | NONE — provenance of segment timings.
+  /// Never let a report imply measured timings when they were derived.
+  timingSource         String?
+
+  // ── Normalisation + chunk plan (deterministic, no AI) ───────────────────
+  segments             MeetingTranscriptSegment[]
+  chunks               MeetingChunk[]
+  extractionRuns       MeetingExtractionRun[]
+  participantFacts     MeetingParticipantFact[]
+  stuckFacts           MeetingStuckFact[]
+  wwwFacts             MeetingWwwFact[]
+  segmentFacts         MeetingSegmentFact[]
+  kpiFacts             MeetingKpiFact[]
+  gapFacts             MeetingGapFact[]
+  discussionFacts      MeetingDiscussionFact[]
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   createdBy         String
@@ -2479,6 +2653,31 @@ model ClientDailyHuddleWeeklyReport {
   /// Human sign-off gate — the report reads as Draft until this is set.
   validatedAt         DateTime?
   validatedBy         String?
+
+  // ── Cache key + snapshot provenance (doc 17 §E.2, §L) ───────────────────
+  // Closes doc 15 defect B8. The cache key is the TRIPLE
+  // (sourceFingerprint, promptVersion, schemaVersion): all three match ⇒ serve
+  // the stored report with zero LLM cost. Any differ ⇒ the report is STALE and
+  // the user is offered Regenerate — staleness never auto-regenerates, because
+  // that would both re-bill silently and invalidate a facilitator's sign-off.
+  //
+  /// Hash over every input the report was built from — transcripts and their
+  /// extraction versions, roster, meeting config, leave, and human edits.
+  sourceFingerprint   String?
+  /// Version of the prose prompt that produced the qualitative sections.
+  promptVersion       String?
+  /// Version of the stored report JSON shape. Readers stay back-compatible.
+  schemaVersion       Int       @default(1)
+  modelId             String?
+  tokensInput         Int?
+  tokensOutput        Int?
+  costUsd             Decimal?  @db.Decimal(10, 6)
+  /// Latest version number; history lives in `MeetingReportVersion`.
+  currentVersion      Int       @default(1)
+  /// Share of the source meetings' content actually extracted (0–100).
+  /// Below 100 the report is PARTIAL and cannot be marked validated.
+  coveragePct         Float?
+
   generatedAt         DateTime  @default(now())
   generatedBy         String
   updatedAt           DateTime  @updatedAt
@@ -2495,6 +2694,843 @@ model ClientDailyHuddleWeeklyReport {
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([deletedAt])
+  @@schema("app_quikscale")
+}
+
+/// One speaker turn from a normalised transcript.
+///
+/// This table earns its place four times over, which is why the whole
+/// long-transcript pipeline hangs off it:
+///   1. output of normalisation (`lib/meetings/normalize.ts`);
+///   2. the per-chunk FETCH UNIT — an extraction job reads only its own
+///      segment range, so worker memory stays flat no matter how long the
+///      meeting is (a 6-hour transcript is ~1 MB, loaded once);
+///   3. the EVIDENCE ANCHOR — every extracted fact cites `transcriptSegmentIds`,
+///      so a quote resolves to real text by primary key, with no search;
+///   4. the host for the optional `embedding vector(768)` column added in
+///      Phase 8 for targeted evidence retrieval.
+///
+/// Timings may be measured or derived — see `timingInterpolated` and the
+/// parent's `timingSource`. Never present a derived timing as measured.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §D.2, §E.3.
+model MeetingTranscriptSegment {
+  id                 String                  @id @default(cuid())
+  orgId              String
+  clientId           String?
+  transcriptId       String
+  /// 0-based, dense, stable. Doubles as the array position and the evidence key.
+  idx                Int
+  startMs            Int
+  endMs              Int
+  /// Speaker exactly as the recorder labelled them — never corrected, because
+  /// correcting attribution would fabricate evidence. Fathom genuinely
+  /// mis-attributes lines; resolution to a roster member is a separate step.
+  speakerRaw         String
+  /// Resolved via `participantMatch.ts`. Null when identity is not provable.
+  clientMemberId     String?
+  text               String                  @db.Text
+  charCount          Int
+  estTokens          Int
+  /// True when this segment's timing was derived rather than measured.
+  timingInterpolated Boolean                 @default(false)
+  createdAt          DateTime                @default(now())
+  org                Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript         ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@unique([transcriptId, idx])
+  @@index([orgId])
+  @@index([orgId, transcriptId, idx])
+  @@index([orgId, transcriptId, startMs])
+  @@index([transcriptId, clientMemberId])
+  @@schema("app_quikscale")
+}
+
+/// One unit of work in the extraction fan-out.
+///
+/// `status` here — not Redis — is the source of truth for both fan-in and
+/// resumability. BullMQ's `FlowProducer` would be the obvious way to express
+/// parent/child fan-in, and is deliberately NOT used: chunk state has to be
+/// persisted for resumability anyway, so FlowProducer would create a second,
+/// non-durable source of truth that a Redis eviction could silently lose,
+/// leaving a run stuck with no SQL-visible reason. `SELECT status, count(*)
+/// FROM MeetingChunk WHERE runId = ...` is an operator's first question.
+///
+/// A crashed worker is recovered by reclaiming rows whose `lockedUntil` has
+/// passed; COMPLETED chunks are never re-run, so recovery is nearly free.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §D.5, §D.6, §D.10.
+model MeetingChunk {
+  id             String                  @id @default(cuid())
+  orgId          String
+  clientId       String?
+  transcriptId   String
+  runId          String
+  idx            Int
+  /// Inclusive segment-index range of this chunk's OWN content.
+  segFromIdx     Int
+  segToIdx       Int
+  /// Where the prompt starts once overlap is applied. Null = no overlap.
+  /// Overlap is re-read context and is excluded from coverage.
+  overlapFromIdx Int?
+  startMs        Int
+  endMs          Int
+  estTokens      Int
+  estPromptTokens Int
+  /// Why the boundary landed here — kept for debuggability of chunk plans.
+  boundaryScore  Int?
+  boundaryReasons String[]               @default([])
+  /// Best-guess agenda segment from a cue at the chunk's start.
+  agendaHint     String?
+  /// True when one turn alone exceeded the hard maximum and became its own
+  /// chunk. Turns are never split: the segment is the smallest unit carrying
+  /// a speaker and a timestamp.
+  oversizeSegment Boolean                @default(false)
+  /// Raw agenda-boundary markers this chunk reported, as
+  /// `[{ segmentKey, boundary, atSegmentId, partial, evidence[], confidence }]`.
+  /// Markers are chunk output, not facts: a single START seen in chunk 3 means
+  /// nothing until it is paired with the END that chunk 5 saw, so they are
+  /// parked on the chunk and reconciled globally in consolidation. Keeping
+  /// them here rather than in a table means a COMPLETED chunk carries its own
+  /// markers through a resume and is never re-extracted for them.
+  segmentMarkers Json?
+  /// PENDING | PROCESSING | COMPLETED | FAILED | SKIPPED
+  status         String                  @default("PENDING")
+  attempts       Int                     @default(0)
+  lastError      String?
+  lockedUntil    DateTime?
+  tokensInput    Int?
+  tokensOutput   Int?
+  costUsd        Decimal?                @db.Decimal(10, 6)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  org            Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript     ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  run            MeetingExtractionRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, idx])
+  /// The fan-in query: "is any chunk still outstanding?"
+  @@index([runId, status])
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([status, lockedUntil])
+  @@schema("app_quikscale")
+}
+
+/// One extraction of one transcript by one toolchain version.
+///
+/// `@@unique([orgId, idempotencyKey])` IS the idempotency guard: a duplicate
+/// request finds the existing run and joins it rather than starting a second
+/// pipeline. The key hashes every version that can change the extracted facts
+/// (transcript, normalisation, chunker, extractor, prompt), so a toolchain
+/// change forces a fresh run while an unchanged re-request costs nothing.
+///
+/// `coveragePct` is TIME-weighted, not chunk-count-weighted: a failed 12-minute
+/// chunk matters more than a failed 3-minute one. Below `MIN_COVERAGE` no
+/// report is generated at all; between that and 100% the report is PARTIAL,
+/// names its missing windows, and cannot be signed off.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §D.8, §D.10, §E.3.
+model MeetingExtractionRun {
+  id                   String                  @id @default(cuid())
+  orgId                String
+  clientId             String?
+  transcriptId         String
+  meetingId            String?
+  /// DAILY | WEEKLY
+  cadence              String?
+  idempotencyKey       String
+  transcriptVersion    Int
+  normalizationVersion Int
+  chunkerVersion       Int
+  extractionVersion    Int
+  extractPromptVersion String
+  /// PENDING | PREPARING | EXTRACTING | CONSOLIDATING | ANALYSING
+  /// | COMPLETED | PARTIAL | FAILED | DEGRADED
+  status               String                  @default("PENDING")
+  stage                String?
+  progress             Json?
+  chunksTotal          Int                     @default(0)
+  chunksCompleted      Int                     @default(0)
+  chunksFailed         Int                     @default(0)
+  segmentsTotal        Int                     @default(0)
+  /// Provenance of segment timings for this run's transcript.
+  timingSource         String?
+  normalizationStats   Json?
+  contentMsTotal       Int?
+  contentMsCovered     Int?
+  coveragePct          Float?
+  /// The fan-in barrier. Set by exactly one winner via a conditional UPDATE,
+  /// so consolidation starts once and only when no chunk is outstanding.
+  consolidateClaimedAt DateTime?
+  tokensInput          Int                     @default(0)
+  tokensOutput         Int                     @default(0)
+  costUsd              Decimal                 @default(0) @db.Decimal(10, 6)
+  queueWaitMs          Int?
+  workerDurationMs     Int?
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  error                String?
+  requestedBy          String?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  org                  Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript           ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  chunks               MeetingChunk[]
+
+  /// Idempotency: a duplicate request joins this run instead of starting one.
+  @@unique([orgId, idempotencyKey])
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, status])
+  @@schema("app_quikscale")
+}
+
+/// Monthly Report — one persisted rollup per client per calendar month.
+///
+/// BUILT FROM STORED WEEKLY ARTEFACTS, NEVER FROM TRANSCRIPTS.
+/// A month is roughly 20 daily huddles and 4 weekly meetings — about 1.4M
+/// tokens of transcript. This report reads four `ClientDailyHuddleWeeklyReport`
+/// rows (their flat `metrics` snapshots), the WWW lifecycle, and SQL aggregates
+/// over the fact layer: ~5k tokens in total. That ~99.6% saving is the single
+/// largest lever in the architecture, and it exists only because the weekly
+/// reports stored their numbers flat in the first place.
+///
+/// `sourceWeeklyReportIds` and `sourceWmReportIds` are what the fingerprint
+/// hashes: a monthly report is fresh exactly when the reports beneath it have
+/// not been regenerated. It never needs to know what a transcript said.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §D.5, §E.6, §G lever 12.
+model ClientMonthlyReport {
+  id                    String    @id @default(cuid())
+  orgId                 String
+  clientId              String
+  /// First and last day of the calendar month, UTC midnight.
+  periodStart           DateTime
+  periodEnd             DateTime
+  /// Full structured report — see `StoredMonthlyReport`.
+  report                Json
+  /// Flat numeric snapshot, for quarterly/annual trending later. The same
+  /// discipline that made THIS report cheap to build.
+  metrics               Json
+  validation            Json?
+  reportConfidence      Float?
+  /// The weekly artefacts this rollup was built from, for traceability and for
+  /// the cache key.
+  sourceWeeklyReportIds String[]  @default([])
+  sourceWmReportIds     String[]  @default([])
+  /// Weeks in the month with no report. Recorded so the rendered report can
+  /// qualify its conclusions instead of implying a complete picture.
+  missingWeeks          String[]  @default([])
+
+  // ── Cache key + snapshot provenance (doc 17 §L) ─────────────────────────
+  sourceFingerprint     String?
+  promptVersion         String?
+  schemaVersion         Int       @default(1)
+  modelId               String?
+  tokensInput           Int?
+  tokensOutput          Int?
+  costUsd               Decimal?  @db.Decimal(10, 6)
+  currentVersion        Int       @default(1)
+
+  /// Human sign-off gate — the report reads as Draft until this is set.
+  validatedAt           DateTime?
+  validatedBy           String?
+  generatedAt           DateTime  @default(now())
+  generatedBy           String
+  updatedAt             DateTime  @updatedAt
+  updatedBy             String?
+  deletedAt             DateTime?
+  isDemoData            Boolean   @default(false)
+  client                Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  org                   Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// Regenerating a month replaces its row; history lives in
+  /// `MeetingReportVersion`.
+  @@unique([orgId, clientId, periodStart])
+  @@index([orgId])
+  @@index([orgId, clientId, periodStart])
+  @@index([orgId, deletedAt])
+  @@index([clientId])
+  @@schema("app_quikscale")
+}
+
+/// One participant's three-point Daily Huddle update, in one meeting.
+///
+/// The highest-value table in the fact layer. It answers adherence trends,
+/// quality trends and "No Stuck" frequency directly; self-joined on
+/// `(clientMemberId, meetingDate)` it also answers Phase-2 commitment
+/// follow-through — today's achievement against yesterday's focus — with **no
+/// schema change**, which the requirement doc asks for explicitly.
+///
+/// ADHERENCE AND QUALITY ARE SEPARATE COLUMNS, DELIBERATELY.
+/// The client doc distinguishes "was the update given?" from "how good was
+/// it?", and the Facilitator Observations section is built on exactly that
+/// split: a member can score 100% adherence while every achievement is
+/// activity-oriented. Collapsing them would erase the finding.
+///
+/// Adherence is stored as an ENUM-LIKE STRING, never a number. The Yes=100 /
+/// Partial=50 / No=0 mapping and the averaging over huddles ATTENDED live in
+/// `lib/ai/weeklyHuddleAggregate.ts`, where they are unit-tested and cannot
+/// drift. The model never emits a score.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §E.4.
+model MeetingParticipantFact {
+  id                  String                  @id @default(cuid())
+  orgId               String
+  clientId            String?
+  transcriptId        String
+  runId               String?
+  meetingDate         DateTime?
+  cadence             String?
+  chunkIdx            Int?
+  /// Speaker label exactly as the recorder wrote it. Never corrected.
+  speakerRaw          String
+  /// Resolved via `participantMatch.ts`. Null when identity is not provable —
+  /// an unresolved speaker is excluded from scoring rather than guessed at.
+  clientMemberId      String?
+
+  achievementText     String?                 @db.Text
+  /// YES | PARTIAL | NO
+  achievementAdherence String
+  /// OUTCOME | ACTIVITY | BAU | VAGUE | NONE
+  achievementQuality  String
+  achievementEvidence Json
+
+  focusText           String?                 @db.Text
+  focusAdherence      String
+  /// DELIVERABLE | SPECIFIC | CARRY_FORWARD | BAU | VAGUE | NONE
+  focusQuality        String
+  focusEvidence       Json
+
+  stuckText           String?                 @db.Text
+  stuckAdherence      String
+  /// CLEAR | UNCLEAR | EXPLICIT_NONE | NOT_ADDRESSED
+  stuckQuality        String
+  stuckEvidence       Json
+
+  /// Did the member explicitly say they had no stuck?
+  ///
+  /// Derivable from `stuckQuality`, but stored because the client doc asks for
+  /// "No Stuck" frequency as structured underlying data even when it is not
+  /// displayed — it is the input to the future No-Stuck vs Red-KPI
+  /// correlation, and a boolean is far cheaper to aggregate over four weeks
+  /// than an enum comparison.
+  noStuck             Boolean                 @default(false)
+
+  confidence          Float                   @default(0)
+  extractionVersion   Int?
+  promptVersion       String?
+  modelId             String?
+  /// True when this came from a chunk's overlap window. The merger prefers the
+  /// non-overlap instance so overlap never inflates counts.
+  fromOverlap         Boolean                 @default(false)
+  /// Set when consolidation folded this into another fact. Never hard-deleted,
+  /// so a bad merge is inspectable and reversible.
+  mergedIntoId        String?
+  createdAt           DateTime                @default(now())
+  deletedAt           DateTime?
+  org                 Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript          ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, clientId, meetingDate])
+  @@index([orgId, clientMemberId, meetingDate])
+  @@index([orgId, clientId, noStuck, meetingDate])
+  @@schema("app_quikscale")
+}
+
+/// One blocker raised in a meeting.
+///
+/// `normalizedKey` is what makes recurrence detection free: grouping by it
+/// finds repeats within a week (§4.5B) AND across a month, with no AI call and
+/// no vector index.
+///
+/// `raisedForRaw` is free text on purpose — a stuck is often raised for a
+/// client, a team or an external party, not only for a roster member. Forcing
+/// it to a member id would either lose those or invent an owner.
+///
+/// `statusStated` is populated ONLY when a status was stated aloud. A blocker's
+/// real status lives in the business record, not in a sentence.
+model MeetingStuckFact {
+  id                String                  @id @default(cuid())
+  orgId             String
+  clientId          String?
+  transcriptId      String
+  runId             String?
+  meetingDate       DateTime?
+  cadence           String?
+  chunkIdx          Int?
+  raisedByRaw       String
+  raisedByMemberId  String?
+  raisedForRaw      String?
+  raisedForMemberId String?
+  description       String                  @db.Text
+  /// Lowercased, punctuation-stripped, stopword-free, sorted tokens.
+  /// Drives recurrence grouping.
+  normalizedKey     String
+  category          String?
+  /// OPEN | IN_PROGRESS | RESOLVED — only when stated in the meeting.
+  statusStated      String?
+  evidence          Json
+  confidence        Float                   @default(0)
+  extractionVersion Int?
+  promptVersion     String?
+  modelId           String?
+  fromOverlap       Boolean                 @default(false)
+  mergedIntoId      String?
+  createdAt         DateTime                @default(now())
+  deletedAt         DateTime?
+  org               Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript        ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, clientId, meetingDate])
+  /// Recurrence grouping, within a week and across a month.
+  @@index([orgId, normalizedKey])
+  @@schema("app_quikscale")
+}
+
+/// A Who/What/When candidate extracted from a meeting.
+///
+/// Serves BOTH report sections and the link to the business record, which is
+/// why doc 15's separately-planned `ClientHuddleReportWwwLink` is unnecessary:
+/// one table, not two.
+///
+/// `whenMissing` is a required boolean rather than an absent `whenText`. The
+/// client doc is unambiguous — where When is missing, FLAG it, never infer —
+/// and an omitted field is ambiguous in a way that invites a guessed date.
+/// `whenText` holds the date AS SPOKEN ("this week", "month-end"); it is not
+/// normalised to a calendar date here, because doing so would bake a guess
+/// into the record.
+model MeetingWwwFact {
+  id                String                  @id @default(cuid())
+  orgId             String
+  clientId          String?
+  transcriptId      String
+  runId             String?
+  meetingDate       DateTime?
+  cadence           String?
+  chunkIdx          Int?
+  whoRaw            String?
+  whoMemberId       String?
+  /// Resolved tenant `User` id — the bridge to `WWWItem.who`. Rungs 3 and 4 of
+  /// the ladder require human confirmation, so this stays null until confirmed.
+  whoUserId         String?
+  what              String                  @db.Text
+  normalizedKey     String
+  /// The date exactly as spoken. Never converted.
+  whenText          String?
+  /// Parsed only when unambiguous, and only for display alongside `whenText`.
+  whenDate          DateTime?
+  whenMissing       Boolean                 @default(true)
+  /// COMPLETE | MISSING_WHEN | MISSING_WHO | MISSING_WHAT | MISSING_MULTIPLE
+  completeness      String
+  evidence          Json
+  confidence        Float                   @default(0)
+  /// Set once a real WWW item has been created from this candidate.
+  linkedWwwItemId   String?
+  /// A dismissal persists, so a rejected suggestion never reappears after a
+  /// regenerate — otherwise the facilitator re-rejects it every week.
+  dismissedAt       DateTime?
+  dismissedBy       String?
+  dismissReason     String?
+  extractionVersion Int?
+  promptVersion     String?
+  modelId           String?
+  fromOverlap       Boolean                 @default(false)
+  mergedIntoId      String?
+  createdAt         DateTime                @default(now())
+  deletedAt         DateTime?
+  org               Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript        ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, clientId, meetingDate])
+  @@index([orgId, linkedWwwItemId])
+  @@index([orgId, normalizedKey])
+  @@schema("app_quikscale")
+}
+
+/// One agenda segment's coverage, reconstructed from transcript markers.
+///
+/// The extractor emits START/END markers per chunk; consolidation pairs them
+/// globally into windows. `coverage` and `timeDiscipline` are then computed by
+/// `lib/meetings/segmentAdherence.ts` — never by the model, which only reports
+/// where a boundary fell.
+///
+/// `humanFlag` and `flagAgrees` record the reconciliation with the seven
+/// `ClientWeeklyMeeting` flag columns. **The human flag wins on disagreement**
+/// — a facilitator may know a segment was deferred in a side channel the
+/// recorder never heard. The disagreement is stored rather than discarded,
+/// because a systematic mismatch means either detection is wrong or the flags
+/// are being filled in carelessly, and both are worth knowing.
+model MeetingSegmentFact {
+  id                String                  @id @default(cuid())
+  orgId             String
+  clientId          String?
+  transcriptId      String
+  runId             String?
+  meetingDate       DateTime?
+  /// goodNews | kpDashboard | gaps | www | feedback |
+  /// collectiveIntelligence | opspReview | onePhraseClose
+  segmentKey        String
+  /// DONE | PARTIAL | NOT_DONE | UNKNOWN
+  coverage          String
+  /// ON_TRACK | RUSHED | OVER_RAN | SKIPPED | UNKNOWN
+  timeDiscipline    String
+  expectedMinutes   Int?
+  actualMinutes     Float?
+  startMs           Int?
+  endMs             Int?
+  /// The `ClientMeetingFlag` value a human entered: YES | NO | NA, or null.
+  humanFlag         String?
+  /// False when the human flag and the transcript reading disagree.
+  flagAgrees        Boolean                 @default(true)
+  comment           String?
+  evidence          Json
+  confidence        Float                   @default(0)
+  extractionVersion Int?
+  promptVersion     String?
+  modelId           String?
+  createdAt         DateTime                @default(now())
+  deletedAt         DateTime?
+  org               Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript        ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  /// One verdict per segment per meeting.
+  @@unique([transcriptId, segmentKey])
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, clientId, meetingDate])
+  @@schema("app_quikscale")
+}
+
+/// One member's K&P dashboard read in a Weekly Meeting.
+///
+/// **RAG IS COPIED VERBATIM, NEVER JUDGED.** The requirement doc is explicit:
+/// preserve the status stated or shown in the meeting; the AI must not
+/// independently change it based on its interpretation. A validation rule fails
+/// the report if a RAG value appears with no evidence quote containing it.
+///
+/// `ragConflict` marks a member whose RAG was stated differently at two points.
+/// The later value is kept and the conflict recorded — resolving it silently
+/// would be the model picking a side on a number the client is scored against.
+model MeetingKpiFact {
+  id                String                  @id @default(cuid())
+  orgId             String
+  clientId          String?
+  transcriptId      String
+  runId             String?
+  meetingDate       DateTime?
+  /// Which chunk produced this fact. Null once consolidated across several.
+  chunkIdx          Int?
+  /// Speaker label exactly as the transcript had it.
+  speakerRaw        String
+  clientMemberId    String?
+  /// GREEN | AMBER | RED | MIXED | NOT_STATED — as stated, never derived.
+  kpiRag            String?
+  priorityRag       String?
+  keyPoints         String[]                @default([])
+  ragConflict       Boolean                 @default(false)
+  evidence          Json
+  confidence        Float                   @default(0)
+  extractionVersion Int?
+  promptVersion     String?
+  modelId           String?
+  fromOverlap       Boolean                 @default(false)
+  mergedIntoId      String?
+  createdAt         DateTime                @default(now())
+  deletedAt         DateTime?
+  org               Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript        ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, clientId, meetingDate])
+  /// The join P10's No-Stuck vs Red-KPI correlation needs.
+  @@index([orgId, clientMemberId, meetingDate])
+  @@schema("app_quikscale")
+}
+
+/// A gap or issue surfaced in a Weekly Meeting, with the agreed response.
+///
+/// `scope` distinguishes a gap one member raised from one the whole team shares.
+/// The requirement doc asks for team-wide gaps to be CONSOLIDATED rather than
+/// repeated member-wise, so a gap raised by three or more people becomes one
+/// `TEAM` row listing every raiser — which is also a stronger signal than three
+/// separate rows would be.
+model MeetingGapFact {
+  id                String                  @id @default(cuid())
+  orgId             String
+  clientId          String?
+  transcriptId      String
+  runId             String?
+  meetingDate       DateTime?
+  /// Which chunk produced this fact. Null once consolidated across several.
+  chunkIdx          Int?
+  gap               String                  @db.Text
+  normalizedKey     String
+  /// Only when an action was actually agreed. Never inferred.
+  agreedAction      String?                 @db.Text
+  ownerRaw          String?
+  ownerMemberId     String?
+  /// TEAM | INDIVIDUAL
+  scope             String                  @default("INDIVIDUAL")
+  raisedByRaw       String[]                @default([])
+  /// RED | AMBER | GREEN — only when a severity was stated aloud.
+  severityStated    String?
+  evidence          Json
+  confidence        Float                   @default(0)
+  extractionVersion Int?
+  promptVersion     String?
+  modelId           String?
+  fromOverlap       Boolean                 @default(false)
+  mergedIntoId      String?
+  createdAt         DateTime                @default(now())
+  deletedAt         DateTime?
+  org               Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript        ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([orgId, clientId, meetingDate])
+  @@index([orgId, normalizedKey])
+  @@schema("app_quikscale")
+}
+
+/// Good News, Customer/Employee Feedback and Collective Intelligence items.
+///
+/// One table with a `kind` discriminator rather than three near-identical ones:
+/// all three are "somebody shared something", differing only in which agenda
+/// segment they belong to.
+///
+/// `wasDeferred` matters for CI specifically. The requirement doc says that if
+/// CI was skipped or deferred, RECORD THAT — do not generate a topic from other
+/// meeting discussion. A deferred CI is a row saying so, never a manufactured
+/// topic scraped from elsewhere in the conversation.
+model MeetingDiscussionFact {
+  id                String                  @id @default(cuid())
+  orgId             String
+  clientId          String?
+  transcriptId      String
+  runId             String?
+  meetingDate       DateTime?
+  /// Which chunk produced this fact. Null once consolidated across several.
+  chunkIdx          Int?
+  /// GOOD_NEWS | CEF_CUSTOMER | CEF_EMPLOYEE | CI_TOPIC
+  kind              String
+  sharedByRaw       String?
+  sharedByMemberId  String?
+  summary           String                  @db.Text
+  normalizedKey     String
+  /// The decision or outcome, for a CI topic that reached one.
+  outcome           String?                 @db.Text
+  /// True when the segment was explicitly skipped or deferred.
+  wasDeferred       Boolean                 @default(false)
+  evidence          Json
+  confidence        Float                   @default(0)
+  extractionVersion Int?
+  promptVersion     String?
+  modelId           String?
+  fromOverlap       Boolean                 @default(false)
+  mergedIntoId      String?
+  createdAt         DateTime                @default(now())
+  deletedAt         DateTime?
+  org               Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  transcript        ClientMeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId, kind])
+  @@index([orgId, clientId, meetingDate])
+  @@schema("app_quikscale")
+}
+
+/// Audit of one consolidation decision.
+///
+/// Every merge is recorded with the rule that made it and who decided. Two
+/// reasons this matters more than it looks:
+///
+///   · A bad merge is the most damaging failure in consolidation — two distinct
+///     blockers merged into one produce a FALSE report and destroy an evidence
+///     trail. Merged rows are soft-deleted rather than removed, so a merge is
+///     inspectable and reversible.
+///   · `decidedBy` distinguishes free deterministic merges from the bounded LLM
+///     adjudication, so the adjudicator's accuracy is measurable rather than
+///     assumed.
+model MeetingFactMerge {
+  id             String   @id @default(cuid())
+  orgId          String
+  transcriptId   String
+  runId          String?
+  /// PARTICIPANT | STUCK | WWW
+  factType       String
+  survivorFactId String
+  mergedFactId   String
+  /// EXACT_KEY | TOKEN_SIMILARITY | JARO | LLM_ADJUDICATED | OVERLAP_DUPLICATE
+  rule           String
+  similarity     Float?
+  /// deterministic | llm
+  decidedBy      String
+  confidence     Float?
+  createdAt      DateTime @default(now())
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, transcriptId])
+  @@index([survivorFactId])
+  @@schema("app_quikscale")
+}
+
+/// Immutable snapshot of one generated report version — the answer to
+/// "why did the report say this in August?".
+///
+/// ONE table serves every report kind (`reportKind` discriminates) rather than
+/// a parallel version table per report type. A fourth report kind is then a new
+/// composer, not new infrastructure.
+///
+/// Regenerating never destroys the previous snapshot: the live row on the report
+/// table is version N, and versions 1..N-1 remain here. Retention is the last
+/// 10 versions per report, pruned by the generator.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §E.6, §L.
+model MeetingReportVersion {
+  id                String   @id @default(cuid())
+  orgId             String
+  clientId          String?
+  /// DH_WEEKLY | DH_DAILY | WM | MONTHLY
+  reportKind        String
+  /// Id of the row on the owning report table (not an FK — the table varies
+  /// by `reportKind`, and a snapshot must outlive a hard-deleted report).
+  reportId          String
+  version           Int
+  report            Json
+  metrics           Json
+  validation        Json?
+  /// The exact cache key this snapshot was generated under.
+  sourceFingerprint String?
+  promptVersion     String?
+  schemaVersion     Int      @default(1)
+  modelId           String?
+  extractionVersion Int?
+  tokensInput       Int?
+  tokensOutput      Int?
+  costUsd           Decimal? @db.Decimal(10, 6)
+  coveragePct       Float?
+  generatedAt       DateTime @default(now())
+  generatedBy       String
+  org               Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([reportKind, reportId, version])
+  @@index([orgId])
+  @@index([orgId, reportKind, reportId])
+  @@index([orgId, clientId, reportKind, generatedAt])
+  @@schema("app_quikscale")
+}
+
+/// Report-generation lock, progress record and idempotency guard.
+///
+/// The `@@unique([orgId, reportKind, scopeKey])` constraint IS the lock: two
+/// users pressing Generate simultaneously race to insert, exactly one wins, and
+/// the loser is handed the winner's job to poll. Without it each press is a
+/// separate LLM bill plus a lost-update race on the report upsert.
+///
+/// `scopeKey` is the deterministic identity of the thing being generated:
+///   "DH_WEEKLY:<clientId>:2026-08-10" · "WM:<weeklyMeetingId>"
+///   "MONTHLY:<clientId>:2026-08"
+///
+/// A `PROCESSING` row whose `lockedUntil` has passed is reclaimable — that is
+/// how a crashed serverless invocation or worker is recovered rather than
+/// leaving the report permanently un-generatable.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §E.6, §N.
+model MeetingReportJob {
+  id          String    @id @default(cuid())
+  orgId       String
+  clientId    String?
+  reportKind  String
+  scopeKey    String
+  /// NOT_STARTED | PROCESSING | COMPLETED | FAILED
+  status      String    @default("NOT_STARTED")
+  /// { step, done, total, label } — drives "Composing 3 of 6…" in the UI.
+  progress    Json?
+  attempt     Int       @default(1)
+  /// Lease expiry. Past + PROCESSING ⇒ another caller may reclaim.
+  lockedUntil DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  error       String?
+  /// Set once the generated report row exists, so the UI can navigate to it.
+  reportId    String?
+  requestedBy String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// The generation lock.
+  @@unique([orgId, reportKind, scopeKey])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([status, lockedUntil])
+  @@schema("app_quikscale")
+}
+
+/// One row per LLM call — including failures.
+///
+/// Every model call in the meeting pipeline goes through
+/// `apps/quikscale/lib/ai/llm.ts`, which writes one of these. Failures are
+/// logged too: a call that burned input tokens and then timed out still cost
+/// money, and cost must never be invisible.
+///
+/// Shape deliberately mirrors QuikInsight's `QiTokenUsageLog` so the two are
+/// comparable, with `runId`/`chunkIdx` added because a long Weekly Meeting
+/// extraction fans out across many chunks and its cost must decompose per chunk.
+///
+/// This table is what makes the project's primary KPI — Report Cache Hit Rate —
+/// and "cost per Weekly Meeting" answerable as SQL.
+///
+/// See `docs/17-ai-meeting-rhythm-architecture.md` §E.6, §O.
+model AiUsageLog {
+  id            String   @id @default(cuid())
+  orgId         String
+  clientId      String?
+  /// NORMALIZE | CHUNK_EXTRACT | CONSOLIDATE_ADJUDICATE | EMBED | VERIFY
+  /// | DH_WEEKLY_PROSE | WM_PROSE | MONTHLY | DAILY_REPORT | SEMANTIC_DUP
+  feature       String
+  model         String
+  promptVersion String?
+  /// Provenance — which meeting, run and chunk this call belongs to.
+  transcriptId  String?
+  runId         String?
+  chunkIdx      Int?
+  reportKind    String?
+  reportId      String?
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  /// Tokens served from the provider's context cache, when reported.
+  cachedTokens  Int?
+  costUsd       Decimal  @default(0) @db.Decimal(10, 6)
+  latencyMs     Int?
+  queueWaitMs   Int?
+  /// OK | INVALID_OUTPUT | REPAIRED | RATE_LIMITED | TIMEOUT | UNAVAILABLE | ERROR
+  status        String   @default("OK")
+  attempt       Int      @default(1)
+  errorCode     String?
+  /// Correlates the retries and repair calls of one logical operation.
+  traceId       String?
+  createdAt     DateTime @default(now())
+  org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@index([orgId, feature, createdAt])
+  @@index([orgId, clientId, createdAt])
+  @@index([runId])
+  @@index([reportKind, reportId])
   @@schema("app_quikscale")
 }
 
@@ -27861,4 +28897,63 @@ model QiTokenTransaction {
   @@index([userId, createdAt(sort: Desc)])
   @@index([orgId, createdAt(sort: Desc)])
   @@schema("app_quikinsight")
+}
+
+model ClientWeeklyMeetingReport {
+  id                String              @id @default(cuid())
+  orgId             String
+  clientId          String
+  weeklyMeetingId   String              @unique
+  meetingDate       DateTime
+  /// Full structured report — see `StoredWeeklyMeetingReport`.
+  report            Json
+  /// Flat numeric snapshot, so the monthly rollup reads numbers instead of
+  /// re-deriving them from facts.
+  metrics           Json
+  validation        Json?
+  reportConfidence  Float?
+
+  // ── Coverage (doc 17 §D.10) ─────────────────────────────────────────────
+  /// Extraction coverage at generation time. Below 100 the report is PARTIAL
+  /// and cannot be signed off.
+  coveragePct       Float?
+  /// The time windows nobody read, as `[{ startMs, endMs }]`. Named in the
+  /// report so an incomplete picture never reads as a complete one.
+  processingLimitations Json?
+  /// COMPLETE | PARTIAL — mirrors the extraction run's coverage verdict.
+  completeness      String              @default("COMPLETE")
+
+  // ── Cache key + snapshot provenance (doc 17 §L) ─────────────────────────
+  sourceFingerprint String?
+  promptVersion     String?
+  schemaVersion     Int                 @default(1)
+  modelId           String?
+  extractionVersion Int?
+  tokensInput       Int?
+  tokensOutput      Int?
+  costUsd           Decimal?            @db.Decimal(10, 6)
+  currentVersion    Int                 @default(1)
+
+  /// Human sign-off gate — the report reads as Draft until this is set, and a
+  /// PARTIAL report can never reach it.
+  validatedAt       DateTime?
+  validatedBy       String?
+  generatedAt       DateTime            @default(now())
+  generatedBy       String
+  updatedAt         DateTime            @updatedAt
+  updatedBy         String?
+  deletedAt         DateTime?
+  isDemoData        Boolean             @default(false)
+  client            Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  org               Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  weeklyMeeting     ClientWeeklyMeeting @relation(fields: [weeklyMeetingId], references: [id], onDelete: Cascade)
+
+  /// One report per meeting. Regenerating replaces the row; history lives in
+  /// `MeetingReportVersion`.
+  @@unique([orgId, weeklyMeetingId])
+  @@index([orgId])
+  @@index([orgId, clientId, meetingDate])
+  @@index([orgId, deletedAt])
+  @@index([clientId])
+  @@schema("app_quikscale")
 }

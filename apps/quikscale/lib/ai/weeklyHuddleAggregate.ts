@@ -23,6 +23,7 @@
  */
 
 import { isPunctual } from "@/lib/services/clientMeetingsMath";
+import { attendanceVerdict } from "@/lib/meetings/occurrenceAttendance";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -159,6 +160,17 @@ export interface HuddleDay {
   actualStartTime: string | null;
   actualEndTime: string | null;
   punctualityOverride: MeetingFlag;
+  /**
+   * This day's planned start/end, when it differed from the client's standing
+   * schedule. Null means the standing schedule applied.
+   *
+   * Punctuality is measured against these when present. Without them a huddle
+   * deliberately moved from 09:30 to 10:30 scores as 60 minutes late, which
+   * penalises a team for communicating a change — the client asked about
+   * exactly this case in the requirement doc.
+   */
+  plannedStartOverride?: string | null;
+  plannedEndOverride?: string | null;
   totalMembers: number;
   /** What we actually know about who was in the room. See `DayAttendance`. */
   attendance: DayAttendance;
@@ -442,42 +454,24 @@ export function buildAttendanceMatrix(input: {
    * complete enough to have seen the person had they been there.
    */
   const cellFor = (member: RosterMember, col: AttendanceColumn): AttendanceCell => {
-    const at = (state: AttendanceState, evidence: AttendanceEvidence): AttendanceCell => ({
-      date: col.date,
-      state,
-      evidence,
+    const day = byDate.get(col.date);
+
+    // A day that was held but has no record at all is UNKNOWN, not ABSENT. The
+    // ladder cannot make that call: it is handed evidence, and no row at all is
+    // the absence of evidence rather than evidence of absence.
+    if (col.held && !day) return { date: col.date, state: "UNKNOWN", evidence: "NO_DATA" };
+
+    const verdict = attendanceVerdict(member, {
+      held: col.held,
+      markedAbsentIds: day?.attendance.markedAbsentIds ?? [],
+      absenceListAuthoritative: day?.attendance.absenceListAuthoritative ?? false,
+      participantIds: day?.attendance.participantIds ?? [],
+      spokeIds: day?.attendance.spokeIds ?? [],
+      participantListUsable: day?.attendance.participantListUsable ?? false,
+      onLeaveIds: leaveByMember.get(member.id)?.has(col.date) ? [member.id] : [],
     });
 
-    if (!col.held) return at("NA", "NA_NOT_HELD");
-
-    const day = byDate.get(col.date);
-    if (!day) return at("UNKNOWN", "NO_DATA");
-
-    // 0. Planned leave outranks everything, including a human's absence tick:
-    //    someone on approved leave was never expected, so recording them
-    //    "absent" must not count against their attendance.
-    if (leaveByMember.get(member.id)?.has(col.date)) return at("NA", "NA_LEAVE");
-
-    // 0b. A human ticking absent outranks every inference below.
-    if (day.attendance.markedAbsentIds.includes(member.id)) return at("ABSENT", "HUMAN_MARKED");
-
-    // 0c. A human logged this huddle, so the absence list settles it both ways:
-    //     not on it means present.
-    if (day.attendance.absenceListAuthoritative) return at("PRESENT", "HUMAN_MARKED");
-
-    // 1. In the participant list — proves presence even for someone silent.
-    if (day.attendance.participantIds.includes(member.id)) {
-      return at("PRESENT", "PRESENT_PARTICIPANT_LIST");
-    }
-
-    // 2. Spoke — proves presence. (Silence proves nothing, which is why there
-    //    is no matching "did not speak ⇒ absent" rung.)
-    if (day.attendance.spokeIds.includes(member.id)) return at("PRESENT", "PRESENT_SPOKE");
-
-    // 3. Absence may only be inferred where we would have seen them.
-    if (col.attendanceKnown) return at("ABSENT", "INFERRED_ABSENT");
-
-    return at("UNKNOWN", "NO_DATA");
+    return { date: col.date, state: verdict.state, evidence: verdict.evidence };
   };
 
   /** PRESENT counts fully, PARTIAL half, ABSENT zero; NA/UNKNOWN don't count. */
@@ -726,12 +720,29 @@ export function computeExecutiveMetrics(input: {
     })
     .filter((n): n is number => n !== null);
 
+  // Punctuality is measured against THIS DAY's planned start, falling back to
+  // the client's standing schedule. The client asked in the requirement doc how
+  // a meeting whose time was deliberately moved should be scored; measuring a
+  // rescheduled 10:30 huddle against a standing 09:30 would mark it an hour
+  // late and penalise the team for communicating the change.
+  //
+  // A day is only scored when SOME planned start is known — a day with neither
+  // an override nor a standing time is excluded rather than assumed punctual.
+  const punctualityScorable = held.filter(
+    (d) => (d.plannedStartOverride ?? config.dailyStartTime) !== null,
+  );
+
   let startedOnTimePct: number | null = null;
-  if (config.dailyStartTime && held.length) {
-    const onTime = held.filter((d) =>
-      isPunctual(config.dailyStartTime, d.actualStartTime, d.meetingDate, d.punctualityOverride),
+  if (punctualityScorable.length) {
+    const onTime = punctualityScorable.filter((d) =>
+      isPunctual(
+        d.plannedStartOverride ?? config.dailyStartTime,
+        d.actualStartTime,
+        d.meetingDate,
+        d.punctualityOverride,
+      ),
     ).length;
-    startedOnTimePct = round1((onTime / held.length) * 100);
+    startedOnTimePct = round1((onTime / punctualityScorable.length) * 100);
   }
 
   const avgDuration = mean(durations);

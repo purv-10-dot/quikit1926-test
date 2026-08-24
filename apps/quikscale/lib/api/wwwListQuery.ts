@@ -9,6 +9,7 @@ import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { parseMultiFilter } from "@/lib/api/multiFilter";
+import { overdueWhere } from "@/lib/services/wwwLifecycle";
 
 export interface WwwScopeParams {
   /** Single value or comma-separated set (`on-track,behind-schedule`). */
@@ -17,6 +18,15 @@ export interface WwwScopeParams {
   who?: string;
   teamId?: string;
   includeDeleted?: boolean;
+  /**
+   * Restrict to overdue items only.
+   *
+   * Uses `overdueWhere` from `lib/services/wwwLifecycle.ts` — the same rules as
+   * the in-memory `isOverdue` predicate, so a filtered list and its own row
+   * badges cannot contradict each other, and so this agrees with the
+   * performance scorecard and QuikFlow's overdue notification.
+   */
+  overdue?: boolean;
 }
 
 export async function buildWwwScopeWhere(
@@ -46,6 +56,18 @@ export async function buildWwwScopeWhere(
     });
     const memberIds = members.map((m) => m.userId);
     where.who = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
+  }
+
+  // Overdue is DERIVED, not stored (see wwwLifecycle.ts). This fragment mirrors
+  // the predicate exactly: past its REAL due date, not to-be-decided, and not
+  // closed. Merged under AND so it composes with an explicit status filter
+  // rather than silently replacing it.
+  if (params.overdue) {
+    const od = overdueWhere();
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      { when: od.when, dueDateTBD: od.dueDateTBD, status: od.status },
+    ];
   }
 
   return where;

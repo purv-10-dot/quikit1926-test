@@ -27,6 +27,8 @@
 
 import { GoogleGenAI } from "@google/genai";
 
+import { sharedRateLimiter } from "./rateLimiter";
+
 /**
  * Model id — overridable via env so we can bump it without a code change.
  *
@@ -129,6 +131,18 @@ export function isKeyFailure(err: unknown): boolean {
   );
 }
 
+/**
+ * Analysis-tier model, for the small meeting-level reasoning passes only.
+ *
+ * Doc 17 section G lever 11: extraction is high-volume and schema-constrained,
+ * so it runs on the cheap model. The analysis pass is ONE call with ~4k input
+ * tokens whose output the client actually reads, so it is the one place where
+ * paying for a stronger model is worth it. Falls back to `GEMINI_MODEL` when
+ * unset, which keeps today's behaviour exactly.
+ */
+export const GEMINI_MODEL_ANALYSIS =
+  process.env.GEMINI_MODEL_ANALYSIS?.trim() || GEMINI_MODEL;
+
 export interface GenerateOptions {
   /** e.g. "application/json" to coax structured output. */
   responseMimeType?: string;
@@ -137,15 +151,98 @@ export interface GenerateOptions {
 }
 
 /**
- * Generate text from `prompt`, rotating across the configured keys and failing
- * over on key errors. Returns the model's text on success.
+ * Extended options for `generateContentDetailed`. Everything here is optional
+ * and defaults to the behaviour `generateContent` has always had.
+ */
+export interface GenerateDetailedOptions extends GenerateOptions {
+  /** Override the model — e.g. `GEMINI_MODEL_ANALYSIS` for an L2 pass. */
+  model?: string;
+  /** JSON Schema for structured output; cuts reparse retries substantially. */
+  responseSchema?: Record<string, unknown>;
+  /** 0 for extraction and repair, where determinism matters more than variety. */
+  temperature?: number;
+  maxOutputTokens?: number;
+  /**
+   * Pre-flight token estimate, used to reserve rate-limit budget before the
+   * call. Defaults to a length-based estimate of the prompt; pass a better
+   * figure when the expected output is large.
+   */
+  estTokens?: number;
+  /** Set false to bypass the rate limiter (tests, one-off admin scripts). */
+  rateLimit?: boolean;
+}
+
+/** Token counts as the provider reported them. Zeros when unavailable. */
+export interface GeminiUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /** Subset of `inputTokens` served from the provider's context cache. */
+  cachedTokens: number;
+  totalTokens: number;
+}
+
+export interface GenerateDetailedResult {
+  text: string;
+  usage: GeminiUsage;
+  /** Which model actually served the request. */
+  model: string;
+  /** Non-secret key label, e.g. "key#2" — safe to log and to bucket on. */
+  keyId: string;
+  /** How many keys were tried (1 = first key worked). */
+  keyAttempts: number;
+  /** Milliseconds spent waiting on the rate limiter. */
+  rateWaitMs: number;
+  latencyMs: number;
+}
+
+/** Stable, non-secret label for a key, by its position in the pool. */
+function keyLabel(idx: number): string {
+  return `key#${idx + 1}`;
+}
+
+/**
+ * Read `usageMetadata` defensively.
+ *
+ * The SDK's field names have shifted across versions and any of them can be
+ * absent, so every value is coerced and defaulted. Usage is telemetry: a
+ * missing count must never fail a request that otherwise succeeded — it just
+ * records zero and the gap shows up in the metrics.
+ */
+function readUsage(res: unknown): GeminiUsage {
+  const meta = (res as { usageMetadata?: Record<string, unknown> } | null)
+    ?.usageMetadata;
+  const num = (v: unknown): number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+
+  const inputTokens = num(meta?.promptTokenCount);
+  const outputTokens =
+    num(meta?.candidatesTokenCount) || num(meta?.responseTokenCount);
+  const cachedTokens = num(meta?.cachedContentTokenCount);
+  const totalTokens =
+    num(meta?.totalTokenCount) || inputTokens + outputTokens;
+
+  return { inputTokens, outputTokens, cachedTokens, totalTokens };
+}
+
+/**
+ * Generate content, rotating across keys, failing over on key errors, and
+ * returning the provider's token usage alongside the text.
+ *
+ * This is the low-level call. Most callers should use
+ * `lib/ai/llm.ts`, which adds Zod validation, a repair retry, backoff and the
+ * `AiUsageLog` write on top. This function's job is narrow: pick a key,
+ * respect its rate limit, make one call, report what it cost.
+ *
+ * Rate limiting lives here rather than in the gateway because this is the only
+ * place that knows WHICH key is about to be used, and the provider's ceiling
+ * is per key (doc 17 section D.11, gap G16).
  *
  * @throws {GeminiUnavailableError} when no key is configured or all keys fail.
  */
-export async function generateContent(
+export async function generateContentDetailed(
   prompt: string,
-  opts: GenerateOptions = {},
-): Promise<string> {
+  opts: GenerateDetailedOptions = {},
+): Promise<GenerateDetailedResult> {
   const keys = loadKeys();
   if (keys.length === 0) {
     throw new GeminiUnavailableError(
@@ -153,40 +250,83 @@ export async function generateContent(
     );
   }
 
+  const model = opts.model?.trim() || GEMINI_MODEL;
+  const estTokens = opts.estTokens ?? Math.ceil(prompt.length / 4);
+  const useLimiter = opts.rateLimit !== false;
+
   const start = cursor;
   // Advance the cursor up front so the NEXT request moves on by exactly one,
   // independent of how many failover hops this request makes.
   cursor = (start + 1) % keys.length;
 
   let lastErr: unknown;
+  let rateWaitMs = 0;
+
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const idx = (start + attempt) % keys.length;
-    const keyNum = idx + 1;
-    if (attempt === 0) console.log(`[Gemini] Using key #${keyNum}`);
-    else console.log(`[Gemini] Failover to key #${keyNum}`);
+    const keyId = keyLabel(idx);
+    if (attempt === 0) console.log(`[Gemini] Using ${keyId} (${model})`);
+    else console.log(`[Gemini] Failover to ${keyId}`);
 
+    const began = Date.now();
     try {
+      if (useLimiter) {
+        rateWaitMs += await sharedRateLimiter.acquire(keyId, estTokens, {
+          signal: opts.signal,
+        });
+      }
+
       const ai = getGeminiClient(keys[idx]);
       const res = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+        model,
         contents: prompt,
         config: {
           ...(opts.responseMimeType
             ? { responseMimeType: opts.responseMimeType }
             : {}),
+          ...(opts.responseSchema
+            ? { responseSchema: opts.responseSchema as never }
+            : {}),
+          ...(opts.temperature !== undefined
+            ? { temperature: opts.temperature }
+            : {}),
+          ...(opts.maxOutputTokens !== undefined
+            ? { maxOutputTokens: opts.maxOutputTokens }
+            : {}),
           ...(opts.signal ? { abortSignal: opts.signal } : {}),
         },
       });
+
       const text = res.text;
+      const usage = readUsage(res);
+
+      // Reconcile the window against what was actually billed, so our
+      // 4-chars-per-token estimate does not drift the limiter over time.
+      if (useLimiter) {
+        sharedRateLimiter.settle(keyId, estTokens, usage.totalTokens || estTokens);
+      }
+
       if (!text || !text.trim()) {
         throw new Error("Gemini returned an empty response");
       }
-      return text;
+
+      return {
+        text,
+        usage,
+        model,
+        keyId,
+        keyAttempts: attempt + 1,
+        rateWaitMs,
+        latencyMs: Date.now() - began,
+      };
     } catch (err) {
       lastErr = err;
+      // A 429 means we were over the real ceiling, whatever our configured
+      // one says. Penalise the key so the next window is gentler rather than
+      // hammering it again immediately.
+      if (useLimiter && isRateLimit(err)) sharedRateLimiter.penalise(keyId);
       // Key errors and transient errors alike: fall through to the next key
       // for resilience. We remember the last error for the final message.
-      if (isKeyFailure(err)) continue;
       continue;
     }
   }
@@ -195,4 +335,51 @@ export async function generateContent(
     `All ${keys.length} Gemini API key(s) failed.`,
     lastErr,
   );
+}
+
+/**
+ * Narrower than `isKeyFailure`: specifically "we were throttled", as opposed
+ * to "this key is invalid". Only throttling should trigger the adaptive
+ * concurrency penalty — halving throughput because a key was revoked would
+ * punish the healthy keys for a config error.
+ */
+export function isRateLimit(err: unknown): boolean {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown } | null;
+  const status =
+    typeof e?.status === "number"
+      ? e.status
+      : typeof e?.code === "number"
+        ? e.code
+        : undefined;
+  if (status === 429) return true;
+
+  const msg = (typeof e?.message === "string" ? e.message : "").toLowerCase();
+  return (
+    msg.includes("resource_exhausted") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("rate limit") ||
+    msg.includes("rate-limit") ||
+    msg.includes("too many requests") ||
+    msg.includes("quota") ||
+    msg.includes(" 429")
+  );
+}
+
+/**
+ * Generate text from `prompt`, rotating across the configured keys and failing
+ * over on key errors. Returns the model's text on success.
+ *
+ * Thin wrapper over `generateContentDetailed` — kept so existing callers
+ * (`meetingReport.ts`, `weeklyHuddleReport.ts`, `semanticKpiMatch.ts`) are
+ * unchanged. They gain rate limiting for free; they do not get usage counts,
+ * which is why new code should go through `lib/ai/llm.ts` instead.
+ *
+ * @throws {GeminiUnavailableError} when no key is configured or all keys fail.
+ */
+export async function generateContent(
+  prompt: string,
+  opts: GenerateOptions = {},
+): Promise<string> {
+  const res = await generateContentDetailed(prompt, opts);
+  return res.text;
 }

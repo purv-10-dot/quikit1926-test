@@ -76,6 +76,16 @@ const recurringStuckSchema = z.object({
 });
 export type RecurringStuck = z.infer<typeof recurringStuckSchema>;
 
+/**
+ * Version of this prose prompt.
+ *
+ * Part of the DH Weekly Report's cache key, so bumping it marks every affected
+ * report STALE — offered for regeneration, never regenerated automatically.
+ * Bump it for a real instruction change; do not bump it for a comment or a
+ * whitespace tidy, because the cost is a fleet-wide regeneration prompt.
+ */
+export const PROMPT_VERSION = "dh-weekly-prose@1.0.0";
+
 export const WWW_KINDS = ["BLOCKER", "KPI_RELATED", "PRIORITY_RELATED", "ACTION"] as const;
 
 const wwwSuggestionSchema = z.object({

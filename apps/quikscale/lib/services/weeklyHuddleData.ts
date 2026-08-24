@@ -56,6 +56,18 @@ export interface WeekContext {
   sources: WeekSource[];
   weekStart: Date;
   weekEnd: Date;
+  /**
+   * memberId → dates of APPROVED leave within this week.
+   *
+   * Feeds rung 0 of the attendance ladder, which renders NA and drops the day
+   * from that member's denominator entirely. The requirement doc is explicit
+   * that approved leave is not an attendance-discipline issue; without this a
+   * member on leave scores exactly like one who simply did not turn up.
+   *
+   * `buildAttendanceMatrix` has accepted this map since the attendance rewrite,
+   * but nothing ever populated it — the feature was plumbed and unfed.
+   */
+  onLeave: Record<string, Date[]>;
 }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -170,8 +182,13 @@ export async function loadWeekContext(
         actualStartTime: true,
         actualEndTime: true,
         punctualityOverride: true,
+        plannedStartOverride: true,
+        plannedEndOverride: true,
         totalMembers: true,
-        absentTeamMembers: { select: { clientMemberId: true } },
+        // `absenceReason` is what separates approved leave from a no-show. The
+        // requirement doc is explicit that leave is not an attendance-discipline
+        // issue, and until now every absence looked identical.
+        absentTeamMembers: { select: { clientMemberId: true, absenceReason: true } },
       },
     }),
     db.clientMeetingTranscript.findMany({
@@ -351,9 +368,29 @@ export async function loadWeekContext(
 
   const huddleDates = new Set(huddles.map((h) => ymd(h.meetingDate)));
 
+  /**
+   * memberId → dates of approved leave.
+   *
+   * Only a human tick with `absenceReason = PLANNED_LEAVE` counts. Leave is
+   * never inferred from silence: an unexplained absence stays an absence, and
+   * guessing that someone was on leave would quietly inflate the team's
+   * attendance figure.
+   */
+  const onLeave: Record<string, Date[]> = {};
+  const recordLeave = (
+    meetingDate: Date,
+    absences: { clientMemberId: string; absenceReason: string | null }[],
+  ) => {
+    for (const a of absences) {
+      if (a.absenceReason !== "PLANNED_LEAVE") continue;
+      onLeave[a.clientMemberId] = [...(onLeave[a.clientMemberId] ?? []), meetingDate];
+    }
+  };
+
   // --- Days logged in the Daily Huddle module (authoritative attendance) ----
   for (const h of huddles) {
     const date = ymd(h.meetingDate);
+    recordLeave(h.meetingDate, h.absentTeamMembers);
     const transcript = transcriptByHuddleId.get(h.id) ?? transcriptByDate.get(date) ?? null;
     const report = reportFor(transcript);
 
@@ -378,10 +415,17 @@ export async function loadWeekContext(
       actualStartTime: h.actualStartTime,
       actualEndTime: h.actualEndTime,
       punctualityOverride: h.punctualityOverride,
+      plannedStartOverride: h.plannedStartOverride,
+      plannedEndOverride: h.plannedEndOverride,
       totalMembers: h.totalMembers,
       attendance: buildAttendance({
         humanLogged: true,
-        markedAbsentIds: h.absentTeamMembers.map((a) => a.clientMemberId),
+        // Members on approved leave are NOT marked absent: they were never
+        // expected, so they leave the denominator entirely rather than counting
+        // against the team. Rung 0 of the attendance ladder renders them NA.
+        markedAbsentIds: h.absentTeamMembers
+          .filter((a) => a.absenceReason !== "PLANNED_LEAVE")
+          .map((a) => a.clientMemberId),
         attendees: attendeesOf(transcript),
         adherence,
       }),
@@ -461,5 +505,6 @@ export async function loadWeekContext(
     sources,
     weekStart,
     weekEnd,
+    onLeave,
   };
 }

@@ -195,9 +195,29 @@ describe("wwwSchema", () => {
   it("rejects invalid status", () => {
     expect(createWWWSchema.safeParse({ ...base, status: "done" }).success).toBe(false);
   });
-  it("accepts valid statuses", () => {
-    for (const s of ["not-yet-started", "in-progress", "completed", "blocked", "not-applicable"]) {
+  it("accepts every status the UI can render", () => {
+    for (const s of [
+      "not-applicable",
+      "not-yet-started",
+      "behind-schedule",
+      "on-track",
+      "completed",
+    ]) {
       expect(createWWWSchema.safeParse({ ...base, status: s }).success).toBe(true);
+    }
+  });
+
+  it("rejects the legacy statuses the UI cannot render", () => {
+    // `in-progress` and `blocked` used to be accepted here, which let writes
+    // create rows the status <select> cannot display: it matches no option and
+    // silently falls back to its first, showing the item as "Not Applicable",
+    // while `wwwStats.ts` drops it from every bucket. A 400 naming the invalid
+    // value is better than a row that is live but invisible.
+    //
+    // Existing rows are migrated by 20260824210000_www_status_vocabulary, and
+    // reads normalise through `canonicalStatus` in `lib/services/wwwLifecycle.ts`.
+    for (const s of ["in-progress", "blocked", "not-started"]) {
+      expect(createWWWSchema.safeParse({ ...base, status: s }).success).toBe(false);
     }
   });
   it("accepts partial update", () => {

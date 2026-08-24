@@ -6,6 +6,10 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { storedWeeklyReportSchema, buildMetricsSnapshot } from "@/lib/ai/weeklyHuddleCompose";
 import { loadWeekContext, toWeekStart, weekEndFor } from "@/lib/services/weeklyHuddleData";
+import {
+  computeWeeklyCacheState,
+  evaluateWeeklyCache,
+} from "@/lib/reports/weeklyCacheState";
 
 export const runtime = "nodejs";
 
@@ -56,6 +60,18 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
   const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
 
+  // Is the stored report still current? This compares the cache-key triple
+  // against the live data — and does NOT regenerate. Auto-regenerating on a
+  // read would re-bill on a page view and silently void a facilitator's
+  // sign-off, which is exactly the behaviour the architecture forbids.
+  //
+  // BEST EFFORT. The fingerprint needs a few extra indexed reads, and if any of
+  // them fail the report must still be readable: a staleness banner is a
+  // convenience, and losing it is not a reason to deny someone the report they
+  // came for. On failure the verdict is "unknown" — neither fresh nor stale —
+  // so the UI shows no banner rather than a wrong one.
+  const verdict = await evaluateCacheSafely(orgId, parsed.data.clientId, context);
+
   return NextResponse.json({
     success: true,
     data: {
@@ -72,9 +88,81 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       rosterSize: context.roster.length,
       sources: context.sources,
       canEdit,
+      version: saved?.currentVersion ?? null,
+      coveragePct: saved?.coveragePct ?? null,
+      /**
+       * Staleness, for the banner. The report is still SERVED — the user
+       * decides whether to spend on a regeneration.
+       *
+       * `wouldClearSignOff` warns that regenerating discards a completed
+       * review, so the UI can confirm before destroying it.
+       */
+      cache: verdict,
     },
   });
 });
+
+/**
+ * Evaluate staleness without ever failing the read.
+ *
+ * `known: false` means the check itself could not run — distinct from "the
+ * report is fresh". The UI must show no banner in that case rather than
+ * asserting currency it has not verified.
+ */
+async function evaluateCacheSafely(
+  orgId: string,
+  clientId: string,
+  context: Awaited<ReturnType<typeof loadWeekContext>>,
+): Promise<{
+  known: boolean;
+  fresh: boolean;
+  stale: boolean;
+  reasons: string[];
+  messages: string[];
+  wouldClearSignOff: boolean;
+}> {
+  const unknown = {
+    known: false,
+    fresh: false,
+    stale: false,
+    reasons: [] as string[],
+    messages: [] as string[],
+    wouldClearSignOff: false,
+  };
+  if (!context) return unknown;
+
+  try {
+    const saved = await db.clientDailyHuddleWeeklyReport.findFirst({
+      where: { orgId, clientId, weekStart: context.weekStart, deletedAt: null },
+      select: {
+        sourceFingerprint: true,
+        promptVersion: true,
+        schemaVersion: true,
+        coveragePct: true,
+        currentVersion: true,
+        validatedAt: true,
+      },
+    });
+
+    const state = await computeWeeklyCacheState(orgId, clientId, context);
+    const verdict = evaluateWeeklyCache(saved ?? null, state);
+
+    return {
+      known: true,
+      fresh: verdict.fresh,
+      stale: verdict.stale,
+      reasons: verdict.reasons,
+      messages: verdict.messages,
+      wouldClearSignOff: verdict.wouldClearSignOff,
+    };
+  } catch (err) {
+    console.error(
+      "[reports:weekly] staleness check failed; serving the report without it:",
+      err instanceof Error ? err.message : err,
+    );
+    return unknown;
+  }
+}
 
 const putSchema = z.object({
   clientId: z.string().min(1),

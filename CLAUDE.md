@@ -130,6 +130,8 @@ Any AI feature in any app MUST go through `@quikit/ai-sdk` — never call an LLM
 
 Calling a provider SDK directly bypasses central audit, cost tracking and per-tenant budgets, prompt-injection sanitisation, PII stripping, provider fallback, and one place to change models — and every app then drifts. Existing direct calls (quikhrms, quikvc) are migration tickets, not precedents.
 
+**Approved exception — `quikscale` Meeting Rhythm.** The AI meeting pipeline routes every model call through `apps/quikscale/lib/ai/llm.ts`, which wraps `@google/genai` directly. This is a deliberate, owner-approved deviation, not drift: `@quikit/ai-sdk` is a client for an AI Runtime service that is deployed nowhere in this repo, carries no Zod (so it cannot validate structured extraction output), and does no local cost accounting. The gateway delivers the rule's *intent* — one place to change models, one place that records cost, one place that validates and sanitises — behind a single seam, so adopting the SDK later is a change to that one file. **New AI code in quikscale must go through `lib/ai/llm.ts`, never `@google/genai` directly.** See [`docs/17-ai-meeting-rhythm-architecture.md`](docs/17-ai-meeting-rhythm-architecture.md) §F.5.
+
 ## Provider Order (all apps)
 
 ```

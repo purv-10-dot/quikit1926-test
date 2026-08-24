@@ -28,6 +28,9 @@ Reference + onboarding for the QuikIT monorepo. Read in the order below if you'r
 - [12-auth-service-integration-response.md](./12-auth-service-integration-response.md) — `/api/verify-token` contract + agent-JWT issuance spec
 - [13-app-ports-and-env.md](./13-app-ports-and-env.md) — definitive per-app port table + every env var
 - [14-ai-integration-guide.md](./14-ai-integration-guide.md) — adding AI to an app: `@quikit/ai-sdk`, the two integration models, P0 enablers, FAQ
+- [15-daily-huddle-weekly-report.md](./15-daily-huddle-weekly-report.md) — DH Weekly Report: attendance evidence ladder, member classification, decision log D1–D18
+- [16-meeting-capture-teams-vs-fathom.md](./16-meeting-capture-teams-vs-fathom.md) — how a meeting gets captured: Teams-native recording vs the Fathom bot (D19–D30)
+- [17-ai-meeting-rhythm-architecture.md](./17-ai-meeting-rhythm-architecture.md) — **AI Meeting Rhythm system architecture** for 3–6+ hour transcripts: chunked hierarchical extraction, fact layer, WWW lifecycle, report caching/versioning, token & cost strategy
 - [login-roles-architecture-and-flow.md](./login-roles-architecture-and-flow.md) — auth → org → in-app RBAC: the full role & permission flow (plain-English + code)
 - [registration-otp-flow.md](./registration-otp-flow.md) — self-serve sign-up + OTP verification flow
 - [cache-management.md](./cache-management.md) — the 4-layer cache model (React.cache → LRU → Redis → DB) + session store

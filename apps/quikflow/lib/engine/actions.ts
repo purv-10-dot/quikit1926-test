@@ -735,6 +735,12 @@ const saveTranscript: ActionExecutor = async (ctx) => {
     attendees: Array.isArray(d.attendees) ? d.attendees : [],
     recordingUrl: firstString(d.recordingUrl),
     rawText: firstString(d.transcriptText, d.rawText),
+    // The structured transcript, timestamps intact. `rawText` above is a
+    // flattened rendering of the same content that drops every timestamp;
+    // QuikScale needs the timings for evidence anchoring and for chunking long
+    // meetings. Optional — a recorder that only returns a plain string sends
+    // null, and QuikScale interpolates.
+    rawSegments: Array.isArray(d.transcriptSegments) ? d.transcriptSegments : null,
     summary: firstString(d.summary),
     actionItems: Array.isArray(d.actionItems) ? d.actionItems : [],
     // Optional manual overrides from the builder's action params.
