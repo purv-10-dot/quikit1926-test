@@ -134,27 +134,28 @@ export function RelatedWorkSection({
     else showToast(res?.error || "Couldn't remove the item.", "error");
   }
 
-  /** Links a freshly-created issue to this release, then drops the placeholder
-   * card that spawned it. Called from the issue-created listener once the top
-   * Create Task modal reports success. */
+  /** Attaches a freshly-created issue to the SAME placeholder card that spawned
+   * it (sets the card's issueId in place) — so the item stays in Related work
+   * showing status/assignee/Unlink, exactly like "Link work item". It must NOT
+   * create a separate release-issue link (that would move it into the Work items
+   * section below and delete the card). Called from the issue-created listener. */
   async function linkCreatedIssue(link: ReleaseRelatedLink, issueId: string) {
-    const linked = await fetch(`/api/releases/${releaseId}/issues`, {
+    const res = await fetch(`/api/releases/${releaseId}/links/link-work-item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueIds: [issueId] }),
+      body: JSON.stringify({ issueId, linkId: link.id }),
     }).then((r) => r.json());
-    if (!linked?.success) {
-      showToast(linked?.error || "Work item created, but couldn't link it to the release.", "error");
+    if (!res?.success) {
+      showToast(res?.error || "Work item created, but couldn't link it to the release.", "error");
       return;
     }
-    await fetch(`/api/releases/${releaseId}/links?linkId=${link.id}`, { method: "DELETE" }).catch(() => undefined);
     onChanged();
   }
 
   // When the top Create Task modal (opened via "Create work item") reports a
-  // created issue, link it to this release and remove the placeholder card. The
-  // modal communicates success via this window event, so we listen while it's
-  // open. Only handle issues in THIS project to avoid cross-release crosstalk.
+  // created issue, attach it to the placeholder card that opened it (keeping it
+  // in Related work). The modal communicates success via this window event, so
+  // we listen while it's open.
   useEffect(() => {
     if (!createForLink) return;
     const target = createForLink;
@@ -344,6 +345,7 @@ export function RelatedWorkSection({
         open={createForLink !== null}
         onClose={() => setCreateForLink(null)}
         initialProjectId={projectId}
+        initialTitle={createForLink?.title ?? ""}
       />
 
       <EditIssueModal
