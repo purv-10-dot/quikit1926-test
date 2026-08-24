@@ -59,8 +59,13 @@ function pick(row: RawRow, col: ImportColumn): string {
 /** Vocabularies. Import is forgiving about case and spacing, strict about values. */
 const PRIORITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "LOWEST"];
 const TYPES = [
-  "FUNCTIONAL", "REGRESSION", "SMOKE", "UAT", "SECURITY",
-  "PERFORMANCE", "COMPATIBILITY", "NEGATIVE", "BDD", "EXPLORATORY",
+  "FUNCTIONAL", "REGRESSION", "SMOKE", "SANITY", "INTEGRATION", "UI", "API",
+  "DATABASE", "PERFORMANCE", "SECURITY", "COMPATIBILITY", "POSITIVE",
+  "NEGATIVE", "BOUNDARY_VALUE", "USABILITY", "ACCESSIBILITY", "EXPLORATORY",
+  "BDD",
+  // Not offered going forward, but still accepted so a CSV re-exported from
+  // this app before the list widened still imports cleanly.
+  "UAT",
 ];
 
 function normaliseEnum(value: string, allowed: string[]): string | null {

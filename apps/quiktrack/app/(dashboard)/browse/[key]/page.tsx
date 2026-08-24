@@ -1,7 +1,9 @@
 import { getServerSession } from "next-auth";
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { loadProjectAccess } from "@/lib/api/withProjectAccess";
 import { IssueFullView } from "@/components/issue-full-view/issue-full-view";
 
 // Session-scoped, per-request — the issue is resolved from the live org.
@@ -52,7 +54,41 @@ export default async function BrowseIssuePage({
     notFound();
   }
 
+  // The issue exists in this org, but the viewer may not be a member of its
+  // project (e.g. an emailed "copy link" opened by a teammate who has QuikTrack
+  // but not this space). loadProjectAccess returns null in exactly that case.
+  // Without this guard the client IssueFullView fires project-scoped fetches
+  // that 403, and the page sits on its loading shimmer forever — so render a
+  // clear no-access message instead.
+  const access = await loadProjectAccess(orgId, userId, issue.projectId);
+  if (!access) {
+    return <NoSpaceAccess />;
+  }
+
   return <IssueFullView projectId={issue.projectId} issueId={issue.id} />;
+}
+
+/** Shown when the viewer has QuikTrack but not the work item's space. */
+function NoSpaceAccess() {
+  return (
+    <div className="flex h-full min-h-[60vh] items-center justify-center px-6 py-16">
+      <div className="max-w-md text-center">
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          You don&apos;t have access to this space
+        </h1>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          This work item lives in a project you&apos;re not a member of. Ask a
+          project admin to add you, then open the link again.
+        </p>
+        <Link
+          href="/dashboard"
+          className="mt-5 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Go to your work
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 /**

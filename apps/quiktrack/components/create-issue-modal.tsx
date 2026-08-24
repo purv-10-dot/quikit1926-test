@@ -102,11 +102,15 @@ export function CreateIssueModal({
   open,
   onClose,
   initialProjectId,
+  initialTitle,
   onProjectChange,
 }: {
   open: boolean;
   onClose: () => void;
   initialProjectId?: string;
+  /** Prefill the Title/Summary field (e.g. from a release placeholder card's
+   *  name). The user can still edit it before creating. */
+  initialTitle?: string;
   /** Notifies a wrapper (e.g. the discovery Create dispatcher) when the user
    *  switches the Project here, so it can flip to the right form for the type. */
   onProjectChange?: (projectId: string) => void;
@@ -213,13 +217,14 @@ export function CreateIssueModal({
     setProjectId(match?.id ?? initialProjectId);
   }, [open, initialProjectId, projects]);
 
-  // Reset form whenever modal opens fresh.
+  // Reset form whenever modal opens fresh. Title seeds from initialTitle when a
+  // caller prefills it (e.g. a release placeholder card's name).
   useEffect(() => {
     if (!open) {
       setError(null);
       return;
     }
-    setTitle("");
+    setTitle(initialTitle ?? "");
     setDescription("");
     setStoryPoints("");
     setSprintId("");
@@ -230,7 +235,7 @@ export function CreateIssueModal({
     setStartDate("");
     setError(null);
     setShowCfErrors(false);
-  }, [open]);
+  }, [open, initialTitle]);
 
   // Fetch project-scoped data when project changes.
   useEffect(() => {

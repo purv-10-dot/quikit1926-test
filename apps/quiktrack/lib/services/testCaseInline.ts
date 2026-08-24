@@ -28,8 +28,14 @@ import { TestCaseError } from "./testCases";
 /** Vocabularies. Mirrors lib/validation/testCase.ts — invalid values are rejected. */
 const PRIORITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "LOWEST"];
 const TYPES = [
-  "FUNCTIONAL", "REGRESSION", "SMOKE", "UAT", "SECURITY",
-  "PERFORMANCE", "COMPATIBILITY", "NEGATIVE", "BDD", "EXPLORATORY",
+  "FUNCTIONAL", "REGRESSION", "SMOKE", "SANITY", "INTEGRATION", "UI", "API",
+  "DATABASE", "PERFORMANCE", "SECURITY", "COMPATIBILITY", "POSITIVE",
+  "NEGATIVE", "BOUNDARY_VALUE", "USABILITY", "ACCESSIBILITY", "EXPLORATORY",
+  "BDD",
+  // Not offered going forward, but still accepted so a case saved before the
+  // list widened can still be inline-edited on its OTHER fields without this
+  // one rejecting the whole patch.
+  "UAT",
 ];
 const AUTOMATION = ["MANUAL", "AUTOMATED"];
 const APPROVAL = ["DRAFT", "IN_REVIEW", "APPROVED", "DEPRECATED"];
