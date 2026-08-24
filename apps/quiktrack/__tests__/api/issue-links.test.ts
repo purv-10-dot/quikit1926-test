@@ -267,3 +267,134 @@ describe("DELETE /api/issues/[id]/links/[linkId]", () => {
     expect(res.status).toBe(200);
   });
 });
+
+/**
+ * REGRESSION — `[id]` accepts a cuid OR an issue key, and the links route
+ * resolves it. Two bugs lived here, and neither surfaced above because every
+ * test in this file passes the cuid, where `params.id === issue.id` makes the
+ * raw path param and the resolved one indistinguishable:
+ *
+ *   1. The route called `resolveIssueIdOrKey` without importing it. Every
+ *      request threw ReferenceError and came back as
+ *      `{ success: false, error: "resolveIssueIdOrKey is not defined" }`.
+ *   2. The queries downstream of the lookup reached for `params.id` again. A
+ *      key there matches no cuid column: GET returned an empty list inside a
+ *      200, and POST wrote the KEY into `sourceIssueId`/`targetIssueId` —
+ *      a cuid foreign key — where no constraint catches it.
+ *
+ * These assert on what the route hands Prisma, not just the status code,
+ * because (2) is invisible from the response body.
+ */
+describe("/api/issues/[id]/links resolves an issue key to its cuid", () => {
+  type FindFirstArgs = { where?: Record<string, unknown> };
+  type OrClause = { id?: string; key?: string };
+  type Mockable = { mockImplementation: (fn: (args: FindFirstArgs) => unknown) => void };
+
+  const ISSUE_KEY = "QT-1";
+  const TARGET_KEY = "QT-2";
+  const ROWS = [
+    { id: ISSUE, key: ISSUE_KEY, projectId: PROJECT },
+    { id: TARGET, key: TARGET_KEY, projectId: PROJECT },
+  ];
+
+  /**
+   * Stands in for the QtIssue table so the resolver's OR(id, key) query and any
+   * by-id fetch run against the same data — a route that queried by the raw key
+   * would find nothing, exactly as in production.
+   */
+  function stubIssueTable() {
+    (mockDb.qtIssue.findFirst as unknown as Mockable).mockImplementation(
+      (args: FindFirstArgs) => {
+        const where = args?.where ?? {};
+        const or = (where.OR ?? []) as OrClause[];
+        const found = ROWS.find((r) =>
+          or.length
+            ? or.some((c) => c.id === r.id || c.key === r.key)
+            : where.id === r.id,
+        );
+        return Promise.resolve(found ? { ...found, orgId: TENANT } : null);
+      },
+    );
+  }
+
+  function asMember() {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    stubIssueTable();
+    mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+  }
+
+  it("GET queries the link table by the resolved cuid, not the key", async () => {
+    asMember();
+    mockDb.qtIssueLink.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(
+      new NextRequest(`http://localhost/api/issues/${ISSUE_KEY}/links`),
+      { params: { id: ISSUE_KEY } } as never,
+    );
+
+    expect(res.status).toBe(200);
+    // Both directions must filter on the cuid. With the key they matched
+    // nothing and the caller got an empty list inside a 200.
+    const wheres = mockDb.qtIssueLink.findMany.mock.calls.map(
+      (c) => (c[0] as { where: Record<string, unknown> }).where,
+    );
+    expect(wheres).toHaveLength(2);
+    expect(wheres[0]).toMatchObject({ sourceIssueId: ISSUE });
+    expect(wheres[1]).toMatchObject({ targetIssueId: ISSUE });
+    for (const w of wheres) {
+      expect(JSON.stringify(w)).not.toContain(ISSUE_KEY);
+    }
+  });
+
+  it("POST stores cuids in both foreign keys when given keys", async () => {
+    asMember();
+    mockDb.qtIssueLink.findFirst.mockResolvedValue(null);
+    mockDb.qtIssueLink.create.mockResolvedValue({
+      id: LINK,
+      type: "BLOCKS",
+      createdAt: new Date(),
+      sourceIssue: { id: ISSUE, key: ISSUE_KEY, title: "This" },
+      targetIssue: { id: TARGET, key: TARGET_KEY, title: "Other" },
+    } as never);
+
+    const res = await POST(
+      new NextRequest(`http://localhost/api/issues/${ISSUE_KEY}/links`, {
+        method: "POST",
+        body: JSON.stringify({ targetIssueId: TARGET_KEY, type: "BLOCKS" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: { id: ISSUE_KEY } } as never,
+    );
+
+    expect(res.status).toBe(201);
+    // The row that outlives the request: a key in either column is corruption
+    // no constraint would catch.
+    expect(mockDb.qtIssueLink.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceIssueId: ISSUE,
+          targetIssueId: TARGET,
+          projectId: PROJECT,
+        }),
+      }),
+    );
+  });
+
+  it("rejects a self-link when one side is a key and the other its cuid", async () => {
+    asMember();
+
+    const res = await POST(
+      new NextRequest(`http://localhost/api/issues/${ISSUE_KEY}/links`, {
+        method: "POST",
+        body: JSON.stringify({ targetIssueId: ISSUE, type: "RELATES_TO" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: { id: ISSUE_KEY } } as never,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("itself");
+    expect(mockDb.qtIssueLink.create).not.toHaveBeenCalled();
+  });
+});

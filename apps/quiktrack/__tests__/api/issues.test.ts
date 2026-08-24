@@ -27,6 +27,19 @@ function postReq(body: unknown) {
 
 const ROUTE_CTX = { params: {} } as never;
 
+/**
+ * Filter clauses live in `where.AND` (see lib/services/issueFilters.ts): both
+ * this route and /api/issues/section-counts compose the SAME fragments there,
+ * which is what stops the backlog's section header count from disagreeing with
+ * the rows it expands to show. Prisma treats a top-level key and a
+ * single-element AND identically, so this is a shape change, not a behaviour
+ * one — these helpers just look in the right place.
+ */
+type Where = { AND?: Record<string, unknown>[] } & Record<string, unknown>;
+function andFragment(where: Where | undefined, key: string) {
+  return (where?.AND ?? []).find((f) => key in f)?.[key];
+}
+
 describe("GET /api/issues", () => {
   it("401 when unauthenticated", async () => {
     const res = await GET(listReq(`projectId=${PROJECT}`), ROUTE_CTX);
@@ -58,7 +71,9 @@ describe("GET /api/issues", () => {
     expect(res.status).toBe(200);
 
     const args = mockDb.qtIssue.findMany.mock.calls[0]?.[0];
-    expect(args?.where?.type).toEqual({ notIn: ["EPIC", "SUBTASK"] });
+    expect(andFragment(args?.where as Where, "type")).toEqual({
+      notIn: ["EPIC", "SUBTASK"],
+    });
   });
 
   it("translates excludeType=EPIC (single) into a Prisma not filter", async () => {
@@ -73,7 +88,7 @@ describe("GET /api/issues", () => {
     expect(res.status).toBe(200);
 
     const args = mockDb.qtIssue.findMany.mock.calls[0]?.[0];
-    expect(args?.where?.type).toEqual({ not: "EPIC" });
+    expect(andFragment(args?.where as Where, "type")).toEqual({ not: "EPIC" });
   });
 
   // Regression: a specific `type` filter must WIN over `excludeType` (the backlog
@@ -95,7 +110,7 @@ describe("GET /api/issues", () => {
     expect(res.status).toBe(200);
 
     const args = mockDb.qtIssue.findMany.mock.calls[0]?.[0];
-    expect(args?.where?.type).toBe("BUG");
+    expect(andFragment(args?.where as Where, "type")).toBe("BUG");
   });
 
   it("filters by parentId for subtask listings", async () => {
@@ -114,7 +129,7 @@ describe("GET /api/issues", () => {
 
     const args = mockDb.qtIssue.findMany.mock.calls[0]?.[0];
     expect(args?.where?.parentId).toBe("parent_1");
-    expect(args?.where?.type).toBe("SUBTASK");
+    expect(andFragment(args?.where as Where, "type")).toBe("SUBTASK");
   });
 
   // assigneeId accepts a comma list so the multi-select people filter (board,
@@ -155,6 +170,64 @@ describe("GET /api/issues", () => {
     expect(where?.AND).toEqual([
       { OR: [{ assigneeId: null }, { assigneeId: { in: ["u1", "u2"] } }] },
     ]);
+  });
+
+  // Due-date filter (backlog Filter panel). The caller sends absolute bounds —
+  // only the browser knows the viewer's local "today" — so this route is a
+  // plain range filter. The clause is nested in AND so it can never collide
+  // with the search OR or the assignee clause.
+  async function whereForQuery(query: string) {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+    mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.qtIssue.findMany.mockResolvedValue([] as never);
+    mockDb.qtIssue.count.mockResolvedValue(0 as never);
+
+    const res = await GET(listReq(`projectId=${PROJECT}&${query}`), ROUTE_CTX);
+    expect(res.status).toBe(200);
+    return mockDb.qtIssue.findMany.mock.calls[0]?.[0]?.where;
+  }
+
+  it("applies no due-date clause when no due params are sent", async () => {
+    const where = await whereForQuery("limit=50");
+    expect(where?.AND).toBeUndefined();
+  });
+
+  it("translates dueDate=none into an is-null match", async () => {
+    const where = await whereForQuery("dueDate=none");
+    expect(where?.AND).toEqual([{ dueDate: null }]);
+  });
+
+  it("translates dueTo alone into an upper bound (the Overdue preset)", async () => {
+    const where = await whereForQuery("dueTo=2026-08-11T23%3A59%3A59.999Z");
+    expect(where?.AND).toEqual([
+      { dueDate: { lte: new Date("2026-08-11T23:59:59.999Z") } },
+    ]);
+  });
+
+  it("translates dueFrom + dueTo into an inclusive range", async () => {
+    const where = await whereForQuery(
+      "dueFrom=2026-08-12T00%3A00%3A00.000Z&dueTo=2026-08-19T23%3A59%3A59.999Z",
+    );
+    expect(where?.AND).toEqual([
+      {
+        dueDate: {
+          gte: new Date("2026-08-12T00:00:00.000Z"),
+          lte: new Date("2026-08-19T23:59:59.999Z"),
+        },
+      },
+    ]);
+  });
+
+  it("ignores an unparseable bound rather than 500ing on a stale URL", async () => {
+    const where = await whereForQuery("dueFrom=not-a-date");
+    expect(where?.AND).toBeUndefined();
+  });
+
+  it("keeps the due-date and assignee clauses side by side in AND", async () => {
+    const where = await whereForQuery("assigneeId=u1&dueDate=none");
+    expect(where?.AND).toEqual([{ assigneeId: "u1" }, { dueDate: null }]);
   });
 });
 
