@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { badRequest, gateProject, serverError } from "@/lib/test/gate";
-import { wouldCreateCycle, type ParentMap } from "@/lib/test/sectionTree";
+import { subtreeIds, wouldCreateCycle, type ParentMap } from "@/lib/test/sectionTree";
 import { updateSectionSchema } from "@/lib/validation/testCase";
 
 /**
@@ -131,15 +131,21 @@ export const DELETE = withOrgAuth<Params>(
       );
       if (denied) return denied;
 
-      // Soft-archive, never a hard delete: cases in this section may be
-      // referenced by tests in historical runs, whose result trail is permanent.
-      // The FK cascade would take those cases with it.
-      await db.qtTestSection.update({
-        where: { id: params.id },
+      // Soft-archive the WHOLE subtree, never a hard delete: cases in these
+      // sections may be referenced by tests in historical runs, whose result
+      // trail is permanent, and a hard delete's FK cascade would take those
+      // cases with it. Archiving only `params.id` would leave its child
+      // folders live but unreachable — orphaned exactly like a section whose
+      // parent was already deleted (see suite-tree.tsx's orphan-folder count).
+      const parents = await parentMapOf(orgId, ctx.suiteId);
+      const ids = subtreeIds(parents, params.id);
+
+      await db.qtTestSection.updateMany({
+        where: { id: { in: ids }, orgId },
         data: { isDeleted: true },
       });
 
-      return NextResponse.json({ success: true, data: { id: params.id } });
+      return NextResponse.json({ success: true, data: { id: params.id, deletedIds: ids } });
     } catch (error: unknown) {
       return serverError(error);
     }
