@@ -614,6 +614,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
               title: issue.title,
               projectId: issue.projectId,
               projectName: project.name ?? null,
+              orgId,
             },
             reassignedBy: actor
               ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || actor.email

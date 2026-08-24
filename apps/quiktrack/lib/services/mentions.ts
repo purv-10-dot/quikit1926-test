@@ -76,6 +76,7 @@ export async function notifyMentions(args: {
       title: args.issue.title,
       projectId: args.issue.projectId,
       projectName: project?.name ?? null,
+      orgId: args.orgId,
     };
 
     await Promise.all(
@@ -168,6 +169,7 @@ export async function notifyDocMentions(args: {
               docId: args.doc.id,
               mentionedBy: actorName,
               excerpt,
+              orgId: args.orgId,
             }).catch((e) => console.error("[mentions] doc email failed:", e))
           : Promise.resolve(),
       ),
