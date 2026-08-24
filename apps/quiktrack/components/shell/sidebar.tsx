@@ -26,7 +26,6 @@ import {
   ClipboardList,
   PieChart,
 } from "lucide-react";
-import { AppsSection } from "./apps-section";
 import { ComingSoonRow } from "./coming-soon-row";
 import { FiltersSection } from "./filters-section";
 import { MoreSpacesPopover } from "./more-spaces-popover";
@@ -452,11 +451,10 @@ export function Sidebar() {
               /> */}
             </div>
           )}
-          {/* Org-level "Apps" tree — the holistic, cross-project surface for
-              installed modules (QuikTest). Per-project access is the space's
-              own "Tests" tab (PROJECT_TABS), not this section. The "apps" nav
-              key derives from TestCase:view via ENTITY_TO_NAV. */}
-          {canSee("apps") && <AppsSection />}
+          {/* Org-level "Apps" tree removed from the sidebar per product. Kept the
+              AppsSection component + "apps" nav gating intact in case it's
+              restored; per-project QuikTest access is the space's own "Tests" tab.
+          {canSee("apps") && <AppsSection />} */}
           {canSee("timesheet") && perms.isAdmin && (
             <span data-tour="timesheet">
               <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
