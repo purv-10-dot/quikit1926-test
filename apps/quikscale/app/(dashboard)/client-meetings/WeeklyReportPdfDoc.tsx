@@ -13,11 +13,19 @@ import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n}%`);
 
-const ATTENDANCE = {
+/** Suffix marking a member who is shown but not scored. */
+const TYPE_LABEL: Record<string, string> = { OPTIONAL: "Optional", EXTERNAL: "External" };
+
+const ATTENDANCE: Record<string, { mark: string; bg: string; color: string }> = {
   PRESENT: { mark: "✓", bg: "#F0FDF4", color: "#166534" },
+  // Joined, but under the presence threshold — counted as half.
+  PARTIAL: { mark: "◐", bg: "#FFFBEB", color: "#92400E" },
   ABSENT: { mark: "✗", bg: "#FEF2F2", color: "#991B1B" },
   NA: { mark: "NA", bg: "#F8FAFC", color: "#94A3B8" },
-} as const;
+  // No evidence either way. Rendered blank rather than guessed, and excluded
+  // from the percentage.
+  UNKNOWN: { mark: "—", bg: "#F8FAFC", color: "#CBD5E1" },
+};
 
 const STATUS: Record<string, { label: string; color: string }> = {
   OPEN: { label: "Open", color: "#B91C1C" },
@@ -216,7 +224,11 @@ export default function WeeklyReportPdfDoc({
               </View>
               {attendance.rows.map((row) => (
                 <View key={row.memberId} style={styles.tRow}>
-                  <Text style={[styles.td, { width: "30%" }]}>{row.name}</Text>
+                  <Text style={[styles.td, { width: "30%" }]}>
+                    {row.attendanceType === "REQUIRED"
+                      ? row.name
+                      : `${row.name}  [${TYPE_LABEL[row.attendanceType]}]`}
+                  </Text>
                   {row.cells.map((cell) => {
                     const a = ATTENDANCE[cell.state];
                     return (

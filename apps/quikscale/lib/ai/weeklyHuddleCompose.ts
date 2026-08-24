@@ -31,7 +31,23 @@ import { WWW_KINDS, type WeeklyReportAi } from "./weeklyHuddleReport";
 
 const attendanceCellSchema = z.object({
   date: z.string(),
-  state: z.enum(["PRESENT", "ABSENT", "NA"]),
+  state: z.enum(["PRESENT", "PARTIAL", "ABSENT", "NA", "UNKNOWN"]),
+  /**
+   * Which rung of the evidence ladder decided the cell. Defaulted so a report
+   * stored before evidence tracking existed still parses — an old report is
+   * historical fact and must not become unreadable.
+   */
+  evidence: z
+    .enum([
+      "HUMAN_MARKED",
+      "NA_LEAVE",
+      "NA_NOT_HELD",
+      "PRESENT_PARTICIPANT_LIST",
+      "PRESENT_SPOKE",
+      "INFERRED_ABSENT",
+      "NO_DATA",
+    ])
+    .default("NO_DATA"),
 });
 
 const attendanceMatrixSchema = z.object({
@@ -49,11 +65,17 @@ const attendanceMatrixSchema = z.object({
     z.object({
       memberId: z.string(),
       name: z.string(),
+      role: z.string().nullable().default(null),
+      /** Defaulted so reports stored before classification existed still parse. */
+      attendanceType: z.enum(["REQUIRED", "OPTIONAL", "EXTERNAL"]).default("REQUIRED"),
       cells: z.array(attendanceCellSchema),
-      attendancePct: z.number(),
+      /** Null for OPTIONAL/EXTERNAL — shown but not scored. */
+      attendancePct: z.number().nullable().default(null),
       presentDays: z.number(),
       expectedDays: z.number(),
       onLeaveDays: z.number(),
+      /** Days excluded from the percentage for want of evidence. */
+      unknownDays: z.number().default(0),
     }),
   ),
   averageAttendancePct: z.number(),

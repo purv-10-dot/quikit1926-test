@@ -19,11 +19,26 @@ import type { ValidationResult, ValidationSeverity } from "@/lib/ai/weeklyReport
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n}%`);
 
-/** §4.3 cell states. */
-const ATTENDANCE_CELL: Record<string, { label: string; cls: string }> = {
-  PRESENT: { label: "✓", cls: "bg-green-50 text-green-700" },
-  ABSENT: { label: "✗", cls: "bg-red-50 text-red-700" },
-  NA: { label: "NA", cls: "bg-gray-50 text-gray-400" },
+/** Badge for a member who appears in the table but is not scored. */
+const MEMBER_TYPE_LABEL: Record<string, string> = { OPTIONAL: "Optional", EXTERNAL: "External" };
+
+/** §4.3 cell states. Semantic data colours — not themeable. */
+const ATTENDANCE_CELL: Record<string, { label: string; cls: string; title: string }> = {
+  PRESENT: { label: "✓", cls: "bg-green-50 text-green-700", title: "Present" },
+  PARTIAL: {
+    label: "◐",
+    cls: "bg-amber-50 text-amber-700",
+    title: "Joined briefly — counted as half a presence",
+  },
+  ABSENT: { label: "✗", cls: "bg-red-50 text-red-700", title: "Absent" },
+  NA: { label: "NA", cls: "bg-gray-50 text-gray-400", title: "No huddle, or on planned leave" },
+  // Deliberately blank, not a cross: we do not know, and guessing here is what
+  // produced the understated attendance this replaced.
+  UNKNOWN: {
+    label: "—",
+    cls: "bg-gray-50 text-gray-300",
+    title: "No attendance evidence for this day — excluded from the percentage",
+  },
 };
 
 const BLOCKER_STATUS: Record<string, { label: string; cls: string }> = {
@@ -251,11 +266,25 @@ export function WeeklyHuddleReportView({
               <tbody>
                 {attendance.rows.map((row) => (
                   <tr key={row.memberId} className="border-b border-gray-100 last:border-0">
-                    <td className="px-3 py-1.5 font-medium text-gray-800">{row.name}</td>
+                    <td className="px-3 py-1.5 font-medium text-gray-800">
+                      {row.name}
+                      {row.attendanceType !== "REQUIRED" ? (
+                        <span
+                          className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500"
+                          title="Shown for visibility, but excluded from the attendance percentage"
+                        >
+                          {MEMBER_TYPE_LABEL[row.attendanceType]}
+                        </span>
+                      ) : null}
+                    </td>
                     {row.cells.map((cell) => {
                       const s = ATTENDANCE_CELL[cell.state];
                       return (
-                        <td key={cell.date} className={`px-2 py-1.5 text-center font-semibold ${s.cls}`}>
+                        <td
+                          key={cell.date}
+                          title={s.title}
+                          className={`px-2 py-1.5 text-center font-semibold ${s.cls}`}
+                        >
                           {s.label}
                         </td>
                       );
@@ -268,6 +297,13 @@ export function WeeklyHuddleReportView({
           </div>
           <p className="mt-1 text-[11px] text-gray-400">
             NA = no huddle held that day, or the member was on planned leave — excluded from the percentage.
+            {attendance.rows.some((r) => r.attendanceType !== "REQUIRED") ? (
+              <>
+                {" "}
+                Optional and External members are shown for visibility only: they neither raise nor
+                lower the team average.
+              </>
+            ) : null}
           </p>
         </section>
       ) : null}

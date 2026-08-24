@@ -59,7 +59,12 @@ export interface ValidateInput {
 function subFiftyAttendance(attendance: AttendanceMatrix): Set<string> {
   const out = new Set<string>();
   for (const row of attendance.rows) {
-    if (row.expectedDays > 0 && row.attendancePct < 50) out.add(normalizeName(row.name));
+    // expectedDays is 0 for OPTIONAL/EXTERNAL members, so they are excluded
+    // here automatically — the executive summary may only name someone whose
+    // attendance is actually being measured.
+    if (row.expectedDays > 0 && row.attendancePct !== null && row.attendancePct < 50) {
+      out.add(normalizeName(row.name));
+    }
   }
   return out;
 }

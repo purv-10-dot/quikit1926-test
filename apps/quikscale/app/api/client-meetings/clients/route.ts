@@ -156,7 +156,12 @@ export const GET = auth.view(async ({ orgId }, request) => {
       meetingUntil: r.meetingUntil ? r.meetingUntil.toISOString().slice(0, 10) : null,
       teamMembers: r.teamMembers
         .filter(tm => !tm.member.deletedAt)
-        .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
+        .map(tm => ({
+          id: tm.member.id,
+          name: tm.member.name,
+          email: tm.member.email,
+          attendanceType: tm.attendanceType,
+        })),
       userMemberCount: r._count.memberships,
       createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
       createdBy: r.createdBy,
@@ -225,7 +230,11 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         meetingUntil:    d.meetingUntil ? new Date(d.meetingUntil) : null,
         createdBy: userId,
         teamMembers: {
-          create: d.teamMemberIds.map(cmId => ({ orgId, clientMemberId: cmId })),
+          create: d.teamMemberIds.map(cmId => ({
+            orgId,
+            clientMemberId: cmId,
+            attendanceType: d.teamMemberTypes?.[cmId] ?? "REQUIRED",
+          })),
         },
       },
     });
@@ -238,6 +247,7 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         description: created.description,
         isActive: created.isActive,
         teamMemberIds: d.teamMemberIds,
+        teamMemberTypes: d.teamMemberTypes ?? {},
       },
     });
 
@@ -258,6 +268,7 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         dailyStartTime: created.dailyStartTime,
         dailyEndTime: created.dailyEndTime,
         teamMemberIds: d.teamMemberIds,
+        teamMemberTypes: d.teamMemberTypes ?? {},
       },
       ...requestContext(request),
     });

@@ -42,10 +42,29 @@ export type AdherenceRating = "YES" | "PARTIAL" | "NO";
 
 export type BlockerStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED";
 
+/**
+ * How this member's attendance is measured **for this client**.
+ *
+ * Only REQUIRED enters the attendance percentage — numerator and denominator
+ * both. OPTIONAL and EXTERNAL still get a row and still show whether they
+ * turned up; they simply are not scored, so they can neither drag the team
+ * average down by being absent nor inflate it by attending.
+ */
+export type ClientAttendanceType = "REQUIRED" | "OPTIONAL" | "EXTERNAL";
+
 export interface RosterMember {
   id: string;
   name: string;
+  email?: string | null;
+  /** Job title for the Adherence Snapshot. */
+  role?: string | null;
+  /** Client-scoped classification. Absent ⇒ REQUIRED, matching the DB default. */
+  attendanceType?: ClientAttendanceType;
 }
+
+/** Everything except REQUIRED is displayed but not scored. */
+export const isScoredMember = (m: { attendanceType?: ClientAttendanceType }): boolean =>
+  (m.attendanceType ?? "REQUIRED") === "REQUIRED";
 
 /** Client-level meeting configuration — answers §4.1's metadata questions. */
 export interface WeeklyClientConfig {
@@ -80,6 +99,58 @@ export interface DayBlocker {
   status?: BlockerStatus | null;
 }
 
+/**
+ * The evidence we hold about who attended one huddle.
+ *
+ * Deliberately *evidence*, not a verdict. The previous model stored
+ * `absentMemberIds` computed as "everyone who didn't speak", which silently
+ * turned every quiet attendee into an absence and produced attendance figures
+ * in the 30% range for teams that fully attended. Presence and absence are now
+ * derived in `buildAttendanceMatrix` from what each signal can actually prove:
+ *
+ *   - a human ticking "absent" proves absence;
+ *   - a meeting participant list proves presence, including for people who
+ *     never said a word;
+ *   - speaking proves presence but silence proves nothing;
+ *   - and where no signal covers someone, the honest answer is UNKNOWN.
+ */
+export interface DayAttendance {
+  /** `ClientMember` ids a human explicitly marked absent. Beats every inference. */
+  markedAbsentIds: string[];
+  /**
+   * True when a human logged this huddle, which makes `markedAbsentIds`
+   * authoritative in BOTH directions: anyone not on it was present, and an
+   * empty list means a full house. Without this the same empty list is
+   * indistinguishable from "we have no idea", which is precisely the ambiguity
+   * that produced the old wrong numbers.
+   */
+  absenceListAuthoritative: boolean;
+  /** Members present per the meeting's participant list (the strongest presence signal). */
+  participantIds: string[];
+  /** Members who spoke in the transcript. */
+  spokeIds: string[];
+  /**
+   * Whether the participant list is complete enough to infer absence from.
+   *
+   * Only a list that plausibly covers the whole meeting can turn "not in it"
+   * into "was absent". Set by `participantListQuality` in the data layer.
+   */
+  participantListUsable: boolean;
+  /** Names from this day we could not resolve, for the unmatched-participants tray. */
+  unresolved: UnresolvedParticipant[];
+}
+
+/** A name seen in a recording that did not resolve to a roster member. */
+export interface UnresolvedParticipant {
+  name: string;
+  email: string | null;
+  reason: ResolutionReason | "fuzzy" | "email" | "alias" | "parenthetical" | "external";
+  /** Roster names it tied between, when ambiguous. */
+  candidates?: string[];
+  /** A fuzzy suggestion awaiting human confirmation. */
+  suggestedMemberId?: string | null;
+}
+
 /** One day of the reporting week: the huddle record + its transcript report. */
 export interface HuddleDay {
   id: string;
@@ -89,20 +160,8 @@ export interface HuddleDay {
   actualEndTime: string | null;
   punctualityOverride: MeetingFlag;
   totalMembers: number;
-  /** `ClientMember` ids recorded absent for this huddle. */
-  absentMemberIds: string[];
-  /**
-   * Whether `absentMemberIds` is trustworthy for this day.
-   *
-   * A huddle logged in the Daily Huddle module carries an authoritative
-   * absence list. A day known only from a Fathom transcript does not — if that
-   * transcript has a report we infer presence from who spoke, but with no
-   * report at all we know the huddle happened and nothing about who attended.
-   * Such a day counts as CONDUCTED but is excluded from every attendance
-   * figure, because an empty absence list would otherwise silently read as
-   * "everyone was present".
-   */
-  attendanceKnown: boolean;
+  /** What we actually know about who was in the room. See `DayAttendance`. */
+  attendance: DayAttendance;
   adherence: DayAdherenceRow[];
   blockers: DayBlocker[];
   transcriptId: string | null;
@@ -262,30 +321,70 @@ export function plannedHuddleDates(config: WeeklyClientConfig, weekStart: Date):
 // §4.3 — attendance matrix
 // ---------------------------------------------------------------------------
 
-export type AttendanceState = "PRESENT" | "ABSENT" | "NA";
+/**
+ * What one member's attendance on one day amounts to.
+ *
+ * `UNKNOWN` is the important addition. Previously any gap in the evidence
+ * collapsed to ABSENT, which is how a fully-attended week reported 30%. A cell
+ * we cannot determine now renders "—" and is excluded from the denominator:
+ * honest beats complete.
+ *
+ * `PARTIAL` is produced only from join-duration data (a Teams attendance
+ * report). It counts as half a presence — joining ninety seconds of a
+ * twenty-minute huddle is not attendance, but it is not absence either.
+ */
+export type AttendanceState = "PRESENT" | "PARTIAL" | "ABSENT" | "NA" | "UNKNOWN";
+
+/** Which rung of the ladder decided a cell — shown in the UI as provenance. */
+export type AttendanceEvidence =
+  | "HUMAN_MARKED"
+  | "NA_LEAVE"
+  | "NA_NOT_HELD"
+  | "PRESENT_PARTICIPANT_LIST"
+  | "PRESENT_SPOKE"
+  | "INFERRED_ABSENT"
+  | "NO_DATA";
 
 export interface AttendanceColumn {
   date: string;
   weekday: string;
   held: boolean;
   huddleId: string | null;
-  /** False when the huddle happened but we have no reliable attendance data. */
+  /**
+   * Whether this day's evidence can support an absence verdict at all.
+   *
+   * True when a human logged the huddle (their absence list is authoritative
+   * even when empty) or the participant list is usable. False leaves every
+   * unproven member UNKNOWN rather than absent.
+   */
   attendanceKnown: boolean;
 }
 
 export interface AttendanceCell {
   date: string;
   state: AttendanceState;
+  /** Why this cell reads the way it does. */
+  evidence: AttendanceEvidence;
 }
 
 export interface AttendanceRow {
   memberId: string;
   name: string;
+  role: string | null;
+  /** REQUIRED | OPTIONAL | EXTERNAL for this client. */
+  attendanceType: ClientAttendanceType;
   cells: AttendanceCell[];
-  attendancePct: number;
+  /**
+   * Null for OPTIONAL and EXTERNAL members — they are shown but not scored, so
+   * a number here would imply a judgement the report is not making. Renders "—".
+   */
+  attendancePct: number | null;
   presentDays: number;
+  /** Days counted in the denominator: PRESENT + PARTIAL + ABSENT. Always 0 when unscored. */
   expectedDays: number;
   onLeaveDays: number;
+  /** Days with no usable evidence — excluded from the percentage. */
+  unknownDays: number;
 }
 
 export interface AttendanceMatrix {
@@ -320,7 +419,14 @@ export function buildAttendanceMatrix(input: {
         weekday: WEEKDAY_SHORT[new Date(`${date}T00:00:00.000Z`).getUTCDay()],
         held: huddle?.callStatus === "HELD",
         huddleId: huddle?.id ?? null,
-        attendanceKnown: huddle?.attendanceKnown ?? false,
+        // Absence may only be inferred where the evidence would have shown
+        // the person had they attended: a human logged the huddle (their
+        // absence list is authoritative even when empty), or the participant
+        // list is complete enough to trust.
+        attendanceKnown:
+          (huddle?.attendance.absenceListAuthoritative ||
+            huddle?.attendance.participantListUsable) ??
+          false,
       };
     });
 
@@ -328,50 +434,117 @@ export function buildAttendanceMatrix(input: {
     Object.entries(onLeave).map(([id, ds]) => [id, new Set(ds.map(ymd))]),
   );
 
+  /**
+   * The precedence ladder for one member on one day.
+   *
+   * Order is the whole design: the only rung that can produce ABSENT from an
+   * inference is the last one, and it is gated on the day's evidence being
+   * complete enough to have seen the person had they been there.
+   */
+  const cellFor = (member: RosterMember, col: AttendanceColumn): AttendanceCell => {
+    const at = (state: AttendanceState, evidence: AttendanceEvidence): AttendanceCell => ({
+      date: col.date,
+      state,
+      evidence,
+    });
+
+    if (!col.held) return at("NA", "NA_NOT_HELD");
+
+    const day = byDate.get(col.date);
+    if (!day) return at("UNKNOWN", "NO_DATA");
+
+    // 0. Planned leave outranks everything, including a human's absence tick:
+    //    someone on approved leave was never expected, so recording them
+    //    "absent" must not count against their attendance.
+    if (leaveByMember.get(member.id)?.has(col.date)) return at("NA", "NA_LEAVE");
+
+    // 0b. A human ticking absent outranks every inference below.
+    if (day.attendance.markedAbsentIds.includes(member.id)) return at("ABSENT", "HUMAN_MARKED");
+
+    // 0c. A human logged this huddle, so the absence list settles it both ways:
+    //     not on it means present.
+    if (day.attendance.absenceListAuthoritative) return at("PRESENT", "HUMAN_MARKED");
+
+    // 1. In the participant list — proves presence even for someone silent.
+    if (day.attendance.participantIds.includes(member.id)) {
+      return at("PRESENT", "PRESENT_PARTICIPANT_LIST");
+    }
+
+    // 2. Spoke — proves presence. (Silence proves nothing, which is why there
+    //    is no matching "did not speak ⇒ absent" rung.)
+    if (day.attendance.spokeIds.includes(member.id)) return at("PRESENT", "PRESENT_SPOKE");
+
+    // 3. Absence may only be inferred where we would have seen them.
+    if (col.attendanceKnown) return at("ABSENT", "INFERRED_ABSENT");
+
+    return at("UNKNOWN", "NO_DATA");
+  };
+
+  /** PRESENT counts fully, PARTIAL half, ABSENT zero; NA/UNKNOWN don't count. */
+  const weightOf = (state: AttendanceState): number | null =>
+    state === "PRESENT" ? 1 : state === "PARTIAL" ? 0.5 : state === "ABSENT" ? 0 : null;
+
+  // Every member keeps a row — an optional attendee who turned up should still
+  // be visible. Classification changes whether the row is SCORED, not whether
+  // it is shown.
   const rows: AttendanceRow[] = roster.map((member) => {
-    const leave = leaveByMember.get(member.id) ?? new Set<string>();
-    let present = 0;
+    const cells = columns.map((col) => cellFor(member, col));
+    const scoredMember = isScoredMember(member);
+
+    let scored = 0;
     let expected = 0;
     let onLeaveDays = 0;
+    let unknownDays = 0;
+    let present = 0;
 
-    const cells: AttendanceCell[] = columns.map((col) => {
-      // A day with no reliable attendance data reads NA rather than inventing
-      // a full house from an empty absence list.
-      if (!col.held || !col.attendanceKnown) return { date: col.date, state: "NA" as const };
-      if (leave.has(col.date)) {
-        onLeaveDays += 1;
-        return { date: col.date, state: "NA" as const };
+    for (const cell of cells) {
+      const weight = weightOf(cell.state);
+      if (weight === null) {
+        if (cell.evidence === "NA_LEAVE") onLeaveDays += 1;
+        else if (cell.state === "UNKNOWN") unknownDays += 1;
+        continue;
       }
+      if (cell.state === "PRESENT") present += 1;
+      // Optional/external days are never counted, in either direction.
+      if (!scoredMember) continue;
       expected += 1;
-      const huddle = byDate.get(col.date)!;
-      const absent = huddle.absentMemberIds.includes(member.id);
-      if (!absent) present += 1;
-      return { date: col.date, state: absent ? ("ABSENT" as const) : ("PRESENT" as const) };
-    });
+      scored += weight;
+    }
 
     return {
       memberId: member.id,
       name: member.name,
+      role: member.role ?? null,
+      attendanceType: member.attendanceType ?? "REQUIRED",
       cells,
       presentDays: present,
       expectedDays: expected,
       onLeaveDays,
-      attendancePct: expected ? round1((present / expected) * 100) : 0,
+      unknownDays,
+      attendancePct: !scoredMember ? null : expected ? round1((scored / expected) * 100) : 0,
     };
   });
 
-  // Tile value: average over held huddles of that huddle's attendance rate.
-  const heldRates: number[] = [];
-  for (const col of columns) {
-    if (!col.held || !col.attendanceKnown) continue;
-    const huddle = byDate.get(col.date)!;
-    const expectedToday = roster.filter((m) => !(leaveByMember.get(m.id)?.has(col.date) ?? false));
-    if (!expectedToday.length) continue;
-    const presentToday = expectedToday.filter((m) => !huddle.absentMemberIds.includes(m.id)).length;
-    heldRates.push((presentToday / expectedToday.length) * 100);
+  // Tile value: the mean of each day's own attendance rate, so a day with only
+  // two assessable members doesn't outweigh a day with ten. Days where nobody
+  // was assessable contribute nothing rather than a zero.
+  const dayRates: number[] = [];
+  const scoredRows = rows.filter((r) => r.attendanceType === "REQUIRED");
+  for (const [i, col] of columns.entries()) {
+    if (!col.held) continue;
+    let scored = 0;
+    let counted = 0;
+    // Required members only — an optional attendee must not move the team tile.
+    for (const row of scoredRows) {
+      const weight = weightOf(row.cells[i].state);
+      if (weight === null) continue;
+      counted += 1;
+      scored += weight;
+    }
+    if (counted) dayRates.push((scored / counted) * 100);
   }
 
-  return { columns, rows, averageAttendancePct: round1(mean(heldRates) ?? 0) };
+  return { columns, rows, averageAttendancePct: round1(mean(dayRates) ?? 0) };
 }
 
 // ---------------------------------------------------------------------------

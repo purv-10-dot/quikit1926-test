@@ -3,6 +3,19 @@ import { vi, beforeEach, afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 /**
+ * A dummy DATABASE_URL, set BEFORE anything can import @quikit/database.
+ *
+ * The shared client passes `datasources.db.url = process.env.DATABASE_URL`
+ * explicitly, and a regenerated Prisma client rejects `undefined` there at
+ * CONSTRUCTION time — so any test file that transitively imports the real
+ * client (rather than the mockDb helper) dies on import with
+ * "Invalid value undefined for datasource". No query is ever issued in tests;
+ * this only has to be a syntactically valid URL.
+ */
+process.env.DATABASE_URL ??= "postgresql://test:test@localhost:5432/test?schema=public";
+process.env.DATABASE_URL_DIRECT ??= process.env.DATABASE_URL;
+
+/**
  * Global test setup for QuikFlow. Mirrors the pattern used across the repo
  * (see apps/quikscale/__tests__/setup.ts), trimmed to what QuikFlow's
  * `withOrgAuth` actually depends on: a mocked session + a mocked orgId

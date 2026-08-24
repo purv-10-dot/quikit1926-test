@@ -88,7 +88,7 @@ interface ClientRow {
   weeklyStartTime: string | null; weeklyEndTime: string | null;
   dailyStartTime: string | null;  dailyEndTime: string | null;
   weeklyDay: string | null; dailyDays: string[]; meetingUntil: string | null; startDate: string | null;
-  teamMembers: Array<{ id: string; name: string; email: string }>;
+  teamMembers: Array<{ id: string; name: string; email: string; attendanceType?: AttendanceType }>;
   createdAt: string; updatedAt: string;
   createdBy: string; createdByName: string; createdByInitials: string;
   updatedBy: string | null;
@@ -105,7 +105,22 @@ const emptyForm = {
   weeklyDay: "" as string, dailyDays: [] as string[],
   startDate: "" as string, meetingUntil: "" as string,
   teamMemberIds: [] as string[],
+  /** Per-member attendance classification for this client. Absent ⇒ REQUIRED. */
+  teamMemberTypes: {} as Record<string, AttendanceType>,
 };
+
+type AttendanceType = "REQUIRED" | "OPTIONAL" | "EXTERNAL";
+
+/**
+ * Only REQUIRED members count toward the attendance percentage. OPTIONAL and
+ * EXTERNAL still appear in the weekly report so you can see whether they
+ * turned up, but they neither raise nor lower the team average.
+ */
+const ATTENDANCE_TYPE_OPTIONS: { value: AttendanceType; label: string }[] = [
+  { value: "REQUIRED", label: "Required" },
+  { value: "OPTIONAL", label: "Optional" },
+  { value: "EXTERNAL", label: "External" },
+];
 
 // Weekday chips for the recurrence editor (keys match the calendar tokens).
 const DAY_CHIPS: { key: string; label: string }[] = [
@@ -547,6 +562,9 @@ export default function ClientsPage() {
         startDate:       row.startDate ? row.startDate.slice(0, 10) : "",
         meetingUntil:    row.meetingUntil ?? "",
         teamMemberIds:   row.teamMembers.map(m => m.id),
+        teamMemberTypes: Object.fromEntries(
+          row.teamMembers.map(m => [m.id, m.attendanceType ?? "REQUIRED"]),
+        ) as Record<string, AttendanceType>,
       },
     });
   }
@@ -580,6 +598,11 @@ export default function ClientsPage() {
         startDate:       f.startDate || null,
         meetingUntil:    f.meetingUntil || null,
         teamMemberIds:   f.teamMemberIds,
+        // Only send classifications for members still selected, so removing
+        // someone cannot leave a stale entry behind.
+        teamMemberTypes: Object.fromEntries(
+          f.teamMemberIds.map(id => [id, f.teamMemberTypes[id] ?? "REQUIRED"]),
+        ),
       };
       const url = editing.id ? `/api/client-meetings/clients/${editing.id}` : "/api/client-meetings/clients";
       const method = editing.id ? "PUT" : "POST";
@@ -1020,6 +1043,45 @@ export default function ClientsPage() {
                 chipLimit={Infinity}
               />
             )}
+
+            {/* Per-member classification. Only Required members count toward the
+                attendance percentage — see ATTENDANCE_TYPE_OPTIONS. */}
+            {editing.form.teamMemberIds.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                  <span className="text-xs font-medium text-gray-700">Attendance</span>
+                  <span className="text-[11px] text-gray-400">
+                    Only Required members count toward attendance %
+                  </span>
+                </div>
+                <ul className="max-h-56 divide-y divide-gray-100 overflow-y-auto">
+                  {editing.form.teamMemberIds.map((id) => {
+                    const m = memberNameById.get(id);
+                    return (
+                      <li key={id} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <span className="min-w-0 truncate text-xs text-gray-700">{m ?? id}</span>
+                        <Segmented
+                          value={editing.form.teamMemberTypes[id] ?? "REQUIRED"}
+                          onChange={(v) =>
+                            setEditing({
+                              ...editing,
+                              form: {
+                                ...editing.form,
+                                teamMemberTypes: {
+                                  ...editing.form.teamMemberTypes,
+                                  [id]: v as AttendanceType,
+                                },
+                              },
+                            })
+                          }
+                          options={ATTENDANCE_TYPE_OPTIONS}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <div>

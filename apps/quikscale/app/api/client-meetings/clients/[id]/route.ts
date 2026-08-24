@@ -87,6 +87,11 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
       dailyStartTime: existing.dailyStartTime,
       dailyEndTime: existing.dailyEndTime,
       teamMemberIds: existing.teamMembers.map(tm => tm.clientMemberId).sort(),
+      // Tracked so a Required→Optional change shows in Change History rather
+      // than passing silently: it materially changes the attendance figures.
+      teamMemberTypes: Object.fromEntries(
+        existing.teamMembers.map(tm => [tm.clientMemberId, tm.attendanceType]),
+      ),
     };
 
     await db.$transaction(async tx => {
@@ -111,7 +116,12 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
         await tx.clientTeamMember.deleteMany({ where: { clientId: params.id } });
         if (d.teamMemberIds.length > 0) {
           await tx.clientTeamMember.createMany({
-            data: d.teamMemberIds.map(cmId => ({ clientId: params.id, clientMemberId: cmId, orgId })),
+            data: d.teamMemberIds.map(cmId => ({
+              clientId: params.id,
+              clientMemberId: cmId,
+              orgId,
+              attendanceType: d.teamMemberTypes?.[cmId] ?? "REQUIRED",
+            })),
           });
         }
       }
@@ -126,6 +136,12 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
       dailyStartTime: d.dailyStartTime ?? existing.dailyStartTime,
       dailyEndTime: d.dailyEndTime ?? existing.dailyEndTime,
       teamMemberIds: (d.teamMemberIds ?? oldSnapshot.teamMemberIds).slice().sort(),
+      teamMemberTypes:
+        d.teamMemberIds === undefined
+          ? oldSnapshot.teamMemberTypes
+          : Object.fromEntries(
+              d.teamMemberIds.map(id => [id, d.teamMemberTypes?.[id] ?? "REQUIRED"]),
+            ),
     };
     const changes = Object.keys(newSnapshot).filter(k => {
       const a = (oldSnapshot as Record<string, unknown>)[k];

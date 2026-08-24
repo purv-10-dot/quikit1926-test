@@ -27,6 +27,9 @@ const LABEL_FILL = "F8FAFC";
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n}%`);
 
+/** Suffix marking a member who is shown but not scored. */
+const TYPE_LABEL: Record<string, string> = { OPTIONAL: "Optional", EXTERNAL: "External" };
+
 const STATUS_LABEL: Record<string, string> = {
   OPEN: "Open",
   IN_PROGRESS: "In Progress",
@@ -40,7 +43,14 @@ const KIND_LABEL: Record<string, string> = {
   ACTION: "Action",
 };
 
-const ATTENDANCE_MARK: Record<string, string> = { PRESENT: "✓", ABSENT: "✗", NA: "NA" };
+const ATTENDANCE_MARK: Record<string, string> = {
+  PRESENT: "✓",
+  PARTIAL: "◐",
+  ABSENT: "✗",
+  NA: "NA",
+  // No evidence either way — never rendered as an absence.
+  UNKNOWN: "—",
+};
 
 function cell(text: string, opts: { bold?: boolean; fill?: string; align?: boolean; width?: number } = {}) {
   return new TableCell({
@@ -167,7 +177,7 @@ export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: strin
           (row) =>
             new TableRow({
               children: [
-                cell(row.name),
+                cell(row.attendanceType === "REQUIRED" ? row.name : `${row.name}  [${TYPE_LABEL[row.attendanceType]}]`),
                 ...row.cells.map((c) => cell(ATTENDANCE_MARK[c.state] ?? "—", { align: true })),
                 cell(pct(row.attendancePct), { align: true, bold: true }),
               ],

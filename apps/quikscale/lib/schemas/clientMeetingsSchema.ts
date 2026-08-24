@@ -81,6 +81,16 @@ export const createClientSchema = z.object({
   meetingUntil: z.string().regex(DATE_ISO_OR_YMD).optional().nullable(),
   /// IDs of ClientMember rows that should be on this client's roster.
   teamMemberIds: z.array(z.string()).default([]),
+  /**
+   * Per-member attendance classification for THIS client, keyed by member id.
+   *
+   * A companion to `teamMemberIds` rather than a replacement, so every existing
+   * caller keeps working: any id absent from this map is REQUIRED, which is
+   * both the DB default and the behaviour before classification existed.
+   */
+  teamMemberTypes: z
+    .record(z.string(), z.enum(["REQUIRED", "OPTIONAL", "EXTERNAL"]))
+    .optional(),
 });
 
 export const updateClientSchema = createClientSchema.partial();

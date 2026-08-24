@@ -14,12 +14,19 @@
  */
 
 import { db } from "@/lib/db";
-import { resolveParticipant } from "@/lib/ai/weeklyHuddleAggregate";
+import {
+  buildRosterIndex,
+  matchParticipant,
+  resolvedMemberId,
+  type RosterIndex,
+} from "@/lib/ai/participantMatch";
 import type {
   DayAdherenceRow,
+  DayAttendance,
   DayBlocker,
   HuddleDay,
   RosterMember,
+  UnresolvedParticipant,
   WeeklyClientConfig,
 } from "@/lib/ai/weeklyHuddleAggregate";
 import { MEETING_TZ } from "@/lib/services/meetingTranscriptMatch";
@@ -104,16 +111,48 @@ export async function loadWeekContext(
       dailyStartTime: true,
       dailyEndTime: true,
       teamMembers: {
-        select: { member: { select: { id: true, name: true, deletedAt: true } } },
+        select: {
+          // Required/optional/external is a property of the LINK, not the
+          // person: the same member can be required for one client and
+          // optional for another.
+          attendanceType: true,
+          member: {
+            select: {
+              id: true,
+              name: true,
+              // Email is the only unambiguous way to match a meeting
+              // participant to a roster member — see participantMatch.ts.
+              email: true,
+              role: true,
+              deletedAt: true,
+            },
+          },
+        },
       },
     },
   });
   if (!client) return null;
 
   const roster: RosterMember[] = client.teamMembers
-    .map((tm) => tm.member)
-    .filter((m) => m && !m.deletedAt)
-    .map((m) => ({ id: m.id, name: m.name }));
+    .filter((tm) => tm.member && !tm.member.deletedAt)
+    .map((tm) => ({
+      id: tm.member.id,
+      name: tm.member.name,
+      email: tm.member.email,
+      role: tm.member.role,
+      attendanceType: tm.attendanceType,
+    }));
+
+  // Human-recorded name mappings ("Bobby" → "Harjinder (Bobby) Kohli"). Loaded
+  // once for the whole week rather than per day.
+  const aliasRows = roster.length
+    ? await db.clientMemberAlias.findMany({
+        where: { orgId, clientMemberId: { in: roster.map((m) => m.id) } },
+        select: { clientMemberId: true, normalizedAlias: true },
+      })
+    : [];
+
+  const rosterIndex = buildRosterIndex(roster, aliasRows);
 
   const [huddles, transcripts] = await Promise.all([
     db.clientDailyHuddle.findMany({
@@ -152,6 +191,9 @@ export async function loadWeekContext(
         startedAt: true,
         endedAt: true,
         durationMinutes: true,
+        // The meeting participant list — the only signal that proves a silent
+        // attendee was present, and the only one carrying email.
+        attendees: true,
       },
     }),
   ]);
@@ -174,6 +216,14 @@ export async function loadWeekContext(
 
   const reportFor = (t: { id: string; report: unknown } | null): StoredMeetingReport | null =>
     (t && overrideReports?.get(t.id)) ?? ((t?.report as StoredMeetingReport | null) ?? null);
+
+  /** The recording's participant list — `[{ name, email }]`, or empty. */
+  const attendeesOf = (
+    t: { attendees?: unknown } | null,
+  ): { name?: string | null; email?: string | null }[] =>
+    Array.isArray(t?.attendees)
+      ? (t.attendees as { name?: string | null; email?: string | null }[])
+      : [];
 
   /** Pull the day's per-person ratings out of its saved report. */
   const adherenceOf = (report: StoredMeetingReport | null): DayAdherenceRow[] =>
@@ -213,6 +263,88 @@ export async function loadWeekContext(
     }
   };
 
+  /**
+   * Turn a day's raw signals into attendance evidence.
+   *
+   * `participantListUsable` is the gate that decides whether absence may be
+   * inferred at all, and it is deliberately strict. Inferring absence means
+   * asserting "we would have seen this person had they been there" — only a
+   * participant list that plausibly covers the meeting supports that. Anything
+   * weaker leaves unproven members UNKNOWN, which is the entire fix for the
+   * previous behaviour of treating every quiet attendee as absent.
+   *
+   * `humanLogged` short-circuits the gate: a huddle someone filled in by hand
+   * carries an authoritative absence list, and it is authoritative even when
+   * empty (that is what "nobody was absent" looks like).
+   */
+  const buildAttendance = (input: {
+    humanLogged: boolean;
+    markedAbsentIds: string[];
+    attendees: { name?: string | null; email?: string | null }[];
+    adherence: DayAdherenceRow[];
+  }): DayAttendance => {
+    const participantIds = new Set<string>();
+    const spokeIds = new Set<string>();
+    const unresolved: UnresolvedParticipant[] = [];
+    let attendeesWithEmail = 0;
+    let attendeesResolved = 0;
+
+    const note = (
+      name: string,
+      email: string | null,
+      match: ReturnType<typeof matchParticipant>,
+    ) => {
+      // An org/team label is a legitimate party, not a missing person — keeping
+      // it out of the tray is what stops genuine roster gaps being buried.
+      if (match.reason === "external") return;
+      if (unresolved.some((u) => u.name === name)) return;
+      unresolved.push({
+        name,
+        email,
+        reason: match.reason,
+        candidates: match.candidates,
+        suggestedMemberId: match.pendingConfirm ? match.memberId : null,
+      });
+    };
+
+    for (const a of input.attendees) {
+      const name = (a.name ?? "").trim();
+      const email = (a.email ?? "").trim() || null;
+      if (!name && !email) continue;
+      if (email) attendeesWithEmail += 1;
+
+      const match = matchParticipant(name || email || "", rosterIndex, email);
+      const id = resolvedMemberId(match);
+      if (id) {
+        participantIds.add(id);
+        attendeesResolved += 1;
+      } else {
+        note(name || email || "(unnamed)", email, match);
+      }
+    }
+
+    for (const row of input.adherence) {
+      const match = matchParticipant(row.participant, rosterIndex);
+      const id = resolvedMemberId(match);
+      if (id) spokeIds.add(id);
+      else note(row.participant, null, match);
+    }
+
+    const listCoverage = input.attendees.length ? attendeesResolved / input.attendees.length : 0;
+    const participantListUsable =
+      input.humanLogged ||
+      (attendeesWithEmail > 0 && listCoverage >= 0.6 && participantIds.size >= 2);
+
+    return {
+      markedAbsentIds: input.markedAbsentIds,
+      absenceListAuthoritative: input.humanLogged,
+      participantIds: [...participantIds],
+      spokeIds: [...spokeIds],
+      participantListUsable,
+      unresolved,
+    };
+  };
+
   /** "HH:mm" in the meeting timezone, for a transcript-derived day. */
   const hhmm = (d: Date | null): string | null =>
     d ? new Intl.DateTimeFormat("en-GB", { timeZone: MEETING_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(d) : null;
@@ -247,9 +379,12 @@ export async function loadWeekContext(
       actualEndTime: h.actualEndTime,
       punctualityOverride: h.punctualityOverride,
       totalMembers: h.totalMembers,
-      absentMemberIds: h.absentTeamMembers.map((a) => a.clientMemberId),
-      // The module's absence list is authoritative even when it is empty.
-      attendanceKnown: true,
+      attendance: buildAttendance({
+        humanLogged: true,
+        markedAbsentIds: h.absentTeamMembers.map((a) => a.clientMemberId),
+        attendees: attendeesOf(transcript),
+        adherence,
+      }),
       adherence,
       blockers: blockersOf(report),
       transcriptId: transcript?.id ?? null,
@@ -284,15 +419,6 @@ export async function loadWeekContext(
 
     collectNotes(date, adherence);
 
-    // With a report we can infer attendance from who actually spoke. Without
-    // one we know nothing about attendance, and say so rather than guessing.
-    const spoke = new Set(
-      adherence
-        .map((a) => resolveParticipant(a.participant, roster).memberId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const attendanceKnown = adherence.length > 0;
-
     days.push({
       id: t.id,
       meetingDate: t.meetingDate,
@@ -301,8 +427,17 @@ export async function loadWeekContext(
       actualEndTime: hhmm(t.endedAt),
       punctualityOverride: "NA",
       totalMembers: roster.length,
-      absentMemberIds: attendanceKnown ? roster.filter((m) => !spoke.has(m.id)).map((m) => m.id) : [],
-      attendanceKnown,
+      // No human logged this day, so absence can only be inferred if the
+      // recording's participant list is good enough — never from silence.
+      // This is the fix for the previous behaviour, which marked every roster
+      // member who did not speak as absent and reported ~30% attendance for
+      // teams that fully attended.
+      attendance: buildAttendance({
+        humanLogged: false,
+        markedAbsentIds: [],
+        attendees: attendeesOf(t),
+        adherence,
+      }),
       adherence,
       blockers: blockersOf(report),
       transcriptId: t.id,
