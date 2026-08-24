@@ -116,6 +116,26 @@ export function CreateIdeaModal({
     );
   }
 
+  // Type not resolved yet → render a neutral loading shell instead of the idea
+  // form. Otherwise a non-discovery space (the common case) briefly shows the
+  // idea layout before flipping to Create Task once the type fetch returns —
+  // the visible glitch. A tiny spinner is honest and doesn't commit to a form.
+  if (!typeKnown && selectedId) {
+    return (
+      <div
+        className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/30 p-6"
+        onMouseDown={onClose}
+      >
+        <div
+          className="mt-10 flex w-full max-w-2xl items-center justify-center rounded-lg bg-white py-16 shadow-2xl"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/30 p-6" onMouseDown={onClose}>
       <div className="mt-10 w-full max-w-2xl rounded-lg bg-white shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
