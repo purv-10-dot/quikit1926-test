@@ -78,6 +78,7 @@ export function UserPicker({
             <span key={u.id} className="qc-chip">
               <Avatar name={u.displayName} id={u.id} avatarUrl={u.avatarUrl} size={18} />
               {u.displayName}
+              {u.isGuest ? <span className="qc-badge-external">External</span> : null}
               <button
                 type="button"
                 aria-label={`Remove ${u.displayName}`}
@@ -117,7 +118,10 @@ export function UserPicker({
               onClick={() => pick(u)}
             >
               <Avatar name={u.displayName} id={u.id} avatarUrl={u.avatarUrl} size={28} />
-              <span style={{ flex: 1 }}>{u.displayName}</span>
+              <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                {u.displayName}
+                {u.isGuest ? <span className="qc-badge-external">External</span> : null}
+              </span>
             </button>
           ))
         )}

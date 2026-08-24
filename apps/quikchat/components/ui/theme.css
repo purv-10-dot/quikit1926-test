@@ -1697,6 +1697,24 @@ body {
   border-radius: var(--qc-r-pill);
   padding: 1px 6px;
 }
+/* Teams-style "External" tag for users holding the Guest RBAC role — shown
+   next to their name in the DM header, profile card, member list, and the
+   New DM/Group people picker. Filled (not outlined like .qc-role-badge) so
+   it reads as identity metadata, not a channel-scoped role. */
+.qc-badge-external {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--qc-text-2);
+  background: var(--qc-surface-2);
+  border: 0.5px solid var(--qc-border-strong);
+  border-radius: var(--qc-r-pill);
+  padding: 1px 7px;
+}
 .qc-detail-row {
   display: flex;
   justify-content: space-between;

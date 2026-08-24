@@ -36,7 +36,14 @@ export function ProfileCard({
           size={64}
           online={online}
         />
-        <div className="qc-profile__name">{user.displayName}</div>
+        <div className="qc-profile__name">
+          {user.displayName}
+          {user.isGuest ? (
+            <span className="qc-badge-external" style={{ marginLeft: 8, verticalAlign: "middle" }}>
+              External
+            </span>
+          ) : null}
+        </div>
         <div className="qc-profile__meta">
           {online != null ? (
             <span className="qc-profile__presence" data-online={online}>

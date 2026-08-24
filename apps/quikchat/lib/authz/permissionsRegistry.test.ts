@@ -43,12 +43,14 @@ describe("permissionsRegistry", () => {
     }
   });
 
-  it("allPermissionPairs enumerates exactly the leaf action pairs (16)", () => {
+  it("allPermissionPairs enumerates exactly the leaf action pairs (12)", () => {
     const pairs = allPermissionPairs();
-    // 4 (Channel) +1+1+2 +1+1 +2+1+1+1 +1 = 16
-    // Was 17 until Channel.InviteExternal (+1) left the registry — it gated
-    // nothing. A change here means the tree moved, not that a grant vanished.
-    expect(pairs).toHaveLength(16);
+    // 1 (Channel) +1+1+2 +1+1 +1+1+1+1 +1 = 12
+    // Was 16 until Channel's "view"/"update"/"delete" and Assistant's "view"
+    // left the registry — none of the four had a `userCan(...)` call anywhere
+    // (the same dead-checkbox trap Channel.InviteExternal was, at 17→16). A
+    // change here means the tree moved, not that a grant vanished.
+    expect(pairs).toHaveLength(12);
     // No duplicates.
     const keys = new Set(pairs.map((p) => `${p.resource}:${p.action}`));
     expect(keys.size).toBe(pairs.length);
@@ -64,10 +66,19 @@ describe("permissionsRegistry", () => {
     expect(isValidPermissionPair("App.Modules", "create")).toBe(false);
   });
 
-  it("Channel supports full CRUD-V", () => {
-    for (const a of ["view", "create", "update", "delete"]) {
-      expect(isValidPermissionPair("Channel", a)).toBe(true);
-    }
+  it("Channel supports create only — view/update/delete are not real gates", () => {
+    // "view" is membership-controlled, not RBAC; "update"/"delete" belong to
+    // the separate Channel.Moderate leaf. Neither had a userCan(...) call
+    // site, so they were removed rather than left as dead checkboxes.
+    expect(isValidPermissionPair("Channel", "create")).toBe(true);
+    expect(isValidPermissionPair("Channel", "view")).toBe(false);
+    expect(isValidPermissionPair("Channel", "update")).toBe(false);
+    expect(isValidPermissionPair("Channel", "delete")).toBe(false);
+  });
+
+  it("Assistant supports create only — view is not a real gate", () => {
+    expect(isValidPermissionPair("Assistant", "create")).toBe(true);
+    expect(isValidPermissionPair("Assistant", "view")).toBe(false);
   });
 
   it("rejects unknown resources and non-verb actions", () => {

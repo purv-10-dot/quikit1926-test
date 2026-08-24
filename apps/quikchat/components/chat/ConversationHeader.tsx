@@ -52,6 +52,10 @@ export function ConversationHeader({
 }: ConversationHeaderProps) {
   const { openProfile } = useProfile();
   const isGroup = channel.type === "group";
+  // Teams-style "External" tag: only meaningful for a 1:1 DM with a Guest-role
+  // peer — a group's avatar-stack badges (if ever added) would be the place
+  // for a multi-member equivalent, not this single title-line tag.
+  const dmPeer = !isGroup ? channel.members.find((m) => m.id !== currentUserId) : undefined;
   const stack = channel.members.slice(0, 3);
   const extra = channel.members.length - stack.length;
   // Count online members other than the viewer.
@@ -87,6 +91,7 @@ export function ConversationHeader({
         <div className="qc-min0">
           <div className="qc-convo-title">
             <span className="qc-truncate">{channel.name ?? "Direct message"}</span>
+            {dmPeer?.isGuest ? <span className="qc-badge-external">External</span> : null}
           </div>
           <div className="qc-convo-sub">{sub}</div>
         </div>

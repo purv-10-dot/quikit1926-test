@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addDays,
   addMonths,
@@ -30,8 +31,12 @@ import {
   useToast,
 } from "@/components/ui";
 import {
+  MICROSOFT_CONNECT_URL,
   createCalendarEvent,
+  createChannel,
+  createMeetingApi,
   deleteCalendarEvent,
+  fetchCalendarConnection,
   fetchCalendarEvents,
   fetchFreeBusy,
   fetchOrgUsers,
@@ -100,27 +105,42 @@ function timeLabel(h: number): string {
 }
 
 /**
- * Schedule-or-edit modal for a personal calendar event (`QcCalendarEvent`).
- * Create when `event.id` is unset; edit-in-place (via `updateCalendarEvent`)
- * when it's a real, editable event id. Entry points (below) only ever pass an
- * id for editable personal events — a meeting overlay (`editable: false`)
- * never reaches here, since editing it here would silently create an
- * unrelated duplicate rather than touching the real meeting.
+ * Schedule-or-edit modal. Create when `event.id` is unset; edit-in-place (via
+ * `updateCalendarEvent`) when it's a real, editable event id. Entry points
+ * (below) only ever pass an id for editable personal events — a meeting
+ * overlay (`editable: false`) never reaches here, since editing it here would
+ * silently create an unrelated duplicate rather than touching the real
+ * meeting.
+ *
+ * On CREATE, branches on whether any attendee was picked:
+ *   - none picked  → a personal `QcCalendarEvent` (unchanged behavior: blocks
+ *     your own calendar, no one else is told, no Outlook event).
+ *   - 1+ picked     → the REAL meeting flow (same one the channel-header
+ *     "Schedule meeting" button uses): find-or-create a channel for the
+ *     attendees, then `createMeetingApi` in it. That call is what actually
+ *     invites Outlook (Microsoft Graph `POST /me/events` with real
+ *     attendees) and posts the chat meeting card with Join/Start-call
+ *     buttons — this modal used to fake both with a hardcoded join URL and a
+ *     picker that was never sent to the server.
  */
 function EventScheduleModal({
   event,
   date,
   onClose,
   onScheduled,
+  onOpenChannel,
   currentUserId,
 }: {
   event: WeekEvent;
   date: Date;
   onClose: () => void;
   onScheduled: () => void;
+  /** Jump the user into the meeting's chat once it's created (real-flow only). */
+  onOpenChannel?: (channelId: string) => void;
   currentUserId: string;
 }) {
   const toast = useToast();
+  const qc = useQueryClient();
   const isEditing = !!event.id;
   const [title, setTitle] = useState(event.title === "(no title)" ? "" : event.title);
   const [description, setDescription] = useState("");
@@ -204,6 +224,21 @@ function EventScheduleModal({
       return next;
     });
 
+  // Same key + staleTime as SchedulingModal's identical check — invalidated
+  // there (and in CalendarsSettings) on connect/disconnect, so this stays in
+  // sync without a dedicated poll. Only matters once an attendee is picked;
+  // a no-attendee personal event never calls the provider.
+  const connection = useQuery({
+    queryKey: ["calendar-connection"],
+    queryFn: fetchCalendarConnection,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const needsCalendarConnect =
+    selected.size > 0 &&
+    connection.data?.requiresUserConnect === true &&
+    connection.data.connected === false;
+
   async function handleSubmit() {
     const t = title.trim();
     if (!t) {
@@ -212,6 +247,7 @@ function EventScheduleModal({
     }
     const start = new Date(`${dateStr}T${pad2(hh)}:${pad2(mm)}:00`);
     const end = new Date(start.getTime() + durMin * 60000);
+    const attendeeIds = others.filter((m) => selected.has(m.id)).map((m) => m.id);
     setSubmitting(true);
     try {
       if (isEditing) {
@@ -222,6 +258,26 @@ function EventScheduleModal({
           end: end.toISOString(),
         });
         toast.success({ title: `Saved “${t}”` });
+      } else if (attendeeIds.length > 0) {
+        // Real flow: find-or-create the attendees' channel, then schedule the
+        // actual meeting in it (Graph event + Outlook invites + chat card with
+        // Join/Start-call — see the component doc comment).
+        const channel =
+          attendeeIds.length === 1
+            ? await createChannel({ type: "dm", memberIds: attendeeIds })
+            : await createChannel({ type: "group", visibility: "private", name: t, memberIds: attendeeIds });
+        await createMeetingApi(channel.channelId, {
+          title: t,
+          description: description.trim() || undefined,
+          allDay: false,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          attendeeUserIds: attendeeIds,
+          conferencing,
+          clientMessageId: crypto.randomUUID(),
+        });
+        toast.success({ title: `Scheduled “${t}”` });
+        onOpenChannel?.(channel.channelId);
       } else {
         await createCalendarEvent({
           title: t,
@@ -236,6 +292,11 @@ function EventScheduleModal({
       onScheduled();
       onClose();
     } catch (e) {
+      // A connection can be revoked/expired between the cached banner read and
+      // this submit — re-ask rather than pattern-match the provider's error
+      // string, so a revoked connection surfaces the banner here too (mirrors
+      // SchedulingModal). Not awaited — the toast below already shows the error.
+      if (attendeeIds.length > 0) void qc.invalidateQueries({ queryKey: ["calendar-connection"] });
       toast.error({
         title: isEditing ? "Couldn't save changes" : "Couldn't schedule",
         body: e instanceof Error ? e.message : "Please try again.",
@@ -316,6 +377,25 @@ function EventScheduleModal({
       }
     >
       <div className="qc-schedule" data-testid="calendar-scheduling-modal">
+        {/* Actionable precondition, shown INSTEAD of letting the submit fail with
+            a provider error string. Non-blocking (mirrors SchedulingModal): the
+            answer is cached and can be stale, so submit is still the backstop. */}
+        {needsCalendarConnect ? (
+          <div className="qc-schedule__connect" role="status" data-testid="calendar-connect-cta">
+            <span>
+              Connect your Microsoft calendar to schedule meetings and see attendee availability.
+            </span>
+            <Button
+              variant="primary"
+              onClick={() => {
+                window.location.href = MICROSOFT_CONNECT_URL;
+              }}
+            >
+              Connect your Microsoft calendar
+            </Button>
+          </div>
+        ) : null}
+
         <div className="qc-schedule__top">
           <label className="qc-field">
             <span className="qc-field__label">Title</span>
@@ -421,9 +501,14 @@ function EventScheduleModal({
 
 export interface CalendarModuleProps {
   currentUserId: string;
+  /** Switch to the chat view and open this channel — used after scheduling a
+   * real meeting with attendees, so the organizer lands on the new meeting
+   * card instead of staying on the calendar. Optional: tests and any host
+   * that never schedules a multi-attendee meeting don't need to wire it. */
+  onOpenChannel?: (channelId: string) => void;
 }
 
-export function CalendarModule({ currentUserId }: CalendarModuleProps) {
+export function CalendarModule({ currentUserId, onOpenChannel }: CalendarModuleProps) {
   const [cursor, setCursor] = useState(() => new Date());
   const [mode, setMode] = useState<"Day" | "Week" | "Month">("Week");
   const [events, setEvents] = useState<CalendarEventDto[]>([]);
@@ -947,6 +1032,7 @@ export function CalendarModule({ currentUserId }: CalendarModuleProps) {
           date={scheduleTarget.date}
           onClose={() => setScheduleTarget(null)}
           onScheduled={() => setRefreshTick((t) => t + 1)}
+          onOpenChannel={onOpenChannel}
           currentUserId={currentUserId}
         />
       ) : null}

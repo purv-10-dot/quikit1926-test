@@ -292,7 +292,10 @@ export function InfoDrawer({
                 status={statusOf?.(m.id)}
               />
             </button>
-            <span style={{ flex: 1 }}>{m.displayName}</span>
+            <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+              {m.displayName}
+              {m.isGuest ? <span className="qc-badge-external">External</span> : null}
+            </span>
             <span className="qc-role-badge">{m.role}</span>
             {canManage && m.id !== currentUserId ? (
               <Popover

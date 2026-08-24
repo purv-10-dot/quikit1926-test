@@ -13,7 +13,12 @@
  *                              existing orgs opt in via Settings → Roles. See
  *                              the two-list block below for why that split
  *                              exists and what each list does.
- *   - Guest                 — Channel:view only (participate-only floor).
+ *   - Guest                 — no grants at all (participate-only floor): a
+ *                              Guest may read/send in channels they're already
+ *                              a member of (membership, not RBAC, controls
+ *                              that) but holds none of the "create X" grants
+ *                              below, so they can't start a channel, DM,
+ *                              or call themselves.
  *
  * Also backfills EXISTING orgs (DECISION 1): every current QuikChat user with
  * no role yet is assigned Member, and any ADMIN_TIER_ROLES membership (or a
@@ -84,12 +89,10 @@ type Grant = { resource: string; action: Action };
  * universal and is not a policy choice. When in doubt, use the NEW_ORG list.
  */
 const MEMBER_GRANTS_BACKFILL: Grant[] = [
-  { resource: "Channel", action: "view" },
   { resource: "Channel", action: "create" },
   { resource: "Channel.DM", action: "create" },
   { resource: "Call", action: "create" },
   { resource: "Call.Group", action: "create" },
-  { resource: "Assistant", action: "view" },
   { resource: "Assistant", action: "create" },
   { resource: "Assistant.IngestPrivate", action: "create" },
 ];
@@ -122,8 +125,19 @@ const MODERATOR_GRANTS_NEW_ORG: Grant[] = [
   { resource: "Channel.Moderate", action: "delete" },
 ];
 
-/** Guest — participate-only floor: read channels, nothing else. */
-const GUEST_GRANTS: Grant[] = [{ resource: "Channel", action: "view" }];
+/**
+ * Guest — participate-only floor: NO grants at all, deliberately.
+ *
+ * Used to be `[{ resource: "Channel", action: "view" }]`, but nothing in the
+ * codebase ever calls `userCan(..., "Channel", "view")` — viewing is governed
+ * by `QcChannelMember` rows (actual channel membership), not this RBAC system.
+ * That single grant was a no-op checkbox, removed together with `Channel`'s
+ * "view" action in permissionsRegistry.ts. A Guest's real restriction (can't
+ * start a channel/DM/call themselves) already comes from the ABSENCE of the
+ * "create" grants below — so an empty list here changes no actual behavior,
+ * it just stops lying about what "View Channels" does.
+ */
+const GUEST_GRANTS: Grant[] = [];
 
 /* ───────────────────────── Role primitives ───────────────────────── */
 

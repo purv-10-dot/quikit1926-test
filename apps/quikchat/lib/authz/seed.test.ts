@@ -69,26 +69,30 @@ describe("seedAllDefaultRoles", () => {
     expect(byName.get("Member")?.isDefault).toBe(true);
     expect(byName.get("Member")?.isSystem).toBe(false);
 
-    // Grant-set sizes on the NEW-ORG path: admin=16 (all pairs), Moderator=11,
-    // Member=9, Guest=1. Member/Moderator each gained Channel.Public:create
-    // (8→9, 10→11) when public-channel creation became a Member default for new
-    // orgs. admin tracks allPermissionPairs(), so a change THERE means the tree
-    // moved, not that a grant went missing.
+    // Grant-set sizes on the NEW-ORG path: admin=12 (all pairs), Moderator=9,
+    // Member=7. Guest gets NO createMany call at all — GUEST_GRANTS is now
+    // empty (Channel:view was a dead checkbox; removed together with the
+    // registry leaf, see permissionsRegistry.ts), and seedRole/backfillRoleGrants
+    // both no-op on an empty grants array. So only 3 calls exist, not 4.
+    // Member/Moderator each gained Channel.Public:create (6→7, 8→9) when
+    // public-channel creation became a Member default for new orgs. admin
+    // tracks allPermissionPairs(), so a change THERE means the tree moved, not
+    // that a grant went missing.
     const grantSizes = mockDb.qcRolePermission.createMany.mock.calls
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((c: any) => c[0].data.length)
       .sort((a: number, b: number) => a - b);
-    expect(grantSizes).toEqual([1, 9, 11, 16]);
+    expect(grantSizes).toEqual([7, 9, 12]);
   });
 
   it("a NEW org's Member gets Channel.Public but still no Moderate / IngestOrg / config", async () => {
     freshOrgMocks();
     await seedAllDefaultRoles(ORG);
 
-    // The 9-row createMany is the Member seed.
+    // The 7-row createMany is the Member seed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const calls = mockDb.qcRolePermission.createMany.mock.calls as any[];
-    const memberCall = calls.find((c) => c[0].data.length === 9);
+    const memberCall = calls.find((c) => c[0].data.length === 7);
     expect(memberCall).toBeTruthy();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resources = new Set((memberCall[0].data as any[]).map((g: any) => g.resource));
