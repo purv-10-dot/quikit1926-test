@@ -1,5 +1,6 @@
 import { createMcpHandler, fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
 import type { Prisma } from "@prisma/client";
+import { z } from "zod";
 // QUIKTR-118: every Prisma call in this file must go through the guarded
 // client — it throws before any delete or deleteMany call reaches the
 // database. See docs/mcp-security.md.
@@ -9,7 +10,10 @@ import { loadAccessibleProjects, loadProjectAccess, type LoadedProjectAccess } f
 import { userCanInProject } from "@/lib/api/permissions";
 import type { Action, Resource } from "@/lib/api/permissionsRegistry";
 import { logAccessDecision } from "@/lib/mcp/accessLog";
+import { logMcpAction } from "@/lib/mcp/actionLog";
 import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
+import { createMcpTestCase, type McpTestCaseResult } from "@/lib/mcp/testCaseBundle";
+import { TestCaseError } from "@/lib/services/testCases";
 import {
   createIssueSchema,
   issuePriorityEnum,
@@ -17,6 +21,11 @@ import {
   moveIssueSchema,
   updateIssueSchema,
 } from "@/lib/validation/issue";
+import {
+  mcpCreateTestCaseSchema,
+  testCasePriorityEnum,
+  testCaseTypeEnum,
+} from "@/lib/validation/testCase";
 import { ISSUE_LINK_TYPES } from "@/lib/services/issueLinkTypes";
 import { createSprintSchema } from "@/lib/validation/sprint";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
@@ -40,7 +49,13 @@ import {
 } from "@/lib/services/workflow";
 import { recordSprintVelocity } from "@/lib/reports/sprint-snapshot";
 
-const createIssueInput = createIssueSchema.omit({ projectId: true });
+const createIssueInput = createIssueSchema.omit({ projectId: true }).extend({
+  // QUIKTR-122 — optional test case(s) created + linked atomically with the
+  // issue. `issueId` is deliberately not part of each nested item's schema:
+  // it's the new issue's own id, filled in after creation, never
+  // caller-supplied.
+  testCases: z.array(mcpCreateTestCaseSchema.omit({ issueId: true })).max(20).optional(),
+});
 const createSprintInput = createSprintSchema.omit({ projectId: true });
 const updateIssueInput = updateIssueSchema;
 
@@ -719,6 +734,30 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           sprintId: { type: "string" },
           assigneeId: { type: "string" },
           projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
+          testCases: {
+            type: "array",
+            maxItems: 20,
+            description: "QUIKTR-122 — optional test case(s) to create and link to this issue in the same operation. All-or-nothing: if any test case fails, the issue is not created either.",
+            items: {
+              type: "object",
+              required: ["title", "steps"],
+              properties: {
+                title: { type: "string" },
+                steps: {
+                  type: "array", minItems: 1,
+                  items: {
+                    type: "object", required: ["action", "expected"],
+                    properties: { action: { type: "string" }, expected: { type: "string" } },
+                  },
+                },
+                preconditions: { type: "string" },
+                priority: { type: "string", enum: [...testCasePriorityEnum.options] },
+                type: { type: "string", enum: [...testCaseTypeEnum.options] },
+                sectionId: { type: "string" },
+                suiteId: { type: "string" },
+              },
+            },
+          },
         },
         required: ["title"],
       }),
@@ -746,10 +785,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = createIssueInput.safeParse(args);
       if (!parsed.success) {
-        return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
-          isError: true,
-        };
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_issue", action: "CREATE",
+          entityType: "issue", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
       }
 
       const project = await db.qtProject.findFirst({
@@ -757,48 +800,200 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         select: { projectKey: true },
       });
       if (!project) {
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_issue", action: "CREATE",
+          entityType: "issue", entityId: null, entityKey: null,
+          payload: parsed.data, result: "error", errorMessage: "Not found",
+        });
         return { content: [{ type: "text", text: "Not found" }], isError: true };
       }
 
-      const issue = await db.$transaction(async (tx) => {
-        const statusId = parsed.data.statusId ?? (await getDefaultStatusId(tx, projectId));
-        if (!statusId) throw new Error("Project has no statuses");
+      let issue;
+      try {
+        issue = await db.$transaction(async (tx) => {
+          const statusId = parsed.data.statusId ?? (await getDefaultStatusId(tx, projectId));
+          if (!statusId) throw new Error("Project has no statuses");
 
-        const seq = await tx.qtIssue.count({ where: { projectId } });
-        const key = `${project.projectKey}-${seq + 1}`;
+          const seq = await tx.qtIssue.count({ where: { projectId } });
+          const key = `${project.projectKey}-${seq + 1}`;
 
-        return tx.qtIssue.create({
-          data: {
-            orgId,
-            projectId,
-            key,
-            title: parsed.data.title,
-            description: parsed.data.description,
-            type: parsed.data.type,
-            statusId,
-            priority: parsed.data.priority,
-            parentId: parsed.data.parentId,
-            epicId: parsed.data.epicId,
-            sprintId: parsed.data.sprintId,
-            assigneeId: parsed.data.assigneeId,
-            reporterId: userId,
-            createdBy: userId,
-            updatedBy: userId,
-          },
-          select: {
-            id: true,
-            key: true,
-            title: true,
-            description: true,
-            type: true,
-            priority: true,
-            statusId: true,
-            assigneeId: true,
-          },
+          const createdIssue = await tx.qtIssue.create({
+            data: {
+              orgId,
+              projectId,
+              key,
+              title: parsed.data.title,
+              description: parsed.data.description,
+              type: parsed.data.type,
+              statusId,
+              priority: parsed.data.priority,
+              parentId: parsed.data.parentId,
+              epicId: parsed.data.epicId,
+              sprintId: parsed.data.sprintId,
+              assigneeId: parsed.data.assigneeId,
+              reporterId: userId,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+            select: {
+              id: true,
+              key: true,
+              title: true,
+              description: true,
+              type: true,
+              priority: true,
+              statusId: true,
+              assigneeId: true,
+            },
+          });
+
+          // QUIKTR-122 — bundled test cases share this transaction: any
+          // failure here rolls the issue creation back too, so an issue is
+          // never left half-linked to the coverage it was meant to have.
+          const testCases: McpTestCaseResult[] = [];
+          for (const tc of parsed.data.testCases ?? []) {
+            testCases.push(
+              await createMcpTestCase({
+                orgId, projectId, userId, tx,
+                input: { ...tc, issueId: createdIssue.id },
+              }),
+            );
+          }
+
+          return { ...createdIssue, testCases };
+        }, { timeout: 20_000, maxWait: 5_000 });
+      } catch (error: unknown) {
+        if (error instanceof TestCaseError) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "create_issue", action: "CREATE",
+            entityType: "issue", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: error.message,
+          });
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
+
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_issue", action: "CREATE",
+        entityType: "issue", entityId: issue.id, entityKey: issue.key,
+        payload: parsed.data, after: issue, result: "success",
+      });
+      for (const tc of issue.testCases) {
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_issue", action: "CREATE",
+          entityType: "test_case", entityId: tc.id, entityKey: `TC-${tc.refId}`,
+          payload: { issueId: issue.id, ...tc }, after: tc, result: "success",
         });
-      }, { timeout: 20_000, maxWait: 5_000 });
-
+      }
       return { content: [{ type: "text", text: JSON.stringify(issue) }] };
+    },
+  );
+
+  server.registerTool(
+    "create_test_case",
+    {
+      description:
+        "Create a QuikTest test case. Steps are required — each needs both step text and an expected result; if the user hasn't given you concrete steps, ask them rather than inventing placeholder content. Pass sectionId or suiteId to say where it's filed; if the project has exactly one suite you may omit both. Pass issueId to link the new case to an existing issue in the same project.",
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          steps: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              required: ["action", "expected"],
+              properties: { action: { type: "string" }, expected: { type: "string" } },
+            },
+          },
+          preconditions: { type: "string" },
+          priority: { type: "string", enum: [...testCasePriorityEnum.options] },
+          type: { type: "string", enum: [...testCaseTypeEnum.options] },
+          sectionId: { type: "string" },
+          suiteId: { type: "string" },
+          issueId: { type: "string", description: "Issue id or its human-readable key — links the new case to it. Must be in the same project." },
+          projectId: { type: "string", description: "Project id or its human-readable key (e.g. \"QUIKTR\") — see list_projects." },
+        },
+        required: ["title", "steps"],
+      }),
+    },
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "create_test_case" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+      const writeCheck = await checkWritePermission({
+        orgId,
+        userId,
+        projectId,
+        tool: "create_test_case",
+        access: membership.access,
+        resource: "TestCase",
+        action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
+
+      const parsed = mcpCreateTestCaseSchema.safeParse(args);
+      if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_test_case", action: "CREATE",
+          entityType: "test_case", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
+      }
+
+      let issueId = parsed.data.issueId;
+      if (issueId) {
+        const issueRef = await resolveIssueIdOrKey(orgId, issueId, projectId);
+        if (!issueRef) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "create_test_case", action: "CREATE",
+            entityType: "test_case", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: "Work item not found",
+          });
+          return { content: [{ type: "text", text: "Work item not found" }], isError: true };
+        }
+        issueId = issueRef.id;
+      }
+
+      let result: McpTestCaseResult;
+      try {
+        result = await createMcpTestCase({ orgId, projectId, userId, input: { ...parsed.data, issueId } });
+      } catch (error: unknown) {
+        if (error instanceof TestCaseError) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "create_test_case", action: "CREATE",
+            entityType: "test_case", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: error.message,
+          });
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
+
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_test_case", action: "CREATE",
+        entityType: "test_case", entityId: result.id, entityKey: `TC-${result.refId}`,
+        payload: parsed.data, after: result, result: "success",
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );
 
@@ -895,6 +1090,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         where: { id: sprintId },
         data: { status: "ACTIVE", startedAt: new Date(), updatedBy: userId },
         select: { id: true, name: true, status: true, startedAt: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "start_sprint", action: "UPDATE",
+        entityType: "sprint", entityId: sprintId, entityKey: null,
+        payload: { sprintId },
+        before: { status: sprint.status }, after: { status: updated.status },
+        result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
@@ -1006,8 +1209,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = moveIssueSchema.safeParse(rest);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "move_issue", action: "MOVE",
+          entityType: "issue", entityId: issue.id, entityKey: issue.key,
+          payload: rest, before: issue, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1039,7 +1249,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           workflowComments = res.comments ?? [];
         } catch (error: unknown) {
           const mapped = await transitionErrorContent(error, { issue: issueSnapshot, userId });
-          if (mapped) return mapped;
+          if (mapped) {
+            void logMcpAction({
+              orgId, userId, actorType, projectId,
+              tool: "move_issue", action: "MOVE",
+              entityType: "issue", entityId: issue.id, entityKey: issue.key,
+              payload: rest, before: issue, result: "error",
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
+            return mapped;
+          }
           throw error;
         }
       }
@@ -1097,6 +1316,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         actorType,
         actingAgentId,
       });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "move_issue", action: "MOVE",
+        entityType: "issue", entityId: issue.id, entityKey: issue.key,
+        payload: rest, before: issue, after: updated, result: "success",
+      });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
   );
@@ -1148,8 +1373,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           : args;
       const parsed = createSprintInput.safeParse(normalizedArgs);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_sprint", action: "CREATE",
+          entityType: "sprint", entityId: null, entityKey: null,
+          payload: normalizedArgs, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1165,6 +1397,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           updatedBy: userId,
         },
         select: { id: true, name: true, goal: true, status: true, startDate: true, endDate: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_sprint", action: "CREATE",
+        entityType: "sprint", entityId: sprint.id, entityKey: null,
+        payload: parsed.data, after: sprint, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(sprint) }] };
     },
@@ -1217,8 +1455,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = createCommentSchema.safeParse(args);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_comment", action: "CREATE",
+          entityType: "comment", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1238,6 +1483,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const author = await db.user.findUnique({
         where: { id: userId },
         select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "add_comment", action: "CREATE",
+        entityType: "comment", entityId: created.id, entityKey: null,
+        payload: { issueId: issue.id, body: parsed.data.body }, after: created, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify({ ...created, user: author }) }] };
     },
@@ -1303,30 +1554,44 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       let authorUserId = userId;
       if (authorId && authorId !== userId) {
         if (!access.isTenantAdmin) {
-          return {
-            content: [{ type: "text", text: "You don't have access to log time on behalf of another user." }],
-            isError: true,
-          };
+          const errorMessage = "You don't have access to log time on behalf of another user.";
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "add_worklog", action: "CREATE",
+            entityType: "worklog", entityId: null, entityKey: null,
+            payload: args, result: "error", errorMessage,
+          });
+          return { content: [{ type: "text", text: errorMessage }], isError: true };
         }
         const authorMember = await db.qtProjectMember.findFirst({
           where: { projectId, userId: authorId, isDeleted: false },
           select: { id: true },
         });
         if (!authorMember) {
-          return { content: [{ type: "text", text: "authorId is not a member of this project." }], isError: true };
+          const errorMessage = "authorId is not a member of this project.";
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "add_worklog", action: "CREATE",
+            entityType: "worklog", entityId: null, entityKey: null,
+            payload: args, result: "error", errorMessage,
+          });
+          return { content: [{ type: "text", text: errorMessage }], isError: true };
         }
         authorUserId = authorId;
       }
 
       const seconds = parseWorklogTimeSpent(timeSpent);
       if (seconds === null) {
+        const errorMessage =
+          'timeSpent must be a duration like "2h 30m", "45m", "1d", or a non-negative number of seconds.';
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_worklog", action: "CREATE",
+          entityType: "worklog", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [
-            {
-              type: "text",
-              text: 'timeSpent must be a duration like "2h 30m", "45m", "1d", or a non-negative number of seconds.',
-            },
-          ],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1338,8 +1603,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         description: comment,
       });
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_worklog", action: "CREATE",
+          entityType: "worklog", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1359,6 +1631,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         });
       } catch (err) {
         if (err instanceof TimesheetFutureDateError) {
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "add_worklog", action: "CREATE",
+            entityType: "worklog", entityId: null, entityKey: null,
+            payload: parsed.data, result: "error", errorMessage: err.message,
+          });
           return { content: [{ type: "text", text: err.message }], isError: true };
         }
         throw err;
@@ -1367,6 +1645,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       const author = await db.user.findUnique({
         where: { id: authorUserId },
         select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "add_worklog", action: "CREATE",
+        entityType: "worklog", entityId: entry.id, entityKey: null,
+        payload: parsed.data, after: entry, result: "success",
       });
       return {
         content: [
@@ -1480,7 +1764,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         });
         const doneIds = doneStatuses.map((s) => s.id);
 
-        await tx.qtIssue.updateMany({
+        const moved = await tx.qtIssue.updateMany({
           where: {
             sprintId,
             isDeleted: false,
@@ -1489,13 +1773,23 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           data: { sprintId: null, updatedBy: userId },
         });
 
-        return tx.qtSprint.update({
+        const sprintAfter = await tx.qtSprint.update({
           where: { id: sprintId },
           data: { status: "COMPLETED", completedAt, updatedBy: userId },
           select: { id: true, name: true, status: true, completedAt: true },
         });
+        return { sprintAfter, movedCount: moved.count };
       });
-      return { content: [{ type: "text", text: JSON.stringify(updated) }] };
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "complete_sprint", action: "UPDATE",
+        entityType: "sprint", entityId: sprintId, entityKey: null,
+        payload: { sprintId },
+        before: { status: sprint.status },
+        after: { status: updated.sprintAfter.status, movedIssueCount: updated.movedCount },
+        result: "success",
+      });
+      return { content: [{ type: "text", text: JSON.stringify(updated.sprintAfter) }] };
     },
   );
 
@@ -1704,8 +1998,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = updateIssueInput.safeParse(rest);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "quiktrack_update_issue", action: "UPDATE",
+          entityType: "issue", entityId: issue.id, entityKey: issue.key,
+          payload: rest, before: issue, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1723,11 +2024,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         const validFieldIds = new Set(activeFields.map((f) => f.id));
         const unknownIds = Object.keys(customFields).filter((id) => !validFieldIds.has(id));
         if (unknownIds.length > 0) {
+          const errorMessage = `Unknown custom field id(s): ${unknownIds.join(", ")}. Call list_custom_fields to get valid ids for this project.`;
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "quiktrack_update_issue", action: "UPDATE",
+            entityType: "issue", entityId: issue.id, entityKey: issue.key,
+            payload: parsed.data, before: issue, result: "error", errorMessage,
+          });
           return {
-            content: [{
-              type: "text",
-              text: `Unknown custom field id(s): ${unknownIds.join(", ")}. Call list_custom_fields to get valid ids for this project.`,
-            }],
+            content: [{ type: "text", text: errorMessage }],
             isError: true,
           };
         }
@@ -1739,7 +2044,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           values: customFields,
         });
         if (!valid.ok) {
-          return { content: [{ type: "text", text: valid.errors.join(", ") }], isError: true };
+          const errorMessage = valid.errors.join(", ");
+          void logMcpAction({
+            orgId, userId, actorType, projectId,
+            tool: "quiktrack_update_issue", action: "UPDATE",
+            entityType: "issue", entityId: issue.id, entityKey: issue.key,
+            payload: parsed.data, before: issue, result: "error", errorMessage,
+          });
+          return { content: [{ type: "text", text: errorMessage }], isError: true };
         }
       }
 
@@ -1751,8 +2063,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         issueFields as Record<string, unknown>,
       );
       if (rejected.length > 0 && Object.keys(allowed).length === 0) {
+        const errorMessage = `Field(s) not editable for your role: ${rejected.join(", ")}`;
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "quiktrack_update_issue", action: "UPDATE",
+          entityType: "issue", entityId: issue.id, entityKey: issue.key,
+          payload: parsed.data, before: issue, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: `Field(s) not editable for your role: ${rejected.join(", ")}` }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1788,7 +2107,16 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           workflowComments = res.comments ?? [];
         } catch (error: unknown) {
           const mapped = await transitionErrorContent(error, { issue: issueSnapshot, userId });
-          if (mapped) return mapped;
+          if (mapped) {
+            void logMcpAction({
+              orgId, userId, actorType, projectId,
+              tool: "quiktrack_update_issue", action: "UPDATE",
+              entityType: "issue", entityId: issue.id, entityKey: issue.key,
+              payload: parsed.data, before: issue, result: "error",
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
+            return mapped;
+          }
           throw error;
         }
       }
@@ -1846,6 +2174,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         actingAgentId,
       });
 
+      let customFieldChanges: { fieldName: string; oldValue: unknown; newValue: unknown }[] = [];
       if (customFields) {
         const res = await writeIssueValues({
           orgId,
@@ -1855,6 +2184,7 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           values: customFields,
         });
         if (res.ok) {
+          customFieldChanges = res.changes;
           for (const c of res.changes) {
             void recordIssueEvent({
               orgId,
@@ -1870,6 +2200,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           }
         }
       }
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "quiktrack_update_issue", action: "UPDATE",
+        entityType: "issue", entityId: issue.id, entityKey: issue.key,
+        payload: parsed.data, before: issue,
+        after: customFieldChanges.length ? { ...updated, customFieldChanges } : updated,
+        result: "success",
+      });
       return { content: [{ type: "text", text: JSON.stringify(updated) }] };
     },
   );
@@ -1962,8 +2300,15 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
 
       const parsed = addRemoteLinkInput.safeParse(args);
       if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "add_remote_link", action: "CREATE",
+          entityType: "remote_link", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
         return {
-          content: [{ type: "text", text: parsed.error.issues.map((i) => i.message).join(", ") }],
+          content: [{ type: "text", text: errorMessage }],
           isError: true,
         };
       }
@@ -1978,6 +2323,12 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           type: parsed.data.type,
         },
         select: { id: true, url: true, title: true, type: true, metadata: true, createdAt: true },
+      });
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "add_remote_link", action: "CREATE",
+        entityType: "remote_link", entityId: link.id, entityKey: null,
+        payload: { issueId: issue.id, ...parsed.data }, after: link, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(link) }] };
     },
@@ -2054,15 +2405,29 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
       // the same issue named two different ways (e.g. id vs. key), not just
       // an exact literal match on the caller's raw input.
       if (inwardIssueId === outwardIssueId) {
-        return { content: [{ type: "text", text: "Cannot link an issue to itself." }], isError: true };
+        const errorMessage = "Cannot link an issue to itself.";
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "link_issues", action: "CREATE",
+          entityType: "issue_link", entityId: null, entityKey: null,
+          payload: { inwardIssueId, outwardIssueId, linkType }, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
       }
       const linkTypeDef = ISSUE_LINK_TYPES.find((t) => t.type === linkType);
       if (!linkTypeDef) {
+        const errorMessage = `Unknown linkType "${linkType}". Valid types: ${ISSUE_LINK_TYPES.map((t) => t.type).join(", ")}.`;
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "link_issues", action: "CREATE",
+          entityType: "issue_link", entityId: null, entityKey: null,
+          payload: { inwardIssueId, outwardIssueId, linkType }, result: "error", errorMessage,
+        });
         return {
           content: [
             {
               type: "text",
-              text: `Unknown linkType "${linkType}". Valid types: ${ISSUE_LINK_TYPES.map((t) => t.type).join(", ")}.`,
+              text: errorMessage,
             },
           ],
           isError: true,
@@ -2087,6 +2452,14 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
           select: { id: true },
         }));
 
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "link_issues", action: "CREATE",
+        entityType: "issue_link", entityId: link.id, entityKey: null,
+        payload: { inwardIssueId, outwardIssueId, linkType: linkTypeDef.type },
+        after: { id: link.id, alreadyExisted: Boolean(existing) },
+        result: "success",
+      });
       return {
         content: [
           {

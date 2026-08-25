@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import { logAudit } from "@/lib/auditLog";
 import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
-import { ipSlash24, resolveAppByResource, oauthCorsPreflight, withOAuthCors } from "@/lib/oauth";
+import { ipSlash24, resolveAppOrigin, oauthCorsPreflight, withOAuthCors } from "@/lib/oauth";
 
 const FAIL_CLOSED = process.env.NODE_ENV === "production";
 
@@ -59,16 +59,11 @@ function isValidRedirectUri(value: unknown): value is string {
  * Unauthenticated by design (a client has no token yet when it registers);
  * rate-limited instead, same posture as /api/oauth/token.
  *
- * A caller MAY identify which app/resource it intends to reach via a
- * `resource` field (RFC 8707 convention — some MCP clients discover this
- * from the target resource's /.well-known/oauth-protected-resource and
- * declare it here). When given, this ties the resulting client to that
- * app's appId, so /authorize's app-access gate (UserAppAccess) can apply
- * immediately. `resource` is NOT required by RFC 7591 itself, though, and
- * real clients (e.g. Claude Desktop) commonly omit it here — such a client
- * is registered with no appId bound, and /authorize resolves the app from
- * the `resource` query param it sends there instead (RFC 8707's actual
- * intended location for it) — see resolveAppByResource() in lib/oauth.ts.
+ * The caller must identify which app/resource it intends to reach via a
+ * `resource` field (RFC 8707 convention — real MCP clients discover this
+ * from the target resource's /.well-known/oauth-protected-resource). This
+ * ties the resulting client to that app's appId, so /authorize's existing
+ * app-access gate (UserAppAccess) still applies to tokens minted for it.
  */
 export function OPTIONS(): Response {
   return oauthCorsPreflight();
@@ -112,26 +107,14 @@ async function handleRegister(request: NextRequest): Promise<Response> {
     );
   }
 
-  // `resource` is optional here (see doc comment above) — when given, it
-  // must resolve to a real app; when absent, the client is registered
-  // unbound and /authorize resolves the app per-request instead.
-  const resourceRaw = (body as Record<string, unknown>).resource;
-  let matchedApp: { id: string; slug: string; baseUrl: string } | null = null;
-  if (resourceRaw !== undefined && resourceRaw !== null) {
-    if (!isValidUrl(resourceRaw)) {
-      return NextResponse.json(
-        { error: "invalid_client_metadata", error_description: "resource must be a valid URL" },
-        { status: 400 },
-      );
-    }
-    matchedApp = await resolveAppByResource(resourceRaw);
-    if (!matchedApp) {
-      return NextResponse.json(
-        { error: "invalid_client_metadata", error_description: "resource does not match any registered app" },
-        { status: 400 },
-      );
-    }
+  const resource = (body as Record<string, unknown>).resource;
+  if (!isValidUrl(resource)) {
+    return NextResponse.json(
+      { error: "invalid_client_metadata", error_description: "resource is required and must be a valid URL" },
+      { status: 400 },
+    );
   }
+  const resourceOrigin = new URL(resource).origin;
 
   const authMethod = ((body as Record<string, unknown>).token_endpoint_auth_method as string | undefined) ?? "none";
   if (!ALLOWED_AUTH_METHODS.has(authMethod)) {
@@ -143,6 +126,27 @@ async function handleRegister(request: NextRequest): Promise<Response> {
 
   const clientNameRaw = (body as Record<string, unknown>).client_name;
   const clientName = typeof clientNameRaw === "string" && clientNameRaw.trim() ? clientNameRaw.trim() : null;
+
+  // Resolve which app this registration is for by matching `resource`'s
+  // origin against every active app's effective origin — the same
+  // resolution authorize/route.ts uses for its access-denied redirect.
+  const apps = await db.app.findMany({
+    where: { status: { not: "disabled" } },
+    select: { id: true, slug: true, baseUrl: true },
+  });
+  const matchedApp = apps.find((a) => {
+    try {
+      return new URL(resolveAppOrigin(a)).origin === resourceOrigin;
+    } catch {
+      return false;
+    }
+  });
+  if (!matchedApp) {
+    return NextResponse.json(
+      { error: "invalid_client_metadata", error_description: "resource does not match any registered app" },
+      { status: 400 },
+    );
+  }
 
   const isPublic = authMethod === "none";
   let clientSecret: string | null = null;
@@ -158,7 +162,7 @@ async function handleRegister(request: NextRequest): Promise<Response> {
     try {
       created = await db.oAuthClient.create({
         data: {
-          appId: matchedApp?.id ?? null,
+          appId: matchedApp.id,
           purpose: "dynamic",
           clientName,
           clientId,
@@ -189,7 +193,7 @@ async function handleRegister(request: NextRequest): Promise<Response> {
     entityType: "oauth_client",
     entityId: created.id,
     actorId: "dynamic-registration",
-    newValues: JSON.stringify({ clientId: created.clientId, appId: matchedApp?.id ?? null, clientName }),
+    newValues: JSON.stringify({ clientId: created.clientId, appId: matchedApp.id, clientName }),
   });
 
   const responseBody: Record<string, unknown> = {
