@@ -23,7 +23,6 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useBranding, useFeatures } from '@/app/providers';
 import { getNavGroups, GROUP_ICONS, type NavItem } from './nav-groups';
-import { SidebarAccount } from './SidebarAccount';
 
 interface SidebarProps {
   role: string;
@@ -83,7 +82,7 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
     chooseGroup(id);
   };
 
-  const brandName = branding.name ?? 'QuikSkill';
+  const brandName = branding.name ?? 'QuikLMS';
 
   return (
     <aside
@@ -269,8 +268,10 @@ export function Sidebar({ role, collapsed = false, onToggle }: SidebarProps) {
         })}
       </nav>
 
-      {/* ── Account — the only sign-out surface since the topbar menu was removed */}
-      <SidebarAccount role={role} collapsed={collapsed} />
+      {/* No account footer. Profile and sign out live in the topbar's account
+          menu (components/UserMenu.tsx) — the sidebar carries the TENANT (its
+          logo at the top), the header carries the PERSON, which is how quikhrms
+          splits the two. */}
     </aside>
   );
 }

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright config for the QuikSkill LMS audit suite.
+ * Playwright config for the QuikLMS LMS audit suite.
  *
  * Notes specific to this app:
  * - Specs live under `__tests__/e2e/`; Vitest owns `__tests__/{unit,api,components}`.

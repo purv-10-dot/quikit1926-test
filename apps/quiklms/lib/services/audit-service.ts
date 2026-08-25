@@ -230,7 +230,7 @@ function generateUpgradeInvoiceHtml(
 
         <p>If you have any questions, please contact our support team.</p>
 
-        <p>Best regards,<br>QuikSkill LMS Team</p>
+        <p>Best regards,<br>QuikLMS LMS Team</p>
       </div>
     `;
 }

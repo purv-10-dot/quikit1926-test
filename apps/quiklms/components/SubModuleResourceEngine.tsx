@@ -1,6 +1,6 @@
 'use client';
 /**
- * SubModuleResourceEngine — ported from the old QuikSkills frontend
+ * SubModuleResourceEngine — ported from the old QuikLMSs frontend
  * (`src/components/SubModuleResourceEngine.tsx`).
  *
  * The resource authoring panel for a single sub-module — the third tier of the
@@ -19,7 +19,7 @@
  * Neither can report byte-level progress under fetch; the progress bar is driven
  * from upload start/finish instead.
  */
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   X,
   Plus,
@@ -74,6 +74,20 @@ interface Props {
   resources: Resource[];
   onSave: (resources: Resource[]) => void;
   onClose: () => void;
+  /**
+   * Render inline inside a host panel instead of as a full-screen modal.
+   *
+   * The modal form stacks a second overlay on top of the Studio — which is
+   * itself a modal — so adding one link cost four clicks: open the manager,
+   * pick a type, add, then "Save Resources" to commit. Embedded, the panel is
+   * already on screen and every change commits straight to the course, exactly
+   * as editing a module title does. No chrome, no explicit commit step.
+   *
+   * The host MUST key this component by sub-module id: `resources` seeds
+   * `useState` once, so without a remount, switching sub-modules would keep
+   * showing the first one's resources.
+   */
+  embedded?: boolean;
 }
 
 /** Response BODY of POST /api/upload/scorm (still multipart in this app). */
@@ -92,7 +106,12 @@ interface ScormUploadResponse {
   message?: string;
 }
 
-const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose }: Props) => {
+const SubModuleResourceEngine = ({
+  resources: initialResources,
+  onSave,
+  onClose,
+  embedded = false,
+}: Props) => {
   const [resources, setResources] = useState<Resource[]>(initialResources);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -365,12 +384,52 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
     onSave(resources);
   };
 
+  /* Embedded mode commits on every change, so there is no "Save Resources"
+     button to forget to press.
+
+     `onSave` is held in a ref rather than listed as a dependency: the host
+     passes a fresh closure on each render, which would re-fire this effect in
+     a loop. The first run is skipped so mounting does not immediately echo the
+     initial resources back and mark the course dirty for no reason. */
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  const hasMountedRef = useRef(false);
+
+  useEffect(() => {
+    if (!embedded) return;
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    onSaveRef.current(resources);
+  }, [embedded, resources]);
+
   const selectedResource = resources.find((r) => r.id === selectedResourceId);
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-slate-900/95 via-blue-900/30 to-slate-900/95 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200/50 dark:border-slate-700/50">
-        {/* Header */}
+    /* Same element structure in both modes — only the classes differ — so that
+       switching to embedded cannot remount the tree and drop in-flight uploads. */
+    <div
+      className={
+        embedded
+          /* Fill the host pane rather than a fixed box. The fixed height is what
+             broke the add-forms: a whole "Add External Link" / "Add Rich Text"
+             form was rendered into ~19rem, clipping its own heading and growing
+             a second inner scrollbar. The pane bounds the height now. */
+          ? 'flex flex-col h-full min-h-0'
+          : 'fixed inset-0 bg-gradient-to-br from-slate-900/95 via-blue-900/30 to-slate-900/95 backdrop-blur-sm flex items-center justify-center z-[60] p-4'
+      }
+    >
+      <div
+        className={
+          embedded
+            ? 'flex flex-col flex-1 min-h-0 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900'
+            : 'bg-white dark:bg-slate-900 rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200/50 dark:border-slate-700/50'
+        }
+      >
+        {/* Header — modal only. Embedded, the host panel already says which
+            sub-module this is, and there is nothing to save or close. */}
+        {!embedded && (
         <div className="relative bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-500 px-8 py-6">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDM0djZoNnYtNmgtNnptMCAwdi02aC02djZoNnoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-50" />
           <div className="relative flex items-center justify-between">
@@ -414,6 +473,7 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
             </div>
           </div>
         </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -446,22 +506,34 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
         )}
 
         {/* Content */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className={embedded ? "flex-1 flex flex-col overflow-hidden min-h-0" : "flex-1 flex overflow-hidden"}>
           {/* Resource List */}
-          <div className="w-80 border-r border-gray-200 dark:border-slate-700 flex flex-col bg-gray-50/50 dark:bg-slate-800/30">
+          {/* When no form is open the list should own the pane; while one is
+              open it yields so the form is reachable. The old fixed cap was a
+              leftover from the accordion, where the whole engine had ~19rem —
+              in a full-height pane it showed two rows and hid the rest behind a
+              scrollbar nobody notices, which reads as "my third resource was
+              never added". */}
+          <div className={embedded
+            ? `w-full flex flex-col min-h-0 ${addMode || selectedResource ? 'shrink-0' : 'flex-1'}`
+            : "w-80 border-r border-gray-200 dark:border-slate-700 flex flex-col bg-gray-50/50 dark:bg-slate-800/30"}>
             {/* Add Resource Options */}
-            <div className="p-4 border-b border-gray-200 dark:border-slate-700">
+            <div className={embedded ? "p-3 border-b border-line" : "p-4 border-b border-gray-200 dark:border-slate-700"}>
+              {/* The heading is redundant embedded — the step is called Content. */}
+              {!embedded && (
               <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                 Add Resource
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              )}
+              {/* Three across embedded (SCORM is hidden there), two in the modal. */}
+              <div className={embedded ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
-                  className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group"
+                  className={embedded ? "flex items-center justify-center gap-2 px-2 py-2 border border-line rounded-md hover:bg-surface-muted transition-colors group" : "flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group"}
                 >
-                  <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl text-white shadow-lg">
-                    <Upload className="w-5 h-5" />
+                  <div className={embedded ? "text-fg-muted group-hover:text-fg" : "p-2 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl text-white shadow-lg"}>
+                    <Upload className={embedded ? "w-4 h-4" : "w-5 h-5"} />
                   </div>
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-blue-600">
                     Upload File
@@ -469,10 +541,10 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                 </button>
                 <button
                   onClick={() => setAddMode('url')}
-                  className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl hover:border-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all group"
+                  className={embedded ? "flex items-center justify-center gap-2 px-2 py-2 border border-line rounded-md hover:bg-surface-muted transition-colors group" : "flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl hover:border-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all group"}
                 >
-                  <div className="p-2 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-xl text-white shadow-lg">
-                    <Globe className="w-5 h-5" />
+                  <div className={embedded ? "text-fg-muted group-hover:text-fg" : "p-2 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-xl text-white shadow-lg"}>
+                    <Globe className={embedded ? "w-4 h-4" : "w-5 h-5"} />
                   </div>
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-teal-600">
                     Add URL
@@ -480,15 +552,22 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                 </button>
                 <button
                   onClick={() => setAddMode('text')}
-                  className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all group"
+                  className={embedded ? "flex items-center justify-center gap-2 px-2 py-2 border border-line rounded-md hover:bg-surface-muted transition-colors group" : "flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all group"}
                 >
-                  <div className="p-2 bg-gradient-to-br from-rose-500 to-pink-500 rounded-xl text-white shadow-lg">
-                    <Type className="w-5 h-5" />
+                  <div className={embedded ? "text-fg-muted group-hover:text-fg" : "p-2 bg-gradient-to-br from-rose-500 to-pink-500 rounded-xl text-white shadow-lg"}>
+                    <Type className={embedded ? "w-4 h-4" : "w-5 h-5"} />
                   </div>
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-rose-600">
                     Rich Text
                   </span>
                 </button>
+                {/* SCORM is not offered to tenant authors. It stays available
+                    in the super-admin builder, and — importantly — this only
+                    removes the way to ADD one. Existing SCORM resources still
+                    load, still render, and are still deletable here, because
+                    hiding the upload button does not touch stored data or the
+                    player's SCORM branch. */}
+                {!embedded && (
                 <button
                   onClick={() => scormInputRef.current?.click()}
                   disabled={uploading}
@@ -501,6 +580,7 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                     SCORM
                   </span>
                 </button>
+                )}
               </div>
 
               <input
@@ -521,7 +601,17 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
             </div>
 
             {/* Resource List */}
-            <div className="flex-1 overflow-y-auto p-4">
+            {/* A running count, so a list that is scrolled cannot be mistaken
+                for a list that is missing items. */}
+            {embedded && resources.length > 0 && (
+              <p className="px-3 pt-2 text-xs text-fg-muted">
+                {resources.length} resource{resources.length === 1 ? '' : 's'}
+                {addMode ? ' — scroll to see them all' : ''}
+              </p>
+            )}
+            <div className={embedded
+              ? `overflow-y-auto px-3 py-2 ${addMode || selectedResource ? 'max-h-32' : 'flex-1 min-h-0'}`
+              : "flex-1 overflow-y-auto p-4"}>
               <DragDropContext onDragEnd={onDragEnd}>
                 <Droppable droppableId="resources">
                   {(provided) => (
@@ -593,6 +683,11 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
               </DragDropContext>
 
               {resources.length === 0 && !addMode && (
+                embedded ? (
+                  /* One line, not a 12rem illustration. The add buttons are
+                     directly above; the author does not need telling twice. */
+                  <p className="text-xs text-fg-muted py-2">No resources yet.</p>
+                ) : (
                 <div className="text-center py-12">
                   <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-2xl flex items-center justify-center">
                     <FolderOpen className="w-10 h-10 text-blue-500" />
@@ -600,12 +695,13 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                   <p className="text-lg font-semibold text-gray-700 dark:text-gray-300">No resources yet</p>
                   <p className="text-sm text-gray-500 mt-2">Upload files or add external links</p>
                 </div>
+                )
               )}
             </div>
           </div>
 
           {/* Resource Editor / Add Forms */}
-          <div className="flex-1 overflow-y-auto p-8 bg-white dark:bg-slate-900">
+          <div className={embedded ? "flex-1 min-h-0 overflow-y-auto p-3" : "flex-1 overflow-y-auto p-8 bg-white dark:bg-slate-900"}>
             {/* Add URL Form */}
             {addMode === 'url' && (
               <div className="max-w-lg mx-auto">
@@ -653,7 +749,11 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                   </button>
                   <button
                     onClick={addExternalLink}
-                    className="flex-1 px-5 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold rounded-xl hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25"
+                    /* Same silent-failure shape as Add Content: the URL guard
+                       only reported itself in the top strip, out of view. */
+                    disabled={!newResourceUrl.trim()}
+                    title={newResourceUrl.trim() ? undefined : 'Enter a URL first'}
+                    className="flex-1 px-5 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold rounded-xl hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-teal-500 disabled:hover:to-cyan-500"
                   >
                     Add Link
                   </button>
@@ -695,7 +795,18 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                       className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-rose-500/20 focus:border-rose-500 transition-all min-h-[200px] resize-none"
                       placeholder="Enter your content here... (Markdown supported)"
                     />
-                    <p className="text-xs text-gray-500 mt-2">Markdown formatting is supported</p>
+                    {/* The requirement is stated HERE, next to the field it is
+                        about. It used to surface only as a red strip at the top
+                        of the panel — which is scrolled out of view by the time
+                        you are down at the button, so filling in just the Title
+                        and pressing Add Content looked like nothing happened. */}
+                    {newTextContent.trim() ? (
+                      <p className="text-xs text-gray-500 mt-2">Markdown formatting is supported</p>
+                    ) : (
+                      <p className="text-xs text-rose-600 mt-2">
+                        Content is required — a title on its own will not be added.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -708,7 +819,9 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
                   </button>
                   <button
                     onClick={addRichText}
-                    className="flex-1 px-5 py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold rounded-xl hover:from-rose-600 hover:to-pink-600 transition-all shadow-lg shadow-rose-500/25"
+                    disabled={!newTextContent.trim()}
+                    title={newTextContent.trim() ? undefined : 'Add some content first'}
+                    className="flex-1 px-5 py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold rounded-xl hover:from-rose-600 hover:to-pink-600 transition-all shadow-lg shadow-rose-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-rose-500 disabled:hover:to-pink-500"
                   >
                     Add Content
                   </button>
@@ -879,7 +992,7 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
             )}
 
             {/* Empty State */}
-            {!selectedResource && !addMode && resources.length > 0 && (
+            {!embedded && !selectedResource && !addMode && resources.length > 0 && (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-2xl flex items-center justify-center">
@@ -892,7 +1005,7 @@ const SubModuleResourceEngine = ({ resources: initialResources, onSave, onClose 
             )}
 
             {/* Initial Empty State */}
-            {!selectedResource && !addMode && resources.length === 0 && (
+            {!embedded && !selectedResource && !addMode && resources.length === 0 && (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center max-w-md">
                   <div className="w-24 h-24 mx-auto mb-8 bg-gradient-to-br from-blue-100 via-indigo-100 to-violet-100 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-violet-900/30 rounded-3xl flex items-center justify-center">

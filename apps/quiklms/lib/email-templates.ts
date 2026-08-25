@@ -58,14 +58,14 @@ const shell = (heading: string, sub: string, inner: string) => `<!DOCTYPE html><
 <h1 style="color:#fff;margin:0;font-size:28px;font-weight:600;">${heading}</h1>
 <p style="color:rgba(255,255,255,.9);margin:10px 0 0;font-size:16px;">${sub}</p></div>
 <div style="background:#fff;padding:40px;border-radius:0 0 16px 16px;box-shadow:0 4px 20px rgba(0,0,0,.1);">${inner}</div>
-<div style="text-align:center;padding:24px;"><p style="color:#9ca3af;font-size:12px;margin:0;">&copy; QuikSkill LMS. All rights reserved.</p></div>
+<div style="text-align:center;padding:24px;"><p style="color:#9ca3af;font-size:12px;margin:0;">&copy; QuikLMS LMS. All rights reserved.</p></div>
 </div></body></html>`;
 
 export function welcomeEmail(firstName: string, email: string, role: string, setupToken: string): { subject: string; html: string } {
   const url = `${FRONTEND_URL}/setup-password?token=${setupToken}&email=${encodeURIComponent(email)}`;
   const inner = `
 <p style="color:#374151;font-size:16px;line-height:1.6;">Hello <strong>${escapeHtml(firstName)}</strong>,</p>
-<p style="color:#374151;font-size:16px;line-height:1.6;">Your account has been created on QuikSkill LMS. You've been assigned the role of <strong>${roleDisplayName(role)}</strong>.</p>
+<p style="color:#374151;font-size:16px;line-height:1.6;">Your account has been created on QuikLMS LMS. You've been assigned the role of <strong>${roleDisplayName(role)}</strong>.</p>
 <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:24px;margin:24px 0;">
 <h3 style="color:#166534;margin:0 0 16px;font-size:16px;">Your Account Details</h3>
 <p style="color:#374151;font-size:14px;margin:0;"><strong>Email:</strong> ${escapeHtml(email)}</p></div>
@@ -76,7 +76,7 @@ export function welcomeEmail(firstName: string, email: string, role: string, set
 <p style="color:#6b7280;font-size:13px;margin:0 0 8px;">If the button doesn't work, paste this link into your browser:</p>
 <a href="${url}" style="color:#667eea;font-size:12px;word-break:break-all;">${url}</a></div>
 <p style="text-align:center;margin:16px 0;"><a href="${FRONTEND_URL}/login" style="color:#667eea;font-weight:600;font-size:14px;text-decoration:none;">${FRONTEND_URL}/login</a></p>`;
-  return { subject: 'Welcome to QuikSkill - Your Login Credentials', html: shell('Welcome to QuikSkill!', 'Your learning journey begins now', inner) };
+  return { subject: 'Welcome to QuikLMS - Your Login Credentials', html: shell('Welcome to QuikLMS!', 'Your learning journey begins now', inner) };
 }
 
 /**
@@ -124,7 +124,7 @@ export function invitationEmail(params: {
   // every token look invalid.
   const ctaTarget = acceptUrl || loginUrl;
   const loginHref = `${ctaTarget}${ctaTarget.includes('?') ? '&' : '?'}email=${encodeURIComponent(email)}`;
-  const ctaLabel = acceptUrl ? 'Set up my account' : 'Log in to QuikSkill';
+  const ctaLabel = acceptUrl ? 'Set up my account' : 'Log in to QuikLMS';
 
   const credentialsBlock = tempPassword
     ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:24px;margin:24px 0;">
@@ -137,13 +137,13 @@ export function invitationEmail(params: {
 
   const inner = `
 <p style="color:#374151;font-size:16px;line-height:1.6;">Hello <strong>${escapeHtml(firstName || 'there')}</strong>,</p>
-<p style="color:#374151;font-size:16px;line-height:1.6;">You've been invited to <strong>${org}</strong> on QuikSkill LMS as <strong>${roleLabel}</strong>.</p>
+<p style="color:#374151;font-size:16px;line-height:1.6;">You've been invited to <strong>${org}</strong> on QuikLMS LMS as <strong>${roleLabel}</strong>.</p>
 ${credentialsBlock}
 <div style="text-align:center;margin:28px 0 8px;"><a href="${loginHref}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">${ctaLabel}</a></div>
 <p style="text-align:center;margin:12px 0;"><a href="${loginHref}" style="color:#667eea;font-size:13px;word-break:break-all;text-decoration:none;">${loginHref}</a></p>`;
   return {
-    subject: `You've been invited to ${orgName ? orgName + ' on ' : ''}QuikSkill LMS`,
-    html: shell('Welcome to QuikSkill!', `You've been invited as ${roleLabel}`, inner),
+    subject: `You've been invited to ${orgName ? orgName + ' on ' : ''}QuikLMS LMS`,
+    html: shell('Welcome to QuikLMS!', `You've been invited as ${roleLabel}`, inner),
   };
 }
 
@@ -151,24 +151,24 @@ export function adminResetEmail(firstName: string, email: string, newPassword: s
   const loginUrl = `${FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
   const inner = `
 <p style="color:#374151;font-size:16px;line-height:1.6;">Hello <strong>${escapeHtml(firstName || 'there')}</strong>,</p>
-<p style="color:#374151;font-size:16px;line-height:1.6;">Your administrator has set a new password for your QuikSkill LMS account.</p>
+<p style="color:#374151;font-size:16px;line-height:1.6;">Your administrator has set a new password for your QuikLMS LMS account.</p>
 <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px;margin:0 0 24px;">
 <p style="color:#166534;font-size:13px;font-weight:600;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;">Your new password</p>
 <p style="color:#14532d;font-size:18px;font-family:ui-monospace,monospace;margin:0;word-break:break-all;">${escapeHtml(newPassword)}</p></div>
-<div style="text-align:center;margin:24px 0 32px;"><a href="${loginUrl}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Log in to QuikSkill</a></div>`;
-  return { subject: 'QuikSkill - Your Password Has Been Reset', html: shell('Password Reset', 'Your password has been reset by your administrator', inner) };
+<div style="text-align:center;margin:24px 0 32px;"><a href="${loginUrl}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Log in to QuikLMS</a></div>`;
+  return { subject: 'QuikLMS - Your Password Has Been Reset', html: shell('Password Reset', 'Your password has been reset by your administrator', inner) };
 }
 
 export function otpEmail(firstName: string, otp: string): { subject: string; html: string } {
   const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
 <h2 style="color:#6366f1;">Password Reset Request</h2>
 <p>Hello ${escapeHtml(firstName)},</p>
-<p>You have requested to reset your password for your QuikSkill LMS account.</p>
+<p>You have requested to reset your password for your QuikLMS LMS account.</p>
 <p>Your OTP code is:</p>
 <div style="background:#f3f4f6;padding:20px;text-align:center;margin:20px 0;border-radius:8px;">
 <h1 style="color:#6366f1;font-size:32px;margin:0;letter-spacing:8px;">${otp}</h1></div>
 <p>This code will expire in 10 minutes.</p>
 <p>If you didn't request this, please ignore this email.</p>
-<p>Best regards,<br>QuikSkill LMS Team</p></div>`;
-  return { subject: 'Password Reset OTP - QuikSkill LMS', html };
+<p>Best regards,<br>QuikLMS LMS Team</p></div>`;
+  return { subject: 'Password Reset OTP - QuikLMS LMS', html };
 }

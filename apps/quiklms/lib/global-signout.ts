@@ -45,8 +45,8 @@ export async function globalSignOut(finalRedirect?: string): Promise<void> {
   // what this file sends — the user lands on the QuikIT launcher instead.
   // Fix is `AUTH_ALLOWED_RETURN_ORIGINS` on the auth + quikit deployments (see
   // below); nothing in this app can work around it. A per-deployment host
-  // like `quikskill-macck3n1x-rajkumar13.vercel.app` is not, and neither is a
-  // bare `quikskill.vercel.app` — signing out from either dumps the user on the
+  // like `quiklms-macck3n1x-rajkumar13.vercel.app` is not, and neither is a
+  // bare `quiklms.vercel.app` — signing out from either dumps the user on the
   // QuikIT launcher instead of our own landing page. Anchoring to
   // NEXT_PUBLIC_QUIKLMS_URL makes the destination independent of how the app was
   // reached; window.location.origin stays the local-dev fallback, where

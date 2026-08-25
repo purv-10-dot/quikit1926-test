@@ -1,6 +1,6 @@
 'use client';
 /**
- * ResourceUploader — ported from the old QuikSkills frontend
+ * ResourceUploader — ported from the old QuikLMSs frontend
  * (QuikSkillsfrontend/src/components/ResourceUploader.tsx).
  *
  * Modal for attaching a file-backed lesson to a module:

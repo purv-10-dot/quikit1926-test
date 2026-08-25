@@ -1,6 +1,6 @@
 'use client';
 /**
- * VideoPlayer — ported from the old QuikSkills frontend
+ * VideoPlayer — ported from the old QuikLMSs frontend
  * (src/components/VideoPlayer.tsx).
  *
  * Detects the kind of video behind `videoUrl` and renders it accordingly:

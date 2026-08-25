@@ -97,7 +97,7 @@ export default function GlobalError({
             Something went wrong
           </h1>
           <p style={{ margin: '0 0 2rem', fontSize: '0.875rem', color: FG_MUTED }}>
-            QuikSkill hit an unexpected error and could not finish loading.
+            QuikLMS hit an unexpected error and could not finish loading.
             Try again, or return to the home page.
           </p>
 

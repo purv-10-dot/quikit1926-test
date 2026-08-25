@@ -1,6 +1,6 @@
 'use client';
 /**
- * LockedCoursePlayer — ported from the old QuikSkills frontend
+ * LockedCoursePlayer — ported from the old QuikLMSs frontend
  * (`src/components/learner/LockedCoursePlayer.tsx`), which served the
  * `/learner/course/:courseId/legacy` route.
  *

@@ -1,6 +1,6 @@
 'use client';
 /**
- * StorageHealthWidget — ported from the old QuikSkills frontend
+ * StorageHealthWidget — ported from the old QuikLMSs frontend
  * (src/components/StorageHealthWidget.tsx).
  *
  * Compact tenant storage gauge: polls GET /api/tenants/usage on mount and every

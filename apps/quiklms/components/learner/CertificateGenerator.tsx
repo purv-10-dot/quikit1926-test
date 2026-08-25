@@ -1,6 +1,6 @@
 'use client';
 /**
- * CertificateGenerator — ported from the old QuikSkills frontend
+ * CertificateGenerator — ported from the old QuikLMSs frontend
  * (QuikSkillsfrontend/src/components/learner/CertificateGenerator.tsx).
  *
  * Replaces the previous "coming soon" stub. Renders a printable certificate of

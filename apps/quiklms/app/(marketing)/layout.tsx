@@ -4,7 +4,7 @@ import './marketing.css';
 import { FAQS } from './faqs';
 
 /**
- * Marketing layout for the public QuikSkill landing page at `/`.
+ * Marketing layout for the public QuikLMS landing page at `/`.
  *
  * Nested under the root `app/layout.tsx`, which already supplies html/body,
  * Providers and both font variables (`--font-sans` Inter, `--font-display`
@@ -37,15 +37,15 @@ const fraunces = Fraunces({
 const THEME_SCRIPT = `try{var t=localStorage.getItem('quikskill-theme');if(!t)t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}`;
 
 const SITE_URL = process.env.NEXT_PUBLIC_QUIKLMS_URL || 'http://localhost:3014';
-const TITLE = 'QuikSkill — the LMS that runs training, assessment and compliance';
+const TITLE = 'QuikLMS — the LMS that runs training, assessment and compliance';
 const DESCRIPTION =
   'Author courses, run proctored assessments, issue verifiable certificates and track compliance — for schools and enterprises, on one multi-tenant platform.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: TITLE, template: '%s · QuikSkill' },
+  title: { default: TITLE, template: '%s · QuikLMS' },
   description: DESCRIPTION,
-  applicationName: 'QuikSkill',
+  applicationName: 'QuikLMS',
   authors: [{ name: 'Quikit' }],
   creator: 'Quikit',
   publisher: 'Quikit',
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     'online exam software',
     'compliance training',
     'SCORM LMS',
-    'QuikSkill',
+    'QuikLMS',
   ],
   alternates: { canonical: '/' },
   robots: {
@@ -68,7 +68,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    siteName: 'QuikSkill',
+    siteName: 'QuikLMS',
     title: TITLE,
     description: DESCRIPTION,
     url: SITE_URL,
@@ -87,7 +87,7 @@ export const viewport: Viewport = {
 const softwareJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'QuikSkill',
+  name: 'QuikLMS',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   description: DESCRIPTION,

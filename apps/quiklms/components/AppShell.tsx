@@ -1,39 +1,40 @@
-﻿'use client';
-import { useEffect, useRef, useState } from 'react';
-import { Sun, Moon, Check, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
+'use client';
+/**
+ * Authenticated shell — sidebar + top bar, rendered by all eight role groups.
+ *
+ * The top bar follows quikhrms's (`components/hrms/layout/top-bar.tsx`): the
+ * date and a time-of-day greeting anchor the left, and a single cluster of
+ * round controls sits on the right — search, language, theme, the apps waffle
+ * and the account menu. QuikLMS keeps two controls quikhrms has no use for
+ * (locale and dark mode) and drops the one it cannot serve (notifications —
+ * there is no notification store in this app).
+ *
+ * Everything is expressed in the app's own tokens, so a tenant's accent still
+ * drives the hover and focus states.
+ */
+import { useEffect, useState } from 'react';
+import { Sun, Moon } from 'lucide-react';
 import { Sidebar } from './Sidebar';
-import { useTheme } from '@/app/providers';
+import { NavSearch } from './NavSearch';
+import { AppSwitcher } from './AppSwitcher';
+import { UserMenu } from './UserMenu';
+import { useTheme, useCurrentUser } from '@/app/providers';
 import { useTranslation, LOCALES, type Locale } from '@/lib/i18n';
-import { api } from '@/lib/api';
-
-interface SwitchableApp {
-  id: string;
-  name: string;
-  slug: string;
-  url: string;
-  iconUrl: string | null;
-  current: boolean;
-}
-
-/** Wire shape returned by `GET /api/apps/switcher` (platform-canonical). */
-interface SwitcherApp {
-  id: string;
-  name: string;
-  slug: string;
-  baseUrl: string;
-  iconUrl: string | null;
-  current: boolean;
-}
-
-// Role display labels now live with their only reader, SidebarAccount.
+// Mounted at the bottom of this shell. Every QuikIT app carries the launcher —
+// see the note on the mount site — but the import was missing here, so the
+// component reference resolved to nothing and AppShell threw
+// `SupportLauncher is not defined` on render, taking every page in the app
+// down with it. Same specifier the other apps use.
+import { SupportLauncher } from '@quikit/ui/support';
 
 const COLLAPSE_KEY = 'qs_sidebar_collapsed';
 
 export function AppShell({ role, children }: { role: string; children: React.ReactNode }) {
   const { dark, toggle } = useTheme();
   const { t, locale, setLocale } = useTranslation();
+  const { user } = useCurrentUser();
 
-  // â”€â”€ Sidebar collapse (persisted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sidebar collapse (persisted) ────────────────────────────────────────────
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
@@ -46,153 +47,87 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
     });
   };
 
-  // â”€â”€ App switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Grants come from the platform's UserAppAccess table, so the menu only ever
-  // lists apps this user actually has in this org. Fetched lazily on first open
-  // â€” most sessions never touch it, and it must not cost every page load.
-  const [apps, setApps] = useState<SwitchableApp[] | null>(null);
-  const [appsLoading, setAppsLoading] = useState(false);
-  const [appsOpen, setAppsOpen] = useState(false);
-  const appsRef = useRef<HTMLDivElement>(null);
-
+  // ── Greeting ────────────────────────────────────────────────────────────────
+  // Computed AFTER mount only, exactly as quikhrms does it. `new Date()`
+  // resolves to the SERVER's timezone during SSR but the user's on the client,
+  // so deriving either value during render produces a text mismatch and a
+  // hydration error. Render a stable string on the server and the first client
+  // paint, then swap in the localised one.
+  const [greeting, setGreeting] = useState(t('common.welcome', 'Welcome'));
+  const [today, setToday] = useState('');
   useEffect(() => {
-    if (!appsOpen || apps !== null || appsLoading) return;
-    setAppsLoading(true);
-    // `/apps/switcher` is the platform-canonical endpoint every sibling app
-    // exposes; it replaced the bespoke `/me/apps`, which applied only one of
-    // the launcher's five visibility clauses. The response is the shared shape
-    // (`data[]` with `baseUrl`), so map it onto the local `url` field here.
-    api
-      .get<{ data: SwitcherApp[] }>('/apps/switcher')
-      .then((r) =>
-        setApps(
-          (r?.data ?? []).map((a) => ({
-            id: a.id,
-            name: a.name,
-            slug: a.slug,
-            url: a.baseUrl,
-            iconUrl: a.iconUrl ?? null,
-            current: a.current,
-          })),
-        ),
-      )
-      .catch(() => setApps([]))
-      .finally(() => setAppsLoading(false));
-  }, [appsOpen, apps, appsLoading]);
+    const now = new Date();
+    const hour = now.getHours();
+    setGreeting(
+      hour < 12 ? t('common.goodMorning', 'Good morning')
+        : hour < 18 ? t('common.goodAfternoon', 'Good afternoon')
+        : t('common.goodEvening', 'Good evening'),
+    );
+    // The app's own locale, not the browser's — the header must not read
+    // English while the rest of the page is in Hindi. 'en' maps to en-GB for
+    // the day-before-month order quikhrms uses.
+    setToday(
+      now.toLocaleDateString(locale === 'en' ? 'en-GB' : locale, {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      }),
+    );
+  }, [locale, t]);
 
-  useEffect(() => {
-    if (!appsOpen) return;
-    const onClick = (e: MouseEvent) => {
-      if (appsRef.current && !appsRef.current.contains(e.target as Node)) setAppsOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [appsOpen]);
-
-  // Sign out lives in components/SidebarAccount.tsx now, with the menu that
-  // triggers it.
+  const firstName = user?.firstName || t('common.there', 'there');
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas text-fg">
-      {/* Sidebar â€” fixed full height; only its nav scrolls internally */}
+      {/* Sidebar — fixed full height; only its nav scrolls internally */}
       <Sidebar role={role} collapsed={collapsed} onToggle={toggleCollapsed} />
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* â”€â”€ Topbar (sticky; never scrolls with content) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        {/* The role/tenant badge that used to open this bar ("Admin · Corporate")
-            is gone, for every role: it restated what the sidebar's brand row and
-            the account footer already say, and it was the only thing anchoring
-            the topbar to the left. */}
-        <header className="qs-topbar sticky top-0 z-20 flex h-16 shrink-0 items-center justify-end gap-2 px-5">
-          {/* Language */}
-          <select
-            value={locale}
-            onChange={(e) => setLocale(e.target.value as Locale)}
-            aria-label={t('common.language', 'Language')}
-            className="qs-headselect h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30"
-          >
-            {LOCALES.map((l) => (
-              <option key={l} value={l}>{l.toUpperCase()}</option>
-            ))}
-          </select>
-
-          {/* Dark mode */}
-          <button
-            onClick={toggle}
-            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="qs-iconbtn grid size-9 place-items-center rounded-lg border border-line-strong text-fg-muted"
-          >
-            {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </button>
-
-          {/* App switcher â€” only the apps this user is granted in this org */}
-          <div className="relative" ref={appsRef}>
-            <button
-              onClick={() => setAppsOpen((o) => !o)}
-              aria-label="Switch app"
-              aria-expanded={appsOpen}
-              className="qs-iconbtn grid size-9 place-items-center rounded-lg border border-line-strong text-fg-muted"
-            >
-              <Grid3x3 className="size-4" />
-            </button>
-            {appsOpen && (
-              <div className="absolute right-0 top-11 z-30 w-64 overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
-                <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-                  Your apps
-                </p>
-
-                {appsLoading && (
-                  <div className="flex items-center gap-2 px-3 py-3 text-sm text-fg-muted">
-                    <Loader2 className="size-4 animate-spin" /> Loadingâ€¦
-                  </div>
-                )}
-
-                {!appsLoading && apps?.length === 0 && (
-                  <p className="px-3 py-3 text-sm text-fg-muted">No other apps available.</p>
-                )}
-
-                {!appsLoading &&
-                  apps?.map((a) =>
-                    a.current ? (
-                      // Current app is shown, not hidden â€” so the menu says where you are.
-                      <div
-                        key={a.id}
-                        className="flex items-center justify-between px-3 py-2 text-sm text-fg"
-                        aria-current="true"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="grid size-6 place-items-center rounded-md bg-surface-muted text-[10px] font-bold text-fg-muted">
-                            {a.name[0]}
-                          </span>
-                          {a.name}
-                        </span>
-                        <Check className="size-4 text-[var(--brand-primary)]" />
-                      </div>
-                    ) : (
-                      <a
-                        key={a.id}
-                        href={a.url}
-                        className="flex items-center justify-between px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-muted"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="grid size-6 place-items-center rounded-md bg-surface-muted text-[10px] font-bold text-fg-muted">
-                            {a.name[0]}
-                          </span>
-                          {a.name}
-                        </span>
-                        <ExternalLink className="size-3.5 text-fg-subtle" />
-                      </a>
-                    ),
-                  )}
-              </div>
-            )}
+        {/* ── Topbar (sticky; never scrolls with content) ─────────────────── */}
+        <header className="qs-topbar sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-4 px-5">
+          <div className="min-w-0">
+            {/* The non-breaking space holds the line's height before the date
+                lands, so the greeting does not jump on hydration. */}
+            <p className="truncate text-[11px] font-medium text-fg-subtle">{today || ' '}</p>
+            <h1 className="truncate text-base font-bold text-fg">
+              {greeting}, {firstName}
+            </h1>
           </div>
-          {/* No account menu here — profile + sign out moved to the sidebar's
-              footer (components/SidebarAccount.tsx), which now owns that state. */}
+
+          <div className="flex shrink-0 items-center gap-2.5">
+            <NavSearch />
+
+            {/* Language */}
+            <select
+              value={locale}
+              onChange={(e) => setLocale(e.target.value as Locale)}
+              aria-label={t('common.language', 'Language')}
+              className="qs-headselect h-9 rounded-full border border-line-strong bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30"
+            >
+              {LOCALES.map((l) => (
+                <option key={l} value={l}>{l.toUpperCase()}</option>
+              ))}
+            </select>
+
+            {/* Dark mode */}
+            <button
+              onClick={toggle}
+              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="qs-iconbtn grid size-9 place-items-center rounded-full border border-line-strong bg-surface text-fg-muted"
+            >
+              {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </button>
+
+            {/* App switcher — only the apps this user is granted in this org */}
+            <AppSwitcher />
+
+            {/* Account — profile + sign out. Moved here from the sidebar footer
+                so the header carries the person and the sidebar the tenant,
+                which is the arrangement quikhrms uses. */}
+            <UserMenu role={role} />
+          </div>
         </header>
 
-        {/* â”€â”€ Scrollable page content with a consistent max-width â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Scrollable page content with a consistent max-width ─────────── */}
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1400px] p-6">{children}</div>
         </main>

@@ -150,7 +150,7 @@ function buildAssignedHtml(p: BuildHtmlParams): string {
 
           <tr>
             <td style="padding:18px 36px 28px 36px;text-align:center;border-top:1px solid #e5e7eb;">
-              <p style="color:#9ca3af;font-size:14px;line-height:1.6;margin:0 0 4px;">This is an automated message from <strong style="color:#6b7280;">QuikSkill LMS</strong>.</p>
+              <p style="color:#9ca3af;font-size:14px;line-height:1.6;margin:0 0 4px;">This is an automated message from <strong style="color:#6b7280;">QuikLMS LMS</strong>.</p>
               <p style="color:#9ca3af;font-size:13px;margin:0;">Please do not reply to this email.</p>
             </td>
           </tr>

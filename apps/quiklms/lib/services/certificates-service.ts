@@ -60,7 +60,7 @@ const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
  */
 // Same origin as the frontend (Next serves the API under /api on the same host).
 const BACKEND_URL = FRONTEND_URL;
-const PLATFORM_NAME = process.env.PLATFORM_NAME || 'QuikSkill LMS';
+const PLATFORM_NAME = process.env.PLATFORM_NAME || 'QuikLMS LMS';
 
 // ── Certificate rendering geometry ───────────────────────────────────────────
 // Ported from the original's CSS (`generateCertificateHTML`) so a template

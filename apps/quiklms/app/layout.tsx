@@ -18,7 +18,7 @@ const sans = Inter({
   display: 'swap',
 });
 
-// Display face — carries QuikSkill's personality on headings and stats.
+// Display face — carries QuikLMS's personality on headings and stats.
 const display = Bricolage_Grotesque({
   subsets: ['latin'],
   variable: '--font-display',
@@ -95,9 +95,9 @@ const fontVars = [
 ].join(' ');
 
 export const metadata: Metadata = {
-  title: 'QuikSkill LMS',
+  title: 'QuikLMS LMS',
   description: 'Multi-tenant Learning Management System',
-  // QuikSkill ships its OWN in-app i18n (7 locales — see lib/i18n.tsx), so
+  // QuikLMS ships its OWN in-app i18n (7 locales — see lib/i18n.tsx), so
   // browser auto-translation is redundant AND harmful: Google Translate rewrites
   // the server-rendered text (wrapping nodes in <font> tags) BEFORE React
   // hydrates, which trips "Hydration failed — initial UI does not match". Opting

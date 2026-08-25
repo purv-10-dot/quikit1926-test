@@ -1,6 +1,6 @@
 'use client';
 /**
- * useTenantOnboarding — ported from the old QuikSkills frontend
+ * useTenantOnboarding — ported from the old QuikLMSs frontend
  * (src/hooks/useTenantOnboarding.ts).
  *
  * Validates + formats the GST number client-side, then provisions a tenant via

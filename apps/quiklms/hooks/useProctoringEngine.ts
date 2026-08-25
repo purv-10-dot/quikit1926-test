@@ -2,7 +2,7 @@
 /**
  * DOM-event proctoring engine for EXAM sessions.
  *
- * Ported from the old QuikSkills frontend (src/hooks/useProctoringEngine.ts) and
+ * Ported from the old QuikLMSs frontend (src/hooks/useProctoringEngine.ts) and
  * re-pointed at the NEW Next.js backend:
  *   POST /api/proctoring/:sessionId/event   { eventType, metadata }
  *
