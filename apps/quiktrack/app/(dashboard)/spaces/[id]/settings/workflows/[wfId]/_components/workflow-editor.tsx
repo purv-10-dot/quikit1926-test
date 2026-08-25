@@ -404,19 +404,19 @@ function EditorBody({
       </div>
 
       {/* Sub-toolbar: Diagram/Text + Show transition labels */}
-      <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-1.5">
-        <div className="flex rounded border border-gray-300 text-sm">
+      <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-1.5">
+        <div className="flex rounded border border-gray-300 dark:border-gray-600 text-sm">
           <button
             type="button"
             onClick={() => setTab("diagram")}
-            className={`px-3 py-1 ${tab === "diagram" ? "bg-accent-50 text-accent-700" : "text-gray-600"}`}
+            className={`px-3 py-1 ${tab === "diagram" ? "bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"}`}
           >
             Diagram
           </button>
           <button
             type="button"
             onClick={() => setTab("text")}
-            className={`border-l border-gray-300 px-3 py-1 ${tab === "text" ? "bg-accent-50 text-accent-700" : "text-gray-600"}`}
+            className={`border-l border-gray-300 dark:border-gray-600 px-3 py-1 ${tab === "text" ? "bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"}`}
           >
             Text
           </button>
@@ -590,17 +590,25 @@ function EditorBody({
             }}
             onRemoveRule={(i) => ed.removeRule(selectedTransition.id, i)}
             conditionsMode={
-              // ANY = all conditions share one group; ALL = distinct groups.
+              // groupNo semantics: same group = OR (ANY), distinct groups = AND
+              // (ALL). ANY keeps every condition in group 0; ALL puts each in its
+              // own group starting at 1. With a SINGLE condition distinct-group
+              // counting can't tell the modes apart, so we read the intent from
+              // whether its group is 0 (ANY) or non-zero (ALL) — that's what lets
+              // the toggle actually stick for one condition.
               (() => {
                 const groups = selectedTransition.rules
                   .filter((r) => r.kind === "CONDITION")
                   .map((r) => r.groupNo ?? 0);
+                if (groups.length <= 1) return (groups[0] ?? 0) === 0 ? "ANY" : "ALL";
                 return new Set(groups).size <= 1 ? "ANY" : "ALL";
               })()
             }
             onSetConditionsMode={(mode) => {
-              // ALL → each condition its own group; ANY → all share group 0.
-              let g = 0;
+              // ANY → all conditions share group 0 (OR). ALL → each gets its own
+              // group starting at 1 (AND); starting at 1 (not 0) means a single
+              // ALL condition has a non-zero group, so the mode reads back as ALL.
+              let g = 1;
               const remapped = selectedTransition.rules.map((r) =>
                 r.kind === "CONDITION" ? { ...r, groupNo: mode === "ANY" ? 0 : g++ } : r,
               );

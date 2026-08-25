@@ -61,7 +61,7 @@ export function ShareFeedbackModal({
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/40 flex items-start justify-center pt-20 px-4">
-      <div className="w-full max-w-lg bg-white border border-gray-200 rounded-md shadow-xl">
+      <div className="w-full max-w-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900">Share your thoughts</h3>
           <button
@@ -121,15 +121,7 @@ export function ShareFeedbackModal({
                     />
                     <span>
                       Yes, the QuikTrack team can contact me to learn about my experiences to improve
-                      the product. I acknowledge the{" "}
-                      <a
-                        href="#"
-                        className="text-blue-600 hover:underline inline-flex items-center gap-0.5"
-                      >
-                        Privacy Policy
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                      .
+                      the product.
                     </span>
                   </label>
                   <label className="flex items-start gap-2 text-xs text-gray-700">
@@ -152,7 +144,7 @@ export function ShareFeedbackModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="h-9 px-4 text-sm text-gray-700 rounded hover:bg-gray-100"
+                className="h-9 px-4 text-sm text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>
@@ -160,7 +152,7 @@ export function ShareFeedbackModal({
                 type="button"
                 onClick={() => void submit()}
                 disabled={!kind || !text.trim() || submitting}
-                className="h-9 px-4 text-sm font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
+                className="h-9 px-4 text-sm font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
               >
                 {submitting ? "Sending…" : "Send feedback"}
               </button>
@@ -225,10 +217,10 @@ function FeedbackKindDropdown({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`w-full h-10 pl-3 pr-9 inline-flex items-center text-sm rounded text-left bg-white border ${
+        className={`w-full h-10 pl-3 pr-9 inline-flex items-center text-sm rounded text-left bg-white dark:bg-gray-900 dark:text-gray-100 border ${
           open
             ? "border-blue-500 ring-2 ring-blue-500/30"
-            : "border-gray-300 hover:border-gray-400"
+            : "border-gray-300 dark:border-gray-600 dark:bg-gray-900 hover:border-gray-400"
         }`}
       >
         {selected ? (
@@ -240,7 +232,7 @@ function FeedbackKindDropdown({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg py-1">
+        <div className="absolute z-30 mt-1 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1">
           {FEEDBACK_KINDS.map((k) => {
             const active = k.value === value;
             return (
@@ -251,7 +243,7 @@ function FeedbackKindDropdown({
                   onChange(k.value);
                   setOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 ${
                   active ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-800"
                 }`}
               >

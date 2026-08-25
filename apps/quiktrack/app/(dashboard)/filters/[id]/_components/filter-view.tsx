@@ -1,72 +1,46 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AlertTriangle, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
+import { FilterToolbar, defaultToolbarStateFor } from "./filter-toolbar";
+import { TqlEditor } from "./tql-editor";
 import { Pager } from "./filter-view-parts";
 import { SaveFilterModal } from "./save-filter-modal";
 import { BulkActionsBar, type BulkRow } from "./bulk-actions-bar";
 import { EditableFilterTable, type FilterListIssue } from "./editable-filter-table";
-import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
+import { useFilterResults } from "./use-filter-results";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import type { IssueType, Priority } from "../../../spaces/[id]/list/_components/list-types";
 
-interface IssueRow {
-  id: string;
-  key: string;
-  title: string;
-  type: string;
-  priority: string;
-  statusId: string | null;
-  parentId: string | null;
-  epicId: string | null;
-  sprintId: string | null;
-  startDate: string | null;
-  dueDate: string | null;
-  storyPoints: number | null;
-  eta: number | null;
-  assigneeId: string | null;
-  reporterId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  project: { id: string; name: string; projectKey: string } | null;
-  status: { id: string; name: string; color: string; category: string } | null;
-  assignee: UserLite | null;
-  reporter: UserLite | null;
-}
-
-interface UserLite {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  avatar: string | null;
-}
-
-interface ApiResponse {
-  success: boolean;
-  data?: IssueRow[];
-  total?: number;
-  meta?: { title?: string; fallback?: string };
-  error?: string;
-}
-
 export function FilterView({ filterId }: { filterId: string }) {
-  const [items, setItems] = useState<IssueRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [title, setTitle] = useState("");
-  const [fallback, setFallback] = useState<string | undefined>();
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [debounced, setDebounced] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [toolbar, setToolbar] = useState<ToolbarState>(() => defaultToolbarStateFor(filterId));
   const [saveOpen, setSaveOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
+  const perms = useMyPermissions();
+
+  const {
+    items,
+    total,
+    title,
+    fallback,
+    error,
+    tqlError,
+    loading,
+    search,
+    setSearch,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    toolbar,
+    setToolbar,
+    mode,
+    setMode,
+    tql,
+    setTql,
+    refresh,
+  } = useFilterResults(filterId);
 
   // Discovery ideas (type IDEA) live in a separate model with different bulk
   // endpoints, so they aren't bulk-selectable here — only real issues.
@@ -87,10 +61,6 @@ export function FilterView({ filterId }: { filterId: string }) {
       else selectableItems.forEach((i) => next.add(i.id));
       return next;
     });
-  // Clear the selection when the filter or page changes (ids no longer visible).
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [filterId, page]);
 
   // Map the API rows to the table's row shape. The list-types ListIssue carries
   // a few fields the read-only view never used (sprint, subtaskCount); the API
@@ -141,156 +111,24 @@ export function FilterView({ filterId }: { filterId: string }) {
     [items, selectedIds],
   );
 
-  // A saved filter's id is prefixed `sf_`. It isn't a backend filter slug, so
-  // its results query runs against the "all" base with the saved criteria
-  // applied as toolbar params. `savedReady` gates the results fetch until the
-  // criteria have been loaded (so we don't fetch unfiltered first).
-  const isSaved = filterId.startsWith("sf_");
-  const resultSlug = isSaved ? "all" : filterId;
-  const [savedName, setSavedName] = useState<string | null>(null);
-  const [savedReady, setSavedReady] = useState(!isSaved);
-
-  // Reseed the toolbar state whenever the user switches between Default
-  // filters in the sidebar — each slug carries its own implicit chips.
-  useEffect(() => {
-    if (!filterId.startsWith("sf_")) setToolbar(defaultToolbarStateFor(filterId));
-  }, [filterId]);
-
-  // Load a saved filter's criteria (name + toolbar + search) when viewing one.
-  useEffect(() => {
-    if (!isSaved) {
-      setSavedReady(true);
-      setSavedName(null);
-      return;
-    }
-    let alive = true;
-    setSavedReady(false);
-    fetch(`/api/saved-filters/${filterId}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!alive) return;
-        if (!j?.success) {
-          setError(j?.error ?? "Filter not found");
-          setSavedReady(true);
-          return;
-        }
-        const criteria = (j.data?.criteria ?? {}) as ToolbarState & { search?: string };
-        const { search: savedSearch, ...rest } = criteria;
-        setSavedName(j.data?.name ?? "Saved filter");
-        setToolbar({
-          type: [],
-          statusCategory: [],
-          ...(rest as Partial<ToolbarState>),
-        } as ToolbarState);
-        const s = typeof savedSearch === "string" ? savedSearch : "";
-        setSearch(s);
-        setDebounced(s);
-        setSavedReady(true);
-      })
-      .catch(() => {
-        if (alive) {
-          setError("Filter not found");
-          setSavedReady(true);
-        }
-      });
-    return () => {
-      alive = false;
-    };
-  }, [filterId, isSaved]);
-
-  const toolbarQs = useMemo(() => {
-    const qs = new URLSearchParams();
-    if (toolbar.projectId) qs.set("projectId", toolbar.projectId);
-    if (toolbar.assignee) qs.set("assignee", toolbar.assignee);
-    if (toolbar.reporter) qs.set("reporter", toolbar.reporter);
-    if (toolbar.type.length) qs.set("type", toolbar.type.join(","));
-    if (toolbar.statusCategory.length)
-      qs.set("statusCategory", toolbar.statusCategory.join(","));
-    if (toolbar.resolution) qs.set("resolution", toolbar.resolution);
-    if (toolbar.customFilters?.length)
-      qs.set("customFilters", JSON.stringify(toolbar.customFilters));
-    return qs.toString();
-  }, [toolbar]);
-
-  // Debounce the search box so we don't hammer the API on every keystroke.
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  // Auto-persist this default filter's toolbar + search, per user, per slug (no
-  // project scope, no Save button). The page remounts per slug, so each gets
-  // its own row.
-  const persistedFilters = useMemo(
-    () => ({ ...toolbar, search: debounced }),
-    [toolbar, debounced],
-  );
-  useFilterPersistence<typeof persistedFilters>({
-    viewKey: `global-${filterId}`,
-    projectId: null,
-    filters: persistedFilters,
-    // Saved filters carry their own criteria (loaded above), so don't hydrate
-    // from the per-slug view-pref — that would clobber the saved definition.
-    skipHydrate: isSaved,
-    applySaved: (s) => {
-      const { search: savedSearch, ...rest } = s;
-      setToolbar((prev) => ({ ...prev, ...(rest as Partial<ToolbarState>) }));
-      if (typeof savedSearch === "string") {
-        setSearch(savedSearch);
-        setDebounced(savedSearch);
-      }
-    },
-  });
-
-  // Reset to page 1 whenever the filter, search, page size, or toolbar changes.
-  useEffect(() => {
-    setPage(1);
-  }, [filterId, debounced, pageSize, toolbarQs]);
-
-  useEffect(() => {
-    if (!savedReady) return; // wait for saved criteria before the first fetch
-    let alive = true;
-    setLoading(true);
-    setError(null);
-    const qs = new URLSearchParams(toolbarQs);
-    if (debounced) qs.set("search", debounced);
-    qs.set("limit", String(pageSize));
-    qs.set("offset", String((page - 1) * pageSize));
-    fetch(`/api/filters/${resultSlug}?${qs}`)
-      .then((r) => r.json() as Promise<ApiResponse>)
-      .then((j) => {
-        if (!alive) return;
-        if (!j.success) {
-          setError(j.error ?? "Failed to load");
-          return;
-        }
-        setItems(j.data ?? []);
-        setTotal(j.total ?? 0);
-        setTitle(savedName ?? j.meta?.title ?? "Work items");
-        setFallback(j.meta?.fallback);
-      })
-      .catch((e: unknown) => {
-        if (!alive) return;
-        setError(e instanceof Error ? e.message : "Failed to load");
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [resultSlug, savedReady, savedName, debounced, page, pageSize, toolbarQs, refreshKey]);
+  const saveCriteria = mode === "tql" ? { tql } : { ...toolbar, search };
 
   return (
+    // The parent shell's <main> is the scroll container, so instead of relying on
+    // a bounded flex height (which fails here — the page scrolls as one), the
+    // header + filter toolbar are made `sticky top-0` so they stay pinned to the
+    // top while the results table below scrolls under them. A solid background +
+    // z-index keep them opaque over the scrolling rows.
     <div className="px-6 py-4">
+      <div className="sticky top-0 z-20 -mx-6 -mt-4 px-6 pt-4 pb-2 bg-white dark:bg-gray-900">
       <div className="flex items-center gap-2 mb-3">
-        <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
         <Star className="h-5 w-5 text-gray-300 hover:text-yellow-400 cursor-pointer" />
       </div>
 
       {saveOpen && (
         <SaveFilterModal
-          criteria={{ ...toolbar, search: debounced }}
+          criteria={saveCriteria}
           onClose={() => setSaveOpen(false)}
           onSaved={(saved) => {
             setSaveOpen(false);
@@ -306,18 +144,49 @@ export function FilterView({ filterId }: { filterId: string }) {
         </div>
       )}
 
-      <FilterToolbar
-        search={search}
-        onSearchChange={setSearch}
-        onClear={() => {
-          setSearch("");
-          setToolbar(defaultToolbarStateFor(filterId));
-        }}
-        state={toolbar}
-        onChange={setToolbar}
-        onSaveFilter={() => setSaveOpen(true)}
-      />
+      {perms.isAdmin && (
+        <div className="mb-3 inline-flex rounded border border-gray-200 bg-gray-50 p-0.5 text-sm">
+          <button
+            type="button"
+            onClick={() => setMode("basic")}
+            className={`px-3 h-7 rounded ${mode === "basic" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            Basic
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("tql")}
+            className={`px-3 h-7 rounded ${mode === "tql" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            TQL
+          </button>
+        </div>
+      )}
 
+      {mode === "tql" && !perms.loading && !perms.isAdmin ? (
+        <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+          This saved filter uses TQL, which requires organisation admin access.
+        </div>
+      ) : mode === "tql" ? (
+        <TqlEditor value={tql} onChange={setTql} error={tqlError} />
+      ) : (
+        <FilterToolbar
+          search={search}
+          onSearchChange={setSearch}
+          onClear={() => {
+            setSearch("");
+            setToolbar(defaultToolbarStateFor(filterId));
+          }}
+          state={toolbar}
+          onChange={setToolbar}
+          onSaveFilter={() => setSaveOpen(true)}
+        />
+      )}
+      </div>
+
+      {/* Results region — scrolls with the shell's <main>; the sticky toolbar
+          above stays pinned over it. */}
+      <div className="mt-3">
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-8 text-center text-sm text-red-600">
           {error}
@@ -335,7 +204,7 @@ export function FilterView({ filterId }: { filterId: string }) {
             const row = items.find((i) => i.id === id);
             if (row?.project) router.push(`/spaces/${row.project.id}/work/${id}`);
           }}
-          onPatched={() => setRefreshKey((k) => k + 1)}
+          onPatched={refresh}
         />
       )}
 
@@ -345,7 +214,7 @@ export function FilterView({ filterId }: { filterId: string }) {
         onClear={() => setSelectedIds(new Set())}
         onDone={() => {
           setSelectedIds(new Set());
-          setRefreshKey((k) => k + 1); // re-run the results fetch
+          refresh();
         }}
       />
 
@@ -358,6 +227,7 @@ export function FilterView({ filterId }: { filterId: string }) {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
       />
+      </div>
     </div>
   );
 }

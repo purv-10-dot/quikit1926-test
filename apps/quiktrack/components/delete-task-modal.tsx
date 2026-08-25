@@ -144,7 +144,7 @@ export function DeleteTaskModal({
                   <span>
                     <span className="font-medium text-gray-800 dark:text-gray-100">Delete subtasks too</span>
                     <span className="block text-xs text-gray-500 dark:text-gray-400">
-                      All {subtaskCount} subtask{subtaskCount === 1 ? "" : "s"} will be moved to trash with the parent.
+                      All {subtaskCount} subtask{subtaskCount === 1 ? "" : "s"} will be deleted with the parent. This can&apos;t be undone.
                     </span>
                   </span>
                 </label>
@@ -168,7 +168,7 @@ export function DeleteTaskModal({
             </>
           ) : (
             <p className="text-sm text-gray-700 dark:text-gray-200">
-              This task will be moved to trash. You can restore it later from the trash view.
+              This task will be deleted and removed from the project. This can&apos;t be undone.
             </p>
           )}
 

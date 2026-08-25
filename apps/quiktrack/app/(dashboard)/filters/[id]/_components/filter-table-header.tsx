@@ -35,7 +35,7 @@ export function FilterTableHeader({
   return (
     <thead className="sticky top-0 z-10">
       <tr>
-        <th className="w-10 border-b border-gray-200 bg-gray-50 px-3 py-2">
+        <th className="w-10 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2">
           <input
             type="checkbox"
             checked={allSelected}
@@ -71,7 +71,7 @@ export function FilterTableHeader({
                 onDragKeyChange(null);
                 onDragOverKeyChange(null);
               }}
-              className={`group relative border-b border-gray-200 bg-gray-50 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-700 ${isDragOver ? "outline outline-2 outline-blue-400" : ""}`}
+              className={`group relative border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 ${isDragOver ? "outline outline-2 outline-blue-400" : ""}`}
               style={{ width: getColWidth(col.key), minWidth: getColWidth(col.key) }}
             >
               <div className="flex items-center gap-1.5">

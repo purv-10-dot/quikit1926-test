@@ -22,25 +22,39 @@ import type { Role } from "@/lib/rbac";
  * lib/rbac.ts — that string is what lands in `session.user.role` and is looked
  * up in PERMISSIONS, so a name that drifts from the union grants nothing.
  *
- * VIEWER is the default: an assignment that arrives without an explicit role
- * should land on the least-privileged option, not on ADMIN.
+ * LOWERCASE, matching every other app's AppRole table (quikcrm `admin`,
+ * quikhrms `admin`/`employee`, quikinfra `admin`/`site_admin`) and
+ * @quikit/shared's ROLES. The Admin Portal renders `AppRole.name` verbatim, so
+ * the old SCREAMING_CASE showed up as "ADMIN"/"VIEWER" beside every other app's
+ * lowercase names.
+ *
+ * `viewer` is the default: an assignment that arrives without an explicit role
+ * should land on the least-privileged option, not on `admin`.
  */
-export const SYSTEM_ROLES: ReadonlyArray<{
+export const APP_ROLES: ReadonlyArray<{
   name: SeededRole;
   description: string;
   isDefault: boolean;
+  /**
+   * Drives the Admin Portal's optgroup: `isSystem` rows land under "System
+   * Roles", the rest under "Custom Roles". Only `admin` is a system role —
+   * matching every other app, where System Roles holds `admin` alone and
+   * app-specific roles (quikscale's "Member", ours "viewer") sit under Custom.
+   * Seeding everything as isSystem put all three in the system group.
+   */
+  isSystem: boolean;
 }> = [
-  { name: "ADMIN",  description: "Full access, including connecting accounts and managing roles", isDefault: false },
-  { name: "VIEWER", description: "Read-only access to analytics", isDefault: true },
+  { name: "admin",  description: "Full access, including connecting accounts and managing roles", isDefault: false, isSystem: true },
+  { name: "viewer", description: "Read-only access to analytics", isDefault: true, isSystem: false },
 ];
 
 /** The subset of `Role` this app seeds and assigns. */
-export type SeededRole = Extract<Role, "ADMIN" | "VIEWER">;
+export type SeededRole = Extract<Role, "admin" | "viewer">;
 
 /** Permission grants per role, mirroring PERMISSIONS in lib/rbac.ts. */
 const ROLE_PERMISSIONS: Record<SeededRole, readonly string[]> = {
-  ADMIN:  ["analytics.view_own_team", "analytics.view_all_teams", "account.connect", "org.manage_roles"],
-  VIEWER: ["analytics.view_own_team", "analytics.view_all_teams"],
+  admin:  ["analytics.view_own_team", "analytics.view_all_teams", "account.connect", "org.manage_roles"],
+  viewer: ["analytics.view_own_team", "analytics.view_all_teams"],
 };
 
 /** Resolve the central quikit.App id for this app. Null if the row is absent. */
@@ -63,16 +77,24 @@ export async function seedAppRoles(orgId: string): Promise<Map<SeededRole, strin
     throw new Error("quikinsight App row not found in quikit.App — cannot seed roles");
   }
 
-  for (const role of SYSTEM_ROLES) {
+  for (const role of APP_ROLES) {
     await db.$executeRaw`
       INSERT INTO "app_quikinsight"."AppRole"
         ("id", "orgId", "appId", "name", "description", "isSystem", "isDefault", "createdAt", "updatedAt")
       VALUES (
         md5(${orgId} || ':' || ${appId} || ':' || ${role.name}),
         ${orgId}, ${appId}, ${role.name}, ${role.description},
-        true, ${role.isDefault}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ${role.isSystem}, ${role.isDefault}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
-      ON CONFLICT ("orgId", "appId", "name") DO NOTHING;
+      -- Reconcile the grouping flags on re-run rather than DO NOTHING. Orgs
+      -- seeded before these were correct still carry isSystem = true on every
+      -- role, which puts "viewer" in the Admin Portal's System Roles group.
+      -- The description column is deliberately NOT overwritten: an org may
+      -- have edited it, and only the grouping flags need reconciling.
+      ON CONFLICT ("orgId", "appId", "name") DO UPDATE
+        SET "isSystem"  = EXCLUDED."isSystem",
+            "isDefault" = EXCLUDED."isDefault",
+            "updatedAt" = CURRENT_TIMESTAMP;
     `;
   }
 

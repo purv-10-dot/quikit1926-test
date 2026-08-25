@@ -100,12 +100,17 @@ export function IssueFullView({
     },
   });
 
-  // Project name for the breadcrumb pill.
-  const { data: projectName = "Project" } = useApiData<string>(
+  // Project name + key for the breadcrumb pill. The key drives readable
+  // breadcrumb links (/spaces/KEY/board) so navigating away from an issue never
+  // exposes the project UUID in the URL.
+  const { data: project } = useApiData<{ name?: string; projectKey?: string } | null>(
     ["quiktrack", "project-name", projectId],
     `/api/projects/${projectId}`,
-    { select: (d) => (d as { name?: string } | null)?.name ?? "Project" },
+    { select: (d) => d as { name?: string; projectKey?: string } | null },
   );
+  const projectName = project?.name ?? "Project";
+  // Fall back to the id so links still resolve (the /spaces route accepts both).
+  const projectKey = project?.projectKey ?? projectId;
 
   // Project members — feed the @-mention list and the details panel (passed
   // down so the panel doesn't refetch the same list).
@@ -193,6 +198,7 @@ export function IssueFullView({
         <IssueHeaderSections
           issue={issue}
           projectId={projectId}
+          projectKey={projectKey}
           projectName={projectName}
           typeIcon={T}
           onPatch={patch}
@@ -218,8 +224,9 @@ export function IssueFullView({
         <LinkedWorkItems
           issueId={issue.id}
           projectId={projectId}
-          onOpenIssue={(id) => {
-            window.location.href = `/spaces/${projectId}/work/${id}`;
+          onOpenIssue={(_id, key) => {
+            // Keep the URL readable (/browse/KEY) instead of exposing UUIDs.
+            window.location.href = `/browse/${key}`;
           }}
         />
         {/* QuikTest — tests covering this item, and results that raised it as a
@@ -232,7 +239,9 @@ export function IssueFullView({
         {quikTestAdded ? (
           <QuikTestResultsPanel
             issueKey={issue.key}
-            projectId={projectId}
+            // Pass the readable key — the panel uses it only to build
+            // /spaces/{x}/test links, and the route accepts key-or-id.
+            projectId={projectKey}
             collapsible
             defaultOpen
             // Hiding DETACHES the app, so this page and the drawer's + menu always
@@ -256,7 +265,7 @@ export function IssueFullView({
       {/* Right rail — sticks to the top of the scrolling viewport so it stays
           visible while the long left column scrolls. */}
       <div className="sticky top-0 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pt-6">
-        <IssueDetailsPanel issue={issue} members={members} onPatch={patch} />
+        <IssueDetailsPanel issue={issue} projectKey={projectKey} members={members} onPatch={patch} />
         {/* Development sits directly under Details (branches/commits/PRs +
             action links), the same place the issue drawer puts it — it belongs
             with the work item's metadata, not stranded mid-page in the content

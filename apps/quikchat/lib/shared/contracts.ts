@@ -18,7 +18,20 @@ export interface UiPrefsDto {
 
 export type ChannelType = "dm" | "group" | "ai";
 export type ChannelVisibility = "public" | "private";
-export type MessageType = "Text" | "Media" | "SystemActivity" | "Delete" | "Meeting" | "Call";
+export type MessageType =
+  | "Text"
+  | "Media"
+  | "SystemActivity"
+  | "Delete"
+  | "Meeting"
+  | "Call"
+  /**
+   * A write the assistant parked for approval, persisted so the channel keeps a
+   * trace of it. SERVER-WRITTEN ONLY — deliberately absent from
+   * `SendMessageInput.type` below, and rejected by `messages.send`. See the
+   * allow-list there for why that matters more for this type than the others.
+   */
+  | "ApprovalRequest";
 export type ActorType = "human" | "ai_agent";
 export type MemberRole = "admin" | "member";
 
@@ -192,8 +205,340 @@ export interface AssistSource {
   snippet: string;
 }
 
+/**
+ * How dangerous the proposed write is, as classified by the runtime.
+ *
+ * ⚠️ **AN UNRECOGNISED VALUE MUST BE TREATED AS THE HIGHEST RISK.** This union
+ * exists for consumer DX and is deliberately **NOT** validated at runtime: the
+ * runtime may add a fourth class before this type learns about it, and rejecting
+ * an entire write proposal because of an unfamiliar label is a worse outcome
+ * than rendering it conservatively. So a value outside this union will reach the
+ * UI — whatever renders the approval card must default unknown to the
+ * most-restrictive treatment (explicit confirmation, no one-click accept), never
+ * to `soft_write`.
+ *
+ * Stated here rather than only in the card's brief, because the card is where
+ * it would be forgotten.
+ */
+export type AssistRiskClass = "soft_write" | "medium_write" | "high_risk";
+
+/**
+ * A write the assistant proposes but will not perform without human approval.
+ *
+ * Arrives on the assist SSE stream as `{ type: "approval_needed", ... }` and is
+ * **terminal** — one per stream, then the stream closes, exactly like `done` and
+ * `error`.
+ *
+ * Single source of truth: both the runtime seam (`lib/server/runtime/types.ts`)
+ * and the client reader (`lib/assist-client.ts`) import this. It previously
+ * existed as a payload-less placeholder on the server and nothing on the client,
+ * which is two descriptions of one frame waiting to drift.
+ *
+ * Field names are frozen camelCase, per the runtime contract.
+ */
+export interface AssistApprovalRequest {
+  /** Runtime-owned id for this pending request. The only field we hard-require. */
+  requestId: string;
+  /** Which app the write targets, e.g. "quiktrack". */
+  appId: string;
+  /** The tool the assistant wants to run, e.g. "create_issue". */
+  toolName: string;
+  riskClass: AssistRiskClass;
+  /**
+   * Human-readable description of the proposed write, composed by the runtime.
+   * Passed through UNTOUCHED — never interpreted, truncated or reformatted.
+   */
+  summary: string;
+  /**
+   * The tool's arguments. Arbitrary by design and typed loosely on purpose: we
+   * relay it, we do not read it.
+   */
+  toolInput: Record<string, unknown>;
+  /** ISO instant after which the request can no longer be approved. */
+  expiresAt: string;
+}
+
+/**
+ * One row from the runtime's approval ledger (`GET /ai/requests`).
+ *
+ * ── THREE THINGS THAT ARE EASY TO GET WRONG ────────────────────────────────
+ *
+ * 1. `toolInput` / `proposedOutput` / `result` are **NOT camelCased inside.**
+ *    The KEY is camelCase; the OBJECT is the target app's own argument naming
+ *    (`projectId`, `assigneeId`, whatever QuikTrack calls things). They are
+ *    relayed byte-identical — never normalised, never reshaped — and typed no
+ *    deeper than `Record<string, unknown>` on purpose. Typing the interior would
+ *    be inventing a contract we do not own.
+ *
+ * 2. `mode` is **dead**. It is always `'copilot'` and carries no information.
+ *    Typed so the payload round-trips honestly, and deliberately never surfaced
+ *    or filtered on. Do not build a mode switch on it.
+ *
+ * 3. The list returns **terminal rows, not just pending** — `expired`,
+ *    `rejected`, `executed` and `failed` from the last 24h, alongside all
+ *    pending. Every row carries `status`, so one payload renders live and dead
+ *    cards together. Filtering to `pending` in a consumer would reinstate the
+ *    trace gap this change exists to close: a write that expired unactioned
+ *    would vanish rather than showing as expired.
+ *
+ * `riskClass` reuses `AssistRiskClass` — see its note: an unrecognised value
+ * must be treated as the HIGHEST risk, never as `soft_write`.
+ */
+export interface AssistApprovalRow {
+  id: string;
+  orgId: string;
+  userId: string;
+  appId: string;
+  useCase: string;
+  toolName: string;
+  /** Target app's own argument names. Pass through untouched. */
+  toolInput: Record<string, unknown>;
+  /** Target app's own shape. Pass through untouched. */
+  proposedOutput: Record<string, unknown> | null;
+  riskClass: AssistRiskClass;
+  /** Always "copilot". Dead field — never surface or filter on it. */
+  mode: string;
+  status: AssistApprovalStatus;
+  decisionBy: string | null;
+  /**
+   * WHICH AGENT the decision came through — our bot id when it went via
+   * QuikChat's relay, something else (or absent) when it did not.
+   *
+   * ⚠️ NOT a divergence detector, despite being asked for as one. The
+   * reconciler only compares rows where OUR copy is still `pending`, and a
+   * pending row has no decision on either side — so this can never affect
+   * whether a card is patched. See `reconcileChannelApprovals`.
+   *
+   * What it IS good for: at the moment we DO patch, it separates two failures
+   * that are otherwise identical in the logs — our own `applyApprovalDecision`
+   * having silently failed (it swallows by design, and that is OUR bug) versus
+   * the decision genuinely having been taken elsewhere (expected). Logged as a
+   * dimension, never used as control flow.
+   *
+   * Optional: rows predating the field, and rows nobody decided, carry none.
+   */
+  decisionAgentId?: string | null;
+  decisionAt: string | null;
+  executedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  error: string | null;
+  traceId: string | null;
+  /** Present once executed. Target app's own shape; pass through untouched. */
+  result?: Record<string, unknown> | null;
+  /**
+   * The runtime's own sentence for what HAPPENED — "Created QTRK-903". Generated
+   * deterministically (no LLM) and persisted on the row, so it is identical from
+   * the list, the fetch-one and the approve response.
+   *
+   * ⚠️ OPTIONAL, and the optionality is not decoration. Rows created before the
+   * runtime shipped this field do not have it, and they are exactly the rows
+   * most likely to be read (a 24h ledger spans the deploy). A consumer that
+   * assumes it is present renders a blank outcome on real historical data. Every
+   * read site must fall back to the status-derived line, never to empty.
+   *
+   * Distinct from the proposal `summary`, which describes what is ABOUT to
+   * happen and is still missing from this row — see the note on `toolName`.
+   */
+  outcomeSummary?: string | null;
+}
+
+/**
+ * Lifecycle of an approval request.
+ *
+ * Same leniency rule as `AssistRiskClass`: NOT validated at runtime, because the
+ * runtime may add a state before this type learns about it, and dropping a row
+ * whose status we do not recognise would hide a real parked write. A consumer
+ * seeing an unfamiliar status should render it as non-actionable rather than
+ * discard it.
+ *
+ * ── WHY THIS UNION NEEDS NO NORMALISER, UNLIKE `AssistRiskClass` ────────────
+ * The two leniency rules read alike and are enforced completely differently,
+ * and the difference is structural rather than incidental.
+ *
+ * For `riskClass` the SAFE value lives inside the known set (`high_risk`), so an
+ * unfamiliar value has to be actively MAPPED onto it — do nothing and it renders
+ * unstyled, which reads as mild. It needs a normaliser, and it has one.
+ *
+ * For `status` the safe behaviour is "not actionable", and every gate is a
+ * POSITIVE check for `"pending"` rather than a denylist of terminal states. An
+ * unfamiliar value therefore falls to the safe side by construction: it is not
+ * `"pending"`, so it is not actionable, at every gate independently. Adding a
+ * state to this union is purely additive — nothing has to learn to reject it
+ * first.
+ *
+ * Keep it that way. The moment a consumer switches to `status !== "executed" &&
+ * status !== "rejected" && …`, an unknown state starts rendering as live and a
+ * request nobody can action grows Approve/Reject buttons.
+ */
+export type AssistApprovalStatus =
+  | "pending"
+  | "expired"
+  | "rejected"
+  | "executed"
+  | "failed"
+  /**
+   * The request was withdrawn out from under the user — the tenant disabled the
+   * assistant module while it was parked. NOT `rejected`: a human declining and
+   * a request being cancelled are different facts about different actors, and
+   * the ledger's entire purpose is recording who decided what. Collapsing them
+   * would attribute an administrative action to the requester.
+   */
+  | "cancelled";
+
+/** One page of the approval ledger. `total` is the unpaged count. */
+export interface AssistApprovalListPage {
+  requests: AssistApprovalRow[];
+  total: number;
+}
+
+/**
+ * The runtime's answer to `POST /ai/requests/{id}/approve` or `.../reject`.
+ *
+ * ── THE ONE THING TO GET RIGHT ─────────────────────────────────────────────
+ * `status: "failed"` comes back on **HTTP 200**, and that is not a bug to route
+ * around. The approval itself succeeded — the human decision was recorded and
+ * the runtime attempted the write — and then the TARGET APP rejected it. Two
+ * different things failed in two different systems, and only one of them is a
+ * transport problem. Rendering this as a network error would tell the user to
+ * retry a decision that has already been consumed (approval is deliberately not
+ * idempotent, so the retry lands on 409) and would hide the target app's actual
+ * complaint, which is the only part that says what to fix.
+ *
+ * So: 200 + `failed` is an OUTCOME, rendered as an outcome. Only a non-2xx is a
+ * failure to decide.
+ *
+ * Field names are frozen camelCase, per the runtime contract.
+ */
+export interface AssistApprovalDecision {
+  requestId: string;
+  /**
+   * Terminal state after the decision. `executed` / `failed` follow an approve;
+   * `rejected` follows a reject. Typed as the full union rather than a narrowed
+   * literal for the same leniency reason as `AssistApprovalStatus` — the runtime
+   * may answer with a state this build does not know, and a card that renders it
+   * as "unrecognised, not actionable" beats one that throws.
+   */
+  status: AssistApprovalStatus;
+  /** Present on `executed`. The target app's own shape — pass through untouched. */
+  result?: Record<string, unknown> | null;
+  /** Present on `failed`. The target app's own code, e.g. "APP_API_ERROR". */
+  errorCode?: string;
+  /** Present on `failed`. The target app's own message. Never rewritten by us. */
+  error?: string;
+  /**
+   * The same generated sentence the ledger row carries — served here too, so the
+   * card that just took the decision can show the outcome WITHOUT a refetch.
+   *
+   * Optional for the same reason as on the row, plus one of its own: this is the
+   * runtime's newest field on its newest endpoint, and a card that renders blank
+   * when it is absent fails on exactly the deploy skew it exists to survive.
+   *
+   * ⚠️ On a `failed` decision this does NOT replace `error`. The sentence is
+   * deterministic and may say "Could not create the issue" without saying why;
+   * `error` is the target app's own words and the only actionable text on the
+   * card. Both render.
+   */
+  outcomeSummary?: string | null;
+}
+
+/**
+ * `data` on an `ApprovalRequest` message — our own shape, not the runtime's.
+ *
+ * ── WHY THIS IS A SNAPSHOT AND NOT JUST A POINTER ──────────────────────────
+ * The obvious design is `{ requestId }` hydrated server-side on read, the way a
+ * `Meeting` message carries `meetingId`. It does not work here, for two reasons
+ * that are both properties of the runtime's ledger rather than choices:
+ *
+ *  1. `GET /ai/requests` is scoped to the CALLER by the minted token, and there
+ *     is no fetch-one endpoint. An observer's ledger does not contain the
+ *     requester's row, so hydrating for the channel is not slow — it is
+ *     impossible. The channel-visible card is the whole point of persisting.
+ *  2. The ledger keeps terminal rows for 24h. The message is permanent. A card
+ *     that goes blank a day later is worse than the ephemeral one it replaced.
+ *
+ * So the message carries the facts. The cost is that two places hold one fact
+ * and can diverge — see `status` below, and `unconfirmedAt` for what happens
+ * when they do.
+ */
+export interface ApprovalMessageData {
+  /** Runtime-owned request id. Also the `clientMessageId` suffix — see the writer. */
+  requestId: string;
+  /** Who asked. Drives `viewerMayAct`: everyone else gets a read-only card. */
+  requesterId: string;
+  appId: string;
+  toolName: string;
+  /** Runtime's sentence for the PROPOSED write. Rendered verbatim. */
+  summary: string | null;
+  /**
+   * Raw wire value, NOT normalised here. `normaliseRisk` in the adapter owns
+   * that, so an unknown class renders at the highest risk on this path exactly
+   * as it does on the other two.
+   */
+  riskClass: string;
+  /**
+   * The tool's arguments, verbatim.
+   *
+   * Persisted in full even though the OBSERVER card does not render them: the
+   * requester's own card still shows the Details expander, and that is the
+   * surface where rule 2 (`toolInput` renders verbatim) has to hold. Which
+   * viewer sees it is decided at render time by `fromApprovalMessage`, not by
+   * what we chose to persist.
+   */
+  toolInput: Record<string, unknown>;
+  expiresAt: string | null;
+  /** When WE wrote the proposal. Our clock, not a runtime field. */
+  proposedAt: string;
+  /**
+   * OUR copy of the lifecycle state. Authoritative for DISPLAY only.
+   *
+   * The runtime remains authoritative for decisions — every Approve/Reject goes
+   * to it and it answers 409 if this row is stale, so divergence can produce a
+   * wrong screen and never a wrong write.
+   */
+  status: AssistApprovalStatus;
+  outcomeSummary?: string | null;
+  error?: string | null;
+  /** Who decided, when known. A raw id — resolved to a name only for display. */
+  decisionBy?: string | null;
+  /**
+   * Which agent the decision came through, carried from the ledger (or stamped
+   * as our own when our relay took it). Kept for the log dimension described on
+   * `AssistApprovalRow.decisionAgentId`; nothing renders it.
+   */
+  decisionAgentId?: string | null;
+  decisionAt?: string | null;
+  /**
+   * Set when reconciliation looked for this request and the ledger no longer
+   * had it — it aged out of the 24h window while our copy still said `pending`.
+   *
+   * This is the honest end state of the divergence bound: we cannot learn what
+   * happened and will never be able to. The card says so rather than continuing
+   * to offer buttons for a decision that may not exist. Reachable in the stub
+   * via STUB_AGED_REQUEST_ID — a state only visible in a unit test is one
+   * nobody notices rendering wrong.
+   */
+  unconfirmedAt?: string | null;
+  /**
+   * When our copy was last known to match the runtime — stamped by the decision
+   * patch and by a reconcile that had to correct something.
+   *
+   * NOT written when a reconcile merely agrees: nothing renders it on a pending
+   * card, and a write per card per channel open with no reader is load nobody
+   * would attribute to opening a conversation. Kept because it is the audit
+   * trail for when a card last moved, and it costs nothing on writes that were
+   * happening anyway.
+   */
+  confirmedAt?: string | null;
+}
 export interface SendMessageInput {
   content: string;
+  /**
+   * ⚠️ NOT the same union as `MessageType`, and the gap is the point. `Delete`
+   * is a tombstone the delete path writes, and `ApprovalRequest` is written only
+   * by the assist relay. Neither may arrive from a client. Enforced at runtime
+   * by `messages.send` — this type alone would not stop a hand-rolled POST.
+   */
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";
   data?: Record<string, unknown>;
   parentMessageId?: string;

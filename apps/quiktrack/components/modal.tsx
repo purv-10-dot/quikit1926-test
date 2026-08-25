@@ -14,6 +14,7 @@
 // motion.div carries the scale/opacity animation — so Framer's inline
 // transform never touches the element that needs the translate.
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@quikit/ui";
 import { X } from "lucide-react";
@@ -37,7 +38,13 @@ export const Modal = ({ open, onOpenChange, children, className }: ModalProps) =
     };
   }, [open]);
 
-  return (
+  // Portal to <body>: without it, the backdrop's `fixed inset-0` is measured
+  // against the nearest transformed/filtered ancestor (the dashboard shell) and
+  // stops short of the top nav — leaving the header un-dimmed. Portaling makes
+  // `fixed` relative to the real viewport so the overlay covers the whole screen.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -67,7 +74,8 @@ export const Modal = ({ open, onOpenChange, children, className }: ModalProps) =
           </div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 };
 

@@ -171,14 +171,36 @@ export const createApplicationSchema = z.object({
   candidateId: z.string().min(1),
   requisitionId: z.string().min(1),
   currentStage: z.string().optional(),
+  // Recruiter & Position Tracking — who's personally handling this candidate.
+  assignedRecruiterId: z.string().optional(),
+  // Set ONLY by the "Add Candidate + JR immediately" wizard flow — when true
+  // and assignedRecruiterId wasn't explicitly chosen, the requesting user
+  // becomes the recruiter (they're creating AND linking in one action, so
+  // they own it). Every other flow (linking an EXISTING pool candidate later,
+  // regardless of who created it or who's doing the linking) omits this, so
+  // Round Robin decides instead — this is what actually fixes the "HR_Head
+  // adds a candidate, links it later" case: no self-assign just because they
+  // once created the record.
+  selfAssign: z.boolean().optional(),
 });
 
 export const updateApplicationSchema = z.object({
   currentStage: z.string().optional(),
-  status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
+  status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppParked", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
   rejectionReason: z.string().optional(),
   // Optional note recorded in stageHistory when moving/skipping stages.
   moveReason: z.string().optional(),
+  // Recruiter & Position Tracking (Phase 1) — (re)assign, or claim from the
+  // Unassigned queue. Pass null to clear it back to unassigned.
+  assignedRecruiterId: z.string().nullable().optional(),
+});
+
+// "Park Candidate" — not a fit for THIS role, set aside (not rejected) with a reason.
+export const parkApplicationSchema = z.object({
+  reason: z.enum(["LessExperience", "HighBudget", "NonRelevant", "Other"]),
+  note: z.string().trim().max(500).optional(),
+}).refine((d) => d.reason !== "Other" || !!d.note?.trim(), {
+  message: "Please describe the reason", path: ["note"],
 });
 
 // ─── Interview ──────────────────────────────────────────

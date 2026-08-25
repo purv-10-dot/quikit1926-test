@@ -93,7 +93,7 @@ export function PortalDropdown({
         type="button"
         disabled={disabled}
         onClick={() => { if (!disabled) setOpen((v) => !v); }}
-        className="flex min-h-[36px] w-full items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-left text-sm hover:bg-gray-50 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-60"
+        className="flex min-h-[36px] w-full items-center gap-1 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 px-3 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:opacity-60"
       >
         <span className="flex flex-1 flex-wrap items-center gap-1">
           {selected.length === 0 ? (
@@ -126,8 +126,8 @@ export function PortalDropdown({
         createPortal(
           <div
             ref={menuRef}
-            style={{ position: "fixed", left: rect.left, top: rect.top, width: rect.width, zIndex: 60 }}
-            className="max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+            style={{ position: "fixed", left: rect.left, top: rect.top, width: rect.width, zIndex: 1500 }}
+            className="max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
           >
             {options.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">No options</div>}
             {options.map((o) => {
@@ -137,7 +137,7 @@ export function PortalDropdown({
                   key={o.value}
                   type="button"
                   onClick={() => toggle(o.value)}
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${on ? "bg-blue-50/60" : ""}`}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${on ? "bg-blue-50/60 dark:bg-gray-700/60" : ""}`}
                 >
                   {multiple && (
                     <input type="checkbox" readOnly checked={on} className="pointer-events-none" />
@@ -145,7 +145,7 @@ export function PortalDropdown({
                   {o.pill ? (
                     <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${o.pill}`}>{o.label}</span>
                   ) : (
-                    <span className={`text-gray-700 ${on && !multiple ? "font-medium" : ""}`}>{o.label}</span>
+                    <span className={`text-gray-700 dark:text-gray-300 ${on && !multiple ? "font-medium" : ""}`}>{o.label}</span>
                   )}
                 </button>
               );

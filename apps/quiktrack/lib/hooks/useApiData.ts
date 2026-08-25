@@ -27,6 +27,10 @@ export interface UseApiDataOptions<T> {
   /** Map the raw `data` payload into the shape the caller wants (e.g. unwrap
    *  `{ members: [...] }` into the array). Runs only on success. */
   select?: (data: unknown) => T;
+  /** React Query retry policy. Defaults to React Query's default (3 retries).
+   *  Pass `false` for reads where a failure is authoritative (e.g. a 404 that
+   *  means "not found") and retrying only delays surfacing the error. */
+  retry?: boolean | number;
 }
 
 /**
@@ -42,6 +46,7 @@ export function useApiData<T>(
     queryKey,
     enabled: url !== null,
     staleTime: options.staleTime ?? 60_000,
+    ...(options.retry !== undefined ? { retry: options.retry } : {}),
     queryFn: async () => {
       const res = await fetch(url as string);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

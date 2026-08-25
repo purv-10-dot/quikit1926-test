@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import { useRouter } from "next/navigation";
 import { getMetaAdsData, type MetaAdsData } from "@/lib/api/meta-ads";
 import Kpi from "@/components/ui/Kpi";
@@ -73,6 +74,7 @@ export default function MetaAdsPage() {
 
   return (
     <div>
+      {data.isSampleData && <SampleDataBanner platform="Meta Ads" />}
       {/* Header */}
       <div className="greet-row">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

@@ -6,6 +6,19 @@ import {
   getActiveFieldsForProject,
   getValuesForIssue,
 } from "@/lib/services/customFieldValues";
+import { linkLabel, type LinkDirection } from "@/lib/services/issueLinkTypes";
+
+/** Shared select for the "other" issue on a link row (both directions). */
+const linkIssueSelect = {
+  id: true,
+  key: true,
+  title: true,
+  type: true,
+  priority: true,
+  assigneeId: true,
+  statusId: true,
+  status: { select: { id: true, name: true, color: true, category: true } },
+} as const;
 
 /**
  * Aggregate read for the work-item view.
@@ -80,27 +93,43 @@ export const GET = withOrgAuth<{ id: string }>(
           take: 50,
           select: { id: true, userId: true, entryDate: true, hours: true, description: true },
         }),
-        db.qtIssueLink.findMany({
-          where: { orgId, sourceIssueId: issueId },
-          orderBy: { createdAt: "asc" },
-          select: {
-            id: true,
-            type: true,
-            createdAt: true,
-            targetIssue: {
-              select: {
-                id: true,
-                key: true,
-                title: true,
-                type: true,
-                priority: true,
-                assigneeId: true,
-                statusId: true,
-                status: { select: { id: true, name: true, color: true, category: true } },
-              },
-            },
-          },
-        }),
+        // Both directions, normalised to `{ id, type, side, label, otherIssue }`
+        // so this matches the standalone `/links` GET route exactly — the full
+        // view seeds the issue-links cache with this, and LinkedWorkItems reads
+        // that shape. An "is blocked by X" edge is stored as X blocks this, so
+        // it only appears via the incoming query.
+        (async () => {
+          const [outgoing, incoming] = await Promise.all([
+            db.qtIssueLink.findMany({
+              where: { orgId, sourceIssueId: issueId },
+              orderBy: { createdAt: "asc" },
+              select: { id: true, type: true, createdAt: true, targetIssue: { select: linkIssueSelect } },
+            }),
+            db.qtIssueLink.findMany({
+              where: { orgId, targetIssueId: issueId },
+              orderBy: { createdAt: "asc" },
+              select: { id: true, type: true, createdAt: true, sourceIssue: { select: linkIssueSelect } },
+            }),
+          ]);
+          return [
+            ...outgoing.map((l) => ({
+              id: l.id,
+              type: l.type,
+              side: "OUTWARD" as LinkDirection,
+              label: linkLabel(l.type, "OUTWARD"),
+              createdAt: l.createdAt,
+              otherIssue: l.targetIssue,
+            })),
+            ...incoming.map((l) => ({
+              id: l.id,
+              type: l.type,
+              side: "INWARD" as LinkDirection,
+              label: linkLabel(l.type, "INWARD"),
+              createdAt: l.createdAt,
+              otherIssue: l.sourceIssue,
+            })),
+          ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        })(),
         db.qtIssueComment.findMany({
           where: { orgId, issueId, isDeleted: false },
           orderBy: { createdAt: "asc" },

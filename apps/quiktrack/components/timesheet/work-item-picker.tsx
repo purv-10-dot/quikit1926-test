@@ -34,6 +34,11 @@ export function WorkItemPicker({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Server-side search results. The `issues` prop is only a capped first page,
+  // so an older item (e.g. QUIKTR-1) wouldn't be in it — a purely client-side
+  // filter then couldn't find it. When the user types, we search the server so
+  // any matching work item surfaces regardless of the initial page.
+  const [serverResults, setServerResults] = useState<IssueOption[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [createMode, setCreateMode] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -66,6 +71,38 @@ export function WorkItemPicker({
   useEffect(() => {
     if (open && !createMode) searchRef.current?.focus();
   }, [open, createMode]);
+
+  // Debounced server search — fires when the user types and a projectId is set.
+  useEffect(() => {
+    const term = query.trim();
+    if (!open || !projectId || term.length === 0) {
+      setServerResults(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      void fetch(
+        `/api/issues?projectId=${encodeURIComponent(projectId)}&search=${encodeURIComponent(term)}&excludeType=EPIC&limit=20`,
+      )
+        .then((r) => r.json())
+        .then((res) => {
+          if (!alive || !res?.success) return;
+          setServerResults(
+            (res.data ?? []).map((i: IssueOption) => ({
+              id: i.id,
+              key: i.key,
+              title: i.title,
+              type: i.type,
+            })),
+          );
+        })
+        .catch(() => undefined);
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [query, open, projectId]);
 
   const canCreate = Boolean(projectId && onCreated);
 
@@ -101,11 +138,18 @@ export function WorkItemPicker({
 
   // `query` doubles as the list filter and, when creating, the new task title.
   const q = query.trim().toLowerCase();
+  // When searching: merge the server results (authoritative, finds items beyond
+  // the initial page) with any local matches, deduped. When idle: the full list.
   const filtered = q
-    ? issues.filter(
-        (i) =>
-          i.key.toLowerCase().includes(q) || i.title.toLowerCase().includes(q),
-      )
+    ? (() => {
+        const localMatches = issues.filter(
+          (i) =>
+            i.key.toLowerCase().includes(q) || i.title.toLowerCase().includes(q),
+        );
+        const server = serverResults ?? [];
+        const seen = new Set(server.map((i) => i.id));
+        return [...server, ...localMatches.filter((i) => !seen.has(i.id))];
+      })()
     : issues;
 
   const selected = issues.find((i) => i.id === value);

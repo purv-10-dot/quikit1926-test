@@ -92,6 +92,43 @@ export function defaultToolbarStateFor(filterId: string): ToolbarState {
   }
 }
 
+/**
+ * TQL equivalent of each default filter slug, shown pre-filled in the query
+ * box when switching to TQL mode on a default filter — matches Jira's
+ * behavior of translating the active filter into its JQL form.
+ *
+ * `my-open`/`open`/`done`/`resolved-recently` rely on status CATEGORY
+ * ("not DONE"), which TQL's `status` field can't express (it matches by
+ * status NAME, not category — there's no fixed name that means "any open
+ * status" across an org's custom workflows). `resolution IS EMPTY` /
+ * `resolution IS NOT EMPTY` is the honest TQL equivalent for "open" /
+ * "done" — a real clause, not a faked category match.
+ */
+export function defaultTqlFor(filterId: string): string {
+  switch (filterId) {
+    case "my-open":
+      return 'assignee = currentUser() AND resolution IS EMPTY ORDER BY updated DESC';
+    case "reported-by-me":
+      return "reporter = currentUser() ORDER BY updated DESC";
+    case "all":
+      return "ORDER BY updated DESC";
+    case "open":
+      return "resolution IS EMPTY ORDER BY updated DESC";
+    case "done":
+      return "resolution IS NOT EMPTY ORDER BY updated DESC";
+    case "viewed-recently":
+      return "ORDER BY updated DESC";
+    case "created-recently":
+      return "ORDER BY created DESC";
+    case "resolved-recently":
+      return "resolution IS NOT EMPTY ORDER BY updated DESC";
+    case "updated-recently":
+      return "ORDER BY updated DESC";
+    default:
+      return "";
+  }
+}
+
 export function FilterToolbar({ search, onSearchChange, onClear, state, onChange, onSaveFilter }: FilterToolbarProps) {
   // Active chips persist their own label on pick, so this fallback is only
   // hit for the "me"/"unassigned" pseudo-values.

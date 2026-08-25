@@ -37,7 +37,7 @@ const KIND_HINT: Record<string, string> = {
   EXPLORATORY: "A charter to explore — no formal expectations",
 };
 
-const TH = "bg-accent-50 px-4 py-2 font-medium text-gray-700";
+const TH = "bg-accent-50 dark:bg-accent-900/30 px-4 py-2 font-medium text-gray-700 dark:text-gray-300";
 
 function DefaultPill() {
   return (
@@ -56,7 +56,7 @@ export function StatusTable({
   loading: boolean;
 }) {
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
+    <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left">
@@ -83,7 +83,7 @@ export function StatusTable({
             </tr>
           )}
           {rows.map((s) => (
-            <tr key={s.id} className="border-t border-gray-100">
+            <tr key={s.id} className="border-t border-gray-100 dark:border-gray-800">
               <td className="px-4 py-2">
                 <span className="inline-flex items-center gap-2">
                   <span
@@ -97,7 +97,7 @@ export function StatusTable({
               <td className="px-4 py-2">
                 {/* Shown because CI posts results against the KEY, not the label —
                     anyone wiring up automation needs to see it. */}
-                <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                <code className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-xs text-gray-600 dark:text-gray-300">
                   {s.key}
                 </code>
               </td>
@@ -129,7 +129,7 @@ export function StatusTable({
 
 export function TemplateTable({ rows }: { rows: TemplateRow[] }) {
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
+    <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left">
@@ -147,13 +147,13 @@ export function TemplateTable({ rows }: { rows: TemplateRow[] }) {
             </tr>
           )}
           {rows.map((t) => (
-            <tr key={t.id} className="border-t border-gray-100">
+            <tr key={t.id} className="border-t border-gray-100 dark:border-gray-800">
               <td className="px-4 py-2">
                 <span className="inline-flex items-center gap-2">
                   <span className="text-gray-800">{t.name}</span>
                   {t.isDefault && <DefaultPill />}
                   {t.projectId && (
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+                    <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-400">
                       This space only
                     </span>
                   )}

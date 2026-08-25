@@ -149,7 +149,11 @@ export function GroupedKanbanToolbar({
   }, [sprints]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-4">
+    // Pinned to the top of SpaceLayout's scroll container so the controls stay
+    // reachable while the groups scroll underneath. The negative margins match
+    // the view's responsive padding so the opaque background spans the full
+    // content width; z-20 stays below the row menus (z-30).
+    <div className="sticky top-0 z-20 -mx-3 sm:-mx-6 flex flex-wrap items-center gap-2 bg-white px-3 sm:px-6 pt-4 pb-4">
       {canCreateTask && (
         <button
           type="button"

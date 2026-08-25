@@ -2,6 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   ChevronLeft,
@@ -939,9 +940,8 @@ export function TimesheetView({
                             ? row.secondary
                             : "";
                         if (!keyText) return "";
-                        // Clicking the key opens the issue edit drawer. Needs a
-                        // project context, so it's a link only in the
-                        // space-scoped timesheet.
+                        // Space-scoped timesheet: clicking the key opens the
+                        // issue edit drawer (has a project context to load it).
                         if (projectId && issueIdForRow) {
                           return (
                             <button
@@ -954,7 +954,19 @@ export function TimesheetView({
                             </button>
                           );
                         }
-                        return keyText;
+                        // Global timesheet: no project context for the drawer,
+                        // so link to the readable /browse/<KEY> route (resolves
+                        // the key server-side). Fixes the key being unclickable
+                        // in the tenant-wide timesheet.
+                        return (
+                          <Link
+                            href={`/browse/${keyText}`}
+                            className="hover:underline"
+                            title="Open issue"
+                          >
+                            {keyText}
+                          </Link>
+                        );
                       })()}
                     </td>
                   )}

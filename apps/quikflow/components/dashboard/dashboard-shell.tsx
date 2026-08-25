@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "next-auth";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
+import { Toaster } from "sonner";
 import {
   LayoutDashboard,
   Zap,
@@ -19,6 +20,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface NavItem {
   label: string;
@@ -61,6 +63,11 @@ export function DashboardShell({
   const pathname = usePathname();
   const router = useRouter();
   const quikitUrl = process.env.NEXT_PUBLIC_QUIKIT_URL ?? "";
+  // Mounted on every dashboard page — fires GET /api/me/permissions, whose
+  // side effect seeds this org's "admin"/"Member" AppRole rows on first
+  // visit (see useMyPermissions doc comment). Not yet used to gate nav here;
+  // future permission-based sidebar filtering builds on this same call.
+  useMyPermissions();
 
   function NavLink({ item }: { item: NavItem }) {
     const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -82,6 +89,7 @@ export function DashboardShell({
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-secondary)]">
       <ThemeApplier />
+      <Toaster richColors closeButton position="top-right" />
 
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 flex w-60 flex-col bg-accent-800 px-3 py-4 text-white">

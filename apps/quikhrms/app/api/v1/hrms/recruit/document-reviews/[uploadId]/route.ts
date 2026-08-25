@@ -55,17 +55,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       request: req,
       metadata: {
         document: docName,
-        bundle: upload.request.bundle,
         candidate: `${upload.request.application.candidate.firstName} ${upload.request.application.candidate.lastName}`.trim(),
         requisition: upload.request.application.requisition.title,
         reason: parsed.data.action === "reject" ? (parsed.data.reason ?? null) : null,
       },
     });
 
-    // If all required docs of the bundle are Approved → mark request Completed
+    // If all required doc types are now Approved → mark request Completed
     if (parsed.data.action === "approve") {
       const requiredTypes = await prisma.candidateDocumentType.findMany({
-        where: { orgId, bundle: upload.request.bundle, isRequired: true, isActive: true, deletedAt: null },
+        where: { orgId, isRequired: true, isActive: true, deletedAt: null },
         select: { id: true },
       });
       const approved = await prisma.candidateDocumentUpload.findMany({

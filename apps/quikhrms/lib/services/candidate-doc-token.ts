@@ -18,7 +18,6 @@ export interface CandidateDocTokenPayload {
   requestId: string;
   orgId: string;
   applicationId: string;
-  bundle: "PreOffer" | "PostOffer";
   exp: number;
 }
 

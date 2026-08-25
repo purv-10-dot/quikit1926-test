@@ -30,6 +30,7 @@ const ISSUE = {
   title: "Login button does nothing",
   projectId: "project-uuid-1",
   projectName: "Scrum Board",
+  orgId: "org-uuid-b",
 };
 
 /** The captured `html` of the single email the template sent. */
@@ -124,6 +125,37 @@ describe("notification email deep-links", () => {
       issue: { ...ISSUE, dueDate: "2026-01-15" },
     });
     expect(sentHtml()).toContain("https://track.quikit.ai/browse/SCRUM-58");
+  });
+
+  it("names the owning org so a multi-org recipient lands on the right workspace", async () => {
+    const { emailIssueAssigned } = await import("@/lib/email/sendEmail");
+    await emailIssueAssigned({
+      to: "dev@quikit.ai",
+      assigneeName: "Pravin",
+      issue: ISSUE,
+      reassignedBy: null,
+    });
+
+    // Without `?org=`, the link resolves against whichever org the recipient's
+    // session happens to be on — a 404 whenever that isn't the issue's org.
+    expect(sentHtml()).toContain(
+      "https://track.quikit.ai/browse/SCRUM-58?org=org-uuid-b",
+    );
+  });
+
+  it("omits the org param when the caller didn't supply one", async () => {
+    const { emailIssueAssigned } = await import("@/lib/email/sendEmail");
+    const { orgId: _orgId, ...noOrg } = ISSUE;
+    await emailIssueAssigned({
+      to: "dev@quikit.ai",
+      assigneeName: null,
+      issue: noOrg,
+      reassignedBy: null,
+    });
+
+    const html = sentHtml();
+    expect(html).toContain("https://track.quikit.ai/browse/SCRUM-58");
+    expect(html).not.toContain("?org=");
   });
 
   it("URL-encodes the issue key", async () => {

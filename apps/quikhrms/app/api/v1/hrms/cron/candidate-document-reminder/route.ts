@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const docs = await prisma.candidateDocumentType.findMany({
-        where: { orgId: r.orgId, bundle: r.bundle, isActive: true, deletedAt: null },
+        where: { orgId: r.orgId, isActive: true, deletedAt: null },
         orderBy: { sortOrder: "asc" },
         select: { name: true, isRequired: true, helpText: true },
       });
@@ -62,7 +62,6 @@ export async function POST(req: NextRequest) {
       const docData = {
         candidateName: `${r.application.candidate.firstName} ${r.application.candidate.lastName}`.trim(),
         jobTitle: r.application.requisition.title,
-        bundle: r.bundle,
         portalUrl: `${base}/candidate-documents/${r.token}`,
         expiryDays: 7,
         docs: docs.map((d) => ({ name: d.name, isRequired: d.isRequired, helpText: d.helpText })),
@@ -81,7 +80,6 @@ export async function POST(req: NextRequest) {
         vars: {
           candidateName: docData.candidateName,
           jobTitle: docData.jobTitle,
-          bundle: docData.bundle,
           portalUrl: docData.portalUrl,
           expiryDays: docData.expiryDays,
           reminderLevel: tier.level,

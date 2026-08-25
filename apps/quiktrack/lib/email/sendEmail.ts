@@ -248,6 +248,21 @@ function appUrl(): string {
 }
 
 /**
+ * Stamp `?org=<orgId>` onto an in-app deep link.
+ *
+ * A user can belong to several orgs, and this app's session carries exactly one
+ * active org at a time (the JWT `orgId` claim). A link that names only the
+ * record — `/browse/TRACK-1` — therefore resolves against whichever org the
+ * recipient happens to be in when they click it, and 404s whenever that isn't
+ * the org the record lives in. The `org` param tells the app which workspace the
+ * link belongs to; middleware routes the request through
+ * `/api/session/switch-org` when the session is on a different one.
+ */
+function withOrg(url: string, orgId?: string | null): string {
+  return orgId ? `${url}?org=${encodeURIComponent(orgId)}` : url;
+}
+
+/**
  * Deep-link to a single work item, using the app's canonical readable URL
  * (`/browse/SCRUM-58`). That route resolves key → issue server-side (org-scoped)
  * and renders the full-page work-item view.
@@ -256,8 +271,8 @@ function appUrl(): string {
  * takes only `params`, never `searchParams`, so the query string is silently
  * dropped and the recipient lands on the project board instead of the ticket.
  */
-function issueLink(issueKey: string): string {
-  return `${appUrl()}/browse/${encodeURIComponent(issueKey)}`;
+function issueLink(issueKey: string, orgId?: string | null): string {
+  return withOrg(`${appUrl()}/browse/${encodeURIComponent(issueKey)}`, orgId);
 }
 
 export const SUPPORT_EMAIL = "support@quikit.ai";
@@ -401,6 +416,11 @@ interface IssueRef {
   title: string;
   projectId: string;
   projectName?: string | null;
+  /** Org the work item lives in. Carried into the link as `?org=` so a
+   *  recipient sitting in a different org lands on the right workspace instead
+   *  of a 404. Optional so older callers still compile (they just lose the
+   *  cross-org hop). */
+  orgId?: string | null;
 }
 
 export async function emailIssueAssigned(args: {
@@ -409,7 +429,7 @@ export async function emailIssueAssigned(args: {
   issue: IssueRef;
   reassignedBy: string | null;
 }): Promise<void> {
-  const link = issueLink(args.issue.key);
+  const link = issueLink(args.issue.key, args.issue.orgId);
   const project = args.issue.projectName ?? "QuikTrack";
   const html = shell({
     title: "Task Assigned",
@@ -440,7 +460,7 @@ export async function emailIssueStatusChanged(args: {
   toStatus: string;
   changedBy: string | null;
 }): Promise<void> {
-  const link = issueLink(args.issue.key);
+  const link = issueLink(args.issue.key, args.issue.orgId);
   const project = args.issue.projectName ?? "QuikTrack";
   const html = shell({
     title: "Status Update",
@@ -474,7 +494,7 @@ export async function emailIssueMention(args: {
   context: "comment" | "description";
   excerpt: string;
 }): Promise<void> {
-  const link = issueLink(args.issue.key);
+  const link = issueLink(args.issue.key, args.issue.orgId);
   const project = args.issue.projectName ?? "QuikTrack";
   const where = args.context === "comment" ? "a comment" : "the description";
   const html = shell({
@@ -538,8 +558,10 @@ export async function emailDocMention(args: {
   docId: string;
   mentionedBy: string | null;
   excerpt: string;
+  /** Org the document lives in — see withOrg(). */
+  orgId?: string | null;
 }): Promise<void> {
-  const link = `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
+  const link = withOrg(`${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`, args.orgId);
   const html = shell({
     title: "You Were Mentioned",
     detailsHeading: "Document",
@@ -622,7 +644,7 @@ export async function emailIssueOverdue(args: {
   recipientName: string | null;
   issue: IssueRef & { dueDate: string };
 }): Promise<void> {
-  const link = issueLink(args.issue.key);
+  const link = issueLink(args.issue.key, args.issue.orgId);
   const project = args.issue.projectName ?? "QuikTrack";
   const due = new Date(args.issue.dueDate);
   const dueLabel = Number.isFinite(due.getTime())

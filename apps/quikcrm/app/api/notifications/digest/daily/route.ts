@@ -11,9 +11,11 @@
  *  When CRON_SECRET is not set: development allowed, production blocked (401).
  *
  * ─── Vercel Cron ─────────────────────────────────────────────────────────────
- *  NOT yet wired in vercel.json — the deployed-fire entry is held pending
- *  explicit approval (it's the outward-facing bit). This route is invokable
- *  manually (and by a cron once the schedule is added).
+ *  Wired in vercel.json as "30 4 * * *" = 04:30 UTC = 10:00 IST daily. The
+ *  window is the PREVIOUS IST CALENDAR DAY, so each run reports one complete,
+ *  already-closed day. Still invokable manually; because the window is anchored
+ *  to IST midnight rather than the fire instant, a manual re-fire on the same
+ *  IST day reproduces the identical window.
  *
  * ─── Demo state ──────────────────────────────────────────────────────────────
  *  runDailyDigest currently assembles ALL-TIME data (window unit (i) deferred).

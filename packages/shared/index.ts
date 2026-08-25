@@ -22,6 +22,7 @@ export {
 export {
   INTERNAL_SERVICE_ALLOWLIST,
   isAllowedInternalService,
+  AGENT_JWT_ISSUER,
   type InternalService,
 } from "./lib/internal-services";
 

@@ -1,5 +1,7 @@
 ﻿// Meta Ads connector â€” fetches campaign stats via META_ADS connection
 import { prisma } from "@/lib/prisma";
+import { trailingWindow } from "@/lib/period/resolve";
+import type { DateWindow } from "@/lib/period/types";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
@@ -18,7 +20,7 @@ async function metaGet(path: string, token: string) {
   return res.json();
 }
 
-export async function getMetaAdsStats(userId: string, workspaceId?: string) {
+export async function getMetaAdsStats(userId: string, workspaceId?: string, window?: DateWindow) {
   const { token, adAccountId } = await getMetaAdsConn(userId, workspaceId);
   if (!adAccountId) {
     // Self-heal: try to discover ad accounts from the stored token
@@ -42,11 +44,14 @@ export async function getMetaAdsStats(userId: string, workspaceId?: string) {
       }
     } catch { /* */ }
     if (!discoveredId) throw new Error("Meta Ads not connected: no ad account found");
-    return getMetaAdsStats(userId);
+    // Keep workspace and window on the retry — previously dropped.
+    return getMetaAdsStats(userId, workspaceId, window);
   }
 
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const until = new Date().toISOString().slice(0, 10);
+  // Defaults to the trailing 30 days it has always used when no window is given.
+  const w = window ?? trailingWindow(30);
+  const since = w.start;
+  const until = w.end;
   const datePreset = `{"since":"${since}","until":"${until}"}`;
 
   // Account-level insights
@@ -86,7 +91,7 @@ export async function getMetaAdsStats(userId: string, workspaceId?: string) {
   let campaigns: Campaign[] = [];
   try {
     const campData = await metaGet(
-      `/${adAccountId}/campaigns?fields=id,name,status,insights.date_preset(last_30d){spend,impressions,clicks,actions}&limit=20`,
+      `/${adAccountId}/campaigns?fields=id,name,status,insights.time_range(${encodeURIComponent(datePreset)}){spend,impressions,clicks,actions}&limit=20`,
       token,
     );
     campaigns = (campData.data ?? []).map((c: Record<string, unknown>) => {

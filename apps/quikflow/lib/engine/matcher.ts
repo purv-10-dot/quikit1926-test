@@ -11,7 +11,7 @@ import type { EngineEvent } from "./types";
  */
 export async function matchWorkflows(event: EngineEvent) {
   const rows = await db.wfWorkflow.findMany({
-    where: { orgId: event.orgId, status: "Active" },
+    where: { orgId: event.orgId, status: "Active", deletedAt: null },
     select: { id: true, name: true, trigger: true, graphNodes: true, graphEdges: true },
   });
 
@@ -30,7 +30,7 @@ export async function matchScheduledWorkflow(event: EngineEvent) {
   const id = event.data?.workflowId;
   if (typeof id !== "string") return [];
   const wf = await db.wfWorkflow.findFirst({
-    where: { id, orgId: event.orgId, status: "Active" },
+    where: { id, orgId: event.orgId, status: "Active", deletedAt: null },
     select: { id: true, name: true, trigger: true, graphNodes: true, graphEdges: true },
   });
   return wf ? [wf] : [];

@@ -2,6 +2,7 @@
 import { auth } from "@/lib/auth";
 import { getActiveWorkspaceId } from "@/lib/workspace";
 import { getLinkedInOrgStats } from "@/lib/connectors/linkedin";
+import { connectorErrorResponse } from "@/lib/connectors/errors";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -18,10 +19,7 @@ export async function GET() {
     const data = await getLinkedInOrgStats(session.user.id, workspaceId);
     return NextResponse.json({ connected: true, ...data });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load LinkedIn data";
-    if (message.includes("not connected")) {
-      return NextResponse.json({ connected: false });
-    }
-    return NextResponse.json({ error: message }, { status: 500 });
+    const { body, status } = connectorErrorResponse("linkedin", err);
+    return NextResponse.json(body, { status });
   }
 }

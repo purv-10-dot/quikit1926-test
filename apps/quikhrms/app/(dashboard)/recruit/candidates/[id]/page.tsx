@@ -11,7 +11,7 @@ import {
   User, Mail, FileText, Clock, Briefcase, MapPin, Phone, IndianRupee, Globe,
   Star, ThumbsUp, AlertTriangle, Check, X, ExternalLink, Inbox, ChevronDown,
   Ban, Archive, ArchiveRestore, RotateCcw, ShieldX, Rocket, MessageSquare, BellRing,
-  Download, Link2, ClipboardList,
+  Download, Link2, ClipboardList, UserPlus,
 } from "lucide-react";
 import { withBasePath } from "@/lib/utils/base-path";
 import { SkeletonLine } from "@/components/hrms/skeleton";
@@ -34,6 +34,7 @@ interface Application {
 }
 interface Candidate {
   id: string;
+  candidateCode: string | null;
   firstName: string;
   lastName: string;
   email: string;
@@ -113,6 +114,9 @@ export default function CandidateDetailPage() {
                   <span className={clsx("inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide", statusBadge[status] ?? "bg-gray-100 text-gray-500")}>
                     {status}
                   </span>
+                )}
+                {c?.candidateCode && (
+                  <span className="text-[11px] font-mono text-gray-400">{c.candidateCode}</span>
                 )}
               </div>
               {c?.location && (
@@ -235,6 +239,16 @@ function OverviewTab({ candidate: c, loading }: { candidate: Candidate | undefin
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-gray-50 text-gray-600 ring-1 ring-gray-200">
                     <FileText size={11} /> {a.status}
                   </span>
+                  {a.currentStage === "Hired" && a.status === "AppHired" && (
+                    // Onboarding now starts automatically the moment the offer is
+                    // accepted — no manual trigger here anymore. This candidate
+                    // won't appear in the Employees directory or Pipeline's Hired
+                    // column until HR clicks "Confirm Employee" at the end of the
+                    // Onboarding checklist.
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                      <UserPlus size={11} /> Onboarding in progress
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
@@ -472,20 +486,14 @@ interface Upload {
   customLabel: string | null;
   documentType: { id: string; name: string; code: string; isRequired: boolean } | null;
 }
-interface BundleData {
-  bundle: string;
+interface DocsData {
   request: { id: string; status: string; submittedAt: string | null; uploads: Upload[] } | null;
   ready: boolean;
 }
 
-const BUNDLES: { key: string; title: string }[] = [
-  { key: "PreOffer", title: "Pre-Offer Documents" },
-  { key: "PostOffer", title: "Post-Offer Documents" },
-];
-
-function bundleBadge(b: BundleData | undefined) {
-  if (!b?.request) return { label: "Not requested", cls: "bg-gray-50 text-gray-500 ring-gray-200" };
-  if (b.request.status === "Completed" || b.ready) return { label: "Complete", cls: "bg-green-50 text-green-700 ring-green-200" };
+function docsBadge(d: DocsData | undefined) {
+  if (!d?.request) return { label: "Not requested", cls: "bg-gray-50 text-gray-500 ring-gray-200" };
+  if (d.request.status === "Completed" || d.ready) return { label: "Complete", cls: "bg-green-50 text-green-700 ring-green-200" };
   return { label: "Under Review", cls: "bg-amber-50 text-amber-700 ring-amber-200" };
 }
 
@@ -496,23 +504,17 @@ function DocumentsTab({ appId }: { appId: string | null }) {
   const [review, setReview] = useState<{ upload: Upload; action: "approve" | "reject" } | null>(null);
   const [comment, setComment] = useState("");
 
-  const preOffer = useQuery({
+  const docsQuery = useQuery({
     enabled: !!appId,
-    queryKey: ["doc-bundle", appId, "PreOffer"],
-    queryFn: () => api.get<BundleData>(`/api/v1/hrms/recruit/applications/${appId}/documents/PreOffer`),
+    queryKey: ["doc-request", appId],
+    queryFn: () => api.get<DocsData>(`/api/v1/hrms/recruit/applications/${appId}/documents`),
   });
-  const postOffer = useQuery({
-    enabled: !!appId,
-    queryKey: ["doc-bundle", appId, "PostOffer"],
-    queryFn: () => api.get<BundleData>(`/api/v1/hrms/recruit/applications/${appId}/documents/PostOffer`),
-  });
-  const queries = [preOffer, postOffer];
 
   const reviewMut = useMutation({
     mutationFn: ({ uploadId, action, reason }: { uploadId: string; action: string; reason: string }) =>
       api.post(`/api/v1/hrms/recruit/document-reviews/${uploadId}`, { action, reason: reason || undefined }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["doc-bundle", appId] });
+      qc.invalidateQueries({ queryKey: ["doc-request", appId] });
       toast.success(review?.action === "approve" ? "Document approved" : "Document rejected");
       setReview(null);
       setComment("");
@@ -521,109 +523,105 @@ function DocumentsTab({ appId }: { appId: string | null }) {
 
   // Nudge the candidate about documents still pending (not yet approved).
   const remindMut = useMutation({
-    mutationFn: (bundle: string) =>
+    mutationFn: () =>
       api.post<{ reminderCount: number; mailed: boolean; pendingDocs: string[] }>(
-        `/api/v1/hrms/recruit/applications/${appId}/documents/${bundle}/remind`, {}),
+        `/api/v1/hrms/recruit/applications/${appId}/documents/remind`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["doc-bundle", appId] });
+      qc.invalidateQueries({ queryKey: ["doc-request", appId] });
     },
   });
 
   // Re-request after a rejection: re-opens the (submitted) packet so the
   // candidate can re-upload the rejected doc, then re-sends the doc email.
   const reopenMut = useMutation({
-    mutationFn: (bundle: string) =>
-      api.post(`/api/v1/hrms/recruit/applications/${appId}/documents/${bundle}/reopen`, {}),
+    mutationFn: () => api.post(`/api/v1/hrms/recruit/applications/${appId}/documents/reopen`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["doc-bundle", appId] });
+      qc.invalidateQueries({ queryKey: ["doc-request", appId] });
     },
   });
 
   if (!appId) return <EmptyState icon={<FileText size={28} />} title="No application" sub="This candidate has no application to manage documents for." />;
 
+  const data = docsQuery.data?.data;
+  const loading = docsQuery.isLoading;
+  const badge = docsBadge(data);
+  const uploads = data?.request?.uploads ?? [];
+
   return (
     <div className="space-y-4">
-      {BUNDLES.map((b, i) => {
-        const data = queries[i].data?.data;
-        const loading = queries[i].isLoading;
-        const badge = bundleBadge(data);
-        const uploads = data?.request?.uploads ?? [];
-        return (
-          <div key={b.key} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2 text-gray-800">
-                <FileText size={16} className="text-green-700" />
-                <h3 className="text-[13px] font-semibold">{b.title}</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                {data?.request && badge.label !== "Complete" && (
-                  <button
-                    onClick={() => toast.promise(remindMut.mutateAsync(b.key), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
-                    disabled={remindMut.isPending}
-                    title="Re-send the reminder email for documents still pending"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold text-amber-700 bg-amber-50 ring-1 ring-amber-200 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <BellRing size={12} /> {remindMut.isPending ? "Sending…" : "Send Reminder"}
-                  </button>
-                )}
-                <span className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1", badge.cls)}>
-                  {badge.label === "Complete" && <Check size={11} />}
-                  {badge.label === "Under Review" && <Clock size={11} />}
-                  {badge.label}
-                </span>
-              </div>
-            </div>
-            {loading ? (
-              <SkeletonLine w="50%" h={12} />
-            ) : !data?.request ? (
-              <p className="text-xs text-gray-400 py-3">No document request sent for this bundle yet.</p>
-            ) : uploads.length === 0 ? (
-              <p className="text-xs text-gray-400 py-3">Requested — waiting for candidate to upload.</p>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {uploads.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between gap-3 py-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <FileText size={16} className="text-gray-400 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-gray-800 truncate">{u.documentType?.name ?? u.customLabel ?? u.fileName}</p>
-                        <p className="text-[11px] text-gray-400">{new Date(u.uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {u.status === "Approved" && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200"><Check size={11} /> Approved</span>}
-                      {u.status === "Rejected" && (
-                        <>
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200" title={u.rejectionReason ?? ""}><X size={11} /> Rejected</span>
-                          <button onClick={() => toast.promise(reopenMut.mutateAsync(b.key), { loading: "Sending re-request…", success: "Re-request sent", error: "Couldn't send re-request" })} disabled={reopenMut.isPending}
-                            title="Ask the candidate to re-upload this document"
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <RotateCcw size={11} /> {reopenMut.isPending ? "Sending…" : "Re-request"}
-                          </button>
-                        </>
-                      )}
-                      {u.status === "Pending" && (
-                        <>
-                          <button onClick={() => { setComment(""); setReview({ upload: u, action: "approve" }); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100">
-                            <Check size={11} /> Approve
-                          </button>
-                          <button onClick={() => { setComment(""); setReview({ upload: u, action: "reject" }); }}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100">
-                            <X size={11} /> Reject
-                          </button>
-                        </>
-                      )}
-                      <a href={u.fileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-gray-100 rounded" title="Open document">
-                        <ExternalLink size={12} />
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 text-gray-800">
+            <FileText size={16} className="text-green-700" />
+            <h3 className="text-[13px] font-semibold">Documents</h3>
           </div>
-        );
-      })}
+          <div className="flex items-center gap-2">
+            {data?.request && badge.label !== "Complete" && (
+              <button
+                onClick={() => toast.promise(remindMut.mutateAsync(), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })}
+                disabled={remindMut.isPending}
+                title="Re-send the reminder email for documents still pending"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold text-amber-700 bg-amber-50 ring-1 ring-amber-200 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                <BellRing size={12} /> {remindMut.isPending ? "Sending…" : "Send Reminder"}
+              </button>
+            )}
+            <span className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1", badge.cls)}>
+              {badge.label === "Complete" && <Check size={11} />}
+              {badge.label === "Under Review" && <Clock size={11} />}
+              {badge.label}
+            </span>
+          </div>
+        </div>
+        {loading ? (
+          <SkeletonLine w="50%" h={12} />
+        ) : !data?.request ? (
+          <p className="text-xs text-gray-400 py-3">No document request sent yet.</p>
+        ) : uploads.length === 0 ? (
+          <p className="text-xs text-gray-400 py-3">Requested — waiting for candidate to upload.</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {uploads.map((u) => (
+              <div key={u.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FileText size={16} className="text-gray-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-800 truncate">{u.documentType?.name ?? u.customLabel ?? u.fileName}</p>
+                    <p className="text-[11px] text-gray-400">{new Date(u.uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {u.status === "Approved" && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200"><Check size={11} /> Approved</span>}
+                  {u.status === "Rejected" && (
+                    <>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200" title={u.rejectionReason ?? ""}><X size={11} /> Rejected</span>
+                      <button onClick={() => toast.promise(reopenMut.mutateAsync(), { loading: "Sending re-request…", success: "Re-request sent", error: "Couldn't send re-request" })} disabled={reopenMut.isPending}
+                        title="Ask the candidate to re-upload this document"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <RotateCcw size={11} /> {reopenMut.isPending ? "Sending…" : "Re-request"}
+                      </button>
+                    </>
+                  )}
+                  {u.status === "Pending" && (
+                    <>
+                      <button onClick={() => { setComment(""); setReview({ upload: u, action: "approve" }); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100">
+                        <Check size={11} /> Approve
+                      </button>
+                      <button onClick={() => { setComment(""); setReview({ upload: u, action: "reject" }); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100">
+                        <X size={11} /> Reject
+                      </button>
+                    </>
+                  )}
+                  <a href={u.fileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-gray-100 rounded" title="Open document">
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Modal open={!!review} onClose={() => setReview(null)} title={review?.action === "reject" ? "Reject document" : "Approve document"} size="md">
         {review && (

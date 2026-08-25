@@ -13,14 +13,25 @@ export const testCasePriorityEnum = z.enum([
 export const testCaseTypeEnum = z.enum([
   "FUNCTIONAL",
   "REGRESSION",
-  "UAT",
-  "SECURITY",
-  "PERFORMANCE",
   "SMOKE",
+  "SANITY",
+  "INTEGRATION",
+  "UI",
+  "API",
+  "DATABASE",
+  "PERFORMANCE",
+  "SECURITY",
   "COMPATIBILITY",
+  "POSITIVE",
   "NEGATIVE",
-  "BDD",
+  "BOUNDARY_VALUE",
+  "USABILITY",
+  "ACCESSIBILITY",
   "EXPLORATORY",
+  "BDD",
+  // Kept for existing cases saved before this list widened — UAT is no longer
+  // offered in the dropdown, but a case already carrying it must still validate.
+  "UAT",
 ]);
 
 export const automationStatusEnum = z.enum(["MANUAL", "AUTOMATED"]);
@@ -195,17 +206,92 @@ export const attachTestTagSchema = z
     path: ["tagId"],
   });
 
+/**
+ * A comma-separated URL param → a validated array.
+ *
+ * Filters travel as `?priority=HIGH,CRITICAL` so a filtered list is one shareable
+ * link. Unknown values are REJECTED rather than dropped: silently ignoring a typo
+ * would show an unfiltered list while the chip still claimed the filter was on.
+ *
+ * Empty and whitespace-only params are treated as absent, because clearing the last
+ * chip of a filter leaves `?priority=` behind in the URL.
+ */
+function csvOf<T extends z.ZodTypeAny>(inner: T, max = 50) {
+  return z
+    .string()
+    .transform((s) =>
+      s
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0),
+    )
+    .pipe(z.array(inner).max(max))
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined));
+}
+
+/** The "unassigned / never set" sentinel, mirroring lib/test/caseFilters.ts. */
+const unassignedLiteral = z.literal("__unassigned__");
+
+/** An opaque id chosen from a loaded list (label, run, status). */
+const pickedId = z.string().min(1).max(64);
+
+const yesNo = z.enum(["yes", "no"]).optional();
+
+/**
+ * A date-only filter value (`YYYY-MM-DD`) from an `<input type="date">`.
+ *
+ * Parsed as UTC MIDNIGHT rather than via `new Date(s)` on a bare string, so the range
+ * does not shift by a day for users west of UTC. The end of a `to` day is applied in
+ * the query builder.
+ */
+const dateParam = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a YYYY-MM-DD date")
+  .transform((s) => new Date(`${s}T00:00:00.000Z`))
+  .refine((d) => !Number.isNaN(d.getTime()), "Not a real date")
+  .optional();
+
 export const listTestCasesSchema = z.object({
   sectionId: z.string().min(1).optional(),
   suiteId: z.string().min(1).optional(),
+  /**
+   * Show soft-deleted cases instead of live ones — the "Deleted" view that makes
+   * restore reachable. Deliberately a SWITCH, not an include: mixing deleted rows
+   * into the normal list would let someone run a suite that quietly contains
+   * deleted cases.
+   */
+  deleted: z.enum(["true", "false"]).default("false"),
   query: z.string().trim().max(255).optional(),
-  priority: testCasePriorityEnum.optional(),
-  type: testCaseTypeEnum.optional(),
-  automationStatus: automationStatusEnum.optional(),
-  approvalState: approvalStateEnum.optional(),
+
+  // ── Filters (QUIKTR-341) ──────────────────────────────────────────────────
+  // Multi-value filters match ANY of their values; filters combine with AND.
+  /** Exact case refId — the number behind "TC-1042". */
+  ref: z.coerce.number().int().min(1).max(999_999_999).optional(),
+  title: z.string().trim().max(255).optional(),
+  priority: csvOf(testCasePriorityEnum),
+  type: csvOf(testCaseTypeEnum),
+  automation: csvOf(automationStatusEnum),
+  candidate: csvOf(z.union([automationCandidateEnum, unassignedLiteral])),
+  approval: csvOf(approvalStateEnum),
+  assignee: csvOf(z.union([pickedId, unassignedLiteral])),
+  createdBy: csvOf(z.union([pickedId, unassignedLiteral])),
+  label: csvOf(pickedId),
+  reference: z.string().trim().max(255).optional(),
+  coverage: yesNo,
+  execution: csvOf(pickedId),
+  run: csvOf(pickedId),
+  defect: yesNo,
+  createdFrom: dateParam,
+  createdTo: dateParam,
+  updatedFrom: dateParam,
+  updatedTo: dateParam,
+
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
+
+export type ListTestCasesQuery = z.infer<typeof listTestCasesSchema>;
 
 export type CreateTestCaseInput = z.infer<typeof createTestCaseSchema>;
 export type UpdateTestCaseInput = z.infer<typeof updateTestCaseSchema>;

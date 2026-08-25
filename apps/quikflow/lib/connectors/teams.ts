@@ -4,7 +4,13 @@
  * the user's Outlook/Exchange calendar, so we create ordinary /me/events and
  * flip `isOnlineMeeting` to attach a Teams meeting.
  *
- * Env: MS_TEAMS_CLIENT_ID / MS_TEAMS_CLIENT_SECRET / MS_TEAMS_TENANT.
+ * Env: MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET / MICROSOFT_TENANT_ID —
+ * the SAME Azure app registration as the Outlook mail connector (./microsoft.ts).
+ * Deliberate, not an oversight: QuikFlow reuses one Azure app for both mail and
+ * Teams calendar rather than keeping a QUIKFLOW_TEAMS_* copy. Practically this
+ * means revoking/rotating consent for one connector affects the other.
+ * (Still NOT the MS_TEAMS_* names — those are QuikHRMS's own, unrelated
+ * app-only Graph integration on a different Azure app registration.)
  * Delegated Graph scopes: Calendars.ReadWrite, User.Read, offline_access.
  */
 import {
@@ -15,19 +21,20 @@ import {
   msRefresh,
   type MsAppConfig,
 } from "./microsoft-identity";
-import type {
-  CalendarEventInput,
-  CalendarEventResult,
-  CalendarEventView,
-  CalendarProvider,
-  CalendarRecurrence,
+import {
+  CalendarEventNotFoundError,
+  type CalendarEventInput,
+  type CalendarEventResult,
+  type CalendarEventView,
+  type CalendarProvider,
+  type CalendarRecurrence,
 } from "./types";
 
 const SCOPES = ["offline_access", "Calendars.ReadWrite", "User.Read"];
 const MAX_CALENDAR_VIEW = 250;
 
 function cfg(): MsAppConfig {
-  return msAppConfig("MS_TEAMS");
+  return msAppConfig("MICROSOFT", "common", "MICROSOFT_TENANT_ID");
 }
 
 /** Build the Graph recurrence object from QuikFlow's simplified shape. Exported for tests. */
@@ -153,7 +160,14 @@ export const TEAMS: CalendarProvider = {
       accessToken,
       { method: "PATCH", body: toGraphEvent(event) },
     );
-    if (!res.ok) throw new Error(`Teams calendar update failed: ${graphError(json, res.status)}`);
+    if (!res.ok) {
+      const message = `Teams calendar update failed: ${graphError(json, res.status)}`;
+      // 404 here means the stored event id is stale (deleted in Outlook/Teams,
+      // or orphaned by a calendar reconnect) — not a real failure of this run.
+      // Let the caller recreate the event instead of failing the workflow.
+      if (res.status === 404) throw new CalendarEventNotFoundError(message);
+      throw new Error(message);
+    }
     return toResult(json);
   },
 

@@ -6,6 +6,64 @@ import { db } from "@/lib/db";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 
 /**
+ * Row shapes for this route's Prisma `select`s, written out rather than left
+ * to inference.
+ *
+ * Why: the generated Prisma client here is ~90 MB / 2M lines / 946 models.
+ * Resolving a `findMany`'s conditional `GetFindResult<…>` return type against
+ * a declaration file that size can exceed the editor TS server's type
+ * instantiation budget, at which point the language service silently degrades
+ * the query result to `any`. That single degradation cascades into every
+ * symptom seen in the IDE on this file:
+ *
+ *   • `orgAllows.map((a) => …)`  → "Parameter 'a' implicitly has an 'any' type"
+ *   • `new Map(anyPairs)`        → infers `Map<{}, {}>`, because TS cannot
+ *                                  match `any[]` against `readonly [K, V]`
+ *   • `ends.getTime()` /
+ *     `ends.toISOString()`       → "Property … does not exist on type '{}'",
+ *                                  even though the value is really a `Date`
+ *
+ * `tsc` on the CLI has more headroom and compiles the same code clean, so the
+ * errors are editor-only — but they are noise on a real file, and the
+ * annotations below make it correct under either checker. They are not
+ * `as`-casts and not `any` escape hatches: `tsc` still verifies that each
+ * query result is assignable to its annotation, so a schema change that
+ * breaks one of these shapes is still caught at build time.
+ */
+interface AppRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  iconUrl: string | null;
+  baseUrl: string;
+  status: string;
+  requiresOrgAdmin: boolean;
+}
+
+interface OrgAllowRow {
+  appId: string;
+  trialEndsAt: Date | null;
+}
+
+interface UserAccessRow {
+  appId: string;
+  role: string;
+}
+
+interface MembershipRow {
+  orgId: string;
+  role: string;
+}
+
+/** Per-app trial state surfaced to the launcher's "Active" pills + gating. */
+interface TrialInfo {
+  trialEndsAt: string | null;
+  trialState: "active" | "trialing" | "expired";
+  daysLeft: number | null;
+}
+
+/**
  * GET /api/apps/launcher
  *
  * Returns the apps the current user can see in their active org's launcher.
@@ -42,7 +100,7 @@ export async function GET(req: NextRequest) {
   let memberRole: string | undefined;
 
   if (requestedOrgId) {
-    const membership = await db.orgMember.findFirst({
+    const membership: MembershipRow | null = await db.orgMember.findFirst({
       where: { userId, orgId: requestedOrgId, status: "active" },
       select: { orgId: true, role: true },
     });
@@ -58,7 +116,7 @@ export async function GET(req: NextRequest) {
     orgId = session.user.orgId;
     memberRole = session.user.membershipRole;
     if (!orgId) {
-      const membership = await db.orgMember.findFirst({
+      const membership: MembershipRow | null = await db.orgMember.findFirst({
         where: { userId, status: "active" },
         select: { orgId: true, role: true },
         orderBy: { createdAt: "asc" },
@@ -72,7 +130,7 @@ export async function GET(req: NextRequest) {
 
   // Apps in catalog (active only). Exclude `quikit` itself — it IS the
   // launcher; showing it as a tenant tile is nonsensical.
-  const allApps = await db.app.findMany({
+  const allApps: AppRow[] = await db.app.findMany({
     where: { status: { not: "disabled" }, slug: { notIn: ["quikit", ...HIDDEN_APP_SLUGS] } },
     select: {
       id: true,
@@ -98,23 +156,23 @@ export async function GET(req: NextRequest) {
   // launcher. When the selected org has 0 provisioned apps, the launcher
   // renders its existing empty state and points the super-admin at the
   // super-admin panel.
-  const orgAllows = orgId
+  const orgAllows: OrgAllowRow[] = orgId
     ? await db.orgAppAccess.findMany({
         where: { orgId, enabled: true },
         select: { appId: true, trialEndsAt: true },
       })
     : [];
-  const orgAllowedAppIds = new Set(orgAllows.map((a) => a.appId));
+  const orgAllowedAppIds = new Set<string>(orgAllows.map((a) => a.appId));
   // appId → trial expiry (null = no trial / grandfathered / upgraded → active).
-  const orgTrialMap = new Map(orgAllows.map((a) => [a.appId, a.trialEndsAt]));
+  // Explicit type args: without them TS has to infer `[K, V]` from an array
+  // literal, which is the step that collapses to `Map<{}, {}>` in the editor.
+  const orgTrialMap = new Map<string, Date | null>(
+    orgAllows.map((a) => [a.appId, a.trialEndsAt]),
+  );
 
   // Per-app trial state used by the launcher's "Active" pills + gating.
-  function trialInfo(appId: string): {
-    trialEndsAt: string | null;
-    trialState: "active" | "trialing" | "expired";
-    daysLeft: number | null;
-  } {
-    const ends = orgTrialMap.get(appId) ?? null;
+  function trialInfo(appId: string): TrialInfo {
+    const ends: Date | null = orgTrialMap.get(appId) ?? null;
     if (!ends) return { trialEndsAt: null, trialState: "active", daysLeft: null };
     const ms = ends.getTime() - Date.now();
     if (ms > 0) {
@@ -132,13 +190,15 @@ export async function GET(req: NextRequest) {
   //     is their per-app role ("admin" for App Admin, "member" for User).
   //   - Map miss → user is NOT assigned the app and should not see it,
   //     UNLESS they're an Org Admin or Super Admin (full-org visibility).
-  const userAccess = orgId
+  const userAccess: UserAccessRow[] = orgId
     ? await db.userAppAccess.findMany({
         where: { userId, orgId },
         select: { appId: true, role: true },
       })
     : [];
-  const userAppRoles = new Map(userAccess.map((u) => [u.appId, u.role]));
+  const userAppRoles = new Map<string, string>(
+    userAccess.map((u) => [u.appId, u.role]),
+  );
 
   // Visibility (FRD-compliant, post-onboarding-FRD):
   //   - Every user (including super admin) only sees apps the SELECTED ORG
@@ -149,7 +209,7 @@ export async function GET(req: NextRequest) {
   //     has an explicit UserAppAccess row (FR-OA-002 / FR-OA-003)
   //   - `requiresOrgAdmin` apps (e.g. Admin Portal) still gate on the
   //     caller's membership role within the selected org.
-  const visibleApps = allApps.filter((app) => {
+  const visibleApps: AppRow[] = allApps.filter((app) => {
     if (!orgAllowedAppIds.has(app.id)) return false;
     if (app.requiresOrgAdmin && !memberIsAdmin) return false;
     // Per-user scoping for non-admin tiers. Org admin / super admin still
@@ -172,6 +232,7 @@ export async function GET(req: NextRequest) {
     quikvc: process.env.QUIKVC_URL,
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
+    quikchat: process.env.QUIKCHAT_URL,
     quikcrm: process.env.QUIKCRM_URL,
     quikcrmexpress: process.env.QUIKCRMEXPRESS_URL,
     quikfinance: process.env.QUIKFINANCE_URL,
@@ -197,6 +258,7 @@ export async function GET(req: NextRequest) {
     quiktrack: "http://localhost:3004",
     quikinfra: "http://localhost:3006",
     quikvc: "http://localhost:3005",
+    quikchat: "http://localhost:3011",
     quikcrm: "http://localhost:3008",
     quikcrmexpress: "http://localhost:3017",
     quikfinance: "http://localhost:3013",

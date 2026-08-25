@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
 import { htmlToSummaryExcerpt } from "@/lib/api/aiSummary";
+import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
 import manifest from "@/manifest";
 
 /**
@@ -18,10 +19,18 @@ import manifest from "@/manifest";
  * a manual project-membership check (issue's projectId isn't known until
  * after the lookup, so withProjectAccess's path-param resolution doesn't
  * apply here).
+ *
+ * `[id]` accepts the cuid or the issue key — see the resolution note in
+ * app/api/issues/[id]/route.ts. Use the resolved cuid below, never `params.id`.
  */
+// AI Runtime: agent-JWT opt-in (manifest read op `summarize_issue`).
 export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+  const resolved = await resolveIssueIdOrKey(orgId, params.id);
+  if (!resolved) {
+    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  }
   const issue = await db.qtIssue.findFirst({
-    where: { id: params.id, orgId, isDeleted: false },
+    where: { id: resolved.id, orgId, isDeleted: false },
     select: {
       id: true,
       key: true,
@@ -124,4 +133,4 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, {
       url: `${process.env.NEXT_PUBLIC_QUIKIT_URL ?? ""}${manifest.routePrefix}/spaces/${issue.projectId}/issues/${issue.key}`,
     },
   });
-});
+}, { allowAgentJwt: true });

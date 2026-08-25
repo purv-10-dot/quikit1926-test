@@ -12,9 +12,10 @@
  * `SupportPanel` owns its `menu | guide | request` state internally and exposes
  * no hook to intercept that choice, hence the local shell.
  *
- * Only the shell is local. `SupportMenu` and `SupportRequestForm` are imported
- * from `@quikit/ui/support` — no forked copies, so menu copy and the ticket
- * form stay in lockstep with every other app.
+ * Only the shell is local. `SupportMenu`, `SupportRequestForm` and the
+ * `useDraggableFab` drag behaviour are imported from `@quikit/ui/support` — no
+ * forked copies, so menu copy, the ticket form and the way the FAB drags stay in
+ * lockstep with every other app.
  *
  * If packages/ui ever grows a `guideHref` / `onGuideSelect` prop on
  * `SupportLauncher`, delete this file and go back to the one-liner.
@@ -27,7 +28,13 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, MessageCircle, X } from "lucide-react";
 import { getSupportContent } from "@quikit/shared/supportContent";
-import { SupportMenu, SupportRequestForm } from "@quikit/ui/support";
+import {
+  SupportMenu,
+  SupportRequestForm,
+  useDraggableFab,
+  getAnchoredPanelStyle,
+  FAB_SIZE_PX,
+} from "@quikit/ui/support";
 
 /** Views this shell can show. Deliberately no `guide` — that is a route now. */
 type LocalView = "menu" | "request";
@@ -53,6 +60,10 @@ export function QuikScaleSupportLauncher({
   const [view, setView] = useState<LocalView>("menu");
   const launcherRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const { position, isDragging, onPointerDown, didDrag } = useDraggableFab();
+  const anchored = getAnchoredPanelStyle(
+    position ? { ...position, size: FAB_SIZE_PX } : null,
+  );
 
   const { appName } = getSupportContent("quikscale");
 
@@ -117,11 +128,27 @@ export function QuikScaleSupportLauncher({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            style={{ bottom: PANEL_BOTTOM_PX, maxHeight: `calc(100vh - ${PANEL_BOTTOM_PX + 32}px)` }}
-            /* Height follows the view: the menu is two options and should not
+            style={
+              anchored
+                ? {
+                    left: anchored.left,
+                    top: anchored.top,
+                    bottom: anchored.bottom,
+                    maxHeight: anchored.maxHeight,
+                  }
+                : {
+                    bottom: PANEL_BOTTOM_PX,
+                    maxHeight: `calc(100vh - ${PANEL_BOTTOM_PX + 32}px)`,
+                  }
+            }
+            /* Follows the draggable FAB via `anchored`; falls back to the
+               bottom-right corner before hydration measures the viewport.
+               Height follows the view: the menu is two options and should not
                leave a tall empty panel under them; the request form is fixed so
                it doesn't jump as attachments are added and removed. */
-            className={`fixed z-[201] right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden ${
+            className={`fixed z-[201] ${
+              anchored ? "" : "right-4 sm:right-6"
+            } w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden ${
               view === "menu" ? "" : "h-[560px]"
             }`}
           >
@@ -166,14 +193,34 @@ export function QuikScaleSupportLauncher({
       <button
         ref={launcherRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onPointerDown={onPointerDown}
+        onClick={() => {
+          // Swallow the click that ends a drag — dropping the button should not
+          // toggle the panel.
+          if (didDrag()) return;
+          setOpen((o) => !o);
+        }}
         aria-label={open ? "Close support panel" : "Contact support"}
         aria-expanded={open}
-        title="Contact support"
-        style={{ bottom: FAB_BOTTOM_PX }}
+        title="Contact support — drag to move"
+        /* `position` is null until the mount effect measures the viewport, so
+           the first paint keeps the original bottom-right corner styling. */
+        style={
+          position
+            ? { left: position.x, top: position.y, touchAction: "none" }
+            : { bottom: FAB_BOTTOM_PX, touchAction: "none" }
+        }
         /* Sits just under the panel (z-201) so the popup always overlaps it
-           cleanly, and above page chrome like sticky table headers. */
-        className="fixed z-[200] right-4 sm:right-6 h-14 w-14 rounded-full bg-accent-600 hover:bg-accent-700 text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-accent-400/40"
+           cleanly, and above page chrome like sticky table headers.
+           Transitions are enumerated rather than `transition-all` — animating
+           `left`/`top` would make the drag lag behind the pointer. */
+        className={`fixed z-[200] ${
+          position ? "" : "right-4 sm:right-6"
+        } h-14 w-14 rounded-full bg-accent-600 hover:bg-accent-700 text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-[transform,background-color,box-shadow] focus:outline-none focus:ring-4 focus:ring-accent-400/40 ${
+          isDragging
+            ? "cursor-grabbing scale-105 select-none"
+            : "cursor-grab hover:scale-105 active:scale-95"
+        }`}
       >
         {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
       </button>

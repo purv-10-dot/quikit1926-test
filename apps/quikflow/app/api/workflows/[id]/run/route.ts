@@ -31,6 +31,7 @@ export const POST = withOrgAuth<Params>(async ({ orgId, userId }, _req, { params
     where: {
       id: params.id,
       orgId,
+      deletedAt: null,
       OR: [{ scope: "org" }, { scope: "personal", ownerId: userId }],
     },
     select: { id: true, trigger: true, graphNodes: true, graphEdges: true },

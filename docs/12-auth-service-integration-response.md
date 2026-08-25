@@ -12,7 +12,7 @@
 
 Most of your "compatibility findings" are stale — the auth service already uses the claim names and the `org_admin` role value you wanted. Concretely:
 
-- **Canonical JWT claim names**: `id`, `orgId`, `membershipRole` (NextAuth also auto-fills `sub` = `id`).
+- **Canonical JWT claim names**: `id`, `orgId`, `membershipRole` (NextAuth also auto-fills `sub` = `id`). — **See the 2026-08-19 amendment at the end of this doc: the auto-fill claim is true for sign-in-flow sessions but was NOT true for `issue-agent-jwt`, and that gap caused a real outage.**
 - **Canonical org admin role value**: `org_admin` (not `admin`). `"admin"` is a legacy fallback in `ADMIN_TIER_ROLES` for rows seeded before 2026-05-04 — do not write new code that emits it.
 - I am **not renaming anything**. Update your spec to match the names listed above.
 
@@ -80,7 +80,7 @@ Update your spec; we are not changing the auth service. Decisions:
 
 | Your spec | Canonical (current code) | Notes |
 |---|---|---|
-| `sub` | **`id`** | NextAuth auto-fills `sub` to the same value, but the field your code should read is `id`. Don't add another. |
+| `sub` | **`id`** | NextAuth auto-fills `sub` to the same value, but the field your code should read is `id`. Don't add another. ⚠️ **Amended 2026-08-19** — the auto-fill does not happen on `issue-agent-jwt`; that route now sets `sub` explicitly. Both are present and identical. See the amendment section. |
 | `activeOrgId` | **`orgId`** | Lives on JWT and `AuthContext`. The `verify-token` response already exposes it as `activeOrgId` for backward-compat with your spec — but inside JWTs it's just `orgId`. |
 | `orgRole` | **`membershipRole`** | The JWT field is `membershipRole`. `withAuth` then re-exposes it as `ctx.orgRole` (kept for backward-compat with app code that already reads it). |
 | `org_admin` | **`org_admin`** | Already canonical. See §7 P1-B-2. |
@@ -145,7 +145,7 @@ Body:
 - **Q-1 `ttlSeconds` min/max/default**: min `60`, max `900` (15 min), default `300`. Anything outside [60, 900] returns 422. Why: 60s is enough for one hop; 15 min is the hard upper bound — anything longer should re-mint, not reuse. Default matches your spec.
 - **Q-2 `actingAs` enum**: closed enum — `"user" | "ai_agent" | "platform_service" | "scheduled_job"`. Anything else → 422. Defaults to `"user"` if omitted.
 - **Claim names in the minted JWT**: camelCase, matching the rest of our JWT shape — `actingAs`, `actingAgentId`. (No snake_case anywhere in our JWTs.)
-- **Issuer**: I am **not** setting a custom `iss`. NextAuth's `encode()` doesn't expose `iss` cleanly, and adding it would require swapping to a hand-rolled JWT — risky for marginal value. The `actingAs` claim is sufficient signal that this is not a normal user session. If you really need `iss: "auth-service-internal"` for a downstream filter, file a follow-up.
+- **Issuer**: ~~I am **not** setting a custom `iss`. NextAuth's `encode()` doesn't expose `iss` cleanly, and adding it would require swapping to a hand-rolled JWT — risky for marginal value.~~ ⚠️ **Reversed 2026-08-19.** The stated reason was wrong: `encode()` passes its `token` object straight into `jose`'s `EncryptJWT`, so any key in that object becomes a claim — `iss` is one line alongside `actingAs`, no hand-rolled JWT involved. `iss: "auth-service-internal"` is now emitted (constant `AGENT_JWT_ISSUER` in `@quikit/shared`). It is **emitted only, not enforced** — see the amendment section for why enforcement must not go into the shared session path.
 - **TTL semantics**: `expiresAt = iat + ttlSeconds`. The cookie/Bearer is rejected by `verifyJWT` once expired (NextAuth handles it).
 
 **Minted JWT shape** (callers can use it transparently with any `withAuth`):
@@ -153,6 +153,8 @@ Body:
 ```json
 {
   "id": "usr_xxx",
+  "sub": "usr_xxx",
+  "iss": "auth-service-internal",
   "email": "user@example.com",
   "orgId": "org_xxx",
   "membershipRole": "org_admin",
@@ -160,9 +162,12 @@ Body:
   "actingAs": "ai_agent",
   "actingAgentId": "agent_001",
   "iat": 1730800000,
-  "exp": 1730800300
+  "exp": 1730800300,
+  "jti": "..."
 }
 ```
+
+`sub` and `id` deliberately carry the **same** value. Read either; they will never disagree. `actingAgentId` is present only when the caller supplied one — required for `actingAs: "ai_agent"`, optional for `platform_service` / `scheduled_job`.
 
 Note: agent JWTs deliberately **do not** carry a `sessionId`. They are short-lived and not session-bound (you re-mint on demand) — wiring them through Redis session-store would be the wrong abstraction.
 
@@ -285,3 +290,41 @@ Confirmed: the column is `baseUrl` ([packages/database/prisma/schema.prisma:35-6
 Slack me when you've decided on B vs A and I'll ship the JWT permissions update same day.
 
 — Pravin
+
+---
+
+# Amendment — 2026-08-19
+
+Three claims in the original reply were wrong or incomplete. They are corrected inline above and explained here. This section is additive; the original text is struck through rather than deleted, because it was delivered to another team and they built against it.
+
+## 1. `sub` was missing from agent JWTs entirely
+
+**What I said** (§2, TL;DR): "NextAuth auto-fills `sub` to the same value... Don't add another."
+
+**What was true:** NextAuth stamps `sub` in its *sign-in flow* (`core/routes/callback.js`), before the `jwt` callback. `issue-agent-jwt` does not go through that flow — it hand-builds a payload and passes it straight to `encode()`, which adds only `iat`, `exp`, `jti`. **No `sub` was ever set on an agent JWT.**
+
+QuikTrack's verifier requires `sub`. The result was a 100% failure rate on genuinely-minted tokens, presenting as a bare `null` → 401 that was indistinguishable from a forged token. It cost another team most of a day to isolate.
+
+**Fixed:** the route now sets `sub: user.id` alongside `id`. This is conformance to the convention this document already declared, not a new one — next-auth stamps `sub` natively, and all 17 `auth-handoff` routes already stamp `sub` and `id` side by side.
+
+## 2. The reason given for declining `iss` was factually wrong
+
+I wrote that `encode()` "doesn't expose `iss` cleanly" and that adding it "would require swapping to a hand-rolled JWT." Neither is true — `encode({ token })` passes `token` into `new EncryptJWT(token)`, so any key becomes a claim.
+
+That sentence is why the platform had no issuer claim for three months. `iss` is now emitted.
+
+**Emitted, not enforced — and the sequencing is not optional.** Agent JWTs are minted with the *same* `NEXTAUTH_SECRET`-derived key as ordinary session cookies, so the two are separated by claim shape, not cryptography. `iss` exists to make that boundary explicit. But `verifyJWT`/`getToken` serves session cookies **and** Bearer agent JWTs through one code path, and no session cookie carries `iss` — so requiring `iss` inside the shared `withAuth` would reject every logged-in user across all 17 apps. Enforce only in the agent-JWT branch, and only after emit is visible in logs: **emit → verify-and-log → enforce.**
+
+## 3. `actingAgentId` — the contract stands, the verifier was wrong
+
+§3 documents `actingAgentId` as required only when `actingAs: "ai_agent"`. The minter honours that. QuikTrack's verifier required it for *every* non-`user` value, so `platform_service` and `scheduled_job` tokens minted successfully and were then rejected.
+
+**Resolved on the verifier side**, deliberately: tightening the minter instead would have contradicted this document and QuikScale's RBAC doc, and would have pre-committed QuikFlow's scheduled-job design to supplying an agent identity it has no natural source for.
+
+## Still open — a trap worth knowing about
+
+`actingAs` **defaults to `"user"`** when the caller omits it (§3, Q-2). Every agent-JWT verifier rejects `actingAs: "user"`. So omitting `actingAs` yields a token that mints with a 200 and can never authenticate — a third route to a silent 401. **Always send `actingAs` explicitly.** The default is retained for backward compatibility; a future major revision should make the field required.
+
+## Contract test
+
+The mismatch survived because both sides tested against their own assumptions — QuikTrack's suite hand-minted tokens with raw `jose` and hand-wrote `sub`, so it never exercised the real minter. There is now a contract test (`apps/quiktrack/__tests__/unit/agent-jwt.test.ts`) that calls next-auth's real `encode()` with this exact payload and asserts the real verifier accepts it. **If you change the claim set, that test is the thing to update.**

@@ -16,7 +16,6 @@ import { ExportMenu } from "./export-menu";
 import { COLUMN_DEFAULT_WIDTHS, resolveColumns } from "./list-columns";
 import { BulkActionBar } from "./bulk-action-bar";
 import { ImportModal } from "./import-modal";
-import { downloadBlob, toCsv, TEMPLATE_HEADERS } from "./csv-utils";
 import {
   type IssueStatus,
   type ListFilters,
@@ -362,26 +361,6 @@ export function ListView({ projectId }: Props) {
     setRefreshTick((t) => t + 1);
   }, [projectId, selected]);
 
-  const handleBulkExport = useCallback(() => {
-    if (selected.size === 0) return;
-    const picked = issues.filter((i) => selected.has(i.id));
-    const headerRow = TEMPLATE_HEADERS as unknown as string[];
-    const dataRows = picked.map((i) => [
-      i.title,
-      i.type,
-      i.priority ?? "",
-      i.status?.name ?? "",
-      i.assignee?.email ?? "",
-      i.storyPoints ?? "",
-      i.eta ?? "",
-      i.dueDate ? i.dueDate.slice(0, 10) : "",
-      "", // description omitted from export — preserves template-roundtrip
-    ]);
-    const csv = toCsv([headerRow, ...dataRows]);
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadBlob(`quiktrack-export-${stamp}.csv`, csv);
-  }, [issues, selected]);
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-5 py-3">
@@ -434,9 +413,7 @@ export function ListView({ projectId }: Props) {
         count={selected.size}
         onClear={() => setSelected(new Set())}
         onDelete={handleBulkDelete}
-        onExport={handleBulkExport}
         canDelete={canDelete}
-        canExport={canExport}
       />
 
       {error && (

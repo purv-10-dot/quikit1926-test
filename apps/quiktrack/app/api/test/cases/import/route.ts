@@ -26,6 +26,12 @@ const caseSchema = z.object({
   /** File row number, echoed back in the summary so errors are locatable. */
   rowNumber: z.number().int().min(1),
   title: z.string().trim().min(1).max(255),
+  /**
+   * Body layout. Constrained to the four known kinds — the same values the
+   * `QtTestTemplate_kind_check` CHECK constraint permits, so an unknown string cannot
+   * reach the resolution map.
+   */
+  templateKind: z.enum(["TEXT", "STEPS", "BDD", "EXPLORATORY"]).optional(),
   sectionPath: z.array(z.string().trim().min(1).max(255)).max(10).default([]),
   description: z.string().max(10_000).nullish(),
   preconditions: z.string().max(10_000).nullish(),

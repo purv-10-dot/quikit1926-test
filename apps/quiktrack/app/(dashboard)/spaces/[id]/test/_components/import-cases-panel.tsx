@@ -129,6 +129,7 @@ export function ImportCasesPanel({
           cases: cases.map((c) => ({
             rowNumber: c.rowNumber,
             title: c.title,
+            templateKind: c.templateKind,
             sectionPath: c.sectionPath,
             description: c.description,
             preconditions: c.preconditions,

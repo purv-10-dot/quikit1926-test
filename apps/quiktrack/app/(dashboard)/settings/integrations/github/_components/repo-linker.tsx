@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Play, Link2, Link2Off, ListChecks } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { BackfillChecklist, type RepoBackfillStatus } from "./backfill-checklist";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 interface AvailableRepo {
   repoId: string;
@@ -126,7 +127,7 @@ export function RepoLinker({ installationRowId }: { installationRowId: string })
                       <Button
                         onClick={() => backfill.mutate(repo.repoId)}
                         disabled={backfill.isPending}
-                        className="bg-accent-50 text-accent-700 hover:bg-accent-100 inline-flex items-center gap-1.5 text-xs dark:bg-accent-900/20 dark:text-accent-300"
+                        className="border border-gray-200 bg-transparent text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 text-xs dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                       >
                         {backfill.isPending && backfill.variables === repo.repoId ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -142,7 +143,15 @@ export function RepoLinker({ installationRowId }: { installationRowId: string })
                         <ListChecks className="h-3.5 w-3.5" /> Status
                       </Button>
                       <Button
-                        onClick={() => unlink.mutate(repo.repoId)}
+                        onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: "Unlink repository?",
+                            message: `"${repo.repoFullName}" will no longer surface its branches, commits, or pull requests on work items. You can re-link it any time.`,
+                            confirmText: "Unlink",
+                            danger: true,
+                          });
+                          if (ok) unlink.mutate(repo.repoId);
+                        }}
                         disabled={unlink.isPending}
                         className="border border-gray-200 bg-transparent text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 text-xs dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                       >

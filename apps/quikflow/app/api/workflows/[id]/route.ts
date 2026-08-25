@@ -13,6 +13,7 @@ async function loadVisible(orgId: string, userId: string, id: string) {
     where: {
       id,
       orgId,
+      deletedAt: null,
       OR: [{ scope: "org" }, { scope: "personal", ownerId: userId }],
     },
   });
@@ -82,7 +83,11 @@ export const PATCH = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, req,
   return NextResponse.json({ success: true, data: { id: params.id } });
 });
 
-/** DELETE /api/workflows/:id — same permission rule as PATCH. */
+/**
+ * DELETE /api/workflows/:id — same permission rule as PATCH. Soft-delete only
+ * (sets deletedAt); the row stays for audit/restore, and every read filters
+ * `deletedAt: null` back out (see loadVisible + GET /api/workflows).
+ */
 export const DELETE = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, _req, { params }) => {
   const wf = await loadVisible(orgId, userId, params.id);
   if (!wf) {
@@ -92,6 +97,10 @@ export const DELETE = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, _re
   if (!canDelete) {
     return NextResponse.json({ success: false, error: "Not allowed" }, { status: 403 });
   }
-  await db.wfWorkflow.delete({ where: { id: params.id } });
+  await db.wfWorkflow.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
+
+  // A deleted workflow must stop firing on schedule immediately.
+  await syncSchedule({ orgId, workflowId: params.id, trigger: wf.trigger, active: false });
+
   return NextResponse.json({ success: true, data: { id: params.id } });
 });

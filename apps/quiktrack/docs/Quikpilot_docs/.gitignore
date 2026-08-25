@@ -1,0 +1,17 @@
+# Re-include this folder's Markdown. The repo-root .gitignore blanket-ignores
+# `*.md` at every depth, and `common_setup96` dropped the negations that used to
+# rescue app docs — so without this file every design note, decisions log and
+# session record written here is invisible to `git add`.
+#
+# This is not hypothetical: twelve QuikPilot docs were swallowed exactly this way
+# and had to be recovered with `git add -f`. A doc that silently never gets
+# committed reads as "written" right up until someone else clones the repo.
+#
+# Why the negation is honoured: a nested .gitignore takes precedence over the
+# parent for the paths it covers, and the root's `*.md` matches FILES, not the
+# `Quikpilot_docs/` directory — an ignored directory would never be descended
+# into and no negation inside it could win. Same mechanism as
+# `apps/quikchat/.gitignore`.
+#
+# Scoped to this folder and below. The root rule still holds everywhere else.
+!*.md

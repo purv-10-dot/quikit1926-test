@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { MentionItem } from "@/components/editor/mention";
+import { CopyIssueLinkButton } from "@/components/copy-issue-link-button";
 import { IssueTitleEditor } from "@/components/issue-title-editor";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";
@@ -46,6 +47,8 @@ const WORK_TYPE_LABEL: Record<IssueType, string> = {
 interface Props {
   issue: IssuePageData;
   projectId: string;
+  /** Human-readable project key for readable breadcrumb links (falls back to id). */
+  projectKey: string;
   projectName: string;
   typeIcon: { Icon: React.ElementType; color: string };
   onPatch: (data: Record<string, unknown>) => Promise<void>;
@@ -74,6 +77,7 @@ interface Props {
 export function IssueHeaderSections({
   issue,
   projectId,
+  projectKey,
   projectName,
   typeIcon: T,
   onPatch,
@@ -108,7 +112,7 @@ export function IssueHeaderSections({
           </Link>
           <span className="text-gray-300">/</span>
           <Link
-            href={`/spaces/${projectId}/board`}
+            href={`/spaces/${projectKey}/board`}
             className="hover:text-gray-800 inline-flex items-center gap-1.5 text-gray-700"
           >
             <span className="h-4 w-4 rounded bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center">
@@ -124,7 +128,7 @@ export function IssueHeaderSections({
             <>
               <span className="text-gray-300">/</span>
               <Link
-                href={`/spaces/${projectId}/work/${issue.parent.id}`}
+                href={`/browse/${issue.parent.key}`}
                 className="hover:text-gray-800 inline-flex items-center gap-1 text-gray-700"
               >
                 <Zap className="h-3 w-3 text-blue-500" />
@@ -136,7 +140,7 @@ export function IssueHeaderSections({
               <span className="text-gray-300">/</span>
               {issue.epic ? (
                 <Link
-                  href={`/spaces/${projectId}/work/${issue.epic.id}`}
+                  href={`/browse/${issue.epic.key}`}
                   className="hover:text-gray-800 inline-flex items-center gap-1 text-gray-700"
                 >
                   <Zap className="h-3 w-3 text-purple-500" />
@@ -173,6 +177,7 @@ export function IssueHeaderSections({
               >
                 {issue.key}
               </Link>
+              <CopyIssueLinkButton issueKey={issue.key} />
               {typeMenuOpen && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
                   <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
@@ -203,16 +208,19 @@ export function IssueHeaderSections({
               )}
             </div>
           ) : (
-            <Link
-              href={`/browse/${issue.key}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-gray-800 hover:underline inline-flex items-center gap-1 text-gray-700"
-              title="Open in new tab"
-            >
-              <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
-              {issue.key}
-            </Link>
+            <span className="inline-flex items-center gap-1">
+              <Link
+                href={`/browse/${issue.key}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-gray-800 hover:underline inline-flex items-center gap-1 text-gray-700"
+                title="Open in new tab"
+              >
+                <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
+                {issue.key}
+              </Link>
+              <CopyIssueLinkButton issueKey={issue.key} />
+            </span>
           )}
         </div>
         <WatchButton issueId={issue.id} projectId={projectId} />

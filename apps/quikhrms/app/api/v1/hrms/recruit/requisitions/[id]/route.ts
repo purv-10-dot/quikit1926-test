@@ -1,22 +1,41 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
+import { successResponse, notFound, validationError, internalError, forbidden } from "@/lib/api-response";
 import { updateRequisitionSchema } from "@/lib/validations/recruit";
 import { holdApplicationsForRequisition } from "@/lib/recruit/requisition-hold";
 import { createAuditLog } from "@/lib/utils/audit";
 import { countBusinessDays, getHolidayDateSet } from "@/lib/recruit/sla";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
+    const canSeeAll = permissions.includes("*") || permissions.includes("hrms.recruit.read");
+    const canSeeSelf = canSeeAll || permissions.includes("hrms.recruit.read_self");
+    if (!canSeeSelf) return forbidden("No recruitment read permission");
+
+    // Recruiter (self-only) scope: block a direct link/URL to a requisition
+    // they're not assigned to, same rule as the list endpoint.
+    const employeeId = canSeeAll ? null : await resolveEmployeeId(orgId, userId);
+
     const r = await prisma.jobRequisition.findFirst({
-      where: { id: params.id, orgId, deletedAt: null },
+      where: {
+        id: params.id, orgId, deletedAt: null,
+        ...(!canSeeAll && { OR: [
+          { recruiterId: employeeId },
+          { recruiterSplits: { some: { employeeId: employeeId ?? "", deletedAt: null } } },
+        ] }),
+      },
       include: {
         department: { select: { id: true, name: true } },
         hiringManager: { select: { id: true, firstName: true, lastName: true } },
         recruiter: { select: { id: true, firstName: true, lastName: true } },
+        raiser: { select: { id: true, firstName: true, lastName: true } },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+        pipeline: { select: { id: true, name: true, isDefault: true } },
         jobLevel: { select: { id: true, code: true, name: true, slaDays: true } },
         recruiterSplits: { where: { deletedAt: null }, select: { employeeId: true, positionsAssigned: true } },
+        _count: { select: { applications: true } },
         applications: { where: { deletedAt: null }, include: {
           candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
         }},
@@ -25,7 +44,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     if (!r) return notFound("Requisition not found");
     return successResponse(r);
   } catch (error) { console.error("GET /recruit/requisitions/:id error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.read"] });
+});
 
 export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {

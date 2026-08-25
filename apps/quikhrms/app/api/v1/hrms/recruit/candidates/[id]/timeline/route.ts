@@ -221,14 +221,13 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     }
 
     // ─── Document events ───────────────────────────────────
-    const bundleLabel = (b: string) => (b === "PreOffer" ? "Pre-Offer" : "Post-Offer");
     for (const r of docRequests) {
       entries.push({
         id: `docreq-${r.id}`,
         kind: "DocumentsRequested",
-        title: `${bundleLabel(r.bundle)} documents requested`,
+        title: "Documents requested",
         description: (r.reminderCount ?? 0) > 0 ? `${r.reminderCount} reminder${r.reminderCount === 1 ? "" : "s"} sent` : null,
-        metadata: { requestId: r.id, bundle: r.bundle },
+        metadata: { requestId: r.id },
         actor: resolveActor(r.createdBy),
         at: (r.requestSentAt ?? r.createdAt).toISOString(),
       });
@@ -240,7 +239,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
           kind: "DocumentUploaded",
           title: `${docName} uploaded`,
           description: "Uploaded by candidate",
-          metadata: { uploadId: u.id, bundle: r.bundle },
+          metadata: { uploadId: u.id },
           actor: null,
           at: u.uploadedAt.toISOString(),
         });
@@ -250,7 +249,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
             id: `docapr-${u.id}`,
             kind: "DocumentApproved",
             title: `${docName} approved`,
-            metadata: { uploadId: u.id, bundle: r.bundle },
+            metadata: { uploadId: u.id },
             actor: resolveActor(u.reviewedBy),
             at: u.reviewedAt.toISOString(),
           });
@@ -260,7 +259,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
             kind: "DocumentRejected",
             title: `${docName} rejected`,
             description: u.rejectionReason ?? null,
-            metadata: { uploadId: u.id, bundle: r.bundle },
+            metadata: { uploadId: u.id },
             actor: resolveActor(u.reviewedBy),
             at: u.reviewedAt.toISOString(),
           });

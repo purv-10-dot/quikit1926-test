@@ -114,14 +114,14 @@ export function TestStatusesView() {
     // Left-aligned, not centred: every other page under /settings starts at the
     // sidebar edge, and centring this one left a wide empty gutter beside the nav.
     <div className="max-w-3xl px-6 py-6">
-      <h1 className="text-lg font-semibold text-gray-900">QuikTest configuration</h1>
-      <p className="mt-1 text-sm text-gray-500">
+      <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">QuikTest configuration</h1>
+      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
         The outcomes a tester can record and the case layouts they can choose. Both
         apply to <strong className="font-medium text-gray-700">every project</strong>{" "}
         in this organisation.
       </p>
 
-      <h2 className="mt-6 text-sm font-semibold text-gray-900">Test statuses</h2>
+      <h2 className="mt-6 text-sm font-semibold text-gray-900 dark:text-gray-100">Test statuses</h2>
 
       {/* State first: if something is missing, that is the only thing worth reading
           on this page. */}
@@ -185,8 +185,8 @@ export function TestStatusesView() {
       {/* Templates sit on the same page because they fail the same way and are fixed
           by the same button — splitting them would mean two screens for one class of
           problem. */}
-      <h2 className="mt-8 text-sm font-semibold text-gray-900">Case templates</h2>
-      <p className="mt-1 text-sm text-gray-500">
+      <h2 className="mt-8 text-sm font-semibold text-gray-900 dark:text-gray-100">Case templates</h2>
+      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
         Which layout the case editor offers — steps, a single expected result, BDD
         prose, or an exploratory charter.
       </p>
@@ -201,7 +201,7 @@ export function TestStatusesView() {
           type="button"
           onClick={restore}
           disabled={busy}
-          className="shrink-0 whitespace-nowrap rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
         >
           {busy ? "Restoring…" : "Restore missing defaults"}
         </button>
