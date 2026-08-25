@@ -18,14 +18,12 @@ import {
   Switch,
   Users,
 } from "@/components/ui";
-import { UserPlus } from "lucide-react";
 import { fetchMyPresence, updateMyPresence } from "@/lib/api";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
 import { DevicesSettings } from "@/components/settings/DevicesSettings";
 import { NotificationSettingsPanel } from "@/components/notifications/NotificationSettingsModal";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
 import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
-import { UsersTab } from "@/app/(dashboard)/settings/users/components/UsersTab";
 import { SupportStatusTab } from "@quikit/ui/support";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import { STORAGE_KEY, THEMES } from "@/lib/accent-theme";
@@ -39,7 +37,6 @@ type SettingsCat =
   | "calls"
   | "privacy"
   | "roles"
-  | "users"
   | "support";
 
 const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
@@ -61,12 +58,6 @@ const ROLES_CAT: { key: SettingsCat; label: string; icon: ReactNode } = {
   key: "roles",
   label: "Roles & Permissions",
   icon: <Shield size={17} />,
-};
-
-const USERS_CAT: { key: SettingsCat; label: string; icon: ReactNode } = {
-  key: "users",
-  label: "Users & Invites",
-  icon: <UserPlus size={17} />,
 };
 
 export interface SettingsModuleProps {
@@ -107,7 +98,7 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
   // never flashes for non-admins.
   const { isAdmin } = useMyPermissions();
   const visibleCategories = useMemo(
-    () => (isAdmin ? [...CATEGORIES, USERS_CAT, ROLES_CAT] : CATEGORIES),
+    () => (isAdmin ? [...CATEGORIES, ROLES_CAT] : CATEGORIES),
     [isAdmin],
   );
 
@@ -275,10 +266,6 @@ export function SettingsModule({ currentUserId, displayName, avatarUrl }: Settin
           // doesn't overflow the panel — reused verbatim, no restyle.
           <div className="qc-set-embed">
             <RolesTab />
-          </div>
-        ) : cat === "users" ? (
-          <div className="qc-set-scroll">
-            <UsersTab />
           </div>
         ) : (
         <div className="qc-set-scroll">

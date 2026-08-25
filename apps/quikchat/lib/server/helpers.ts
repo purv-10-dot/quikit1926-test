@@ -7,7 +7,6 @@ import {
   type PublicUser,
   type ReactionSummary,
 } from "@/lib/shared";
-import { getGuestUserIds } from "@/lib/authz/permissions";
 
 /** A QcMessage row as returned by Prisma. */
 export interface MessageRow {
@@ -27,45 +26,28 @@ export interface MessageRow {
   createdAt: Date;
 }
 
-/**
- * Load PublicUser projections for a set of user ids (deduped).
- *
- * `orgId` is optional and additive: pass it to also populate `isGuest` (one
- * extra indexed query, batched alongside the user fetch) for surfaces that
- * render the "External" badge (channel members, channel list, org directory).
- * Callers that don't need the badge (calendar attendees, call history, the
- * AI-agent name-flattening paths) can omit it — behavior is identical to
- * before this field existed.
- */
+/** Load PublicUser projections for a set of user ids (deduped). */
 export async function loadPublicUsers(
   userIds: Array<string | null | undefined>,
-  orgId?: string,
 ): Promise<Map<string, PublicUser>> {
   const ids = Array.from(new Set(userIds.filter((id): id is string => !!id)));
   if (!ids.length) return new Map();
-  const [users, guestIds] = await Promise.all([
-    prisma.user.findMany({ where: { id: { in: ids } } }),
-    orgId ? getGuestUserIds(orgId, ids) : Promise.resolve(new Set<string>()),
-  ]);
-  return new Map(users.map((u) => [u.id, toPublicUser(u, guestIds.has(u.id))]));
+  const users = await prisma.user.findMany({ where: { id: { in: ids } } });
+  return new Map(users.map((u) => [u.id, toPublicUser(u)]));
 }
 
-export function toPublicUser(
-  user: {
-    id: string;
-    firstName: string | null;
-    lastName: string | null;
-    avatar: string | null;
-    email?: string;
-  },
-  isGuest?: boolean,
-): PublicUser {
+export function toPublicUser(user: {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  avatar: string | null;
+  email?: string;
+}): PublicUser {
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
   return {
     id: user.id,
     displayName: fullName || user.email || "Unknown",
     avatarUrl: user.avatar ?? null,
-    ...(isGuest ? { isGuest: true } : {}),
   };
 }
 

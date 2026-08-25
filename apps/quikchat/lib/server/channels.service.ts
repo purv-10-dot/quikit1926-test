@@ -621,7 +621,7 @@ export async function listForUser(ctx: OrgContext): Promise<ChannelList> {
   const allMembers = await prisma.qcChannelMember.findMany({
     where: { orgId: ctx.orgId, channelId: { in: channelIds } },
   });
-  const userMap = await loadPublicUsers(allMembers.map((m) => m.userId), ctx.orgId);
+  const userMap = await loadPublicUsers(allMembers.map((m) => m.userId));
 
   const allMessages = await prisma.qcMessage.findMany({
     where: { orgId: ctx.orgId, channelId: { in: channelIds } },
@@ -669,7 +669,7 @@ export async function findById(ctx: OrgContext, channelId: string): Promise<Chan
   const membership = members.find((m) => m.userId === ctx.userId);
   if (!membership) throw new HttpError(403, "Not a member of this channel");
 
-  const userMap = await loadPublicUsers(members.map((m) => m.userId), ctx.orgId);
+  const userMap = await loadPublicUsers(members.map((m) => m.userId));
   const last = await prisma.qcMessage.findFirst({
     where: { orgId: ctx.orgId, channelId },
     orderBy: { createdAt: "desc" },
@@ -820,7 +820,7 @@ export async function listMembers(ctx: OrgContext, channelId: string): Promise<C
     where: { orgId: ctx.orgId, channelId },
     orderBy: { joinedAt: "asc" },
   });
-  const userMap = await loadPublicUsers(members.map((m) => m.userId), ctx.orgId);
+  const userMap = await loadPublicUsers(members.map((m) => m.userId));
   return members.map((m) => {
     const pub = userMap.get(m.userId) ?? {
       id: m.userId,

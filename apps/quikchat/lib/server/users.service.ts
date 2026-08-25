@@ -1,7 +1,6 @@
 import { db as prisma } from "@quikit/database";
 import type { OrgContext, PublicUser } from "@/lib/shared";
 import { toPublicUser } from "./helpers";
-import { getGuestUserIds } from "@/lib/authz/permissions";
 
 export interface ListOrgUsersOptions {
   /** Name/email search (case-insensitive substring). */
@@ -57,6 +56,5 @@ export async function listOrgUsers(
     orderBy: { firstName: "asc" },
     take: Math.min(opts.limit ?? 25, 50),
   });
-  const guestIds = await getGuestUserIds(ctx.orgId, users.map((u) => u.id));
-  return users.map((u) => toPublicUser(u, guestIds.has(u.id)));
+  return users.map(toPublicUser);
 }

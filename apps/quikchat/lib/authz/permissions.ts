@@ -235,21 +235,4 @@ export function forbidden(
   return Response.json({ error: message }, { status: 403 });
 }
 
-/**
- * Batch "which of these users currently hold the Guest role" — powers the
- * Teams-style "External" badge on `PublicUser.isGuest`. One indexed query
- * regardless of how many userIds are passed; empty input/no App row short-
- * circuits to an empty set (fails closed — no badge rather than a wrong one).
- */
-export async function getGuestUserIds(orgId: string, userIds: string[]): Promise<Set<string>> {
-  if (userIds.length === 0) return new Set();
-  const appId = await getQuikChatAppId();
-  if (!appId) return new Set();
-  const rows = await db.qcUserAppRole.findMany({
-    where: { orgId, userId: { in: userIds }, role: { appId, name: "Guest" } },
-    select: { userId: true },
-  });
-  return new Set(rows.map((r) => r.userId));
-}
-
 export { getQuikChatAppId };

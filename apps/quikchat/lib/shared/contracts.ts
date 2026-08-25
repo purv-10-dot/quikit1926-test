@@ -27,14 +27,6 @@ export interface PublicUser {
   /** Maps from the stub `User.username` (later the real user's display field). */
   displayName: string;
   avatarUrl: string | null;
-  /**
-   * True when this user's QuikChat RBAC role is the seeded "Guest" tier —
-   * drives the Teams-style "External" badge next to their name. Optional and
-   * omitted (never `false`) when not computed, so every existing hand-built
-   * `PublicUser` literal (tests, callers that don't pass an orgId to
-   * `loadPublicUsers`) is unaffected.
-   */
-  isGuest?: boolean;
 }
 
 export interface ReactionSummary {

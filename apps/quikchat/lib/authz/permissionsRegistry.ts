@@ -45,14 +45,7 @@ export const PERMISSION_TREE: PermissionModule[] = [
     key: "Channel",
     label: "Channels",
     leaves: [
-      // "view" REMOVED (was declared with no `userCan(..., "Channel", "view")`
-      // call anywhere — the same dead-checkbox trap as the retired
-      // `Channel.InviteExternal` below). Viewing a channel is controlled by
-      // `QcChannelMember` rows (actual membership), not RBAC — a role can never
-      // gate what channels its holders see, only whether they may CREATE one.
-      // "update"/"delete" REMOVED for the same reason: channel rename/delete is
-      // gated by the separate `Channel.Moderate` leaf below, not this one.
-      { resource: "Channel", label: "Channels", actions: ["create"] },
+      { resource: "Channel", label: "Channels", actions: ACTIONS },
       // DECISION 2 — org_admin decides who may create public channels
       // (default Member OFF). Matrix cell.
       { resource: "Channel.Public", label: "Create Public Channel", actions: ["create"] },
@@ -80,12 +73,7 @@ export const PERMISSION_TREE: PermissionModule[] = [
     key: "Assistant",
     label: "AI Assistant",
     leaves: [
-      // "view" REMOVED — no `userCan(..., "Assistant", "view")` call exists
-      // anywhere; only `userCan(..., "Assistant", "create")` gates opening/using
-      // the assistant (channels.service.ts findOrCreateAiChat, the assist
-      // route). Same dead-checkbox category as `Channel`'s view/update/delete
-      // above.
-      { resource: "Assistant", label: "Use Assistant", actions: ["create"] },
+      { resource: "Assistant", label: "Use Assistant", actions: ["view", "create"] },
       {
         resource: "Assistant.IngestPrivate",
         label: "Ingest to Private KB",

@@ -189,13 +189,6 @@ function ShellInner({
   const [view, setView] = useState<"chat" | "calendar" | "calls" | "notifications" | "settings">(
     "chat",
   );
-  // Set right before flipping `view` back to "chat" after scheduling a real
-  // meeting from the Calendar module (CalendarModule has no channel context
-  // of its own — it lives outside ChatWorkspace). ChatWorkspace is always
-  // unmounted while another view is active, so this becomes its fresh
-  // `initialChannelId` on remount and its own once-per-mount deep-link effect
-  // picks it up — no extra plumbing needed on that side.
-  const [scheduledChannelId, setScheduledChannelId] = useState<string | undefined>(undefined);
 
   // RBAC v2 module gate (Phase 3, COSMETIC — the server `gateModuleApi` gate is
   // the enforcement). Hide the Calls / Calendar rail entries when their module
@@ -355,13 +348,7 @@ function ShellInner({
         </div>
       </aside>
       {effectiveView === "calendar" ? (
-        <CalendarModule
-          currentUserId={currentUserId}
-          onOpenChannel={(channelId) => {
-            setScheduledChannelId(channelId);
-            setView("chat");
-          }}
-        />
+        <CalendarModule currentUserId={currentUserId} />
       ) : effectiveView === "calls" ? (
         <CallsModule />
       ) : effectiveView === "notifications" ? (
@@ -380,7 +367,7 @@ function ShellInner({
           currentUserId={currentUserId}
           currentUserName={displayName}
           realtimeUrl={realtimeUrl}
-          initialChannelId={scheduledChannelId ?? initialChannelId}
+          initialChannelId={initialChannelId}
         />
       )}
       <NotificationSettingsModal
