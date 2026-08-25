@@ -74,7 +74,7 @@ CREATE INDEX "MeetingSegmentFact_orgId_clientId_meetingDate_idx"
 
 ALTER TABLE "app_quikscale"."MeetingSegmentFact"
   ADD CONSTRAINT "MeetingSegmentFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingSegmentFact"
   ADD CONSTRAINT "MeetingSegmentFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -128,7 +128,7 @@ CREATE INDEX "MeetingKpiFact_orgId_clientMemberId_meetingDate_idx"
 
 ALTER TABLE "app_quikscale"."MeetingKpiFact"
   ADD CONSTRAINT "MeetingKpiFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingKpiFact"
   ADD CONSTRAINT "MeetingKpiFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -182,7 +182,7 @@ CREATE INDEX "MeetingGapFact_orgId_normalizedKey_idx"
 
 ALTER TABLE "app_quikscale"."MeetingGapFact"
   ADD CONSTRAINT "MeetingGapFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingGapFact"
   ADD CONSTRAINT "MeetingGapFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -237,7 +237,7 @@ CREATE INDEX "MeetingDiscussionFact_orgId_clientId_meetingDate_idx"
 
 ALTER TABLE "app_quikscale"."MeetingDiscussionFact"
   ADD CONSTRAINT "MeetingDiscussionFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingDiscussionFact"
   ADD CONSTRAINT "MeetingDiscussionFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")

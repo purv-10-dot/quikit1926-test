@@ -102,7 +102,7 @@ CREATE INDEX "MeetingReportVersion_orgId_clientId_reportKind_generatedAt_idx"
 
 ALTER TABLE "app_quikscale"."MeetingReportVersion"
   ADD CONSTRAINT "MeetingReportVersion_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ---------------------------------------------------------------------------
 -- 4. MeetingReportJob — generation lock, progress, idempotency
@@ -147,7 +147,7 @@ CREATE INDEX "MeetingReportJob_status_lockedUntil_idx"
 
 ALTER TABLE "app_quikscale"."MeetingReportJob"
   ADD CONSTRAINT "MeetingReportJob_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ---------------------------------------------------------------------------
 -- 5. AiUsageLog — one row per LLM call, including failures
@@ -200,4 +200,4 @@ CREATE INDEX "AiUsageLog_reportKind_reportId_idx"
 
 ALTER TABLE "app_quikscale"."AiUsageLog"
   ADD CONSTRAINT "AiUsageLog_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;

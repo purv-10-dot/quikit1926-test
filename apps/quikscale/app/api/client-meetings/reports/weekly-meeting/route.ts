@@ -6,6 +6,8 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { PROMPT_VERSION as WM_PROMPT_VERSION } from "@/lib/ai/prompts/wmProse";
 import { WM_SCHEMA_VERSION } from "@/lib/reports/wmCompose";
+import { parseDeleteBody, guardValidated } from "@/lib/reports/deleteGuard";
+import { audit, requestContext } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -169,4 +171,73 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
   });
 
   return NextResponse.json({ success: true, data: updated });
+});
+
+/**
+ * DELETE /api/client-meetings/reports/weekly-meeting?weeklyMeetingId=…
+ *
+ * Soft-delete the Weekly Meeting Report.
+ *
+ * The extracted facts and segments the report was computed from stay exactly
+ * where they are: extraction is the expensive half of the pipeline (a
+ * three-hour meeting is chunked and read once), and a regeneration reuses it
+ * for a single small model call. Deleting the report therefore costs nothing
+ * to undo by regenerating.
+ *
+ * A signed-off report requires `confirmValidated: true`.
+ *
+ * PERMISSION — `ClientMeetings.Report: delete`.
+ */
+export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
+  const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid query" },
+      { status: 400 },
+    );
+  }
+
+  const existing = await db.clientWeeklyMeetingReport.findFirst({
+    where: { orgId, weeklyMeetingId: parsed.data.weeklyMeetingId, deletedAt: null },
+    select: {
+      id: true,
+      clientId: true,
+      meetingDate: true,
+      validatedAt: true,
+      currentVersion: true,
+      client: { select: { name: true } },
+    },
+  });
+  if (!existing) {
+    return NextResponse.json({ success: false, error: "Report not found" }, { status: 404 });
+  }
+
+  const { reason, confirmValidated } = await parseDeleteBody(req);
+  const blocked = guardValidated(existing.validatedAt, confirmValidated, "This weekly meeting report");
+  if (blocked) return blocked;
+
+  await db.clientWeeklyMeetingReport.update({
+    where: { id: existing.id },
+    data: { deletedAt: new Date(), updatedBy: userId },
+  });
+
+  const dateLabel = existing.meetingDate.toISOString().slice(0, 10);
+  await audit.log({
+    entityType: "MEETING_REPORT",
+    entityId: existing.id,
+    action: "DELETE",
+    actor: { userId, orgId, teamId: null },
+    reason,
+    snapshot: {
+      name: `Weekly meeting report · ${existing.client?.name ?? "—"} · ${dateLabel}`,
+      reportType: "WEEKLY_MEETING",
+      clientId: existing.clientId,
+      weeklyMeetingId: parsed.data.weeklyMeetingId,
+      version: existing.currentVersion,
+      wasValidated: Boolean(existing.validatedAt),
+    },
+    ...requestContext(req),
+  });
+
+  return NextResponse.json({ success: true, data: { id: existing.id } });
 });

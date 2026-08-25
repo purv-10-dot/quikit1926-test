@@ -1,17 +1,43 @@
 "use client";
 
 /**
- * Export Transcript modal — view + download Fathom meeting transcripts that
- * QuikFlow matched into Meeting Rhythm. Daily / Weekly / Month / Unassigned
- * tabs pick the scope; a two-pane layout lists matches on the left and shows
- * the selected transcript (summary, action items, full text) on the right.
- * Download as .docx (server route) or .txt (client-side).
+ * Export Transcript modal — the single window onto everything the AI meeting
+ * pipeline produced: the Fathom transcripts QuikFlow matched into Meeting
+ * Rhythm, and the four reports built from them.
+ *
+ * Structure follows the meeting rhythm itself rather than the data model:
+ *
+ *   Daily      → a day's huddle transcripts, and each one's daily report
+ *   Weekly     → the week's weekly-meeting transcripts, the Weekly Meeting
+ *                Report, and the Daily-Huddle rollup for that week
+ *   Month      → the month's transcripts, and the Monthly Report
+ *   Unassigned → recordings QuikFlow could not match to a client
+ *
+ * Each scope has ONE list on the left and ONE detail pane on the right, so the
+ * same muscle memory works everywhere. The sub-views ("Transcripts / Report")
+ * are what keep the reports reachable without a second entry point — Meeting
+ * Rhythm → Dashboard stays the only way in.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import {
+  CalendarDays,
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  FileQuestion,
+  Sun,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { MeetingReportPanel } from "./MeetingReportPanel";
 import { UploadTranscriptModal } from "./UploadTranscriptModal";
 import { WeeklyRollupPanel } from "./WeeklyRollupPanel";
+import { WeeklyMeetingReportPanel } from "./WeeklyMeetingReportPanel";
+import { MonthlyReportPanel } from "./MonthlyReportPanel";
+import { ConfirmDeleteDialog, runDelete, type DeleteTarget } from "./ConfirmDeleteDialog";
+import { Banner, EmptyState, Skeleton } from "./reportUi";
 
 interface ClientOpt { id: string; name: string }
 
@@ -34,6 +60,8 @@ interface TranscriptRow {
 }
 
 type Scope = "daily" | "weekly" | "month" | "unassigned";
+/** Which pane the current scope is showing. Not every scope offers all three. */
+type View = "transcripts" | "wmReport" | "rollup" | "monthlyReport";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -54,8 +82,25 @@ function monthBounds(year: number, month1: number): { from: string; to: string }
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
+/** Shift an ISO date by whole days, staying in UTC. */
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function fmtDate(iso: string | null): string {
   return iso ? new Date(iso).toISOString().slice(0, 10) : "—";
+}
+
+function prettyDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${iso}T00:00:00.000Z`));
 }
 
 function attendeeText(rows: TranscriptRow["attendees"]): string {
@@ -87,24 +132,56 @@ export function ExportTranscriptModal({
   const [date, setDate] = useState(today);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [view, setView] = useState<View>("transcripts");
 
   const [rows, setRows] = useState<TranscriptRow[]>([]);
   const [selected, setSelected] = useState<TranscriptRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [viewerTab, setViewerTab] = useState<"transcript" | "report">("transcript");
   const [uploadOpen, setUploadOpen] = useState(false);
-  /** Weekly tab: browse Weekly Meeting transcripts, or roll up the week's Daily Huddles. */
-  const [weeklyView, setWeeklyView] = useState<"meeting" | "rollup">("meeting");
+  const [reportNonce, setReportNonce] = useState(0);
+
+  const [confirming, setConfirming] = useState<(DeleteTarget & { url: string; after: "list" | "report" }) | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [needsAck, setNeedsAck] = useState(false);
 
   const { data: sessionData } = useSession();
   const currentUserId = (sessionData?.user as { id?: string } | undefined)?.id ?? "";
+
+  const clientName = useMemo(
+    () => clients.find((c) => c.id === clientId)?.name,
+    [clients, clientId],
+  );
+
+  // A client only becomes available after the parent's fetch resolves; without
+  // this the Weekly and Month panels sit on an empty clientId and report
+  // "nothing found" for a client the user never got to choose.
+  useEffect(() => {
+    if (!clientId && clients.length) setClientId(initialClientId || clients[0].id);
+  }, [clients, clientId, initialClientId]);
 
   // A different transcript resets the viewer to the transcript tab.
   useEffect(() => {
     setViewerTab("transcript");
   }, [selected?.id]);
+
+  // Changing scope resets to that scope's default pane — "Monthly Report" has
+  // no meaning under the Daily tab.
+  useEffect(() => {
+    setView("transcripts");
+  }, [scope]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !uploadOpen && !confirming) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, uploadOpen, confirming]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -192,249 +269,462 @@ export function ExportTranscriptModal({
     }
   };
 
-  const tabs: { id: Scope; label: string }[] = [
-    { id: "daily", label: "Daily" },
-    { id: "weekly", label: "Weekly" },
-    { id: "month", label: "Month" },
-    { id: "unassigned", label: "Unassigned" },
+  const askDeleteTranscript = (t: TranscriptRow) => {
+    setDeleteError(null);
+    setNeedsAck(false);
+    setConfirming({
+      url: `/api/client-meetings/transcripts/${t.id}`,
+      after: "list",
+      kind: "transcript",
+      name: `${t.title || "Untitled meeting"} · ${fmtDate(t.meetingDate)}`,
+      consequences: [
+        "The recording, its text and any report generated from it stop appearing anywhere in Meeting Rhythm.",
+        "Weekly and monthly reports already generated keep their numbers — they are not recalculated.",
+        "Nothing is erased from the database, so it can be restored by an administrator.",
+      ],
+    });
+  };
+
+  const askDeleteDailyReport = (t: TranscriptRow) => {
+    setDeleteError(null);
+    setNeedsAck(false);
+    setConfirming({
+      url: `/api/client-meetings/transcripts/${t.id}/report`,
+      after: "report",
+      kind: "report",
+      name: `Daily report · ${t.title || "Untitled meeting"} · ${fmtDate(t.meetingDate)}`,
+      consequences: [
+        "Only the generated report is discarded — the transcript itself is kept.",
+        "Extracted facts and segments are kept, so regenerating does not re-read the meeting.",
+        "KPI, Priority and WWW records already created from this report are left alone.",
+      ],
+    });
+  };
+
+  const confirmDelete = useCallback(
+    async (opts: { reason: string; confirmValidated: boolean }) => {
+      if (!confirming) return;
+      setDeleting(true);
+      setDeleteError(null);
+      const result = await runDelete(confirming.url, opts);
+      setDeleting(false);
+      if (result.ok) {
+        const wasList = confirming.after === "list";
+        setConfirming(null);
+        setNeedsAck(false);
+        setNotice(wasList ? "The transcript was deleted." : "The report was deleted.");
+        if (wasList) {
+          void load();
+        } else {
+          // Remount the report panel so it re-reads and falls back to "not
+          // generated yet" rather than showing the report it just deleted.
+          setReportNonce((n) => n + 1);
+        }
+        return;
+      }
+      setNeedsAck(result.requiresConfirmation);
+      setDeleteError(result.error);
+    },
+    [confirming, load],
+  );
+
+  const tabs: { id: Scope; label: string; icon: typeof Sun }[] = [
+    { id: "daily", label: "Daily", icon: Sun },
+    { id: "weekly", label: "Weekly", icon: CalendarDays },
+    { id: "month", label: "Month", icon: CalendarRange },
+    { id: "unassigned", label: "Unassigned", icon: FileQuestion },
   ];
+
+  const subViews: { id: View; label: string }[] =
+    scope === "weekly"
+      ? [
+          { id: "transcripts", label: "Transcripts" },
+          { id: "wmReport", label: "Weekly Meeting Report" },
+          { id: "rollup", label: "Daily Huddle Rollup" },
+        ]
+      : scope === "month"
+        ? [
+            { id: "transcripts", label: "Transcripts" },
+            { id: "monthlyReport", label: "Monthly Report" },
+          ]
+        : [];
+
+  const week = weekBounds(date);
+  const period = `${year}-${String(month).padStart(2, "0")}`;
 
   return (
     <>
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" role="presentation" onClick={onClose}>
-      <div
-        className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-          <h2 className="text-base font-semibold text-gray-800">Export Transcript</h2>
-          <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
-            ✕
-          </button>
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-5 py-3">
-          <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 text-xs">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setScope(t.id)}
-                className={`px-3 py-1.5 font-medium ${scope === t.id ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {scope !== "unassigned" && (
-            <select
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
-            >
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {(scope === "daily" || scope === "weekly") && (
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
-            />
-          )}
-          {scope === "weekly" && (
-            <span className="text-[11px] text-gray-500">
-              Week {weekBounds(date).from} → {weekBounds(date).to}
-            </span>
-          )}
-          {scope === "weekly" && (
-            <>
-              <span className="mx-1 h-5 w-px self-center bg-gray-200" />
-              <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 text-xs">
-                {([
-                  ["meeting", "Weekly Meeting"],
-                  ["rollup", "Rollup: Daily Huddles"],
-                ] as const).map(([id, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => setWeeklyView(id)}
-                    className={`px-3 py-1.5 font-medium ${weeklyView === id ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-          {scope === "month" && (
-            <>
-              <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs">
-                {MONTHS.map((m, i) => (
-                  <option key={m} value={i + 1}>{m}</option>
-                ))}
-              </select>
-              <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs">
-                {[year - 1, year, year + 1].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </>
-          )}
-        </div>
-
-        {/* Body: the week rollup, or the transcript list + viewer */}
-        {scope === "weekly" && weeklyView === "rollup" ? (
-          <WeeklyRollupPanel clientId={clientId} weekStart={weekBounds(date).from} />
-        ) : (
-        <div className="flex min-h-0 flex-1">
-          {/* List */}
-          <div className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-gray-200">
-            <div className="border-b border-gray-200 p-2">
-              <button
-                onClick={() => setUploadOpen(true)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-              >
-                Upload Transcript
-              </button>
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4" role="presentation" onClick={onClose}>
+        <div
+          className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-transcript-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* ── Header ───────────────────────────────────────────────── */}
+          <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3.5">
+            <div>
+              <h2 id="export-transcript-title" className="text-base font-semibold text-gray-900">
+                Meeting Transcripts &amp; Reports
+              </h2>
+              <p className="mt-0.5 text-[11.5px] text-gray-500">
+                Read a recording, or build the daily, weekly and monthly reports from it.
+              </p>
             </div>
-            {loading ? (
-              <p className="p-4 text-xs text-gray-400">Loading…</p>
-            ) : rows.length === 0 ? (
-              <div className="p-4">
-                <p className="text-xs text-gray-400">No transcripts for this selection.</p>
-              </div>
-            ) : (
-              <ul>
-                {rows.map((r) => (
-                  <li key={r.id}>
-                    <button
-                      onClick={() => setSelected(r)}
-                      className={`block w-full border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50 ${selected?.id === r.id ? "bg-accent-50" : ""}`}
-                    >
-                      <p className="truncate text-xs font-medium text-gray-800">{r.title || "Untitled meeting"}</p>
-                      <p className="mt-0.5 text-[11px] text-gray-500">
-                        {fmtDate(r.meetingDate)} · {r.type ?? "—"}
-                        {r.matchStatus !== "MATCHED" ? ` · ${r.matchStatus.toLowerCase()}` : ""}
-                      </p>
-                      {scope === "unassigned" && r.clientName ? (
-                        <p className="text-[11px] text-gray-400">{r.clientName}</p>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
 
-          {/* Viewer */}
-          <div className="min-w-0 flex-1 overflow-y-auto p-5">
-            {error ? (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
-            ) : null}
-            {!selected ? (
-              <p className="text-sm text-gray-400">Select a transcript to view it.</p>
-            ) : (
-              <>
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900">{selected.title || "Meeting transcript"}</h3>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      {selected.clientName ?? "Unassigned"} · {selected.type ?? "—"} · {fmtDate(selected.meetingDate)}
-                      {selected.durationMinutes != null ? ` · ${selected.durationMinutes} min` : ""}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      onClick={() => downloadDocx(selected)}
-                      disabled={downloading}
-                      className="rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-600 disabled:opacity-50"
-                    >
-                      {downloading ? "…" : "Download .docx"}
-                    </button>
-                    <button
-                      onClick={() => downloadTxt(selected)}
-                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                    >
-                      .txt
-                    </button>
-                  </div>
-                </div>
+          {/* ── Controls ─────────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50/70 px-5 py-2.5">
+            <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white text-xs shadow-sm">
+              {tabs.map((t) => {
+                const Icon = t.icon;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setScope(t.id)}
+                    aria-pressed={scope === t.id}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 font-medium transition ${
+                      scope === t.id ? "bg-accent-600 text-white" : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
 
-                {/* Transcript ⇄ Report view toggle */}
-                <div className="mb-4 inline-flex overflow-hidden rounded-lg border border-gray-200 text-xs">
-                  {(["transcript", "report"] as const).map((v) => (
+            {scope !== "unassigned" && (
+              <select
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                aria-label="Client"
+                className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400"
+              >
+                {clients.length === 0 ? <option value="">No clients yet</option> : null}
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {(scope === "daily" || scope === "weekly") && (
+              <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-0.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setDate(shiftDate(date, scope === "daily" ? -1 : -7))}
+                  aria-label={scope === "daily" ? "Previous day" : "Previous week"}
+                  className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  aria-label="Date"
+                  className="border-0 bg-transparent px-1 py-1 text-xs focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setDate(shiftDate(date, scope === "daily" ? 1 : 7))}
+                  aria-label={scope === "daily" ? "Next day" : "Next week"}
+                  className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDate(today)}
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-accent-700 hover:bg-accent-50"
+                >
+                  Today
+                </button>
+              </div>
+            )}
+
+            {scope === "daily" && (
+              <span className="text-[11px] text-gray-500">{prettyDate(date)}</span>
+            )}
+            {scope === "weekly" && (
+              <span className="text-[11px] text-gray-500">
+                Week {week.from} → {week.to}
+              </span>
+            )}
+
+            {scope === "month" && (
+              <>
+                <select
+                  value={month}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                  aria-label="Month"
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs shadow-sm"
+                >
+                  {MONTHS.map((m, i) => (
+                    <option key={m} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+                <select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  aria-label="Year"
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs shadow-sm"
+                >
+                  {[year - 1, year, year + 1].map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {subViews.length ? (
+              <>
+                <span className="mx-1 h-5 w-px self-center bg-gray-200" />
+                <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white text-xs shadow-sm">
+                  {subViews.map((v) => (
                     <button
-                      key={v}
-                      onClick={() => setViewerTab(v)}
-                      className={`px-3 py-1.5 font-medium capitalize ${viewerTab === v ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}
+                      key={v.id}
+                      onClick={() => setView(v.id)}
+                      aria-pressed={view === v.id}
+                      className={`px-3 py-1.5 font-medium transition ${
+                        view === v.id ? "bg-accent-600 text-white" : "text-gray-600 hover:bg-gray-50"
+                      }`}
                     >
-                      {v}
+                      {v.label}
                     </button>
                   ))}
                 </div>
+              </>
+            ) : null}
+          </div>
 
-                {viewerTab === "report" ? (
-                  <MeetingReportPanel transcriptId={selected.id} currentUserId={currentUserId} />
+          {notice ? (
+            <div className="border-b border-gray-100 px-5 py-2">
+              <Banner tone="success">{notice}</Banner>
+            </div>
+          ) : null}
+
+          {/* ── Body ─────────────────────────────────────────────────── */}
+          {scope === "weekly" && view === "rollup" ? (
+            <WeeklyRollupPanel clientId={clientId} clientName={clientName} weekStart={week.from} />
+          ) : scope === "weekly" && view === "wmReport" ? (
+            <WeeklyMeetingReportPanel
+              clientId={clientId}
+              clientName={clientName}
+              weekStart={week.from}
+              weekEnd={week.to}
+            />
+          ) : scope === "month" && view === "monthlyReport" ? (
+            <MonthlyReportPanel clientId={clientId} clientName={clientName} period={period} />
+          ) : (
+            <div className="flex min-h-0 flex-1">
+              {/* List */}
+              <div className="flex w-[19rem] shrink-0 flex-col border-r border-gray-200 bg-gray-50/40">
+                <div className="border-b border-gray-200 bg-white p-2.5">
+                  <button
+                    onClick={() => setUploadOpen(true)}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:border-accent-300 hover:bg-accent-50/40 hover:text-accent-700"
+                  >
+                    <Upload className="h-3.5 w-3.5" /> Upload Transcript
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {loading ? (
+                    <div className="p-3">
+                      <Skeleton rows={5} />
+                    </div>
+                  ) : rows.length === 0 ? (
+                    <p className="p-4 text-xs text-gray-500">
+                      No transcripts for this selection. Try another date, or upload one.
+                    </p>
+                  ) : (
+                    <ul className="p-2 space-y-1.5">
+                      {rows.map((r) => (
+                        <li key={r.id} className="group relative">
+                          <button
+                            onClick={() => setSelected(r)}
+                            className={`block w-full rounded-xl border px-3 py-2.5 pr-8 text-left transition ${
+                              selected?.id === r.id
+                                ? "border-accent-300 bg-accent-50/70"
+                                : "border-gray-200 bg-white hover:border-accent-200 hover:bg-accent-50/30"
+                            }`}
+                          >
+                            <p className="truncate text-xs font-medium text-gray-800">{r.title || "Untitled meeting"}</p>
+                            <p className="mt-0.5 text-[11px] text-gray-500">
+                              {fmtDate(r.meetingDate)} · {r.type ?? "—"}
+                              {r.durationMinutes != null ? ` · ${r.durationMinutes} min` : ""}
+                            </p>
+                            {r.matchStatus !== "MATCHED" || (scope === "unassigned" && r.clientName) ? (
+                              <p className="mt-0.5 text-[10.5px] text-gray-400">
+                                {scope === "unassigned" && r.clientName ? `${r.clientName} · ` : ""}
+                                {r.matchStatus !== "MATCHED" ? r.matchStatus.toLowerCase() : ""}
+                              </p>
+                            ) : null}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => askDeleteTranscript(r)}
+                            aria-label={`Delete transcript ${r.title || "Untitled meeting"}`}
+                            title="Delete this transcript"
+                            className="absolute right-1.5 top-2 rounded-md p-1 text-gray-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              {/* Viewer */}
+              <div className="min-w-0 flex-1 overflow-y-auto bg-gray-50/30 p-5">
+                {error ? (
+                  <div className="mb-3">
+                    <Banner tone="error">{error}</Banner>
+                  </div>
+                ) : null}
+                {!selected ? (
+                  <EmptyState
+                    title="Select a transcript"
+                    hint="Pick a recording on the left to read it, or switch to the Report view to turn it into a meeting report."
+                  />
                 ) : (
                   <>
-                    {attendeeText(selected.attendees) ? (
-                      <p className="mb-3 text-xs text-gray-600">
-                        <span className="font-medium">Attendees:</span> {attendeeText(selected.attendees)}
-                      </p>
-                    ) : null}
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900">{selected.title || "Meeting transcript"}</h3>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {selected.clientName ?? "Unassigned"} · {selected.type ?? "—"} · {fmtDate(selected.meetingDate)}
+                          {selected.durationMinutes != null ? ` · ${selected.durationMinutes} min` : ""}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button
+                          onClick={() => downloadDocx(selected)}
+                          disabled={downloading}
+                          className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+                        >
+                          {downloading ? "…" : "Download .docx"}
+                        </button>
+                        <button
+                          onClick={() => downloadTxt(selected)}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        >
+                          .txt
+                        </button>
+                        <button
+                          onClick={() =>
+                            viewerTab === "report"
+                              ? askDeleteDailyReport(selected)
+                              : askDeleteTranscript(selected)
+                          }
+                          title={viewerTab === "report" ? "Delete this report" : "Delete this transcript"}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {viewerTab === "report" ? "Delete report" : "Delete"}
+                        </button>
+                      </div>
+                    </div>
 
-                    {selected.summary ? (
-                      <section className="mb-4">
-                        <h4 className="mb-1 text-sm font-semibold text-gray-800">Summary</h4>
-                        <p className="whitespace-pre-wrap text-sm text-gray-700">{selected.summary}</p>
-                      </section>
-                    ) : null}
+                    {/* Transcript ⇄ Report view toggle */}
+                    <div className="mb-4 inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white text-xs shadow-sm">
+                      {(["transcript", "report"] as const).map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setViewerTab(v)}
+                          aria-pressed={viewerTab === v}
+                          className={`px-3 py-1.5 font-medium capitalize transition ${
+                            viewerTab === v ? "bg-accent-600 text-white" : "text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
 
-                    {Array.isArray(selected.actionItems) && selected.actionItems.length ? (
-                      <section className="mb-4">
-                        <h4 className="mb-1 text-sm font-semibold text-gray-800">Action items</h4>
-                        <ul className="list-disc pl-5 text-sm text-gray-700">
-                          {selected.actionItems.map((a, i) => (
-                            <li key={i}>{a.text}</li>
-                          ))}
-                        </ul>
-                      </section>
-                    ) : null}
+                    {viewerTab === "report" ? (
+                      <MeetingReportPanel
+                        key={`${selected.id}-${reportNonce}`}
+                        transcriptId={selected.id}
+                        currentUserId={currentUserId}
+                      />
+                    ) : (
+                      <div className="space-y-4">
+                        {attendeeText(selected.attendees) ? (
+                          <p className="text-xs text-gray-600">
+                            <span className="font-medium">Attendees:</span> {attendeeText(selected.attendees)}
+                          </p>
+                        ) : null}
 
-                    <section>
-                      <h4 className="mb-1 text-sm font-semibold text-gray-800">Transcript</h4>
-                      <pre className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 font-sans text-sm text-gray-700">
-                        {selected.rawText ? trimBlankLines(selected.rawText) : "No transcript text saved."}
-                      </pre>
-                    </section>
+                        {selected.summary ? (
+                          <section>
+                            <h4 className="mb-1 text-sm font-semibold text-gray-800">Summary</h4>
+                            <p className="whitespace-pre-wrap text-sm text-gray-700">{selected.summary}</p>
+                          </section>
+                        ) : null}
+
+                        {Array.isArray(selected.actionItems) && selected.actionItems.length ? (
+                          <section>
+                            <h4 className="mb-1 text-sm font-semibold text-gray-800">Action items</h4>
+                            <ul className="list-disc pl-5 text-sm text-gray-700">
+                              {selected.actionItems.map((a, i) => (
+                                <li key={i}>{a.text}</li>
+                              ))}
+                            </ul>
+                          </section>
+                        ) : null}
+
+                        <section>
+                          <h4 className="mb-1 text-sm font-semibold text-gray-800">Transcript</h4>
+                          <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-white p-3 font-sans text-sm text-gray-700">
+                            {selected.rawText ? trimBlankLines(selected.rawText) : "No transcript text saved."}
+                          </pre>
+                        </section>
+                      </div>
+                    )}
                   </>
                 )}
-              </>
-            )}
-          </div>
+              </div>
+            </div>
+          )}
         </div>
-        )}
       </div>
-    </div>
 
-    {uploadOpen ? (
-      <UploadTranscriptModal
-        clients={clients}
-        initialClientId={clientId}
-        onClose={() => setUploadOpen(false)}
-        onUploaded={handleUploaded}
-      />
-    ) : null}
+      {uploadOpen ? (
+        <UploadTranscriptModal
+          clients={clients}
+          initialClientId={clientId}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={handleUploaded}
+        />
+      ) : null}
+
+      {confirming ? (
+        <ConfirmDeleteDialog
+          target={confirming}
+          busy={deleting}
+          error={deleteError}
+          requiresConfirmation={needsAck}
+          onCancel={() => {
+            setConfirming(null);
+            setDeleteError(null);
+            setNeedsAck(false);
+          }}
+          onConfirm={(opts) => void confirmDelete(opts)}
+        />
+      ) : null}
     </>
   );
 }

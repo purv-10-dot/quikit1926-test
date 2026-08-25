@@ -327,6 +327,11 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
       // A regenerated report is unreviewed again — sign-off must be re-earned.
       validatedAt: null,
       validatedBy: null,
+      // Regenerating a week that was deleted brings it back. The unique index
+      // means the soft-deleted row is still the row this upsert lands on, so
+      // without this the new report would be written straight into a hidden
+      // row and never appear again.
+      deletedAt: null,
     },
   });
 

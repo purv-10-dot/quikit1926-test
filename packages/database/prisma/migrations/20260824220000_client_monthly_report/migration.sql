@@ -76,7 +76,7 @@ CREATE INDEX "ClientMonthlyReport_clientId_idx"
 
 ALTER TABLE "app_quikscale"."ClientMonthlyReport"
   ADD CONSTRAINT "ClientMonthlyReport_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."ClientMonthlyReport"
   ADD CONSTRAINT "ClientMonthlyReport_clientId_fkey"
   FOREIGN KEY ("clientId") REFERENCES "app_quikscale"."Client"("id")

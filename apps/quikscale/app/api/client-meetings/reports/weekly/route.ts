@@ -10,6 +10,8 @@ import {
   computeWeeklyCacheState,
   evaluateWeeklyCache,
 } from "@/lib/reports/weeklyCacheState";
+import { parseDeleteBody, guardValidated } from "@/lib/reports/deleteGuard";
+import { audit, requestContext } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -235,4 +237,69 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     success: true,
     data: { report, metrics, validatedAt: updated.validatedAt, validatedBy: updated.validatedBy },
   });
+});
+
+/**
+ * DELETE /api/client-meetings/reports/weekly?clientId=…&weekStart=yyyy-mm-dd
+ *
+ * Soft-delete the Daily Huddle Weekly Report for one client-week.
+ *
+ * The per-day daily reports the rollup was built from are NOT touched: they
+ * belong to their transcripts, cost money to produce, and are what a
+ * regeneration reuses. Deleting the rollup throws away only the composed
+ * week-level document, so regenerating it costs one model call, not five.
+ *
+ * A signed-off week requires `confirmValidated: true` — see `deleteGuard`.
+ *
+ * PERMISSION — `ClientMeetings.Report: delete`.
+ */
+export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
+  const parsed = parseQuery(req.url);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid query" },
+      { status: 400 },
+    );
+  }
+
+  const weekStart = toWeekStart(new Date(`${parsed.data.weekStart}T00:00:00.000Z`));
+  const existing = await db.clientDailyHuddleWeeklyReport.findFirst({
+    where: { orgId, clientId: parsed.data.clientId, weekStart, deletedAt: null },
+    select: { id: true, validatedAt: true, currentVersion: true, client: { select: { name: true } } },
+  });
+  if (!existing) {
+    return NextResponse.json(
+      { success: false, error: "No weekly report for this week." },
+      { status: 404 },
+    );
+  }
+
+  const { reason, confirmValidated } = await parseDeleteBody(req);
+  const blocked = guardValidated(existing.validatedAt, confirmValidated, "This weekly report");
+  if (blocked) return blocked;
+
+  await db.clientDailyHuddleWeeklyReport.update({
+    where: { id: existing.id },
+    data: { deletedAt: new Date(), updatedBy: userId },
+  });
+
+  const weekLabel = weekStart.toISOString().slice(0, 10);
+  await audit.log({
+    entityType: "MEETING_REPORT",
+    entityId: existing.id,
+    action: "DELETE",
+    actor: { userId, orgId, teamId: null },
+    reason,
+    snapshot: {
+      name: `Weekly rollup · ${existing.client?.name ?? "—"} · week of ${weekLabel}`,
+      reportType: "DH_WEEKLY",
+      clientId: parsed.data.clientId,
+      weekStart: weekLabel,
+      version: existing.currentVersion,
+      wasValidated: Boolean(existing.validatedAt),
+    },
+    ...requestContext(req),
+  });
+
+  return NextResponse.json({ success: true, data: { id: existing.id } });
 });

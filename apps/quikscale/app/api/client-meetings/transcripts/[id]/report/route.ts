@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { storedMeetingReportSchema } from "@/lib/ai/meetingReport";
+import { audit, requestContext } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -91,4 +92,78 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   });
 
   return NextResponse.json({ success: true, data: { report } });
+});
+
+/**
+ * DELETE /api/client-meetings/transcripts/[id]/report
+ *
+ * Discard the generated report for a transcript, keeping the transcript itself.
+ * The report columns are cleared (`report`, confidence, generated/updated
+ * stamps) so the viewer falls back to "not generated yet" and the report can be
+ * regenerated from scratch.
+ *
+ * Deliberately does NOT touch extracted facts or segments — those are the
+ * expensive part of the pipeline and are reusable; only the composed document
+ * is thrown away. Any KPI / Priority / WWW records already created from this
+ * report are real records with their own lifecycle and are left alone.
+ *
+ * PERMISSION — `ClientMeetings.Report: delete`.
+ */
+export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const existing = await db.clientMeetingTranscript.findFirst({
+    where: { id: params.id, orgId, deletedAt: null },
+    select: {
+      id: true,
+      clientId: true,
+      title: true,
+      meetingDate: true,
+      report: true,
+      reportConfidence: true,
+      client: { select: { name: true } },
+    },
+  });
+  if (!existing) {
+    return NextResponse.json({ success: false, error: "Transcript not found" }, { status: 404 });
+  }
+  if (!existing.report) {
+    return NextResponse.json(
+      { success: false, error: "No report to delete for this transcript." },
+      { status: 404 },
+    );
+  }
+
+  const body = (await req.json().catch(() => ({}))) as { reason?: unknown } | null;
+  const reason =
+    typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+
+  await db.clientMeetingTranscript.update({
+    where: { id: existing.id },
+    data: {
+      report: Prisma.DbNull,
+      reportConfidence: null,
+      reportGeneratedAt: null,
+      reportGeneratedBy: null,
+      reportUpdatedAt: new Date(),
+      reportUpdatedBy: userId,
+    },
+  });
+
+  const dateLabel = existing.meetingDate ? existing.meetingDate.toISOString().slice(0, 10) : "—";
+  await audit.log({
+    entityType: "MEETING_REPORT",
+    entityId: existing.id,
+    action: "DELETE",
+    actor: { userId, orgId, teamId: null },
+    reason,
+    snapshot: {
+      name: `Daily report · ${existing.client?.name ?? "Unassigned"} · ${dateLabel}`,
+      reportType: "DAILY",
+      transcriptId: existing.id,
+      clientId: existing.clientId,
+      confidence: existing.reportConfidence,
+    },
+    ...requestContext(req),
+  });
+
+  return NextResponse.json({ success: true, data: { id: existing.id } });
 });

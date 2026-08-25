@@ -349,6 +349,9 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
       // A regenerated report is unreviewed again — sign-off must be re-earned.
       validatedAt: null,
       validatedBy: null,
+      // Regenerating a deleted report brings it back — the upsert lands on the
+      // soft-deleted row, which would otherwise stay hidden with fresh content.
+      deletedAt: null,
     },
   });
 

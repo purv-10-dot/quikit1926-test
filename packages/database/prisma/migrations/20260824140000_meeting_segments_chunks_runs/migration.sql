@@ -70,7 +70,7 @@ CREATE INDEX "MeetingTranscriptSegment_transcriptId_clientMemberId_idx"
 
 ALTER TABLE "app_quikscale"."MeetingTranscriptSegment"
   ADD CONSTRAINT "MeetingTranscriptSegment_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingTranscriptSegment"
   ADD CONSTRAINT "MeetingTranscriptSegment_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -135,7 +135,7 @@ CREATE INDEX "MeetingExtractionRun_orgId_status_idx"
 
 ALTER TABLE "app_quikscale"."MeetingExtractionRun"
   ADD CONSTRAINT "MeetingExtractionRun_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingExtractionRun"
   ADD CONSTRAINT "MeetingExtractionRun_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -195,7 +195,7 @@ CREATE INDEX "MeetingChunk_status_lockedUntil_idx"
 
 ALTER TABLE "app_quikscale"."MeetingChunk"
   ADD CONSTRAINT "MeetingChunk_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingChunk"
   ADD CONSTRAINT "MeetingChunk_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")

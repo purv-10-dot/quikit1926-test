@@ -145,8 +145,9 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "DailyHuddle", label: "Daily Huddle", actions: ACTIONS },
       { resource: "WeeklyMeeting", label: "Weekly Meeting", actions: ACTIONS },
       // AI meeting report: `view` = generate/view a report from a transcript;
-      // `update` = the "Edit Report" gate (edit fields and Save).
-      { resource: "ClientMeetings.Report", label: "Meeting Report", actions: ["view", "update"] },
+      // `update` = the "Edit Report" gate (edit fields and Save);
+      // `delete` = remove a transcript, or discard a generated report.
+      { resource: "ClientMeetings.Report", label: "Meeting Report", actions: ["view", "update", "delete"] },
     ],
   },
   {
@@ -299,7 +300,7 @@ export const NAV_RESOURCE: Record<string, string> = {
   "clientMeetings.clients": "ClientMaster",
   "clientMeetings.members": "ClientMember",
   "clientMeetings.dailyHuddle": "DailyHuddle",
-  "clientMeetings.weeklyMeeting": "WeeklyMeeting",
+  "clientMeetings.weeklyMeeting": "WeeklyMeeting",
   "opsp.create": "OPSP.Create",
   "opsp.history": "OPSP.History",
   "opsp.review": "OPSP.Review",

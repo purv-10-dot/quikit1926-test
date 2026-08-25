@@ -67,7 +67,7 @@ CREATE INDEX "WWWStatusHistory_orgId_idx"
 
 ALTER TABLE "app_quikscale"."WWWStatusHistory"
   ADD CONSTRAINT "WWWStatusHistory_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."WWWStatusHistory"
   ADD CONSTRAINT "WWWStatusHistory_wwwItemId_fkey"
   FOREIGN KEY ("wwwItemId") REFERENCES "app_quikscale"."WWWItem"("id")

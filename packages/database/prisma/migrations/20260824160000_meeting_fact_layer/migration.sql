@@ -86,7 +86,7 @@ CREATE INDEX "MeetingParticipantFact_orgId_clientId_noStuck_meetingDate_idx"
 
 ALTER TABLE "app_quikscale"."MeetingParticipantFact"
   ADD CONSTRAINT "MeetingParticipantFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingParticipantFact"
   ADD CONSTRAINT "MeetingParticipantFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -142,7 +142,7 @@ CREATE INDEX "MeetingStuckFact_orgId_normalizedKey_idx"
 
 ALTER TABLE "app_quikscale"."MeetingStuckFact"
   ADD CONSTRAINT "MeetingStuckFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingStuckFact"
   ADD CONSTRAINT "MeetingStuckFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -210,7 +210,7 @@ CREATE INDEX "MeetingWwwFact_orgId_normalizedKey_idx"
 
 ALTER TABLE "app_quikscale"."MeetingWwwFact"
   ADD CONSTRAINT "MeetingWwwFact_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "app_quikscale"."MeetingWwwFact"
   ADD CONSTRAINT "MeetingWwwFact_transcriptId_fkey"
   FOREIGN KEY ("transcriptId") REFERENCES "app_quikscale"."ClientMeetingTranscript"("id")
@@ -253,4 +253,4 @@ CREATE INDEX "MeetingFactMerge_survivorFactId_idx"
 
 ALTER TABLE "app_quikscale"."MeetingFactMerge"
   ADD CONSTRAINT "MeetingFactMerge_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org"("id") ON DELETE CASCADE ON UPDATE CASCADE;
