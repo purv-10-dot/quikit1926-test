@@ -391,7 +391,7 @@ export default function UsersPage() {
       projectsAssigned: Array.isArray(item.projectsAssigned) ? item.projectsAssigned : [],
       department: item.department ?? "",
       isHoUser: !!item.isHoUser,
-      appAllow: item.appAllow !== false,
+      appAllow: item.mobileAccessEnabled !== false,
       password: "",
       retypePassword: "",
       status: item.status ?? "active",

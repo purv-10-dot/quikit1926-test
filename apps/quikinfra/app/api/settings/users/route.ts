@@ -482,7 +482,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
         lastName,
         department: body.department ?? null,
         mobile: body.mobile ? String(body.mobile).trim() : null,
-        mobileAccessEnabled: body.mobileAccessEnabled === true,
+        mobileAccessEnabled: body.appAllow === true,
       },
       create: {
         userId: centralUserId!,
@@ -491,7 +491,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
         lastName,
         department: body.department ?? null,
         mobile: body.mobile ? String(body.mobile).trim() : null,
-        mobileAccessEnabled: body.mobileAccessEnabled === true,
+        mobileAccessEnabled: body.appAllow === true,
       },
     });
 
@@ -640,7 +640,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
     process.env.NEXT_PUBLIC_QUIKINFRA_URL ?? process.env.QUIKINFRA_URL ?? launcherBase
   ).replace(/\/$/, "");
   const inviteUrl = centralInvitationToken
-    ? body.mobileAccessEnabled === true
+    ? body.appAllow === true
       ? `${quikinfraBase}/invite/${centralInvitationToken}`
       : `${launcherBase}/invitations/accept?token=${centralInvitationToken}`
     : launcherBase;

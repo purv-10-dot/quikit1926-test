@@ -14,7 +14,7 @@ export interface UserRow {
   modulesAssigned?: string[];
   projectsAssigned?: string[];
   isHoUser?: boolean;
-  appAllow?: boolean;
+  mobileAccessEnabled?: boolean;
   status: string;
   invitedAt?: string;
   acceptedAt?: string | null;
