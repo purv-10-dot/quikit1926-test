@@ -114,7 +114,7 @@ CREATE INDEX "ClientMeetingReport_weeklyMeetingId_idx"
 
 ALTER TABLE "app_quikscale"."ClientMeetingReport"
   ADD CONSTRAINT "ClientMeetingReport_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org" ("id")
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org" ("id")
   ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "app_quikscale"."ClientMeetingReport"

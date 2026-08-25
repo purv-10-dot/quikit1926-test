@@ -74,7 +74,7 @@ CREATE INDEX "ClientWeekRollupReport_clientId_idx"
 
 ALTER TABLE "app_quikscale"."ClientWeekRollupReport"
   ADD CONSTRAINT "ClientWeekRollupReport_orgId_fkey"
-  FOREIGN KEY ("orgId") REFERENCES "public"."Org" ("id")
+  FOREIGN KEY ("orgId") REFERENCES "quikit"."Org" ("id")
   ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "app_quikscale"."ClientWeekRollupReport"
