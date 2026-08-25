@@ -358,3 +358,14 @@ const TRANSCRIPTS = [
     lines: UNASSIGNED_LINES, report: null,
   },
 ];
+
+/* Meeting Rhythm dashboard table behind the modal. Cell colours follow the
+   QuikScale traffic-light bands: >=98 blue, >=90 green, >=80 yellow, else red. */
+const RHYTHM_ROWS = [
+  { metric: 'Avg Daily Huddle Attendance %',      vals: [72, 78, 85, 91, 88, 94] },
+  { metric: 'Avg Daily Huddle Adherence %',       vals: [64, 70, 76, 82, 79, 86] },
+  { metric: 'Avg Weekly Meeting Attendance %',    vals: [88, 92, 95, 98, 96, 99] },
+  { metric: 'Avg Weekly Meeting Scorecard %',     vals: [70, 74, 81, 84, 80, 87] },
+  { metric: 'Avg WWW Closure %',                  vals: [58, 63, 69, 74, 71, 73] },
+  { metric: 'Avg Blocker Resolution (within SLA) %', vals: [45, 52, 60, 66, 62, 68] },
+];

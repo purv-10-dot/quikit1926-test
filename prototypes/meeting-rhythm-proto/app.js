@@ -225,7 +225,7 @@ function renderList() {
         </div>
       </div>
       <div class="mt-2.5 flex items-center justify-between gap-2">
-        <div class="flex -space-x-1.5">${t.attendees.slice(0, 4).map((a) => avatar(a, 'h-5 w-5 text-[9px] ring-2 ring-white')).join('')}
+        <div class="flex gap-1">${t.attendees.slice(0, 4).map((a) => avatar(a, 'h-5 w-5 text-[9px] ring-2 ring-white')).join('')}
           ${t.attendees.length > 4 ? `<span class="grid h-5 w-5 place-items-center rounded-full bg-gray-100 text-[9px] font-semibold text-gray-500 ring-2 ring-white">+${t.attendees.length - 4}</span>` : ''}</div>
         ${hasReport
           ? `<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">${icon('<path d="M20 6 9 17l-5-5"/>', 'h-3 w-3')}Report ready</span>`
@@ -1026,7 +1026,38 @@ document.addEventListener('keydown', (e) => {
 
 /* ─────────────────────────── boot ─────────────────────────── */
 
+/* Background dashboard table — QuikScale traffic-light bands. */
+function cellTone(v) {
+  if (v >= 98) return 'bg-blue-600 text-white';
+  if (v >= 90) return 'bg-green-600 text-white';
+  if (v >= 80) return 'bg-yellow-500 text-white';
+  return 'bg-red-600 text-white';
+}
+
+function renderRhythmTable() {
+  const host = $('rhythmRows');
+  if (!host) return;
+  const totals = RHYTHM_ROWS[0].vals.map((_, i) =>
+    Math.round(RHYTHM_ROWS.reduce((s, r) => s + r.vals[i], 0) / RHYTHM_ROWS.length));
+
+  host.innerHTML = RHYTHM_ROWS.map((r, i) => {
+    const avg = Math.round(r.vals.reduce((a, b) => a + b, 0) / r.vals.length);
+    return `<tr class="border-t border-gray-100 hover:bg-blue-50">
+      <td class="px-3 py-2 text-gray-500">${i + 1}</td>
+      <td class="px-3 py-2 font-medium text-gray-900">${esc(r.metric)}</td>
+      ${r.vals.map((v) => `<td class="px-1 py-1 text-center"><span class="block rounded px-2 py-1 text-[12px] font-semibold ${cellTone(v)}">${v}%</span></td>`).join('')}
+      <td class="px-1 py-1 text-center"><span class="block rounded px-2 py-1 text-[12px] font-bold ${cellTone(avg)}">${avg}%</span></td>
+    </tr>`;
+  }).join('') + `<tr class="border-t-2 border-gray-200 bg-gray-50">
+      <td class="px-3 py-2 text-gray-400">—</td>
+      <td class="px-3 py-2 font-bold text-gray-900">Total</td>
+      ${totals.map((v) => `<td class="px-1 py-1 text-center"><span class="block rounded px-2 py-1 text-[12px] font-bold ${cellTone(v)}">${v}%</span></td>`).join('')}
+      <td class="px-1 py-1 text-center"><span class="block rounded px-2 py-1 text-[12px] font-bold ${cellTone(Math.round(totals.reduce((a, b) => a + b, 0) / totals.length))}">${Math.round(totals.reduce((a, b) => a + b, 0) / totals.length)}%</span></td>
+    </tr>`;
+}
+
 function render() {
+  renderRhythmTable();
   renderScopeTabs();
   renderClientSel();
   renderDateNav();
