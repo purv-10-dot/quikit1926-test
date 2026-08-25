@@ -41,9 +41,21 @@ interface User {
   managerId?: Manager | string | null;
 }
 
+/**
+ * NO PASSWORD FIELD, deliberately.
+ *
+ * This form used to ask the admin to type one, and it was dead input: the
+ * server discards it on both writes. `createCentralIdentity` generates its own
+ * temp password for the central `auth.User` and mails THAT, and `registerUser`
+ * writes no password at all ("Credentials live only on auth.User" —
+ * lib/services/auth-service.ts). So the admin typed a credential, handed it to
+ * the learner, and it never worked anywhere.
+ *
+ * Invitation is the mechanism, here as in every other app on the platform: the
+ * invitee gets a temp password + a single-use accept link by email.
+ */
 interface CreateUserFormData {
   email: string;
-  password: string;
   firstName: string;
   lastName: string;
   role: 'LEARNER' | 'MANAGER';
@@ -59,6 +71,20 @@ interface EditUserFormData {
 }
 
 type ViewMode = 'table' | 'card';
+
+/**
+ * `POST /api/auth/register`. `credentialsEmailed` reports whether the invitation
+ * ACTUALLY left the server — not merely that a temp password was generated. With
+ * no password field on this form it is the only thing that tells the admin
+ * whether the person they just added can get in, so it is read, not ignored.
+ */
+interface RegisterResponse {
+  data?: {
+    id: string;
+    credentialsEmailed?: boolean;
+    invitationEmailError?: string | null;
+  };
+}
 
 const UserManagementPage = () => {
   const { branding } = useBranding();
@@ -78,7 +104,6 @@ const UserManagementPage = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [showPassword, setShowPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetNewPassword, setResetNewPassword] = useState('');
   const [showResetNewPassword, setShowResetNewPassword] = useState(false);
@@ -94,7 +119,6 @@ const UserManagementPage = () => {
   } = useForm<CreateUserFormData>({
     defaultValues: {
       email: '',
-      password: '',
       firstName: '',
       lastName: '',
       role: 'LEARNER',
@@ -125,7 +149,6 @@ const UserManagementPage = () => {
     if (showCreateModal) {
       reset({
         email: '',
-        password: '',
         firstName: '',
         lastName: '',
         role: 'LEARNER',
@@ -204,6 +227,8 @@ const UserManagementPage = () => {
 
       let successCount = 0;
       let errorCount = 0;
+      let notEmailedCount = 0;
+      let lastEmailError: string | null = null;
 
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map((v) => v.trim());
@@ -219,14 +244,11 @@ const UserManagementPage = () => {
               ? managerEmailMap[managerEmail]
               : undefined;
 
-          const tempPassword = `Temp${Math.random().toString(36).slice(-6)}${Math.random()
-            .toString(36)
-            .slice(-2)
-            .toUpperCase()}!`;
-
+          // No `password` — the server ignores it and mails its own temp
+          // password with the invitation. A client-side one was never a
+          // credential anybody could use.
           const payload: any = {
             email: values[emailIndex],
-            password: tempPassword,
             firstName: values[firstNameIndex],
             lastName: values[lastNameIndex],
             role,
@@ -234,8 +256,15 @@ const UserManagementPage = () => {
           };
           if (managerId) payload.managerId = managerId;
 
-          await api.post('/auth/register', payload);
+          const res = await api.post<RegisterResponse>('/auth/register', payload);
           successCount++;
+          // A row can be created and still not be invited — a mail outage does
+          // not fail provisioning. Count those separately rather than reporting
+          // every created row as an invited learner.
+          if (res?.data?.credentialsEmailed === false) {
+            notEmailedCount++;
+            lastEmailError = res.data.invitationEmailError ?? lastEmailError;
+          }
         } catch (err) {
           errorCount++;
           console.error(`Failed to create user ${values[emailIndex]}:`, err);
@@ -243,6 +272,13 @@ const UserManagementPage = () => {
       }
 
       toast.success(`Bulk upload: ${successCount} successful, ${errorCount} failed`);
+      if (notEmailedCount > 0) {
+        toast.error(
+          `${notEmailedCount} of ${successCount} learner(s) were created but NOT emailed` +
+            `${lastEmailError ? ` — ${lastEmailError}` : ''}. They cannot sign in until the invitation is resent.`,
+          { duration: 12000 },
+        );
+      }
       loadUsers();
     } catch (err: any) {
       toast.error(err.message || 'Failed to upload CSV');
@@ -269,11 +305,24 @@ const UserManagementPage = () => {
       if (data.role !== 'LEARNER' || !data.managerId) {
         delete payload.managerId;
       }
-      await api.post('/auth/register', payload);
+      const res = await api.post<RegisterResponse>('/auth/register', payload);
       setShowCreateModal(false);
-      setShowPassword(false);
       reset();
-      toast.success('User created successfully');
+
+      // The invitation email is this person's ONLY route to a credential, so the
+      // toast reports what actually happened to it. "User created successfully"
+      // on its own was true and useless: it stayed the same whether the invite
+      // was delivered or silently dropped by a server with no mail transport.
+      if (res?.data?.credentialsEmailed === false) {
+        toast.error(
+          `${data.firstName} was created, but the invitation email could NOT be sent` +
+            `${res.data.invitationEmailError ? ` — ${res.data.invitationEmailError}` : ''}. ` +
+            `They cannot sign in until it is resent.`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(`Invitation sent to ${data.email}`);
+      }
       loadUsers();
       loadManagers();
     } catch (err: any) {
@@ -755,7 +804,6 @@ const UserManagementPage = () => {
               <button
                 onClick={() => {
                   setShowCreateModal(false);
-                  setShowPassword(false);
                   reset();
                 }}
                 className="text-fg-muted hover:text-fg transition-colors"
@@ -778,34 +826,6 @@ const UserManagementPage = () => {
                 />
                 {errors.email && (
                   <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-fg mb-1">
-                  Password <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    {...register('password', {
-                      required: 'Password is required',
-                      minLength: { value: 6, message: 'Password must be at least 6 characters' },
-                    })}
-                    className="w-full px-3 py-2 pr-10 border border-line rounded-lg bg-canvas text-fg focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30 focus:border-[var(--brand-primary)] transition-colors"
-                    autoComplete="new-password"
-                    placeholder="Enter password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg focus:outline-none"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
                 )}
               </div>
 
@@ -907,6 +927,17 @@ const UserManagementPage = () => {
                 </div>
               )}
 
+              {/* Says what the button actually does. The password field this
+                  replaced implied the admin set the credential; they never did —
+                  the invitation carries a server-generated temp password. */}
+              <div className="flex items-start gap-2 text-xs text-fg-muted bg-blue-50 rounded-lg p-2.5">
+                <Mail className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
+                <span>
+                  An invitation with a temporary password and a sign-in link will be emailed to
+                  this address. They set their own password on first login.
+                </span>
+              </div>
+
               <div className="flex gap-3 pt-4">
                 <Button
                   type="button"
@@ -914,7 +945,6 @@ const UserManagementPage = () => {
                   className="flex-1"
                   onClick={() => {
                     setShowCreateModal(false);
-                    setShowPassword(false);
                     reset();
                   }}
                 >
@@ -926,7 +956,7 @@ const UserManagementPage = () => {
                   className="flex-1"
                   loading={creating}
                 >
-                  {creating ? 'Creating...' : 'Create Learner'}
+                  {creating ? 'Sending invitation...' : 'Send Invitation'}
                 </Button>
               </div>
             </form>
