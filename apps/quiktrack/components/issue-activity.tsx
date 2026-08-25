@@ -11,9 +11,10 @@ import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { McpLogView, type McpLogEntry } from "@/components/issue-activity-mcp-tab";
 import { parseClockToHours, formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 
-type Tab = "all" | "comments" | "history" | "worklog";
+type Tab = "all" | "comments" | "history" | "worklog" | "mcp";
 
 interface User {
   id: string;
@@ -153,6 +154,7 @@ export function IssueActivity({
   const wantComments = tab === "all" || tab === "comments";
   const wantHistory = tab === "all" || tab === "history";
   const wantWorklog = tab === "all" || tab === "worklog";
+  const wantMcp = tab === "mcp";
 
   const commentsKey = ["quiktrack", "issue-comments", issueId];
   const worklogsKey = ["quiktrack", "issue-worklogs", issueId];
@@ -168,6 +170,10 @@ export function IssueActivity({
   const { data: worklogsData } = useApiData<WorkLogRow[]>(
     worklogsKey,
     wantWorklog ? `/api/timesheets?issueId=${encodeURIComponent(issueId)}` : null,
+  );
+  const { data: mcpEntries = null } = useApiData<{ entries: McpLogEntry[] }>(
+    ["quiktrack", "issue-mcp-log", issueId],
+    wantMcp ? `/api/mcp-audit-log?entityType=issue&entityId=${encodeURIComponent(issueId)}&projectId=${encodeURIComponent(projectId)}` : null,
   );
   // Seed from the parent's already-loaded logs until the query resolves.
   const worklogs = worklogsData ?? initialWorkLogs ?? null;
@@ -198,6 +204,7 @@ export function IssueActivity({
               ["comments", "Comments"],
               ["history", "History"],
               ["worklog", "Work log"],
+              ["mcp", "MCP Log"],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -249,6 +256,8 @@ export function IssueActivity({
           onLogTime={() => setLogOpen(true)}
         />
       )}
+
+      {tab === "mcp" && <McpLogView rows={mcpEntries?.entries ?? null} sortDesc={sortDesc} />}
 
       {logOpen && (
         <LogTimeModal

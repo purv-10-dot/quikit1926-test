@@ -27,11 +27,9 @@ vi.mock("@/lib/oauth", () => ({
   generateAuthCode: vi.fn(() => "test-code"),
   redirectUriMatches: vi.fn((registered: string, actual: string) => registered === actual),
   resolveAppOrigin: vi.fn((app: { baseUrl: string }) => app.baseUrl),
-  resolveAppByResource: vi.fn(),
 }));
 
 import { GET } from "@/app/api/oauth/authorize/route";
-import { resolveAppByResource } from "@/lib/oauth";
 
 const CLIENT_ID = "quikscale";
 const REDIRECT_URI = "http://localhost:3003/api/auth/callback/quikit";
@@ -54,17 +52,14 @@ const BASE_PARAMS = {
 describe("GET /api/oauth/authorize — app access gate", () => {
   beforeEach(() => {
     resetMockDb();
-    vi.mocked(resolveAppByResource).mockReset();
-    // Registered (confidential) client with the matching redirect URI,
-    // bound to an app at registration time (declared `resource` there).
+    // Registered (confidential) client with the matching redirect URI.
     mockDb.oAuthClient.findUnique.mockResolvedValue({
-      appId: "app-quikscale",
       redirectUris: [REDIRECT_URI],
       scopes: ["openid", "profile", "email", "tenant"],
       clientSecret: "$2a$10$fakehashforconfidentialclient",
     } as never);
     // The App backing this client, with a slug + landing baseUrl.
-    mockDb.app.findUnique.mockResolvedValue({
+    mockDb.app.findFirst.mockResolvedValue({
       id: "app-quikscale",
       slug: "quikscale",
       baseUrl: APP_BASE_URL,
@@ -128,51 +123,5 @@ describe("GET /api/oauth/authorize — app access gate", () => {
     expect(location.searchParams.get("code")).toBe("test-code");
     expect(location.searchParams.get("state")).toBe("xyz");
     expect(mockDb.oAuthCode.create).toHaveBeenCalledOnce();
-  });
-
-  describe("unbound dynamic client (registered without `resource`, e.g. Claude Desktop)", () => {
-    beforeEach(() => {
-      // No appId bound at registration — authorize must fall back to the
-      // `resource` query param instead of the (now-null) client.appId.
-      mockDb.oAuthClient.findUnique.mockResolvedValue({
-        appId: null,
-        redirectUris: [REDIRECT_URI],
-        scopes: ["openid", "profile", "email", "tenant"],
-        clientSecret: null,
-      } as never);
-    });
-
-    it("resolves the app from `resource` and still enforces the access gate", async () => {
-      setSession({ id: "user-1", email: "u@test.com", orgId: "org-1" });
-      vi.mocked(resolveAppByResource).mockResolvedValue({
-        id: "app-quikscale",
-        slug: "quikscale",
-        baseUrl: APP_BASE_URL,
-      });
-      mockDb.userAppAccess.findFirst.mockResolvedValue(null);
-      mockDb.app.findMany.mockResolvedValue([{ id: "app-quikscale", requiresOrgAdmin: false }] as never);
-      mockDb.orgAppAccess.findMany.mockResolvedValue([] as never);
-      mockDb.userAppAccess.findMany.mockResolvedValue([] as never);
-
-      const res = await GET(
-        authorizeReq({ ...BASE_PARAMS, code_challenge: "chal", resource: "https://quikscale.example.com/api/mcp" }),
-      );
-
-      expect(resolveAppByResource).toHaveBeenCalledWith("https://quikscale.example.com/api/mcp");
-      const location = new URL(res.headers.get("location") ?? "");
-      expect(location.searchParams.get("reason")).toBe("no_app_access");
-      expect(mockDb.oAuthCode.create).not.toHaveBeenCalled();
-    });
-
-    it("skips the access gate (existing permissive behavior) when no `resource` is given", async () => {
-      setSession({ id: "user-1", email: "u@test.com", orgId: "org-1" });
-      mockDb.oAuthCode.create.mockResolvedValue({} as never);
-
-      const res = await GET(authorizeReq({ ...BASE_PARAMS, code_challenge: "chal" }));
-
-      expect(resolveAppByResource).not.toHaveBeenCalled();
-      expect(mockDb.oAuthCode.create).toHaveBeenCalledOnce();
-      expect(res.status).toBe(307);
-    });
   });
 });

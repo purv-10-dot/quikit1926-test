@@ -296,3 +296,36 @@ export type ListTestCasesQuery = z.infer<typeof listTestCasesSchema>;
 export type CreateTestCaseInput = z.infer<typeof createTestCaseSchema>;
 export type UpdateTestCaseInput = z.infer<typeof updateTestCaseSchema>;
 export type TestStepInput = z.infer<typeof testStepSchema>;
+
+/**
+ * MCP-only step schema (QUIKTR-122). REST's testStepSchema allows a blank
+ * `expected` (exploratory/BDD cases legitimately skip it); an MCP caller has
+ * no follow-up editor UI to fill a hollow step in later, so both fields must
+ * carry real content.
+ */
+export const mcpTestStepSchema = z.object({
+  action: z.string().trim().min(1, "Each step needs non-empty step text."),
+  expected: z.string().trim().min(1, "Each step needs a non-empty expected result."),
+});
+
+/**
+ * MCP `create_test_case` input (QUIKTR-122). Diverges from createTestCaseSchema:
+ *  - sectionId/suiteId are both OPTIONAL (createTestCaseSchema requires
+ *    sectionId) — resolved via resolveMcpTestCaseSection in lib/mcp/testCaseBundle.ts.
+ *  - steps is REQUIRED, min 1, every entry validated by mcpTestStepSchema.
+ *  - issueId is new: links the case to an existing issue in the same project.
+ * projectId is deliberately not part of this schema — resolved via
+ * resolveRequestedProjectId, same as create_issue's MCP input.
+ */
+export const mcpCreateTestCaseSchema = z.object({
+  sectionId: z.string().min(1).optional(),
+  suiteId: z.string().min(1).optional(),
+  issueId: z.string().min(1).optional(),
+  title: z.string().trim().min(1).max(500),
+  preconditions: z.string().max(50_000).optional(),
+  priority: testCasePriorityEnum.default("MEDIUM"),
+  type: testCaseTypeEnum.default("FUNCTIONAL"),
+  steps: z.array(mcpTestStepSchema).min(1, "steps is required.").max(200),
+});
+
+export type McpCreateTestCaseInput = z.infer<typeof mcpCreateTestCaseSchema>;
