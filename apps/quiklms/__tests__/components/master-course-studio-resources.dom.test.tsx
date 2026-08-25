@@ -281,6 +281,70 @@ describe('adding several resources in a row', () => {
   });
 });
 
+describe('the Content pane shows one thing at a time', () => {
+  /**
+   * The list and the open form used to share the pane: the list was capped at
+   * 8rem, so its rows were sliced through the middle, and the form got whatever
+   * was left — not enough for a heading, two fields and an action row, so the
+   * buttons sat below the fold behind a second scrollbar. Both halves were
+   * clipped at once.
+   *
+   * Now the pane swaps: list → form → list, with a back control carrying the
+   * count so the author can still see nothing was lost.
+   */
+  beforeEach(() => {
+    render(<MasterCourseStudio isTenantAdmin approvalEnabled={false} onClose={noop} onSuccess={noop} />);
+  });
+
+  it('gives the whole pane to an add-form, then hands it back to the list', async () => {
+    await goToContent();
+    await addLink('https://example.com/one', 'One');
+    await addLink('https://example.com/two', 'Two');
+
+    expect(screen.getByText('One')).toBeTruthy();
+
+    await act(async () => {
+      screen.getByText('Rich Text').click();
+    });
+
+    // The form is on screen and the rows are gone — not squeezed above it.
+    expect(screen.getByPlaceholderText(/Enter your content here/i)).toBeTruthy();
+    expect(screen.queryByText('One')).toBeNull();
+    // ...but the count still is, on the way back.
+    expect(screen.getByRole('button', { name: 'Resources' })).toBeTruthy();
+    expect(screen.getByText('(2)')).toBeTruthy();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Resources' }).click();
+    });
+
+    expect(screen.getByText('One')).toBeTruthy();
+    expect(screen.getByText('Two')).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/Enter your content here/i)).toBeNull();
+    // Leaving the form must not have added anything.
+    expect(screen.getAllByText(/2 resources/).length).toBeGreaterThan(0);
+  });
+
+  it('opens a row in the same pane, and the back control returns to the list', async () => {
+    await goToContent();
+    await addLink('https://example.com/one', 'One');
+
+    await act(async () => {
+      screen.getByText('One').click();
+    });
+
+    // The editor replaced the list, so it is not competing with it for height.
+    expect(screen.getByDisplayValue('https://example.com/one')).toBeTruthy();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Resources' }).click();
+    });
+
+    expect(screen.getByText('One')).toBeTruthy();
+    expect(screen.getByText('Upload File')).toBeTruthy();
+  });
+});
+
 describe('a growing resource list stays visible', () => {
   it('shows a running count so a scrolled list is not mistaken for a lost one', async () => {
     render(<MasterCourseStudio isTenantAdmin approvalEnabled={false} onClose={noop} onSuccess={noop} />);

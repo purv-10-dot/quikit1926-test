@@ -48,6 +48,7 @@ import {
   Type,
   Globe,
   Package,
+  ArrowLeft,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import { v4 as uuidv4 } from 'uuid';
@@ -406,6 +407,46 @@ const SubModuleResourceEngine = ({
 
   const selectedResource = resources.find((r) => r.id === selectedResourceId);
 
+  /**
+   * Embedded, the pane shows EITHER the list or one form — never both squeezed
+   * into the same column.
+   *
+   * Stacking them is what clipped both halves: the list was capped at 8rem, so
+   * its rows were sliced through the middle, and the form below it inherited
+   * whatever was left — which was not enough for a heading, two fields and an
+   * action row, so its buttons sat under the fold behind a second scrollbar.
+   * A list and a form each want a pane; the pane is only one. So it swaps,
+   * list → form → list, with a back control that carries the count.
+   */
+  const embeddedDetail = embedded && Boolean(addMode || selectedResource);
+
+  /** Leave the form/editor and return to the list. */
+  const closeDetail = () => {
+    setAddMode(null);
+    setSelectedResourceId(null);
+  };
+
+  /* Compact field styling for the embedded pane — the modal's px-4 py-3 /
+     rounded-xl / border-2 fields are sized for an 85vh overlay, not for a
+     section of the Studio's sub-module editor. */
+  const inputCls = embedded
+    ? 'w-full px-3 py-2 bg-canvas border border-line focus:border-brand-primary rounded-md outline-none text-sm text-fg transition-colors'
+    : 'w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all';
+  const labelCls = embedded
+    ? 'block text-sm font-medium text-fg mb-1.5'
+    : 'block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2';
+  /* The action row is pinned to the bottom of the scroll area embedded, so
+     "Add Content" is reachable without scrolling past the textarea. */
+  const actionRowCls = embedded
+    ? 'flex gap-2 mt-4 sticky bottom-0 -mx-3 px-3 py-2 bg-surface border-t border-line'
+    : 'flex gap-3 mt-8';
+  const primaryBtnBase = embedded
+    ? 'flex-1 px-4 py-2 rounded-md text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+    : 'flex-1 px-5 py-3 text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed';
+  const cancelBtnCls = embedded
+    ? 'px-4 py-2 rounded-md border border-line text-sm font-medium text-fg hover:bg-surface-muted transition-colors'
+    : 'flex-1 px-5 py-3 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 font-semibold rounded-xl hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors';
+
   return (
     /* Same element structure in both modes — only the classes differ — so that
        switching to embedded cannot remount the tree and drop in-flight uploads. */
@@ -477,28 +518,37 @@ const SubModuleResourceEngine = ({
 
         {/* Error */}
         {error && (
-          <div className="mx-6 mt-4 p-4 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl flex items-center gap-3">
+          <div className={embedded
+            ? "shrink-0 mx-3 mt-3 p-3 bg-danger-soft border border-danger/30 rounded-md flex items-center gap-2"
+            : "mx-6 mt-4 p-4 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl flex items-center gap-3"}>
+            {!embedded && (
             <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-xl">
               <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
-            <p className="flex-1 text-red-800 dark:text-red-300 font-medium">{error}</p>
-            <button onClick={() => setError(null)} className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl">
-              <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            )}
+            {embedded && <AlertCircle className="w-4 h-4 shrink-0 text-danger" />}
+            <p className={embedded ? "flex-1 text-sm text-danger" : "flex-1 text-red-800 dark:text-red-300 font-medium"}>{error}</p>
+            <button onClick={() => setError(null)} className={embedded ? "p-1 rounded-md hover:bg-surface-muted" : "p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl"}>
+              <X className={embedded ? "w-4 h-4 text-danger" : "w-4 h-4 text-red-600 dark:text-red-400"} />
             </button>
           </div>
         )}
 
         {/* Upload Progress */}
         {uploading && (
-          <div className="mx-6 mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800/50 rounded-2xl">
-            <div className="flex items-center gap-3 mb-3">
-              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-              <span className="font-medium text-blue-800 dark:text-blue-300">Uploading...</span>
-              <span className="ml-auto text-sm font-bold text-blue-600">{Math.round(uploadProgress)}%</span>
+          <div className={embedded
+            ? "shrink-0 mx-3 mt-3 p-3 border border-line rounded-md bg-surface-muted"
+            : "mx-6 mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800/50 rounded-2xl"}>
+            <div className={embedded ? "flex items-center gap-2 mb-2" : "flex items-center gap-3 mb-3"}>
+              <Loader2 className={embedded ? "w-4 h-4 text-brand-primary animate-spin" : "w-5 h-5 text-blue-600 animate-spin"} />
+              <span className={embedded ? "text-sm text-fg" : "font-medium text-blue-800 dark:text-blue-300"}>Uploading...</span>
+              <span className={embedded ? "ml-auto text-xs font-medium text-fg-muted" : "ml-auto text-sm font-bold text-blue-600"}>{Math.round(uploadProgress)}%</span>
             </div>
-            <div className="w-full h-2 bg-blue-100 dark:bg-blue-900/50 rounded-full overflow-hidden">
+            <div className={embedded ? "w-full h-1.5 bg-surface rounded-full overflow-hidden" : "w-full h-2 bg-blue-100 dark:bg-blue-900/50 rounded-full overflow-hidden"}>
               <div
-                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                className={embedded
+                  ? "h-full bg-brand-primary rounded-full transition-all duration-300"
+                  : "h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"}
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
@@ -508,17 +558,18 @@ const SubModuleResourceEngine = ({
         {/* Content */}
         <div className={embedded ? "flex-1 flex flex-col overflow-hidden min-h-0" : "flex-1 flex overflow-hidden"}>
           {/* Resource List */}
-          {/* When no form is open the list should own the pane; while one is
-              open it yields so the form is reachable. The old fixed cap was a
-              leftover from the accordion, where the whole engine had ~19rem —
-              in a full-height pane it showed two rows and hid the rest behind a
-              scrollbar nobody notices, which reads as "my third resource was
-              never added". */}
+          {/* Embedded, the list owns the whole pane — it is not squeezed into a
+              fixed cap above a form any more. The old cap was a leftover from
+              the accordion, where the whole engine had ~19rem; in a full-height
+              pane it showed two rows and sliced the third in half, which reads
+              as "my third resource was never added". */}
+          {!embeddedDetail && (
           <div className={embedded
-            ? `w-full flex flex-col min-h-0 ${addMode || selectedResource ? 'shrink-0' : 'flex-1'}`
+            ? 'w-full flex-1 flex flex-col min-h-0'
             : "w-80 border-r border-gray-200 dark:border-slate-700 flex flex-col bg-gray-50/50 dark:bg-slate-800/30"}>
-            {/* Add Resource Options */}
-            <div className={embedded ? "p-3 border-b border-line" : "p-4 border-b border-gray-200 dark:border-slate-700"}>
+            {/* Add Resource Options — pinned above the list so the three ways
+                in stay put while the list below them scrolls. */}
+            <div className={embedded ? "shrink-0 p-3 border-b border-line" : "p-4 border-b border-gray-200 dark:border-slate-700"}>
               {/* The heading is redundant embedded — the step is called Content. */}
               {!embedded && (
               <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -602,15 +653,15 @@ const SubModuleResourceEngine = ({
 
             {/* Resource List */}
             {/* A running count, so a list that is scrolled cannot be mistaken
-                for a list that is missing items. */}
+                for a list that is missing items. The old "— scroll to see them
+                all" hint went with the cap that made scrolling necessary. */}
             {embedded && resources.length > 0 && (
-              <p className="px-3 pt-2 text-xs text-fg-muted">
-                {resources.length} resource{resources.length === 1 ? '' : 's'}
-                {addMode ? ' — scroll to see them all' : ''}
+              <p className="shrink-0 px-3 pt-2 pb-1 text-xs text-fg-muted">
+                {resources.length} resource{resources.length === 1 ? '' : 's'} — drag to reorder, click to edit
               </p>
             )}
             <div className={embedded
-              ? `overflow-y-auto px-3 py-2 ${addMode || selectedResource ? 'max-h-32' : 'flex-1 min-h-0'}`
+              ? 'flex-1 min-h-0 overflow-y-auto px-3 pb-3'
               : "flex-1 overflow-y-auto p-4"}>
               <DragDropContext onDragEnd={onDragEnd}>
                 <Droppable droppableId="resources">
@@ -634,20 +685,29 @@ const SubModuleResourceEngine = ({
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 onClick={() => setSelectedResourceId(resource.id)}
-                                className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${
-                                  selectedResourceId === resource.id
-                                    ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-500 shadow-lg'
-                                    : 'bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
-                                } ${snapshot.isDragging ? 'shadow-xl' : ''}`}
+                                /* Embedded rows are one line tall with a plain
+                                   border: the pane fits five or six of them
+                                   whole instead of two-and-a-half. */
+                                className={embedded
+                                  ? `flex items-center gap-2 px-2 py-2 rounded-md border cursor-pointer transition-colors ${
+                                      selectedResourceId === resource.id
+                                        ? 'border-brand-primary bg-surface-muted'
+                                        : 'border-line bg-surface hover:bg-surface-muted'
+                                    } ${snapshot.isDragging ? 'shadow-md' : ''}`
+                                  : `flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${
+                                      selectedResourceId === resource.id
+                                        ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-500 shadow-lg'
+                                        : 'bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                                    } ${snapshot.isDragging ? 'shadow-xl' : ''}`}
                               >
-                                <div {...provided.dragHandleProps} className="p-1">
+                                <div {...provided.dragHandleProps} className={embedded ? "p-0.5" : "p-1"}>
                                   <GripVertical className="w-4 h-4 text-gray-400" />
                                 </div>
-                                <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${color} flex items-center justify-center text-white shadow`}>
-                                  <Icon className="w-4 h-4" />
+                                <div className={`${embedded ? 'w-7 h-7 shrink-0' : 'w-9 h-9'} rounded-lg bg-gradient-to-br ${color} flex items-center justify-center text-white shadow`}>
+                                  <Icon className={embedded ? "w-3.5 h-3.5" : "w-4 h-4"} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate" title={resource.title || 'Untitled'}>
+                                  <p className={`text-sm font-medium truncate ${embedded ? 'text-fg' : 'text-gray-800 dark:text-gray-200'}`} title={resource.title || 'Untitled'}>
                                     {resource.title || 'Untitled'}
                                   </p>
                                   <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -699,51 +759,92 @@ const SubModuleResourceEngine = ({
               )}
             </div>
           </div>
+          )}
 
-          {/* Resource Editor / Add Forms */}
-          <div className={embedded ? "flex-1 min-h-0 overflow-y-auto p-3" : "flex-1 overflow-y-auto p-8 bg-white dark:bg-slate-900"}>
+          {/* Resource Editor / Add Forms — embedded, this replaces the list and
+              takes the whole pane, so a form is never rendered into the few
+              rems the list left over. */}
+          {(!embedded || embeddedDetail) && (
+          <div className={embedded ? "flex-1 min-h-0 flex flex-col" : "flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900"}>
+            {/* The way back to the list, and the only place the resource count
+                is visible while a form is open. */}
+            {embedded && (
+              <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-line">
+                <button
+                  type="button"
+                  onClick={closeDetail}
+                  className="flex items-center gap-1.5 px-2 py-1 -ml-1 rounded-md text-sm font-medium text-fg-muted hover:text-fg hover:bg-surface-muted transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Resources
+                </button>
+                <span className="text-xs text-fg-subtle">
+                  ({resources.length})
+                </span>
+                <span className="ml-auto text-sm font-medium text-fg truncate">
+                  {addMode === 'url'
+                    ? 'Add external link'
+                    : addMode === 'text'
+                      ? 'Add rich text'
+                      : selectedResource?.title || 'Edit resource'}
+                </span>
+              </div>
+            )}
+
+            <div className={embedded ? "flex-1 min-h-0 overflow-y-auto p-3" : "flex-1 overflow-y-auto p-8"}>
             {/* Add URL Form */}
             {addMode === 'url' && (
-              <div className="max-w-lg mx-auto">
-                <div className="mb-6">
-                  <div className="p-4 bg-gradient-to-br from-teal-100 to-cyan-100 dark:from-teal-900/30 dark:to-cyan-900/30 rounded-2xl inline-flex">
-                    <Globe className="w-8 h-8 text-teal-600" />
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Add External Link</h3>
-                <p className="text-gray-500 dark:text-gray-400 mb-6">Add a link to external content like YouTube videos, articles, or web tools.</p>
+              <div className={embedded ? "max-w-xl" : "max-w-lg mx-auto"}>
+                {/* The icon tile and the headline are the modal's; embedded the
+                    pane header already says "Add external link", and every rem
+                    they took came off the fields below them. */}
+                {!embedded ? (
+                  <>
+                    <div className="mb-6">
+                      <div className="p-4 bg-gradient-to-br from-teal-100 to-cyan-100 dark:from-teal-900/30 dark:to-cyan-900/30 rounded-2xl inline-flex">
+                        <Globe className="w-8 h-8 text-teal-600" />
+                      </div>
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Add External Link</h3>
+                    <p className="text-gray-500 dark:text-gray-400 mb-6">Add a link to external content like YouTube videos, articles, or web tools.</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-fg-muted mb-3">
+                    YouTube, Vimeo and direct media links are detected automatically.
+                  </p>
+                )}
 
-                <div className="space-y-4">
+                <div className={embedded ? "space-y-3" : "space-y-4"}>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    <label className={labelCls}>
                       URL <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="url"
                       value={newResourceUrl}
                       onChange={(e) => setNewResourceUrl(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                      className={inputCls}
                       placeholder="https://example.com/resource"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    <label className={labelCls}>
                       Title (optional)
                     </label>
                     <input
                       type="text"
                       value={newResourceTitle}
                       onChange={(e) => setNewResourceTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                      className={inputCls}
                       placeholder="Resource title"
                     />
                   </div>
                 </div>
 
-                <div className="flex gap-3 mt-8">
+                <div className={actionRowCls}>
                   <button
                     onClick={() => setAddMode(null)}
-                    className="flex-1 px-5 py-3 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 font-semibold rounded-xl hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                    className={cancelBtnCls}
                   >
                     Cancel
                   </button>
@@ -753,7 +854,9 @@ const SubModuleResourceEngine = ({
                        only reported itself in the top strip, out of view. */
                     disabled={!newResourceUrl.trim()}
                     title={newResourceUrl.trim() ? undefined : 'Enter a URL first'}
-                    className="flex-1 px-5 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold rounded-xl hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-teal-500 disabled:hover:to-cyan-500"
+                    className={embedded
+                      ? `${primaryBtnBase} bg-brand-primary hover:opacity-90`
+                      : `${primaryBtnBase} bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 shadow-lg shadow-teal-500/25 disabled:hover:from-teal-500 disabled:hover:to-cyan-500`}
                   >
                     Add Link
                   </button>
@@ -763,36 +866,46 @@ const SubModuleResourceEngine = ({
 
             {/* Add Rich Text Form */}
             {addMode === 'text' && (
-              <div className="max-w-2xl mx-auto">
-                <div className="mb-6">
-                  <div className="p-4 bg-gradient-to-br from-rose-100 to-pink-100 dark:from-rose-900/30 dark:to-pink-900/30 rounded-2xl inline-flex">
-                    <Type className="w-8 h-8 text-rose-600" />
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Add Rich Text Content</h3>
-                <p className="text-gray-500 dark:text-gray-400 mb-6">Create formatted text content directly in the course.</p>
+              <div className={embedded ? "max-w-2xl" : "max-w-2xl mx-auto"}>
+                {!embedded && (
+                  <>
+                    <div className="mb-6">
+                      <div className="p-4 bg-gradient-to-br from-rose-100 to-pink-100 dark:from-rose-900/30 dark:to-pink-900/30 rounded-2xl inline-flex">
+                        <Type className="w-8 h-8 text-rose-600" />
+                      </div>
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Add Rich Text Content</h3>
+                    <p className="text-gray-500 dark:text-gray-400 mb-6">Create formatted text content directly in the course.</p>
+                  </>
+                )}
 
-                <div className="space-y-4">
+                <div className={embedded ? "space-y-3" : "space-y-4"}>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    <label className={labelCls}>
                       Title
                     </label>
                     <input
                       type="text"
                       value={newResourceTitle}
                       onChange={(e) => setNewResourceTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+                      className={inputCls}
                       placeholder="Content title"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    <label className={labelCls}>
                       Content <span className="text-red-500">*</span>
                     </label>
                     <textarea
                       value={newTextContent}
                       onChange={(e) => setNewTextContent(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-rose-500/20 focus:border-rose-500 transition-all min-h-[200px] resize-none"
+                      /* Embedded the box is shorter and resizable: it shares the
+                         pane with the field above it and a pinned action row, so
+                         a fixed 200px would push the buttons out of view again —
+                         the author drags it taller when they need to. */
+                      className={embedded
+                        ? `${inputCls} min-h-[9rem] resize-y`
+                        : `${inputCls} min-h-[200px] resize-none`}
                       placeholder="Enter your content here... (Markdown supported)"
                     />
                     {/* The requirement is stated HERE, next to the field it is
@@ -810,10 +923,10 @@ const SubModuleResourceEngine = ({
                   </div>
                 </div>
 
-                <div className="flex gap-3 mt-8">
+                <div className={actionRowCls}>
                   <button
                     onClick={() => setAddMode(null)}
-                    className="flex-1 px-5 py-3 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 font-semibold rounded-xl hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                    className={cancelBtnCls}
                   >
                     Cancel
                   </button>
@@ -821,7 +934,9 @@ const SubModuleResourceEngine = ({
                     onClick={addRichText}
                     disabled={!newTextContent.trim()}
                     title={newTextContent.trim() ? undefined : 'Add some content first'}
-                    className="flex-1 px-5 py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold rounded-xl hover:from-rose-600 hover:to-pink-600 transition-all shadow-lg shadow-rose-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-rose-500 disabled:hover:to-pink-500"
+                    className={embedded
+                      ? `${primaryBtnBase} bg-brand-primary hover:opacity-90`
+                      : `${primaryBtnBase} bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 shadow-lg shadow-rose-500/25 disabled:hover:from-rose-500 disabled:hover:to-pink-500`}
                   >
                     Add Content
                   </button>
@@ -831,7 +946,8 @@ const SubModuleResourceEngine = ({
 
             {/* Resource Details */}
             {selectedResource && !addMode && (
-              <div className="max-w-2xl mx-auto">
+              <div className={embedded ? "max-w-2xl" : "max-w-2xl mx-auto"}>
+                {!embedded && (
                 <div className="mb-6">
                   <div className={`p-4 bg-gradient-to-br ${getResourceColor(selectedResource.type)} rounded-2xl inline-flex text-white shadow-lg`}>
                     {(() => {
@@ -840,11 +956,12 @@ const SubModuleResourceEngine = ({
                     })()}
                   </div>
                 </div>
+                )}
 
-                <div className="space-y-6">
+                <div className={embedded ? "space-y-3" : "space-y-6"}>
                   {/* Title */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    <label className={labelCls}>
                       Title
                     </label>
                     <input
@@ -853,15 +970,17 @@ const SubModuleResourceEngine = ({
                       onChange={(e) =>
                         updateResource(selectedResource.id, { title: e.target.value })
                       }
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className={inputCls}
                       placeholder="Resource title"
                     />
                   </div>
 
                   {/* URL/Content Preview */}
                   {selectedResource.url && (
-                    <div className="p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    <div className={embedded
+                      ? "p-3 bg-surface-muted rounded-md border border-line"
+                      : "p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700"}>
+                      <label className={labelCls}>
                         Resource URL
                       </label>
                       <div className="flex items-center gap-2">
@@ -886,7 +1005,7 @@ const SubModuleResourceEngine = ({
                   {/* Rich Text Content */}
                   {selectedResource.type === 'rich_text' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      <label className={labelCls}>
                         Content
                       </label>
                       <textarea
@@ -894,14 +1013,16 @@ const SubModuleResourceEngine = ({
                         onChange={(e) =>
                           updateResource(selectedResource.id, { content: e.target.value })
                         }
-                        className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[200px] resize-none"
+                        className={embedded
+                          ? `${inputCls} min-h-[9rem] resize-y`
+                          : `${inputCls} min-h-[200px] resize-none`}
                         placeholder="Content..."
                       />
                     </div>
                   )}
 
                   {/* Metadata */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={embedded ? "grid grid-cols-2 gap-2" : "grid grid-cols-2 gap-4"}>
                     {selectedResource.fileSize && (
                       <div className="p-4 bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800/50">
                         <div className="flex items-center gap-2 mb-1">
@@ -983,7 +1104,9 @@ const SubModuleResourceEngine = ({
                       <img
                         src={previewUrls[selectedResource.id] || selectedResource.url}
                         alt={selectedResource.title || 'Preview'}
-                        className="max-w-full max-h-96 rounded-lg mx-auto"
+                        className={embedded
+                          ? "max-w-full max-h-56 rounded-lg mx-auto"
+                          : "max-w-full max-h-96 rounded-lg mx-auto"}
                       />
                     </div>
                   )}
@@ -1036,7 +1159,9 @@ const SubModuleResourceEngine = ({
                 </div>
               </div>
             )}
+            </div>
           </div>
+          )}
         </div>
       </div>
     </div>
