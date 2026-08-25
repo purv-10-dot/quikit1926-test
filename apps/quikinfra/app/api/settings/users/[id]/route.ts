@@ -215,7 +215,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     email: emailToUpdate,
     mobile: body.mobile,
     department: body.department,
-    mobileAccessEnabled: body.mobileAccessEnabled,
+    mobileAccessEnabled: body.appAllow,
     // Phase 4 / 5 / Item 6: modulesAssigned / projectsAssigned /
     // permissionMatrix are reconciled below by the v2 sync blocks —
     // not passed to the repository.
