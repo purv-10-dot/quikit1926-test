@@ -72,6 +72,7 @@ export type AiFeature =
   | "VERIFY"
   | "DH_WEEKLY_PROSE"
   | "WM_PROSE"
+  | "WEEK_ROLLUP"
   | "MONTHLY"
   | "DAILY_REPORT"
   | "SEMANTIC_DUP";
@@ -80,6 +81,7 @@ export type AiFeature =
 const ANALYSIS_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>([
   "DH_WEEKLY_PROSE",
   "WM_PROSE",
+  "WEEK_ROLLUP",
   "MONTHLY",
   "VERIFY",
 ]);

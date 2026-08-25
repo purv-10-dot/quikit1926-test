@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import {
+  findReport,
+  scopeKeyFor,
+  setValidated,
+  softDeleteReport,
+} from "@/lib/reports/reportStore";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { PROMPT_VERSION as WM_PROMPT_VERSION } from "@/lib/ai/prompts/wmProse";
@@ -12,6 +18,9 @@ import { audit, requestContext } from "@/lib/audit";
 export const runtime = "nodejs";
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** This route only ever touches one kind of row in the shared report table. */
+const KIND = "WM" as const;
 
 const querySchema = z.object({
   weeklyMeetingId: z.string().min(1),
@@ -66,9 +75,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     );
   }
 
-  const saved = await db.clientWeeklyMeetingReport.findFirst({
-    where: { orgId, weeklyMeetingId: meeting.id, deletedAt: null },
-  });
+  const saved = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, weeklyMeetingId: meeting.id }),
+  );
 
   const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
 
@@ -140,10 +151,11 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     );
   }
 
-  const saved = await db.clientWeeklyMeetingReport.findFirst({
-    where: { orgId, weeklyMeetingId: parsed.data.weeklyMeetingId, deletedAt: null },
-    select: { id: true, completeness: true, coveragePct: true },
-  });
+  const saved = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, weeklyMeetingId: parsed.data.weeklyMeetingId }),
+  );
   if (!saved) {
     return NextResponse.json({ success: false, error: "Report not found" }, { status: 404 });
   }
@@ -160,14 +172,9 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     );
   }
 
-  const updated = await db.clientWeeklyMeetingReport.update({
-    where: { id: saved.id },
-    data: {
-      validatedAt: parsed.data.validated ? new Date() : null,
-      validatedBy: parsed.data.validated ? userId : null,
-      updatedBy: userId,
-    },
-    select: { validatedAt: true, validatedBy: true },
+  const updated = await setValidated(saved.id, {
+    validated: parsed.data.validated,
+    userId,
   });
 
   return NextResponse.json({ success: true, data: updated });
@@ -197,17 +204,11 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
     );
   }
 
-  const existing = await db.clientWeeklyMeetingReport.findFirst({
-    where: { orgId, weeklyMeetingId: parsed.data.weeklyMeetingId, deletedAt: null },
-    select: {
-      id: true,
-      clientId: true,
-      meetingDate: true,
-      validatedAt: true,
-      currentVersion: true,
-      client: { select: { name: true } },
-    },
-  });
+  const existing = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, weeklyMeetingId: parsed.data.weeklyMeetingId }),
+  );
   if (!existing) {
     return NextResponse.json({ success: false, error: "Report not found" }, { status: 404 });
   }
@@ -216,12 +217,9 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
   const blocked = guardValidated(existing.validatedAt, confirmValidated, "This weekly meeting report");
   if (blocked) return blocked;
 
-  await db.clientWeeklyMeetingReport.update({
-    where: { id: existing.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
-  });
+  await softDeleteReport(existing.id, userId);
 
-  const dateLabel = existing.meetingDate.toISOString().slice(0, 10);
+  const dateLabel = existing.periodStart.toISOString().slice(0, 10);
   await audit.log({
     entityType: "MEETING_REPORT",
     entityId: existing.id,
@@ -229,7 +227,7 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
     actor: { userId, orgId, teamId: null },
     reason,
     snapshot: {
-      name: `Weekly meeting report · ${existing.client?.name ?? "—"} · ${dateLabel}`,
+      name: `Weekly meeting report · ${dateLabel}`,
       reportType: "WEEKLY_MEETING",
       clientId: existing.clientId,
       weeklyMeetingId: parsed.data.weeklyMeetingId,

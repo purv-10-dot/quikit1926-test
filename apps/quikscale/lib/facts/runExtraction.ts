@@ -46,6 +46,7 @@ import {
   type MergeDecision,
 } from "./consolidate";
 import { consolidateWeekly } from "./consolidateWeekly";
+import { stampTopics } from "./stampTopics";
 import { EXTRACTION_VERSION } from "@/lib/meetings/prepareTranscript";
 
 /**
@@ -209,6 +210,10 @@ export async function runExtraction(
             segmentMarkers: extracted.segmentMarkers.length
               ? (extracted.segmentMarkers as unknown as Prisma.InputJsonValue)
               : undefined,
+            // Parked for the same reason. One chunk's topic list says little;
+            // the union across a meeting is what lets consolidation group facts
+            // by workstream, which is what makes reduction meaningful.
+            topicsOpen: extracted.topicsOpen,
           },
         });
       });
@@ -509,6 +514,11 @@ async function consolidateRun(
     writeMergeAudit(tx, orgId, transcriptId, runId, factType, merges),
   );
   total += weekly.merges;
+
+  // Topics are stamped LAST, over survivors only. Doing it before merging would
+  // topic one fact per chunk that heard it, then merge them and keep whichever
+  // topic the survivor happened to carry.
+  await stampTopics(orgId, run);
 
   return total;
 }

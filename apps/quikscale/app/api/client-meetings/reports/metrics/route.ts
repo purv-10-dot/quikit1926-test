@@ -108,14 +108,23 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
           distinct: ["transcriptId"],
         })
         .then((r) => r.length),
-      db.clientDailyHuddleWeeklyReport.findMany({
+      // EVERY report kind, in one read. This was one table before the report
+      // rows were merged, so the regeneration rate and the partial-report count
+      // silently covered the daily huddle only — and would have kept doing so
+      // as report kinds were added.
+      db.clientMeetingReport.findMany({
         where: {
           orgId,
           deletedAt: null,
           ...(clientId ? { clientId } : {}),
           generatedAt: { gte: since },
         },
-        select: { currentVersion: true, coveragePct: true, validatedAt: true },
+        select: {
+          reportKind: true,
+          currentVersion: true,
+          coveragePct: true,
+          validatedAt: true,
+        },
       }),
       db.meetingReportJob.groupBy({
         by: ["status", "reportKind"],

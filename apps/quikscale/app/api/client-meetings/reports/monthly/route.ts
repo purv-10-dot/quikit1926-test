@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import {
+  findReport,
+  scopeKeyFor,
+  setValidated,
+  softDeleteReport,
+} from "@/lib/reports/reportStore";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { monthBounds } from "@/lib/reports/monthlyCompose";
@@ -11,6 +17,9 @@ import { audit, requestContext } from "@/lib/audit";
 export const runtime = "nodejs";
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** This route only ever touches one kind of row in the shared report table. */
+const KIND = "MONTHLY" as const;
 
 const querySchema = z.object({
   clientId: z.string().min(1),
@@ -52,9 +61,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
   }
 
-  const saved = await db.clientMonthlyReport.findFirst({
-    where: { orgId, clientId: client.id, periodStart: bounds.start, deletedAt: null },
-  });
+  const saved = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, periodStart: bounds.start }),
+  );
 
   const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
 
@@ -72,8 +83,8 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       validatedAt: saved?.validatedAt ?? null,
       validatedBy: saved?.validatedBy ?? null,
       version: saved?.currentVersion ?? null,
-      missingWeeks: saved?.missingWeeks ?? [],
-      sourceWeeklyReportIds: saved?.sourceWeeklyReportIds ?? [],
+      missingSources: saved?.missingSources ?? [],
+      sourceReportIds: saved?.sourceReportIds ?? [],
       canEdit,
       canGenerate: canEdit,
     },
@@ -107,15 +118,11 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Invalid period" }, { status: 400 });
   }
 
-  const existing = await db.clientMonthlyReport.findFirst({
-    where: { orgId, clientId: parsed.data.clientId, periodStart: bounds.start, deletedAt: null },
-    select: {
-      id: true,
-      validatedAt: true,
-      currentVersion: true,
-      client: { select: { name: true } },
-    },
-  });
+  const existing = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, periodStart: bounds.start }),
+  );
   if (!existing) {
     return NextResponse.json(
       { success: false, error: "No monthly report for this period." },
@@ -127,10 +134,7 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
   const blocked = guardValidated(existing.validatedAt, confirmValidated, "This monthly report");
   if (blocked) return blocked;
 
-  await db.clientMonthlyReport.update({
-    where: { id: existing.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
-  });
+  await softDeleteReport(existing.id, userId);
 
   await audit.log({
     entityType: "MEETING_REPORT",
@@ -139,7 +143,7 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
     actor: { userId, orgId, teamId: null },
     reason,
     snapshot: {
-      name: `Monthly report · ${existing.client?.name ?? "—"} · ${parsed.data.period}`,
+      name: `Monthly report · ${parsed.data.period}`,
       reportType: "MONTHLY",
       clientId: parsed.data.clientId,
       period: parsed.data.period,
@@ -182,10 +186,11 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Invalid period" }, { status: 400 });
   }
 
-  const saved = await db.clientMonthlyReport.findFirst({
-    where: { orgId, clientId: parsed.data.clientId, periodStart: bounds.start, deletedAt: null },
-    select: { id: true },
-  });
+  const saved = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, periodStart: bounds.start }),
+  );
   if (!saved) {
     return NextResponse.json(
       { success: false, error: "No generated report for this period — generate it first." },
@@ -193,14 +198,9 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     );
   }
 
-  const updated = await db.clientMonthlyReport.update({
-    where: { id: saved.id },
-    data: {
-      validatedAt: parsed.data.validated ? new Date() : null,
-      validatedBy: parsed.data.validated ? userId : null,
-      updatedBy: userId,
-    },
-    select: { validatedAt: true, validatedBy: true },
+  const updated = await setValidated(saved.id, {
+    validated: parsed.data.validated,
+    userId,
   });
 
   return NextResponse.json({ success: true, data: updated });

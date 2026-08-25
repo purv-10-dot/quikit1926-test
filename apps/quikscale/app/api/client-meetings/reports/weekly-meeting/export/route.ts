@@ -3,6 +3,7 @@ import { Packer } from "docx";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { findReport, scopeKeyFor } from "@/lib/reports/reportStore";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { storedWmReportSchema } from "@/lib/reports/wmCompose";
 import { buildWeeklyMeetingReportDocx } from "@/lib/exports/weeklyMeetingReportDocx";
@@ -37,10 +38,11 @@ export const POST = auth.view(async ({ orgId }, req) => {
   }
 
   const [saved, org] = await Promise.all([
-    db.clientWeeklyMeetingReport.findFirst({
-      where: { orgId, weeklyMeetingId: parsed.data.weeklyMeetingId, deletedAt: null },
-      select: { report: true, validatedAt: true, meetingDate: true },
-    }),
+    findReport(
+      orgId,
+      "WM",
+      scopeKeyFor({ kind: "WM", weeklyMeetingId: parsed.data.weeklyMeetingId }),
+    ),
     db.org.findFirst({ where: { id: orgId }, select: { name: true } }),
   ]);
 

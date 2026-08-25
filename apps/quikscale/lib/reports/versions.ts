@@ -33,7 +33,12 @@ import { db } from "@/lib/db";
 /** Versions kept per report. Older ones are pruned after each write. */
 export const VERSION_RETENTION = 10;
 
-export type ReportKind = "DH_WEEKLY" | "DH_DAILY" | "WM" | "MONTHLY";
+export type ReportKind =
+  | "DH_WEEKLY"
+  | "DH_DAILY"
+  | "WM"
+  | "WEEK_ROLLUP"
+  | "MONTHLY";
 
 export interface SnapshotInput {
   orgId: string;

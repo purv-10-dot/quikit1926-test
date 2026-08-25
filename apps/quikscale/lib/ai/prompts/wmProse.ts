@@ -77,6 +77,29 @@ export interface WmPromptInput {
   /** Coverage below 100 means content nobody read. Named so conclusions are qualified. */
   coveragePct: number | null;
   missingWindowLabels: string[];
+  /**
+   * Facts recorded but not shown, because a section was bounded (doc 17 §R1).
+   *
+   * Told to the model so it qualifies its reading, exactly as it does for
+   * incomplete coverage — and told for the same reason: a section that was
+   * trimmed must not read as the complete picture. This is what replaced the
+   * old silent `.slice()` calls.
+   */
+  omissionNotes: string[];
+  /** Workstreams the meeting covered, where any were identified. */
+  topics: string[];
+}
+
+/**
+ * Cap a list of secondary detail, and say when it was capped.
+ *
+ * A prompt line listing twelve raisers helps nobody, but trimming to five and
+ * saying nothing is the same silent truncation this work removed — one level
+ * down. "…and 7 more" costs four tokens and keeps the statement true.
+ */
+function withMore(items: string[], limit: number): string[] {
+  if (items.length <= limit) return items;
+  return [...items.slice(0, limit), `…and ${items.length - limit} more`];
 }
 
 const RULES = `
@@ -140,9 +163,9 @@ function renderAgenda(input: WmPromptInput): string {
 
 function renderKpi(input: WmPromptInput): string {
   if (input.kpi.length === 0) return "K&P DASHBOARD\n  (no dashboard reads captured)";
-  const lines = input.kpi.slice(0, 30).map((k) => {
+  const lines = input.kpi.map((k) => {
     const conflict = k.ragConflict ? "  [status stated differently at two points]" : "";
-    const points = k.keyPoints.slice(0, 3).join("; ");
+    const points = withMore(k.keyPoints, 3).join("; ");
     return `  ${k.name}: KPI ${k.kpiRag}, Priorities ${k.priorityRag}${points ? ` — ${points}` : ""}${conflict}`;
   });
   return `K&P DASHBOARD (statuses AS STATED in the meeting)\n${lines.join("\n")}`;
@@ -150,8 +173,10 @@ function renderKpi(input: WmPromptInput): string {
 
 function renderGaps(input: WmPromptInput): string {
   if (input.gaps.length === 0) return "GAPS\n  (none surfaced)";
-  const lines = input.gaps.slice(0, 25).map((g) => {
-    const who = g.raisedBy.length ? ` (raised by ${g.raisedBy.slice(0, 5).join(", ")})` : "";
+  const lines = input.gaps.map((g) => {
+    const who = g.raisedBy.length
+      ? ` (raised by ${withMore(g.raisedBy, 5).join(", ")})`
+      : "";
     const action = g.agreedAction ? `agreed: ${g.agreedAction}` : "NO ACTION AGREED";
     return `  [${g.scope}] ${g.gap}${who} — ${action}`;
   });
@@ -163,12 +188,10 @@ function renderDiscussions(input: WmPromptInput): string {
   const held = input.discussions.filter((d) => !d.wasDeferred);
   const deferred = input.discussions.filter((d) => d.wasDeferred);
 
-  const lines = held
-    .slice(0, 20)
-    .map((d) => `  ${d.kind}: ${d.summary}`);
+  const lines = held.map((d) => `  ${d.kind}: ${d.summary}`);
   if (deferred.length) {
     lines.push(
-      ...deferred.slice(0, 5).map((d) => `  DEFERRED: ${d.summary}`),
+      ...deferred.map((d) => `  DEFERRED: ${d.summary}`),
     );
   }
   return `DISCUSSIONS\n${lines.join("\n")}`;
@@ -217,6 +240,20 @@ export function buildWmPrompt(input: WmPromptInput): string {
     );
     context.push(
       "Do not treat a sparse section as evidence of what the meeting did or did not cover.",
+    );
+  }
+  if (input.topics.length > 0) {
+    context.push(`Workstreams discussed: ${input.topics.join(", ")}.`);
+  }
+  if (input.omissionNotes.length > 0) {
+    // A bounded section and an unread window are different failures and must
+    // not be conflated: one means we did not print everything, the other means
+    // nobody heard it. Both make a conclusion provisional, for different
+    // reasons, and the model is told which is which.
+    context.push(
+      "Some sections below are BOUNDED — the facts exist and are recorded, but not all of them are listed here:",
+      ...input.omissionNotes.map((n) => `  · ${n}`),
+      "Treat a bounded section as a sample, not as the complete list. Do not conclude that only the listed items occurred.",
     );
   }
   parts.push(`MEETING\n${context.map((c) => `  ${c}`).join("\n")}`);

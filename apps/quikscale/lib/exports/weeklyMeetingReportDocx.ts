@@ -202,6 +202,36 @@ function coverageSection(report: StoredWmReport): (Paragraph | Table)[] {
   return out;
 }
 
+/**
+ * What the report did not print — stated up front, beside coverage.
+ *
+ * Deliberately separate from the coverage caveat, and worded differently. An
+ * unread window means nobody heard that part of the meeting; a bounded section
+ * means we heard it, recorded it, and had no room to list all of it. Both make
+ * a conclusion provisional, for different reasons, and merging them would tell
+ * a facilitator there is a recording gap when there is none.
+ *
+ * Silence here is the norm: almost every meeting prints everything it has.
+ */
+function reductionSection(report: StoredWmReport): (Paragraph | Table)[] {
+  const r = report.reduction;
+  if (!r || r.complete || r.notes.length === 0) return [];
+
+  return [
+    new Paragraph({
+      shading: { fill: CAVEAT_FILL },
+      spacing: { before: 120, after: 80 },
+      children: [
+        text("This report shows a selection of what was recorded.", { bold: true }),
+      ],
+    }),
+    ...bullets(r.notes),
+    note(
+      "The items not listed are stored against this meeting and can be opened from the evidence view.",
+    ),
+  ];
+}
+
 /** Section 1 — attendance. */
 function attendanceSection(report: StoredWmReport): (Paragraph | Table)[] {
   const a = report.attendance;
@@ -540,6 +570,7 @@ export function buildWeeklyMeetingReportDocx(
   }
 
   children.push(...coverageSection(report));
+  children.push(...reductionSection(report));
 
   if (!report.callHeld) {
     // Nothing below would mean anything. Rendering empty sections for a meeting

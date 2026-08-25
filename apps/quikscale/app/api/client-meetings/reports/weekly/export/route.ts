@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Packer } from "docx";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { findReport, scopeKeyFor } from "@/lib/reports/reportStore";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { storedWeeklyReportSchema } from "@/lib/ai/weeklyHuddleCompose";
 import { buildWeeklyReportDocx } from "@/lib/exports/weeklyHuddleReportDocx";
@@ -38,10 +39,11 @@ export const POST = auth.view(async ({ orgId }, req) => {
   const weekStart = toWeekStart(new Date(`${parsed.data.weekStart}T00:00:00.000Z`));
 
   const [saved, org] = await Promise.all([
-    db.clientDailyHuddleWeeklyReport.findFirst({
-      where: { orgId, clientId: parsed.data.clientId, weekStart, deletedAt: null },
-      select: { report: true },
-    }),
+    findReport(
+      orgId,
+      "DH_WEEKLY",
+      scopeKeyFor({ kind: "DH_WEEKLY", periodStart: weekStart }),
+    ),
     db.org.findFirst({ where: { id: orgId }, select: { name: true } }),
   ]);
 

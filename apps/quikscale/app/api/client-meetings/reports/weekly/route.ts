@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import {
+  findReport,
+  saveReportEdit,
+  scopeKeyFor,
+  softDeleteReport,
+} from "@/lib/reports/reportStore";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { storedWeeklyReportSchema, buildMetricsSnapshot } from "@/lib/ai/weeklyHuddleCompose";
@@ -16,6 +22,9 @@ import { audit, requestContext } from "@/lib/audit";
 export const runtime = "nodejs";
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** This route only ever touches one kind of row in the shared report table. */
+const KIND = "DH_WEEKLY" as const;
 
 const querySchema = z.object({
   clientId: z.string().min(1),
@@ -56,9 +65,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
   }
 
-  const saved = await db.clientDailyHuddleWeeklyReport.findFirst({
-    where: { orgId, clientId: parsed.data.clientId, weekStart, deletedAt: null },
-  });
+  const saved = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, periodStart: weekStart }),
+  );
 
   const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
 
@@ -134,17 +145,11 @@ async function evaluateCacheSafely(
   if (!context) return unknown;
 
   try {
-    const saved = await db.clientDailyHuddleWeeklyReport.findFirst({
-      where: { orgId, clientId, weekStart: context.weekStart, deletedAt: null },
-      select: {
-        sourceFingerprint: true,
-        promptVersion: true,
-        schemaVersion: true,
-        coveragePct: true,
-        currentVersion: true,
-        validatedAt: true,
-      },
-    });
+    const saved = await findReport(
+      orgId,
+      KIND,
+      scopeKeyFor({ kind: KIND, periodStart: context.weekStart }),
+    );
 
     const state = await computeWeeklyCacheState(orgId, clientId, context);
     const verdict = evaluateWeeklyCache(saved ?? null, state);
@@ -198,10 +203,11 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
   const { clientId, report, validated } = parsed.data;
   const weekStart = toWeekStart(new Date(`${parsed.data.weekStart}T00:00:00.000Z`));
 
-  const existing = await db.clientDailyHuddleWeeklyReport.findFirst({
-    where: { orgId, clientId, weekStart, deletedAt: null },
-    select: { id: true, validation: true, validatedAt: true, validatedBy: true },
-  });
+  const existing = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, periodStart: weekStart }),
+  );
   if (!existing) {
     return NextResponse.json(
       { success: false, error: "No generated report for this week — generate it first." },
@@ -215,22 +221,12 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     counts: { errors: counts.errors ?? 0, warnings: counts.warnings ?? 0 },
   });
 
-  const now = new Date();
-  const updated = await db.clientDailyHuddleWeeklyReport.update({
-    where: { id: existing.id },
-    data: {
-      report: report as unknown as Prisma.InputJsonValue,
-      metrics: metrics as unknown as Prisma.InputJsonValue,
-      reportConfidence: report.overallConfidence,
-      updatedAt: now,
-      updatedBy: userId,
-      ...(validated === undefined
-        ? {}
-        : validated
-          ? { validatedAt: now, validatedBy: userId }
-          : { validatedAt: null, validatedBy: null }),
-    },
-    select: { validatedAt: true, validatedBy: true },
+  const updated = await saveReportEdit(existing.id, {
+    report,
+    metrics,
+    reportConfidence: report.overallConfidence,
+    validated,
+    userId,
   });
 
   return NextResponse.json({
@@ -263,10 +259,11 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
   }
 
   const weekStart = toWeekStart(new Date(`${parsed.data.weekStart}T00:00:00.000Z`));
-  const existing = await db.clientDailyHuddleWeeklyReport.findFirst({
-    where: { orgId, clientId: parsed.data.clientId, weekStart, deletedAt: null },
-    select: { id: true, validatedAt: true, currentVersion: true, client: { select: { name: true } } },
-  });
+  const existing = await findReport(
+    orgId,
+    KIND,
+    scopeKeyFor({ kind: KIND, periodStart: weekStart }),
+  );
   if (!existing) {
     return NextResponse.json(
       { success: false, error: "No weekly report for this week." },
@@ -278,10 +275,7 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
   const blocked = guardValidated(existing.validatedAt, confirmValidated, "This weekly report");
   if (blocked) return blocked;
 
-  await db.clientDailyHuddleWeeklyReport.update({
-    where: { id: existing.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
-  });
+  await softDeleteReport(existing.id, userId);
 
   const weekLabel = weekStart.toISOString().slice(0, 10);
   await audit.log({
@@ -291,7 +285,7 @@ export const DELETE = auth.delete(async ({ orgId, userId }, req) => {
     actor: { userId, orgId, teamId: null },
     reason,
     snapshot: {
-      name: `Weekly rollup · ${existing.client?.name ?? "—"} · week of ${weekLabel}`,
+      name: `Weekly rollup · week of ${weekLabel}`,
       reportType: "DH_WEEKLY",
       clientId: parsed.data.clientId,
       weekStart: weekLabel,

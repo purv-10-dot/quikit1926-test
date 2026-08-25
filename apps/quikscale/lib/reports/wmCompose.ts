@@ -33,6 +33,15 @@ import {
   type SegmentMarker,
 } from "@/lib/meetings/segmentAdherence";
 import { buildScorecard, hhmmToMinutes, type ScorecardResult } from "@/lib/meetings/scorecard";
+import {
+  budgetFor,
+  describeOmissions,
+  mergeOmissions,
+  reduceFacts,
+  type Omission,
+} from "@/lib/facts/reduce";
+
+import { buildFactSet, type MeetingFactSet } from "./factSet";
 
 import type { WmContext } from "./wmData";
 
@@ -64,6 +73,36 @@ export interface DeterministicWm {
   missingWindows: Array<{ startMs: number; endMs: number; label: string }>;
   /** Sections whose inputs fall in a window nobody read. */
   incompleteSections: string[];
+  /**
+   * Facts the report does not show, by type and workstream.
+   *
+   * Empty for almost every meeting. Non-empty means a section was bounded, and
+   * that has to be stated — a reduction nobody can see is just truncation with
+   * extra steps, which is the bug this replaced.
+   */
+  omitted: Omission[];
+  /** The meeting's workstreams, where any were identified. */
+  topics: string[];
+  /**
+   * Counts over the FULL fact set, before reduction.
+   *
+   * Every metric is derived from here rather than from the rendered rows. A
+   * number that moved with how much the report had room to print would be
+   * worthless — and these feed the monthly rollup, so the error would compound
+   * silently across a quarter.
+   */
+  totals: {
+    kpiReads: number;
+    kpiRed: number;
+    kpiAmber: number;
+    kpiGreen: number;
+    ragConflicts: number;
+    dashboardsReviewed: number;
+    gaps: number;
+    gapsTeamWide: number;
+    gapsWithoutAction: number;
+    discussions: number;
+  };
 }
 
 export interface WmKpiRow {
@@ -85,6 +124,8 @@ export interface WmGapRow {
   scope: "TEAM" | "INDIVIDUAL";
   raisedBy: string[];
   severityStated: string | null;
+  /** Workstream, where one was identified. Null groups reduce together. */
+  topicKey: string | null;
 }
 
 export interface WmDiscussionRow {
@@ -93,6 +134,8 @@ export interface WmDiscussionRow {
   summary: string;
   outcome: string | null;
   wasDeferred: boolean;
+  /** Workstream, where one was identified. Null groups reduce together. */
+  topicKey: string | null;
 }
 
 /**
@@ -133,7 +176,49 @@ export function computeDeterministicWm(context: WmContext): DeterministicWm {
   const nameByMemberId = new Map(context.roster.map((m) => [m.id, m]));
   const dashboardNa = new Set(context.dashboardNaIds);
 
-  const kpiRows: WmKpiRow[] = context.facts.kpi.map((k) => {
+  // ── Bounded reduction (doc 17 §R1) ──────────────────────────────────────
+  // A six-hour meeting across four workstreams can consolidate to hundreds of
+  // facts. What the report SHOWS is bounded; what it COUNTS is not. Every
+  // metric below is computed from the full fact arrays, and only the rendered
+  // tables are reduced — so a bounded gaps table never changes the gap count,
+  // the scorecard, or anything the monthly rollup trends.
+  const reducedKpi = reduceFacts(
+    context.facts.kpi.map((k) => ({
+      ...k,
+      factType: "KPI",
+      subject: k.clientMemberId ?? k.speakerRaw,
+    })),
+    budgetFor("KPI"),
+  );
+  const reducedGaps = reduceFacts(
+    context.facts.gaps.map((g) => ({ ...g, factType: "GAP", subject: null })),
+    budgetFor("GAP"),
+  );
+  const reducedDiscussions = reduceFacts(
+    // Kind is the subject, so a good-news item and a CI topic are never reduced
+    // against each other and every kind reaches the report.
+    context.facts.discussions.map((d) => ({
+      ...d,
+      factType: "DISCUSSION",
+      subject: d.kind,
+    })),
+    budgetFor("DISCUSSION"),
+  );
+
+  const omitted = mergeOmissions(
+    reducedKpi.omitted,
+    reducedGaps.omitted,
+    reducedDiscussions.omitted,
+  );
+  const topics = [
+    ...new Set(
+      [...context.facts.gaps, ...context.facts.discussions, ...context.facts.kpi]
+        .map((f) => f.topicKey)
+        .filter((t): t is string => Boolean(t)),
+    ),
+  ].sort();
+
+  const kpiRows: WmKpiRow[] = reducedKpi.kept.map((k) => {
     const member = k.clientMemberId ? nameByMemberId.get(k.clientMemberId) : undefined;
     return {
       name: member?.name ?? k.speakerRaw,
@@ -148,21 +233,23 @@ export function computeDeterministicWm(context: WmContext): DeterministicWm {
     };
   });
 
-  const gaps: WmGapRow[] = context.facts.gaps.map((g) => ({
+  const gaps: WmGapRow[] = reducedGaps.kept.map((g) => ({
     gap: g.gap,
     agreedAction: g.agreedAction,
     owner: g.ownerRaw,
     scope: g.scope === "TEAM" ? "TEAM" : "INDIVIDUAL",
     raisedBy: g.raisedByRaw,
     severityStated: g.severityStated,
+    topicKey: g.topicKey,
   }));
 
-  const discussions: WmDiscussionRow[] = context.facts.discussions.map((d) => ({
+  const discussions: WmDiscussionRow[] = reducedDiscussions.kept.map((d) => ({
     kind: d.kind,
     sharedBy: d.sharedByRaw,
     summary: d.summary,
     outcome: d.outcome,
     wasDeferred: d.wasDeferred,
+    topicKey: d.topicKey,
   }));
 
   const scorecard = buildScorecard({
@@ -174,11 +261,16 @@ export function computeDeterministicWm(context: WmContext): DeterministicWm {
     punctualityOverride: context.meeting.punctualityOverride === "YES",
     attendancePct: attendance.attendancePct,
     segments,
-    dashboardsReviewed: kpiRows.filter((r) => !r.notApplicable).length,
+    // Counted from the FULL fact set, never from the reduced view. A bounded
+    // table must never move a metric — that would make the scorecard depend on
+    // how much of the meeting the report had room to print.
+    dashboardsReviewed: context.facts.kpi.filter(
+      (k) => !(k.clientMemberId && dashboardNa.has(k.clientMemberId)),
+    ).length,
     dashboardsExpected: context.roster.filter(
       (m) => m.attendanceType === "REQUIRED" && !dashboardNa.has(m.id),
     ).length,
-    gapCount: gaps.length,
+    gapCount: context.facts.gaps.length,
   });
 
   const coveragePct = context.extraction?.coveragePct ?? null;
@@ -199,6 +291,23 @@ export function computeDeterministicWm(context: WmContext): DeterministicWm {
     discussions,
     coveragePct,
     completeness,
+    omitted,
+    topics,
+    // Counted from `context.facts`, never from the reduced rows above.
+    totals: {
+      kpiReads: context.facts.kpi.length,
+      kpiRed: context.facts.kpi.filter((k) => k.kpiRag === "RED").length,
+      kpiAmber: context.facts.kpi.filter((k) => k.kpiRag === "AMBER").length,
+      kpiGreen: context.facts.kpi.filter((k) => k.kpiRag === "GREEN").length,
+      ragConflicts: context.facts.kpi.filter((k) => k.ragConflict).length,
+      dashboardsReviewed: context.facts.kpi.filter(
+        (k) => !(k.clientMemberId && dashboardNa.has(k.clientMemberId)),
+      ).length,
+      gaps: context.facts.gaps.length,
+      gapsTeamWide: context.facts.gaps.filter((g) => g.scope === "TEAM").length,
+      gapsWithoutAction: context.facts.gaps.filter((g) => !g.agreedAction).length,
+      discussions: context.facts.discussions.length,
+    },
     missingWindows,
     incompleteSections:
       completeness === "PARTIAL" ? sectionsTouching(missingWindows, segments) : [],
@@ -360,6 +469,28 @@ export const storedWmReportSchema = z.object({
     incompleteSections: z.array(z.string()),
   }),
 
+  /**
+   * Facts recorded but not shown, because a section was bounded (doc 17 §R1).
+   *
+   * Distinct from `coverage` and deliberately separate: coverage is about what
+   * nobody READ, this is about what the report had no room to PRINT. Conflating
+   * them would tell a facilitator a recording gap exists when there is none.
+   */
+  reduction: z.object({
+    complete: z.boolean(),
+    topics: z.array(z.string()),
+    omitted: z.array(
+      z.object({
+        factType: z.string(),
+        topicKey: z.string().nullable(),
+        dropped: z.number(),
+        total: z.number(),
+        reason: z.string(),
+      }),
+    ),
+    notes: z.array(z.string()),
+  }),
+
   // 1 — attendance
   attendance: z.object({
     rows: z.array(attendanceRowSchema),
@@ -406,6 +537,8 @@ export const storedWmReportSchema = z.object({
         scope: z.string(),
         raisedBy: z.array(z.string()),
         severityStated: z.string().nullable(),
+        /** Workstream, so a long meeting's gaps can be read by area. */
+        topicKey: z.string().nullable().default(null),
       }),
     ),
     teamWide: z.number(),
@@ -488,6 +621,16 @@ export function composeWmReport(input: {
       incompleteSections: deterministic.incompleteSections,
     },
 
+    reduction: {
+      complete: deterministic.omitted.length === 0,
+      topics: deterministic.topics,
+      omitted: deterministic.omitted,
+      // Phrased for a reader, not a log line: the facts still exist and are
+      // reachable through the evidence drawer. What is bounded is this
+      // report's view of them, not the record.
+      notes: describeOmissions(deterministic.omitted),
+    },
+
     attendance: {
       rows: deterministic.attendance.rows,
       present: deterministic.attendance.present,
@@ -519,17 +662,18 @@ export function composeWmReport(input: {
 
     kpDashboard: {
       rows: deterministic.kpiRows,
-      reviewed: deterministic.kpiRows.filter((r) => !r.notApplicable).length,
+      // Counts describe the meeting; rows describe what fitted in the table.
+      reviewed: deterministic.totals.dashboardsReviewed,
       expected: context.roster.filter((m) => m.attendanceType === "REQUIRED").length,
       ragCounts,
     },
 
     gaps: {
       rows: deterministic.gaps,
-      teamWide: deterministic.gaps.filter((g) => g.scope === "TEAM").length,
+      teamWide: deterministic.totals.gapsTeamWide,
       // A gap with no agreed action is the most actionable line in the report,
       // so it is counted rather than left for a reader to notice.
-      withoutAction: deterministic.gaps.filter((g) => !g.agreedAction).length,
+      withoutAction: deterministic.totals.gapsWithoutAction,
       observation: ai.gapObservation,
     },
 
@@ -568,6 +712,67 @@ export function composeWmReport(input: {
 }
 
 /**
+ * The bounded qualitative digest a rollup reads (doc 17 §R2).
+ *
+ * Built from `context.facts` — the FULL set — not from the reduced display
+ * rows. A monthly report must not inherit a decision about what fitted on this
+ * week's page; those are different questions with different budgets.
+ */
+export function buildWmFactSet(
+  context: WmContext,
+  deterministic: DeterministicWm,
+): MeetingFactSet {
+  const day = context.meeting.meetingDate.toISOString().slice(0, 10);
+  const nameByMemberId = new Map(context.roster.map((m) => [m.id, m]));
+
+  return buildFactSet({
+    kind: "WM",
+    periodStart: day,
+    periodEnd: day,
+    topics: deterministic.topics,
+    // Gaps are this meeting's blockers as far as recurrence is concerned: the
+    // weekly meeting surfaces them where the daily huddle surfaces stucks, and
+    // a rollup wants one recurrence signal, not two that never meet.
+    stucks: context.facts.gaps.map((g) => ({
+      normalizedKey: g.normalizedKey,
+      description: g.gap,
+      raisedBy: g.raisedByRaw[0] ?? null,
+      date: day,
+      statusStated: g.severityStated,
+      topicKey: g.topicKey,
+    })),
+    gaps: context.facts.gaps.map((g) => ({
+      normalizedKey: g.normalizedKey,
+      gap: g.gap,
+      scope: g.scope,
+      raisedBy: g.raisedByRaw,
+      hasAgreedAction: Boolean(g.agreedAction),
+      topicKey: g.topicKey,
+    })),
+    discussions: context.facts.discussions.map((d) => ({
+      kind: d.kind,
+      normalizedKey: d.normalizedKey,
+      summary: d.summary,
+      wasDeferred: d.wasDeferred,
+      topicKey: d.topicKey,
+    })),
+    kpi: context.facts.kpi.map((k) => {
+      const member = k.clientMemberId ? nameByMemberId.get(k.clientMemberId) : undefined;
+      return {
+        key: k.clientMemberId ?? k.speakerRaw,
+        name: member?.name ?? k.speakerRaw,
+        kpiRag: k.kpiRag ?? "NOT_STATED",
+        priorityRag: k.priorityRag ?? "NOT_STATED",
+        ragConflict: k.ragConflict,
+      };
+    }),
+    // The report's own omissions travel with the digest, so a rollup built on
+    // it can say the picture was bounded rather than repeating the silence.
+    omitted: deterministic.omitted,
+  });
+}
+
+/**
  * Flat numeric snapshot for the monthly rollup.
  *
  * The same discipline that makes the monthly report cheap: it trends these rows
@@ -590,14 +795,17 @@ export function buildWmMetrics(
     segmentDisagreements: s.disagreements,
     expectedMinutesTotal: s.expectedMinutesTotal,
     actualMinutesTotal: s.actualMinutesTotal,
-    dashboardsReviewed: deterministic.kpiRows.filter((r) => !r.notApplicable).length,
-    kpiRed: deterministic.kpiRows.filter((r) => r.kpiRag === "RED").length,
-    kpiAmber: deterministic.kpiRows.filter((r) => r.kpiRag === "AMBER").length,
-    kpiGreen: deterministic.kpiRows.filter((r) => r.kpiRag === "GREEN").length,
-    ragConflicts: deterministic.kpiRows.filter((r) => r.ragConflict).length,
-    gapsTotal: deterministic.gaps.length,
-    gapsTeamWide: deterministic.gaps.filter((g) => g.scope === "TEAM").length,
-    gapsWithoutAction: deterministic.gaps.filter((g) => !g.agreedAction).length,
+    // From `totals`, never from the rendered rows. These are the numbers the
+    // monthly rollup trends, so counting the reduced view here would compound a
+    // presentation decision into a quarter of business metrics.
+    dashboardsReviewed: deterministic.totals.dashboardsReviewed,
+    kpiRed: deterministic.totals.kpiRed,
+    kpiAmber: deterministic.totals.kpiAmber,
+    kpiGreen: deterministic.totals.kpiGreen,
+    ragConflicts: deterministic.totals.ragConflicts,
+    gapsTotal: deterministic.totals.gaps,
+    gapsTeamWide: deterministic.totals.gapsTeamWide,
+    gapsWithoutAction: deterministic.totals.gapsWithoutAction,
     scorecardGreen: deterministic.scorecard.counts.green,
     scorecardAmber: deterministic.scorecard.counts.amber,
     scorecardRed: deterministic.scorecard.counts.red,

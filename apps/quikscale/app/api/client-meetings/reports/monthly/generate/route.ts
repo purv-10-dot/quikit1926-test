@@ -8,6 +8,7 @@ import { generateStructured, LlmUnavailableError, LlmValidationError } from "@/l
 import { buildMonthlyPrompt } from "@/lib/ai/prompts/monthlyProse";
 import { monthlyFingerprint } from "@/lib/reports/fingerprint";
 import { snapshotReportVersion } from "@/lib/reports/versions";
+import { findReport, scopeKeyFor, upsertReport } from "@/lib/reports/reportStore";
 import {
   loadMonthContext,
   computeDeterministicMonth,
@@ -29,6 +30,9 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** This route only ever writes one kind of row in the shared report table. */
+const KIND = "MONTHLY" as const;
 
 const bodySchema = z.object({
   clientId: z.string().min(1),
@@ -104,18 +108,8 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     wwwState: sources.wwwState,
   });
 
-  const existing = await db.clientMonthlyReport.findFirst({
-    where: { orgId, clientId, periodStart: bounds.start, deletedAt: null },
-    select: {
-      id: true,
-      report: true,
-      metrics: true,
-      currentVersion: true,
-      sourceFingerprint: true,
-      promptVersion: true,
-      schemaVersion: true,
-    },
-  });
+  const scopeKey = scopeKeyFor({ kind: KIND, periodStart: bounds.start });
+  const existing = await findReport(orgId, KIND, scopeKey);
 
   const isCurrent =
     existing !== null &&
@@ -196,67 +190,37 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
   const metrics = buildMonthlyMetrics(deterministic);
   const now = new Date();
 
-  await db.clientMonthlyReport.upsert({
-    where: {
-      orgId_clientId_periodStart: { orgId, clientId, periodStart: bounds.start },
-    },
-    create: {
-      orgId,
-      clientId,
-      periodStart: bounds.start,
-      periodEnd: bounds.end,
-      report: report as unknown as Prisma.InputJsonValue,
-      metrics: metrics as unknown as Prisma.InputJsonValue,
-      reportConfidence: ai.overallConfidence,
-      sourceWeeklyReportIds: sources.sourceReports.map((r) => r.reportId),
-      sourceWmReportIds: context.wmReportIds,
-      missingWeeks: deterministic.missingWeeks,
-      sourceFingerprint: fingerprint,
-      promptVersion: MONTHLY_PROMPT_VERSION,
-      schemaVersion: MONTHLY_SCHEMA_VERSION,
-      modelId,
-      tokensInput,
-      tokensOutput,
-      costUsd,
-      currentVersion: 1,
-      generatedAt: now,
-      generatedBy: userId,
-      updatedBy: userId,
-    },
-    update: {
-      periodEnd: bounds.end,
-      report: report as unknown as Prisma.InputJsonValue,
-      metrics: metrics as unknown as Prisma.InputJsonValue,
-      reportConfidence: ai.overallConfidence,
-      sourceWeeklyReportIds: sources.sourceReports.map((r) => r.reportId),
-      sourceWmReportIds: context.wmReportIds,
-      missingWeeks: deterministic.missingWeeks,
-      sourceFingerprint: fingerprint,
-      promptVersion: MONTHLY_PROMPT_VERSION,
-      schemaVersion: MONTHLY_SCHEMA_VERSION,
-      modelId,
-      tokensInput,
-      tokensOutput,
-      costUsd,
-      currentVersion: { increment: 1 },
-      generatedAt: now,
-      generatedBy: userId,
-      updatedBy: userId,
-      // A regenerated report is unreviewed again — sign-off must be re-earned.
-      validatedAt: null,
-      validatedBy: null,
-      // Regenerating a deleted month brings it back — the upsert lands on the
-      // soft-deleted row, which would otherwise stay hidden with fresh content.
-      deletedAt: null,
-    },
+  // The store owns the versioning, sign-off-clearing and undelete rules, so
+  // they are written once rather than in every generate route.
+  const saved = await upsertReport({
+    orgId,
+    clientId,
+    kind: KIND,
+    scopeKey,
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+    report,
+    metrics,
+    reportConfidence: ai.overallConfidence,
+    // One array, now that every report lives in one table: the kind of a
+    // referenced id is a lookup rather than something a column name encodes.
+    sourceReportIds: [
+      ...sources.sourceReports.map((r) => r.reportId),
+      ...context.wmReportIds,
+    ],
+    missingSources: deterministic.missingWeeks,
+    sourceFingerprint: fingerprint,
+    promptVersion: MONTHLY_PROMPT_VERSION,
+    schemaVersion: MONTHLY_SCHEMA_VERSION,
+    modelId,
+    tokensInput,
+    tokensOutput,
+    costUsd,
+    generatedBy: userId,
+    generatedAt: now,
   });
 
-  const saved = await db.clientMonthlyReport.findFirst({
-    where: { orgId, clientId, periodStart: bounds.start },
-    select: { id: true, currentVersion: true },
-  });
-
-  if (saved) {
+  {
     await snapshotReportVersion({
       orgId,
       clientId,
@@ -280,7 +244,7 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     data: {
       report,
       metrics,
-      version: saved?.currentVersion ?? 1,
+      version: saved.currentVersion,
       cacheHit: false,
       generatedAt: now,
       missingWeeks: deterministic.missingWeeks,

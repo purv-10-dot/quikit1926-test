@@ -86,7 +86,23 @@ export interface WmSegmentFact {
   comment: string | null;
 }
 
-export interface WmKpiFact {
+/**
+ * What reduction needs from every fact, on top of its own content.
+ *
+ * `occurrences` is the count of chunks that raised it — one plus however many
+ * facts were merged into it. It is the strongest ranking signal there is,
+ * because unlike confidence it is a fact about the MEETING rather than about
+ * the model's certainty.
+ */
+export interface WmReducible {
+  id: string;
+  topicKey: string | null;
+  confidence: number;
+  chunkIdx: number | null;
+  occurrences: number;
+}
+
+export interface WmKpiFact extends WmReducible {
   speakerRaw: string;
   clientMemberId: string | null;
   kpiRag: string | null;
@@ -95,8 +111,10 @@ export interface WmKpiFact {
   ragConflict: boolean;
 }
 
-export interface WmGapFact {
+export interface WmGapFact extends WmReducible {
   gap: string;
+  /** The recurrence key, computed at extraction. Never recomputed downstream. */
+  normalizedKey: string;
   agreedAction: string | null;
   ownerRaw: string | null;
   scope: string;
@@ -104,8 +122,10 @@ export interface WmGapFact {
   severityStated: string | null;
 }
 
-export interface WmDiscussionFact {
+export interface WmDiscussionFact extends WmReducible {
   kind: string;
+  /** The recurrence key, computed at extraction. Never recomputed downstream. */
+  normalizedKey: string;
   sharedByRaw: string | null;
   summary: string;
   outcome: string | null;
@@ -252,6 +272,13 @@ export async function loadWmContext(
       ])
     : [[], [], [], [], [], []];
 
+  // How many chunks raised each surviving fact. Counted from the rows that were
+  // merged INTO it, so recurrence reflects the meeting rather than the model's
+  // confidence — which is what makes it the right primary ranking signal.
+  const occurrences = transcript
+    ? await loadOccurrences(orgId, transcript.id)
+    : { gap: new Map<string, number>(), discussion: new Map<string, number>() };
+
   const attendeeMemberIds = resolveAttendees(transcript?.attendees, teamMembers);
 
   return {
@@ -303,9 +330,13 @@ export async function loadWmContext(
       : null,
     facts: {
       segments: segments.map(toSegmentFact),
-      kpi: kpi.map(toKpiFact),
-      gaps: gaps.map(toGapFact),
-      discussions: discussions.map(toDiscussionFact),
+      // A K&P read is already one row per member — consolidation merged them —
+      // so its occurrence count is always 1 and ranking falls to confidence.
+      kpi: kpi.map((r) => toKpiFact(r, 1)),
+      gaps: gaps.map((r) => toGapFact(r, occurrences.gap.get(r.id) ?? 1)),
+      discussions: discussions.map((r) =>
+        toDiscussionFact(r, occurrences.discussion.get(r.id) ?? 1),
+      ),
       spokeMemberIds: spoke
         .map((s) => s.clientMemberId)
         .filter((id): id is string => Boolean(id)),
@@ -370,15 +401,35 @@ function toSegmentFact(r: {
   };
 }
 
-function toKpiFact(r: {
-  speakerRaw: string;
-  clientMemberId: string | null;
-  kpiRag: string | null;
-  priorityRag: string | null;
-  keyPoints: string[];
-  ragConflict: boolean;
-}): WmKpiFact {
+/** The fields every fact carries for ranking during reduction. */
+type ReducibleRow = {
+  id: string;
+  topicKey?: string | null;
+  confidence: number;
+  chunkIdx: number | null;
+};
+
+const reducible = (r: ReducibleRow, occurrences: number) => ({
+  id: r.id,
+  topicKey: r.topicKey ?? null,
+  confidence: r.confidence,
+  chunkIdx: r.chunkIdx,
+  occurrences,
+});
+
+function toKpiFact(
+  r: ReducibleRow & {
+    speakerRaw: string;
+    clientMemberId: string | null;
+    kpiRag: string | null;
+    priorityRag: string | null;
+    keyPoints: string[];
+    ragConflict: boolean;
+  },
+  occurrences: number,
+): WmKpiFact {
   return {
+    ...reducible(r, occurrences),
     speakerRaw: r.speakerRaw,
     clientMemberId: r.clientMemberId,
     kpiRag: r.kpiRag,
@@ -388,16 +439,22 @@ function toKpiFact(r: {
   };
 }
 
-function toGapFact(r: {
-  gap: string;
-  agreedAction: string | null;
-  ownerRaw: string | null;
-  scope: string;
-  raisedByRaw: string[];
-  severityStated: string | null;
-}): WmGapFact {
+function toGapFact(
+  r: ReducibleRow & {
+    gap: string;
+    normalizedKey: string;
+    agreedAction: string | null;
+    ownerRaw: string | null;
+    scope: string;
+    raisedByRaw: string[];
+    severityStated: string | null;
+  },
+  occurrences: number,
+): WmGapFact {
   return {
+    ...reducible(r, occurrences),
     gap: r.gap,
+    normalizedKey: r.normalizedKey,
     agreedAction: r.agreedAction,
     ownerRaw: r.ownerRaw,
     scope: r.scope,
@@ -406,18 +463,60 @@ function toGapFact(r: {
   };
 }
 
-function toDiscussionFact(r: {
-  kind: string;
-  sharedByRaw: string | null;
-  summary: string;
-  outcome: string | null;
-  wasDeferred: boolean;
-}): WmDiscussionFact {
+function toDiscussionFact(
+  r: ReducibleRow & {
+    kind: string;
+    normalizedKey: string;
+    sharedByRaw: string | null;
+    summary: string;
+    outcome: string | null;
+    wasDeferred: boolean;
+  },
+  occurrences: number,
+): WmDiscussionFact {
   return {
+    ...reducible(r, occurrences),
     kind: r.kind,
+    normalizedKey: r.normalizedKey,
     sharedByRaw: r.sharedByRaw,
     summary: r.summary,
     outcome: r.outcome,
     wasDeferred: r.wasDeferred,
   };
+}
+
+/**
+ * How many chunks raised each surviving fact.
+ *
+ * Counted from the merged-away rows, which consolidation soft-deletes rather
+ * than removing precisely so this stays answerable. A gap three coaches raised
+ * outranks one mentioned in passing, and that ordering is what makes reduction
+ * defensible rather than arbitrary.
+ */
+async function loadOccurrences(
+  orgId: string,
+  transcriptId: string,
+): Promise<{ gap: Map<string, number>; discussion: Map<string, number> }> {
+  // A plain indexed read rather than `groupBy`: the row count here is at most
+  // the number of facts a meeting merged away — tens, not thousands — and
+  // counting in TypeScript keeps this straightforward to mock and to read.
+  const where = { orgId, transcriptId, mergedIntoId: { not: null } };
+  const select = { mergedIntoId: true };
+
+  const [gaps, discussions] = await Promise.all([
+    db.meetingGapFact.findMany({ where, select }),
+    db.meetingDiscussionFact.findMany({ where, select }),
+  ]);
+
+  const toMap = (rows: Array<{ mergedIntoId: string | null }>) => {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.mergedIntoId) continue;
+      // One for the survivor itself, plus everything merged into it.
+      counts.set(row.mergedIntoId, (counts.get(row.mergedIntoId) ?? 1) + 1);
+    }
+    return counts;
+  };
+
+  return { gap: toMap(gaps), discussion: toMap(discussions) };
 }

@@ -33,6 +33,27 @@ import type { TrendResult } from "@/lib/reports/trendEngine";
  */
 export const PROMPT_VERSION = "monthly-prose@1.0.0";
 
+/**
+ * How many of each list reach the prompt.
+ *
+ * Bounded on purpose — a month can recur thirty blockers and the model does not
+ * read them better for seeing all thirty. What changed (doc 17 §R1) is that the
+ * cap now ANNOUNCES itself: a section trimmed in silence reads as the complete
+ * picture, which is how a truncation becomes a false statement.
+ */
+const RECURRING_LIMIT = 15;
+const NO_STUCK_LIMIT = 10;
+
+/**
+ * Cap a list of secondary detail, and say when it was capped.
+ *
+ * "…and 7 more" costs four tokens and keeps the line true.
+ */
+function withMore(items: string[], limit: number): string[] {
+  if (items.length <= limit) return items;
+  return [...items.slice(0, limit), `…and ${items.length - limit} more`];
+}
+
 export interface MonthlyPromptInput {
   clientName: string;
   /** "August 2026" */
@@ -118,14 +139,23 @@ function renderRecurring(input: MonthlyPromptInput): string {
   if (input.recurringStucks.length === 0) {
     return "RECURRING BLOCKERS\n  (none recurred across the period)";
   }
-  const lines = input.recurringStucks
-    .slice(0, 15)
-    .map(
-      (s) =>
-        `  "${s.description}" — ${s.occurrences} time${s.occurrences === 1 ? "" : "s"} across ${s.weeksSeen} week${s.weeksSeen === 1 ? "" : "s"}` +
-        `, raised by ${s.raisedBy.slice(0, 4).join(", ")}` +
-        (s.latestStatusStated ? `, last stated status ${s.latestStatusStated}` : ", no status ever stated"),
+  // Already ranked by recurrence upstream, so the cap keeps the ones that
+  // recurred most — but it SAYS how many it left out. A silent cap would make
+  // "three blockers recurred" read as the whole picture when it was thirty.
+  const shown = input.recurringStucks.slice(0, RECURRING_LIMIT);
+  const lines = shown.map(
+    (s) =>
+      `  "${s.description}" — ${s.occurrences} time${s.occurrences === 1 ? "" : "s"} across ${s.weeksSeen} week${s.weeksSeen === 1 ? "" : "s"}` +
+      `, raised by ${withMore(s.raisedBy, 4).join(", ")}` +
+      (s.latestStatusStated ? `, last stated status ${s.latestStatusStated}` : ", no status ever stated"),
+  );
+
+  const dropped = input.recurringStucks.length - shown.length;
+  if (dropped > 0) {
+    lines.push(
+      `  (${dropped} further recurring blocker${dropped === 1 ? "" : "s"} recorded but not listed — treat this as a sample, not the full list)`,
     );
+  }
   return `RECURRING BLOCKERS\n${lines.join("\n")}`;
 }
 
@@ -146,12 +176,16 @@ function renderWww(input: MonthlyPromptInput): string {
 
 function renderNoStuck(input: MonthlyPromptInput): string {
   if (input.noStuckOutliers.length === 0) return "";
-  const lines = input.noStuckOutliers
-    .slice(0, 10)
-    .map(
-      (m) =>
-        `  ${m.name}: reported "No Stuck" in ${m.noStuckRate}% of ${m.huddlesAttended} huddles attended`,
-    );
+  const shown = input.noStuckOutliers.slice(0, NO_STUCK_LIMIT);
+  const lines = shown.map(
+    (m) =>
+      `  ${m.name}: reported "No Stuck" in ${m.noStuckRate}% of ${m.huddlesAttended} huddles attended`,
+  );
+
+  const dropped = input.noStuckOutliers.length - shown.length;
+  if (dropped > 0) {
+    lines.push(`  (and ${dropped} more, not listed)`);
+  }
   return [
     'FREQUENT "NO STUCK" REPORTING',
     "  The client asks for this to be watched: consistently reporting no blockers",

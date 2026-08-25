@@ -16,12 +16,18 @@ import {
   WeeklyReportError,
   type ParticipantDayNote,
 } from "@/lib/ai/weeklyHuddleReport";
-import { buildMetricsSnapshot, composeWeeklyReport, computeDeterministicWeek } from "@/lib/ai/weeklyHuddleCompose";
+import {
+  buildMetricsSnapshot,
+  buildWeeklyFactSet,
+  composeWeeklyReport,
+  computeDeterministicWeek,
+} from "@/lib/ai/weeklyHuddleCompose";
 import {
   computeWeeklyCacheState,
   DH_WEEKLY_SCHEMA_VERSION,
 } from "@/lib/reports/weeklyCacheState";
 import { snapshotReportVersion } from "@/lib/reports/versions";
+import { scopeKeyFor, upsertReport } from "@/lib/reports/reportStore";
 import { validateWeeklyReport } from "@/lib/ai/weeklyReportValidation";
 import { loadWeekContext, toWeekStart, weekLabel } from "@/lib/services/weeklyHuddleData";
 
@@ -30,6 +36,9 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** This route only ever writes one kind of row in the shared report table. */
+const KIND = "DH_WEEKLY" as const;
 
 /** Hard ceiling on daily reports generated in one request. */
 const MAX_BACKFILL = 7;
@@ -271,6 +280,9 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
   });
 
   const metrics = buildMetricsSnapshot(report, validation);
+  // The bounded digest a monthly or quarterly rollup reads instead of a
+  // period of raw fact rows (doc 17 §R2).
+  const factSet = buildWeeklyFactSet(report);
   const now = new Date();
 
   // Provenance for the cache key (doc 17 §L). Without these the stored report
@@ -278,76 +290,42 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
   // the whole pipeline and re-bills whether or not anything changed.
   const cacheState = await computeWeeklyCacheState(orgId, clientId, context);
 
-  // Regenerating replaces the week's row — the unique index makes this an
-  // upsert rather than an accumulating history.
-  await db.clientDailyHuddleWeeklyReport.upsert({
-    where: { orgId_clientId_weekStart: { orgId, clientId, weekStart } },
-    create: {
-      orgId,
-      clientId,
-      weekStart,
-      weekEnd: context.weekEnd,
-      report: report as unknown as Prisma.InputJsonValue,
-      metrics: metrics as unknown as Prisma.InputJsonValue,
-      validation: validation as unknown as Prisma.InputJsonValue,
-      sourceFingerprint: cacheState.sourceFingerprint,
-      promptVersion: cacheState.promptVersion,
-      schemaVersion: DH_WEEKLY_SCHEMA_VERSION,
-      coveragePct: cacheState.coveragePct,
-      currentVersion: 1,
-      reportConfidence: report.overallConfidence,
-      // Only real huddle rows — a transcript-only day carries a transcript id
-      // in `day.id`, which must not be recorded as a huddle reference.
-      sourceHuddleIds: context.sources.map((s) => s.huddleId).filter((id): id is string => Boolean(id)),
-      sourceTranscriptIds: context.days.map((d) => d.transcriptId).filter((id): id is string => Boolean(id)),
-      generatedAt: now,
-      generatedBy: userId,
-      updatedBy: userId,
-    },
-    update: {
-      weekEnd: context.weekEnd,
-      report: report as unknown as Prisma.InputJsonValue,
-      metrics: metrics as unknown as Prisma.InputJsonValue,
-      validation: validation as unknown as Prisma.InputJsonValue,
-      sourceFingerprint: cacheState.sourceFingerprint,
-      promptVersion: cacheState.promptVersion,
-      schemaVersion: DH_WEEKLY_SCHEMA_VERSION,
-      coveragePct: cacheState.coveragePct,
-      // Each regeneration is a new version; the previous snapshot survives
-      // in MeetingReportVersion so "why did it say that?" stays answerable.
-      currentVersion: { increment: 1 },
-      reportConfidence: report.overallConfidence,
-      // Only real huddle rows — a transcript-only day carries a transcript id
-      // in `day.id`, which must not be recorded as a huddle reference.
-      sourceHuddleIds: context.sources.map((s) => s.huddleId).filter((id): id is string => Boolean(id)),
-      sourceTranscriptIds: context.days.map((d) => d.transcriptId).filter((id): id is string => Boolean(id)),
-      generatedAt: now,
-      generatedBy: userId,
-      updatedBy: userId,
-      // A regenerated report is unreviewed again — sign-off must be re-earned.
-      validatedAt: null,
-      validatedBy: null,
-      // Regenerating a week that was deleted brings it back. The unique index
-      // means the soft-deleted row is still the row this upsert lands on, so
-      // without this the new report would be written straight into a hidden
-      // row and never appear again.
-      deletedAt: null,
-    },
+  // The store owns the versioning, sign-off-clearing and undelete rules, so
+  // they are written once rather than in every generate route.
+  const saved = await upsertReport({
+    orgId,
+    clientId,
+    kind: KIND,
+    scopeKey: scopeKeyFor({ kind: KIND, periodStart: weekStart }),
+    periodStart: weekStart,
+    periodEnd: context.weekEnd,
+    report,
+    metrics,
+    factSet,
+    validation,
+    sourceFingerprint: cacheState.sourceFingerprint,
+    promptVersion: cacheState.promptVersion,
+    schemaVersion: DH_WEEKLY_SCHEMA_VERSION,
+    coveragePct: cacheState.coveragePct,
+    reportConfidence: report.overallConfidence,
+    // Only real huddle rows — a transcript-only day carries a transcript id in
+    // `day.id`, which must not be recorded as a huddle reference.
+    sourceHuddleIds: context.sources
+      .map((s) => s.huddleId)
+      .filter((id): id is string => Boolean(id)),
+    sourceTranscriptIds: context.days
+      .map((d) => d.transcriptId)
+      .filter((id): id is string => Boolean(id)),
+    generatedBy: userId,
+    generatedAt: now,
   });
 
-  // Re-read for the id and the incremented version. The upsert cannot return
-  // them directly because the branch taken depends on whether a row existed.
-  const saved = await db.clientDailyHuddleWeeklyReport.findFirst({
-    where: { orgId, clientId, weekStart },
-    select: { id: true, currentVersion: true },
-  });
-
-  if (saved) {
+  {
     // Best-effort: a lost history entry is a nuisance, a lost report is not.
     await snapshotReportVersion({
       orgId,
       clientId,
-      reportKind: "DH_WEEKLY",
+      reportKind: KIND,
       reportId: saved.id,
       report,
       metrics,

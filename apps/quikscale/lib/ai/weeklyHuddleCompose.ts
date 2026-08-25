@@ -14,6 +14,9 @@
  */
 
 import { z } from "zod";
+
+import { normalizeKey } from "@/lib/facts/consolidate";
+import { buildFactSet, type MeetingFactSet } from "@/lib/reports/factSet";
 import {
   buildAdherenceHeatMap,
   buildAttendanceMatrix,
@@ -365,4 +368,47 @@ export function buildMetricsSnapshot(
     validationErrors: validation.counts.errors,
     validationWarnings: validation.counts.warnings,
   };
+}
+
+/**
+ * The bounded qualitative digest a rollup reads (doc 17 §R2).
+ *
+ * `buildMetricsSnapshot` gives a rollup this week's numbers; this gives it the
+ * recurrence keys and per-member rates that numbers cannot carry. With both, a
+ * month reads four small artefacts instead of a month of raw fact rows — and a
+ * quarter reads thirteen, at the same cost per artefact.
+ *
+ * Built from the STORED report, so the digest can never disagree with the
+ * document a facilitator signed off.
+ */
+export function buildWeeklyFactSet(report: StoredWeeklyReport): MeetingFactSet {
+  return buildFactSet({
+    kind: "DH_WEEKLY",
+    periodStart: report.weekStart,
+    periodEnd: report.weekEnd,
+    members: report.heatMap.rows.map((r) => ({
+      // The member id where identity resolved, else the label as spoken. A
+      // rollup can only aggregate what it can key, and an unresolved speaker
+      // aggregating under their own name is better than being dropped.
+      key: r.memberId ?? r.participant,
+      name: r.participant,
+      attended: r.daysAssessed,
+      achievementPct: r.achievementPct,
+      focusPct: r.focusPct,
+      stuckPct: r.stuckPct,
+      noStuckCount: r.noStuckDays,
+    })),
+    stucks: report.stucks.all.map((b) => ({
+      // Recomputed here only because the stored report keeps the description
+      // rather than the key. `digestStucks` groups on it, so two spellings of
+      // one blocker must normalise identically — the same function the fact
+      // layer uses is used here for exactly that reason.
+      normalizedKey: normalizeKey(b.description),
+      description: b.description,
+      raisedBy: b.raisedBy,
+      date: b.date,
+      statusStated: b.status,
+      topicKey: null,
+    })),
+  });
 }

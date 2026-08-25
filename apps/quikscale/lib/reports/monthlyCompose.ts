@@ -41,6 +41,8 @@ import {
   computeLifecycleMetrics,
   type LifecycleMetrics,
 } from "@/lib/services/wwwLifecycle";
+import { readFactSet, aggregateFactSets, type MeetingFactSet } from "./factSet";
+import { listReports } from "./reportStore";
 import { buildWwwScopeWhere } from "@/lib/api/wwwListQuery";
 import {
   getPeriodFacts,
@@ -119,8 +121,18 @@ export interface MonthContext {
     reportId: string | null;
     currentVersion: number | null;
     metrics: Record<string, unknown> | null;
+    /**
+     * The week's bounded qualitative digest (doc 17 §R2).
+     *
+     * Null for a report generated before the column existed. The month then
+     * falls back to reading the fact tables for that week — slower, but a
+     * correct answer beats an empty one.
+     */
+    factSet: MeetingFactSet | null;
   }[];
   wmReportIds: string[];
+  /** The weekly meetings' bounded digests, for cross-meeting recurrence. */
+  wmFactSets: MeetingFactSet[];
   wwwItems: {
     status: string;
     when: Date;
@@ -151,15 +163,14 @@ export async function loadMonthContext(
 
   const weekStarts = weeksInMonth(bounds.start, bounds.end);
 
-  const [weeklyReports, wwwItems] = await Promise.all([
-    db.clientDailyHuddleWeeklyReport.findMany({
-      where: {
-        orgId: ctx.orgId,
-        clientId,
-        deletedAt: null,
-        weekStart: { in: weekStarts },
-      },
-      select: { id: true, weekStart: true, metrics: true, currentVersion: true },
+  // Both kinds in ONE indexed read. Before the report tables were merged this
+  // was two queries against two tables; the month wants "everything that
+  // happened", which is what a single table with a kind column expresses.
+  const [sourceReports, wwwItems] = await Promise.all([
+    listReports(ctx.orgId, clientId, {
+      kinds: ["DH_WEEKLY", "WM"],
+      from: bounds.start,
+      to: bounds.end,
     }),
     // Row-level visibility applies here too. A monthly report must not become a
     // way to count commitments the reader cannot see individually.
@@ -186,7 +197,10 @@ export async function loadMonthContext(
     ),
   ]);
 
-  const byWeek = new Map(weeklyReports.map((r) => [ymd(r.weekStart), r]));
+  const weeklyReports = sourceReports.filter((r) => r.reportKind === "DH_WEEKLY");
+  const wmReports = sourceReports.filter((r) => r.reportKind === "WM");
+
+  const byWeek = new Map(weeklyReports.map((r) => [ymd(r.periodStart), r]));
 
   return {
     client,
@@ -202,11 +216,13 @@ export async function loadMonthContext(
         reportId: found?.id ?? null,
         currentVersion: found?.currentVersion ?? null,
         metrics: (found?.metrics as Record<string, unknown> | undefined) ?? null,
+        factSet: readFactSet(found?.factSet),
       };
     }),
-    // The Weekly-Meeting half needs P5. Empty until then, and the report says so
-    // rather than implying weekly meetings did not happen.
-    wmReportIds: [],
+    wmReportIds: wmReports.map((r) => r.id),
+    wmFactSets: wmReports
+      .map((r) => readFactSet(r.factSet))
+      .filter((f): f is MeetingFactSet => f !== null),
     wwwItems,
   };
 }
@@ -255,42 +271,57 @@ export async function computeDeterministicMonth(
     DH_WEEKLY_TREND_SPECS,
   );
 
-  // Facts across the whole month, for recurrence and No-Stuck patterns that a
-  // per-week view cannot see — a blocker raised once in each of four weeks is
-  // invisible weekly and obvious monthly.
-  const facts = await getPeriodFacts(
-    orgId,
-    context.client.id,
-    context.periodStart,
-    context.periodEnd,
-    { cadence: "DAILY" },
-  );
+  // Recurrence and No-Stuck patterns come from the weeks' stored DIGESTS, not
+  // from a month of raw fact rows (doc 17 §R2). Each digest is already bounded,
+  // so a month, a quarter and a year all cost the same per source report —
+  // which is the property that makes those views possible at all.
+  //
+  // Weeks generated before the digest existed fall back to the fact tables.
+  // Slower for those weeks, and correct, which beats reporting an empty month.
+  const digests = context.weeks
+    .map((w) => w.factSet)
+    .filter((f): f is MeetingFactSet => f !== null);
+  const weeksWithoutDigest = context.weeks.filter((w) => w.reportId && !w.factSet);
 
-  const members = computeMemberAdherence(facts.participants);
+  // Weekly meetings join the same aggregation. A gap raised in the weekly
+  // meeting and a blocker raised in the daily huddle are the same problem seen
+  // from two rhythms; keeping them in separate buckets would hide the one
+  // pattern a monthly view exists to find.
+  const aggregated = aggregateFactSets([...digests, ...context.wmFactSets]);
 
-  const recurring = findRecurringStucks(facts.stucks).map((r) => ({
-    description: r.description,
-    occurrences: r.occurrences,
+  let recurring = aggregated.stucks.map((s) => ({
+    description: s.description,
+    occurrences: s.occurrences,
     // Distinct ISO weeks, not distinct days: a blocker raised three times in one
     // week is a bad day, across three weeks it is a pattern.
-    weeksSeen: new Set(r.dates.map((d) => isoWeekKey(new Date(`${d}T00:00:00Z`)))).size,
-    raisedBy: r.raisedBy,
-    latestStatusStated: r.latestStatusStated,
+    weeksSeen: new Set(s.dates.map((d) => isoWeekKey(new Date(`${d}T00:00:00Z`)))).size,
+    raisedBy: s.raisedBy,
+    latestStatusStated: s.latestStatusStated,
   }));
 
-  const noStuckOutliers: NoStuckOutlier[] = members
+  let noStuckOutliers: NoStuckOutlier[] = aggregated.members
     .filter(
       (m) =>
-        m.huddlesAttended >= NO_STUCK_MIN_HUDDLES &&
-        m.noStuckRate >= NO_STUCK_OUTLIER_PCT,
+        m.attended >= NO_STUCK_MIN_HUDDLES &&
+        m.attended > 0 &&
+        Math.round((m.noStuckCount / m.attended) * 100) >= NO_STUCK_OUTLIER_PCT,
     )
     .map((m) => ({
-      name: m.speakerRaw,
-      noStuckRate: m.noStuckRate,
-      huddlesAttended: m.huddlesAttended,
-      stuckAdherencePct: m.stuckPct,
+      name: m.name,
+      noStuckRate: Math.round((m.noStuckCount / m.attended) * 100),
+      huddlesAttended: m.attended,
+      stuckAdherencePct: m.stuckPct ?? 0,
     }))
     .sort((a, b) => b.noStuckRate - a.noStuckRate);
+
+  if (weeksWithoutDigest.length > 0) {
+    const legacy = await legacyPatternsFromFacts(orgId, context);
+    // Merged rather than replaced: a month can legitimately hold one week from
+    // before the digest existed and three from after, and dropping either half
+    // would understate recurrence in exactly the month that spans the change.
+    recurring = mergeRecurring(recurring, legacy.recurring);
+    noStuckOutliers = mergeOutliers(noStuckOutliers, legacy.noStuckOutliers);
+  }
 
   const missingWeeks = context.weeks.filter((w) => !w.reportId).map((w) => w.label);
 
@@ -304,6 +335,98 @@ export async function computeDeterministicMonth(
     weeksReported: context.weeks.length - missingWeeks.length,
     weeksTotal: context.weeks.length,
   };
+}
+
+/**
+ * The pre-digest path, for weeks whose report predates `factSet`.
+ *
+ * This is the code the whole of §R2 exists to stop being the default: it pulls
+ * a period of raw fact rows into memory to find patterns. Kept because deleting
+ * it would silently blank the qualitative half of every month generated before
+ * the digest shipped, and a wrong-but-empty report is worse than a slow one.
+ *
+ * It becomes dead once every report in a period has been regenerated.
+ */
+async function legacyPatternsFromFacts(
+  orgId: string,
+  context: MonthContext,
+): Promise<{
+  recurring: DeterministicMonth["recurringStucks"];
+  noStuckOutliers: NoStuckOutlier[];
+}> {
+  const facts = await getPeriodFacts(
+    orgId,
+    context.client.id,
+    context.periodStart,
+    context.periodEnd,
+    { cadence: "DAILY" },
+  );
+
+  const members = computeMemberAdherence(facts.participants);
+
+  return {
+    recurring: findRecurringStucks(facts.stucks).map((r) => ({
+      description: r.description,
+      occurrences: r.occurrences,
+      weeksSeen: new Set(r.dates.map((d) => isoWeekKey(new Date(`${d}T00:00:00Z`)))).size,
+      raisedBy: r.raisedBy,
+      latestStatusStated: r.latestStatusStated,
+    })),
+    noStuckOutliers: members
+      .filter(
+        (m) =>
+          m.huddlesAttended >= NO_STUCK_MIN_HUDDLES &&
+          m.noStuckRate >= NO_STUCK_OUTLIER_PCT,
+      )
+      .map((m) => ({
+        name: m.speakerRaw,
+        noStuckRate: m.noStuckRate,
+        huddlesAttended: m.huddlesAttended,
+        stuckAdherencePct: m.stuckPct,
+      })),
+  };
+}
+
+/**
+ * Combine digest-derived and fact-derived patterns without double-counting.
+ *
+ * The two sources cover different weeks of the same month, so a blocker seen by
+ * both is one blocker with the higher counts, not two entries — and certainly
+ * not the sum, which would report a recurrence that never happened.
+ */
+function mergeRecurring(
+  fromDigests: DeterministicMonth["recurringStucks"],
+  fromFacts: DeterministicMonth["recurringStucks"],
+): DeterministicMonth["recurringStucks"] {
+  const byDescription = new Map(fromDigests.map((r) => [r.description.toLowerCase(), r]));
+
+  for (const r of fromFacts) {
+    const key = r.description.toLowerCase();
+    const existing = byDescription.get(key);
+    if (!existing) {
+      byDescription.set(key, r);
+      continue;
+    }
+    existing.occurrences = Math.max(existing.occurrences, r.occurrences);
+    existing.weeksSeen = Math.max(existing.weeksSeen, r.weeksSeen);
+    existing.raisedBy = [...new Set([...existing.raisedBy, ...r.raisedBy])];
+    existing.latestStatusStated = existing.latestStatusStated ?? r.latestStatusStated;
+  }
+
+  return [...byDescription.values()].sort(
+    (a, b) => b.weeksSeen - a.weeksSeen || b.occurrences - a.occurrences,
+  );
+}
+
+function mergeOutliers(
+  fromDigests: NoStuckOutlier[],
+  fromFacts: NoStuckOutlier[],
+): NoStuckOutlier[] {
+  const byName = new Map(fromDigests.map((o) => [o.name.toLowerCase(), o]));
+  for (const o of fromFacts) {
+    if (!byName.has(o.name.toLowerCase())) byName.set(o.name.toLowerCase(), o);
+  }
+  return [...byName.values()].sort((a, b) => b.noStuckRate - a.noStuckRate);
 }
 
 /** ISO year-week key, for counting distinct weeks a blocker appeared in. */

@@ -11,10 +11,13 @@ import { snapshotReportVersion } from "@/lib/reports/versions";
 import { buildWwwReview } from "@/lib/reports/wwwReview";
 import { buildNewWww } from "@/lib/reports/newWww";
 import { loadWmContext, WmContextError } from "@/lib/reports/wmData";
+import { describeOmissions } from "@/lib/facts/reduce";
+import { findReport, scopeKeyFor, upsertReport } from "@/lib/reports/reportStore";
 import {
   computeDeterministicWm,
   composeWmReport,
   buildWmMetrics,
+  buildWmFactSet,
   wmAiSchema,
   WM_SCHEMA_VERSION,
   type WmAi,
@@ -30,6 +33,9 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
+
+/** This route only ever writes one kind of row in the shared report table. */
+const KIND = "WM" as const;
 
 const bodySchema = z.object({
   weeklyMeetingId: z.string().min(1),
@@ -152,19 +158,8 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     })),
   });
 
-  const existing = await db.clientWeeklyMeetingReport.findFirst({
-    where: { orgId, weeklyMeetingId, deletedAt: null },
-    select: {
-      id: true,
-      report: true,
-      metrics: true,
-      currentVersion: true,
-      completeness: true,
-      sourceFingerprint: true,
-      promptVersion: true,
-      schemaVersion: true,
-    },
-  });
+  const scopeKey = scopeKeyFor({ kind: KIND, weeklyMeetingId });
+  const existing = await findReport(orgId, KIND, scopeKey);
 
   const isCurrent =
     existing !== null &&
@@ -244,6 +239,9 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     overall: deterministic.scorecard.overall,
     coveragePct: deterministic.coveragePct,
     missingWindowLabels: deterministic.missingWindows.map((w) => w.label),
+    // What the report had no room to print, distinct from what nobody read.
+    omissionNotes: describeOmissions(deterministic.omitted),
+    topics: deterministic.topics,
   });
 
   let ai: WmAi;
@@ -312,14 +310,29 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
   const metrics = buildWmMetrics(deterministic);
   const now = new Date();
 
-  const common = {
-    report: report as unknown as Prisma.InputJsonValue,
-    metrics: metrics as unknown as Prisma.InputJsonValue,
+  // The bounded digest higher-level rollups read instead of a period of raw
+  // facts (doc 17 §R2). Built from the FULL fact set, not the reduced display
+  // rows — a rollup must not inherit a decision about what fitted on a page.
+  const factSet = buildWmFactSet(context, deterministic);
+
+  // The store owns the versioning, sign-off-clearing and undelete rules, so
+  // they are written once rather than in every generate route.
+  const saved = await upsertReport({
+    orgId,
+    clientId,
+    kind: KIND,
+    scopeKey,
+    // A single-occurrence report spans one day, so both ends are its date.
+    periodStart: context.meeting.meetingDate,
+    periodEnd: context.meeting.meetingDate,
+    weeklyMeetingId,
+    report,
+    metrics,
+    factSet,
     reportConfidence: ai.overallConfidence,
     coveragePct: deterministic.coveragePct,
     completeness: deterministic.completeness,
-    processingLimitations:
-      deterministic.missingWindows as unknown as Prisma.InputJsonValue,
+    processingLimitations: deterministic.missingWindows,
     sourceFingerprint: fingerprint,
     promptVersion: WM_PROMPT_VERSION,
     schemaVersion: WM_SCHEMA_VERSION,
@@ -328,43 +341,15 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     tokensInput,
     tokensOutput,
     costUsd,
-    generatedAt: now,
     generatedBy: userId,
-    updatedBy: userId,
-  };
-
-  await db.clientWeeklyMeetingReport.upsert({
-    where: { orgId_weeklyMeetingId: { orgId, weeklyMeetingId } },
-    create: {
-      orgId,
-      clientId,
-      weeklyMeetingId,
-      meetingDate: context.meeting.meetingDate,
-      currentVersion: 1,
-      ...common,
-    },
-    update: {
-      ...common,
-      currentVersion: { increment: 1 },
-      // A regenerated report is unreviewed again — sign-off must be re-earned.
-      validatedAt: null,
-      validatedBy: null,
-      // Regenerating a deleted report brings it back — the upsert lands on the
-      // soft-deleted row, which would otherwise stay hidden with fresh content.
-      deletedAt: null,
-    },
+    generatedAt: now,
   });
 
-  const saved = await db.clientWeeklyMeetingReport.findFirst({
-    where: { orgId, weeklyMeetingId },
-    select: { id: true, currentVersion: true },
-  });
-
-  if (saved) {
+  {
     await snapshotReportVersion({
       orgId,
       clientId,
-      reportKind: "WM",
+      reportKind: KIND,
       reportId: saved.id,
       report,
       metrics,
@@ -385,7 +370,7 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     data: {
       report,
       metrics,
-      version: saved?.currentVersion ?? 1,
+      version: saved.currentVersion,
       completeness: deterministic.completeness,
       coveragePct: deterministic.coveragePct,
       missingWindows: deterministic.missingWindows,

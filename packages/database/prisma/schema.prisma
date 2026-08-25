@@ -224,8 +224,7 @@ model Org {
   clientWeeklyMeetings      ClientWeeklyMeeting[]
   clientMeetingTranscripts  ClientMeetingTranscript[]
   clientHuddleWeeklyReports ClientDailyHuddleWeeklyReport[]
-  clientMonthlyReports      ClientMonthlyReport[]
-  clientWeeklyMeetingReports ClientWeeklyMeetingReport[]
+  clientMeetingReports      ClientMeetingReport[]
   meetingSegments           MeetingTranscriptSegment[]
   meetingParticipantFacts   MeetingParticipantFact[]
   meetingStuckFacts         MeetingStuckFact[]
@@ -1550,8 +1549,7 @@ model Client {
   weeklyMeetings      ClientWeeklyMeeting[]
   meetingTranscripts  ClientMeetingTranscript[]
   huddleWeeklyReports ClientDailyHuddleWeeklyReport[]
-  monthlyReports      ClientMonthlyReport[]
-  weeklyMeetingReports ClientWeeklyMeetingReport[]
+  meetingReports      ClientMeetingReport[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position Float?
@@ -1850,7 +1848,7 @@ model ClientWeeklyMeeting {
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
   transcripts            ClientMeetingTranscript[]
-  report                 ClientWeeklyMeetingReport?
+  reports                ClientMeetingReport[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position Float?
@@ -2633,6 +2631,13 @@ model ClientMeetingTranscript {
 /// `report`) so the future Monthly Report can trend four weeks with a cheap
 /// row read instead of parsing the full report JSON — the requirement doc
 /// mandates storing weekly results in a structured, comparable form.
+///
+/// @deprecated Superseded by `ClientMeetingReport`, which holds every report
+/// kind in one table. Its rows were copied across by
+/// `20260825160000_unified_client_meeting_report`, and no code reads this table
+/// any more. It is retained for one release ONLY as a rollback target, because
+/// unlike the other three report tables it held live data. A follow-up
+/// migration drops it once the cutover is confirmed in every environment.
 model ClientDailyHuddleWeeklyReport {
   id                  String    @id @default(cuid())
   orgId               String
@@ -2646,6 +2651,14 @@ model ClientDailyHuddleWeeklyReport {
   metrics             Json
   /// Result of the post-generation validation checks.
   validation          Json?
+  /// Bounded qualitative digest of this report's facts — see `MeetingFactSet`.
+  ///
+  /// `metrics` gives a rollup the numbers; this gives it the recurrence keys,
+  /// per-member rates and topics that numbers cannot carry. Together they mean
+  /// a month, quarter or year reads a handful of bounded artefacts instead of
+  /// a period of raw fact rows. Derived and recomputable: the fact tables
+  /// remain the audit trail.
+  factSet               Json?
   reportConfidence    Float?
   /// Huddles and transcripts this rollup was built from, for traceability.
   sourceHuddleIds     String[]  @default([])
@@ -2794,6 +2807,14 @@ model MeetingChunk {
   /// them here rather than in a table means a COMPLETED chunk carries its own
   /// markers through a resume and is never re-extracted for them.
   segmentMarkers Json?
+  /// Topic or workstream labels this chunk reported.
+  ///
+  /// Extracted at no extra cost — the model already returns `topicsOpen` —
+  /// and parked here for the same reason as `segmentMarkers`: a topic seen in
+  /// one chunk only becomes useful once every chunk's list is in view, during
+  /// consolidation. Discarding it was throwing away the input that makes
+  /// group-wise reduction meaningful on a long, multi-workstream meeting.
+  topicsOpen     String[]                @default([])
   /// PENDING | PROCESSING | COMPLETED | FAILED | SKIPPED
   status         String                  @default("PENDING")
   attempts       Int                     @default(0)
@@ -2903,60 +2924,6 @@ model MeetingExtractionRun {
 /// not been regenerated. It never needs to know what a transcript said.
 ///
 /// See `docs/17-ai-meeting-rhythm-architecture.md` §D.5, §E.6, §G lever 12.
-model ClientMonthlyReport {
-  id                    String    @id @default(cuid())
-  orgId                 String
-  clientId              String
-  /// First and last day of the calendar month, UTC midnight.
-  periodStart           DateTime
-  periodEnd             DateTime
-  /// Full structured report — see `StoredMonthlyReport`.
-  report                Json
-  /// Flat numeric snapshot, for quarterly/annual trending later. The same
-  /// discipline that made THIS report cheap to build.
-  metrics               Json
-  validation            Json?
-  reportConfidence      Float?
-  /// The weekly artefacts this rollup was built from, for traceability and for
-  /// the cache key.
-  sourceWeeklyReportIds String[]  @default([])
-  sourceWmReportIds     String[]  @default([])
-  /// Weeks in the month with no report. Recorded so the rendered report can
-  /// qualify its conclusions instead of implying a complete picture.
-  missingWeeks          String[]  @default([])
-
-  // ── Cache key + snapshot provenance (doc 17 §L) ─────────────────────────
-  sourceFingerprint     String?
-  promptVersion         String?
-  schemaVersion         Int       @default(1)
-  modelId               String?
-  tokensInput           Int?
-  tokensOutput          Int?
-  costUsd               Decimal?  @db.Decimal(10, 6)
-  currentVersion        Int       @default(1)
-
-  /// Human sign-off gate — the report reads as Draft until this is set.
-  validatedAt           DateTime?
-  validatedBy           String?
-  generatedAt           DateTime  @default(now())
-  generatedBy           String
-  updatedAt             DateTime  @updatedAt
-  updatedBy             String?
-  deletedAt             DateTime?
-  isDemoData            Boolean   @default(false)
-  client                Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  org                   Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  /// Regenerating a month replaces its row; history lives in
-  /// `MeetingReportVersion`.
-  @@unique([orgId, clientId, periodStart])
-  @@index([orgId])
-  @@index([orgId, clientId, periodStart])
-  @@index([orgId, deletedAt])
-  @@index([clientId])
-  @@schema("app_quikscale")
-}
-
 /// One participant's three-point Daily Huddle update, in one meeting.
 ///
 /// The highest-value table in the fact layer. It answers adherence trends,
@@ -3072,6 +3039,10 @@ model MeetingStuckFact {
   /// Lowercased, punctuation-stripped, stopword-free, sorted tokens.
   /// Drives recurrence grouping.
   normalizedKey     String
+  /// Workstream this fact belongs to, matched against the topic labels its own
+  /// chunks reported. Null when nothing matched — never a guess, because a
+  /// wrong topic would silently reduce two unrelated facts against each other.
+  topicKey          String?
   category          String?
   /// OPEN | IN_PROGRESS | RESOLVED — only when stated in the meeting.
   statusStated      String?
@@ -3089,6 +3060,8 @@ model MeetingStuckFact {
 
   @@index([orgId])
   @@index([orgId, transcriptId])
+  /// The grouping key for bounded reduction (doc 17 §R1).
+  @@index([orgId, transcriptId, topicKey])
   @@index([orgId, clientId, meetingDate])
   /// Recurrence grouping, within a week and across a month.
   @@index([orgId, normalizedKey])
@@ -3276,6 +3249,10 @@ model MeetingGapFact {
   chunkIdx          Int?
   gap               String                  @db.Text
   normalizedKey     String
+  /// Workstream this fact belongs to, matched against the topic labels its own
+  /// chunks reported. Null when nothing matched — never a guess, because a
+  /// wrong topic would silently reduce two unrelated facts against each other.
+  topicKey          String?
   /// Only when an action was actually agreed. Never inferred.
   agreedAction      String?                 @db.Text
   ownerRaw          String?
@@ -3299,6 +3276,8 @@ model MeetingGapFact {
 
   @@index([orgId])
   @@index([orgId, transcriptId])
+  /// The grouping key for bounded reduction (doc 17 §R1).
+  @@index([orgId, transcriptId, topicKey])
   @@index([orgId, clientId, meetingDate])
   @@index([orgId, normalizedKey])
   @@schema("app_quikscale")
@@ -3329,6 +3308,10 @@ model MeetingDiscussionFact {
   sharedByMemberId  String?
   summary           String                  @db.Text
   normalizedKey     String
+  /// Workstream this fact belongs to, matched against the topic labels its own
+  /// chunks reported. Null when nothing matched — never a guess, because a
+  /// wrong topic would silently reduce two unrelated facts against each other.
+  topicKey          String?
   /// The decision or outcome, for a CI topic that reached one.
   outcome           String?                 @db.Text
   /// True when the segment was explicitly skipped or deferred.
@@ -3347,6 +3330,8 @@ model MeetingDiscussionFact {
 
   @@index([orgId])
   @@index([orgId, transcriptId, kind])
+  /// The grouping key for bounded reduction (doc 17 §R1).
+  @@index([orgId, transcriptId, topicKey])
   @@index([orgId, clientId, meetingDate])
   @@schema("app_quikscale")
 }
@@ -28899,61 +28884,107 @@ model QiTokenTransaction {
   @@schema("app_quikinsight")
 }
 
-model ClientWeeklyMeetingReport {
-  id                String              @id @default(cuid())
-  orgId             String
-  clientId          String
-  weeklyMeetingId   String              @unique
-  meetingDate       DateTime
-  /// Full structured report — see `StoredWeeklyMeetingReport`.
-  report            Json
-  /// Flat numeric snapshot, so the monthly rollup reads numbers instead of
-  /// re-deriving them from facts.
-  metrics           Json
-  validation        Json?
-  reportConfidence  Float?
+/// Every generated meeting report, of every kind, in one table.
+///
+/// WHY ONE TABLE
+/// Four tables held these rows before: one per report kind. About twenty-four
+/// of their thirty columns were byte-identical — the whole cache-key block, the
+/// sign-off pair, the audit columns and the same four indexes — and the copies
+/// had already drifted (`factSet` on two of four, `completeness` on one).
+/// Four copies of one contract is what produces that.
+///
+/// The pattern is not new here: `MeetingReportVersion` and `MeetingReportJob`
+/// already key on `reportKind` for exactly the same reason. The report rows
+/// were the odd ones out.
+///
+/// Adding a report kind is now a row, not a table plus a migration plus a route
+/// family — which matters because a quarterly rollup is already possible from
+/// `ClientWeekRollupReport.metrics`.
+model ClientMeetingReport {
+  id                    String               @id @default(cuid())
+  orgId                 String
+  clientId              String
 
-  // ── Coverage (doc 17 §D.10) ─────────────────────────────────────────────
-  /// Extraction coverage at generation time. Below 100 the report is PARTIAL
-  /// and cannot be signed off.
-  coveragePct       Float?
-  /// The time windows nobody read, as `[{ startMs, endMs }]`. Named in the
-  /// report so an incomplete picture never reads as a complete one.
+  /// DH_WEEKLY | WM | WEEK_ROLLUP | MONTHLY. See `ReportKind` in
+  /// `lib/reports/versions.ts` — the one place the union is declared.
+  reportKind            String
+  /// Identity WITHIN the kind: the ISO period start for period reports, the
+  /// meeting id for WM. A client can hold two weekly meetings on one date, so
+  /// the date alone would not identify that report. Same convention as
+  /// `MeetingReportJob.scopeKey`.
+  scopeKey              String
+
+  /// One name for what were `weekStart`, `periodStart` and `meetingDate` —
+  /// one concept that had three. A single-occurrence report sets both ends to
+  /// its own date.
+  periodStart           DateTime
+  periodEnd             DateTime
+
+  /// The occurrence this report is ABOUT. WM only today, null elsewhere. Kept
+  /// as a real FK so deleting a weekly meeting still deletes its report.
+  weeklyMeetingId       String?
+
+  report                Json
+  metrics               Json
+  validation            Json?
+  /// Bounded qualitative digest (doc 17 §R2). Null for kinds that do not build
+  /// one, and for reports generated before the column existed.
+  factSet               Json?
+  reportConfidence      Float?
+
+  // ── Coverage — set by kinds built from extraction, null for the rest ─────
+  coveragePct           Float?
+  /// COMPLETE | PARTIAL. A PARTIAL report cannot be signed off.
+  completeness          String               @default("COMPLETE")
   processingLimitations Json?
-  /// COMPLETE | PARTIAL — mirrors the extraction run's coverage verdict.
-  completeness      String              @default("COMPLETE")
+  extractionVersion     Int?
 
   // ── Cache key + snapshot provenance (doc 17 §L) ─────────────────────────
-  sourceFingerprint String?
-  promptVersion     String?
-  schemaVersion     Int                 @default(1)
-  modelId           String?
-  extractionVersion Int?
-  tokensInput       Int?
-  tokensOutput      Int?
-  costUsd           Decimal?            @db.Decimal(10, 6)
-  currentVersion    Int                 @default(1)
+  // Identical for every kind, which is the whole argument for one table.
+  sourceFingerprint     String?
+  promptVersion         String?
+  schemaVersion         Int                  @default(1)
+  modelId               String?
+  tokensInput           Int?
+  tokensOutput          Int?
+  costUsd               Decimal?             @db.Decimal(10, 6)
+  currentVersion        Int                  @default(1)
 
-  /// Human sign-off gate — the report reads as Draft until this is set, and a
-  /// PARTIAL report can never reach it.
-  validatedAt       DateTime?
-  validatedBy       String?
-  generatedAt       DateTime            @default(now())
-  generatedBy       String
-  updatedAt         DateTime            @updatedAt
-  updatedBy         String?
-  deletedAt         DateTime?
-  isDemoData        Boolean             @default(false)
-  client            Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  org               Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  weeklyMeeting     ClientWeeklyMeeting @relation(fields: [weeklyMeetingId], references: [id], onDelete: Cascade)
+  /// Reports this one was built from. One array rather than the former
+  /// `sourceWeeklyReportIds` / `sourceWmReportIds` pair: with every report in
+  /// one table, the kind of a referenced id is a lookup, not something the
+  /// column name has to encode.
+  sourceReportIds       String[]             @default([])
+  /// Artefacts OUTSIDE this table, so these stay distinct.
+  sourceHuddleIds       String[]             @default([])
+  sourceTranscriptIds   String[]             @default([])
+  /// Sources expected in the period that produced nothing. Named so a report
+  /// qualifies its conclusions rather than implying a complete picture.
+  missingSources        String[]             @default([])
 
-  /// One report per meeting. Regenerating replaces the row; history lives in
-  /// `MeetingReportVersion`.
-  @@unique([orgId, weeklyMeetingId])
+  /// Human sign-off gate — the report reads as Draft until this is set.
+  validatedAt           DateTime?
+  validatedBy           String?
+  generatedAt           DateTime             @default(now())
+  generatedBy           String
+  updatedAt             DateTime             @updatedAt
+  updatedBy             String?
+  deletedAt             DateTime?
+  isDemoData            Boolean              @default(false)
+
+  client                Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  org                   Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  weeklyMeeting         ClientWeeklyMeeting? @relation(fields: [weeklyMeetingId], references: [id], onDelete: Cascade)
+
+  /// One report per kind per scope. A DH weekly and a week rollup for the SAME
+  /// week coexist here — they share a `periodStart` and differ only by kind,
+  /// which is exactly the case this composite key exists for.
+  @@unique([orgId, reportKind, scopeKey])
   @@index([orgId])
-  @@index([orgId, clientId, meetingDate])
+  @@index([orgId, clientId, reportKind, periodStart])
+  @@index([orgId, clientId, periodStart])
   @@index([orgId, deletedAt])
   @@index([clientId])
+  @@index([weeklyMeetingId])
   @@schema("app_quikscale")
 }

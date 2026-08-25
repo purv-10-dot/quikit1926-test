@@ -275,6 +275,41 @@ export function monthlyFingerprint(input: MonthlyFingerprintInput): string {
 }
 
 /**
+ * Week Rollup — the same shape as the monthly one, and for the same reason.
+ *
+ * Both are built from stored artefacts rather than from source data, so both
+ * hash their SOURCES' versions. A rollup is fresh exactly when the reports
+ * beneath it have not been regenerated, and it never needs to know what a
+ * transcript said. Only the kind and the period label differ.
+ */
+export function weekRollupFingerprint(input: {
+  orgId: string;
+  clientId: string;
+  /** ISO Monday, e.g. "2026-08-03". */
+  weekStart: string;
+  sourceReports: { reportId: string; kind: string; version: number }[];
+  wwwState?: { wwwItemId: string; status: string; when: string; revisions: number }[];
+}): string {
+  return hash({
+    v: FINGERPRINT_VERSION,
+    kind: "WEEK_ROLLUP",
+    orgId: input.orgId,
+    clientId: input.clientId,
+    period: input.weekStart,
+    sourceReports: [...input.sourceReports]
+      .sort((a, b) =>
+        a.kind === b.kind
+          ? a.reportId.localeCompare(b.reportId)
+          : a.kind.localeCompare(b.kind),
+      )
+      .map((r) => [r.kind, r.reportId, r.version]),
+    wwwState: [...(input.wwwState ?? [])]
+      .sort((a, b) => a.wwwItemId.localeCompare(b.wwwItemId))
+      .map((w) => [w.wwwItemId, w.status, w.when, w.revisions]),
+  });
+}
+
+/**
  * Idempotency key for one extraction run (doc 17 §D.8).
  *
  * Distinct from a report fingerprint: this identifies "extracting THIS
