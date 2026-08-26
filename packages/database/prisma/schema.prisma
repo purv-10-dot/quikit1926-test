@@ -3148,8 +3148,27 @@ model MeetingWwwFact {
   completeness      String
   evidence          Json
   confidence        Float                   @default(0)
-  /// Set once a real WWW item has been created from this candidate.
+  /// The `WWWItem` this candidate resolves to. Two different reasons, told
+  /// apart by `linkOrigin` — see below.
   linkedWwwItemId   String?
+  /// WHY `linkedWwwItemId` is set.
+  ///
+  ///   CREATED           this meeting produced the item (a human pressed Create)
+  ///   MATCHED_EXISTING  this meeting DISCUSSED an item that already existed
+  ///   null              written before this column existed; read as CREATED,
+  ///                     which is what every pre-existing row is
+  ///
+  /// Load-bearing for WWW Review. Without it an item created from Monday's
+  /// huddle would appear as a "review" of itself in the same week's report, and
+  /// the section could not answer the one question it exists for: what did this
+  /// meeting say about commitments made BEFORE it.
+  linkOrigin        String?
+  /// Which matcher rule fired, and how strongly, when `linkOrigin` is
+  /// MATCHED_EXISTING. Stored so a wrong link is explainable and reversible
+  /// rather than an unattributable claim about meeting history.
+  /// EXACT_KEY | TOKEN_SIMILARITY | JARO
+  matchRule         String?
+  matchConfidence   Float?
   /// A dismissal persists, so a rejected suggestion never reappears after a
   /// regenerate — otherwise the facilitator re-rejects it every week.
   dismissedAt       DateTime?
@@ -3170,6 +3189,8 @@ model MeetingWwwFact {
   @@index([orgId, clientId, meetingDate])
   @@index([orgId, linkedWwwItemId])
   @@index([orgId, normalizedKey])
+  /// The WWW Review selector: "which items did THIS meeting discuss?"
+  @@index([orgId, transcriptId, linkOrigin])
   @@schema("app_quikscale")
 }
 

@@ -29,6 +29,7 @@ import {
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
 import type { ValidationResult } from "@/lib/ai/weeklyReportValidation";
 import { WeeklyHuddleReportView } from "./WeeklyHuddleReportView";
+import { useWwwExport, type ExportCandidate } from "./www/useWwwExport";
 import { DownloadWeeklyReportButtons } from "./DownloadWeeklyReportButtons";
 import { ConfirmDeleteDialog, runDelete, type DeleteTarget } from "./ConfirmDeleteDialog";
 import { Banner, ConfidenceBadge, EmptyState, SignOffBar, Skeleton } from "./reportUi";
@@ -129,6 +130,51 @@ export function WeeklyRollupPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Export WWW. The candidates come from the STORED report, so what is offered
+  // is exactly what the report says — the panel never re-derives them.
+  const candidates = useMemo(
+    () => ((report?.newWww?.rows ?? []) as unknown as ExportCandidate[]),
+    [report],
+  );
+  const wwwExport = useWwwExport(
+    candidates,
+    `/api/client-meetings/reports/weekly/new-www/bulk?clientId=${encodeURIComponent(
+      clientId,
+    )}&weekStart=${encodeURIComponent(weekStart)}`,
+  );
+  // Owner options for the inline picker.
+  //
+  // Fetched here with a plain request rather than via `useInfiniteUsers`,
+  // which needs a QueryClientProvider this panel has never had — adding one
+  // would make a report component depend on a provider purely to fill a gap
+  // that is usually absent. Only fetched when a candidate actually needs an
+  // owner, so a clean report costs no extra request.
+  const needsOwnerPicker = candidates.some((c) => wwwExport.gapsFor(c).includes("who"));
+  const [ownerOptions, setOwnerOptions] = useState<
+    { id: string; firstName: string; lastName: string; email: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!needsOwnerPicker || ownerOptions.length) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/users?page=1&limit=200&sortBy=firstName");
+        const json = (await res.json()) as {
+          success?: boolean;
+          data?: { id: string; firstName: string; lastName: string; email: string }[];
+        };
+        if (!cancelled && json.success && json.data) setOwnerOptions(json.data);
+      } catch {
+        // A failed lookup leaves the picker empty; Export stays blocked, which
+        // is the correct outcome — better than offering a guessed owner.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [needsOwnerPicker, ownerOptions.length]);
 
   const [confirming, setConfirming] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -501,7 +547,88 @@ export function WeeklyRollupPanel({
                 }
               />
 
-              <WeeklyHuddleReportView report={report} validation={validation} />
+              <WeeklyHuddleReportView
+                report={report}
+                validation={validation}
+                newWwwProps={{
+                  selected: wwwExport.selected,
+                  onSelectionChange: wwwExport.setSelected,
+                  gapsFor: wwwExport.gapsFor,
+                  onDraftChange: wwwExport.setDraft,
+                  drafts: wwwExport.drafts,
+                  // Only supplied when a row actually needs an owner: without
+                  // options the cell stays read-only, which is right for a
+                  // report where nothing is missing.
+                  ownerOptions: needsOwnerPicker ? ownerOptions : undefined,
+                  exportBar: (
+                    <div className="mt-2 space-y-1.5">
+                      {wwwExport.error ? (
+                        <Banner tone="error">{wwwExport.error}</Banner>
+                      ) : null}
+                      {wwwExport.result ? (
+                        <Banner tone={wwwExport.result.created ? "info" : "warn"}>
+                          {wwwExport.result.created} item
+                          {wwwExport.result.created === 1 ? "" : "s"} exported to WWW.
+                          {wwwExport.result.duplicates
+                            ? ` ${wwwExport.result.duplicates} already existed.`
+                            : ""}
+                          {wwwExport.result.skipped
+                            ? ` ${wwwExport.result.skipped} skipped.`
+                            : ""}
+                          {wwwExport.result.messages.length ? (
+                            <ul className="mt-1 list-disc pl-4">
+                              {wwwExport.result.messages.map((m, i) => (
+                                <li key={i}>{m}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </Banner>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void wwwExport.exportSelected()}
+                          disabled={!wwwExport.canExport || !canEdit}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {wwwExport.exporting
+                            ? "Exporting…"
+                            : `Export WWW${wwwExport.selected.size ? ` (${wwwExport.selected.size})` : ""}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={wwwExport.selectAllReady}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          Select all ready
+                        </button>
+                        {wwwExport.selected.size ? (
+                          <button
+                            type="button"
+                            onClick={wwwExport.clear}
+                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                      {/* Say WHICH rows are blocking, not just that something is. */}
+                      {wwwExport.blocking.length ? (
+                        <p className="text-[11px] text-amber-700">
+                          {wwwExport.blocking.length} selected item
+                          {wwwExport.blocking.length === 1 ? "" : "s"} still need an owner or a
+                          due date. Fill them in above, or tick “Due date TBD”.
+                        </p>
+                      ) : null}
+                      {!canEdit ? (
+                        <p className="text-[11px] text-gray-500">
+                          Exporting needs the Edit Report permission.
+                        </p>
+                      ) : null}
+                    </div>
+                  ),
+                }}
+              />
             </>
           )}
         </div>

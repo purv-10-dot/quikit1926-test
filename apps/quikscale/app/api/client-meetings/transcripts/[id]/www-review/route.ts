@@ -3,16 +3,20 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
-import { buildWwwReview, attachMeetingEvidence } from "@/lib/reports/wwwReview";
+import { buildWwwReview } from "@/lib/reports/wwwReview";
+import { linkExistingMatches } from "@/lib/reports/wwwCandidateLink";
 
 export const runtime = "nodejs";
 
 const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.Report");
 
 const querySchema = z.object({
-  periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  includeHistoricClosed: z.coerce.boolean().optional(),
+  /**
+   * Skip the matcher pass and read only what is already linked. Used by callers
+   * that have just run it themselves, so one report generation does not run the
+   * same matching twice.
+   */
+  skipMatch: z.coerce.boolean().optional(),
 });
 
 /**
@@ -65,22 +69,22 @@ export const GET = auth.view<{ id: string }>(
     // what the item looked like at the time rather than what it looks like now.
     const asOf = transcript.meetingDate ?? new Date();
 
+    // Match this meeting's candidates to items that already existed. Idempotent
+    // — only unlinked facts are considered — so a repeated read neither
+    // duplicates work nor re-decides a link somebody has since acted on.
+    //
+    // It runs on read because extraction and reporting are separate steps here:
+    // a meeting extracted before this feature existed has facts but no links,
+    // and requiring a re-extraction to see them would cost a model call to
+    // recover information already in the database.
+    if (!parsed.data.skipMatch) {
+      await linkExistingMatches(orgId, params.id, transcript.clientId, asOf);
+    }
+
     const review = await buildWwwReview(
       { orgId, userId },
-      transcript.clientId,
-      asOf,
-      {
-        periodStart: parsed.data.periodStart
-          ? new Date(`${parsed.data.periodStart}T00:00:00.000Z`)
-          : undefined,
-        periodEnd: parsed.data.periodEnd
-          ? new Date(`${parsed.data.periodEnd}T23:59:59.999Z`)
-          : undefined,
-        includeHistoricClosed: parsed.data.includeHistoricClosed,
-      },
+      { transcriptIds: [params.id], asOf },
     );
-
-    const withEvidence = await attachMeetingEvidence(orgId, params.id, review);
 
     return NextResponse.json({
       success: true,
@@ -88,7 +92,7 @@ export const GET = auth.view<{ id: string }>(
         transcriptId: params.id,
         clientId: transcript.clientId,
         asOf,
-        ...withEvidence,
+        ...review,
       },
     });
   },

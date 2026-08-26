@@ -10,6 +10,7 @@ import { weeklyMeetingFingerprint } from "@/lib/reports/fingerprint";
 import { snapshotReportVersion } from "@/lib/reports/versions";
 import { buildWwwReview } from "@/lib/reports/wwwReview";
 import { buildNewWww } from "@/lib/reports/newWww";
+import { linkExistingMatches } from "@/lib/reports/wwwCandidateLink";
 import { loadWmContext, WmContextError } from "@/lib/reports/wmData";
 import { describeOmissions } from "@/lib/facts/reduce";
 import { findReport, scopeKeyFor, upsertReport } from "@/lib/reports/reportStore";
@@ -113,8 +114,29 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
   // Built BEFORE the cache check, because WWW state is part of the fingerprint:
   // an owner completing an item after generation makes the review section wrong,
   // and that has to register as staleness.
+  //
+  // The matcher runs first. WWW Review is selected from the items THIS meeting
+  // discussed, and nothing knows which those are until extracted candidates
+  // have been matched against items that already existed. Without this pass the
+  // section is empty; with the old client-wide selector it was full of items
+  // nobody mentioned.
+  if (context.transcript) {
+    await linkExistingMatches(
+      orgId,
+      context.transcript.id,
+      clientId,
+      context.meeting.meetingDate,
+    );
+  }
+
   const [review, newWww] = await Promise.all([
-    buildWwwReview({ orgId, userId }, clientId, context.meeting.meetingDate),
+    buildWwwReview(
+      { orgId, userId },
+      {
+        transcriptIds: context.transcript ? [context.transcript.id] : [],
+        asOf: context.meeting.meetingDate,
+      },
+    ),
     context.transcript
       ? buildNewWww(orgId, context.transcript.id, clientId)
       : Promise.resolve(null),
@@ -280,9 +302,13 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     throw err;
   }
 
+  // `unavailableReason` is carried through rather than dropped: WWW Review is
+  // now selected from what the meeting discussed, so an empty section usually
+  // means extraction has not run — not that the team committed to nothing. The
+  // reader has to be able to tell those apart.
   const reviewSection: WwwSectionInput = {
-    available: true,
-    unavailableReason: null,
+    available: review.rows.length > 0,
+    unavailableReason: review.unavailableReason,
     scopeLimited: review.scopeLimited,
     rows: review.rows as unknown as Array<Record<string, unknown>>,
   };

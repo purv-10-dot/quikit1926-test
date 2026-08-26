@@ -212,7 +212,36 @@ export const storedWeeklyReportSchema = z.object({
     stuckProtocol: observationSchema,
     recommendations: observationSchema,
   }),
+  /**
+   * @deprecated Superseded by `wwwReview` + `newWww`, which carry evidence, a
+   * factId and a link to the real item. Kept for one release so reports
+   * generated before those sections existed still render.
+   */
   wwwSuggestions: z.array(storedWwwSchema),
+  /**
+   * Section 7 — items created BEFORE these huddles that the week discussed.
+   *
+   * Optional with an empty default, deliberately: adding a field is the wrong
+   * reason to bump `DH_WEEKLY_SCHEMA_VERSION` (see the rule stated on that
+   * constant), and every report stored before this existed must keep parsing.
+   * Rows are loosely typed for the same reason the Weekly Meeting report does
+   * it — the shape is owned by `lib/reports/wwwReview.ts`, and duplicating it
+   * here would create two definitions to keep in step.
+   */
+  wwwReview: z
+    .object({
+      rows: z.array(z.record(z.unknown())).default([]),
+      scopeLimited: z.boolean().default(false),
+      unavailableReason: z.string().nullish(),
+    })
+    .default({ rows: [], scopeLimited: false, unavailableReason: null }),
+  /** Section 8 — commitments made in these huddles, not yet in the record. */
+  newWww: z
+    .object({
+      rows: z.array(z.record(z.unknown())).default([]),
+      unavailableReason: z.string().nullish(),
+    })
+    .default({ rows: [], unavailableReason: null }),
   /** Which days fed the rollup, for traceability. */
   sourceDays: z.array(
     z.object({
@@ -282,6 +311,10 @@ export function composeWeeklyReport(input: {
   deterministic: DeterministicWeek;
   ai: WeeklyReportAi;
   sourceDays: { date: string; huddleId: string | null; transcriptId: string | null; hasReport: boolean }[];
+  /** Section 7. Built by `lib/reports/wwwReview.ts`; no AI involved. */
+  wwwReview?: StoredWeeklyReport["wwwReview"];
+  /** Section 8. Candidates only — nothing is ever created from here. */
+  newWww?: StoredWeeklyReport["newWww"];
 }): StoredWeeklyReport {
   const { config, roster, weekStart, weekEnd, weekLabel, deterministic, ai, sourceDays } = input;
   const { attendance, heatMap, metrics, blockers } = deterministic;
@@ -317,6 +350,8 @@ export function composeWeeklyReport(input: {
     // Anything at or below 40% confidence starts unchecked — the reviewer opts
     // in rather than having to notice and opt out.
     wwwSuggestions: ai.wwwSuggestions.map((w) => ({ ...w, accepted: w.confidence > 0.4 })),
+    wwwReview: input.wwwReview ?? { rows: [], scopeLimited: false, unavailableReason: null },
+    newWww: input.newWww ?? { rows: [], unavailableReason: null },
     sourceDays,
   };
 }

@@ -32,6 +32,8 @@ import {
   type WhoResolution,
 } from "@/lib/services/wwwWhoBridge";
 
+import { LINK_ORIGIN } from "@/lib/reports/wwwCandidateMatch";
+
 export interface NewWwwCandidate {
   factId: string;
   /** Speaker label exactly as the transcript had it. */
@@ -197,7 +199,14 @@ export async function linkCandidate(
 ): Promise<void> {
   await db.meetingWwwFact.updateMany({
     where: { id: factId, orgId },
-    data: { linkedWwwItemId: wwwItemId },
+    data: {
+      linkedWwwItemId: wwwItemId,
+      // Stamped so WWW Review can tell "this meeting produced the item" apart
+      // from "this meeting discussed an item that already existed". Without it
+      // an item created from Monday's huddle would show up as a review of
+      // itself in the same week's report.
+      linkOrigin: LINK_ORIGIN.CREATED,
+    },
   });
 }
 

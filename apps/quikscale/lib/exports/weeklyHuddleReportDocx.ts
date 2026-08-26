@@ -36,13 +36,6 @@ const STATUS_LABEL: Record<string, string> = {
   RESOLVED: "Resolved",
 };
 
-const KIND_LABEL: Record<string, string> = {
-  BLOCKER: "Blocker",
-  KPI_RELATED: "KPI-related",
-  PRIORITY_RELATED: "Priority-related",
-  ACTION: "Action",
-};
-
 const ATTENDANCE_MARK: Record<string, string> = {
   PRESENT: "✓",
   PARTIAL: "◐",
@@ -85,6 +78,9 @@ function h3(text: string) {
 }
 
 const spacer = () => new Paragraph({ text: "", spacing: { after: 80 } });
+
+/** Loose report rows carry `unknown`; render a string or nothing. */
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 /** Build the Word document for a generated weekly report. */
 export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: string): Document {
@@ -319,37 +315,101 @@ export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: strin
   );
 
   // WWW suggestions
-  if (report.wwwSuggestions.length) {
-    children.push(h2("7. WWW Suggestions"));
-    children.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: "Drawn from this week's stucks and discussion points. Nothing here is created automatically.",
-            size: 16,
-            italics: true,
-            color: "64748B",
-          }),
-        ],
-        spacing: { after: 100 },
-      }),
-    );
+  // ── 7. WWW Review ─────────────────────────────────────────────────────────
+  //
+  // Rendered from the STORED report, like every other section: a download can
+  // never trigger a query or a model call. Rows are loosely typed because the
+  // shape is owned by `lib/reports/wwwReview.ts`.
+  const reviewRows = (report.wwwReview?.rows ?? []) as Record<string, unknown>[];
+  children.push(h2("7. WWW Review"));
+  if (reviewRows.length) {
     children.push(
       table([
-        headerRow(["Who", "What", "When", "Source"]),
-        ...report.wwwSuggestions.map(
-          (w) =>
+        headerRow(["Owner", "WWW", "Previous Status", "Current Status", "Change"]),
+        ...reviewRows.map(
+          (r) =>
             new TableRow({
               children: [
-                cell(w.who || "—", { width: 16 }),
-                cell(`${w.what}  [${KIND_LABEL[w.kind] ?? w.kind}]`, { width: 48 }),
-                // The doc is explicit: an unstated date is flagged, never invented.
-                cell(w.when || "Not stated — flagged", { width: 16 }),
-                cell(w.sourceDate ?? "—", { width: 20 }),
+                cell(str(r.whoName) || "Unassigned", { width: 16 }),
+                cell(str(r.what) || "—", { width: 36 }),
+                // Never blank: a blank cell reads as "no change", which is a
+                // claim about the meeting that nobody made.
+                cell(str(r.statusAtMeeting) || "Not recorded", { width: 16 }),
+                cell(str(r.currentStatus) || "—", { width: 16 }),
+                cell(str(r.changeLabel) || "—", { width: 16 }),
               ],
             }),
         ),
       ]),
+    );
+  } else {
+    children.push(
+      new Paragraph({
+        text:
+          str(report.wwwReview?.unavailableReason) ||
+          "No previously-created WWW item was discussed this week.",
+      }),
+    );
+  }
+
+  // ── 8. New WWW ────────────────────────────────────────────────────────────
+  const newRows = (report.newWww?.rows ?? []) as Record<string, unknown>[];
+  children.push(h2("8. WWW / New Action Items"));
+  if (newRows.length) {
+    children.push(
+      table([
+        headerRow(["Who", "What", "When", "Status"]),
+        ...newRows.map((r) => {
+          const who = r.who as { userName?: string } | null | undefined;
+          const missing = Array.isArray(r.missingFields) ? (r.missingFields as string[]) : [];
+          return new TableRow({
+            children: [
+              cell(who?.userName || str(r.whoRaw) || "Not identified", { width: 18 }),
+              cell(str(r.what) || "—", { width: 46 }),
+              // The doc is explicit: an unstated date is flagged, never invented.
+              cell(r.whenMissing ? "Not specified" : str(r.whenText) || "Not specified", {
+                width: 18,
+              }),
+              cell(
+                r.linkedWwwItemId
+                  ? "Created"
+                  : r.dismissedAt
+                    ? "Dismissed"
+                    : missing.length
+                      ? `Needs ${missing.join(" & ")}`
+                      : "Ready",
+                { width: 18 },
+              ),
+            ],
+          });
+        }),
+      ]),
+    );
+  } else if (report.wwwSuggestions.length) {
+    // A report generated before these sections existed still shows its action
+    // items rather than appearing to have found none.
+    children.push(
+      table([
+        headerRow(["Who", "What", "When"]),
+        ...report.wwwSuggestions.map(
+          (w) =>
+            new TableRow({
+              children: [
+                cell(w.who || "—", { width: 20 }),
+                cell(w.what, { width: 60 }),
+                cell(w.when || "Not stated — flagged", { width: 20 }),
+              ],
+            }),
+        ),
+      ]),
+    );
+  } else {
+    children.push(
+      new Paragraph({
+        text:
+          str(report.newWww?.unavailableReason) ||
+          "No new action items were identified this week.",
+      }),
     );
   }
 

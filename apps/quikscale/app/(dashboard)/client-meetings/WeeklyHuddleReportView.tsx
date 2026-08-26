@@ -16,6 +16,12 @@
 
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
 import type { ValidationResult, ValidationSeverity } from "@/lib/ai/weeklyReportValidation";
+import { WwwReviewSection, type WwwReviewRowView } from "./www/WwwReviewSection";
+import {
+  NewWwwSection,
+  type NewWwwRowView,
+  type NewWwwSectionProps,
+} from "./www/NewWwwSection";
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n}%`);
 
@@ -67,13 +73,6 @@ const BLOCKER_STATUS: Record<string, { label: string; cls: string }> = {
   OPEN: { label: "Open", cls: "bg-red-100 text-red-700" },
   IN_PROGRESS: { label: "In Progress", cls: "bg-amber-100 text-amber-800" },
   RESOLVED: { label: "Resolved", cls: "bg-green-100 text-green-700" },
-};
-
-const WWW_KIND: Record<string, { label: string; cls: string }> = {
-  BLOCKER: { label: "Blocker", cls: "bg-red-100 text-red-700" },
-  KPI_RELATED: { label: "KPI-related", cls: "bg-blue-100 text-blue-800" },
-  PRIORITY_RELATED: { label: "Priority-related", cls: "bg-purple-100 text-purple-800" },
-  ACTION: { label: "Action", cls: "bg-gray-100 text-gray-700" },
 };
 
 const SEVERITY: Record<ValidationSeverity, { cls: string; dot: string; label: string }> = {
@@ -155,11 +154,17 @@ export function ValidationBanner({ validation }: { validation: ValidationResult 
 }
 
 export function WeeklyHuddleReportView({
+  newWwwProps,
   report,
   validation,
 }: {
   report: StoredWeeklyReport;
   validation: ValidationResult | null;
+  /**
+   * Selection, gap-filling and the Export action. Omitted for a read-only
+   * render — a downloaded or historical report has nothing to export against.
+   */
+  newWwwProps?: Partial<NewWwwSectionProps>;
 }) {
   const { meetingDetails: md, executive, attendance, heatMap, stucks, facilitatorObservations: fo } = report;
   const team = heatMap.teamAverage;
@@ -505,44 +510,24 @@ export function WeeklyHuddleReportView({
         </div>
       </section>
 
-      {/* WWW suggestions */}
-      {report.wwwSuggestions.length ? (
-        <section>
-          <SectionHeading>7. WWW Suggestions</SectionHeading>
-          <p className="mb-2 text-[11px] text-gray-500">
-            Drawn from this week&apos;s stucks and discussion points. Nothing here is created automatically.
-          </p>
-          <ul className="space-y-2">
-            {report.wwwSuggestions.map((w, i) => {
-              const kind = WWW_KIND[w.kind] ?? WWW_KIND.ACTION;
-              return (
-                <li key={i} className="rounded-lg border border-gray-100 px-3 py-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-800">{w.what}</p>
-                      <p className="mt-0.5 text-[11px] text-gray-600">
-                        <span className="font-medium">Who:</span> {w.who || "—"}
-                        {" · "}
-                        <span className="font-medium">When:</span>{" "}
-                        {w.when ? w.when : <em className="text-amber-700">not stated — flagged</em>}
-                      </p>
-                      {w.sourceQuote || w.sourceDate ? (
-                        <p className="mt-0.5 text-[10px] italic text-gray-400">
-                          Source{w.sourceDate ? ` (${w.sourceDate})` : ""}: {w.sourceQuote ?? "—"}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1.5">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${kind.cls}`}>{kind.label}</span>
-                      <ConfidenceBar value={w.confidence} />
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
+      {/* 7 — WWW Review: items created BEFORE this week that the week discussed. */}
+      <WwwReviewSection
+        title="7. WWW Review"
+        rows={(report.wwwReview?.rows ?? []) as WwwReviewRowView[]}
+        unavailableReason={report.wwwReview?.unavailableReason ?? null}
+        scopeLimited={report.wwwReview?.scopeLimited}
+      />
+
+      {/* 8 — New WWW: commitments made THIS week, not yet in the record.
+          Falls back to the legacy `wwwSuggestions` so a report generated
+          before these sections existed still shows its action items. */}
+      <NewWwwSection
+        title="8. WWW / New Action Items"
+        rows={(report.newWww?.rows ?? []) as NewWwwRowView[]}
+        {...(newWwwProps ?? {})}
+        legacySuggestions={report.newWww?.rows?.length ? [] : report.wwwSuggestions}
+        unavailableReason={report.newWww?.unavailableReason ?? null}
+      />
     </div>
   );
 }

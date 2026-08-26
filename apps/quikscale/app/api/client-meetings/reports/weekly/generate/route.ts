@@ -27,6 +27,10 @@ import {
   DH_WEEKLY_SCHEMA_VERSION,
 } from "@/lib/reports/weeklyCacheState";
 import { snapshotReportVersion } from "@/lib/reports/versions";
+import { projectWeekWwwFacts } from "@/lib/reports/dailyWwwFacts";
+import { buildWwwReview } from "@/lib/reports/wwwReview";
+import { buildNewWww } from "@/lib/reports/newWww";
+import { linkExistingMatches } from "@/lib/reports/wwwCandidateLink";
 import { scopeKeyFor, upsertReport } from "@/lib/reports/reportStore";
 import { validateWeeklyReport } from "@/lib/ai/weeklyReportValidation";
 import { loadWeekContext, toWeekStart, weekLabel } from "@/lib/services/weeklyHuddleData";
@@ -236,6 +240,43 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     );
   }
 
+  // --- 2b. WWW facts for the week ------------------------------------------
+  //
+  // The Daily Huddle pipeline has no fact extraction of its own: its WWW comes
+  // from the per-day report above. WWW Review and New WWW read `MeetingWwwFact`,
+  // so those daily candidates are projected into that shape here.
+  //
+  // Projection rather than a second extraction pass, for two reasons: the daily
+  // report has ALREADY paid a model call to find these commitments, and running
+  // an independent extraction would give the Daily tab and the weekly report two
+  // different answers to "what did the team commit to?".
+  //
+  // Both steps are idempotent and cost nothing in tokens, so a regenerate is
+  // safe and a week extracted before this feature existed still fills in.
+  const weekTranscriptIds = context.sources
+    .map((s) => s.transcriptId)
+    .filter((id): id is string => Boolean(id));
+
+  if (weekTranscriptIds.length) {
+    const projected = await projectWeekWwwFacts(orgId, weekTranscriptIds);
+    if (projected.failures.length) {
+      notes.push(
+        `WWW candidates could not be read for ${projected.failures.length} huddle(s); the WWW sections may be incomplete.`,
+      );
+    }
+
+    // Match this week's candidates to items that already existed. This is what
+    // separates WWW Review (discussed before, reviewed now) from New WWW.
+    for (const source of context.sources) {
+      if (!source.transcriptId) continue;
+      await linkExistingMatches(
+        orgId,
+        source.transcriptId,
+        clientId,
+        new Date(`${source.date}T00:00:00.000Z`),
+      );
+    }
+  }
   // --- 3. Deterministic layer ----------------------------------------------
   const deterministic = computeDeterministicWeek({
     config: context.client,
@@ -291,6 +332,34 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     ai,
   });
 
+
+  // --- 4b. WWW sections ------------------------------------------------------
+  //
+  // Review is selected from what the week DISCUSSED, so `asOf` is the first
+  // huddle of the week: a status that moved mid-week shows as a change across
+  // the whole week rather than only against its last day.
+  const firstHuddle = weekTranscriptIds.length
+    ? new Date(`${context.sources.find((s) => s.transcriptId)!.date}T00:00:00.000Z`)
+    : context.weekStart;
+
+  const review = await buildWwwReview(
+    { orgId, userId },
+    { transcriptIds: weekTranscriptIds, asOf: firstHuddle },
+  );
+  const newWwwSections = await Promise.all(
+    weekTranscriptIds.map((id) => buildNewWww(orgId, id, clientId)),
+  );
+  // De-duplicated across the week: one commitment repeated in three huddles is
+  // one thing to create, not three.
+  const seenCandidateKeys = new Set<string>();
+  const newWwwRows = newWwwSections
+    .flatMap((r) => r.candidates)
+    .filter((c) => {
+      const key = c.what.trim().toLowerCase();
+      if (seenCandidateKeys.has(key)) return false;
+      seenCandidateKeys.add(key);
+      return true;
+    });
   const report = composeWeeklyReport({
     config: context.client,
     roster: context.roster,
@@ -299,6 +368,17 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     weekLabel: label,
     deterministic,
     ai,
+    wwwReview: {
+      rows: review.rows as unknown as Record<string, unknown>[],
+      scopeLimited: review.scopeLimited,
+      unavailableReason: review.unavailableReason,
+    },
+    newWww: {
+      rows: newWwwRows as unknown as Record<string, unknown>[],
+      unavailableReason: newWwwRows.length
+        ? null
+        : "No new commitments were identified in this week's huddles.",
+    },
     sourceDays: context.sources.map((s) => ({
       date: s.date,
       huddleId: s.huddleId,

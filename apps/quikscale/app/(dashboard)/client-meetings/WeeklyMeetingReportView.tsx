@@ -11,6 +11,10 @@
 
 import type { StoredWmReport } from "@/lib/reports/wmCompose";
 import { Chip, SectionCard, StatRow, StatTile, ragClass, pctText } from "./reportUi";
+import {
+  WwwReviewSection,
+  type WwwReviewRowView,
+} from "./www/WwwReviewSection";
 
 const attendanceTone = (state: string) => {
   const s = state.toUpperCase();
@@ -346,7 +350,15 @@ export function WeeklyMeetingReportView({ report }: { report: StoredWmReport }) 
       </SectionCard>
 
       {/* 5 & 6 — WWW */}
-      <WwwSection title="WWW review" section={report.wwwReview} />
+      {/* Review has a purpose-built renderer: its rows carry a specific
+          previous→current status contract that the generic key-dump below
+          cannot express, and the format asks for them grouped by person. */}
+      <WwwReviewSection
+        title="WWW review"
+        rows={(report.wwwReview.rows ?? []) as WwwReviewRowView[]}
+        unavailableReason={report.wwwReview.unavailableReason}
+        scopeLimited={report.wwwReview.scopeLimited}
+      />
       <WwwSection title="New WWW" section={report.newWww} />
 
       {/* 7 — discussions */}

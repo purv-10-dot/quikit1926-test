@@ -33,13 +33,6 @@ const STATUS: Record<string, { label: string; color: string }> = {
   RESOLVED: { label: "Resolved", color: "#166534" },
 };
 
-const KIND: Record<string, string> = {
-  BLOCKER: "Blocker",
-  KPI_RELATED: "KPI-related",
-  PRIORITY_RELATED: "Priority-related",
-  ACTION: "Action",
-};
-
 const styles = StyleSheet.create({
   page: { paddingHorizontal: 28, paddingVertical: 26, fontFamily: "Helvetica", fontSize: 9, color: "#1F2937" },
 
@@ -93,6 +86,9 @@ const styles = StyleSheet.create({
   footer: { position: "absolute", bottom: 16, left: 28, right: 28, textAlign: "center", fontSize: 7, fontStyle: "italic", color: "#94A3B8" },
 });
 
+/** Loose report rows carry `unknown`; render a string or nothing. */
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
 export default function WeeklyReportPdfDoc({
   report,
   orgName,
@@ -102,6 +98,11 @@ export default function WeeklyReportPdfDoc({
 }) {
   const { meetingDetails: md, executive, attendance, heatMap, stucks, facilitatorObservations: fo } = report;
   const team = heatMap.teamAverage;
+  // Rows are loosely typed because the shape is owned by
+  // `lib/reports/wwwReview.ts`; duplicating it here would create a second
+  // definition to keep in step.
+  const reviewRows = (report.wwwReview?.rows ?? []) as Record<string, unknown>[];
+  const newRows = (report.newWww?.rows ?? []) as Record<string, unknown>[];
 
   const details: [string, string][] = [
     ["Meeting Type", md.meetingType],
@@ -358,32 +359,103 @@ export default function WeeklyReportPdfDoc({
           ))}
         </View>
 
-        {/* 7. WWW suggestions */}
-        {report.wwwSuggestions.length ? (
-          <>
-            <Text style={styles.h2}>7. WWW Suggestions</Text>
-            <View style={styles.table}>
-              <View style={styles.tHead}>
-                <Text style={[styles.th, { width: "16%" }]}>Who</Text>
-                <Text style={[styles.th, { width: "48%" }]}>What</Text>
-                <Text style={[styles.th, { width: "18%" }]}>When</Text>
-                <Text style={[styles.th, { width: "18%" }]}>Source</Text>
-              </View>
-              {report.wwwSuggestions.map((w, i) => (
-                <View key={i} style={styles.tRow} wrap={false}>
-                  <Text style={[styles.td, { width: "16%" }]}>{w.who || "—"}</Text>
-                  <Text style={[styles.td, { width: "48%" }]}>
-                    {w.what} [{KIND[w.kind] ?? w.kind}]
-                  </Text>
-                  <Text style={[styles.td, { width: "18%", color: w.when ? "#1F2937" : "#B45309" }]}>
-                    {w.when || "Not stated — flagged"}
-                  </Text>
-                  <Text style={[styles.td, { width: "18%" }]}>{w.sourceDate ?? "—"}</Text>
-                </View>
-              ))}
+        {/* 7. WWW Review — rendered from the STORED report, like every other
+            section, so a download never queries or calls a model. */}
+        <Text style={styles.h2}>7. WWW Review</Text>
+        {reviewRows.length ? (
+          <View style={styles.table}>
+            <View style={styles.tHead}>
+              <Text style={[styles.th, { width: "16%" }]}>Owner</Text>
+              <Text style={[styles.th, { width: "36%" }]}>WWW</Text>
+              <Text style={[styles.th, { width: "16%" }]}>Previous</Text>
+              <Text style={[styles.th, { width: "16%" }]}>Current</Text>
+              <Text style={[styles.th, { width: "16%" }]}>Change</Text>
             </View>
-          </>
-        ) : null}
+            {reviewRows.map((r, i) => (
+              <View key={i} style={styles.tRow} wrap={false}>
+                <Text style={[styles.td, { width: "16%" }]}>{str(r.whoName) || "Unassigned"}</Text>
+                <Text style={[styles.td, { width: "36%" }]}>{str(r.what) || "—"}</Text>
+                {/* Never blank: a blank cell would read as "no change". */}
+                <Text
+                  style={[
+                    styles.td,
+                    { width: "16%", color: str(r.statusAtMeeting) ? "#1F2937" : "#94A3B8" },
+                  ]}
+                >
+                  {str(r.statusAtMeeting) || "Not recorded"}
+                </Text>
+                <Text style={[styles.td, { width: "16%" }]}>{str(r.currentStatus) || "—"}</Text>
+                <Text style={[styles.td, { width: "16%" }]}>{str(r.changeLabel) || "—"}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.note}>
+            {str(report.wwwReview?.unavailableReason) ||
+              "No previously-created WWW item was discussed this week."}
+          </Text>
+        )}
+
+        {/* 8. New WWW */}
+        <Text style={styles.h2}>8. WWW / New Action Items</Text>
+        {newRows.length ? (
+          <View style={styles.table}>
+            <View style={styles.tHead}>
+              <Text style={[styles.th, { width: "18%" }]}>Who</Text>
+              <Text style={[styles.th, { width: "46%" }]}>What</Text>
+              <Text style={[styles.th, { width: "18%" }]}>When</Text>
+              <Text style={[styles.th, { width: "18%" }]}>Status</Text>
+            </View>
+            {newRows.map((r, i) => {
+              const who = r.who as { userName?: string } | null | undefined;
+              const missing = Array.isArray(r.missingFields) ? (r.missingFields as string[]) : [];
+              const dated = !r.whenMissing && str(r.whenText);
+              return (
+                <View key={i} style={styles.tRow} wrap={false}>
+                  <Text style={[styles.td, { width: "18%" }]}>
+                    {who?.userName || str(r.whoRaw) || "Not identified"}
+                  </Text>
+                  <Text style={[styles.td, { width: "46%" }]}>{str(r.what) || "—"}</Text>
+                  {/* An unstated date is flagged, never invented. */}
+                  <Text style={[styles.td, { width: "18%", color: dated ? "#1F2937" : "#B45309" }]}>
+                    {dated || "Not specified"}
+                  </Text>
+                  <Text style={[styles.td, { width: "18%" }]}>
+                    {r.linkedWwwItemId
+                      ? "Created"
+                      : r.dismissedAt
+                        ? "Dismissed"
+                        : missing.length
+                          ? `Needs ${missing.join(" & ")}`
+                          : "Ready"}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : report.wwwSuggestions.length ? (
+          <View style={styles.table}>
+            <View style={styles.tHead}>
+              <Text style={[styles.th, { width: "20%" }]}>Who</Text>
+              <Text style={[styles.th, { width: "60%" }]}>What</Text>
+              <Text style={[styles.th, { width: "20%" }]}>When</Text>
+            </View>
+            {report.wwwSuggestions.map((w, i) => (
+              <View key={i} style={styles.tRow} wrap={false}>
+                <Text style={[styles.td, { width: "20%" }]}>{w.who || "—"}</Text>
+                <Text style={[styles.td, { width: "60%" }]}>{w.what}</Text>
+                <Text style={[styles.td, { width: "20%", color: w.when ? "#1F2937" : "#B45309" }]}>
+                  {w.when || "Not stated — flagged"}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.note}>
+            {str(report.newWww?.unavailableReason) ||
+              "No new action items were identified this week."}
+          </Text>
+        )}
 
         <Text
           style={styles.footer}
