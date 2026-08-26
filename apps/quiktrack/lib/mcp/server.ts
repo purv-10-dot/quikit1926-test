@@ -14,6 +14,7 @@ import { logMcpAction } from "@/lib/mcp/actionLog";
 import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
 import { createMcpTestCase, type McpTestCaseResult } from "@/lib/mcp/testCaseBundle";
 import { TestCaseError } from "@/lib/services/testCases";
+import { createTestSuiteInTransaction } from "@/lib/services/testSuites";
 import {
   createIssueSchema,
   issuePriorityEnum,
@@ -25,6 +26,7 @@ import {
   mcpCreateTestCaseSchema,
   testCasePriorityEnum,
   testCaseTypeEnum,
+  createSuiteSchema,
 } from "@/lib/validation/testCase";
 import { ISSUE_LINK_TYPES } from "@/lib/services/issueLinkTypes";
 import { createSprintSchema } from "@/lib/validation/sprint";
@@ -57,6 +59,7 @@ const createIssueInput = createIssueSchema.omit({ projectId: true }).extend({
   testCases: z.array(mcpCreateTestCaseSchema.omit({ issueId: true })).max(20).optional(),
 });
 const createSprintInput = createSprintSchema.omit({ projectId: true });
+const createSuiteInput = createSuiteSchema.omit({ projectId: true });
 const updateIssueInput = updateIssueSchema;
 
 /**
@@ -994,6 +997,63 @@ export const mcpHandler = createMcpHandler(({ authInfo }) => {
         payload: parsed.data, after: result, result: "success",
       });
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    "create_test_suite",
+    {
+      description:
+        'Create a QuikTest test suite. A default root section ("All test cases") is created with it, so the suite is immediately usable for filing test cases. Pass projectId if this token isn\'t scoped to a single project.',
+      inputSchema: fromJsonSchema({
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          description: { type: "string" },
+          projectId: { type: "string", description: 'Project id or its human-readable key (e.g. "QUIKTR") — see list_projects.' },
+        },
+        required: ["name"],
+      }),
+    },
+    async (args: unknown) => {
+      const { projectId: rawProjectId } = args as { projectId?: string };
+      const resolved = resolveRequestedProjectId(tokenProjectId, rawProjectId);
+      if (!resolved.ok) {
+        return { content: [{ type: "text", text: resolved.error }], isError: true };
+      }
+      let { projectId } = resolved;
+
+      const membership = await checkProjectMembership({ orgId, userId, projectId, tokenProjectId, tool: "create_test_suite" });
+      if (!membership.ok) return membership.result;
+      projectId = membership.access.projectId;
+
+      const writeCheck = await checkWritePermission({
+        orgId, userId, projectId, tool: "create_test_suite",
+        access: membership.access, resource: "TestSuite", action: "create",
+      });
+      if (!writeCheck.ok) return writeCheck.result;
+
+      const parsed = createSuiteInput.safeParse(args);
+      if (!parsed.success) {
+        const errorMessage = parsed.error.issues.map((i) => i.message).join(", ");
+        void logMcpAction({
+          orgId, userId, actorType, projectId,
+          tool: "create_test_suite", action: "CREATE",
+          entityType: "test_suite", entityId: null, entityKey: null,
+          payload: args, result: "error", errorMessage,
+        });
+        return { content: [{ type: "text", text: errorMessage }], isError: true };
+      }
+
+      const suite = await db.$transaction((tx) => createTestSuiteInTransaction(tx, orgId, projectId, userId, parsed.data));
+
+      void logMcpAction({
+        orgId, userId, actorType, projectId,
+        tool: "create_test_suite", action: "CREATE",
+        entityType: "test_suite", entityId: suite.id, entityKey: null,
+        payload: parsed.data, after: suite, result: "success",
+      });
+      return { content: [{ type: "text", text: JSON.stringify(suite) }] };
     },
   );
 
