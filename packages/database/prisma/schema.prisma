@@ -270,6 +270,7 @@ model Org {
   QtReportView             QtReportView[]
   QtSavedFilter            QtSavedFilter[]
   QtProjectStar            QtProjectStar[]
+  QtSpaceTemplate          QtSpaceTemplate[]
   UserAppRole              QtUserAppRole[]
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
@@ -6675,6 +6676,11 @@ model QtProject {
   /// Space Admins via the project tab customizer; role permissions still gate
   /// each tab on top of this.
   tabConfig            Json?
+  /// Per-space background chosen from the header "..." menu (QuikTrack).
+  /// Shape: `{ "type": "color" | "gradient" | "image", "value": "<token|url>" }`
+  /// null = the default plain surface. `type:"image"` stores a data URL or a
+  /// remote URL; the picker caps uploads so the row stays small.
+  background           Json?
   icon                 String?
   color                String?                 @default("#2563eb")
   status               String                  @default("active")
@@ -6735,6 +6741,44 @@ model QtProjectStar {
 
   @@id([userId, projectId])
   @@index([orgId, userId])
+  @@schema("app_quiktrack")
+}
+
+/// A reusable space template captured from an existing space via the project
+/// header's "..." → Save as template. Org-scoped, never cross-org.
+///
+/// `config` is a point-in-time SNAPSHOT (not a live link): issue types,
+/// statuses + board columns, workflows, custom fields, project roles and their
+/// grants, sprint settings, and the tab configuration. Creating a space from a
+/// template replays that snapshot — later edits to the source space do NOT
+/// propagate, which is what makes a template stable.
+///
+/// `sourceProjectId` is a plain column, not a relation: a template must outlive
+/// the space it was captured from (deleting the source leaves the template
+/// perfectly usable, just with a dangling provenance id).
+model QtSpaceTemplate {
+  id              String   @id @default(cuid())
+  orgId           String
+  name            String
+  description     String?
+  /// Provenance only — the space this snapshot was taken from. Not a FK.
+  sourceProjectId String?
+  /// Template kind inherited from the source space ("scrum" / "functional" /
+  /// "discovery"), so the create-space flow knows which runtime behavior to use.
+  templateKey     String   @default("scrum")
+  icon            String?
+  color           String?  @default("#2563eb")
+  /// The snapshot itself. See `lib/services/spaceTemplates.ts` for the shape.
+  config          Json
+  isDeleted       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, name])
+  @@index([orgId, isDeleted])
   @@schema("app_quiktrack")
 }
 

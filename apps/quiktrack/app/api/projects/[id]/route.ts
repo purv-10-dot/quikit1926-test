@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
 import { forbidden, isProjectSpaceAdmin } from "@/lib/api/permissions";
 import { updateProjectSchema } from "@/lib/validation/project";
+import { listStarredProjectIds } from "@/lib/services/projectStars";
+import { getSpaceBackground } from "@/lib/services/spaceBackground";
 
 /**
  * Read/write the QtProject.tabConfig column via raw SQL. The generated Prisma
@@ -31,20 +33,36 @@ export const GET = withProjectAccess<{ id: string }>(
         issueTypes: { where: { isDeleted: false }, orderBy: { orderIndex: "asc" } },
       },
     });
-    // tabConfig lives on QtProject but the generated Prisma client is stale
-    // (can't be regenerated while the dev server holds the engine DLL), so read
-    // the column raw and merge it into the response.
-    const tabConfig = await readTabConfig(orgId, projectId);
-    // Two lifecycle capabilities drive the settings "Danger zone":
+    // tabConfig and background both live on QtProject but the generated Prisma
+    // client is stale (can't be regenerated while the dev server holds the
+    // engine DLL), so read those columns raw and merge them into the response.
+    // Two lifecycle capabilities drive the settings "Danger zone" AND the
+    // header's "..." menu:
     //   • canArchive — global admins AND this space's Space Admin (archive is a
     //     project-owner action).
     //   • isAdmin    — global admins only (move-to-trash / restore).
     // The client hides buttons accordingly; the routes still enforce both.
-    const canArchive = isTenantAdmin || (await isProjectSpaceAdmin(userId, projectId));
+    // `starred` is per-user (QtProjectStar) and drives the menu's
+    // "Add to starred" / "Remove from starred" toggle without a second fetch.
+    const [tabConfig, canArchive, starredIds, background] = await Promise.all([
+      readTabConfig(orgId, projectId),
+      isTenantAdmin
+        ? Promise.resolve(true)
+        : isProjectSpaceAdmin(userId, projectId),
+      listStarredProjectIds(orgId, userId),
+      getSpaceBackground(orgId, projectId),
+    ]);
     return NextResponse.json({
       success: true,
       data: project
-        ? { ...project, tabConfig, isAdmin: isTenantAdmin, canArchive }
+        ? {
+            ...project,
+            tabConfig,
+            background,
+            isAdmin: isTenantAdmin,
+            canArchive,
+            starred: starredIds.includes(projectId),
+          }
         : project,
     });
   },
