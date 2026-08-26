@@ -520,6 +520,10 @@ export interface ClientMasterInput {
    *  a relation on Client, so it is NOT record-loadable; it MUST ride the payload
    *  to resolve as {{trigger.teamMemberEmails}}. */
   teamMemberEmails?: string;
+  /** Optional attendees, comma-joined. Sent to Graph as `type: "optional"`, which
+   *  is what lets the attendance report tell a no-show that counts from one that
+   *  does not — see lib/meetings/inviteLists.ts. */
+  optionalMemberEmails?: string;
   /** Recurrence tokens for the Teams calendar series — carried PRE-FORMATTED
    *  (weekday names / comma list / YYYY-MM-DD). Payload-only (see the module
    *  catalog note) so the formatted strings win over any record-loaded value. */
@@ -541,6 +545,7 @@ function clientMasterData(input: ClientMasterInput): Record<string, unknown> {
     weeklyStartTime: input.weeklyStartTime ?? null,
     weeklyEndTime: input.weeklyEndTime ?? null,
     teamMemberEmails: input.teamMemberEmails ?? "",
+    optionalMemberEmails: input.optionalMemberEmails ?? "",
     // Recurrence (pre-formatted for the calendar action's flat token params).
     weeklyDay: input.weeklyDay ?? "",
     dailyDays: (input.dailyDays ?? []).join(","),

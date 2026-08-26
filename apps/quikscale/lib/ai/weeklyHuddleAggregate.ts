@@ -23,7 +23,8 @@
  */
 
 import { isPunctual } from "@/lib/services/clientMeetingsMath";
-import { attendanceVerdict } from "@/lib/meetings/occurrenceAttendance";
+import { attendanceKnown, attendanceVerdict } from "@/lib/meetings/occurrenceAttendance";
+import type { TeamsAttendanceEvidence } from "@/lib/meetings/occurrenceAttendance";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -139,6 +140,11 @@ export interface DayAttendance {
   participantListUsable: boolean;
   /** Names from this day we could not resolve, for the unmatched-participants tray. */
   unresolved: UnresolvedParticipant[];
+  /**
+   * Join-duration evidence from the Teams attendance report for this date, when
+   * one has been synced. Absent for Fathom-only and manually uploaded days.
+   */
+  teams?: TeamsAttendanceEvidence;
 }
 
 /** A name seen in a recording that did not resolve to a roster member. */
@@ -352,6 +358,14 @@ export type AttendanceEvidence =
   | "HUMAN_MARKED"
   | "NA_LEAVE"
   | "NA_NOT_HELD"
+  /** Teams attendance report: joined for at least the presence threshold. */
+  | "TEAMS_REPORT"
+  /** Teams attendance report: joined, but under the threshold — half a presence. */
+  | "TEAMS_REPORT_SHORT"
+  /** Required invitee missing from a complete Teams report — provable absence. */
+  | "TEAMS_REPORT_ABSENT"
+  /** Optional invitee who did not join. Shown, never scored. */
+  | "OPTIONAL_NOT_JOINED"
   | "PRESENT_PARTICIPANT_LIST"
   | "PRESENT_SPOKE"
   | "INFERRED_ABSENT"
@@ -388,7 +402,9 @@ export interface AttendanceRow {
   cells: AttendanceCell[];
   /**
    * Null for OPTIONAL and EXTERNAL members — they are shown but not scored, so
-   * a number here would imply a judgement the report is not making. Renders "—".
+   * a number here would imply a judgement the report is not making — and null
+   * for a REQUIRED member with no assessable day (`expectedDays === 0`), whose
+   * cells all read "—". Renders "—".
    */
   attendancePct: number | null;
   presentDays: number;
@@ -433,12 +449,16 @@ export function buildAttendanceMatrix(input: {
         huddleId: huddle?.id ?? null,
         // Absence may only be inferred where the evidence would have shown
         // the person had they attended: a human logged the huddle (their
-        // absence list is authoritative even when empty), or the participant
-        // list is complete enough to trust.
-        attendanceKnown:
-          (huddle?.attendance.absenceListAuthoritative ||
-            huddle?.attendance.participantListUsable) ??
-          false,
+        // absence list is authoritative even when empty), the participant
+        // list is complete enough to trust, or Teams gave us a complete list
+        // of who joined.
+        attendanceKnown: huddle
+          ? attendanceKnown({
+              absenceListAuthoritative: huddle.attendance.absenceListAuthoritative,
+              participantListUsable: huddle.attendance.participantListUsable,
+              teams: huddle.attendance.teams,
+            })
+          : false,
       };
     });
 
@@ -469,6 +489,7 @@ export function buildAttendanceMatrix(input: {
       spokeIds: day?.attendance.spokeIds ?? [],
       participantListUsable: day?.attendance.participantListUsable ?? false,
       onLeaveIds: leaveByMember.get(member.id)?.has(col.date) ? [member.id] : [],
+      teams: day?.attendance.teams,
     });
 
     return { date: col.date, state: verdict.state, evidence: verdict.evidence };
@@ -515,7 +536,12 @@ export function buildAttendanceMatrix(input: {
       expectedDays: expected,
       onLeaveDays,
       unknownDays,
-      attendancePct: !scoredMember ? null : expected ? round1((scored / expected) * 100) : 0,
+      // Null, not 0, when nothing was assessable. A row whose every cell reads
+      // "—" must not total "0%": "we have no evidence" and "never showed up"
+      // are different findings, and printing the second for the first is how a
+      // fully-attended week libels someone. `expectedDays: 0` already excludes
+      // the row from the exec summary's <50% list, which reads this as null.
+      attendancePct: !scoredMember || !expected ? null : round1((scored / expected) * 100),
     };
   });
 

@@ -30,6 +30,7 @@ import { snapshotReportVersion } from "@/lib/reports/versions";
 import { scopeKeyFor, upsertReport } from "@/lib/reports/reportStore";
 import { validateWeeklyReport } from "@/lib/ai/weeklyReportValidation";
 import { loadWeekContext, toWeekStart, weekLabel } from "@/lib/services/weeklyHuddleData";
+import { syncTeamsAttendance } from "@/lib/meetings/teamsAttendance";
 
 export const runtime = "nodejs";
 // Up to five daily generations plus the weekly pass — well beyond the default.
@@ -100,6 +101,18 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
   if (!initial) {
     return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
   }
+
+  // Pull any Teams attendance report we do not already hold for this week,
+  // BEFORE the context is re-read below. Microsoft ages these out, so the
+  // report run is the last reliable chance to capture them. Never fatal: with
+  // no Teams connection the ladder simply falls back to transcript evidence.
+  const attendanceSync = await syncTeamsAttendance({
+    orgId,
+    clientId,
+    kind: "daily",
+    dates: initial.sources.map((s) => s.date),
+    plannedEndTime: initial.client.dailyEndTime,
+  });
   if (!initial.days.length) {
     return NextResponse.json({
       success: true,
@@ -191,12 +204,27 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     }
   }
 
-  // Re-load so the backfilled reports feed the aggregation.
-  const context = overrideReports.size
-    ? await loadWeekContext(orgId, clientId, weekStart, { includeDates: dates, overrideReports })
-    : initial;
+  // Re-load so the backfilled reports feed the aggregation — and so do any
+  // attendance reports the sync above persisted, which `initial` was read
+  // before and therefore cannot see.
+  const context =
+    overrideReports.size || attendanceSync.synced
+      ? await loadWeekContext(orgId, clientId, weekStart, { includeDates: dates, overrideReports })
+      : initial;
   if (!context) {
     return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+  }
+
+  // Surface only a reason someone can act on — "no report yet" is a normal
+  // state and the sync deliberately stays quiet about it.
+  if (attendanceSync.reason === "reconnect-required") {
+    notes.push(
+      "Teams attendance was not available: the Teams connection needs reconnecting to grant meeting-read access. Attendance fell back to transcript evidence.",
+    );
+  } else if (attendanceSync.reason === "access-policy") {
+    notes.push(
+      "Teams attendance was refused by Microsoft (missing Teams application access policy — a DevOps task). Attendance fell back to transcript evidence.",
+    );
   }
 
   const daysWithoutReport = context.sources.filter((s) => !s.hasReport && !overrideReports.has(s.transcriptId ?? ""));

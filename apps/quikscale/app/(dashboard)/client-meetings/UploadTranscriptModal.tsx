@@ -7,9 +7,15 @@
  * `ClientMeetingTranscript`, so it immediately works with the existing
  * viewer, export, and Gemini report-generation flow.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface ClientOpt { id: string; name: string }
+
+interface RosterMember {
+  id: string;
+  name: string;
+  attendanceType?: "REQUIRED" | "OPTIONAL" | "EXTERNAL";
+}
 
 interface UploadedTranscript {
   id: string;
@@ -51,6 +57,49 @@ export function UploadTranscriptModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Who attended. A .docx carries no participant list, so without this the
+  // report can only ever prove "who spoke" — and since silence is not evidence
+  // of absence, nobody is ever reported absent. A human ticking this list makes
+  // it authoritative in both directions: whoever is not on it WAS absent.
+  const [roster, setRoster] = useState<RosterMember[]>([]);
+  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+
+  useEffect(() => {
+    if (!clientId) {
+      setRoster([]);
+      setAttendeeIds([]);
+      return;
+    }
+    let cancelled = false;
+    setRosterLoading(true);
+    fetch(`/api/client-meetings/clients/${clientId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        const members: RosterMember[] = json?.success ? json.data?.teamMembers ?? [] : [];
+        setRoster(members);
+        // Pre-tick everyone who was expected. Optional attendees start
+        // unticked: they were never obliged to come, so the honest default is
+        // "not recorded as here" rather than a presence nobody asserted.
+        setAttendeeIds(members.filter((m) => m.attendanceType !== "OPTIONAL").map((m) => m.id));
+      })
+      .catch(() => {
+        if (!cancelled) setRoster([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRosterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  const toggleAttendee = (id: string) =>
+    setAttendeeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
   const submit = async () => {
     if (!file) {
       setError("Choose a .docx file to upload.");
@@ -69,6 +118,12 @@ export function UploadTranscriptModal({
       body.set("type", type);
       body.set("meetingDate", meetingDate);
       if (title.trim()) body.set("title", title.trim());
+      // Only send the list when the roster actually loaded. An empty array from
+      // a failed fetch would be indistinguishable from "nobody came", and the
+      // server treats a supplied list as authoritative.
+      if (roster.length) body.set("attendeeIds", JSON.stringify(attendeeIds));
+      if (startTime) body.set("startTime", startTime);
+      if (endTime) body.set("endTime", endTime);
 
       const res = await fetch("/api/client-meetings/transcripts/upload", { method: "POST", body });
       const json = await res.json();
@@ -150,6 +205,75 @@ export function UploadTranscriptModal({
               placeholder="Defaults to the file name"
               className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Started at (optional)</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Ended at (optional)</label>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              />
+            </div>
+          </div>
+
+          {/* Attendance. This is the only place an uploaded transcript can learn
+              who was in the room, and therefore the only way the weekly report
+              can name an absentee. */}
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-xs font-medium text-gray-600">Who attended?</label>
+              {roster.length ? (
+                <span className="text-[11px] text-gray-400">
+                  {attendeeIds.length} of {roster.length}
+                </span>
+              ) : null}
+            </div>
+            {rosterLoading ? (
+              <p className="text-[11px] text-gray-400">Loading team members…</p>
+            ) : roster.length === 0 ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                This client has no team members yet, so attendance can&apos;t be recorded for this
+                transcript. Add them in Meeting Rhythm → Client Master.
+              </p>
+            ) : (
+              <>
+                <ul className="max-h-40 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200">
+                  {roster.map((m) => (
+                    <li key={m.id}>
+                      <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={attendeeIds.includes(m.id)}
+                          onChange={() => toggleAttendee(m.id)}
+                          className="rounded border-gray-300 text-blue-600"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                        {m.attendanceType && m.attendanceType !== "REQUIRED" ? (
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">
+                            {m.attendanceType === "OPTIONAL" ? "Optional" : "External"}
+                          </span>
+                        ) : null}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Anyone left unticked is reported as absent for this meeting.
+                </p>
+              </>
+            )}
           </div>
 
           <div>

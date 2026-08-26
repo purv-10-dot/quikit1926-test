@@ -1550,6 +1550,7 @@ model Client {
   meetingTranscripts  ClientMeetingTranscript[]
   huddleWeeklyReports ClientDailyHuddleWeeklyReport[]
   meetingReports      ClientMeetingReport[]
+  meetingAttendance   ClientMeetingAttendance[]
 
   // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
   position Float?
@@ -2517,6 +2518,39 @@ enum MeetingTranscriptMatch {
 /// clientId/type/meetingDate are nullable so an unmatched transcript is still
 /// persisted (never dropped). dailyHuddleId/weeklyMeetingId link to the concrete
 /// meeting row when one already exists for that client+date.
+/// A synced Microsoft Teams attendance report for ONE meeting occurrence.
+///
+/// Cached rather than re-queried on every report run for two reasons: Graph's
+/// retention of attendance reports is limited (a report we do not keep is gone
+/// for good), and a recurring huddle stacks every occurrence's report under one
+/// `onlineMeeting` id, so the date match must be pinned once and not redone.
+///
+/// `records` is the raw Graph shape:
+/// `[{ displayName, email, role, totalAttendanceInSeconds,
+///     intervals: [{ joinDateTime, leaveDateTime, durationInSeconds }] }]`
+/// plus `invited: [{ email, type: "required" | "optional" }]` from the event —
+/// the invite is what makes a missing record mean ABSENT rather than UNKNOWN.
+model ClientMeetingAttendance {
+  id           String   @id @default(cuid())
+  orgId        String
+  clientId     String
+  /// The occurrence's own date (UTC midnight), NOT the series start.
+  meetingDate  DateTime
+  /// "daily" | "weekly" — matches WfCalendarLink.kind.
+  kind         String
+  /// "teams" today. Present so a second provider does not need a migration.
+  source       String   @default("teams")
+  meetingStart DateTime?
+  meetingEnd   DateTime?
+  records      Json
+  fetchedAt    DateTime @default(now())
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, clientId, meetingDate, kind])
+  @@index([orgId, clientId])
+  @@schema("app_quikscale")
+}
+
 model ClientMeetingTranscript {
   id                String                 @id @default(cuid())
   orgId             String
@@ -2534,6 +2568,15 @@ model ClientMeetingTranscript {
   durationMinutes   Int?
   /// [{ name, email }] snapshot of meeting participants from the source.
   attendees         Json?
+  /// Where `attendees` came from: "fathom" | "manual" | "teams".
+  ///
+  /// This is what decides how much the list can prove. A human ticking the
+  /// attendee list on upload ("manual") is authoritative in BOTH directions —
+  /// anyone not on it was absent — exactly like a human-logged huddle. A
+  /// recorder-derived list ("fathom") only proves presence, and must clear the
+  /// coverage gate in `weeklyHuddleData` before absence may be inferred from
+  /// it. Null on legacy rows, which read as "fathom". See doc 15 §16.
+  attendeesSource   String?
   rawText           String?                @db.Text
   summary           String?                @db.Text
   /// [{ text, assignee?, dueDate? }] action items from the source, if any.

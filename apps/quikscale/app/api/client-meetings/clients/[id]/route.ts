@@ -5,6 +5,7 @@ import { updateClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext, classifyUpdateAction, diffFields, CLIENT_AUDIT_FIELDS } from "@/lib/audit";
+import { splitInviteEmails } from "@/lib/meetings/inviteLists";
 import { emitClientUpdated, emitClientDeleted } from "@/lib/services/workflowEvents";
 
 // RBAC v2: same per-action gate as the list endpoint. View/update/delete are
@@ -41,7 +42,14 @@ export const GET = auth.view<{ id: string }>(async ({ orgId }, _req, { params })
       dailyStartTime: row.dailyStartTime,   dailyEndTime: row.dailyEndTime,
       teamMembers: row.teamMembers
         .filter(tm => !tm.member.deletedAt)
-        .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
+        .map(tm => ({
+          id: tm.member.id,
+          name: tm.member.name,
+          email: tm.member.email,
+          // Consumers need to know who was EXPECTED, not just who is listed —
+          // the transcript-upload attendee picker pre-ticks on this.
+          attendanceType: tm.attendanceType,
+        })),
       // Legacy tenant-user memberships (kept for now; see migration note in schema).
       members: row.memberships.map(m => ({
         id: m.id,
@@ -206,13 +214,17 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
           dailyDays: true,
           meetingUntil: true,
           startDate: true,
-          teamMembers: { select: { member: { select: { email: true } } } },
+          // attendanceType decides which of the invite's two attendee lists a
+          // member lands in — see lib/meetings/inviteLists.ts.
+          teamMembers: { select: { attendanceType: true, member: { select: { email: true } } } },
         },
       });
-      const emails = (finalClient?.teamMembers ?? [])
-        .map((tm) => tm.member?.email)
-        .filter(Boolean)
-        .join(", ");
+      const invite = splitInviteEmails(
+        (finalClient?.teamMembers ?? []).map((tm) => ({
+          email: tm.member?.email,
+          attendanceType: tm.attendanceType,
+        })),
+      );
       emitClientUpdated({
         orgId,
         clientId: params.id,
@@ -221,7 +233,8 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
         dailyEndTime: finalClient?.dailyEndTime ?? null,
         weeklyStartTime: finalClient?.weeklyStartTime ?? null,
         weeklyEndTime: finalClient?.weeklyEndTime ?? null,
-        teamMemberEmails: emails,
+        teamMemberEmails: invite.required,
+        optionalMemberEmails: invite.optional,
         weeklyDay: finalClient?.weeklyDay ?? "",
         dailyDays: finalClient?.dailyDays ?? [],
         meetingUntil: finalClient?.meetingUntil ? finalClient.meetingUntil.toISOString().slice(0, 10) : "",

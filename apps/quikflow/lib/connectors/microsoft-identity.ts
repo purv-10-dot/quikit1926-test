@@ -7,7 +7,7 @@
  * The Outlook mail connector (./microsoft.ts) predates this and keeps its own
  * copy; the Teams calendar connector (./teams.ts) builds on this helper.
  */
-import type { TokenSet } from "./types";
+import { ReconnectRequiredError, type TokenSet } from "./types";
 
 export const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -60,9 +60,42 @@ async function tokenRequest(cfg: MsAppConfig, form: Record<string, string>): Pro
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     const detail = (json.error_description as string) ?? (json.error as string) ?? `HTTP ${res.status}`;
+    if (isReconnectRequired(json)) {
+      throw new ReconnectRequiredError(
+        `Microsoft access needs to be reconnected. ${summariseConsentFailure(detail)}`,
+      );
+    }
     throw new Error(`Microsoft token exchange failed: ${detail}`);
   }
   return json as unknown as MsTokenResponse;
+}
+
+/**
+ * Does this token-endpoint failure mean "the grant is gone, reconnect" rather
+ * than "something transient went wrong"?
+ *
+ * `invalid_grant` is the OAuth2 code for a revoked/expired/invalidated refresh
+ * token. AADSTS65001 is Entra's "not consented" — raised both when a user's
+ * consent was withdrawn and when the app was never granted a permission it is
+ * asking for. Neither is retryable: a human has to re-authorise.
+ */
+function isReconnectRequired(json: Record<string, unknown>): boolean {
+  const code = typeof json.error === "string" ? json.error : "";
+  const detail = typeof json.error_description === "string" ? json.error_description : "";
+  return code === "invalid_grant" || code === "invalid_scope" || detail.includes("AADSTS65001");
+}
+
+/**
+ * Turn Entra's wall of AADSTS text (trace ids, correlation ids, timestamps)
+ * into one actionable sentence. The raw detail is deliberately dropped: it
+ * lands in a workflow run log a non-admin reads, where it reliably obscures the
+ * one thing they can do about it.
+ */
+function summariseConsentFailure(detail: string): string {
+  if (detail.includes("AADSTS65001")) {
+    return "The account has not consented to every permission this app requests — an administrator may need to grant consent before reconnecting.";
+  }
+  return "The stored authorisation is no longer valid — reconnect the account on the Connections page.";
 }
 
 /** Build the consent-screen URL for an app + scope set. */
@@ -127,14 +160,35 @@ export async function msExchangeCode(
   return toTokenSet(raw, scopes, email);
 }
 
-/** Refresh-token grant. Echoes the prior refresh token when none is re-issued. */
-export async function msRefresh(cfg: MsAppConfig, scopes: string[], refreshToken: string): Promise<TokenSet> {
+/**
+ * Refresh-token grant. Echoes the prior refresh token when none is re-issued.
+ *
+ * DELIBERATELY SENDS NO `scope`.
+ * ------------------------------
+ * A refresh grant may narrow the granted scopes but never widen them (RFC 6749
+ * §6); omitting `scope` asks for exactly what was consented at connect time.
+ * Sending our current scope constant instead makes every refresh assert the
+ * scope set the code wants TODAY, so the day a feature appends a scope, every
+ * connection consented before it stops refreshing with AADSTS65001 — and since
+ * refreshing is what every Graph call funnels through, an optional feature's
+ * permission silently becomes a hard dependency of the core product.
+ *
+ * That is not hypothetical: adding the two read-only `OnlineMeeting*` scopes
+ * for the attendance report broke Teams calendar event creation outright on
+ * every existing connection. The scope set a connection actually holds is
+ * recorded on the WfConnection row at connect time and read from there (see
+ * `missingCaptureScopes`) — it is not this function's to re-assert.
+ */
+export async function msRefresh(cfg: MsAppConfig, refreshToken: string): Promise<TokenSet> {
   const raw = await tokenRequest(cfg, {
     refresh_token: refreshToken,
     client_id: cfg.clientId,
     client_secret: cfg.clientSecret,
     grant_type: "refresh_token",
-    scope: scopes.join(" "),
   });
-  return toTokenSet({ ...raw, refresh_token: raw.refresh_token ?? refreshToken }, scopes, "");
+  // Fall back to [] rather than to a requested-scope list: recording scopes the
+  // provider did not confirm would let a legacy connection masquerade as having
+  // permissions it never got, turning a clean "reconnect to grant X" into a 403
+  // at the point of use.
+  return toTokenSet({ ...raw, refresh_token: raw.refresh_token ?? refreshToken }, [], "");
 }

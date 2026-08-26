@@ -41,6 +41,28 @@ const ATTENDANCE_CELL: Record<string, { label: string; cls: string; title: strin
   },
 };
 
+/**
+ * Why a cell reads the way it does, shown on hover.
+ *
+ * Provenance matters here more than in most tables: "absent" from a Teams
+ * attendance report is a measurement, while "absent" inferred from a
+ * participant list is a deduction, and a facilitator disputing a cell needs to
+ * know which one they are arguing with.
+ */
+const ATTENDANCE_EVIDENCE: Record<string, string> = {
+  HUMAN_MARKED: "Recorded by hand in the Daily Huddle module",
+  NA_LEAVE: "On approved leave — excluded from the percentage",
+  NA_NOT_HELD: "No huddle was held that day",
+  TEAMS_REPORT: "Teams attendance report — joined for the full meeting",
+  TEAMS_REPORT_SHORT: "Teams attendance report — joined only briefly (counts as half)",
+  TEAMS_REPORT_ABSENT: "Teams attendance report — invited, never joined",
+  OPTIONAL_NOT_JOINED: "Optional attendee who did not join — not counted either way",
+  PRESENT_PARTICIPANT_LIST: "In the meeting's participant list",
+  PRESENT_SPOKE: "Spoke during the meeting",
+  INFERRED_ABSENT: "Not in an otherwise complete participant list",
+  NO_DATA: "No attendance evidence for this day — excluded from the percentage",
+};
+
 const BLOCKER_STATUS: Record<string, { label: string; cls: string }> = {
   OPEN: { label: "Open", cls: "bg-red-100 text-red-700" },
   IN_PROGRESS: { label: "In Progress", cls: "bg-amber-100 text-amber-800" },
@@ -282,7 +304,7 @@ export function WeeklyHuddleReportView({
                       return (
                         <td
                           key={cell.date}
-                          title={s.title}
+                          title={ATTENDANCE_EVIDENCE[cell.evidence] ?? s.title}
                           className={`px-2 py-1.5 text-center font-semibold ${s.cls}`}
                         >
                           {s.label}
@@ -295,6 +317,26 @@ export function WeeklyHuddleReportView({
               </tbody>
             </table>
           </div>
+          {/* The requirement doc's §5 attendance block: expected / present /
+              absent / on leave, so the percentage is auditable rather than
+              asserted. */}
+          <p className="mt-2 text-[11px] text-gray-500">
+            {(() => {
+              const scored = attendance.rows.filter((r) => r.attendanceType === "REQUIRED");
+              const present = scored.reduce((sum, r) => sum + r.presentDays, 0);
+              const expected = scored.reduce((sum, r) => sum + r.expectedDays, 0);
+              const onLeave = scored.reduce((sum, r) => sum + r.onLeaveDays, 0);
+              const unknown = scored.reduce((sum, r) => sum + r.unknownDays, 0);
+              return (
+                <>
+                  <strong>{present}</strong> present of <strong>{expected}</strong> expected
+                  member-days
+                  {onLeave ? <> · {onLeave} on planned leave</> : null}
+                  {unknown ? <> · {unknown} with no attendance evidence</> : null}.
+                </>
+              );
+            })()}
+          </p>
           <p className="mt-1 text-[11px] text-gray-400">
             NA = no huddle held that day, or the member was on planned leave — excluded from the percentage.
             {attendance.rows.some((r) => r.attendanceType !== "REQUIRED") ? (

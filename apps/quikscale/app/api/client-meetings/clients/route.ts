@@ -7,6 +7,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { emitClientCreated } from "@/lib/services/workflowEvents";
+import { splitInviteEmails } from "@/lib/meetings/inviteLists";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, activeBooleanFromSearch, commaTokens } from "@/lib/api/listSearch";
@@ -277,15 +278,21 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
     // the meeting windows + team-member emails so a calendar workflow can create
     // Teams events (times are also record-loadable; emails are a relation and
     // must ride the payload as {{trigger.teamMemberEmails}}).
-    const memberEmails = d.teamMemberIds.length
-      ? (await db.clientMember.findMany({
+    const memberRows = d.teamMemberIds.length
+      ? await db.clientMember.findMany({
           where: { id: { in: d.teamMemberIds }, orgId },
-          select: { email: true },
-        }))
-          .map((m) => m.email)
-          .filter(Boolean)
-          .join(", ")
-      : "";
+          select: { id: true, email: true },
+        })
+      : [];
+    // Required and optional go to the invite as different attendee types, so
+    // Teams' attendance report can distinguish a no-show that counts from one
+    // that does not. See lib/meetings/inviteLists.ts.
+    const invite = splitInviteEmails(
+      memberRows.map((m) => ({
+        email: m.email,
+        attendanceType: d.teamMemberTypes?.[m.id] ?? "REQUIRED",
+      })),
+    );
     emitClientCreated({
       orgId,
       clientId: created.id,
@@ -294,7 +301,8 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
       dailyEndTime: created.dailyEndTime,
       weeklyStartTime: created.weeklyStartTime,
       weeklyEndTime: created.weeklyEndTime,
-      teamMemberEmails: memberEmails,
+      teamMemberEmails: invite.required,
+      optionalMemberEmails: invite.optional,
       weeklyDay: created.weeklyDay,
       dailyDays: created.dailyDays,
       meetingUntil: created.meetingUntil ? created.meetingUntil.toISOString().slice(0, 10) : "",

@@ -46,6 +46,47 @@ export interface OccurrenceEvidence {
   participantListUsable: boolean;
   /** Member ids on approved leave for this date. */
   onLeaveIds?: string[];
+  /**
+   * Microsoft Teams attendance report for THIS occurrence, when we have one.
+   *
+   * This is the only signal that measures *how long* somebody was in the room,
+   * and the only one that makes absence provable rather than inferred: Graph
+   * returns a complete list of everyone who joined, so a required invitee who
+   * is missing from it was genuinely not there.
+   */
+  teams?: TeamsAttendanceEvidence;
+}
+
+/** Join-duration evidence from a Graph attendance report. See doc 15 §4.3–4.5. */
+export interface TeamsAttendanceEvidence {
+  /**
+   * True when a report exists for this occurrence's own date.
+   *
+   * A recurring huddle stacks every occurrence's report under one `onlineMeeting`
+   * id, so this must be date-matched upstream — attaching the wrong day's report
+   * would mark a whole team absent for a meeting they attended.
+   */
+  reportPresent: boolean;
+  /** `totalAttendanceInSeconds` per resolved member id. Absent key = no record. */
+  secondsByMemberId: Record<string, number>;
+  /** Below this, a join is PARTIAL rather than PRESENT. See `presenceThresholdSeconds`. */
+  thresholdSeconds: number;
+  /** Members the calendar invite marked `required`. */
+  requiredInvitedIds: string[];
+  /** Members the calendar invite marked `optional` — never scored as absent. */
+  optionalInvitedIds: string[];
+}
+
+/**
+ * How long counts as attending, per doc 15 §4.4.
+ *
+ * A floor of two minutes stops a dropped-and-rejoined connection reading as a
+ * drive-by; the 20% term scales it so a 3-hour weekly meeting is not satisfied
+ * by the same two minutes that satisfy a 15-minute huddle.
+ */
+export function presenceThresholdSeconds(plannedDurationMinutes: number | null | undefined): number {
+  const planned = plannedDurationMinutes && plannedDurationMinutes > 0 ? plannedDurationMinutes : 0;
+  return Math.max(120, Math.round(0.2 * planned * 60));
 }
 
 /** A member as far as the ladder is concerned. */
@@ -69,8 +110,13 @@ export interface AttendanceVerdict {
 export function attendanceKnown(evidence: {
   absenceListAuthoritative: boolean;
   participantListUsable: boolean;
+  teams?: { reportPresent: boolean };
 }): boolean {
-  return evidence.absenceListAuthoritative || evidence.participantListUsable;
+  return (
+    evidence.absenceListAuthoritative ||
+    evidence.participantListUsable ||
+    evidence.teams?.reportPresent === true
+  );
 }
 
 /**
@@ -103,16 +149,42 @@ export function attendanceVerdict(
   //     not on it means present.
   if (occurrence.absenceListAuthoritative) return at("PRESENT", "HUMAN_MARKED");
 
-  // 1. In the participant list — proves presence even for someone silent.
+  // 1. Teams attendance report — the only signal with a duration, and the only
+  //    one that proves absence. Ranked above the participant list because a
+  //    list says "was invited/seen", while this says "was in the room, for N
+  //    seconds". Ranked below the human rungs because a facilitator correcting
+  //    the record must always win.
+  const teams = occurrence.teams;
+  if (teams?.reportPresent) {
+    const seconds = teams.secondsByMemberId[member.id];
+    if (seconds !== undefined && seconds > 0) {
+      return seconds >= teams.thresholdSeconds
+        ? at("PRESENT", "TEAMS_REPORT")
+        : at("PARTIAL", "TEAMS_REPORT_SHORT");
+    }
+    // No record in a complete list of joiners. What that means depends on
+    // whether they were obliged to come.
+    if (teams.optionalInvitedIds.includes(member.id)) {
+      return at("NA", "OPTIONAL_NOT_JOINED");
+    }
+    if (teams.requiredInvitedIds.includes(member.id)) {
+      return at("ABSENT", "TEAMS_REPORT_ABSENT");
+    }
+    // Neither list mentions them: the invite and the roster disagree. Fall
+    // through rather than guess — the rungs below may still prove presence,
+    // and rung 4's gate now passes, so a genuine no-show still reads ABSENT.
+  }
+
+  // 2. In the participant list — proves presence even for someone silent.
   if (occurrence.participantIds.includes(member.id)) {
     return at("PRESENT", "PRESENT_PARTICIPANT_LIST");
   }
 
-  // 2. Spoke — proves presence. (Silence proves nothing, which is why there is
+  // 3. Spoke — proves presence. (Silence proves nothing, which is why there is
   //    no matching "did not speak ⇒ absent" rung.)
   if (occurrence.spokeIds.includes(member.id)) return at("PRESENT", "PRESENT_SPOKE");
 
-  // 3. Absence may only be inferred where we would have seen them.
+  // 4. Absence may only be inferred where we would have seen them.
   if (attendanceKnown(occurrence)) return at("ABSENT", "INFERRED_ABSENT");
 
   return at("UNKNOWN", "NO_DATA");

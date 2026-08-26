@@ -32,6 +32,8 @@ import type {
 import { MEETING_TZ } from "@/lib/services/meetingTranscriptMatch";
 import type { ParticipantDayNote } from "@/lib/ai/weeklyHuddleReport";
 import type { StoredMeetingReport } from "@/lib/ai/meetingReport";
+import { presenceThresholdSeconds } from "@/lib/meetings/occurrenceAttendance";
+import type { TeamsAttendanceEvidence } from "@/lib/meetings/occurrenceAttendance";
 
 /** Per-day availability, for the UI checklist and the generate step. */
 export interface WeekSource {
@@ -71,6 +73,67 @@ export interface WeekContext {
 }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Minutes between two "HH:mm" planned times. Null when either is missing. */
+function minutesBetween(start: string | null, end: string | null): number | null {
+  const mins = (hhmm: string | null) => {
+    const m = hhmm?.match(/^(\d{1,2}):(\d{2})$/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const a = mins(start);
+  const b = mins(end);
+  return a !== null && b !== null && b > a ? b - a : null;
+}
+
+/** One participant as a stored Teams attendance report describes them. */
+interface StoredTeamsRecord {
+  name: string;
+  email: string | null;
+  seconds: number;
+}
+
+/**
+ * Read `ClientMeetingAttendance.records`.
+ *
+ * Defensive on purpose: this is JSON written by a Graph response, so a shape
+ * change upstream must degrade to "no Teams evidence" (the day then falls back
+ * to the transcript rungs) rather than throw inside report generation.
+ */
+function parseTeamsAttendance(
+  raw: unknown,
+): { records: StoredTeamsRecord[]; invited: { email: string; type: string }[] } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as { records?: unknown; invited?: unknown };
+  if (!Array.isArray(obj.records)) return null;
+
+  const records: StoredTeamsRecord[] = [];
+  for (const r of obj.records) {
+    if (!r || typeof r !== "object") continue;
+    const rec = r as { displayName?: unknown; email?: unknown; totalAttendanceInSeconds?: unknown };
+    const seconds =
+      typeof rec.totalAttendanceInSeconds === "number" && rec.totalAttendanceInSeconds > 0
+        ? rec.totalAttendanceInSeconds
+        : 0;
+    records.push({
+      name: typeof rec.displayName === "string" ? rec.displayName : "",
+      email: typeof rec.email === "string" && rec.email ? rec.email : null,
+      seconds,
+    });
+  }
+
+  const invited: { email: string; type: string }[] = [];
+  if (Array.isArray(obj.invited)) {
+    for (const i of obj.invited) {
+      if (!i || typeof i !== "object") continue;
+      const inv = i as { email?: unknown; type?: unknown };
+      if (typeof inv.email === "string" && inv.email) {
+        invited.push({ email: inv.email, type: inv.type === "optional" ? "optional" : "required" });
+      }
+    }
+  }
+
+  return { records, invited };
+}
 
 /** Sunday of the ISO week beginning at `weekStart` (Monday). */
 export function weekEndFor(weekStart: Date): Date {
@@ -166,7 +229,7 @@ export async function loadWeekContext(
 
   const rosterIndex = buildRosterIndex(roster, aliasRows);
 
-  const [huddles, transcripts] = await Promise.all([
+  const [huddles, transcripts, teamsAttendance] = await Promise.all([
     db.clientDailyHuddle.findMany({
       where: {
         orgId,
@@ -211,7 +274,16 @@ export async function loadWeekContext(
         // The meeting participant list — the only signal that proves a silent
         // attendee was present, and the only one carrying email.
         attendees: true,
+        // Whether that list was ticked by a human (authoritative both ways) or
+        // derived from a recorder (proves presence only). See the column doc.
+        attendeesSource: true,
       },
+    }),
+    // Synced Teams attendance reports for this week. The only source with join
+    // durations, and the only one that can prove absence.
+    db.clientMeetingAttendance.findMany({
+      where: { orgId, clientId, kind: "daily", meetingDate: { gte: weekStart, lte: weekEnd } },
+      select: { meetingDate: true, records: true },
     }),
   ]);
 
@@ -241,6 +313,41 @@ export async function loadWeekContext(
     Array.isArray(t?.attendees)
       ? (t.attendees as { name?: string | null; email?: string | null }[])
       : [];
+
+  // --- Teams attendance, resolved to roster members once per day -----------
+  //
+  // Every Graph record carries an email and `ClientMember.email` exists, so
+  // this join is exact — no name fuzziness enters the one signal the report
+  // relies on to call somebody absent.
+  const plannedDurationMinutes = minutesBetween(client.dailyStartTime, client.dailyEndTime);
+  const teamsByDate = new Map<string, TeamsAttendanceEvidence>();
+  for (const row of teamsAttendance) {
+    const parsed = parseTeamsAttendance(row.records);
+    if (!parsed) continue;
+
+    const secondsByMemberId: Record<string, number> = {};
+    for (const rec of parsed.records) {
+      const match = matchParticipant(rec.name || rec.email || "", rosterIndex, rec.email);
+      const id = resolvedMemberId(match);
+      // Several records per person is normal — Teams emits one per device or
+      // rejoin — so seconds accumulate rather than overwrite.
+      if (id) secondsByMemberId[id] = (secondsByMemberId[id] ?? 0) + rec.seconds;
+    }
+
+    const invitedIds = (want: "required" | "optional") =>
+      parsed.invited
+        .filter((i) => i.type === want)
+        .map((i) => resolvedMemberId(matchParticipant(i.email, rosterIndex, i.email)))
+        .filter((id): id is string => Boolean(id));
+
+    teamsByDate.set(ymd(row.meetingDate), {
+      reportPresent: true,
+      secondsByMemberId,
+      thresholdSeconds: presenceThresholdSeconds(plannedDurationMinutes),
+      requiredInvitedIds: invitedIds("required"),
+      optionalInvitedIds: invitedIds("optional"),
+    });
+  }
 
   /** Pull the day's per-person ratings out of its saved report. */
   const adherenceOf = (report: StoredMeetingReport | null): DayAdherenceRow[] =>
@@ -298,7 +405,16 @@ export async function loadWeekContext(
     humanLogged: boolean;
     markedAbsentIds: string[];
     attendees: { name?: string | null; email?: string | null }[];
+    /**
+     * True when a human ticked WHO ATTENDED (the upload modal), which makes the
+     * list authoritative in both directions — its complement is exactly who was
+     * absent. Only a human-supplied list earns this: a recorder-derived list
+     * still has to clear the coverage gate below, because a participant list
+     * Fathom happened to capture is not a statement that anyone was missing.
+     */
+    attendeesAuthoritative?: boolean;
     adherence: DayAdherenceRow[];
+    teams?: TeamsAttendanceEvidence;
   }): DayAttendance => {
     const participantIds = new Set<string>();
     const spokeIds = new Set<string>();
@@ -348,17 +464,31 @@ export async function loadWeekContext(
     }
 
     const listCoverage = input.attendees.length ? attendeesResolved / input.attendees.length : 0;
+    // A human-ticked list needs no coverage gate: it IS the statement of who
+    // was there, so its complement is exactly who was not. Guarded on a
+    // non-empty resolved list so an upload whose ticks all failed to resolve
+    // cannot silently mark the entire roster absent.
+    const humanAttendeeList = Boolean(input.attendeesAuthoritative && participantIds.size > 0);
     const participantListUsable =
       input.humanLogged ||
+      humanAttendeeList ||
       (attendeesWithEmail > 0 && listCoverage >= 0.6 && participantIds.size >= 2);
 
     return {
       markedAbsentIds: input.markedAbsentIds,
+      // Deliberately NOT set for a human ATTENDEE list. The two lists are
+      // inverses: `absenceListAuthoritative` means "markedAbsentIds names
+      // everyone who was away, so everybody else was present" (ladder rung 0c),
+      // whereas an attendee list names everyone who was THERE. Setting it here
+      // would make rung 0c mark the whole roster present, absentees included.
+      // The attendee list works through `participantListUsable` instead: rung 2
+      // proves the people on it present, rung 4 reads the rest as absent.
       absenceListAuthoritative: input.humanLogged,
       participantIds: [...participantIds],
       spokeIds: [...spokeIds],
       participantListUsable,
       unresolved,
+      teams: input.teams,
     };
   };
 
@@ -427,7 +557,9 @@ export async function loadWeekContext(
           .filter((a) => a.absenceReason !== "PLANNED_LEAVE")
           .map((a) => a.clientMemberId),
         attendees: attendeesOf(transcript),
+        attendeesAuthoritative: transcript?.attendeesSource === "manual",
         adherence,
+        teams: teamsByDate.get(date),
       }),
       adherence,
       blockers: blockersOf(report),
@@ -476,11 +608,18 @@ export async function loadWeekContext(
       // This is the fix for the previous behaviour, which marked every roster
       // member who did not speak as absent and reported ~30% attendance for
       // teams that fully attended.
+      //
+      // A MANUAL upload is the exception: nobody logged the huddle, but a human
+      // still ticked who attended, and that list is as good as one. Without it
+      // an uploaded transcript can only ever prove "who spoke", so no absentee
+      // is ever named — the whole reason this branch existed but under-reported.
       attendance: buildAttendance({
         humanLogged: false,
         markedAbsentIds: [],
         attendees: attendeesOf(t),
+        attendeesAuthoritative: t.attendeesSource === "manual",
         adherence,
+        teams: teamsByDate.get(date),
       }),
       adherence,
       blockers: blockersOf(report),

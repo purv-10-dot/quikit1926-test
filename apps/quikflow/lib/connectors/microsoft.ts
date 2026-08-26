@@ -107,13 +107,15 @@ export const OUTLOOK: MailProvider = {
     return toTokenSet(raw, email);
   },
 
+  // No `scope` on a refresh: it re-issues what was consented, and asserting the
+  // current constant would break every connection consented before a scope was
+  // added (AADSTS65001). Same reasoning as msRefresh in ./microsoft-identity.
   async refresh(refreshToken) {
     const raw = await tokenRequest({
       refresh_token: refreshToken,
       client_id: clientId(),
       client_secret: clientSecret(),
       grant_type: "refresh_token",
-      scope: SCOPES.join(" "),
     });
     return toTokenSet({ ...raw, refresh_token: raw.refresh_token ?? refreshToken }, "");
   },

@@ -66,14 +66,14 @@ describe("POST /api/connections", () => {
   });
 });
 
-describe("PATCH /api/connections — Fathom notetaker email", () => {
+describe("PATCH /api/connections — Fathom account email", () => {
   it("rejects a non-admin with 403", async () => {
     setSession(MEMBER);
     const res = await PATCH(
       req("/api/connections", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: "c1", notetakerEmail: "bot@fathom.video" }),
+        body: JSON.stringify({ id: "c1", notetakerEmail: "rohit@quikit.com" }),
       }),
       { params: {} },
     );
@@ -88,7 +88,7 @@ describe("PATCH /api/connections — Fathom notetaker email", () => {
       req("/api/connections", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: "c1", notetakerEmail: "bot@fathom.video" }),
+        body: JSON.stringify({ id: "c1", notetakerEmail: "rohit@quikit.com" }),
       }),
       { params: {} },
     );
@@ -103,21 +103,21 @@ describe("PATCH /api/connections — Fathom notetaker email", () => {
       req("/api/connections", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: "c1", notetakerEmail: "bot@fathom.video" }),
+        body: JSON.stringify({ id: "c1", notetakerEmail: "rohit@quikit.com" }),
       }),
       { params: {} },
     );
     expect(res.status).toBe(200);
     expect(mockDb.wfConnection.update.mock.calls[0][0].data.settings).toEqual({
       other: "keep-me",
-      notetakerEmail: "bot@fathom.video",
+      notetakerEmail: "rohit@quikit.com",
     });
   });
 
   it("clears notetakerEmail when given an empty string", async () => {
     setSession(ADMIN);
     mockDb.wfConnection.findFirst.mockResolvedValue({
-      settings: { notetakerEmail: "old@fathom.video", other: "keep-me" },
+      settings: { notetakerEmail: "old@quikit.com", other: "keep-me" },
     } as never);
     mockDb.wfConnection.update.mockResolvedValue({} as never);
     const res = await PATCH(
@@ -130,5 +130,33 @@ describe("PATCH /api/connections — Fathom notetaker email", () => {
     );
     expect(res.status).toBe(200);
     expect(mockDb.wfConnection.update.mock.calls[0][0].data.settings).toEqual({ other: "keep-me" });
+  });
+
+  /**
+   * Save time is the ONLY moment a human is present to see this problem. Both
+   * bad shapes fail silently later: a malformed address makes Graph reject the
+   * whole event, and a bot-looking address is nobody's mailbox — the invite
+   * bounces, the meeting never reaches Fathom's Upcoming Meetings, and nothing
+   * joins, while every layer reports success.
+   */
+  it.each([
+    ["a bot mailbox", "notetaker@fathom.video", /no invitable bot mailbox/i],
+    ["a Fathom-domain address", "anything@fathom.ai", /no invitable bot mailbox/i],
+    ["a notetaker-named address", "meeting-notetaker@acme.com", /no invitable bot mailbox/i],
+    ["a malformed address", "not-an-email", /valid email address/i],
+  ])("rejects %s with 400 and an explanation", async (_label, value, expected) => {
+    setSession(ADMIN);
+    const res = await PATCH(
+      req("/api/connections", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: "c1", notetakerEmail: value }),
+      }),
+      { params: {} },
+    );
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(expected);
+    expect(mockDb.wfConnection.update).not.toHaveBeenCalled();
   });
 });

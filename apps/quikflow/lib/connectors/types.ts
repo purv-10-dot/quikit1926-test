@@ -112,8 +112,16 @@ export interface CalendarEventInput {
   end: string;
   /** IANA/Windows time zone the start/end are expressed in, e.g. "Asia/Kolkata". */
   timeZone: string;
-  /** Attendee email addresses. */
+  /** Attendee email addresses, invited as REQUIRED. */
   attendees?: string[];
+  /**
+   * Attendee email addresses invited as OPTIONAL.
+   *
+   * Separate from `attendees` rather than a typed list so every existing caller
+   * keeps working unchanged — and so "who must attend" stays the default
+   * reading of `attendees`.
+   */
+  optionalAttendees?: string[];
   location?: string;
   /** Attach a Teams online meeting (isOnlineMeeting + teamsForBusiness). */
   onlineMeeting?: boolean;
@@ -166,4 +174,23 @@ export interface CalendarProvider extends OAuthProvider {
   deleteEvent(accessToken: string, eventId: string): Promise<void>;
   /** List events overlapping [startIso, endIso) on the connected calendar. */
   listCalendarView(accessToken: string, startIso: string, endIso: string): Promise<CalendarEventView[]>;
+}
+
+/**
+ * Thrown when the identity provider rejects a stored grant outright — the user
+ * revoked access, the refresh token expired or was invalidated, or consent for
+ * the app was never granted (Entra AADSTS65001) / has been withdrawn.
+ *
+ * Distinct from a generic token error because the remedy is different and the
+ * user can act on it: no retry, no backoff and no amount of waiting fixes it —
+ * somebody has to reconnect the account (and, for an admin-consent-required
+ * scope, a tenant admin has to consent first). Callers mark the connection
+ * `error` so the Connections page can say "Reconnect required" instead of
+ * showing a raw AADSTS wall in a run log.
+ */
+export class ReconnectRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReconnectRequiredError";
+  }
 }

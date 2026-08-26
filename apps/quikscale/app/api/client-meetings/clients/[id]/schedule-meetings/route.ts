@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { splitInviteEmails } from "@/lib/meetings/inviteLists";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { toErrorMessage } from "@/lib/api/errors";
@@ -33,7 +34,7 @@ export const POST = auth.update<{ id: string }>(async ({ orgId, userId }, _reque
         dailyDays: true,
         meetingUntil: true,
         startDate: true,
-        teamMembers: { select: { member: { select: { email: true } } } },
+        teamMembers: { select: { attendanceType: true, member: { select: { email: true } } } },
       },
     });
     if (!client) {
@@ -46,7 +47,14 @@ export const POST = auth.update<{ id: string }>(async ({ orgId, userId }, _reque
       return NextResponse.json({ success: true, data: { connected: false } });
     }
 
-    const attendees = client.teamMembers.map((tm) => tm.member?.email).filter(Boolean);
+    // Required and optional are invited as different Graph attendee types —
+    // the report reads the invite to decide whether a no-show counts.
+    const invite = splitInviteEmails(
+      client.teamMembers.map((tm) => ({ email: tm.member?.email, attendanceType: tm.attendanceType })),
+    );
+    const asList = (csv: string) => (csv ? csv.split(", ").filter(Boolean) : []);
+    const attendees = asList(invite.required);
+    const optionalAttendees = asList(invite.optional);
     const startDate = (client.startDate ?? new Date()).toISOString().slice(0, 10);
     const until = client.meetingUntil ? client.meetingUntil.toISOString().slice(0, 10) : null;
 
@@ -57,6 +65,7 @@ export const POST = auth.update<{ id: string }>(async ({ orgId, userId }, _reque
       name: client.name,
       createdBy: userId,
       attendees,
+      optionalAttendees,
       daily:
         client.dailyStartTime && client.dailyEndTime
           ? { start: client.dailyStartTime, end: client.dailyEndTime, days: client.dailyDays, startDate, until }

@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "docs:api": "node scripts/gen-api-contract.mjs",
+    "docs:api:check": "node scripts/gen-api-contract.mjs --check",
     "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts",
     "kb:screens": "tsx scripts/capture-kb-screens.ts"
   },

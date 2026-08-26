@@ -26,6 +26,17 @@ const STYLES: Record<string, string> = {
   // connection
   connected: "bg-green-100 text-green-700",
   expired: "bg-red-100 text-red-700",
+  error: "bg-red-100 text-red-700",
+};
+
+/**
+ * Statuses whose stored value is not what a reader needs to see. A connection
+ * goes to `error` when the identity provider rejects the stored grant — the
+ * only useful thing to say about it is the action it needs, not the category
+ * it fell into.
+ */
+const LABELS: Record<string, string> = {
+  error: "reconnect required",
 };
 
 const DOT: Record<string, string> = {
@@ -45,6 +56,7 @@ const DOT: Record<string, string> = {
   failed: "bg-red-500",
   rejected: "bg-red-500",
   expired: "bg-red-500",
+  error: "bg-red-500",
 };
 
 export function StatusPill({ status, label }: { status: string; label?: string }) {
@@ -56,7 +68,7 @@ export function StatusPill({ status, label }: { status: string; label?: string }
       )}
     >
       <span className={cn("h-1.5 w-1.5 rounded-full", DOT[status] ?? "bg-gray-400")} />
-      {label ?? status}
+      {label ?? LABELS[status] ?? status}
     </span>
   );
 }

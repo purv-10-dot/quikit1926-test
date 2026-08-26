@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 /**
  * Chromium e2e for the Fathom notetaker auto-invite feature: an org admin
@@ -22,7 +22,10 @@ test.beforeAll(async () => {
   orgId = org.id;
   const conn = await db.wfConnection.upsert({
     where: { orgId_provider_label: { orgId, provider: "teams", label: CONNECTION_LABEL } },
-    update: { status: "connected", settings: null },
+    // Prisma.DbNull, not `null`: on a nullable Json column plain null is
+    // ambiguous (JSON null vs SQL NULL) and the client rejects it. DbNull is
+    // the SQL NULL this reset wants — a connection with no settings at all.
+    update: { status: "connected", settings: Prisma.DbNull },
     create: {
       orgId,
       provider: "teams",
@@ -40,19 +43,19 @@ test.afterAll(async () => {
   await db.$disconnect();
 });
 
-test("admin sets, persists, and clears the Fathom notetaker bot email on a Teams connection", async ({ page }) => {
+test("admin sets, persists, and clears the Fathom account email on a Teams connection", async ({ page }) => {
   await page.goto("/connections");
 
   const card = page.locator("li", { hasText: CONNECTION_LABEL });
   await expect(card).toBeVisible({ timeout: 10_000 });
 
-  const input = card.getByLabel(/fathom notetaker bot email/i);
+  const input = card.getByLabel(/fathom account email/i);
   const saveButton = card.getByRole("button", { name: "Save" });
 
   // Save is disabled until the field is dirty.
   await expect(saveButton).toBeDisabled();
 
-  await input.fill("notetaker@fathom.video");
+  await input.fill("rohit@quikit.com");
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
 
@@ -62,11 +65,11 @@ test("admin sets, persists, and clears the Fathom notetaker bot email on a Teams
   // Reload to prove the value round-tripped through PATCH → Postgres → GET,
   // not just local component state.
   await page.reload();
-  const reloadedInput = page.locator("li", { hasText: CONNECTION_LABEL }).getByLabel(/fathom notetaker bot email/i);
-  await expect(reloadedInput).toHaveValue("notetaker@fathom.video");
+  const reloadedInput = page.locator("li", { hasText: CONNECTION_LABEL }).getByLabel(/fathom account email/i);
+  await expect(reloadedInput).toHaveValue("rohit@quikit.com");
 
   const stored = await db.wfConnection.findUniqueOrThrow({ where: { id: connectionId } });
-  expect((stored.settings as { notetakerEmail?: string } | null)?.notetakerEmail).toBe("notetaker@fathom.video");
+  expect((stored.settings as { notetakerEmail?: string } | null)?.notetakerEmail).toBe("rohit@quikit.com");
 
   // Clearing the field removes the override (falls back to the org-wide env var).
   await reloadedInput.fill("");
