@@ -53,9 +53,59 @@ describe("GET /api/projects/:id", () => {
     } as never);
     mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m1" } as never);
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
-    // Re-mock the second findFirst (project + relations) used by the handler.
+    // The handler makes three raw-SQL reads (tabConfig, the per-user star set,
+    // and the space background). An unmocked $queryRaw returns undefined, which
+    // would blow up in .map()/[0] — so give them all an empty result set.
+    mockDb.$queryRaw.mockResolvedValue([] as never);
     const res = await GET(getReq(), { params: { id: PROJECT } } as never);
-    expect([200, 404]).toContain(res.status);
+    expect(res.status).toBe(200);
+  });
+
+  // The header's "..." menu renders entirely from this payload, so each of
+  // these fields is load-bearing: starred drives the star toggle's label,
+  // background paints the header band, and canArchive/isAdmin decide whether
+  // Archive / Delete appear at all.
+  it("exposes starred, background, canArchive and isAdmin for the space menu", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.qtProject.findFirst.mockResolvedValue({
+      id: PROJECT,
+      orgId: TENANT,
+      name: "Test",
+      projectKey: "T1",
+      projectType: "software",
+      managementStyle: "team-managed",
+    } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([{ tabConfig: null }] as never) // readTabConfig
+      .mockResolvedValueOnce([{ projectId: PROJECT }] as never) // starred set
+      .mockResolvedValueOnce([
+        { background: { type: "gradient", value: "ocean" } },
+      ] as never); // background
+
+    const res = await GET(getReq(), { params: { id: PROJECT } } as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toMatchObject({
+      starred: true,
+      background: { type: "gradient", value: "ocean" },
+      isAdmin: true,
+      canArchive: true,
+      projectType: "software",
+      managementStyle: "team-managed",
+    });
+  });
+
+  it("reports starred=false when this user hasn't starred the space", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT, name: "Test" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.$queryRaw.mockResolvedValue([] as never);
+
+    const res = await GET(getReq(), { params: { id: PROJECT } } as never);
+    const body = await res.json();
+    expect(body.data.starred).toBe(false);
+    expect(body.data.background).toBeNull();
   });
 });
 

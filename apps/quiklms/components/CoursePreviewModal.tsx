@@ -1,6 +1,6 @@
 'use client';
 /**
- * CoursePreviewModal — ported from the old QuikSkills frontend
+ * CoursePreviewModal — ported from the old QuikLMSs frontend
  * (`src/components/CoursePreviewModal.tsx`), replacing the previous
  * "coming soon" stub.
  *

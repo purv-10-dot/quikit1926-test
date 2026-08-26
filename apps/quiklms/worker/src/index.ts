@@ -1,5 +1,5 @@
 /**
- * QuikSkill worker entrypoint — Socket.IO gateways (/messages, /exams),
+ * QuikLMS worker entrypoint — Socket.IO gateways (/messages, /exams),
  * cron scheduler, and the TUS upload server, all on one HTTP server.
  */
 import 'dotenv/config';

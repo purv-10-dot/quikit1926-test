@@ -1,6 +1,6 @@
 'use client';
 /**
- * UpgradeEmailTemplateEditor — ported 1:1 from the old QuikSkills frontend
+ * UpgradeEmailTemplateEditor — ported 1:1 from the old QuikLMSs frontend
  * (src/components/UpgradeEmailTemplateEditor.tsx). Replaces the "coming soon" stub.
  *
  * Super-admin modal for the storage-upgrade notification email:
@@ -79,7 +79,7 @@ export const UpgradeEmailTemplateEditor: React.FC<UpgradeEmailTemplateEditorProp
 
           <p>If you have any questions, please contact our support team.</p>
 
-          <p>Best regards,<br>QuikSkill LMS Team</p>
+          <p>Best regards,<br>QuikLMS LMS Team</p>
         </div>
       `);
     } finally {

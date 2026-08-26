@@ -66,16 +66,41 @@ const HARD_SEPARATOR = /^\s*(?:---+|===+|\*\*\*+|___+)\s*$/;
 // Matches: "Q1.", "Q 1:", "Question 1 -", "1.", "1)", "1:" at line start.
 const QUESTION_PREFIX = /^(?:q(?:uestion)?\s*\d+|\d+)\s*[.):\-]?\s*/i;
 
-// Lettered or numbered option label at the start of a line.
-//   "A)", "A.", "A:", "A-", "(A)", lower-case, plus "1)", "1." etc.
-// Capture group 1 = label letter or digit.
+// Option labels.
 //
-// LETTER_OPTION is the strict letter-only form — preferred when both letters
+// Every style we accept collapses into one shape:
+//
+//     [Option|Choice] [ ( or [ ]  TOKEN  [ ) or ] ]  DELIMITER  text
+//
+// where TOKEN is a letter, a number or a roman numeral, and DELIMITER is one
+// of  ) . : ]  -  —  –  →  . Building the patterns from shared fragments means
+// adding a delimiter is a one-place change rather than four parallel edits.
+//
+// Note the closing bracket is optional *and* ']' / ')' are delimiters. That is
+// deliberate: for "(A) London" the regex backtracks so ')' serves as the
+// delimiter, which is what makes both "(A) x" and "A) x" work from one pattern.
+const LBL_PREFIX = '(?:(?:option|choice)\\s*)?';
+const LBL_OPEN   = '[([]?';
+const LBL_CLOSE  = '[)\\]]?';
+const LBL_DELIM  = '[.):\\]\\-—–→]'; // . ) : ] - em-dash en-dash arrow
+
+const optionRx = (token: string) =>
+  new RegExp(`^\\s*${LBL_PREFIX}${LBL_OPEN}(${token})${LBL_CLOSE}\\s*${LBL_DELIM}\\s+(.+)$`, 'i');
+
+// LETTER_OPTION is the strict single-letter form — preferred when both letters
 // and digits appear in the same block, because "1. What is …" at the top of
 // a question would otherwise be misread as an option label.
-const LETTER_OPTION  = /^\s*\(?([A-Za-z])\)?\s*[.):\-]\s+(.+)$/;
-const DIGIT_OPTION   = /^\s*\(?([0-9]{1,2})\)?\s*[.):\-]\s+(.+)$/;
-const LETTERED_OPTION = /^\s*\(?([A-Za-z]|[0-9]{1,2})\)?\s*[.):\-]\s+(.+)$/;
+const LETTER_OPTION = optionRx('[A-Za-z]');
+const DIGIT_OPTION  = optionRx('[0-9]{1,2}');
+
+// Roman numerals are tried LAST, and that ordering is what resolves the "I."
+// ambiguity the format is inherently stuck with: 'I', 'V', 'X', 'C', 'D', 'M'
+// are all valid single letters too. A list of "A) B) C)" matches LETTER first
+// and never reaches here; a list of "I) II) III)" yields only one single-letter
+// match, falls through, and is then read as the roman sequence it plainly is.
+const ROMAN_OPTION = optionRx('[IVXLCDM]{1,7}|[ivxlcdm]{1,7}');
+
+const LETTERED_OPTION = optionRx('[A-Za-z]|[0-9]{1,2}');
 
 // A bare bullet (no letter) — only treated as an option marker if the
 // whole block uses the same bullet for every option.
@@ -143,6 +168,48 @@ function labelToIndex(label: string): number | null {
 }
 
 /**
+ * Roman numeral → 0-based index. Returns null for anything that is not a
+ * well-formed numeral, so "MMM" style nonsense and stray letters are rejected
+ * rather than silently becoming an index.
+ */
+const ROMAN_VALUES: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+
+function romanToIndex(label: string): number | null {
+  const s = label.toLowerCase();
+  if (!/^[ivxlcdm]+$/.test(s)) return null;
+
+  let total = 0;
+  for (let i = 0; i < s.length; i++) {
+    const cur = ROMAN_VALUES[s[i]];
+    const next = ROMAN_VALUES[s[i + 1]];
+    // Subtractive pairs (IV, IX, XL…) — the smaller value before a larger one.
+    total += next && cur < next ? -cur : cur;
+  }
+  // Round-trip check: only canonical spellings count, so "IIII" or "VX" are
+  // rejected instead of being read as 4 and 5.
+  if (indexToRoman(total) !== s) return null;
+  return total >= 1 && total <= 26 ? total - 1 : null;
+}
+
+/** Canonical roman spelling for 1..26, used to validate romanToIndex. */
+function indexToRoman(n: number): string {
+  const table: [number, string][] = [
+    [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'],
+    [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'],
+    [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i'],
+  ];
+  let out = '';
+  let rest = n;
+  for (const [value, numeral] of table) {
+    while (rest >= value) {
+      out += numeral;
+      rest -= value;
+    }
+  }
+  return out;
+}
+
+/**
  * Resolve an "Answer: …" payload to one or more option indices by either
  * matching label letters / numbers or looking up the option text.
  */
@@ -157,6 +224,20 @@ function resolveAnswers(payload: string, options: string[]): number[] {
     const single = labelToIndex(cleaned);
     if (single !== null && single < options.length) {
       out.push(single);
+      continue;
+    }
+    /*
+     * Roman fallback for "Answer: II" / "Answer: iv".
+     *
+     * Deliberately AFTER the letter reading and gated on that reading being out
+     * of range: for a four-option question, "Answer: I" means the letter I only
+     * if there are nine options, which there are not — so it is roman 1. But
+     * "Answer: C" on a four-option question stays the letter C (index 2) rather
+     * than becoming roman 100, because the letter reading fits.
+     */
+    const roman = romanToIndex(cleaned);
+    if (roman !== null && roman < options.length) {
+      out.push(roman);
       continue;
     }
     // Try a case-insensitive exact match against option text.
@@ -185,11 +266,17 @@ function splitIntoBlocks(text: string): string[] {
   let current: string[] = [];
   let blankRun = 0;
   let optionsInCurrent = 0;
+  // Style of the option list being collected, used to tell a genuine next
+  // option from the next question's number. See looksLikeOption below.
+  let lastOptionIdx = -1;
+  let optionsAreDigits = false;
 
   const flush = () => {
     if (current.some(l => l.trim().length > 0)) blocks.push(current);
     current = [];
     optionsInCurrent = 0;
+    lastOptionIdx = -1;
+    optionsAreDigits = false;
   };
 
   for (const raw of lines) {
@@ -214,7 +301,43 @@ function splitIntoBlocks(text: string): string[] {
     const wasBlank = blankRun > 0;
     blankRun = 0;
 
-    const looksLikeOption = LETTERED_OPTION.test(trimmed) || BULLET_OPTION.test(trimmed);
+    /*
+     * "Is this an option, or the start of the next question?"
+     *
+     * Both look identical in the most common paste there is:
+     *
+     *     1. First question?          <- question, numbered
+     *     A) wrong
+     *     B) right
+     *                                 <- one blank line
+     *     2. Second question?         <- ALSO matches the option pattern
+     *
+     * Testing the pattern alone said "option", which suppressed the soft-flush
+     * below and glued all fifteen pasted questions into one. So a line only
+     * counts as an option if it CONTINUES the list already being collected:
+     * same label kind (letters vs digits) and a higher index. "2." after
+     * options A and B does neither, so it reads as the next question — while
+     * "3)" after options 1) and 2) still reads as the third option.
+     */
+    const om = trimmed.match(LETTERED_OPTION);
+    const omIdx = om ? labelToIndex(om[1]) : null;
+    const omIsDigit = om ? /^\d+$/.test(om[1]) : false;
+
+    // The first non-blank line of a block is the question, never an option —
+    // without this, "1. First question?" claims the option style as digits and
+    // then rejects the "A) …" lines that follow it.
+    const isFirstLineOfBlock = !current.some(l => l.trim().length > 0);
+
+    let looksLikeOption = false;
+    if (BULLET_OPTION.test(trimmed)) {
+      looksLikeOption = !isFirstLineOfBlock;
+    } else if (om && omIdx !== null && !isFirstLineOfBlock) {
+      looksLikeOption =
+        optionsInCurrent === 0
+          ? true // first option of the block establishes the style
+          : omIsDigit === optionsAreDigits && omIdx > lastOptionIdx;
+    }
+
     const looksLikeAnswer = ANSWER_LINE.test(trimmed);
     const looksLikeQuestionPrefix = QUESTION_PREFIX.test(trimmed) && !looksLikeOption;
 
@@ -231,6 +354,10 @@ function splitIntoBlocks(text: string): string[] {
     }
 
     if (looksLikeOption) {
+      if (om && omIdx !== null) {
+        if (optionsInCurrent === 0) optionsAreDigits = omIsDigit;
+        lastOptionIdx = omIdx;
+      }
       optionsInCurrent++;
     }
     current.push(line);
@@ -254,14 +381,14 @@ function parseBlock(block: string, indexInPaste: number): ParsedQuestion | null 
   // Try letter-labelled options first; only fall back to digit labels when
   // we can't find ≥2 letter-labelled lines. This prevents mistaking the
   // question's own "1." / "2." numbering for an option marker.
-  const collect = (rx: RegExp): OptionEntry[] => {
+  const collect = (rx: RegExp, toIndex: (label: string) => number | null = labelToIndex): OptionEntry[] => {
     const acc: OptionEntry[] = [];
     let lastIdx = -1;
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
       const m = trimmed.match(rx);
       if (!m) continue;
-      const idx = labelToIndex(m[1]);
+      const idx = toIndex(m[1]);
       if (idx === null) continue;
       // Reject backwards labels (A then A again, B then A, etc.) — those
       // tend to be unrelated text rather than the option list.
@@ -272,11 +399,24 @@ function parseBlock(block: string, indexInPaste: number): ParsedQuestion | null 
     return acc;
   };
 
+  /*
+   * Order is the whole disambiguation strategy, so it is load-bearing:
+   *
+   *   letters → digits → roman
+   *
+   * "A) B) C)" matches as letters and stops there — never mind that C is also
+   * roman 100. "I) II) III)" produces a single letter match (just the I), falls
+   * through the digit attempt, and is then read as the roman sequence it is.
+   * That is the contextual resolution the format needs: whether the SURROUNDING
+   * labels form a roman run, not what the first label could mean in isolation.
+   */
   const tryLettered = (): OptionEntry[] | null => {
     const letters = collect(LETTER_OPTION);
     if (letters.length >= 2) return letters;
     const digits = collect(DIGIT_OPTION);
-    return digits.length >= 2 ? digits : null;
+    if (digits.length >= 2) return digits;
+    const roman = collect(ROMAN_OPTION, romanToIndex);
+    return roman.length >= 2 ? roman : null;
   };
 
   const tryBullets = (): OptionEntry[] | null => {

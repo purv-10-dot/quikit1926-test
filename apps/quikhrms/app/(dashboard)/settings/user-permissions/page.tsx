@@ -55,7 +55,7 @@ export default function UserPermissionsPage() {
     queryKey: ["users-permissions", "employees", statusFilter],
     queryFn: () =>
       api.get<EmployeeRow[]>(
-        `/api/v1/hrms/employees?limit=100${statusFilter ? `&status=${statusFilter}` : ""}`,
+        `/api/v1/hrms/employees?limit=1000&picker=1${statusFilter ? `&status=${statusFilter}` : ""}`,
       ),
   });
   const employees = empResp?.data ?? [];

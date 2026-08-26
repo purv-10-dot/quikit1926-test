@@ -1,6 +1,6 @@
 'use client';
 /**
- * OnboardingWizard — ported from the old QuikSkills frontend
+ * OnboardingWizard — ported from the old QuikLMSs frontend
  * (src/components/OnboardingWizard.tsx).
  *
  * Super-admin tenant onboarding form: company name + GST number (+ optional

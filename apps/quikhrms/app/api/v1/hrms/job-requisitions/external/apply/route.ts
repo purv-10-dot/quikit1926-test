@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
     const assignedRecruiterId = await resolveAssignedRecruiter(orgId, jobId);
     if (assignedRecruiterId) {
       await prisma.$executeRaw`
-        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${assignedRecruiterId} WHERE id = ${application.id}`;
+        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${assignedRecruiterId}, "assignedRecruiterAt" = NOW() WHERE id = ${application.id}`;
     }
 
     void fireWorkflow({ orgId, event: "recruit.application.received", payload: { applicationId: application.id, candidateId: candidate.id, requisitionId: jobId, stage: null } });

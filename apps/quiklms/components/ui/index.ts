@@ -1,5 +1,5 @@
 /**
- * QuikSkill-local UI primitives.
+ * QuikLMS-local UI primitives.
  *
  * CLAUDE.md says "UI components: Import from `@quikit/ui` — NEVER create local
  * copies", and QuikLMS now DOES depend on `@quikit/ui` (see package.json) and

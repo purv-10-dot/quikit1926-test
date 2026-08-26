@@ -48,7 +48,7 @@ const requisitionBaseObject = z.object({
   })).optional(),
   education: z.string().optional(),
   passingYear: z.number().int().min(1950).max(2100).nullable().optional(),
-  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question").max(50),
+  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question"),
   benefits: z.array(z.string()).optional(),
 
   // Role scorecard — optional. Captures the JD-Scorecard pattern at hiring time.
@@ -70,7 +70,7 @@ const requisitionBaseObject = z.object({
   recruiterId: z.string().optional(),
   // Recruiter Performance Dashboard — Job Level drives the default SLA;
   // customSlaDays/Reason let HR override it for this one requisition.
-  jobLevelId: z.string().optional(),
+  jobLevelId: z.string().min(1, "Job level required"),
   customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
   customSlaReason: z.string().max(1000).optional(),
   // Optional multi-recruiter position split — e.g. 10 openings: 4 to

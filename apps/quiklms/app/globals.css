@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
- * QuikSkill design tokens.
+ * QuikLMS design tokens.
  *
  * Two layers:
  *  1. Brand vars (--brand-primary/secondary) are hex and set server-side per
@@ -14,7 +14,7 @@
  *     which is why these stay constant while the brand color varies.
  */
 :root {
-  /* Brand (tenant-overridable). QuikSkill default = confident indigo. */
+  /* Brand (tenant-overridable). QuikLMS default = confident indigo. */
   --brand-primary: #4f46e5;
   --brand-secondary: #3730a3;
 
@@ -185,7 +185,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Legacy QuikSkills utility classes.
+ * Legacy QuikLMSs utility classes.
  *
  * Ported from the old frontend's `src/index.css` (@layer components) because the
  * components carried over from it — CourseCreator, CourseBuilder, QuizCreator,
@@ -357,10 +357,13 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 14%, transparent);
   }
 
-  /* Account row at the foot of the panel — replaced the tenant badge that used
-     to sit here (the tenant is named once, at the top, next to its logo). */
-  .qs-account-row { transition: background-color .16s ease; }
-  .qs-account-row:hover { background-color: rgb(var(--surface-muted)); }
+  /* Account trigger — now the avatar chip in the TOPBAR's right cluster (it sat
+     at the foot of this panel until the shell was aligned with quikhrms). */
+  .qs-account-row { transition: background-color .16s ease, border-color .16s ease; }
+  .qs-account-row:hover {
+    background-color: rgb(var(--surface-muted));
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+  }
 
   /* The circular avatar. Round, not the old rounded-square tile: it is a person
      now, not a tenant, and the shape is what distinguishes the two. */
@@ -372,10 +375,12 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
 
-  /* Menu rises out of the footer, so it animates upward rather than downward. */
-  .qs-account-pop { animation: qs-account-in .16s ease-out both; }
-  @keyframes qs-account-in {
-    from { opacity: 0; transform: translateY(4px); }
+  /* Every header popover — account menu, apps waffle, search results — hangs
+     BELOW its trigger now, so it drops in rather than rising (this replaced
+     `.qs-account-pop`, which animated upward out of the old sidebar footer). */
+  .qs-pop { animation: qs-pop-in .16s ease-out both; }
+  @keyframes qs-pop-in {
+    from { opacity: 0; transform: translateY(-4px); }
     to   { opacity: 1; transform: translateY(0); }
   }
 
@@ -409,8 +414,34 @@
     border-color: color-mix(in srgb, var(--brand-primary) 40%, transparent);
   }
 
-  /* The topbar account chip (.qs-accountbtn) is gone — profile and sign out
-     moved to the sidebar footer above. */
+  /* Global search box — quikhrms's pill input, with the tenant's accent on the
+     focus ring instead of its fixed green. */
+  .qs-search-input {
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+  .qs-search-input:hover {
+    border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
+  }
+  .qs-search-input:focus {
+    border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  }
+
+  /* The keyboard-highlighted result. Tinted rather than filled: the row still
+     has to read as a list item, and the pointer hover uses the plain muted
+     surface, so the two states must stay distinguishable. */
+  .qs-search-hit-active {
+    background-color: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  }
+  .dark .qs-search-hit-active {
+    background-color: color-mix(in srgb, var(--brand-primary) 22%, transparent);
+  }
+
+  /* Fallback tile in the apps waffle when no brand icon resolves. */
+  .qs-app-monogram {
+    color: var(--brand-on, #ffffff);
+    background-image: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

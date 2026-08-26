@@ -1544,11 +1544,11 @@ function ProfileModal({ employeeId, task, onClose, onSaved }: { employeeId: stri
   });
   const { data: peopleResp } = useQuery({
     queryKey: ["org-chart"],
-    queryFn: () => api.get<{ employees: { id: string; firstName: string; lastName: string }[] }>("/api/v1/hrms/org-chart"),
+    queryFn: () => api.get<{ employees: { id: string; firstName: string; lastName: string; employeeCode: string | null }[] }>("/api/v1/hrms/org-chart"),
   });
   const managerOpts = (peopleResp?.data?.employees ?? [])
     .filter((e) => e.id !== employeeId)
-    .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() }));
+    .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() + (e.employeeCode ? ` (${e.employeeCode})` : "") }));
   const { data: noticePeriodsData } = useQuery({
     queryKey: ["notice-periods", "all"],
     queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100"),

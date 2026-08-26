@@ -92,7 +92,7 @@ function toResendAttachment(a: EmailAttachment) {
 export type SendEmailResult = { messageId?: string } | null;
 
 export async function sendEmail({ to, subject, html, from, attachments }: SendEmailInput): Promise<SendEmailResult> {
-  const sender = from || optionalEnv('SMTP_FROM') || 'QuikSkill <no-reply@quikskill.ai>';
+  const sender = from || optionalEnv('SMTP_FROM') || 'QuikLMS <no-reply@quikskill.ai>';
 
   // Prefer SMTP when configured; otherwise try Resend if a key exists.
   if (optionalEnv('SMTP_HOST')) {

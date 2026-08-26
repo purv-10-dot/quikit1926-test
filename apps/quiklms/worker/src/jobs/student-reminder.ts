@@ -104,7 +104,7 @@ export async function runStudentReminders(): Promise<void> {
       // up a mid-class call than the student who is already not in the class.
       const phone = student?.guardianContact || student?.phone;
       if (!phone) continue;
-      const sid = await placeCall(phone, `Hello, this is a reminder that ${student?.firstName ?? 'the student'}'s QuikSkill class has started. Please join now.`).catch(() => null);
+      const sid = await placeCall(phone, `Hello, this is a reminder that ${student?.firstName ?? 'the student'}'s QuikLMS class has started. Please join now.`).catch(() => null);
       await prisma.lmsStudentReminderCallAttempt.create({
         data: { reminderCallId: rec.id, attemptNumber: attempts + 1, attemptTime: new Date(), phoneNumber: phone, callStatus: sid ? 'initiated' : 'failed', callSid: sid ?? undefined },
       });

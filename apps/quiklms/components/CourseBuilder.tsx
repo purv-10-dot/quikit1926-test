@@ -1,6 +1,6 @@
 'use client';
 /**
- * CourseBuilder — ported from the old QuikSkills frontend
+ * CourseBuilder — ported from the old QuikLMSs frontend
  * (QuikSkillsfrontend/src/components/CourseBuilder.tsx).
  *
  * Admin-side course outline editor:

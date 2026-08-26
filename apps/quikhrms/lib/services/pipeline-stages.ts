@@ -59,6 +59,32 @@ export function getStageConfig(stages: unknown, name: string): StageConfig | nul
   return normalizeStages(stages).find((s) => s.name === name) ?? null;
 }
 
+/**
+ * Canonical stage-name → display-label mapping — the SAME one the Hiring
+ * Pipeline board itself uses. Any other place that shows a pipeline stage
+ * name (Pipeline Targets widgets, reports, etc.) should use this, not its
+ * own relabeling, so a stage always reads identically everywhere.
+ */
+export function prettyStage(stage: string): string {
+  if (stage === "HRInterview") return "HR Interview";
+  // "PhoneScreen" stays the internal/stored name (REQUIRED_STAGES,
+  // /phonescreen/i checks all key off it), only the label shown to users
+  // reads "Initial Screening".
+  if (stage === "PhoneScreen") return "Initial Screening";
+  // "Screening" is the stage's internal name (required, matched elsewhere via
+  // showScreening()/REQUIRED_STAGES) — only the displayed label reads "Sourced".
+  if (stage === "Screening") return "Sourced";
+  // Same idea — "Offer" stays the internal/stored name (REQUIRED_STAGES,
+  // existing pipelines' JSON, /offer/i checks all key off it), only the
+  // label shown to users reads "Offered".
+  if (stage === "Offer") return "Offered";
+  // Same idea — "Hired" stays the internal/stored name (REQUIRED_STAGES,
+  // /hired/i checks all key off it), only the label shown to users reads
+  // "Onboard".
+  if (stage === "Hired") return "Onboard";
+  return stage.replace(/([A-Z])/g, " $1").trim();
+}
+
 const REQUIRED_STAGES = ["Screening", "PhoneScreen", "HRInterview", "Offer", "Hired"] as const;
 
 /** Ensure required stages exist — insert any missing at sensible positions. */

@@ -27,6 +27,8 @@ interface CrudTableProps<T extends { id: string }> {
   extraActions?: (item: T) => React.ReactNode;
   /** Optional server-side pager rendered under the table. */
   pagination?: PaginationProps;
+  /** Optional extra header button(s) rendered on the same line as "Add new", just before it. */
+  headerExtra?: React.ReactNode;
   /**
    * Whether the caller may Add/Edit/Delete — defaults to true so every
    * existing caller keeps working unchanged. Pass the page's write-permission
@@ -50,6 +52,7 @@ export function CrudTable<T extends { id: string }>({
   extraActions,
   pagination,
   canManage = true,
+  headerExtra,
 }: CrudTableProps<T>) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -57,11 +60,14 @@ export function CrudTable<T extends { id: string }>({
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-base font-semibold text-gray-900">{title}</h1>
-        {canManage && (
-          <button onClick={onAdd} className="btn btn-primary">
-            <Plus size={13} /> Add new
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {headerExtra}
+          {canManage && (
+            <button onClick={onAdd} className="btn btn-primary">
+              <Plus size={13} /> Add new
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="surface-card overflow-hidden">

@@ -5,7 +5,7 @@
  * Tenant admins get `/branding`, which writes `Org.branding` and re-skins the
  * portal for every user in that organisation. A super-admin has no org
  * (`LmsUser.orgId` is nullable precisely for them), so `/tenants/current` 404s
- * and the brand vars stay at the QuikSkill default. This is the equivalent for
+ * and the brand vars stay at the QuikLMS default. This is the equivalent for
  * that role: the same accent controls, scoped so the change cannot reach a
  * tenant.
  *

@@ -4,7 +4,7 @@ import './marketing.css';
 import { FAQS } from './faqs';
 
 /**
- * Marketing layout for the public QuikSkill landing page at `/`.
+ * Marketing layout for the public QuikLMS landing page at `/`.
  *
  * Nested under the root `app/layout.tsx`, which already supplies html/body,
  * Providers and both font variables (`--font-sans` Inter, `--font-display`
@@ -43,9 +43,9 @@ const DESCRIPTION =
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: TITLE, template: '%s · QuikSkill' },
+  title: { default: TITLE, template: '%s · QuikLMS' },
   description: DESCRIPTION,
-  applicationName: 'QuikSkill',
+  applicationName: 'QuikLMS',
   authors: [{ name: 'Quikit' }],
   creator: 'Quikit',
   publisher: 'Quikit',
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     'online exam software',
     'compliance training',
     'SCORM LMS',
-    'QuikSkill',
+    'QuikLMS',
   ],
   alternates: { canonical: '/' },
   robots: {
@@ -68,7 +68,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    siteName: 'QuikSkill',
+    siteName: 'QuikLMS',
     title: TITLE,
     description: DESCRIPTION,
     url: SITE_URL,
@@ -87,7 +87,7 @@ export const viewport: Viewport = {
 const softwareJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'QuikSkill',
+  name: 'QuikLMS',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   description: DESCRIPTION,

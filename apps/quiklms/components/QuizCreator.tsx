@@ -1,6 +1,6 @@
 'use client';
 /**
- * QuizCreator — ported from the old QuikSkills frontend
+ * QuizCreator — ported from the old QuikLMSs frontend
  * (`src/components/QuizCreator.tsx`).
  *
  * Modal quiz authoring form (react-hook-form) used to create or edit an

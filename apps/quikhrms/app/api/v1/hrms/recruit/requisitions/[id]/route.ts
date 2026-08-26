@@ -7,6 +7,7 @@ import { holdApplicationsForRequisition } from "@/lib/recruit/requisition-hold";
 import { createAuditLog } from "@/lib/utils/audit";
 import { countBusinessDays, getHolidayDateSet } from "@/lib/recruit/sla";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
@@ -114,6 +115,20 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       },
     });
 
+    // Backfill RequisitionPosition seats to match the current Positions count.
+    // Seats are only ever generated up front at create time
+    // (generatePositionsForRequisition, see requisitions/route.ts POST) — raising
+    // Positions on an edit (e.g. 1 → 3) never created the missing -02/-03 seats,
+    // so Assign Recruiter / position tracking kept only seeing the original 1.
+    // Re-running this on every edit (not just when `positions` is part of THIS
+    // request) also self-heals any requisition already stuck from that gap
+    // before this fix existed. Idempotent (ON CONFLICT DO NOTHING on
+    // sequenceNo) — never touches an existing seat, only adds missing ones.
+    // Positions DECREASED is deliberately left alone: an existing seat may
+    // already have a recruiter/candidate on it, so shrinking the count never
+    // auto-deletes a seat; HR cancels one manually if it's truly unneeded.
+    await generatePositionsForRequisition(orgId, params.id, existing.requisitionNumber, r.positions, userId);
+
     // Full-replace the recruiter split when HR explicitly resubmits it. Omit
     // `recruiterAssignments` entirely on an edit to leave the existing split
     // untouched (e.g. when only editing unrelated fields).
@@ -167,6 +182,44 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         orgId, userId, action: "Update", entityType: "Requisition", entityId: r.id,
         before: { jobLevelId: existing.jobLevelId, customSlaDays: existing.customSlaDays, customSlaReason: existing.customSlaReason },
         after: { jobLevelId: r.jobLevelId, customSlaDays: r.customSlaDays, customSlaReason: r.customSlaReason },
+      });
+    }
+
+    // Log status changes on their own — e.g. Open → On Hold → Closed —
+    // distinct from generic field edits below, so the Activity timeline can
+    // show "Status changed" as its own kind of event.
+    if (existing.status !== r.status) {
+      void createAuditLog({
+        orgId, userId, action: "StatusChange", entityType: "Requisition", entityId: r.id,
+        before: { status: existing.status }, after: { status: r.status },
+      });
+    }
+
+    // Generic edit trail — everything else meaningful that can change on this
+    // form (date/SLA-override/status are logged separately above, so excluded
+    // here to avoid double-logging the same field twice).
+    const genericBefore = {
+      title: existing.title, positions: existing.positions, priority: existing.priority,
+      departmentId: existing.departmentId, hiringManagerId: existing.hiringManagerId,
+      recruiterId: existing.recruiterId, employmentType: existing.employmentType,
+      workLocation: existing.workLocation, experienceMin: existing.experienceMin?.toString(),
+      experienceMax: existing.experienceMax?.toString(), salaryMin: existing.salaryMin?.toString(),
+      salaryMax: existing.salaryMax?.toString(), budget: existing.budget?.toString(),
+      jobDescription: existing.jobDescription,
+    };
+    const genericAfter = {
+      title: r.title, positions: r.positions, priority: r.priority,
+      departmentId: r.departmentId, hiringManagerId: r.hiringManagerId,
+      recruiterId: r.recruiterId, employmentType: r.employmentType,
+      workLocation: r.workLocation, experienceMin: r.experienceMin?.toString(),
+      experienceMax: r.experienceMax?.toString(), salaryMin: r.salaryMin?.toString(),
+      salaryMax: r.salaryMax?.toString(), budget: r.budget?.toString(),
+      jobDescription: r.jobDescription,
+    };
+    if (JSON.stringify(genericBefore) !== JSON.stringify(genericAfter)) {
+      void createAuditLog({
+        orgId, userId, action: "Update", entityType: "Requisition", entityId: r.id,
+        before: genericBefore, after: genericAfter,
       });
     }
 

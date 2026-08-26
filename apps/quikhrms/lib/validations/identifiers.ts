@@ -61,6 +61,7 @@ const zIfsc = z.string().regex(IFSC_REGEX, "Invalid IFSC — 4 letters + 0 + 6 c
 export const zIfscOptional = z.preprocess(emptyToUndefined, zIfsc.optional());
 
 export const zBankAccount = z.string().regex(BANK_ACCOUNT_REGEX, "Account number must be 9–18 digits");
+export const zBankAccountOptional = z.preprocess(emptyToUndefined, zBankAccount.optional());
 
 // Optional (blank-allowed) variants of the statutory IDs.
 export const zPanOptional = z.preprocess(emptyToUndefined, zPan.optional());

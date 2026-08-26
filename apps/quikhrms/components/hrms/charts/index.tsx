@@ -28,3 +28,28 @@ export const DonutView = dynamic(
   () => import("./_recharts-bundle").then((m) => m.DonutView),
   { ssr: false, loading: () => SKELETON },
 );
+
+export const StackedBarView = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.StackedBarView),
+  { ssr: false, loading: () => SKELETON },
+);
+
+export const RadarCompareView = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.RadarCompareView),
+  { ssr: false, loading: () => SKELETON },
+);
+
+export const ScoreBarChartView = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.ScoreBarChartView),
+  { ssr: false, loading: () => SKELETON },
+);
+
+export const MultiLineChartView = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.MultiLineChartView),
+  { ssr: false, loading: () => SKELETON },
+);
+
+export const FunnelView = dynamic(
+  () => import("./_recharts-bundle").then((m) => m.FunnelView),
+  { ssr: false, loading: () => SKELETON },
+);

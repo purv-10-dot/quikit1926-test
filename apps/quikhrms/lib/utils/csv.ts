@@ -24,13 +24,22 @@ export interface CsvColumn<T> {
 
 type CsvCell = string | number | boolean | Date | null | undefined;
 
+// A cell built by employee-export.ts's asText() to stop Excel mangling a long
+// numeric ID (phone/Aadhaar/UAN/PF number) into scientific notation or
+// stripping its leading zeros — `="9876543210"`, a static string literal in
+// formula form. asText() already strips any inner `"`, so this shape can
+// never carry real formula syntax (cell refs, functions, operators) — safe to
+// let Excel actually evaluate it, which is the whole point of writing it.
+const SAFE_FORCE_TEXT_FORMULA = /^="[^"]*"$/;
+
 /** Escape one cell to a CSV field per RFC 4180 (quote + double inner quotes). */
 function escapeCsvValue(value: CsvCell): string {
   let s = normalizeCell(value);
   // Defend against CSV formula injection: a cell starting with = + - @ (or a
   // leading tab/CR) is interpreted as a formula by Excel/Sheets. Prefix a single
-  // quote so it's shown as literal text and can't execute.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  // quote so it's shown as literal text and can't execute — except the one
+  // narrow, deliberately-safe pattern above, which this would otherwise break.
+  if (!SAFE_FORCE_TEXT_FORMULA.test(s) && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   // Always quote — simplest correct behaviour; handles commas, quotes, newlines.
   return `"${s.replace(/"/g, '""')}"`;
 }

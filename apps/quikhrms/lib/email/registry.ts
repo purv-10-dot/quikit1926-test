@@ -219,6 +219,30 @@ const EVENTS: EmailEvent[] = [
     ],
   },
   {
+    key: "recruit.sla.at-risk", label: "Position SLA At Risk → Recruiter", group: "Recruitment",
+    variables: [
+      v("recipientName", "Recipient's name", "Anita Rao"),
+      v("positionCode", "Position/seat code", "REQ-DEMO-015-01"),
+      v("requisitionTitle", "Requisition title", "Senior Engineer"),
+      v("recruiterName", "Assigned recruiter's name", "Rahul Verma"),
+      v("targetDays", "Position → Offer SLA target (days)", "15"),
+      v("daysLeft", "Days left before breach (negative if already over)", "2"),
+      v("reviewUrl", "Link to the position", "https://…"),
+    ],
+  },
+  {
+    key: "recruit.sla.missed", label: "Position SLA Breached → Recruiter & HR", group: "Recruitment",
+    variables: [
+      v("recipientName", "Recipient's name", "Anita Rao"),
+      v("positionCode", "Position/seat code", "REQ-DEMO-015-01"),
+      v("requisitionTitle", "Requisition title", "Senior Engineer"),
+      v("recruiterName", "Assigned recruiter's name", "Rahul Verma"),
+      v("targetDays", "Position → Offer SLA target (days)", "15"),
+      v("daysLeft", "Days over the target (negative number)", "-3"),
+      v("reviewUrl", "Link to the position", "https://…"),
+    ],
+  },
+  {
     key: "requisition.approval", label: "Requisition Approval Request", group: "Recruitment",
     variables: [
       v("recipientName", "Approver's name", "Anita Rao"),
@@ -340,6 +364,14 @@ const EVENTS: EmailEvent[] = [
       v("signatoryDesignation", "Signatory designation", "Head HR"),
       v("letterDate", "Letter date", "10 Jul 2026"),
     ],
+  },
+  {
+    key: "recruit.offer-accepted", label: "Offer Accepted → Candidate", group: "Recruitment",
+    variables: [CANDIDATE, JOB_TITLE],
+  },
+  {
+    key: "recruit.offer-declined", label: "Offer Declined → Candidate", group: "Recruitment",
+    variables: [CANDIDATE, JOB_TITLE],
   },
   {
     key: "recruit.rejection", label: "Application Rejected → Candidate", group: "Recruitment",

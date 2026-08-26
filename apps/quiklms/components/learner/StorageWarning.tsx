@@ -1,6 +1,6 @@
 'use client';
 /**
- * StorageWarning — ported from the old QuikSkills frontend
+ * StorageWarning — ported from the old QuikLMSs frontend
  * (src/components/learner/StorageWarning.tsx).
  *
  * Pre-upload storage guard modal. Given a pending file size and the tenant's

@@ -80,8 +80,9 @@ export default function Footer() {
           <div>
             <a href="#top" className="brand">
               <BrandMark />
+              {/* Same split wordmark as the nav — see the note in Nav.tsx. */}
               <span>
-                Quik<b>Skill</b>
+                Quik<b>LMS</b>
               </span>
             </a>
             <p className="desc">
@@ -103,7 +104,7 @@ export default function Footer() {
           ))}
         </div>
         <div className="footer-bottom">
-          <span>© {year} Quikit · QuikSkill. All rights reserved.</span>
+          <span>© {year} Quikit · QuikLMS. All rights reserved.</span>
           <div className="socials">
             <a href="https://quikit.ai" aria-label="Quikit">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

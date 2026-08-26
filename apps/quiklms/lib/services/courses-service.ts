@@ -13,6 +13,9 @@ import type { Prisma, LmsLessonType as LessonType } from '@prisma/client';
 import { db } from '@/lib/db';
 import { NotFound } from '@/lib/http';
 import { presignFromUrlOrKey, isManagedStorageUrl } from '@/lib/s3';
+// Shared with UniversalLMSPlayer — see the docblock in that module for why these
+// patterns must not be re-declared per call site.
+import { isYouTubeUrl, isVimeoUrl } from '@/lib/utils/videoUrl';
 
 /** Keys inside `subModule.resourceData` the legacy enricher presigned. */
 const RESOURCE_DATA_URL_KEYS = ['url', 'fileUrl', 'contentUrl', 'videoUrl'] as const;
@@ -401,10 +404,6 @@ function fileTypeFromName(name?: string): LessonType {
  */
 type AnyRec = Record<string, unknown>;
 export function transformMasterCourseForPlayer(masterCourse: AnyRec): AnyRec {
-  const isYouTubeUrl = (url: string) =>
-    /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/)|youtu\.be\/)/i.test((url || '').trim());
-  const isVimeoUrl = (url: string) => /^(https?:\/\/)?(www\.)?(vimeo\.com\/)/i.test((url || '').trim());
-
   const getContentType = (resource: AnyRec): string => {
     const type = String(resource.type || '').toLowerCase();
     const url = String(resource.url || resource.contentUrl || resource.fileUrl || '').trim();

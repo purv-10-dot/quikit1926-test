@@ -32,7 +32,7 @@ vi.mock('next-auth/react', () => ({ signOut: h.signOut }));
 
 import { globalSignOut } from '@/lib/global-signout';
 
-const ORIGIN = 'https://quikskill.vercel.app';
+const ORIGIN = 'https://quiklms.vercel.app';
 const AUTH = 'https://auth.example';
 const QUIKIT = 'https://launcher.example';
 // The default post-logout destination. `?reason=logged_out` tells the landing
@@ -150,11 +150,11 @@ describe('resilience', () => {
 });
 
 describe('the destination is the CANONICAL origin, not wherever the browser is', () => {
-  // Both signout-global endpoints allow-list `quikskill.vercel.app` and fall
+  // Both signout-global endpoints allow-list `quiklms.vercel.app` and fall
   // back to their OWN root for anything else. Signing out from a per-deployment
   // host therefore landed the user on the QuikIT launcher. Verified live: that
   // callbackUrl returns `-> https://qukit-launcher.vercel.app/`.
-  const DEPLOY_ORIGIN = 'https://quikskill-macck3n1x-rajkumar13.vercel.app';
+  const DEPLOY_ORIGIN = 'https://quiklms-macck3n1x-rajkumar13.vercel.app';
 
   const onDeploymentHost = () => {
     vi.stubGlobal('window', {

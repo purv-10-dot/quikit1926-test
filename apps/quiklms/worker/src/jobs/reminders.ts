@@ -89,7 +89,7 @@ async function notifyWindow(
 
     const subject = `Class Reminder: ${c.title} starts in ${minutesBefore} minutes`;
     const sms =
-      `QuikSkill: "${c.title}" with ${teacherName} starts in ${minutesBefore} min.` +
+      `QuikLMS: "${c.title}" with ${teacherName} starts in ${minutesBefore} min.` +
       (joinUrl ? ` Join: ${joinUrl}` : '') +
       (joinUrl && password ? ` Password: ${password}` : '');
 
