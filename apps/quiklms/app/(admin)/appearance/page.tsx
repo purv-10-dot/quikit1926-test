@@ -13,6 +13,7 @@
  * console logo is the product's, not a customer's, so only the accent is
  * adjustable.
  */
+
 import { useEffect, useMemo, useState } from 'react';
 import {
   Palette, Check, RotateCcw, ToggleLeft, ToggleRight, Eye, Info,
