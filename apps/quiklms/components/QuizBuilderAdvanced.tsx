@@ -1,6 +1,6 @@
 'use client';
 /**
- * QuizBuilderAdvanced — ported from the old QuikSkills frontend
+ * QuizBuilderAdvanced — ported from the old QuikLMSs frontend
  * (`src/components/QuizBuilderAdvanced.tsx`).
  *
  * The authoring surface for quizzes. Two tabs:

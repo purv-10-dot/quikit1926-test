@@ -1,6 +1,6 @@
 'use client';
 /**
- * MasterCourseStudio — ported from the old QuikSkills frontend
+ * MasterCourseStudio — ported from the old QuikLMSs frontend
  * (`src/components/MasterCourseStudio.tsx`), replacing a 29-line
  * "Full course builder coming soon" stub.
  *
@@ -73,6 +73,7 @@ import { MAX_THUMBNAIL_BYTES, formatMaxSize } from '@/lib/constants/uploads';
 import { v4 as uuidv4 } from 'uuid';
 import QuizBuilderAdvanced from '@/components/QuizBuilderAdvanced';
 import SubModuleResourceEngine from '@/components/SubModuleResourceEngine';
+import StudioStep from '@/components/StudioStep';
 
 // Types
 interface Resource {
@@ -232,7 +233,14 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
   });
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'identity' | 'modules' | 'settings'>('identity');
+  // A tenant author creating a fresh course starts where the work is — the
+  // syllabus. The course title, the only field Identity holds that save
+  // requires, is editable inline in the header for them, so landing on Modules
+  // does not strand it. Editing (and the super-admin builder) keeps opening on
+  // Identity, where an author expects to review what the course *is* first.
+  const [activeTab, setActiveTab] = useState<'identity' | 'modules' | 'settings'>(
+    isTenantAdmin && !courseId ? 'modules' : 'identity',
+  );
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [expandedSubModules, setExpandedSubModules] = useState<Set<string>>(new Set());
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -241,6 +249,22 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
   const [quizTarget, setQuizTarget] = useState<{ type: 'module' | 'submodule'; id: string } | null>(null);
   const [showResourceEngine, setShowResourceEngine] = useState(false);
   const [resourceTargetSubModule, setResourceTargetSubModule] = useState<string | null>(null);
+  /**
+   * Which module has had its (optional) module-end assessment revealed.
+   *
+   * Holding an id rather than a boolean means the disclosure resets by itself
+   * when the author moves to a different module — revealing it on Module 1
+   * should not pre-open it on Module 2.
+   */
+  const [revealedModuleQuizId, setRevealedModuleQuizId] = useState<string | null>(null);
+  /**
+   * Which section of the sub-module editor is showing.
+   *
+   * UI-only. Everything the sections edit lives in `course`, so switching
+   * sections cannot lose input — a half-typed title is still there when the
+   * author comes back from Content. Nothing resets until the Studio closes.
+   */
+  const [activeSection, setActiveSection] = useState<'details' | 'content' | 'quiz'>('details');
 
   // Loading/saving state
   const [loading, setLoading] = useState(false);
@@ -314,6 +338,63 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
     }
     loadTenants();
   }, [courseId]);
+
+  // Seed the first Module / Sub-Module for a brand-new tenant course.
+  //
+  // "Add New Module" then "New Submodule" were two mandatory clicks that had to
+  // happen before ANY real authoring could start, and they landed the author on
+  // an "EMPTY SYLLABUS" placeholder in between. Nobody builds a course with zero
+  // modules, so the scaffold is created up front and the sub-module is selected,
+  // putting the author straight into the editor.
+  //
+  // Scoped deliberately: `!courseId` so hydrating an existing course can never
+  // inject a phantom module into it, and `isTenantAdmin` so the super-admin
+  // master-course builder keeps its blank-slate behaviour untouched. The ref
+  // guard makes it once-only even under StrictMode's double-invoke.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!isTenantAdmin || courseId || seededRef.current) return;
+    seededRef.current = true;
+
+    const moduleId = uuidv4();
+    const subModuleId = uuidv4();
+
+    setCourse((prev) => {
+      // Defensive: never overwrite structure that somehow already exists.
+      if (prev.modules.length > 0) return prev;
+      return {
+        ...prev,
+        modules: [
+          {
+            id: moduleId,
+            title: 'Module 1',
+            description: '',
+            learningObjective: '',
+            orderIndex: 0,
+            subModules: [
+              {
+                id: subModuleId,
+                title: 'Sub-Module 1',
+                description: '',
+                learningObjective: '',
+                resources: [],
+                orderIndex: 0,
+                isPreviewable: false,
+                // Matches addSubModule's default so seeded and hand-added
+                // sub-modules behave identically.
+                completionThreshold: 80,
+              },
+            ],
+          },
+        ],
+      };
+    });
+
+    setExpandedModules(new Set([moduleId]));
+    setExpandedSubModules(new Set([subModuleId]));
+    setSelectedModuleId(moduleId);
+    setSelectedSubModuleId(subModuleId);
+  }, [isTenantAdmin, courseId]);
 
   // Auto-save effect
   useEffect(() => {
@@ -760,6 +841,37 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
     setResourceTargetSubModule(null);
   };
 
+  /**
+   * Commit a sub-module's resources to local course state. No network.
+   *
+   * The modal path above (`saveResources`) POSTs to /save and then RELOADS the
+   * whole course on every commit. That is acceptable for a once-per-visit
+   * "Save Resources" button, but the embedded panel commits on every add,
+   * rename and reorder — the same behaviour would mean a round-trip per
+   * keystroke, and the reload would overwrite whatever else the author happens
+   * to be typing elsewhere in the Studio.
+   *
+   * So resources now behave like every other edit here — module titles,
+   * quizzes, settings — which live in state until Save or auto-save persists
+   * them. That removes resources' special case rather than adding a second,
+   * faster-firing persist path alongside it.
+   */
+  const applyResources = (subModuleId: string, resources: Resource[]) => {
+    setCourse((prev) => ({
+      ...prev,
+      modules: prev.modules.map((m) =>
+        m.subModules.some((sm) => sm.id === subModuleId)
+          ? {
+              ...m,
+              subModules: m.subModules.map((sm) =>
+                sm.id === subModuleId ? { ...sm, resources } : sm,
+              ),
+            }
+          : m,
+      ),
+    }));
+  };
+
   // Toggle expansion
   const toggleModuleExpansion = (moduleId: string) => {
     setExpandedModules((prev) => {
@@ -839,10 +951,103 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
     );
   }
 
+  /* Visual language.
+     `calm` selects the tenant authoring look: one neutral surface, one accent
+     (the tenant's own `brand-primary`), tighter spacing, and no decorative
+     gradients. An author spends an hour inside this screen, so it is dressed
+     as a tool rather than as a landing page — and the reclaimed vertical space
+     goes to the syllabus. The super-admin builder keeps its original treatment,
+     which is what scoping this to the tenant route means in practice. */
+  const calm = isTenantAdmin;
+
+  /* One definition of panel chrome, so the calm surfaces cannot drift into
+     five slightly different radii and shadows the way the original did. */
+  const panelCls = calm
+    ? 'bg-surface rounded-lg p-5 border border-line'
+    : 'bg-white dark:bg-slate-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-slate-700';
+  const panelStackCls = `${panelCls} ${calm ? 'space-y-5' : 'space-y-8'}`;
+  /* Editor headings: a section label, not a page title. */
+  const editorTitleCls = calm
+    ? 'text-lg font-semibold tracking-tight text-fg'
+    : 'text-3xl font-extrabold tracking-tight';
+
+  /* Pulled out of the JSX, where these two lookups were repeated ~20 times. */
+  const currentModule = course.modules.find((m) => m.id === selectedModuleId);
+  const currentSubModule = currentModule?.subModules.find((sm) => sm.id === selectedSubModuleId);
+  /* The stepped sub-module editor is a two-pane layout, which needs the height
+     to flow from the modal rather than the content. Only that case opts out of
+     the scrolling wrapper; everything else keeps the original behaviour. */
+  const twoPaneEditor = calm && Boolean(selectedSubModuleId);
+
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-slate-900/95 via-purple-900/30 to-slate-900/95 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-7xl h-[95vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200/50 dark:border-slate-700/50">
+    <div className={calm
+      ? 'fixed inset-0 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center z-50 p-4'
+      : 'fixed inset-0 bg-gradient-to-br from-slate-900/95 via-purple-900/30 to-slate-900/95 backdrop-blur-sm flex items-center justify-center z-50 p-4'}>
+      <div className={calm
+        ? 'bg-canvas dark:bg-slate-900 rounded-xl w-full max-w-7xl h-[95vh] flex flex-col shadow-lg overflow-hidden border border-line'
+        : 'bg-white dark:bg-slate-900 rounded-3xl w-full max-w-7xl h-[95vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200/50 dark:border-slate-700/50'}>
         {/* Header */}
+        {calm ? (
+          <div className="border-b border-line bg-surface px-6 py-4">
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0 flex-1">
+                {/* The course title lives here rather than only on the Identity
+                    tab. It is the one field `handleSave` refuses to go without,
+                    so keeping it always-visible means a tenant author can start
+                    on Modules and never hit "Course title is required". */}
+                <input
+                  type="text"
+                  aria-label="Course title"
+                  value={course.title}
+                  onChange={(e) => setCourse((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Untitled course"
+                  className="w-full bg-transparent text-xl font-semibold text-fg tracking-tight placeholder-fg-subtle border-b border-transparent hover:border-line-strong focus:border-brand-primary focus:outline-none transition-colors"
+                />
+                {/* No counters, no workflow note. Both were status the author
+                    can already see — the syllabus tree shows the modules and
+                    sub-modules, each step shows its own resource and quiz
+                    count, and the save button already reads "Save & Publish"
+                    when approval is off. Restating it above the title just
+                    pushed the actual work further down the screen. */}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {autoSaving && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+                    <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
+                    Saving…
+                  </span>
+                )}
+                {lastAutoSave && !autoSaving && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+                    <CheckCircle className="w-3.5 h-3.5 text-success" />
+                    Saved {lastAutoSave.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand-primary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {course.status === 'Published'
+                    ? 'Save Changes'
+                    : (approvalEnabled ? 'Submit for Approval' : 'Save & Publish')}
+                </button>
+
+                <button
+                  onClick={onClose}
+                  aria-label="Close studio"
+                  className="p-2 rounded-md text-fg-muted hover:text-fg hover:bg-surface-muted transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+          </div>
+        ) : (
         <div className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 px-8 py-6">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDM0djZoNnYtNmgtNnptMCAwdi02aC02djZoNnoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-50" />
           <div className="relative flex items-center justify-between">
@@ -883,14 +1088,10 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                 className="flex items-center gap-2 px-5 py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                {isTenantAdmin
-                  ? (course.status === 'Published'
-                      ? 'Save Changes'
-                      : (approvalEnabled ? 'Submit for Approval' : 'Save & Publish'))
-                  : 'Save Draft'}
+                Save Draft
               </button>
 
-              {course._id && !isTenantAdmin && (
+              {course._id && (
                 <button
                   onClick={handlePublish}
                   disabled={saving}
@@ -930,8 +1131,39 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
             </div>
           </div>
         </div>
+        )}
 
-        {/* Tabs */}
+        {/* Tabs.
+            Calm: a conventional left-aligned tab strip — labels only, an
+            underline for the active one. Three full-width buttons carrying an
+            icon tile and a subtitle each read as primary navigation; these are
+            section switches inside one screen, and shrinking them buys the
+            syllabus another row of vertical space. */}
+        {calm ? (
+          <div className="flex items-stretch gap-1 border-b border-line bg-surface px-4">
+            {[
+              { id: 'identity', label: 'Course Identity' },
+              { id: 'modules', label: 'Modules & Content' },
+              { id: 'settings', label: 'Settings' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                className={`relative px-4 py-3 text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'text-fg'
+                    : 'text-fg-muted hover:text-fg'
+                }`}
+              >
+                {tab.label}
+                {activeTab === tab.id && (
+                  <span className="absolute inset-x-0 -bottom-px h-0.5 bg-brand-primary" />
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
         <div className="flex border-b border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50">
           {[
             { id: 'identity', label: 'Course Identity', icon: BookOpen, description: 'Basic info & thumbnail' },
@@ -966,6 +1198,7 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
             </button>
           ))}
         </div>
+        )}
 
         {/* Messages */}
         {error && (
@@ -996,7 +1229,7 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
             <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-slate-900/50 p-6 lg:p-10">
               <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
                 {/* Identity Card */}
-                <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-slate-700">
+                <div className={panelCls}>
                   <div className="flex items-center gap-4 mb-8">
                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
                         <BookOpen className="w-6 h-6" />
@@ -1093,7 +1326,7 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
 
                 {/* Distribution Card */}
                 {!isTenantAdmin && (
-                  <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-slate-700">
+                  <div className={panelCls}>
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -1151,9 +1384,11 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                   <div className="p-5 border-b border-gray-100 dark:border-slate-800">
                     <button
                       onClick={addModule}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+                      className={calm
+                        ? 'w-full flex items-center justify-center gap-2 py-2 rounded-md border border-line text-sm font-medium text-fg hover:bg-surface-muted transition-colors'
+                        : 'w-full flex items-center justify-center gap-2 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]'}
                     >
-                      <Plus className="w-5 h-5" /> Add New Module
+                      <Plus className={calm ? 'w-4 h-4' : 'w-5 h-5'} /> Add New Module
                     </button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
@@ -1238,9 +1473,13 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                </div>
 
                {/* Main Editor */}
-               <div className="flex-1 overflow-y-auto bg-gray-50/50 dark:bg-slate-900/30 custom-scrollbar relative p-6 lg:p-10">
+               <div className={twoPaneEditor
+                 ? 'flex-1 min-h-0 flex flex-col bg-gray-50/50 dark:bg-slate-900/30 relative p-6'
+                 : 'flex-1 overflow-y-auto bg-gray-50/50 dark:bg-slate-900/30 custom-scrollbar relative p-6 lg:p-10'}>
                   {selectedModuleId ? (
-                    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-300">
+                    <div className={twoPaneEditor
+                      ? 'flex-1 min-h-0 flex flex-col gap-4 animate-in fade-in duration-300'
+                      : 'max-w-4xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-300'}>
                       {/* Breadcrumbs */}
                       <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-widest">
                          <Layers className="w-4 h-4" />
@@ -1260,10 +1499,12 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                         <div className="space-y-6">
                            <div className="flex items-center justify-between">
                              <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-indigo-200">
+                                <div className={calm
+                                  ? 'w-8 h-8 rounded-md bg-brand-primary text-white flex items-center justify-center font-semibold text-sm shrink-0'
+                                  : 'w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-indigo-200'}>
                                    {course.modules.findIndex(m => m.id === selectedModuleId) + 1}
                                 </div>
-                                <h2 className="text-3xl font-extrabold tracking-tight">Module Settings</h2>
+                                <h2 className={editorTitleCls}>Module Settings</h2>
                              </div>
                              <div className="flex items-center gap-2">
                                <button 
@@ -1275,13 +1516,13 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                              </div>
                            </div>
 
-                           <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-slate-700 space-y-8">
+                           <div className={panelStackCls}>
                              <div className="space-y-2">
                                 <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Module Title</label>
                                 <input 
                                   value={course.modules.find(m => m.id === selectedModuleId)?.title || ''}
                                   onChange={(e) => updateModule(selectedModuleId, { title: e.target.value })}
-                                  className="w-full px-6 py-4 bg-gray-50 dark:bg-slate-900 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-xl transition-all"
+                                  className={calm ? "w-full px-3 py-2 bg-canvas border border-line focus:border-brand-primary rounded-md outline-none text-sm font-medium text-fg transition-colors" : "w-full px-6 py-4 bg-gray-50 dark:bg-slate-900 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none font-bold text-xl transition-all"}
                                 />
                              </div>
                              <div className="space-y-2">
@@ -1291,12 +1532,37 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                                 <textarea 
                                   value={course.modules.find(m => m.id === selectedModuleId)?.learningObjective || ''}
                                   onChange={(e) => updateModule(selectedModuleId, { learningObjective: e.target.value })}
-                                  className="w-full px-6 py-4 bg-gray-50 dark:bg-slate-900 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none transition-all font-medium min-h-[100px] resize-none"
+                                  className={calm ? "w-full px-3 py-2 bg-canvas border border-line focus:border-brand-primary rounded-md outline-none text-sm text-fg transition-colors min-h-[80px] resize-none" : "w-full px-6 py-4 bg-gray-50 dark:bg-slate-900 border-2 border-transparent focus:border-indigo-500 rounded-2xl outline-none transition-all font-medium min-h-[100px] resize-none"}
                                 />
                              </div>
 
                              <div className="pt-6 border-t border-gray-100 dark:border-slate-700">
-                                <div className="flex items-center justify-between p-6 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-3xl">
+                                {/* Module-end assessment — opt-in for tenant authors.
+                                    Most courses assess per sub-module (the Checkpoint
+                                    Quiz), so a permanently-present module-tier card
+                                    read as a step everyone had to consider. It is
+                                    NOT removed: an existing moduleEndQuiz still gates
+                                    module completion in progress-service and feeds
+                                    compliance reporting, so hiding the only way to
+                                    edit or delete one would strand that data. When a
+                                    module already has one, the card shows as before.
+                                    The super-admin builder is unchanged. */}
+                                {isTenantAdmin
+                                  && !course.modules.find(m => m.id === selectedModuleId)?.moduleEndQuiz
+                                  && revealedModuleQuizId !== selectedModuleId ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRevealedModuleQuizId(selectedModuleId)}
+                                    className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-indigo-600 transition-colors"
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                    Add a module-end assessment
+                                    <span className="font-normal text-gray-400">— optional</span>
+                                  </button>
+                                ) : (
+                                <div className={calm
+                                  ? 'flex items-center justify-between gap-4 p-4 rounded-lg border border-line bg-surface-muted'
+                                  : 'flex items-center justify-between p-6 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-3xl'}>
                                    <div className="flex items-center gap-4">
                                       <div className="p-3 bg-white dark:bg-slate-800 rounded-2xl">
                                          <HelpCircle className="w-6 h-6 text-indigo-600" />
@@ -1317,18 +1583,21 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                                       {course.modules.find(m => m.id === selectedModuleId)?.moduleEndQuiz ? 'Edit Assessment' : 'Setup Quiz'}
                                    </button>
                                 </div>
+                                )}
                              </div>
                            </div>
                         </div>
                       ) : (
                         /* SUBMODULE EDITOR */
-                        <div className="space-y-6">
+                        <div className={twoPaneEditor ? 'flex-1 min-h-0 flex flex-col gap-4' : 'space-y-6'}>
                            <div className="flex items-center justify-between">
                              <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-purple-200">
+                                <div className={calm
+                                  ? 'w-8 h-8 rounded-md bg-brand-primary text-white flex items-center justify-center shrink-0'
+                                  : 'w-14 h-14 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-purple-200'}>
                                    <FolderOpen className="w-6 h-6" />
                                 </div>
-                                <h2 className="text-3xl font-extrabold tracking-tight">Sub-module Editor</h2>
+                                <h2 className={editorTitleCls}>Sub-module Editor</h2>
                              </div>
                              <button 
                               onClick={() => deleteSubModule(selectedModuleId, selectedSubModuleId)}
@@ -1338,17 +1607,136 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                              </button>
                            </div>
 
-                           <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-slate-700 space-y-8">
+                           {calm ? (
+                             /* Two panes: a fixed section rail, and one section
+                                rendered at full size beside it.
+
+                                This replaced a vertical accordion. The accordion
+                                gave every section the same short, fixed-height
+                                box, which was fine for a title field and fatal
+                                for the resource engine: choosing "Add URL" or
+                                "Rich Text" rendered a whole form into ~19rem, so
+                                it clipped its own heading and grew a second
+                                inner scrollbar. A form needs a pane, not a
+                                drawer. Only one section mounts at a time, so
+                                nothing bleeds through from the previous one, and
+                                the pane — not the modal — is what scrolls. */
+                             <div className="flex-1 min-h-0 flex gap-4">
+                               <nav aria-label="Sub-module sections" className="w-44 shrink-0 flex flex-col gap-1">
+                                 {[
+                                   {
+                                     id: 'details' as const,
+                                     label: 'Details',
+                                     summary: currentSubModule?.title || 'Untitled',
+                                     complete: Boolean(currentSubModule?.title?.trim()),
+                                   },
+                                   {
+                                     id: 'content' as const,
+                                     label: 'Content',
+                                     summary: `${currentSubModule?.resources.length || 0} resource${(currentSubModule?.resources.length || 0) === 1 ? '' : 's'}`,
+                                     complete: (currentSubModule?.resources.length || 0) > 0,
+                                   },
+                                   {
+                                     id: 'quiz' as const,
+                                     label: 'Checkpoint quiz',
+                                     summary: currentSubModule?.quiz ? 'Set up' : 'Optional',
+                                     complete: Boolean(currentSubModule?.quiz),
+                                   },
+                                 ].map((s) => (
+                                   <button
+                                     key={s.id}
+                                     type="button"
+                                     onClick={() => setActiveSection(s.id)}
+                                     aria-current={activeSection === s.id ? 'true' : undefined}
+                                     className={`w-full text-left px-3 py-2 rounded-md border transition-colors ${
+                                       activeSection === s.id
+                                         ? 'border-brand-primary bg-surface-muted'
+                                         : 'border-transparent hover:bg-surface-muted'
+                                     }`}
+                                   >
+                                     <span className="flex items-center gap-2">
+                                       {/* Completion at a glance, so the author can
+                                           see what is filled in without opening
+                                           each section. */}
+                                       <span
+                                         aria-hidden="true"
+                                         className={`w-4 h-4 shrink-0 rounded-full flex items-center justify-center text-[10px] ${
+                                           s.complete ? 'bg-brand-primary text-white' : 'border border-line-strong text-fg-subtle'
+                                         }`}
+                                       >
+                                         {s.complete ? '✓' : ''}
+                                       </span>
+                                       <span className={`text-sm ${activeSection === s.id ? 'font-medium text-fg' : 'text-fg-muted'}`}>
+                                         {s.label}
+                                       </span>
+                                     </span>
+                                     <span className="block pl-6 text-xs text-fg-subtle truncate">{s.summary}</span>
+                                   </button>
+                                 ))}
+                               </nav>
+
+                               <div className="flex-1 min-h-0 rounded-lg border border-line bg-surface overflow-hidden flex flex-col">
+                                 {activeSection === 'details' && (
+                                   <div className="p-4 overflow-y-auto space-y-2">
+                                     <label className="text-sm font-medium text-fg">Title</label>
+                                     <input
+                                       value={currentSubModule?.title || ''}
+                                       onChange={(e) => updateSubModule(selectedModuleId, selectedSubModuleId, { title: e.target.value })}
+                                       className="w-full px-3 py-2 bg-canvas border border-line focus:border-brand-primary rounded-md outline-none text-sm font-medium text-fg transition-colors"
+                                     />
+                                   </div>
+                                 )}
+
+                                 {activeSection === 'content' && (
+                                   /* keyed by sub-module: `resources` seeds the
+                                      engine's useState once, so switching
+                                      sub-modules must remount it. The engine
+                                      fills this pane rather than a fixed box, so
+                                      its add-forms finally have room. */
+                                   <SubModuleResourceEngine
+                                     key={selectedSubModuleId}
+                                     embedded
+                                     resources={currentSubModule?.resources || []}
+                                     onSave={(resources) => applyResources(selectedSubModuleId, resources)}
+                                     onClose={() => {}}
+                                   />
+                                 )}
+
+                                 {activeSection === 'quiz' && (
+                                   <div className="p-4 overflow-y-auto">
+                                     <div className="flex items-center justify-between gap-4">
+                                       <p className="text-sm text-fg-muted">Test knowledge immediately after this content.</p>
+                                       <button
+                                         onClick={() => openQuizBuilder('submodule', selectedSubModuleId)}
+                                         className="shrink-0 px-3 py-2 rounded-md border border-line text-sm font-medium text-fg hover:bg-surface-muted transition-colors"
+                                       >
+                                         {currentSubModule?.quiz ? 'Edit quiz' : 'Set up quiz'}
+                                       </button>
+                                     </div>
+                                   </div>
+                                 )}
+                               </div>
+                             </div>
+                           ) : (
+                           <div className={panelStackCls}>
+                             <StudioStep
+                               collapsible={false}
+                               index={1}
+                               title="Details"
+                               open
+                               onToggle={() => {}}
+                             >
                              <div className="space-y-2">
                                 <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Title</label>
-                                <input 
-                                  value={course.modules.find(m => m.id === selectedModuleId)?.subModules.find(sm => sm.id === selectedSubModuleId)?.title || ''}
+                                <input
+                                  value={currentSubModule?.title || ''}
                                   onChange={(e) => updateSubModule(selectedModuleId, selectedSubModuleId, { title: e.target.value })}
                                   className="w-full px-6 py-4 bg-gray-50 dark:bg-slate-900 border-2 border-transparent focus:border-purple-500 rounded-2xl outline-none font-bold text-xl transition-all"
                                 />
                              </div>
+                             </StudioStep>
 
-                             {/* Action Grid for Resources & Quizzes */}
+                             {(
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="p-6 bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-100 dark:border-blue-900/30 rounded-3xl group transition-all hover:border-blue-400">
                                    <div className="flex items-center justify-between mb-4">
@@ -1357,7 +1745,7 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                                    </div>
                                    <h4 className="font-bold text-lg mb-1">Learning Engine</h4>
                                    <p className="text-sm text-gray-500 mb-6">Manage videos, SCORM, and documents.</p>
-                                   <button 
+                                   <button
                                     onClick={() => openResourceEngine(selectedSubModuleId)}
                                     className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-200"
                                    >
@@ -1386,8 +1774,16 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                                    </button>
                                 </div>
                              </div>
+                             )}
 
-                             {/* Advance Options */}
+                             {/* Per-sub-module gating (preview access, pass %)
+                                 is NOT a step here any more. For a tenant author
+                                 it is set once and rarely revisited, so it sat in
+                                 the way of the work; it now lives on the Settings
+                                 tab, listed for every sub-module at once. Still
+                                 rendered inline for the super-admin builder, whose
+                                 layout was left out of scope. */}
+                             {!calm && (
                              <div className="space-y-4 pt-4">
                                 <label className="text-sm font-bold text-gray-400 uppercase tracking-widest">Advanced Settings</label>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1420,7 +1816,9 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                                    </div>
                                 </div>
                              </div>
+                             )}
                            </div>
+                           )}
                         </div>
                       )}
                     </div>
@@ -1459,7 +1857,7 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
           {activeTab === 'settings' && (
             <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-slate-900/50 p-6 lg:p-10">
               <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 shadow-xl border border-gray-100 dark:border-slate-700">
+                <div className={panelCls}>
                   <div className="flex items-center gap-4 mb-8">
                      <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
                         <Settings className="w-6 h-6" />
@@ -1554,6 +1952,76 @@ const MasterCourseStudio = ({ courseId, onClose, onSuccess, isTenantAdmin = fals
                     </div>
                   </div>
                 </div>
+
+                {/* Per-sub-module gating, moved off the sub-module editor.
+                    These two fields belong to each SubModule, not to the
+                    course, so they are listed per sub-module rather than
+                    flattened into a course-level setting — that would have
+                    changed what they mean and stranded existing values.
+                    Listing them together also makes them reviewable in one
+                    pass, which the old per-sub-module step never allowed. */}
+                {calm && (
+                  <div className={panelCls}>
+                    <h3 className="text-sm font-semibold text-fg">Sub-module access</h3>
+                    <p className="text-xs text-fg-muted mt-1">
+                      Preview access and pass mark, per sub-module.
+                    </p>
+
+                    {course.modules.every((m) => m.subModules.length === 0) ? (
+                      <p className="text-xs text-fg-muted mt-4">
+                        Add a sub-module under Modules &amp; Content first.
+                      </p>
+                    ) : (
+                      <div className="mt-4 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-xs text-fg-muted border-b border-line">
+                              <th className="font-medium py-2 pr-4">Sub-module</th>
+                              <th className="font-medium py-2 pr-4 w-40">Preview without enrolling</th>
+                              <th className="font-medium py-2 w-28">Pass mark</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {course.modules.flatMap((m) =>
+                              m.subModules.map((sm) => (
+                                <tr key={sm.id} className="border-b border-line last:border-0">
+                                  <td className="py-2 pr-4">
+                                    <span className="text-fg">{sm.title}</span>
+                                    <span className="text-xs text-fg-muted"> · {m.title}</span>
+                                  </td>
+                                  <td className="py-2 pr-4">
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={Boolean(sm.isPreviewable)}
+                                      aria-label={`Preview without enrolling — ${sm.title}`}
+                                      onClick={() => updateSubModule(m.id, sm.id, { isPreviewable: !sm.isPreviewable })}
+                                      className={`w-10 h-5 rounded-full transition-colors relative ${sm.isPreviewable ? 'bg-brand-primary' : 'bg-line-strong'}`}
+                                    >
+                                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${sm.isPreviewable ? 'left-[1.375rem]' : 'left-0.5'}`} />
+                                    </button>
+                                  </td>
+                                  <td className="py-2">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      aria-label={`Pass mark percent — ${sm.title}`}
+                                      value={sm.completionThreshold ?? 80}
+                                      onChange={(e) => updateSubModule(m.id, sm.id, { completionThreshold: parseInt(e.target.value) || 80 })}
+                                      className="w-16 px-2 py-1 bg-canvas border border-line focus:border-brand-primary rounded-md outline-none text-sm text-fg text-center transition-colors"
+                                    />
+                                    <span className="text-xs text-fg-muted ml-1">%</span>
+                                  </td>
+                                </tr>
+                              )),
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

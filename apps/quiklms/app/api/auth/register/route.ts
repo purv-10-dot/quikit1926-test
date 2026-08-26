@@ -127,10 +127,24 @@ export const POST = route(async (req) => {
            * generates and sends its own password, and the email template gets
            * the value directly from the identity service).
            *
-           * `credentialsEmailed` tells the caller a fresh password was seeded,
+           * `credentialsEmailed` tells the caller the invitation WAS DELIVERED,
            * so the UI can say "check your email" without holding the secret.
+           *
+           * It used to read `identity.tempPassword != null`, which answered a
+           * different question — "was a credential generated" — and was therefore
+           * true on a server with no mail transport at all, where `sendEmail`
+           * returns null and sends nothing. The roster screens have no password
+           * field, so this email is the invitee's ONLY route to a working
+           * credential; reporting a send that never happened is what made a
+           * missing invitation look like a delivered one.
            */
-          credentialsEmailed: identity.tempPassword != null,
+          credentialsEmailed: identity.invitationEmailed,
+          /**
+           * Why the invitation did not go out, when it did not. Surfaced to the
+           * admin who invited so a mail misconfiguration is visible at the moment
+           * it costs somebody their access, not weeks later in a support ticket.
+           */
+          invitationEmailError: identity.invitationEmailError,
         },
       },
       201,

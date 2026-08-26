@@ -73,7 +73,7 @@ export default function Faq({ items }: { items: FaqEntry[] }) {
           <h2>
             Questions people actually <span className="serif-italic gradient-text">ask</span>
           </h2>
-          <p>The things worth knowing before bringing QuikSkill to your organisation.</p>
+          <p>The things worth knowing before bringing QuikLMS to your organisation.</p>
         </div>
 
         <div className="faq2 reveal" data-d="1">
@@ -105,7 +105,7 @@ export default function Faq({ items }: { items: FaqEntry[] }) {
           </div>
           {!anyVisible && <p className="faq2-foot">No questions match — try a different topic.</p>}
           <p className="faq2-foot">
-            Ready to start? <a href="/login">Sign in to QuikSkill →</a>
+            Ready to start? <a href="/login">Sign in to QuikLMS →</a>
           </p>
         </div>
       </div>

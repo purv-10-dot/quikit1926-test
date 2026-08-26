@@ -177,7 +177,7 @@ export default function Hero() {
               <i />
               <i />
               <i />
-              <span className="dash-url">quikskill.app / learner</span>
+              <span className="dash-url">quiklms.app / learner</span>
             </div>
 
             <div className="dash-body">
@@ -187,7 +187,7 @@ export default function Hero() {
                     <GraduationCap />
                   </span>
                   <span className="ds-bn">
-                    <b>QuikSkill</b>
+                    <b>QuikLMS</b>
                     <small>Learner</small>
                   </span>
                 </div>

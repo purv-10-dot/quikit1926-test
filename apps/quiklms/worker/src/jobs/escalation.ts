@@ -162,7 +162,7 @@ export async function runEscalations(): Promise<void> {
     const teacher = await prisma.lmsUser.findUnique({ where: { id: c.teacherId }, select: { phone: true, firstName: true } });
     const phone = teacher?.phone;
     if (!phone) continue;
-    const sid = await placeCall(phone, `Hello ${teacher?.firstName ?? 'teacher'}, your QuikSkill class has started. Please join immediately.`).catch(() => null);
+    const sid = await placeCall(phone, `Hello ${teacher?.firstName ?? 'teacher'}, your QuikLMS class has started. Please join immediately.`).catch(() => null);
     await prisma.lmsCallEscalationAttempt.create({
       data: { escalationId: esc.id, attemptNumber: attempts + 1, attemptTime: new Date(), phoneNumber: phone, callStatus: sid ? 'initiated' : 'failed', callSid: sid ?? undefined },
     });

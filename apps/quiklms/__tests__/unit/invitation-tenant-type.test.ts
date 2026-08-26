@@ -18,7 +18,7 @@ const base = {
   firstName: 'Ada',
   email: 'ada@school.test',
   tempPassword: 'Temp123!',
-  loginUrl: 'https://quikskill.vercel.app/login',
+  loginUrl: 'https://quiklms.vercel.app/login',
 };
 
 describe('role vocabulary follows the tenant type', () => {

@@ -1,6 +1,6 @@
 'use client';
 /**
- * VideoQuiz — ported from the old QuikSkills frontend
+ * VideoQuiz — ported from the old QuikLMSs frontend
  * (`src/components/learner/VideoQuiz.tsx`). Replaces the previous
  * "coming soon" stub, keeping both the named `VideoQuiz` export and the
  * default export so existing importers continue to work.

@@ -1,6 +1,6 @@
 'use client';
 /**
- * CourseCreator — ported from the old QuikSkills frontend
+ * CourseCreator — ported from the old QuikLMSs frontend
  * (`src/components/CourseCreator.tsx`), replacing the "coming soon" stub.
  *
  * A 3-step wizard modal that authors a master course:

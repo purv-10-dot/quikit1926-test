@@ -59,11 +59,34 @@ function invitationBaseUrl(): string {
 }
 
 /**
+ * Outcome of one invitation dispatch.
+ *
+ * `sent: false` is NOT an error condition for provisioning — the account is
+ * still created — but it MUST reach the caller. It previously did not: this
+ * function returned `void`, discarded `sendEmail`'s result and swallowed every
+ * throw, so an invitation that never left the building was indistinguishable
+ * from one that did. `POST /api/auth/register` then reported
+ * `credentialsEmailed: true` off the mere existence of a temp password, and the
+ * roster UI said "created successfully" — while the invitee, whose ONLY
+ * credential lives in that email, got nothing and nobody was told.
+ */
+export type InvitationDispatch = {
+  sent: boolean;
+  /** Machine-readable cause when `sent` is false; null on success. */
+  reason: 'skipped' | 'no-transport' | 'failed' | null;
+  /** Human-readable detail for the failure, surfaced to the admin who invited. */
+  detail: string | null;
+};
+
+/**
  * Send the invitation/welcome email for a freshly provisioned identity. Every
  * user-creation flow (tenant admin, roster, bulk upload) reaches this via
  * createCentralIdentity, so this is the ONE place invitations are dispatched.
- * Best-effort: a mail outage must never fail identity provisioning, so all
- * errors are swallowed (and logged). `orgName` is looked up for context.
+ *
+ * Best-effort: a mail outage must never FAIL identity provisioning — but it must
+ * never be SILENT either. Errors are still caught (the account survives them);
+ * they are now reported back through the return value instead of vanishing.
+ * `orgName` is looked up for context.
  */
 async function sendInvitation(params: {
   email: string;
@@ -78,7 +101,7 @@ async function sendInvitation(params: {
   /** `native` (temp password) or `sso` (Google/Microsoft), as in quikscale. */
   inviteMethod?: (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
   ssoProvider?: SsoProvider | null;
-}): Promise<void> {
+}): Promise<InvitationDispatch> {
   try {
     // Both lookups are COSMETIC — they only choose the org name and the role
     // vocabulary in the email body. Neither may prevent the invitation from
@@ -127,9 +150,9 @@ async function sendInvitation(params: {
       orgName: org?.name ?? 'your organisation',
       orgLogoUrl: null,
       orgBrandColor: null,
-      inviterName: params.inviterName ?? 'QuikSkill Admin',
+      inviterName: params.inviterName ?? 'QuikLMS Admin',
       role: roleDisplayNameFor(params.role, tenantType),
-      appNames: ['QuikSkill LMS'],
+      appNames: ['QuikLMS LMS'],
       token: params.invitationToken ?? '',
       // The shared template builds `${appBaseUrl}/login` and
       // `${appBaseUrl}/invitations/accept?token=…` itself, so this must be the
@@ -141,10 +164,34 @@ async function sendInvitation(params: {
       ssoProvider: params.ssoProvider ?? null,
       tempPassword: params.tempPassword ?? '',
     });
-    await sendEmail({ to: params.email, subject, html });
+    // `sendEmail` returns null — it does NOT throw — when neither SMTP_HOST nor
+    // RESEND_API_KEY is configured, which is its documented signal for "NOT
+    // SENT" (see the `SendEmailResult` doc in lib/email.ts: "callers are
+    // expected to branch on it"). This caller did not branch on it, which is how
+    // an environment with no mail credentials reported every invitation as
+    // delivered. Branch on it.
+    const result = await sendEmail({ to: params.email, subject, html });
+    if (!result) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[identity] invitation NOT sent to ${params.email}: no mail transport configured ` +
+          `(set SMTP_HOST/SMTP_USER/SMTP_PASS or RESEND_API_KEY on this deployment).`,
+      );
+      return {
+        sent: false,
+        reason: 'no-transport',
+        detail: 'No mail transport is configured on this server (SMTP_HOST / RESEND_API_KEY).',
+      };
+    }
+    return { sent: true, reason: null, detail: null };
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[identity] invitation email failed (provisioning kept):', err);
+    return {
+      sent: false,
+      reason: 'failed',
+      detail: err instanceof Error ? err.message : 'Unknown mail transport error.',
+    };
   }
 }
 
@@ -229,6 +276,18 @@ export interface CreateCentralIdentityResult {
    * case there was nothing to invite them to and no token was issued.
    */
   invited: boolean;
+  /**
+   * Whether the invitation email ACTUALLY left the server.
+   *
+   * Distinct from `invited` (a token was minted) and from `tempPassword != null`
+   * (a credential was generated). Those two say what we prepared; this says what
+   * was delivered. The roster screens no longer offer a password field, so this
+   * mail is the invitee's only route to a working credential — a caller that
+   * cannot tell whether it went is a caller that cannot warn anybody.
+   */
+  invitationEmailed: boolean;
+  /** Why `invitationEmailed` is false, for the admin who invited. Null on success. */
+  invitationEmailError: string | null;
 }
 
 export async function createCentralIdentity(
@@ -454,9 +513,15 @@ export async function createCentralIdentity(
     }
   });
 
-  // 4) Invitation email — best-effort; never blocks or fails provisioning.
+  // 4) Invitation email — best-effort; never blocks or fails provisioning, but
+  //    its outcome is REPORTED rather than discarded (see `InvitationDispatch`).
+  let dispatch: InvitationDispatch = {
+    sent: false,
+    reason: 'skipped',
+    detail: 'The caller asked for no invitation email.',
+  };
   if (input.sendInvite !== false) {
-    await sendInvitation({
+    dispatch = await sendInvitation({
       email,
       firstName,
       role: lmsRole,
@@ -469,7 +534,14 @@ export async function createCentralIdentity(
     });
   }
 
-  return { userId, tempPassword, reused: Boolean(existing), invited: !alreadyActive };
+  return {
+    userId,
+    tempPassword,
+    reused: Boolean(existing),
+    invited: !alreadyActive,
+    invitationEmailed: dispatch.sent,
+    invitationEmailError: dispatch.sent ? null : dispatch.detail,
+  };
 }
 
 // ---------------------------------------------------------------------------

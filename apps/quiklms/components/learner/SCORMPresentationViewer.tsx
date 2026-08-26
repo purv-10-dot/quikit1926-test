@@ -2,7 +2,7 @@
 /**
  * SCORM-Compliant Presentation Viewer for PPT Files
  *
- * Ported from the old QuikSkills frontend `src/components/learner/SCORMPresentationViewer.tsx`.
+ * Ported from the old QuikLMSs frontend `src/components/learner/SCORMPresentationViewer.tsx`.
  *
  * MANDATORY BEHAVIORAL RULES:
  * - PPT files behave as SLIDE-BASED content (NOT scrollable)

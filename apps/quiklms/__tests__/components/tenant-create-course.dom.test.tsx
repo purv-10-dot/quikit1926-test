@@ -19,7 +19,7 @@
  * wired here. These assert the wiring, because the wiring IS the fix.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 
 const h = vi.hoisted(() => ({
   push: vi.fn(),
@@ -56,22 +56,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('creating a new course', () => {
-  it('shows the launch screen before opening the studio', () => {
+  it('mounts the studio immediately — there is no launch screen to click past', () => {
     render(<TenantCourseCreatorPage />);
-    expect(screen.getByText('Open Course Studio')).toBeTruthy();
-    expect(screen.queryByTestId('studio')).toBeNull();
-  });
-
-  it('advertises the quiz builder — the capability the wizard never had', () => {
-    render(<TenantCourseCreatorPage />);
-    expect(screen.getByText('Quiz Builder')).toBeTruthy();
-  });
-
-  it('opens the studio as a TENANT ADMIN, not as a super admin', () => {
-    render(<TenantCourseCreatorPage />);
-    fireEvent.click(screen.getByText('Open Course Studio'));
 
     expect(screen.getByTestId('studio')).toBeTruthy();
+    // The interstitial ("Open Course Studio") is gone. It repeated a decision
+    // the author already made by navigating here and cost a click per course.
+    expect(screen.queryByText('Open Course Studio')).toBeNull();
+  });
+
+  it('mounts the studio as a TENANT ADMIN, not as a super admin', () => {
+    render(<TenantCourseCreatorPage />);
+
+    // isTenantAdmin is what gives this author the quiz builder, sub-modules and
+    // the full resource engine — the capabilities the old wizard never had.
     expect(h.studioProps.mock.calls.at(-1)![0]).toMatchObject({
       isTenantAdmin: true,
       approvalEnabled: true,
@@ -107,28 +105,33 @@ describe('editing an existing course', () => {
     expect(h.push).toHaveBeenCalledWith('/my-submissions');
   });
 
-  it('closing a FRESH draft steps back rather than navigating away', () => {
+  it('closing a FRESH draft also returns to My Submissions', () => {
+    // Previously this stepped back to the launch screen. With the interstitial
+    // removed there is nowhere to step back TO, so both close paths — fresh
+    // draft and edit — land on the same list.
     render(<TenantCourseCreatorPage />);
-    fireEvent.click(screen.getByText('Open Course Studio'));
-    // onClose flips state, so it must run inside act() to flush the re-render.
-    act(() => (h.studioProps.mock.calls.at(-1)![0].onClose as () => void)());
+    (h.studioProps.mock.calls.at(-1)![0].onClose as () => void)();
 
-    expect(h.push).not.toHaveBeenCalled();
-    expect(screen.getByText('Open Course Studio')).toBeTruthy();
+    expect(h.push).toHaveBeenCalledWith('/my-submissions');
   });
 });
 
 describe('the approval workflow toggle', () => {
-  it('warns that courses need approval by default', () => {
+  /* These used to assert on banner copy in the launch screen. That screen is
+     gone and the workflow notice now renders inside the Studio header, which is
+     mocked here — so they assert the resolved FLAG instead. That was always the
+     thing that mattered: the banner was a rendering of this boolean, and the
+     boolean is what decides whether tenant content auto-publishes. */
+
+  it('requires approval by default', () => {
     render(<TenantCourseCreatorPage />);
-    expect(screen.getByText('Approval Required:')).toBeTruthy();
-    expect(screen.getByText('Requires Approval')).toBeTruthy();
+    expect(h.studioProps.mock.calls.at(-1)![0]).toMatchObject({ approvalEnabled: true });
   });
 
-  it('says direct publish only when explicitly disabled', () => {
+  it('allows direct publish only when explicitly disabled', () => {
     h.config = { approvalWorkflowEnabled: false };
     render(<TenantCourseCreatorPage />);
-    expect(screen.getByText('Direct Publish:')).toBeTruthy();
+    expect(h.studioProps.mock.calls.at(-1)![0]).toMatchObject({ approvalEnabled: false });
   });
 
   it('defaults to REQUIRING approval when config is absent — fail closed', () => {
@@ -136,13 +139,13 @@ describe('the approval workflow toggle', () => {
     // the other way would auto-publish tenant content on a config read failure.
     h.config = null;
     render(<TenantCourseCreatorPage />);
-    expect(screen.getByText('Approval Required:')).toBeTruthy();
+    expect(h.studioProps.mock.calls.at(-1)![0]).toMatchObject({ approvalEnabled: true });
   });
 
-  it('forwards the resolved flag to the studio', () => {
+  it('forwards the resolved flag when editing too', () => {
     h.config = { approvalWorkflowEnabled: false };
+    h.params.set('courseId', 'course-42');
     render(<TenantCourseCreatorPage />);
-    fireEvent.click(screen.getByText('Open Course Studio'));
     expect(h.studioProps.mock.calls.at(-1)![0]).toMatchObject({ approvalEnabled: false });
   });
 });

@@ -71,7 +71,7 @@ export async function runStudentAbsenceCalls(): Promise<void> {
       const studentName = `${student.firstName ?? ''} ${student.lastName ?? ''}`.trim() || 'student';
 
       const message =
-        `Hello ${studentName}. This is an automated message from QuikSkill. ` +
+        `Hello ${studentName}. This is an automated message from QuikLMS. ` +
         `You were marked absent for the class "${className}"` +
         (classTime ? ` scheduled at ${classTime}` : '') +
         `. Please contact your school for more information.`;

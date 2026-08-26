@@ -1,6 +1,6 @@
 'use client';
 /**
- * MockInterviewSidebarButton — ported from the old QuikSkills frontend
+ * MockInterviewSidebarButton — ported from the old QuikLMSs frontend
  * (src/components/MockInterviewSidebarButton.tsx).
  *
  * Sidebar control that opens the external mock interview app in a new tab.

@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/quikskill-lms';
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/quiklms-lms';
 const prisma = new PrismaClient();
 // ETL is a one-shot script: use a loosely-typed client for the nested-create
 // blocks (Mongo docs are dynamic; Prisma's generated input types add no value here).
