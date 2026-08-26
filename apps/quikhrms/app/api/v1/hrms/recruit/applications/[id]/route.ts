@@ -15,7 +15,7 @@ import { getStageConfig, stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole } from "@/lib/rbac/queries";
 import { publishNotification } from "@/lib/services/realtime";
 import { offerSelect, offerFromApplication } from "@/lib/recruit/offer-shape";
-import { consumePositionOnHire, releasePositionOnUnhire } from "@/lib/services/requisition-positions";
+import { reservePositionOnHire, releasePositionOnUnhire } from "@/lib/services/requisition-positions";
 type MailFiredResult = { template: string; to?: string; skipped?: string } | null;
 
 function fmtDate(d: Date | null | undefined): string {
@@ -369,13 +369,14 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
           return conflict("All positions for this requisition are already filled.");
         }
         await prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }).catch(() => null);
-        // Recruiter & Position Tracking (Phase 1) — consume one Open position
-        // allocated to this candidate's assigned recruiter. Attribution only,
-        // never blocks the hire (no-ops if unassigned or none left).
+        // Recruiter & Position Tracking — reserve (not yet fill) the seat.
+        // A position only closes once the employee actually onboards (see
+        // finalizePositionOnOnboard's call in onboarding/[employeeId]/complete)
+        // — an accepted offer isn't a filled seat until the person shows up.
         if (existing.status !== "AppHired") {
           const assignedRows = await prisma.$queryRaw<{ assignedRecruiterId: string | null }[]>`
             SELECT "assignedRecruiterId" FROM "app_quikhrms"."JobApplication" WHERE id = ${params.id}`;
-          await consumePositionOnHire(orgId, existing.requisitionId, assignedRows[0]?.assignedRecruiterId ?? null, params.id, userId);
+          await reservePositionOnHire(orgId, existing.requisitionId, assignedRows[0]?.assignedRecruiterId ?? null, params.id, userId);
         }
       }
       // Un-hire → free the seat. A previously-hired candidate who is now
@@ -407,7 +408,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     // candidate's recruiter. Not in the generated client yet, so raw SQL.
     if (data.assignedRecruiterId !== undefined) {
       await prisma.$executeRaw`
-        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${data.assignedRecruiterId} WHERE id = ${params.id}`;
+        UPDATE "app_quikhrms"."JobApplication"
+        SET "assignedRecruiterId" = ${data.assignedRecruiterId}, "assignedRecruiterAt" = ${data.assignedRecruiterId ? new Date() : null}
+        WHERE id = ${params.id}`;
     }
 
     const stageChanged = data.currentStage && data.currentStage !== existing.currentStage;

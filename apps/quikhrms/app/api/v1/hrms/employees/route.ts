@@ -254,7 +254,20 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
 
     const data = parsed.data;
 
-    // Duplicate work email is allowed by policy (DB unique constraint dropped).
+    // Work email must be unique across active employees — duplicate work
+    // emails caused two Employee rows to fight over the same central
+    // authUserId link (unique on orgId+authUserId), throwing at reconcile
+    // time instead of at creation time.
+    {
+      const dupWorkEmail = await prisma.employee.findFirst({
+        where: { orgId, workEmail: { equals: data.workEmail, mode: "insensitive" }, deletedAt: null },
+        select: { id: true },
+      });
+      if (dupWorkEmail) {
+        return validationError("Validation failed", { workEmail: ["This work email is already used by another employee"] });
+      }
+    }
+
     // Personal email must be unique across active employees.
     if (data.personalEmail) {
       const dup = await prisma.employee.findFirst({

@@ -9,6 +9,7 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
 import { getMyJobRequisitionIds } from "@/lib/recruit/my-jobs";
+import { createAuditLog } from "@/lib/utils/audit";
 import type { Prisma } from "@quikit/database";
 
 export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
@@ -131,6 +132,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         interviewMode: data.interviewMode,
         etaToFillDays: data.etaToFillDays,
         targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
+        // Frozen at creation — Deadline TAT compares later revisions against
+        // this to know whether the ORIGINAL commitment was also missed.
+        originalEtaToFillDays: data.etaToFillDays,
+        originalTargetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         createdById: creatorEmpId, hiringManagerId: data.hiringManagerId, recruiterId: data.recruiterId,
         jobLevelId: data.jobLevelId, customSlaDays: data.customSlaDays, customSlaReason: data.customSlaReason,
@@ -164,6 +169,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     void fireWorkflow({
       orgId, event: "recruit.requisition.created",
       payload: { requisitionId: req_.id, title: req_.title, departmentId: req_.departmentId },
+    });
+
+    void createAuditLog({
+      orgId, userId, action: "Create", entityType: "Requisition", entityId: req_.id,
+      changes: { title: req_.title, requisitionNumber: req_.requisitionNumber, positions: req_.positions, departmentId: req_.departmentId },
     });
 
     return successResponse(req_, undefined, 201);

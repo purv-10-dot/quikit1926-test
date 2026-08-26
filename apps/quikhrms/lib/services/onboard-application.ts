@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { generateEmployeeCode } from "@/lib/utils/employee-code";
-import { consumePositionOnHire } from "@/lib/services/requisition-positions";
+import { reservePositionOnHire } from "@/lib/services/requisition-positions";
 
 /**
  * Recruiter & Position Tracking flow change (Option B): the Employee row is
@@ -149,13 +149,15 @@ export async function convertApplicationToEmployee(
       return emp;
     });
 
-    // Recruiter & Position Tracking (Phase 1) — consume one Open position
-    // allocated to this candidate's assigned recruiter. Attribution only,
-    // never blocks the hire (no-ops if unassigned or none left). Not in the
-    // generated Prisma client, so fetched via raw SQL.
+    // Recruiter & Position Tracking — the seat is RESERVED (not yet Filled)
+    // here. An accepted offer isn't a filled seat until the person actually
+    // onboards — see finalizePositionOnOnboard's call in
+    // onboarding/[employeeId]/complete. Attribution only, never blocks the
+    // hire (no-ops if unassigned or none left). Not in the generated Prisma
+    // client, so fetched via raw SQL.
     const assignedRows = await prisma.$queryRaw<{ assignedRecruiterId: string | null }[]>`
       SELECT "assignedRecruiterId" FROM "app_quikhrms"."JobApplication" WHERE id = ${applicationId}`;
-    await consumePositionOnHire(orgId, reqn.id, assignedRows[0]?.assignedRecruiterId ?? null, applicationId, actorId);
+    await reservePositionOnHire(orgId, reqn.id, assignedRows[0]?.assignedRecruiterId ?? null, applicationId, actorId);
 
     return { ok: true, employeeId: employee.id };
   } catch (error) {

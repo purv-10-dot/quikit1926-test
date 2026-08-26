@@ -170,6 +170,44 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       });
     }
 
+    // Log status changes on their own — e.g. Open → On Hold → Closed —
+    // distinct from generic field edits below, so the Activity timeline can
+    // show "Status changed" as its own kind of event.
+    if (existing.status !== r.status) {
+      void createAuditLog({
+        orgId, userId, action: "StatusChange", entityType: "Requisition", entityId: r.id,
+        before: { status: existing.status }, after: { status: r.status },
+      });
+    }
+
+    // Generic edit trail — everything else meaningful that can change on this
+    // form (date/SLA-override/status are logged separately above, so excluded
+    // here to avoid double-logging the same field twice).
+    const genericBefore = {
+      title: existing.title, positions: existing.positions, priority: existing.priority,
+      departmentId: existing.departmentId, hiringManagerId: existing.hiringManagerId,
+      recruiterId: existing.recruiterId, employmentType: existing.employmentType,
+      workLocation: existing.workLocation, experienceMin: existing.experienceMin?.toString(),
+      experienceMax: existing.experienceMax?.toString(), salaryMin: existing.salaryMin?.toString(),
+      salaryMax: existing.salaryMax?.toString(), budget: existing.budget?.toString(),
+      jobDescription: existing.jobDescription,
+    };
+    const genericAfter = {
+      title: r.title, positions: r.positions, priority: r.priority,
+      departmentId: r.departmentId, hiringManagerId: r.hiringManagerId,
+      recruiterId: r.recruiterId, employmentType: r.employmentType,
+      workLocation: r.workLocation, experienceMin: r.experienceMin?.toString(),
+      experienceMax: r.experienceMax?.toString(), salaryMin: r.salaryMin?.toString(),
+      salaryMax: r.salaryMax?.toString(), budget: r.budget?.toString(),
+      jobDescription: r.jobDescription,
+    };
+    if (JSON.stringify(genericBefore) !== JSON.stringify(genericAfter)) {
+      void createAuditLog({
+        orgId, userId, action: "Update", entityType: "Requisition", entityId: r.id,
+        before: genericBefore, after: genericAfter,
+      });
+    }
+
     return successResponse(r);
   } catch (error) { console.error("PATCH /recruit/requisitions/:id error:", error); return internalError(); }
 }, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.requisition.write"], anyPermission: true });

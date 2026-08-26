@@ -14,11 +14,12 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
 import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
   ArrowLeft, ArrowRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star,
-  FileText, ClipboardList, ThumbsUp, Gem, HelpCircle, CalendarClock, History, Building2, User, MapPin, Clock, Video,
-  Flag, Circle, Calendar, AlignLeft, MoreVertical } from "lucide-react";
+  FileText, ClipboardList, ThumbsUp, Gem, HelpCircle, History, Building2, User, MapPin, Clock, Video,
+  Flag, Circle, Calendar, AlignLeft, MoreVertical, Send, Rocket, ShieldX, Layers } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
+import { ActivityTimelineList, type ActivityEntry } from "../_components/activity-timeline";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem, JobLevelOption } from "../_components/requisition-wizard";
 import { PageBackground } from "@/components/hrms/page-background";
 import { Pagination } from "@/components/hrms/pagination";
@@ -321,10 +322,9 @@ export default function RequisitionsPage() {
   const [decisions, setDecisions] = useState<Record<string, HeldAction>>({});
   const [openFeedback, setOpenFeedback] = useState<Set<string>>(new Set());
 
-  // ── Recruiter & Position Tracking (Phase 1) — allocate positions to recruiters ──
+  // ── Recruiter & Position Tracking (Phase 1) — assign positions to recruiters ──
   const [assignRecruiterReq, setAssignRecruiterReq] = useState<ReqItem | null>(null);
-  const [allocRecruiterId, setAllocRecruiterId] = useState("");
-  const [allocCount, setAllocCount] = useState("1");
+  const [timelineReq, setTimelineReq] = useState<ReqItem | null>(null);
   const emptyForm = emptyReqForm;
   const [form, setForm] = useState<ReqFormShape>(emptyForm);
 
@@ -365,7 +365,7 @@ export default function RequisitionsPage() {
 
   // ── Recruiter & Position Tracking (Phase 1) ──────────────────────────────
   interface PositionRow {
-    id: string; positionCode: string; sequenceNo: number; status: "Open" | "Filled" | "Cancelled";
+    id: string; positionCode: string; sequenceNo: number; status: "Open" | "PendingOnboarding" | "Filled" | "Cancelled";
     recruiterId: string | null; recruiterName: string | null;
     filledByApplicationId: string | null; filledAt: string | null;
   }
@@ -377,16 +377,17 @@ export default function RequisitionsPage() {
   const positions = positionsData?.data ?? [];
   const openPositionsCount = positions.filter((p) => p.status === "Open" && !p.recruiterId).length;
 
-  const allocateMut = useMutation({
-    mutationFn: ({ id, recruiterId, count }: { id: string; recruiterId: string; count: number }) =>
-      api.post(`/api/v1/hrms/recruit/requisitions/${id}/positions/allocate`, { recruiterId, count }),
+
+  // Assign one SPECIFIC seat (picked directly from its row) — vs. the bulk
+  // "allocate N oldest" flow above.
+  const assignPositionMut = useMutation({
+    mutationFn: ({ reqId, positionId, recruiterId }: { reqId: string; positionId: string; recruiterId: string }) =>
+      api.post(`/api/v1/hrms/recruit/requisitions/${reqId}/positions/${positionId}/assign`, { recruiterId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["req-positions", assignRecruiterReq?.id] });
-      setAllocRecruiterId("");
-      setAllocCount("1");
-      toast.success("Positions allocated");
+      toast.success("Recruiter assigned");
     },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed to allocate positions"),
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed to assign recruiter"),
   });
 
   const createMut = useMutation({
@@ -481,6 +482,8 @@ export default function RequisitionsPage() {
   const fmtMoney = (n?: string | number | null) =>
     n == null || n === "" ? "" : `₹${Number(n).toLocaleString("en-IN")}`;
   const joinList = (a?: (string | null)[] | null) => (Array.isArray(a) ? a.filter(Boolean).join("; ") : "");
+  // Job Description is stored as rich-text HTML — strip tags for a clean Excel cell.
+  const stripHtml = (html?: string | null) => (html ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const yn = (b?: boolean) => (b ? "Yes" : "No");
   const range = (min?: number | null, max?: number | null) =>
     min == null && max == null ? "" : `${min ?? ""}${min != null && max != null ? " – " : ""}${max ?? ""}`;
@@ -521,7 +524,7 @@ export default function RequisitionsPage() {
       internalPostingOnly: yn(r.internalPostingOnly),
       postToJobPortal: yn(r.postToJobPortal),
       rolePurpose: r.rolePurpose ?? "",
-      jobDescription: r.jobDescription ?? "",
+      jobDescription: stripHtml(r.jobDescription),
       responsibilities: joinList(r.responsibilities),
       requirements: joinList(r.requirements),
       niceToHave: joinList(r.niceToHave),
@@ -666,16 +669,6 @@ export default function RequisitionsPage() {
                       if (canManage) {
                         if (isActiveStatus) {
                           menuActions.push({
-                            label: "Revise Date", icon: <CalendarClock size={13} />, onClick: () => {
-                              setReviseForm({
-                                startDate: r.closedDate ? r.closedDate.slice(0, 10) : "",
-                                endDate: r.targetJoiningDate ? r.targetJoiningDate.slice(0, 10) : "",
-                                reason: "",
-                              });
-                              setReviseTarget(r);
-                            },
-                          });
-                          menuActions.push({
                             label: "Edit Requisition", icon: <Pencil size={13} />, onClick: () => {
                               setForm(reqToForm(r));
                               setEditId(r.id);
@@ -685,11 +678,7 @@ export default function RequisitionsPage() {
                           // Recruiter & Position Tracking (Phase 1) — own dedicated modal,
                           // separate from the general "View" details modal.
                           menuActions.push({
-                            label: "Assign Recruiter", icon: <Users size={13} />, onClick: () => {
-                              setAllocRecruiterId("");
-                              setAllocCount("1");
-                              setAssignRecruiterReq(r);
-                            },
+                            label: "Assign Recruiter", icon: <Users size={13} />, onClick: () => setAssignRecruiterReq(r),
                           });
                         }
                         if (r.status === "ReqDraft") {
@@ -726,6 +715,7 @@ export default function RequisitionsPage() {
                           menuActions.push({ label: "Cancel Requisition", icon: <XCircle size={13} />, danger: true, onClick: () => setCancelTarget(r) });
                         }
                       }
+                      menuActions.push({ label: "Timeline", icon: <History size={13} />, onClick: () => setTimelineReq(r) });
                       return (
                         <div className="inline-flex items-center gap-1.5 justify-end">
                           <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => { setOpenSec(null); setShowAllHistory(false); setViewReq(r); }} />
@@ -769,6 +759,7 @@ export default function RequisitionsPage() {
         // otherwise fall back to whoever directly created it.
         const raisedByEmp = viewReq.raiser ?? viewReq.creator;
         const raisedBy = raisedByEmp ? `${raisedByEmp.firstName} ${raisedByEmp.lastName}`.trim() : "—";
+        const jobLevel = jobLevels.find((l) => l.id === viewReq.jobLevelId);
         const STATUS_LABEL: Record<string, string> = {
           ReqDraft: "Draft", PendingApproval: "Pending Approval", ReqApproved: "Approved",
           ReqOpen: "Open", ReqOnHold: "On Hold", ReqClosed: "Closed", ReqCancelled: "Cancelled",
@@ -787,6 +778,7 @@ export default function RequisitionsPage() {
         interface DetailField { label: string; value: string; Icon: AccIcon; badge?: "status" | "priority" | "employment" }
         const fields: DetailField[] = [
           { label: "Department", value: viewReq.department?.name ?? "—", Icon: Building2 },
+          { label: "Job Level", value: jobLevel ? `${jobLevel.name} (${jobLevel.code})` : "—", Icon: Layers },
           { label: "Recruiter (HR)", value: rcv, Icon: User },
           { label: "Hiring Manager", value: hm, Icon: User },
           { label: "Raised By", value: raisedBy, Icon: User },
@@ -817,7 +809,7 @@ export default function RequisitionsPage() {
         const accordionItems: Array<{ key: string; label: string; Icon: AccIcon; tile: string; body: React.ReactNode }> = [];
         if (viewReq.jobDescription)
           accordionItems.push({ key: "jd", label: "Job Description", Icon: FileText, tile: "bg-blue-50 text-blue-600",
-            body: <p className="whitespace-pre-line leading-relaxed text-gray-700">{viewReq.jobDescription}</p> });
+            body: <div className="max-w-none whitespace-pre-line leading-relaxed text-gray-700">{viewReq.jobDescription}</div> });
         if (viewReq.requirements?.length)
           accordionItems.push({ key: "req", label: "Requirements", Icon: ClipboardList, tile: "bg-violet-50 text-violet-600", body: listBlock(viewReq.requirements) });
         if (viewReq.responsibilities?.length)
@@ -843,12 +835,12 @@ export default function RequisitionsPage() {
           : f.badge === "employment" ? "inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium bg-green-50 text-green-700"
           : "";
         return (
-          <Modal open onClose={() => setViewReq(null)} size="2xl"
+          <Modal open onClose={() => setViewReq(null)} size="3xl" maxWidthClass="max-w-6xl" maxHeightClass="max-h-[96vh]"
             headerIcon={<Briefcase size={16} />}
             title={viewReq.title} subtitle={`${viewReq.requisitionNumber} · ${typeLabel}`}
             bodyClassName="p-0 flex flex-col">
-            <div className="p-4 space-y-4 overflow-y-auto text-xs flex-1 min-h-0">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3.5">
+            <div className="p-5 space-y-5 overflow-y-auto text-xs flex-1 min-h-0">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
                 {fields.map((f) => (
                   <div key={f.label} className="flex items-start gap-2.5">
                     <span className="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 grid place-items-center shrink-0">
@@ -936,12 +928,16 @@ export default function RequisitionsPage() {
       {assignRecruiterReq && (() => {
         const recruiterOptions = employees.map((e) => ({
           value: e.id,
-          label: e.displayName || `${e.firstName} ${e.lastName}`.trim(),
+          label: (e.displayName || `${e.firstName} ${e.lastName}`.trim()) + (e.employeeCode ? ` (${e.employeeCode})` : ""),
         }));
         const positionStatusPill: Record<PositionRow["status"], string> = {
           Open: "bg-gray-100 text-gray-600",
+          PendingOnboarding: "bg-amber-50 text-amber-700",
           Filled: "bg-green-50 text-green-700",
           Cancelled: "bg-red-50 text-red-600",
+        };
+        const positionStatusLabel: Record<PositionRow["status"], string> = {
+          Open: "Open", PendingOnboarding: "Pending Onboarding", Filled: "Filled", Cancelled: "Cancelled",
         };
         return (
           <Modal open onClose={() => setAssignRecruiterReq(null)} size="md"
@@ -954,29 +950,24 @@ export default function RequisitionsPage() {
                 <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
                   {positions.map((p) => (
                     <li key={p.id} className="flex items-center gap-2 px-2.5 py-2">
-                      <span className="font-mono text-[11px] text-gray-700">{p.positionCode}</span>
-                      <span className={clsx("inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-medium", positionStatusPill[p.status])}>{p.status}</span>
-                      <span className="flex-1 text-gray-500 truncate">{p.recruiterName || "Unallocated"}</span>
+                      <span className="font-mono text-[11px] text-gray-700 shrink-0">{p.positionCode}</span>
+                      <span className={clsx("inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-medium shrink-0", positionStatusPill[p.status])}>{positionStatusLabel[p.status]}</span>
+                      {canManage && p.status === "Open" ? (
+                        <div className="flex-1 min-w-0">
+                          <Select
+                            value={p.recruiterId ?? ""}
+                            onChange={(v) => v && assignPositionMut.mutate({ reqId: assignRecruiterReq.id, positionId: p.id, recruiterId: v })}
+                            searchable size="sm"
+                            placeholder="Unallocated"
+                            options={recruiterOptions}
+                          />
+                        </div>
+                      ) : (
+                        <span className="flex-1 text-gray-500 truncate">{p.recruiterName || "Unallocated"}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
-              )}
-              {canManage && openPositionsCount > 0 && (
-                <div className="rounded-lg bg-teal-50/60 ring-1 ring-teal-100 p-2.5 flex items-end gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10.5px] font-semibold uppercase tracking-wide text-teal-700 mb-1">Allocate to recruiter</p>
-                    <Select value={allocRecruiterId} onChange={setAllocRecruiterId} searchable
-                      placeholder="— Select recruiter —" options={recruiterOptions} />
-                  </div>
-                  <input type="number" min={1} max={openPositionsCount} value={allocCount}
-                    onChange={(e) => setAllocCount(e.target.value)}
-                    className="w-16 h-8 rounded-lg border border-gray-300 px-2 text-xs" />
-                  <button type="button" disabled={!allocRecruiterId || allocateMut.isPending}
-                    onClick={() => allocateMut.mutate({ id: assignRecruiterReq.id, recruiterId: allocRecruiterId, count: Math.max(1, Math.min(openPositionsCount, Number(allocCount) || 1)) })}
-                    className="h-8 px-3 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-xs font-semibold disabled:opacity-50 shrink-0">
-                    Allocate
-                  </button>
-                </div>
               )}
               {openPositionsCount === 0 && positions.length > 0 && (
                 <p className="text-[11px] text-gray-400">All positions are allocated or filled.</p>
@@ -991,6 +982,10 @@ export default function RequisitionsPage() {
           </Modal>
         );
       })()}
+
+      {timelineReq && (
+        <RequisitionTimelineModal requisition={timelineReq} onClose={() => setTimelineReq(null)} />
+      )}
 
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1289,4 +1284,56 @@ function reqToForm(r: ReqItem): ReqFormShape {
     skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],
     justification: "",
   };
+}
+
+// ─── Requisition Activity Timeline ───────────────────────
+
+interface ReqTimelineResponse {
+  requisition: { id: string; title: string; requisitionNumber: string; status: string; createdAt: string };
+  entries: ActivityEntry[];
+}
+
+function RequisitionTimelineModal({ requisition, onClose }: { requisition: ReqItem; onClose: () => void }) {
+  const api = useApiClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["requisition-timeline", requisition.id],
+    queryFn: () => api.get<ReqTimelineResponse>(`/api/v1/hrms/recruit/requisitions/${requisition.id}/timeline`),
+  });
+  const res = data?.data;
+
+  return (
+    <Modal open onClose={onClose} title="Requisition Timeline" size="lg">
+      <div className="space-y-4">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+          <p className="font-semibold text-slate-900">{requisition.title}</p>
+          <p className="text-xs text-slate-500">{requisition.requisitionNumber}</p>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2 py-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <div className="shimmer rounded-full w-6 h-6 flex-shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="shimmer h-2.5 rounded w-3/5" />
+                  <div className="shimmer h-2 rounded w-4/5" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !res || res.entries.length === 0 ? (
+          <div className="text-center py-10 border border-dashed border-slate-200 rounded-lg">
+            <Clock size={28} className="mx-auto text-slate-300 mb-2" />
+            <p className="text-[13px] font-semibold text-slate-700">No activity yet</p>
+          </div>
+        ) : (
+          <ActivityTimelineList entries={res.entries} />
+        )}
+
+        <div className="flex justify-end pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Close</button>
+        </div>
+      </div>
+    </Modal>
+  );
 }

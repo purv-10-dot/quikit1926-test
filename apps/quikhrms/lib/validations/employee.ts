@@ -206,10 +206,6 @@ function employeeDateChecks(
   if (d.dateOfBirth && d.dateOfJoining && d.dateOfBirth >= d.dateOfJoining) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date of birth must be before the date of joining", path: ["dateOfBirth"] });
   }
-  // Only enforced on create — updateEmployeeSchema omits dateOfJoining entirely.
-  if (d.dateOfJoining && d.dateOfJoining < new Date().toISOString().slice(0, 10)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date of joining cannot be in the past", path: ["dateOfJoining"] });
-  }
   if (d.probationEndDate && d.dateOfJoining && d.probationEndDate < d.dateOfJoining) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Probation end date must be on or after the date of joining", path: ["probationEndDate"] });
   }

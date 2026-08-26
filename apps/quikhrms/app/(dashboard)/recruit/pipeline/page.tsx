@@ -16,6 +16,11 @@ import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
+import { prettyStage } from "@/lib/services/pipeline-stages";
+
+// Requisition Job Description is now rich-text HTML; the interviewer-invite JD
+// override below is still a plain-text field, so strip tags when auto-filling it.
+const stripHtml = (html?: string | null) => (html ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
 interface ApplicationItem {
   id: string;
@@ -365,7 +370,7 @@ export default function PipelinePage() {
     let cancelled = false;
     api.get<{ jobDescription?: string | null }>(`/api/v1/hrms/recruit/requisitions/${scheduleApp.app.requisition.id}`)
       .then((res) => {
-        const jd = res.data?.jobDescription;
+        const jd = stripHtml(res.data?.jobDescription);
         if (!cancelled && jd) setSchedule((s) => (s.jobDescription ? s : { ...s, jobDescription: jd }));
       })
       .catch(() => {});
@@ -408,10 +413,10 @@ export default function PipelinePage() {
 
   const { data: recruitersForAssignData } = useQuery({
     queryKey: ["employees-picker"],
-    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?picker=1&limit=200"),
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string; employeeCode: string | null }[]>("/api/v1/hrms/employees?picker=1&limit=200"),
     enabled: !!assignRecruiterTarget,
   });
-  const recruiterAssignOptions = (recruitersForAssignData?.data ?? []).map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() }));
+  const recruiterAssignOptions = (recruitersForAssignData?.data ?? []).map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() + (e.employeeCode ? ` (${e.employeeCode})` : "") }));
 
   const assignRecruiterMut = useMutation({
     mutationFn: ({ id, recruiterId }: { id: string; recruiterId: string }) =>
@@ -557,7 +562,7 @@ export default function PipelinePage() {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
       tomorrow.setMinutes(0, 0, 0);
       const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
+      setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: stripHtml(app.requisition.jobDescription), takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
       setScheduleResult(null);
       setScheduleApp({ app, stage: next });
     } else {
@@ -648,7 +653,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: stripHtml(app.requisition.jobDescription), takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: vars.target });
       } else {
@@ -673,7 +678,7 @@ export default function PipelinePage() {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
         tomorrow.setMinutes(0, 0, 0);
         const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: app.requisition.jobDescription ?? "", takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
+        setSchedule({ interviewerIds: [], scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "", jobDescription: stripHtml(app.requisition.jobDescription), takeHomeInstructions: "", takeHomeAttachmentUrl: "", takeHomeAttachmentName: "", takeHomeAttachmentLink: "", takeHomeDueDate: "" });
         setScheduleResult(null);
         setScheduleApp({ app, stage: nextStage });
       }
@@ -2127,7 +2132,7 @@ export default function PipelinePage() {
                   options={[{ value: "", label: "Add interviewer…" },
                     ...scheduleInterviewerChoices
                       .filter((e) => !schedule.interviewerIds.includes(e.id))
-                      .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`, description: e.jobTitle ?? undefined })),
+                      .map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`, description: [e.employeeCode, e.jobTitle].filter(Boolean).join(" · ") || undefined })),
                   ]}
                 />
               </div>
@@ -2806,7 +2811,11 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
           const fmtD = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
           const daysBetween = (a: string, b: number | string) =>
             Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000));
+          // `date` is the field every real stage-move write uses; `at` is a
+          // legacy alias some older seeded rows carry — accept either so a
+          // mismatch never silently drops the entry.
           const moves = (app.stageHistory ?? [])
+            .map((h) => ({ stage: h.stage, date: h.date ?? (h as { at?: string }).at }))
             .filter((h): h is { stage: string; date: string } => !!h.stage && !!h.date)
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
           const events: { label: string; date: string }[] = [];
@@ -2933,17 +2942,6 @@ function FeedbackHistoryModal({ app, onClose }: { app: ApplicationItem; onClose:
 }
 
 // ─── Pipeline stat cards + stage visuals ────────────────
-function prettyStage(stage: string): string {
-  if (stage === "HRInterview") return "HR Interview";
-  // "Screening" is the stage's internal name (required, matched elsewhere via
-  // showScreening()/REQUIRED_STAGES) — only the displayed label reads "Source".
-  if (stage === "Screening") return "Source";
-  // Same idea — "Offer" stays the internal/stored name (REQUIRED_STAGES,
-  // existing pipelines' JSON, /offer/i checks all key off it), only the
-  // label shown to users reads "Offered".
-  if (stage === "Offer") return "Offered";
-  return stage.replace(/([A-Z])/g, " $1").trim();
-}
 
 function stageMeta(stage: string): { icon: React.ReactNode; color: string } {
   const key = stage.replace(/\s+/g, "").toLowerCase();

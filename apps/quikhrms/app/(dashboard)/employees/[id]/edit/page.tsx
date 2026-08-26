@@ -30,7 +30,7 @@ type Gender = "Male" | "Female" | "Transgender" | "NonBinary" | "PreferNotToSay"
 interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
 interface Location { id: string; name: string; }
-interface Employee { id: string; firstName: string; lastName: string; }
+interface Employee { id: string; firstName: string; lastName: string; employeeCode?: string | null; }
 
 type NoticePeriodOption = { id: string; name: string; duration: number; unit: "Days" | "Weeks" | "Months" };
 /** Convert a configured notice period to whole days (same math as offboarding). */
@@ -165,7 +165,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100&picker=1") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=1000&picker=1") });
   const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
   const noticePeriods = noticePeriodsData?.data ?? [];
 
@@ -445,14 +445,14 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     <input placeholder="Enter first name" value={form.firstName} onChange={(e) => update({ firstName: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Last Name" required>
-                  <IconInput icon={<User size={14} />}>
-                    <input placeholder="Enter last name" value={form.lastName} onChange={(e) => update({ lastName: e.target.value })} className={inputCls} />
-                  </IconInput>
-                </Field>
                 <Field label="Middle Name">
                   <IconInput icon={<User size={14} />}>
                     <input placeholder="Enter middle name" value={form.middleName ?? ""} onChange={(e) => update({ middleName: e.target.value })} className={inputCls} />
+                  </IconInput>
+                </Field>
+                <Field label="Last Name" required>
+                  <IconInput icon={<User size={14} />}>
+                    <input placeholder="Enter last name" value={form.lastName} onChange={(e) => update({ lastName: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
                 <Field label="Gender" required>
@@ -610,7 +610,7 @@ function EditEmployeePageInner({ params }: { params: { id: string } }) {
                     onChange={(v) => update({ reportingManagerId: v || null })}
                     placeholder="Search manager"
                     searchable
-                    options={(managers?.data ?? []).filter((m) => m.id !== id).map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` }))}
+                    options={(managers?.data ?? []).filter((m) => m.id !== id).map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName} (${m.employeeCode})` }))}
                   />
                 </Field>
                 <Field label="Date of Joining" required>

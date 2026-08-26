@@ -6,6 +6,7 @@ import { TopBar } from "@/components/hrms/layout/top-bar";
 import { DelegationBanner } from "@/components/hrms/layout/delegation-banner";
 import { AuthGuard } from "@/components/hrms/layout/auth-guard";
 import { RouteGuard } from "@/components/hrms/layout/route-guard";
+import { PageContentShell } from "@/components/hrms/layout/page-content-shell";
 import { SessionGuard } from "@/components/session-guard";
 import { SetupGate } from "@/components/hrms/setup/setup-gate";
 import { SupportLauncher } from "@quikit/ui/support";
@@ -43,16 +44,12 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
                 <TopBar />
               </div>
             </div>
-            {/* pb-24: the SetupGate "Setup x/10" reminder floats fixed at
-                bottom-right on every /settings and /payroll page until org
-                setup is complete — without this clearance it sits directly
-                over a page's bottom-right action button (e.g. Save). */}
-            <div className="px-4 py-4 pb-24 lg:px-6 lg:py-5 lg:pb-24">
+            <PageContentShell>
               <DelegationBanner />
               {/* Permission gate — a hidden sidebar link must also be an
                   unreachable URL (Quick actions, pasted links, history). */}
               <RouteGuard>{children}</RouteGuard>
-            </div>
+            </PageContentShell>
           </main>
         </div>
         {/* Floating support launcher — outside <main> so it stays pinned to the
