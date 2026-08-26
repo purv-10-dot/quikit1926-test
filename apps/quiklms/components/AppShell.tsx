@@ -1,11 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Sun, Moon, Check, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
-// Shared floating support widget, mounted at the bottom of this shell. The JSX
-// reference existed without this import, so EVERY authenticated page in the app
-// threw "ReferenceError: SupportLauncher is not defined" and 500'd — the shell
-// wraps all eight role groups. Imported from @quikit/ui (never a local copy),
-// the same path quikcrm/quikchat/quikinfra/quiktrack/quikasset use.
 import { SupportLauncher } from '@quikit/ui/support';
 import { Sidebar } from './Sidebar';
 import { NavSearch } from './NavSearch';
@@ -13,12 +8,6 @@ import { AppSwitcher } from './AppSwitcher';
 import { UserMenu } from './UserMenu';
 import { useTheme, useCurrentUser } from '@/app/providers';
 import { useTranslation, LOCALES, type Locale } from '@/lib/i18n';
-// Mounted at the bottom of this shell. Every QuikIT app carries the launcher —
-// see the note on the mount site — but the import was missing here, so the
-// component reference resolved to nothing and AppShell threw
-// `SupportLauncher is not defined` on render, taking every page in the app
-// down with it. Same specifier the other apps use.
-import { SupportLauncher } from '@quikit/ui/support';
 
 const COLLAPSE_KEY = 'qs_sidebar_collapsed';
 
