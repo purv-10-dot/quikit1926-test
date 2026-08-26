@@ -1,9 +1,14 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
-import { resolveMcpTestCaseSection } from "@/lib/mcp/testCaseBundle";
+import { resolveMcpTestCaseSection, createMcpTestCase } from "@/lib/mcp/testCaseBundle";
+import { guardClient } from "@/lib/mcp/guardedDb";
 
 const ORG = "org_1";
 const PROJECT = "proj_1";
+// createMcpTestCase's bundled path (params.tx set) runs createTestCaseInTransaction,
+// which calls assertResolvedProjectId — that rejects a placeholder like "proj_1", so
+// this test needs a cuid-shaped id.
+const PROJECT_CUID = "c" + "a".repeat(24);
 
 beforeEach(() => {
   resetMockDb();
@@ -115,5 +120,80 @@ describe("resolveMcpTestCaseSection (QUIKTR-122)", () => {
     await expect(
       resolveMcpTestCaseSection(mockDb, { orgId: ORG, projectId: PROJECT }),
     ).rejects.toMatchObject({ code: "AMBIGUOUS_SUITE", status: 400 });
+  });
+});
+
+/**
+ * Regression test for a real bug found live-testing QUIKTR-122 against
+ * quiktrack-uat: guardClient (lib/mcp/guardedDb.ts) used to unconditionally
+ * wrap any object/function-typed property on a guarded Prisma client,
+ * including Prisma's internal, non-configurable `_extensions` property —
+ * violating the Proxy get-trap invariant and crashing with a TypeError.
+ * See mcp-no-delete-guardrail.test.ts for the mechanism-level tests; this
+ * one drives the real bundled create_issue -> createMcpTestCase(params.tx)
+ * path (testCaseBundle.ts's params.tx branch) through a guardClient-wrapped
+ * tx carrying that property shape, to prove the production code path — not
+ * just the Proxy primitive — survives it.
+ */
+describe("createMcpTestCase — bundled path survives a guarded tx with a non-configurable Prisma-internal property", () => {
+  it("resolves normally when the tx exposes a frozen _extensions property, and reading it mid-operation does not throw", async () => {
+    let extensionsAccessedWithoutThrowing = false;
+
+    const rawTx: Record<string, unknown> = {
+      qtTestSection: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "sec_1",
+          suiteId: "suite_1",
+          suite: { projectId: PROJECT_CUID },
+        }),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([{ n: 1 }]),
+      qtTestCase: {
+        create: vi.fn().mockImplementation(() => {
+          // Simulate Prisma's own internals touching `_extensions` on the
+          // (guarded) tx mid-operation — this is the exact access pattern
+          // that threw before the fix.
+          expect(() => {
+            extensionsAccessedWithoutThrowing = (guardedTx as Record<string, unknown>)._extensions === innerExtensions;
+          }).not.toThrow();
+          return Promise.resolve({
+            id: "case_1",
+            refId: 1,
+            title: "A bundled test case",
+            sectionId: "sec_1",
+            createdAt: new Date(),
+          });
+        }),
+      },
+      qtTestCaseStep: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      qtTestCaseVersion: { create: vi.fn().mockResolvedValue({}) },
+      qtTestCaseTag: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    };
+    const innerExtensions = {};
+    Object.defineProperty(rawTx, "_extensions", {
+      value: innerExtensions,
+      writable: false,
+      configurable: false,
+      enumerable: true,
+    });
+
+    const guardedTx = guardClient(rawTx);
+
+    const result = await createMcpTestCase({
+      orgId: ORG,
+      projectId: PROJECT_CUID,
+      userId: "user_1",
+      input: {
+        title: "A bundled test case",
+        priority: "MEDIUM",
+        type: "FUNCTIONAL",
+        sectionId: "sec_1",
+        steps: [],
+      } as never,
+      tx: guardedTx as never,
+    });
+
+    expect(result).toMatchObject({ id: "case_1", sectionId: "sec_1", issue: null });
+    expect(extensionsAccessedWithoutThrowing).toBe(true);
   });
 });

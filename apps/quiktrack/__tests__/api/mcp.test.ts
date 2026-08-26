@@ -4700,6 +4700,123 @@ describe("POST /api/mcp", () => {
     });
   });
 
+  describe("create_test_suite", () => {
+    function mockPatAndOwner() {
+      mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
+        id: "pat_1",
+        orgId: ORG,
+        projectId: PROJECT,
+        createdById: CREATED_BY,
+        tokenHash: hashPatToken(RAW_TOKEN),
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        revokedAt: null,
+        lastUsedAt: new Date(),
+        createdAt: new Date(),
+      } as never);
+      mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+      // create_test_suite opens its own transaction (no caller-owned tx to
+      // join) — every test needs this even ones that error out inside it.
+      mockDb.$transaction.mockImplementation((cb: unknown) => (cb as (t: typeof mockDb) => Promise<unknown>)(mockDb));
+    }
+
+    it("creates a suite with a default root section", async () => {
+      mockPatAndOwner();
+      mockDb.qtTestSuite.create.mockResolvedValue({ id: "suite_1", name: "Regression" } as never);
+      mockDb.qtTestSection.create.mockResolvedValue({ id: "sec_1" } as never);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "create_test_suite", arguments: { name: "Regression" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBeUndefined();
+      const created = JSON.parse(body.result.content[0].text);
+      expect(created).toMatchObject({ id: "suite_1", name: "Regression" });
+      expect(mockDb.qtTestSuite.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ projectId: PROJECT, name: "Regression" }) }),
+      );
+      expect(mockDb.qtTestSection.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ suiteId: "suite_1", name: "All test cases", orderNo: 0 }) }),
+      );
+      expect(mockDb.qtMcpActionLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tool: "create_test_suite",
+          action: "CREATE",
+          entityType: "test_suite",
+          entityId: "suite_1",
+          entityKey: null,
+          result: "success",
+        }),
+      });
+    });
+
+    it("returns an MCP error for create_test_suite when the caller lacks TestSuite:create", async () => {
+      mockPatAndOwner();
+      mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+      mockDb.app.findUnique.mockResolvedValue({ id: "app_qt" } as never);
+      mockDb.qtUserAppRole.findFirst.mockResolvedValue(null);
+      mockDb.qtProjectMember.findFirst.mockResolvedValue({ role: "MEMBER" } as never);
+      mockDb.qtProjectUserRole.findUnique.mockResolvedValue({
+        projectRoleId: "viewer_role",
+        projectRole: { name: "Viewer" },
+      } as never);
+      mockDb.qtProjectRolePermission.findFirst.mockResolvedValue(null);
+      mockDb.qtUserPermissionExtra.findFirst.mockResolvedValue(null);
+
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "create_test_suite", arguments: { name: "Regression" } },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestSuite.create).not.toHaveBeenCalled();
+    });
+
+    it("returns an MCP error for create_test_suite when name is missing", async () => {
+      mockPatAndOwner();
+
+      // The MCP SDK's own JSON-Schema check (required: ["name"]) intercepts
+      // a missing required field before the handler runs at all — same as
+      // create_sprint's equivalent test — so this never reaches our Zod
+      // validation or its logMcpAction call.
+      const res = await POST(
+        mcpRequest(
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "create_test_suite", arguments: {} },
+          },
+          RAW_TOKEN,
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await readMcpJsonRpcResponse(res);
+      expect(body.result.isError).toBe(true);
+      expect(mockDb.qtTestSuite.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe("QUIKTR-122 — create_issue bundled testCases", () => {
     function mockPatAndOwner() {
       mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
