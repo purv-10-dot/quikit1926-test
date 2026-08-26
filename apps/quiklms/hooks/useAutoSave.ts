@@ -1,6 +1,6 @@
 'use client';
 /**
- * useAutoSave — ported from the old QuikSkills frontend (`src/hooks/useAutoSave.ts`).
+ * useAutoSave — ported from the old QuikLMSs frontend (`src/hooks/useAutoSave.ts`).
  *
  * Persists exam answers to `PATCH /exam-sessions/:id/save` every 30s, plus once
  * on `beforeunload`. Skips the write when the answers are byte-identical to the

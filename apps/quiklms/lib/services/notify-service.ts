@@ -154,7 +154,7 @@ export async function notifyUsers(opts: NotifyOptions): Promise<NotifyResult> {
         // way into email HTML. Every caller passes plain text, so escaping
         // changes nothing they rely on and closes the injection.
         html: `<p>Hi ${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)},</p><p>${escapeHtml(message)}</p>` +
-          `<p><a href="${FRONTEND_URL}">Open QuikSkill</a></p>`,
+          `<p><a href="${FRONTEND_URL}">Open QuikLMS</a></p>`,
       });
     } catch (err) {
       // eslint-disable-next-line no-console

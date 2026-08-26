@@ -11,8 +11,8 @@ export interface ProgressRingProps {
 }
 
 /**
- * QuikSkill's signature motif: learning rendered as a progress arc. Used for
- * course completion, mastery, attendance, and goals so a QuikSkill screen is
+ * QuikLMS's signature motif: learning rendered as a progress arc. Used for
+ * course completion, mastery, attendance, and goals so a QuikLMS screen is
  * recognizable across every role. Uses the tenant brand color via currentColor
  * so it adapts per tenant. Accessible as a progressbar.
  */

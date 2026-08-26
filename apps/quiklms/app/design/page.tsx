@@ -1,6 +1,6 @@
 'use client';
 /**
- * Design-system styleguide — a living reference for the QuikSkill foundation:
+ * Design-system styleguide — a living reference for the QuikLMS foundation:
  * tokens, typography, primitives, and the signature progress motif. Not part of
  * the product surface; kept public for review (see middleware PUBLIC_PREFIXES).
  */
@@ -52,7 +52,7 @@ export default function DesignSystemPage() {
       <div className="mx-auto max-w-5xl space-y-12">
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-6">
           <div>
-            <p className="text-sm font-medium text-[var(--brand-primary)]">QuikSkill</p>
+            <p className="text-sm font-medium text-[var(--brand-primary)]">QuikLMS</p>
             <h1 className="font-display text-3xl font-bold tracking-tight text-fg">Design System</h1>
             <p className="mt-1 max-w-prose text-sm text-fg-muted">
               Token-driven foundation — modern &amp; trustworthy, neutral for school and

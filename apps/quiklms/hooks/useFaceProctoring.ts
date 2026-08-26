@@ -2,7 +2,7 @@
 /**
  * Face proctoring (webcam + MediaPipe FaceLandmarker).
  *
- * Ported from the old QuikSkills frontend. MediaPipe (@mediapipe/tasks-vision)
+ * Ported from the old QuikLMSs frontend. MediaPipe (@mediapipe/tasks-vision)
  * is NOT a dependency of this app, so this hook DEGRADES GRACEFULLY:
  *   - It attempts a runtime dynamic import of '@mediapipe/tasks-vision'.
  *   - If the module is absent (the common case here), it reports faceStatus

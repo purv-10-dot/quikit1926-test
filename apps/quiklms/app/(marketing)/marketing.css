@@ -1,8 +1,8 @@
 /* =========================================================================
-   QuikSkill — Landing Site
+   QuikLMS — Landing Site
    Hand-crafted theme system + animations, modelled on the QuikHRMS landing
    (apps/quikhrms/app/(marketing)/marketing.css). Same structure, same motion
-   language, QuikSkill's content and palette.
+   language, QuikLMS's content and palette.
 
    TOKENS ARE `--lp-` PREFIXED, unlike the HRMS original. globals.css defines
    `--bg`, `--surface`, `--line`, `--fg` … at :root as SPACE-SEPARATED RGB
@@ -19,7 +19,7 @@
    light/dark switch is a `data-theme` attribute on <html>, deliberately
    separate from the dashboard's `.dark` class. */
 .lp-root {
-  /* Brand gradient — QuikSkill indigo → violet → cyan */
+  /* Brand gradient — QuikLMS indigo → violet → cyan */
   --lp-brand-1: #6366f1;   /* indigo */
   --lp-brand-2: #8b5cf6;   /* violet */
   --lp-brand-3: #22d3ee;   /* cyan */

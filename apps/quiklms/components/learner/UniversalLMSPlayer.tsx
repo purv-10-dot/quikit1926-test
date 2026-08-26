@@ -1,6 +1,6 @@
 'use client';
 /**
- * UniversalLMSPlayer — ported from the old QuikSkills frontend
+ * UniversalLMSPlayer — ported from the old QuikLMSs frontend
  * (`src/components/learner/UniversalLMSPlayer.tsx`), which served the
  * `/learner/course/:courseId` route. Mounted here via `@/components/players/CoursePlayer`
  * with `dynamic(..., { ssr:false })` — it touches window/document/fullscreen and
@@ -25,6 +25,40 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+
+/**
+ * Typography for rich-text lesson bodies.
+ *
+ * These class lists lived inline at two call sites — the `Text` lesson branch
+ * and the any-lesson-that-has-HTML fallback — and both carried only the dark
+ * palette from when this player was dark-themed. `isCorporate` is hard-coded
+ * true, so the shell renders `bg-gray-50` and the player area `bg-gray-100`:
+ * every one of those classes painted white text onto a near-white surface.
+ * That is why a rich-text lesson's title read as missing entirely rather than
+ * merely low-contrast — it was white on white, and so was the body.
+ *
+ * Hoisted so the two call sites cannot drift apart again, and both palettes are
+ * kept so flipping `isCorporate` back cannot silently re-break either one.
+ */
+const RICH_TEXT_PROSE_LIGHT = `prose prose-lg max-w-none
+  prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900
+  prose-a:text-indigo-600 prose-a:hover:text-indigo-700
+  prose-ul:text-gray-700 prose-ol:text-gray-700
+  prose-li:text-gray-700 prose-blockquote:text-gray-500
+  prose-code:text-indigo-700 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded
+  prose-pre:bg-gray-900 prose-pre:text-gray-100
+  prose-img:rounded-xl prose-img:shadow-md prose-img:max-w-full
+  prose-table:text-gray-700 prose-th:text-gray-900 prose-td:border-gray-200 prose-th:border-gray-200`;
+
+const RICH_TEXT_PROSE_DARK = `prose prose-invert prose-lg max-w-none
+  prose-headings:text-white prose-p:text-gray-300 prose-strong:text-white
+  prose-a:text-indigo-400 prose-a:hover:text-indigo-300
+  prose-ul:text-gray-300 prose-ol:text-gray-300
+  prose-li:text-gray-300 prose-blockquote:text-gray-400
+  prose-code:text-indigo-300 prose-code:bg-white/10 prose-code:px-1 prose-code:rounded
+  prose-pre:bg-black/30 prose-pre:border prose-pre:border-white/10
+  prose-img:rounded-xl prose-img:shadow-lg prose-img:max-w-full
+  prose-table:text-gray-300 prose-th:text-white prose-td:border-white/10 prose-th:border-white/10`;
 // Using native HTML5 video instead of ReactPlayer for better compatibility and SCORM compliance
 import {
   ArrowLeft, Play, Pause, CheckCircle, Lock, Video, FileText,
@@ -40,6 +74,7 @@ import PdfProgressViewer from '@/components/learner/PdfProgressViewer';
 import SlidesProgressViewer from '@/components/learner/SlidesProgressViewer';
 import SCORMPresentationViewer from '@/components/learner/SCORMPresentationViewer';
 import SCORMDocumentViewer from '@/components/learner/SCORMDocumentViewer';
+import { isYouTubeUrl, isVimeoUrl, getYouTubeVideoId, getVimeoVideoId } from '@/lib/utils/videoUrl';
 import { useOfflineDetection } from '@/hooks/useOfflineDetection';
 import { useFeatures, useCurrentUser } from '@/app/providers';
 
@@ -82,7 +117,13 @@ const formatTimeLocation = (seconds: number): string => {
 // ============================================================================
 // DEBUG UTILITY - Enable/disable debug logging globally
 // ============================================================================
-const DEBUG_ENABLED = false; // Set to false in production
+// Off unless NEXT_PUBLIC_LMS_PLAYER_DEBUG=1 is set, so production is unchanged.
+// Previously a hardcoded `false`, which meant every [YOUTUBE] diagnostic in this
+// file was dead code in every environment — a player bug reported from a tenant
+// arrived with an empty console, and the only way to see anything was to edit
+// this line and restart. The whole point of these logs is the session you did
+// not plan for, so the switch belongs outside the source.
+const DEBUG_ENABLED = process.env.NEXT_PUBLIC_LMS_PLAYER_DEBUG === '1';
 const DEBUG_PREFIX = '[UniversalLMSPlayer]';
 
 const debugLog = (category: string, message: string, data?: any) => {
@@ -238,45 +279,11 @@ interface XAPIStatement {
   };
 }
 
-// YouTube URL detection and ID extraction
-const isYouTubeUrl = (url: string): boolean => {
-  if (!url) return false;
-  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/)|youtu\.be\/)/i;
-  return youtubeRegex.test(url);
-};
-
-const isVimeoUrl = (url: string): boolean => {
-  if (!url) return false;
-  const vimeoRegex = /^(https?:\/\/)?(www\.)?(vimeo\.com\/)/i;
-  return vimeoRegex.test(url);
-};
-
-const getYouTubeVideoId = (url: string): string | null => {
-  if (!url) return null;
-  // Handle various YouTube URL formats:
-  // - https://www.youtube.com/watch?v=VIDEO_ID
-  // - https://youtu.be/VIDEO_ID
-  // - https://www.youtube.com/embed/VIDEO_ID
-  // - https://www.youtube.com/v/VIDEO_ID
-  const patterns = [
-    /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-  return null;
-};
-
-const getVimeoVideoId = (url: string): string | null => {
-  if (!url) return null;
-  // Handle Vimeo URL format: https://vimeo.com/VIDEO_ID
-  const match = url.match(/vimeo\.com\/(\d+)/i);
-  return match ? match[1] : null;
-};
+// YouTube / Vimeo URL recognition lives in lib/utils/videoUrl.ts. It is shared
+// with courses-service, which decides whether a resource is typed 'Video' in the
+// first place — when these patterns lived in both files they drifted, and a URL
+// form that one side accepted and the other did not produced a lesson the player
+// could never render.
 
 const UniversalLMSPlayer: React.FC = () => {
 
@@ -359,6 +366,13 @@ const UniversalLMSPlayer: React.FC = () => {
   const [ytCurrentTime, setYtCurrentTime] = useState(0);
   const [ytDuration, setYtDuration] = useState(0);
   const [ytMaxWatched, setYtMaxWatched] = useState(0);
+  // YT player state 3 (BUFFERING). Tracked separately from `ytPlaying` because
+  // the two are not opposites: a buffering video is neither playing nor paused,
+  // and without this the overlay showed the big idle Play button the whole time
+  // the video was filling its buffer. On a two-hour 1080p lesson that is several
+  // seconds of a screen that looks broken, so the learner clicks Play again and
+  // again — each click a `playVideo()` on a player that is already trying.
+  const [ytBuffering, setYtBuffering] = useState(false);
   const [showWatchLaterModal, setShowWatchLaterModal] = useState(false);
   const ytProgressRef = useRef<NodeJS.Timeout | null>(null);
   const lastSeekTimeRef = useRef(0);
@@ -468,23 +482,44 @@ const UniversalLMSPlayer: React.FC = () => {
       if (previousCallback) previousCallback();
     };
 
-    // Also poll as fallback (some browsers miss the callback)
+    // Also poll as fallback (some browsers miss the callback).
+    //
+    // Polling continues past the 8s fallback below, up to POLL_GIVE_UP_MS, so a
+    // merely slow API can still take over from the plain embed. Arriving late is
+    // a slow network, not a failure, and the real player is the one that can
+    // enforce no-skip.
+    const POLL_GIVE_UP_MS = 30_000;
+    const startedAt = Date.now();
     const pollInterval = setInterval(() => {
       if (window.YT && window.YT.Player && typeof window.YT.Player === 'function') {
         console.log('[YT API] Ready via polling');
         setYtApiReady(true);
+        setYtApiFailed(false);
         clearInterval(pollInterval);
+        return;
       }
+      if (Date.now() - startedAt >= POLL_GIVE_UP_MS) clearInterval(pollInterval);
     }, 100);
 
-    // Fallback timeout - if API doesn't load in 8s, mark as failed
+    // Fallback timeout - if API doesn't load in 8s, show the plain embed.
+    //
+    // The condition reads the LIVE global, never the `ytApiReady` state variable.
+    // This callback is created on the mount render and closes over that render's
+    // `ytApiReady`, which is `false` and stays `false` in here no matter what the
+    // API actually did — the effect has `[]` deps, so the closure is never
+    // rebuilt. Testing it declared EVERY YouTube lesson failed at the 8s mark,
+    // including ones playing perfectly. That was invisible while `ytApiFailed`
+    // rendered nothing; the moment the fallback embed was wired up it became a
+    // banner on every working video. `window.YT` has no such problem: it is a
+    // global, so reading it here reads the truth at 8s.
     const fallbackTimeout = setTimeout(() => {
-      clearInterval(pollInterval);
-      if (!ytApiReady) {
-        console.warn('[YT API] Failed to load after 8s, using fallback');
-        setYtApiFailed(true);
-        setYtReady(true);
+      if (window.YT && window.YT.Player && typeof window.YT.Player === 'function') {
+        setYtApiReady(true);
+        return;
       }
+      console.warn('[YT API] Failed to load after 8s, using fallback');
+      setYtApiFailed(true);
+      setYtReady(true);
     }, 8000);
 
     return () => {
@@ -493,12 +528,27 @@ const UniversalLMSPlayer: React.FC = () => {
     };
   }, []);
 
+  // Identity of the lesson currently being played, as primitives. These exist so
+  // the init effect below can depend on the CONTENT without depending on the
+  // `course` object, which is a new reference every render. See the dependency
+  // note at the end of that effect.
+  const activeLesson = course?.modules?.[currentModuleIndex]?.lessons?.[currentLessonIndex];
+  const activeLessonUrl = activeLesson?.contentUrl || '';
+  const activeLessonType = activeLesson?.type || '';
+
   // Initialize YouTube player when lesson changes to a YouTube video
   useEffect(() => {
     const currentLesson = course?.modules?.[currentModuleIndex]?.lessons?.[currentLessonIndex];
 
-    // Early exit if no lesson or not a video
+    // Early exit if no lesson or not a video.
+    //
+    // These two returns used to be silent. That is what made the dependency race
+    // described at the bottom of this effect so expensive to find: the console
+    // showed the API loading, the course loading, and the lesson rendering, with
+    // no [YOUTUBE] line anywhere and nothing to say why. An early return on the
+    // path to a blank player is worth a line.
     if (!currentLesson || currentLesson.type !== 'Video') {
+      debugLog('YOUTUBE', `Skipping init — ${currentLesson ? `lesson type is ${currentLesson.type}` : 'no lesson yet (course still loading?)'}`);
       return;
     }
 
@@ -506,6 +556,7 @@ const UniversalLMSPlayer: React.FC = () => {
     const isYT = isYouTubeUrl(videoUrl);
 
     if (!isYT) {
+      debugLog('YOUTUBE', `Skipping init — not a YouTube URL: ${videoUrl || '(empty)'}`);
       return;
     }
 
@@ -521,7 +572,13 @@ const UniversalLMSPlayer: React.FC = () => {
     if (ytInitInProgressRef.current?.videoId === videoId) {
       const initAge = Date.now() - (ytInitInProgressRef.current.timestamp || 0);
       const container = document.getElementById('yt-player-container');
-      const hasIframe = container?.querySelector('iframe') !== null;
+      // `!!` matters. `container?.querySelector(...)` is `undefined` when the
+      // container itself is missing, and `undefined !== null` is true — so the
+      // old form claimed an iframe existed precisely when nothing was mounted,
+      // and this guard then skipped the init that would have created it. That
+      // leaves the spinner up permanently, since nothing clears the in-progress
+      // ref afterwards.
+      const hasIframe = !!container?.querySelector('iframe');
 
       // Trust init ref if: iframe exists OR init started < 5 seconds ago
       if (hasIframe || initAge < 5000) {
@@ -578,6 +635,7 @@ const UniversalLMSPlayer: React.FC = () => {
     // Reset states for new video
     setYtReady(false);
     setYtPlaying(false);
+    setYtBuffering(false);
     setYtCurrentTime(0);
     setYtDuration(0);
     setYtMaxWatched(0);
@@ -631,20 +689,42 @@ const UniversalLMSPlayer: React.FC = () => {
         return;
       }
 
-      // IMPORTANT: Check if container already has an iframe (from previous attempt)
-      // If so, clear it to allow fresh player creation
-      const existingIframe = container.querySelector('iframe');
-      if (existingIframe) {
-        debugLog('YOUTUBE', 'Clearing existing iframe from container');
-        existingIframe.remove();
-      }
+      // NEVER hand `container` itself to YT.Player.
+      //
+      // The API does not render *into* the element it is given — it REPLACES it
+      // with an <iframe> that inherits the id. Passing the React-owned div meant
+      // React's node was ripped out of the DOM behind React's back, and every
+      // consequence followed from that:
+      //
+      //   · `getElementById('yt-player-container')` then returned the IFRAME, so
+      //     the "clear existing iframe" check below ran `.querySelector('iframe')`
+      //     on an iframe — always null, never cleared.
+      //   · `new YT.Player(<iframe>, {videoId})` is the API's attach-to-existing
+      //     -iframe mode. It ignores `videoId`, and against a dead player's
+      //     leftover iframe it never fires onReady — the permanent "Loading
+      //     Video..." spinner, because `ytReady` only flips inside onReady.
+      //   · `player.destroy()` removed that iframe outright, leaving no element
+      //     with the id at all. React never re-creates it (its own vdom still
+      //     believes the div is mounted), so the retry loop below polled for a
+      //     container that could not come back.
+      //
+      // React StrictMode makes this the common path rather than the rare one: it
+      // deliberately mounts, cleans up, and re-mounts every effect, so the
+      // second init always met a container the first had already replaced.
+      //
+      // The fix is to keep `container` as a stable host React alone owns, and
+      // give YouTube a fresh disposable child on every init. Emptying the host
+      // also disposes of any orphan left by a previous run.
+      container.innerHTML = '';
+      const mount = document.createElement('div');
+      container.appendChild(mount);
 
       debugLog('YOUTUBE', `Creating player instance for: ${videoId}`);
 
       try {
         // Pass the actual DOM element instead of ID string for more reliable targeting
         // @ts-ignore - YouTube API accepts both string and HTMLElement
-        ytPlayerRef.current = new window.YT.Player(container, {
+        ytPlayerRef.current = new window.YT.Player(mount, {
           videoId: videoId,
           playerVars: {
             controls: 0,
@@ -676,12 +756,29 @@ const UniversalLMSPlayer: React.FC = () => {
             onStateChange: (event) => {
               if (cancelled) return;
 
+              // Duration backfill. `getDuration()` answers 0 until the player
+              // has the video's metadata, and onReady can fire before that —
+              // more easily on a long video, whose metadata is bigger and whose
+              // manifest takes longer to arrive. A 0 here is not cosmetic: the
+              // auto-complete effect bails on `ytDuration <= 0`, so the lesson
+              // could never be completed and the bar sat at 0:00/0:00 forever.
+              // Every state change is a fresh chance to read a real number.
+              if (event.data !== -1) {
+                const d = event.target.getDuration() || 0;
+                if (d > 0) setYtDuration(prev => (prev > 0 ? prev : d));
+              }
+
               if (event.data === 1) { // PLAYING
                 setYtPlaying(true);
+                setYtBuffering(false);
               } else if (event.data === 2) { // PAUSED
                 setYtPlaying(false);
+                setYtBuffering(false);
+              } else if (event.data === 3) { // BUFFERING
+                setYtBuffering(true);
               } else if (event.data === 0) { // ENDED - Video finished playing
                 setYtPlaying(false);
+                setYtBuffering(false);
                 const finalDuration = ytPlayerRef.current?.getDuration() || 0;
                 setYtCurrentTime(finalDuration);
                 setYtMaxWatched(finalDuration);
@@ -718,12 +815,19 @@ const UniversalLMSPlayer: React.FC = () => {
             onError: (event) => {
               debugError('YOUTUBE', `Player error: ${event.data}`);
               ytInitInProgressRef.current = null; // Clear init flag on error
+              // 153 is absent from YouTube's published list but shows up in the
+              // wild: it means the embedding page presented no usable origin, so
+              // the player refused to configure. It is a property of where the
+              // page is served from, never of the video — the same id embeds
+              // fine from a real http(s) origin. Worth naming explicitly,
+              // because the generic `Error: 153` sent us hunting the video.
               const errorMessages: Record<number, string> = {
                 2: 'Invalid video ID',
                 5: 'HTML5 player error',
                 100: 'Video not found',
                 101: 'Cannot embed',
-                150: 'Cannot embed (copyright)'
+                150: 'Cannot embed (copyright)',
+                153: 'Player configuration rejected — the page origin was not accepted by YouTube',
               };
               setVideoError(errorMessages[event.data] || `Error: ${event.data}`);
               setYtReady(true); // Show error state
@@ -752,9 +856,30 @@ const UniversalLMSPlayer: React.FC = () => {
       // will think init is still happening and skip
       ytInitInProgressRef.current = null;
     };
-    // Use stable dependencies - course object changes reference on every render!
+    // `course` itself is deliberately NOT a dependency — it is a fresh object on
+    // every render and would re-init the player continuously. But leaving it out
+    // entirely meant the effect could not see the course ARRIVING, and that was
+    // a race it lost routinely:
+    //
+    //   t=0ms    mount, course is null           → effect runs, silent return
+    //   t=~250ms YouTube API ready               → ytApiReady flips, effect runs
+    //                                              again, course STILL null,
+    //                                              silent return
+    //   t=~260ms course fetch resolves           → no dependency changed, so the
+    //                                              effect never runs again
+    //
+    // No player is ever constructed and `ytReady` never leaves `false`, which is
+    // the permanent "Loading Video..." spinner. Whether it happens is purely
+    // whether youtube.com/iframe_api beats the course API — so it reproduces
+    // every time on localhost and intermittently in production, which is exactly
+    // how it was reported.
+    //
+    // The two fields below are the identity of the thing being played, and both
+    // are primitives: they change when the lesson changes (which SHOULD re-init)
+    // and are referentially stable across unrelated re-renders (which should
+    // not).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, currentModuleIndex, currentLessonIndex, ytApiReady]);
+  }, [courseId, currentModuleIndex, currentLessonIndex, ytApiReady, activeLessonUrl, activeLessonType]);
 
   // YouTube progress tracking
   useEffect(() => {
@@ -766,6 +891,12 @@ const UniversalLMSPlayer: React.FC = () => {
       try {
         const currentTime = ytPlayerRef.current.getCurrentTime();
         const playerState = ytPlayerRef.current.getPlayerState();
+
+        // Second duration backfill, alongside the one in onStateChange. A video
+        // that is cued and never touched fires no state change at all, so this
+        // tick is the only thing that would ever see its duration arrive.
+        const d = ytPlayerRef.current.getDuration() || 0;
+        if (d > 0) setYtDuration(prev => (prev > 0 ? prev : d));
 
         // Update time when playing (state 1 = PLAYING)
         if (playerState === 1) {
@@ -988,15 +1119,30 @@ const UniversalLMSPlayer: React.FC = () => {
   const lessonProgressRef = useRef(lessonProgress);
   const courseIdRef = useRef(courseId);
   const userRef = useRef(user);
+  // `playing` is mirrored for the 10s heartbeat, which decides whether there is
+  // anything to save. Reading the state variable there read the mount-time
+  // `false` forever.
+  const playingRef = useRef(playing);
   courseRef.current = course;
   currentModuleIndexRef.current = currentModuleIndex;
   currentLessonIndexRef.current = currentLessonIndex;
   lessonProgressRef.current = lessonProgress;
   courseIdRef.current = courseId;
   userRef.current = user;
+  playingRef.current = playing;
 
   // Ref-wrapped functions so postMessage handlers always call latest version
   const loadProgressRef = useRef<() => Promise<void>>(async () => { });
+  // Same treatment for the two periodic savers. The effect that installs the
+  // heartbeat and sync intervals has `[isOnline]` deps, so whatever it captured
+  // on mount is what its timers call for the lifetime of the player — and on
+  // mount `course` is still null and `courseId` not yet resolved. Both functions
+  // open with a `if (!courseId || !course) return` guard, so every tick took the
+  // guard and logged "Cannot sync - no courseId or course data" instead of
+  // saving. Progress was never written by the interval, and the unmount "final
+  // save" was the same dead closure, so leaving the page saved nothing either.
+  const syncProgressRef = useRef<() => Promise<void>>(async () => { });
+  const saveVideoProgressRef = useRef<() => void>(() => { });
 
   // SCORM state
   const scormIframeRef = useRef<HTMLIFrameElement>(null);
@@ -1100,12 +1246,16 @@ const UniversalLMSPlayer: React.FC = () => {
 
     document.addEventListener('keydown', handleKeyDown, true);
 
-    // Set up heartbeat (every 10 seconds for video)
+    // Set up heartbeat (every 10 seconds for video).
+    // Everything here reads through refs — see the note on `syncProgressRef`.
     heartbeatInterval.current = setInterval(() => {
-      if (course && currentModuleIndex >= 0 && currentLessonIndex >= 0) {
-        const currentLesson = course.modules[currentModuleIndex]?.lessons[currentLessonIndex];
-        if (currentLesson?.type === 'Video' && playing) {
-          saveVideoProgress();
+      const c = courseRef.current;
+      const mIdx = currentModuleIndexRef.current;
+      const lIdx = currentLessonIndexRef.current;
+      if (c && mIdx >= 0 && lIdx >= 0) {
+        const currentLesson = c.modules[mIdx]?.lessons[lIdx];
+        if (currentLesson?.type === 'Video' && playingRef.current) {
+          saveVideoProgressRef.current();
         }
       }
     }, 10000);
@@ -1136,7 +1286,7 @@ const UniversalLMSPlayer: React.FC = () => {
     // Set up sync interval (every 15 seconds)
     syncInterval.current = setInterval(() => {
       if (isOnline) {
-        syncProgress();
+        syncProgressRef.current();
       }
     }, 15000);
 
@@ -1270,7 +1420,9 @@ const UniversalLMSPlayer: React.FC = () => {
       document.removeEventListener('keydown', handleKeyDown, true);
       cleanupSCORMAPI();
       if (isOnline) {
-        syncProgress(); // Final save
+        syncProgressRef.current(); // Final save — must be the live one, not the
+                                   // mount-time closure, or leaving the page
+                                   // silently discards the session.
       }
       sessionStartTimeRef.current = null;
     };
@@ -1980,6 +2132,12 @@ const UniversalLMSPlayer: React.FC = () => {
       debugError('SYNC', 'Failed to sync progress', error?.message);
     }
   }, [courseId, course, currentModuleIndex, currentLessonIndex, lessonProgress, played, duration, isOnline, sessionTime, maxWatchedTime, playerRef]);
+
+  // Point the refs at the current render's versions. Assigned during render, the
+  // same way `loadProgressRef` above is, so the intervals installed once on mount
+  // always reach the callback built from the latest course, lesson and progress.
+  syncProgressRef.current = syncProgress;
+  saveVideoProgressRef.current = saveVideoProgress;
 
   const updateLessonProgress = (lessonId: string, progress: Partial<LessonProgress>) => {
     setLessonProgress(prev => ({
@@ -3044,6 +3202,9 @@ const UniversalLMSPlayer: React.FC = () => {
               <>
                 {currentLesson.type === 'Video' ? (() => {
                   const videoUrlToUse = currentLesson.contentUrl;
+                  // Only used by the no-JS-API fallback embed below; the live
+                  // player gets its id from the init effect, not from here.
+                  const ytVideoId = getYouTubeVideoId(videoUrlToUse || '');
 
                   return (
                     <>
@@ -3106,14 +3267,41 @@ const UniversalLMSPlayer: React.FC = () => {
                                   {/* Video Container - YouTube API Player */}
                                   <div className="relative flex-1" style={{ minHeight: isFullscreen ? 'calc(100vh - 120px)' : '400px' }}>
                                     {/* YouTube Player Container for API */}
+                                    {/* Stable host — React owns this node and YouTube never
+                                        touches it. The player's iframe is mounted as a child
+                                        (see the note in initPlayer), and since YT.Player sizes
+                                        that iframe to its own default 640x390, the child rules
+                                        below are what actually make it fill the frame. */}
                                     <div
                                       id="yt-player-container"
-                                      className="absolute inset-0 w-full h-full bg-black"
+                                      className="absolute inset-0 w-full h-full bg-black [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full"
                                     />
 
 
+                                    {/* IFrame API unreachable — ad blocker, corporate proxy, or a
+                                        network that drops youtube.com. `ytApiFailed` was previously
+                                        set and never rendered, so this case produced a black box with
+                                        no spinner and no message: the worst possible failure to
+                                        diagnose from a learner's screenshot. A plain embed still
+                                        works here (it needs no JS API), so fall back to one — the
+                                        no-skip guarantee is lost, hence the warning. */}
+                                    {ytApiFailed && ytVideoId && (
+                                      <div className="absolute inset-0 z-30 bg-black flex flex-col">
+                                        <div className="bg-amber-500/20 border-b border-amber-500/40 px-3 py-2 text-amber-100 text-xs">
+                                          Player controls unavailable on this network — showing the standard YouTube embed. Progress tracking is limited.
+                                        </div>
+                                        <iframe
+                                          className="flex-1 w-full"
+                                          src={`https://www.youtube.com/embed/${ytVideoId}?rel=0&modestbranding=1`}
+                                          title={currentLesson.title || 'Course video'}
+                                          allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+                                          allowFullScreen
+                                        />
+                                      </div>
+                                    )}
+
                                     {/* Loading State */}
-                                    {!ytReady && (
+                                    {!ytReady && !ytApiFailed && (
                                       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center z-30 pointer-events-auto">
                                         <div className="text-center">
                                           <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -3124,7 +3312,7 @@ const UniversalLMSPlayer: React.FC = () => {
                                     )}
 
                                     {/* Transparent overlay to intercept clicks and control via API */}
-                                    {ytReady && (
+                                    {ytReady && !ytApiFailed && (
                                       <div
                                         className="absolute inset-0 z-20 cursor-pointer"
                                         onClick={(e) => {
@@ -3134,8 +3322,19 @@ const UniversalLMSPlayer: React.FC = () => {
                                           ytTogglePlay();
                                         }}
                                       >
-                                        {/* Play button overlay (when paused) */}
-                                        {!ytPlaying && (
+                                        {/* Buffering takes priority over the idle Play button: while
+                                            the player is filling its buffer it is neither playing nor
+                                            paused, and showing Play there reads as "nothing is
+                                            happening" on exactly the long, high-bitrate lessons that
+                                            need the longest to start. */}
+                                        {ytBuffering ? (
+                                          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                            <div className="text-center">
+                                              <div className="w-14 h-14 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                                              <p className="text-white text-sm font-medium">Buffering…</p>
+                                            </div>
+                                          </div>
+                                        ) : !ytPlaying && (
                                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/30 transition-all">
                                             <div className="w-24 h-24 bg-indigo-600 rounded-full flex items-center justify-center hover:bg-indigo-500 hover:scale-110 transition-all shadow-2xl">
                                               <Play className="w-12 h-12 text-white ml-1" />
@@ -3382,7 +3581,14 @@ const UniversalLMSPlayer: React.FC = () => {
                                     <video
                                       ref={playerRef}
                                       src={videoUrlToUse}
-                                      preload="auto"
+                                      // "metadata", not "auto". `auto` invites the browser to pull as
+                                      // much of the file as it likes before the learner presses play;
+                                      // on a multi-hour upload that is a long stall on a black frame,
+                                      // and on a metered connection it is a lot of wasted data for a
+                                      // video that may never be started. `metadata` fetches only the
+                                      // header — enough for duration, which is all the progress bar
+                                      // needs — and the rest streams on demand.
+                                      preload="metadata"
                                       onTimeUpdate={() => {
                                         if (playerRef.current) {
                                           const current = playerRef.current.currentTime;
@@ -3964,29 +4170,23 @@ const UniversalLMSPlayer: React.FC = () => {
                         el.addEventListener('scroll', handleScroll);
                         return () => el.removeEventListener('scroll', handleScroll);
                       }}>
-                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
-                          <h2 className="text-2xl font-bold text-white mb-4">{currentLesson.title}</h2>
+                        <div className={isCorporate
+                          ? 'bg-white border border-gray-200 rounded-2xl p-8 shadow-sm'
+                          : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl'}>
+                          <h2 className={`text-2xl font-bold mb-4 ${isCorporate ? 'text-gray-900' : 'text-white'}`}>{currentLesson.title}</h2>
                           {currentLesson.description && !currentLesson.content && (
-                            <div className="prose prose-invert max-w-none">
-                              <p className="text-gray-300 whitespace-pre-wrap">{currentLesson.description}</p>
+                            <div className={`max-w-none ${isCorporate ? 'prose' : 'prose prose-invert'}`}>
+                              <p className={`whitespace-pre-wrap ${isCorporate ? 'text-gray-600' : 'text-gray-300'}`}>{currentLesson.description}</p>
                             </div>
                           )}
                           {currentLesson.content ? (
                             <div
-                              className="prose prose-invert prose-lg max-w-none mt-4
-                          prose-headings:text-white prose-p:text-gray-300 prose-strong:text-white
-                          prose-a:text-indigo-400 prose-a:hover:text-indigo-300
-                          prose-ul:text-gray-300 prose-ol:text-gray-300
-                          prose-li:text-gray-300 prose-blockquote:text-gray-400
-                          prose-code:text-indigo-300 prose-code:bg-white/10 prose-code:px-1 prose-code:rounded
-                          prose-pre:bg-black/30 prose-pre:border prose-pre:border-white/10
-                          prose-img:rounded-xl prose-img:shadow-lg prose-img:max-w-full
-                          prose-table:text-gray-300 prose-th:text-white prose-td:border-white/10 prose-th:border-white/10"
+                              className={`mt-4 ${isCorporate ? RICH_TEXT_PROSE_LIGHT : RICH_TEXT_PROSE_DARK}`}
                               dangerouslySetInnerHTML={{ __html: currentLesson.content }}
                             />
                           ) : currentLesson.description ? (
-                            <div className="prose prose-invert max-w-none mt-4">
-                              <p className="text-gray-300 whitespace-pre-wrap leading-relaxed text-lg">{currentLesson.description}</p>
+                            <div className={`max-w-none mt-4 ${isCorporate ? 'prose' : 'prose prose-invert'}`}>
+                              <p className={`whitespace-pre-wrap leading-relaxed text-lg ${isCorporate ? 'text-gray-700' : 'text-gray-300'}`}>{currentLesson.description}</p>
                             </div>
                           ) : null}
                           <button
@@ -4195,13 +4395,12 @@ const UniversalLMSPlayer: React.FC = () => {
                       : currentLesson.content ? (
                       // Fallback for any lesson type that has HTML/text content
                       <div className="w-full max-w-4xl mx-auto p-6 h-full overflow-y-auto">
-                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
-                          <h2 className="text-2xl font-bold text-white mb-4">{currentLesson.title}</h2>
+                        <div className={isCorporate
+                          ? 'bg-white border border-gray-200 rounded-2xl p-8 shadow-sm'
+                          : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl'}>
+                          <h2 className={`text-2xl font-bold mb-4 ${isCorporate ? 'text-gray-900' : 'text-white'}`}>{currentLesson.title}</h2>
                           <div
-                            className="prose prose-invert prose-lg max-w-none
-                        prose-headings:text-white prose-p:text-gray-300 prose-strong:text-white
-                        prose-a:text-indigo-400 prose-ul:text-gray-300 prose-ol:text-gray-300
-                        prose-li:text-gray-300 prose-img:rounded-xl prose-img:max-w-full"
+                            className={isCorporate ? RICH_TEXT_PROSE_LIGHT : RICH_TEXT_PROSE_DARK}
                             dangerouslySetInnerHTML={{ __html: currentLesson.content }}
                           />
                           <button
@@ -4261,7 +4460,9 @@ const UniversalLMSPlayer: React.FC = () => {
                       ) : (
 
                       <div className="text-center">
-                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+                        <div className={isCorporate
+                          ? 'bg-white border border-gray-200 rounded-2xl p-8 shadow-sm'
+                          : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl'}>
                           <div className="p-4 bg-gradient-to-br from-indigo-500/20 to-violet-500/20 rounded-xl inline-block mb-4">
                             <FileText className="w-12 h-12 text-indigo-400" />
                           </div>

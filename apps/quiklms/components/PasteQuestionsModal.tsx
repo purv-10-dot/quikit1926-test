@@ -1,6 +1,6 @@
 'use client';
 /**
- * PasteQuestionsModal — ported from the old QuikSkills frontend
+ * PasteQuestionsModal — ported from the old QuikLMSs frontend
  * (src/components/PasteQuestionsModal.tsx).
  *
  * A modal that lets an author paste a free-form block of questions and see a
@@ -63,7 +63,7 @@ const PasteQuestionsModal: React.FC<PasteQuestionsModalProps> = ({ open, onClose
       onClick={handleClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -88,40 +88,93 @@ const PasteQuestionsModal: React.FC<PasteQuestionsModalProps> = ({ open, onClose
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 p-6 overflow-hidden">
           {/* Left: textarea */}
           <div className="flex flex-col min-h-0">
-            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
-              Paste here
-            </label>
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <label htmlFor="paste-questions-input" className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Paste here
+              </label>
+              {/* Two small affordances that remove the "what do I type?" stall:
+                  load a working example, and clear it again. */}
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setText(EXAMPLE)}
+                  className="text-indigo-600 hover:text-indigo-700 font-medium"
+                >
+                  Load example
+                </button>
+                {text.trim() !== '' && (
+                  <>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setText('')}
+                      className="text-gray-500 hover:text-gray-700 font-medium"
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
             <textarea
+              id="paste-questions-input"
               value={text}
               onChange={e => setText(e.target.value)}
               placeholder={EXAMPLE}
               spellCheck={false}
-              className="flex-1 min-h-[280px] w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none resize-none"
+              className="flex-1 min-h-[320px] w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono leading-relaxed text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none resize-none"
             />
             <details className="mt-2 text-xs text-gray-500">
-              <summary className="cursor-pointer hover:text-gray-700">Supported formats</summary>
-              <div className="mt-2 space-y-1 leading-relaxed">
-                <p>• Option labels: <code>A) ... A. ... A: ... (A) ... 1) ...</code> — upper or lower case.</p>
-                <p>• Mark the correct answer with a trailing <code>*</code>, <code>[correct]</code>, <code>(correct)</code>, <code>[x]</code>, <code>✓</code>, OR a separate <code>Answer: B</code> / <code>Answer: Paris</code> line.</p>
-                <p>• Multi-select: mark several options correct, OR <code>Answer: B, D</code>.</p>
-                <p>• Separate questions with a blank line, <code>---</code>, or a <code>Q1.</code> / <code>1.</code> prefix on the next question.</p>
-                <p>• Two options reading "True / False" auto-switch the question type to True/False.</p>
+              <summary className="cursor-pointer hover:text-gray-700 font-medium">Supported formats</summary>
+              <div className="mt-2 space-y-2 leading-relaxed">
+                <div>
+                  <p className="font-semibold text-gray-600">Option labels — any of these</p>
+                  <p className="mt-0.5">Letters: <code>A)</code> <code>A.</code> <code>A:</code> <code>(A)</code> <code>[A]</code> <code>A —</code> <code>A –</code> <code>A →</code> — upper or lower case.</p>
+                  <p>Numbers: <code>1)</code> <code>1.</code> <code>1:</code> <code>(1)</code> <code>[1]</code> <code>1 —</code> <code>1 →</code></p>
+                  <p>Roman: <code>I)</code> <code>II.</code> <code>(iii)</code> <code>[iv]</code> — upper or lower case.</p>
+                  <p>Worded: <code>Option A:</code> <code>Option A —</code> <code>Choice A:</code> <code>Choice 1:</code></p>
+                  <p>Bullets: <code>-</code> <code>*</code> <code>•</code> when every option uses the same one.</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-600">Marking the answer</p>
+                  <p className="mt-0.5">Trailing <code>*</code>, <code>[correct]</code>, <code>(correct)</code>, <code>[x]</code>, <code>✓</code> — or a separate <code>Answer: B</code> / <code>Answer: Paris</code> line.</p>
+                  <p>Multi-select: mark several options, or <code>Answer: B, D</code>.</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-600">Separating questions</p>
+                  <p className="mt-0.5">A blank line, <code>---</code>, or a <code>Q1.</code> / <code>1.</code> prefix on the next question. Paste as many as you like in one go.</p>
+                  <p>Two options reading “True / False” switch the question type automatically.</p>
+                </div>
               </div>
             </details>
           </div>
 
           {/* Right: preview */}
           <div className="flex flex-col min-h-0">
-            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 flex items-center justify-between">
-              <span>Preview</span>
-              <span className="font-bold text-indigo-600">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Preview</span>
+              {/* Colour carries the state: green once something parsed, amber
+                  when there is text but nothing was recognised — that second
+                  case is the one an author needs to notice before hitting
+                  Apply and wondering where their questions went. */}
+              <span
+                className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                  result.questions.length > 0
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : text.trim()
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-gray-100 text-gray-500 border border-gray-200'
+                }`}
+              >
                 {result.questions.length} question{result.questions.length === 1 ? '' : 's'} detected
               </span>
-            </label>
+            </div>
             <div className="flex-1 min-h-[280px] overflow-y-auto bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-3">
               {result.questions.length === 0 && (
                 <div className="h-full flex items-center justify-center text-center text-gray-400 text-sm px-6">
-                  {text.trim() ? 'No questions detected yet.' : 'Paste text on the left to see the preview.'}
+                  {text.trim()
+                    ? 'Nothing recognised yet — check the option labels against Supported formats below.'
+                    : 'Paste your questions on the left. They appear here as they are recognised.'}
                 </div>
               )}
               {result.questions.map((q, qi) => (
@@ -157,7 +210,9 @@ const PasteQuestionsModal: React.FC<PasteQuestionsModalProps> = ({ open, onClose
               disabled={result.questions.length === 0}
               className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
-              Apply {result.questions.length > 0 ? `(${result.questions.length})` : ''}
+              {result.questions.length > 0
+                ? `Add ${result.questions.length} question${result.questions.length === 1 ? '' : 's'}`
+                : 'Add questions'}
             </button>
           </div>
         </div>

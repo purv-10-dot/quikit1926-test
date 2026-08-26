@@ -296,13 +296,13 @@ describe('POST /api/tenants', () => {
     // NEXTAUTH_URL is the platform-standard self-origin var and is ALWAYS set in
     // prod (NextAuth cannot boot without it), so clientUrl tracks the real domain
     // — the localhost fallback only applies in local dev.
-    process.env.NEXTAUTH_URL = 'https://quikskills.quikit.ai';
+    process.env.NEXTAUTH_URL = 'https://quiklmss.quikit.ai';
     h.findUnique.mockResolvedValue(null);
     h.create.mockImplementation(({ data }: any) => ({ ...data }));
 
     const res = await tenantsPOST(post('http://x/api/tenants', valid), {});
     const body = await res.json();
-    expect(body.clientUrl).toBe('https://quikskills.quikit.ai/acme-corp');
+    expect(body.clientUrl).toBe('https://quiklmss.quikit.ai/acme-corp');
   });
 });
 

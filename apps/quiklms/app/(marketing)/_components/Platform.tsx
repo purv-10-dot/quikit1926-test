@@ -43,7 +43,7 @@ export default function Platform() {
           </h2>
           <p>
             Most teams run an LMS for delivery, a separate tool for exams, and a spreadsheet for who
-            has actually completed what. QuikSkill is the three of those as one system.
+            has actually completed what. QuikLMS is the three of those as one system.
           </p>
         </div>
 

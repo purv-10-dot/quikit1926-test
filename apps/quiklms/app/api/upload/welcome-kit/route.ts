@@ -6,7 +6,7 @@ import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { presignForPrefix } from '@/lib/services/upload-service';
 import { getObjectBuffer } from '@/lib/s3';
 
-const WELCOME_KIT_KEY = 'welcome-kit/QuikSkill_Welcome_Guide.pdf';
+const WELCOME_KIT_KEY = 'welcome-kit/QuikLMS_Welcome_Guide.pdf';
 
 /** Legacy: `if (file.size > 10 * 1024 * 1024)` (upload.controller.ts:93). */
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -39,7 +39,7 @@ export const POST = route(async (req) => {
   // Fixed key — overwrite-in-place semantics, like the legacy upload.
   const { uploadUrl, permanentUrl } = await presignForPrefix(
     'welcome-kit',
-    'QuikSkill_Welcome_Guide.pdf',
+    'QuikLMS_Welcome_Guide.pdf',
     'application/pdf',
   );
   return json({ success: true, message: 'Welcome Kit upload URL generated', uploadUrl, fileUrl: permanentUrl });
@@ -75,7 +75,7 @@ export const GET = route(async (req) => {
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'attachment; filename="QuikSkill_Welcome_Guide.pdf"',
+      'Content-Disposition': 'attachment; filename="QuikLMS_Welcome_Guide.pdf"',
     },
   });
 });

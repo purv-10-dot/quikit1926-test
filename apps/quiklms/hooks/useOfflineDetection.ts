@@ -1,6 +1,6 @@
 'use client';
 /**
- * useOfflineDetection — ported from the old QuikSkills frontend
+ * useOfflineDetection — ported from the old QuikLMSs frontend
  * (`src/hooks/useOfflineDetection.ts`).
  *
  * Tracks navigator online/offline. `wasOffline` latches true for 3s after

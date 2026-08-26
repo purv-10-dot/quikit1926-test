@@ -134,7 +134,7 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
 
             <p>If you have any questions, please contact our support team.</p>
 
-            <p>Best regards,<br>QuikSkill LMS Team</p>
+            <p>Best regards,<br>QuikLMS LMS Team</p>
           </div>
         `,
     };
@@ -142,7 +142,7 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
 
   if (resolved === ('welcome_kit' as EmailTemplateType)) {
     return {
-      subject: 'Welcome to QuikSkill LMS - {{tenantName}}',
+      subject: 'Welcome to QuikLMS LMS - {{tenantName}}',
       htmlContent: `<!DOCTYPE html>
 <html>
   <head>
@@ -159,11 +159,11 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
   <body>
     <div class="container">
       <div class="header">
-        <h1>Welcome to QuikSkill LMS!</h1>
+        <h1>Welcome to QuikLMS LMS!</h1>
       </div>
       <div class="content">
         <p>Dear {{contactName}},</p>
-        <p>Congratulations! Your organization <strong>{{tenantName}}</strong> has been successfully onboarded to QuikSkill LMS.</p>
+        <p>Congratulations! Your organization <strong>{{tenantName}}</strong> has been successfully onboarded to QuikLMS LMS.</p>
 
         <div class="info-box">
           <h3>Your Login Credentials</h3>
@@ -181,7 +181,7 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
 
         <p>If you have any questions, please don't hesitate to contact our support team.</p>
 
-        <p>Best regards,<br>The QuikSkill Team</p>
+        <p>Best regards,<br>The QuikLMS Team</p>
       </div>
     </div>
   </body>
@@ -216,7 +216,7 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
         <div style="text-align: center;">
           <a href="{{loginUrl}}" class="cta-button">View My Achievements</a>
         </div>
-        <p>Best regards,<br><strong>The QuikSkill LMS Team</strong></p>
+        <p>Best regards,<br><strong>The QuikLMS LMS Team</strong></p>
       </div>
     </div>
   </body>
@@ -252,7 +252,7 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
         <div style="text-align: center;">
           <a href="{{certificateUrl}}" class="cta-button">Download Certificate</a>
         </div>
-        <p>Best regards,<br><strong>The QuikSkill LMS Team</strong></p>
+        <p>Best regards,<br><strong>The QuikLMS LMS Team</strong></p>
       </div>
     </div>
   </body>
@@ -261,17 +261,17 @@ function getDefaultTemplate(type: string): { subject: string; htmlContent: strin
   }
 
   return {
-    subject: 'A message from QuikSkill LMS',
+    subject: 'A message from QuikLMS LMS',
     htmlContent: `<!DOCTYPE html>
 <html>
   <head><meta charset="utf-8"></head>
   <body>
     <div style="max-width:600px;margin:30px auto;font-family:Arial,sans-serif;">
-      <h1>QuikSkill LMS</h1>
+      <h1>QuikLMS LMS</h1>
       <p>Dear {{studentName}},</p>
-      <p>You have a new notification from <strong>QuikSkill LMS</strong>.</p>
+      <p>You have a new notification from <strong>QuikLMS LMS</strong>.</p>
       <p><a href="{{loginUrl}}">Go to My Account</a></p>
-      <p>Best regards,<br><strong>The QuikSkill LMS Team</strong></p>
+      <p>Best regards,<br><strong>The QuikLMS LMS Team</strong></p>
     </div>
   </body>
 </html>`,

@@ -31,7 +31,7 @@ export const GET = route(async (req) => {
       data: {
         orgId: null,
         tenantType: null,
-        tenantName: 'QuikSkill Platform',
+        tenantName: 'QuikLMS Platform',
         features: ALL_FEATURES,
         availableRoles: ['ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'TEACHER', 'PARENT', 'LEARNER'],
         roleLabels: { ADMIN: 'Super Admin', TENANT_ADMIN: 'Administrator', SUB_ADMIN: 'Sub Admin', MANAGER: 'Manager', TEACHER: 'Teacher', PARENT: 'Parent', LEARNER: 'Learner' },

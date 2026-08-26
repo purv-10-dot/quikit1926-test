@@ -44,7 +44,7 @@ export default function ResetPasswordPage() {
             <h2 className="text-sm font-semibold text-fg">Change it in QuikIT account settings</h2>
             <p className="mt-1 text-sm leading-relaxed text-fg-muted">
               You will be asked to confirm your current password there. Once
-              saved, use the new password the next time you sign in to QuikSkill.
+              saved, use the new password the next time you sign in to QuikLMS.
             </p>
 
             {authUrl ? (

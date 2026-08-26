@@ -1,6 +1,6 @@
 'use client';
 /**
- * OfflineAlert — ported from the old QuikSkills frontend
+ * OfflineAlert — ported from the old QuikLMSs frontend
  * (`src/components/learner/OfflineAlert.tsx`).
  *
  * A fixed banner that appears when the connection drops and flips to a

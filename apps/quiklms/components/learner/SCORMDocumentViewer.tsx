@@ -2,7 +2,7 @@
 /**
  * Document Viewer for DOC/DOCX/XLS/XLSX and other Office files
  *
- * Ported from the old QuikSkills frontend `src/components/learner/SCORMDocumentViewer.tsx`.
+ * Ported from the old QuikLMSs frontend `src/components/learner/SCORMDocumentViewer.tsx`.
  *
  * Uses Microsoft Office Online or Google Docs Viewer in an iframe.
  * When iframe fails (common with presigned S3 URLs), shows a download

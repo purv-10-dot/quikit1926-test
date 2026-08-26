@@ -99,8 +99,11 @@ export default function Nav() {
         <div className="wrap">
           <a href="#top" className="brand">
             <BrandMark />
+            {/* Split across two nodes so the second half carries the bold half
+                of the wordmark. Worth knowing when renaming: the product name
+                never appears as one searchable string here. */}
             <span>
-              Quik<b>Skill</b>
+              Quik<b>LMS</b>
             </span>
           </a>
 

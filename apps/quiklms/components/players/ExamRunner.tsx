@@ -1,6 +1,6 @@
 'use client';
 /**
- * Exam taking surface — ported from the old QuikSkills frontend
+ * Exam taking surface — ported from the old QuikLMSs frontend
  * (`src/pages/ExamTakingPage.tsx`), which served the `/exam/:examId/take` route.
  *
  * This component previously had proctoring and a timer but **no question UI** —

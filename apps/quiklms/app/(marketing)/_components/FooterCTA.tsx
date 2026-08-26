@@ -24,7 +24,7 @@ export default function FooterCTA() {
             </p>
             <div className="hero-cta">
               <a href="/login" className="btn btn-primary btn-lg">
-                Sign in to QuikSkill
+                Sign in to QuikLMS
                 <ArrowRight />
               </a>
               <a href="/verify-certificate" className="btn btn-ghost btn-lg">
