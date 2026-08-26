@@ -137,7 +137,7 @@ RUN addgroup --system --gid 1001 nodejs \
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3014
+ENV PORT=3016
 ENV HOSTNAME="0.0.0.0"
 
 # Standalone server (Next 14 monorepo output: apps/quiklms/server.js)
@@ -151,7 +151,7 @@ COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_mo
 COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 USER nextjs
-EXPOSE 3014
+EXPOSE 3016
 
 # This image is the Next.js app ONLY. The `/worker` sidecar (Socket.IO + TUS +
 # cron, apps/quiklms/worker) is a separate process on its own port — it needs

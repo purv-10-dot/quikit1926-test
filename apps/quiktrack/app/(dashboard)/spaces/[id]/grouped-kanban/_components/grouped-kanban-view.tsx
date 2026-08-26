@@ -214,7 +214,8 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
     // the inner region into its own empty fill area, which is the dead space
     // that showed up only on this view. `min-w-0` keeps each group's
     // horizontal scroll self-contained (same guard the board view uses).
-    <div className="px-3 sm:px-6 py-4 min-w-0">
+    // No top padding — the sticky GroupedKanbanToolbar owns it.
+    <div className="px-3 sm:px-6 pb-4 min-w-0">
       <GroupedKanbanToolbar
         filters={{ ...filters, search: searchInput }}
         onFilterChange={(next) => {

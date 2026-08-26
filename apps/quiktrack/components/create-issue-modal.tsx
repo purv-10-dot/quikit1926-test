@@ -102,11 +102,15 @@ export function CreateIssueModal({
   open,
   onClose,
   initialProjectId,
+  initialTitle,
   onProjectChange,
 }: {
   open: boolean;
   onClose: () => void;
   initialProjectId?: string;
+  /** Prefill the Title/Summary field (e.g. from a release placeholder card's
+   *  name). The user can still edit it before creating. */
+  initialTitle?: string;
   /** Notifies a wrapper (e.g. the discovery Create dispatcher) when the user
    *  switches the Project here, so it can flip to the right form for the type. */
   onProjectChange?: (projectId: string) => void;
@@ -182,9 +186,18 @@ export function CreateIssueModal({
         if (!alive) return;
         const data: Project[] = j?.data ?? [];
         setProjects(data);
-        if (!projectId) {
-          setProjectId(initialProjectId ?? data[0]?.id ?? "");
-        }
+        // Normalize the current projectId against the loaded list. The value may
+        // be a project KEY (the URL is canonicalized to /spaces/<KEY>/…) rather
+        // than a cuid; if it doesn't match any p.id, try p.projectKey and swap in
+        // the resolved cuid so the picker highlights the right project instead of
+        // silently falling back to the first one.
+        setProjectId((cur) => {
+          const wanted = cur || initialProjectId || "";
+          const match = wanted
+            ? data.find((p) => p.id === wanted || p.projectKey === wanted)
+            : undefined;
+          return match?.id ?? (cur ? cur : data[0]?.id ?? "");
+        });
       })
       .catch(() => undefined);
     return () => {
@@ -193,18 +206,25 @@ export function CreateIssueModal({
   }, [open, initialProjectId, projectId]);
 
   // When opened with an explicit initialProjectId, honor it (callers like the
-  // discovery Create dispatcher pass the chosen space).
+  // discovery Create dispatcher pass the chosen space). Resolve key-or-id against
+  // the loaded list when it's available so a KEY doesn't get stored raw (the
+  // list-load effect above also normalizes as a backstop).
   useEffect(() => {
-    if (open && initialProjectId) setProjectId(initialProjectId);
-  }, [open, initialProjectId]);
+    if (!open || !initialProjectId) return;
+    const match = projects.find(
+      (p) => p.id === initialProjectId || p.projectKey === initialProjectId,
+    );
+    setProjectId(match?.id ?? initialProjectId);
+  }, [open, initialProjectId, projects]);
 
-  // Reset form whenever modal opens fresh.
+  // Reset form whenever modal opens fresh. Title seeds from initialTitle when a
+  // caller prefills it (e.g. a release placeholder card's name).
   useEffect(() => {
     if (!open) {
       setError(null);
       return;
     }
-    setTitle("");
+    setTitle(initialTitle ?? "");
     setDescription("");
     setStoryPoints("");
     setSprintId("");
@@ -215,14 +235,16 @@ export function CreateIssueModal({
     setStartDate("");
     setError(null);
     setShowCfErrors(false);
-  }, [open]);
+  }, [open, initialTitle]);
 
   // Fetch project-scoped data when project changes.
   useEffect(() => {
     if (!open || !projectId) return;
     let alive = true;
     Promise.all([
-      fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
+      // creatable=1 → only statuses a new item may start in (the workflow's
+      // initial status when the project is gated; the full list otherwise).
+      fetch(`/api/projects/${projectId}/statuses?creatable=1`).then((r) => r.json()),
       fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
       fetch(`/api/sprints?projectId=${projectId}&limit=50`).then((r) => r.json()),
       fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=100`).then((r) => r.json()),

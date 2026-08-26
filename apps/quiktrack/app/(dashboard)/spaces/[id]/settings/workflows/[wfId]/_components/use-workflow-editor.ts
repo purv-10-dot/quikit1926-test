@@ -201,7 +201,30 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
           if (rule.type === "show_screen" && t.rules.some((r) => r.type === "show_screen")) {
             return t;
           }
-          return { ...t, rules: [...t.rules, rule] };
+          // Conditions default to AND ("Must be all", Jira's default): give each
+          // new condition its OWN group so it's AND-ed with the others. Without
+          // this every condition lands in group 0 and the engine OR-s them, so a
+          // transition would show even when a condition fails. The ALL/ANY toggle
+          // re-maps groups afterwards. If the existing conditions are all in one
+          // group (the user chose "Can be any"), keep the new one in that group.
+          let next = rule;
+          if (rule.kind === "CONDITION") {
+            const condGroups = t.rules.filter((r) => r.kind === "CONDITION").map((r) => r.groupNo ?? 0);
+            // ANY mode = the user chose "Can be any", i.e. every existing
+            // condition sits in group 0 (OR-ed). A single condition in a non-zero
+            // group means ALL mode (see the ALL/ANY toggle's 0-vs-nonzero
+            // convention in workflow-editor.tsx). In ANY mode keep the new one in
+            // group 0; otherwise (ALL) give it its own group = max+1.
+            const isAnyMode =
+              condGroups.length > 0 && condGroups.every((g) => g === 0);
+            const groupNo = isAnyMode
+              ? 0
+              : condGroups.length === 0
+                ? 0
+                : Math.max(...condGroups) + 1;
+            next = { ...rule, groupNo };
+          }
+          return { ...t, rules: [...t.rules, next] };
         }),
       })),
     [mutate],
@@ -227,7 +250,16 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
         ...d,
         transitions: d.transitions.map((t) =>
           t.id === transitionId
-            ? { ...t, rules: t.rules.map((r, i) => (i === index ? rule : r)) }
+            ? {
+                ...t,
+                rules: t.rules.map((r, i) =>
+                  // Preserve the existing group/order so re-editing a condition's
+                  // config doesn't silently reset its AND/OR grouping to group 0.
+                  i === index
+                    ? { ...rule, groupNo: rule.groupNo ?? r.groupNo, orderNo: rule.orderNo ?? r.orderNo }
+                    : r,
+                ),
+              }
             : t,
         ),
       })),
@@ -252,6 +284,22 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     [mutate],
   );
 
+  // Name/description are workflow METADATA, saved straight to the live row via
+  // PATCH (not part of the publishable graph draft). So this reflects the change
+  // in local state (header + editor) without marking unpublished changes, then
+  // refreshes the workflow list so its name updates there too.
+  const setMeta = useCallback(
+    (patch: { name?: string; description?: string | null }) => {
+      setDraft((prev) => ({
+        ...prev,
+        name: patch.name ?? prev.name,
+        description: patch.description !== undefined ? patch.description : prev.description,
+      }));
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-scheme"] });
+    },
+    [qc],
+  );
+
   return {
     draft,
     saving: save.isPending,
@@ -273,5 +321,6 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
     removeRule,
     updateRule,
     setTriggers,
+    setMeta,
   };
 }

@@ -59,7 +59,7 @@ function TaxDetailsPageInner() {
     queryKey: ["employees", "deductor-list"],
     queryFn: () =>
       api.get<Array<{ id: string; firstName: string; lastName: string; employeeCode: string }>>(
-        "/api/v1/hrms/employees?limit=500",
+        "/api/v1/hrms/employees?limit=500&picker=1",
       ),
   });
   const employeeList = employeesRes?.data ?? [];

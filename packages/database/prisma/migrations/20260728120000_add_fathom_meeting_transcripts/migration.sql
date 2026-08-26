@@ -70,3 +70,4 @@ ALTER TABLE "app_quikscale"."ClientMeetingTranscript" ADD CONSTRAINT "ClientMeet
 
 -- AddForeignKey
 ALTER TABLE "app_quikscale"."ClientMeetingTranscript" ADD CONSTRAINT "ClientMeetingTranscript_weeklyMeetingId_fkey" FOREIGN KEY ("weeklyMeetingId") REFERENCES "app_quikscale"."ClientWeeklyMeeting"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+

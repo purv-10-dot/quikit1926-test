@@ -20,6 +20,8 @@ export interface BacklogViewSettings {
     /** Story-point estimate badge (Jira-style). */
     estimate: boolean;
     status: boolean;
+    /** Inline due-date chip (editable). */
+    dueDate: boolean;
     assignee: boolean;
   };
 }
@@ -29,7 +31,15 @@ export const DEFAULT_VIEW_SETTINGS: BacklogViewSettings = {
   emptySprints: true,
   completedSprints: false,
   density: "default",
-  fields: { workType: true, key: true, epic: true, estimate: true, status: true, assignee: true },
+  fields: {
+    workType: true,
+    key: true,
+    epic: true,
+    estimate: true,
+    status: true,
+    dueDate: true,
+    assignee: true,
+  },
 };
 
 const FIELD_LABELS: Array<{ key: keyof BacklogViewSettings["fields"]; label: string }> = [
@@ -38,6 +48,7 @@ const FIELD_LABELS: Array<{ key: keyof BacklogViewSettings["fields"]; label: str
   { key: "epic", label: "Epic" },
   { key: "estimate", label: "Story points" },
   { key: "status", label: "Status" },
+  { key: "dueDate", label: "Due date" },
   { key: "assignee", label: "Assignee" },
 ];
 

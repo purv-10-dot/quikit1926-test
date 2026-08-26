@@ -31,6 +31,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     const app = await prisma.jobApplication.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
+      include: { candidate: { select: { source: true } } },
     });
     if (!app) return notFound("Application not found");
 
@@ -47,6 +48,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     const currentStage = app.currentStage ?? stages[0] ?? "Screening";
     const currentIdx = stages.indexOf(currentStage);
     const round = currentIdx >= 0 ? currentIdx + 1 : 1;
+    // Career-page candidates clearing the Source round move on silently — no
+    // "you cleared this round" email, since there's no real interview yet.
+    const skipClearedRoundMail = currentStage === "Screening" && app.candidate.source === "CandCareerPage";
 
     const interviewerId = await resolveEmployeeId(orgId, userId);
     if (!interviewerId) return validationError("Interviewer employee record not found");
@@ -131,7 +135,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       // Congratulate the candidate on clearing this round — same email the
       // interview-decision path sends. Previously the pipeline "approve" path
       // advanced the candidate silently with no email. Best-effort, background.
-      void (async () => {
+      if (!skipClearedRoundMail) void (async () => {
         try {
           const [cand, company, req_] = await Promise.all([
             prisma.candidate.findFirst({ where: { id: app.candidateId, orgId }, select: { firstName: true, lastName: true, email: true } }),

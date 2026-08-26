@@ -99,7 +99,7 @@ const allowedOrigins = [
   .map((o) => o.trim())
   .filter(Boolean);
 const io = new SocketServer(httpServer, {
-  cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : ['http://localhost:3014'], credentials: true },
+  cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : ['http://localhost:3016'], credentials: true },
 });
 registerExamNamespace(io);
 registerMessagesNamespace(io);

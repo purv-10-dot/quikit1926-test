@@ -4,6 +4,8 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createSprintSchema } from "@/lib/validation/sprint";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 
+// AI Runtime: agent-JWT opt-in (manifest read op `list_sprints`). Reads only —
+// the POST below deliberately stays session/API-token.
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const idOrKey = url.searchParams.get("projectId");
@@ -109,7 +111,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     })),
     nextCursor,
   });
-});
+}, { allowAgentJwt: true });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = createSprintSchema.safeParse(await req.json());
@@ -156,4 +158,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     },
   });
   return NextResponse.json({ success: true, data: sprint }, { status: 201 });
-});
+}, { allowAgentJwt: true });

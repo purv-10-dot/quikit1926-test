@@ -1,25 +1,41 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth, withServiceAuth } from "@/lib/with-auth";
-import { successResponse, validationError, internalError } from "@/lib/api-response";
+import { successResponse, validationError, internalError, forbidden } from "@/lib/api-response";
 import { createRequisitionSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { generateRequisitionNumber } from "@/lib/utils/requisition-number";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
+import { getMyJobRequisitionIds } from "@/lib/recruit/my-jobs";
 import type { Prisma } from "@quikit/database";
 
-export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
+    const canSeeAll = permissions.includes("*") || permissions.includes("hrms.recruit.read");
+    const canSeeSelf = canSeeAll || permissions.includes("hrms.recruit.read_self");
+    if (!canSeeSelf) return forbidden("No recruitment read permission");
+
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
+    // Recruiter (self-only) scope: only requisitions they're assigned to
+    // (any split row, not just the primary/first one) — HR_Head-style roles
+    // skip this and see every requisition in the org.
+    let myJobIds: string[] | null = null;
+    if (!canSeeAll) {
+      const employeeId = await resolveEmployeeId(orgId, userId);
+      myJobIds = employeeId ? await getMyJobRequisitionIds(orgId, employeeId) : [];
+    }
+
     const { data, total } = await (async () => {
       const where: Prisma.JobRequisitionWhereInput = {
         orgId, deletedAt: null,
+        ...(myJobIds !== null && { id: { in: myJobIds } }),
         ...(status && { status: status as Prisma.JobRequisitionWhereInput["status"] }),
         ...(priority && { priority: priority as Prisma.JobRequisitionWhereInput["priority"] }),
         ...(search && { OR: [
@@ -35,7 +51,11 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
             department: { select: { id: true, name: true } },
             hiringManager: { select: { id: true, firstName: true, lastName: true } },
             recruiter: { select: { id: true, firstName: true, lastName: true } },
+            raiser: { select: { id: true, firstName: true, lastName: true } },
+            creator: { select: { id: true, firstName: true, lastName: true } },
             pipeline: { select: { id: true, name: true, isDefault: true } },
+            jobLevel: { select: { id: true, code: true, name: true, slaDays: true } },
+            recruiterSplits: { where: { deletedAt: null }, select: { employeeId: true, positionsAssigned: true } },
             _count: { select: { applications: true } },
           },
         }),
@@ -45,7 +65,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
     })();
     return successResponse(data, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/requisitions error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.read"] });
+});
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -63,6 +83,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       where: { id: data.pipelineId, orgId, deletedAt: null },
     });
     if (!pipeline) return validationError("Selected pipeline not found");
+
+    if (data.jobLevelId) {
+      const level = await prisma.jobLevel.findFirst({ where: { id: data.jobLevelId, orgId, deletedAt: null } });
+      if (!level) return validationError("Selected job level not found");
+    }
+    if (data.recruiterAssignments?.length) {
+      const ids = data.recruiterAssignments.map((a) => a.employeeId);
+      const found = await prisma.employee.findMany({ where: { id: { in: ids }, orgId, deletedAt: null }, select: { id: true } });
+      if (found.length !== new Set(ids).size) return validationError("One or more assigned recruiters are not in your organization.");
+    }
 
     const req_ = await prisma.jobRequisition.create({
       data: {
@@ -103,10 +133,33 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         createdById: creatorEmpId, hiringManagerId: data.hiringManagerId, recruiterId: data.recruiterId,
+        jobLevelId: data.jobLevelId, customSlaDays: data.customSlaDays, customSlaReason: data.customSlaReason,
         createdBy: userId, updatedBy: userId,
       },
       include: { department: { select: { id: true, name: true } } },
     });
+
+    // Recruiter & Position Tracking (Phase 1) — one RequisitionPosition row per
+    // opening, generated up front. The requisition itself is never duplicated.
+    await generatePositionsForRequisition(orgId, req_.id, requisitionNumber, data.positions, userId);
+
+    // Multi-recruiter position split — optional. If HR didn't split explicitly
+    // but did pick a single recruiter, still record one row for that recruiter
+    // covering every position, so the Recruiter Performance Dashboard has one
+    // consistent source of truth (no special-casing "single recruiter" later).
+    const splits = data.recruiterAssignments?.length
+      ? data.recruiterAssignments
+      : data.recruiterId
+        ? [{ employeeId: data.recruiterId, positionsAssigned: data.positions }]
+        : [];
+    if (splits.length) {
+      await prisma.requisitionRecruiter.createMany({
+        data: splits.map((s) => ({
+          orgId, requisitionId: req_.id, employeeId: s.employeeId,
+          positionsAssigned: s.positionsAssigned, createdBy: userId, updatedBy: userId,
+        })),
+      });
+    }
 
     void fireWorkflow({
       orgId, event: "recruit.requisition.created",
@@ -115,4 +168,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(req_, undefined, 201);
   } catch (error) { console.error("POST /recruit/requisitions error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.requisition.write"], anyPermission: true });

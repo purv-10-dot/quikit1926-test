@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +12,7 @@ import { clsx } from "clsx";
 import { Plus, Search, User, Briefcase, MapPin, Link2, FileText, IndianRupee,
   Globe, Users as UsersIcon, Landmark, GraduationCap, Rocket, Inbox, Check, ChevronDown, ChevronRight, Sparkles,
   Ban, Archive, ArchiveRestore, Clock, ShieldX, MoreVertical, RotateCcw, X, Flame, AlertCircle, Building2,
-  ArrowLeft, ArrowRight, Upload, Pencil, UserPlus } from "lucide-react";
+  ArrowLeft, ArrowRight, Upload, Pencil, UserPlus, PauseCircle } from "lucide-react";
 import { CandidateBulkImport } from "../_components/candidate-bulk-import";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { NumberInput } from "@/components/hrms/ui/number-input";
@@ -20,6 +21,7 @@ import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { PageBackground } from "@/components/hrms/page-background";
+import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 // CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
 // so 5–6 digit nonsense values can't be entered.
@@ -41,6 +43,7 @@ interface Requisition {
 
 interface CandidateItem {
   id: string;
+  candidateCode: string | null;
   firstName: string;
   lastName: string;
   email: string;
@@ -88,6 +91,7 @@ interface CandFormShape {
   linkedinUrl: string; resumeUrl: string;
   skills: string;
   requisitionId: string;
+  assignedRecruiterId: string;
 }
 type CandFormErrors = Partial<Record<keyof CandFormShape, string>>;
 
@@ -97,8 +101,16 @@ const statusColors: Record<string, string> = {
   Hired: "bg-green-100 text-green-700",
   CandRejected: "bg-red-100 text-red-700",
   CandOnHold: "bg-orange-100 text-orange-700",
+  CandParked: "bg-purple-100 text-purple-700",
   Withdrawn: "bg-gray-100 text-gray-500",
 };
+
+const PARK_REASONS = [
+  { value: "LessExperience", label: "Less Experience" },
+  { value: "HighBudget", label: "High Budget" },
+  { value: "NonRelevant", label: "Non Relevant" },
+  { value: "Other", label: "Other" },
+] as const;
 
 export default function CandidatesPage() {
   const api = useApiClient();
@@ -106,7 +118,7 @@ export default function CandidatesPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [search, setSearch] = useState("");
-  const [viewScope, setViewScope] = useState<"active" | "pool" | "blacklisted" | "archived">("active");
+  const [viewScope, setViewScope] = useState<"pool" | "blacklisted" | "archived">("pool");
   // Default the Active view to candidates currently in the pipeline; the user
   // can switch to "All statuses" (or any other) from the filter.
   const [statusFilter, setStatusFilter] = useState("InPipeline");
@@ -120,9 +132,14 @@ export default function CandidatesPage() {
   const [blacklistForm, setBlacklistForm] = useState({ reason: "", duration: "permanent" as "permanent" | "30" | "90" | "180" | "365" | "custom", customDays: 90 });
   const [archiveTarget, setArchiveTarget] = useState<CandidateItem | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
+  const [parkTarget, setParkTarget] = useState<CandidateItem | null>(null);
+  const [parkForm, setParkForm] = useState({ reason: "" as "" | typeof PARK_REASONS[number]["value"], note: "" });
   const [applyTarget, setApplyTarget] = useState<CandidateItem | null>(null);
   const [applyReqId, setApplyReqId] = useState("");
   const [showBulk, setShowBulk] = useState(false);
+  const [showSmartAdd, setShowSmartAdd] = useState(false);
+  const [smartResumeUrl, setSmartResumeUrl] = useState("");
+  const [smartParsing, setSmartParsing] = useState(false);
   const [resumeTarget, setResumeTarget] = useState<CandidateItem | null>(null);
   const [resumeCtx, setResumeCtx] = useState<{ requisitionTitle: string; heldStage: string; stages: string[] } | null>(null);
   const [resumeStage, setResumeStage] = useState("");
@@ -136,9 +153,55 @@ export default function CandidatesPage() {
     linkedinUrl: "", resumeUrl: "",
     skills: "",
     requisitionId: "",
+    assignedRecruiterId: "",
   };
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Partial<Record<keyof typeof emptyForm, string>>>({});
+
+  // "Smart Add" — upload a resume, auto-fill the Add Candidate wizard from it.
+  // Never blocks: any parse failure just opens the wizard with the resume
+  // attached and everything else blank, same as filling it in by hand.
+  const handleSmartParse = async () => {
+    if (!smartResumeUrl) return;
+    setSmartParsing(true);
+    try {
+      const res = await api.post<{
+        firstName: string; lastName: string; email: string; phone: string;
+        currentCompany: string; currentDesignation: string;
+        experienceMonths: number | null; skills: string[];
+        linkedinUrl: string; location: string;
+      }>("/api/v1/hrms/recruit/candidates/parse-resume", { resumeUrl: smartResumeUrl });
+      const p = res.data;
+      setForm({
+        ...emptyForm,
+        resumeUrl: smartResumeUrl,
+        firstName: p.firstName || "",
+        lastName: p.lastName || "",
+        email: p.email || "",
+        phone: p.phone || "",
+        currentCompany: p.currentCompany || "",
+        currentDesignation: p.currentDesignation || "",
+        location: p.location || "",
+        totalExperience: p.experienceMonths ?? null,
+        linkedinUrl: p.linkedinUrl || "",
+        skills: Array.isArray(p.skills) ? p.skills.join(", ") : "",
+      });
+      if (!p.firstName && !p.email) {
+        toast.info("Couldn't find much in this resume", "Fields are blank — please fill them in manually.");
+      } else {
+        toast.success("Resume read", "Review the pre-filled details before saving.");
+      }
+    } catch {
+      setForm({ ...emptyForm, resumeUrl: smartResumeUrl });
+      toast.error("Couldn't auto-fill from resume", "Please fill the details in manually.");
+    } finally {
+      setSmartParsing(false);
+      setErrors({});
+      setShowSmartAdd(false);
+      setSmartResumeUrl("");
+      setShowCreate(true);
+    }
+  };
 
   const isIndiaLocation = /\bindia\b|bengaluru|bangalore|mumbai|delhi|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram|ahmedabad|indore|bhopal|jaipur|lucknow|kanpur|surat|kochi/i
     .test(form.location);
@@ -195,20 +258,17 @@ export default function CandidatesPage() {
       } else {
         if (viewScope === "blacklisted") { qs.set("blacklisted", "1"); qs.set("includeArchived", "1"); }
         else if (viewScope === "archived") qs.set("archived", "1");
-        // Candidate Pool — sourced but never linked to a requisition.
-        else if (viewScope === "pool") qs.set("noApplication", "1");
         else {
-          // Active tab is exclusively for candidates linked to at least one
-          // requisition — never-applied (Candidate Pool) candidates belong only
-          // in the Pool tab, regardless of which status filter is selected here.
-          qs.set("hasApplication", "1");
-          // Active view defaults to candidates still in the pipeline — hides Hired
-          // and Rejected. An explicit status filter (e.g. "Rejected") overrides this.
-          if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected"); qs.set("excludeStage", "Hired"); }
+          // Candidate Pool now covers everyone — sourced-but-unlinked candidates
+          // AND candidates already linked to a requisition (previously the
+          // separate "Active" tab) — merged into one tab.
+          // Defaults to candidates still in the pipeline — hides Hired and
+          // Rejected. An explicit status filter (e.g. "Rejected") overrides this.
+          if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected,CandParked"); qs.set("excludeStage", "Hired"); }
         }
         // Candidate-level status (single value per candidate — unaffected by how
         // many pipelines/applications they're in).
-        if (statusFilter && viewScope === "active") qs.set("status", statusFilter);
+        if (statusFilter && viewScope === "pool") qs.set("status", statusFilter);
       }
       if (sourceFilter) qs.set("source", sourceFilter);
       if (expFilter) {
@@ -258,13 +318,66 @@ export default function CandidatesPage() {
     },
   });
 
+  // "Park Candidate" — not a fit for THIS role, set aside (not rejected) with a reason.
+  const parkMut = useMutation({
+    mutationFn: ({ applicationId, reason, note }: { applicationId: string; reason: string; note?: string }) =>
+      api.post(`/api/v1/hrms/recruit/applications/${applicationId}/park`, { reason, note }),
+    meta: { suppressGlobalError: true },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Candidate parked", "Set aside — not a fit for this role.");
+      setParkTarget(null);
+      setParkForm({ reason: "", note: "" });
+    },
+    onError: (e: Error) => toast.error("Couldn't park candidate", e.message),
+  });
+
+  const unparkMut = useMutation({
+    mutationFn: (applicationId: string) => api.delete(`/api/v1/hrms/recruit/applications/${applicationId}/park`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Unparked", "Candidate is back in the pipeline.");
+    },
+  });
+
+  // Candidate Pool (never archived, just never linked to a job) → apply
+  // directly, no un-archive step needed (that's the difference from
+  // applyFromArchiveMut above).
+  const applyFromPoolMut = useMutation({
+    mutationFn: async ({ id, requisitionId, assignedRecruiterId }: { id: string; requisitionId: string; assignedRecruiterId?: string }) => {
+      const res = await api.post<{ warning?: string }>("/api/v1/hrms/recruit/applications", { candidateId: id, requisitionId, assignedRecruiterId, currentStage: "PhoneScreen" });
+      return res.data?.warning;
+    },
+    meta: { suppressGlobalError: true },
+    onSuccess: (warning) => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Applied to role", "Candidate added to the requisition.");
+      if (warning) toast.warning("Recently rejected", warning);
+      setApplyTarget(null);
+      setApplyReqId("");
+    },
+  });
+
+  // "Pending Review" applications (e.g. a website apply) have no stage yet —
+  // this is the one action that puts them on the Hiring Pipeline board.
+  const startPipelineMut = useMutation({
+    mutationFn: (applicationId: string) => api.post(`/api/v1/hrms/recruit/applications/${applicationId}/start-pipeline`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Moved to Pipeline", "Candidate now appears on the Hiring Pipeline board.");
+    },
+  });
+
   // Re-engage an archived candidate on a NEW role: un-archive, then apply.
   // Backend enforces the same-role cooling block and returns a soft warning
   // when they were recently rejected for a different role.
   const applyFromArchiveMut = useMutation({
-    mutationFn: async ({ id, requisitionId }: { id: string; requisitionId: string }) => {
+    mutationFn: async ({ id, requisitionId, assignedRecruiterId }: { id: string; requisitionId: string; assignedRecruiterId?: string }) => {
       await api.delete(`/api/v1/hrms/recruit/candidates/${id}/archive`);
-      const res = await api.post<{ warning?: string }>("/api/v1/hrms/recruit/applications", { candidateId: id, requisitionId });
+      // currentStage: "PhoneScreen" — a candidate HR is manually applying to a
+      // role is already vetted, so this skips the raw-applicant "Source" stage,
+      // matching the Pipeline page's own pool "Assign to Requisition" flow.
+      const res = await api.post<{ warning?: string }>("/api/v1/hrms/recruit/applications", { candidateId: id, requisitionId, assignedRecruiterId, currentStage: "PhoneScreen" });
       return res.data?.warning;
     },
     meta: { suppressGlobalError: true },
@@ -306,6 +419,14 @@ export default function CandidatesPage() {
   });
   const openReqs = (reqsData?.data ?? []).filter((r) => r.status === "ReqOpen" || r.status === "ReqApproved");
 
+  // Recruiter & Position Tracking (Phase 1) — who's personally handling this
+  // candidate once they're linked to a requisition.
+  const { data: recruitersData } = useQuery({
+    queryKey: ["employees-picker"],
+    queryFn: () => api.get<{ id: string; firstName: string; lastName: string }[]>("/api/v1/hrms/employees?picker=1&limit=200"),
+  });
+  const recruiterOptions = (recruitersData?.data ?? []).map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() }));
+
   const createMut = useMutation({
     mutationFn: async (body: typeof form) => {
       const payload = {
@@ -334,6 +455,11 @@ export default function CandidatesPage() {
           // Skip straight to Phone Screening — linking a candidate to a JR at
           // creation time means they're already past initial screening.
           currentStage: "PhoneScreen",
+          assignedRecruiterId: body.assignedRecruiterId || undefined,
+          // Creating the candidate AND linking them to a JR in one action —
+          // if no recruiter was explicitly picked, the person doing this
+          // becomes the recruiter (self-assign), not Round Robin.
+          selfAssign: true,
         });
         warning = appRes.data?.warning;
       }
@@ -375,6 +501,7 @@ export default function CandidatesPage() {
         linkedinUrl: d.linkedinUrl ?? "", resumeUrl: d.resumeUrl ?? "",
         skills: Array.isArray(d.skills) ? (d.skills as string[]).join(", ") : "",
         requisitionId: "",
+        assignedRecruiterId: "",
       });
     } catch {
       toast.error("Couldn't load candidate", "Please try again.");
@@ -446,6 +573,7 @@ export default function CandidatesPage() {
     Hired: "Hired",
     CandRejected: "Rejected",
     CandOnHold: "On Hold",
+    CandParked: "Parked",
     Withdrawn: "Withdrawn",
   };
   const exportRows = candidates.map((c) => ({
@@ -491,6 +619,10 @@ export default function CandidatesPage() {
             className="flex items-center gap-2 btn bg-white ring-1 ring-gray-200 text-gray-700 hover:bg-gray-50">
             <Upload size={13} /> Bulk Add
           </button>
+          <button onClick={() => { setSmartResumeUrl(""); setShowSmartAdd(true); }}
+            className="flex items-center gap-2 btn bg-white ring-1 ring-green-200 text-green-700 hover:bg-green-50">
+            <Sparkles size={13} /> Smart Add
+          </button>
           <button onClick={() => { setForm(emptyForm); setErrors({}); setShowCreate(true); }}
             className="flex items-center gap-2 btn bg-green-600 hover:bg-green-700 text-white">
             <Plus size={13} /> Add Candidate
@@ -502,8 +634,7 @@ export default function CandidatesPage() {
         <FilterBar>
           <div className="inline-flex items-center bg-gray-100 rounded-md p-0.5">
             {([
-              { k: "active", label: "Active", icon: <User size={13} /> },
-              { k: "pool", label: "Candidate Pool", icon: <UsersIcon size={13} /> },
+              { k: "pool", label: "Applications", icon: <UsersIcon size={13} /> },
               { k: "blacklisted", label: "Blacklisted", icon: <Ban size={13} /> },
               { k: "archived", label: "Archived", icon: <Archive size={13} /> },
             ] as const).map((v) => (
@@ -528,6 +659,7 @@ export default function CandidatesPage() {
               { value: "InPipeline", label: "In Pipeline" },
               { value: "Hired", label: "Hired" },
               { value: "CandOnHold", label: "On Hold" },
+              { value: "CandParked", label: "Parked" },
               { value: "CandRejected", label: "Rejected" },
               { value: "Withdrawn", label: "Withdrawn" },
             ]}
@@ -588,9 +720,12 @@ export default function CandidatesPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Candidate</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Phone</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Current</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Experience</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Source</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Applied To</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Tags</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
                 <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
@@ -609,9 +744,14 @@ export default function CandidatesPage() {
                         {`${c.firstName?.[0] ?? ""}${c.lastName?.[0] ?? ""}`.toUpperCase() || "?"}
                       </span>
                       <div className="min-w-0">
-                        <Link href={`/recruit/candidates/${c.id}`} className="text-[13px] font-semibold text-gray-900 hover:text-green-700 hover:underline">
-                          {c.firstName} {c.lastName}
-                        </Link>
+                        <div className="flex items-center gap-1.5">
+                          <Link href={`/recruit/candidates/${c.id}`} className="text-[13px] font-semibold text-gray-900 hover:text-green-700 hover:underline">
+                            {c.firstName} {c.lastName}
+                          </Link>
+                          {c.candidateCode && (
+                            <span className="text-[10px] font-mono text-gray-400">{c.candidateCode}</span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-gray-500 truncate">{c.email}</p>
                         <div className="mt-1 flex flex-wrap items-center gap-1">
                           {c.isBlacklisted && !blExpired && (
@@ -642,6 +782,7 @@ export default function CandidatesPage() {
                       </div>
                     </div>
                   </td>
+                  <td className="px-4 py-3 text-xs text-gray-700">{c.phone || "—"}</td>
                   <td className="px-4 py-3 text-xs text-gray-700">
                     {c.currentDesignation && <p className="font-semibold text-gray-900">{c.currentDesignation}</p>}
                     {c.currentCompany && <p className="text-[11px] text-gray-500">{c.currentCompany}</p>}
@@ -658,35 +799,63 @@ export default function CandidatesPage() {
                       {c.source.replace("Cand", "")}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-xs text-gray-700">
+                    {c.applications[0]?.requisition ? (
+                      <>
+                        <p className="font-medium text-gray-900 truncate max-w-[160px]">{c.applications[0].requisition.title}</p>
+                        <p className="text-[11px] text-gray-400 font-mono">{c.applications[0].requisition.requisitionNumber}</p>
+                      </>
+                    ) : "—"}
+                  </td>
                   <td className="px-4 py-3">
-                    <StatusCell status={c.status} stage={c.applications[0]?.currentStage ?? null} />
+                    {c.tags && c.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 max-w-[200px]">
+                        {c.tags.slice(0, 2).map((t, ti) => (
+                          <span key={ti} className="inline-block px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[10.5px] truncate max-w-[180px]" title={t}>{t}</span>
+                        ))}
+                        {c.tags.length > 2 && <span className="text-[10.5px] text-gray-400">+{c.tags.length - 2}</span>}
+                      </div>
+                    ) : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusCell status={c.status} stage={c.applications[0]?.currentStage ?? null} hasApplication={c.applications.length > 0} />
                   </td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end">
-                      <div className="inline-flex items-center rounded-xl ring-1 ring-gray-200 bg-white divide-x divide-gray-100 overflow-hidden">
-                        <ActionBtn icon={<Clock size={15} />} label="Timeline" color="text-green-600" onClick={() => setTimelineTarget(c)} title="View timeline" />
-                        {/* Only active candidates are editable — blacklisted/archived are read-only. */}
-                        {!c.isBlacklisted && !c.isArchived && (
-                          <ActionBtn icon={<Pencil size={15} />} label="Edit" color="text-blue-600" onClick={() => openEdit(c)} title="Edit candidate" />
-                        )}
-                        {c.isBlacklisted ? (
-                          <ActionBtn icon={<RotateCcw size={15} />} label="Unblock" color="text-emerald-600" onClick={() => unblacklistMut.mutate(c.id)} title="Lift blacklist" />
-                        ) : (
-                          <ActionBtn icon={<Ban size={15} />} label="Blacklist" color="text-red-600" onClick={() => { setBlacklistForm({ reason: "", duration: "permanent", customDays: 90 }); setBlacklistTarget(c); }} title="Blacklist candidate" />
-                        )}
-                        {c.isArchived ? (
-                          <>
-                            {c.status === "CandOnHold" ? (
-                              <ActionBtn icon={<RotateCcw size={15} />} label="Resume" color="text-amber-600" onClick={() => openResume(c)} title="Resume from hold — pick a stage" />
-                            ) : (
-                              <ActionBtn icon={<ArchiveRestore size={15} />} label="Restore" color="text-slate-600" onClick={() => unarchiveMut.mutate(c.id)} title="Restore to the same stage" />
-                            )}
-                            <ActionBtn icon={<UserPlus size={15} />} label="Apply to role" color="text-green-600" onClick={() => { setApplyReqId(""); setApplyTarget(c); }} title="Restore and apply to a role" />
-                          </>
-                        ) : (
-                          <ActionBtn icon={<Archive size={15} />} label="Archive" color="text-slate-600" onClick={() => { setArchiveReason(""); setArchiveTarget(c); }} title="Archive candidate" />
-                        )}
-                      </div>
+                      <RowActionsMenu actions={[
+                        { label: "Timeline", icon: <Clock size={14} />, onClick: () => setTimelineTarget(c) },
+                        // Only active candidates are editable — blacklisted/archived are read-only.
+                        ...(!c.isBlacklisted && !c.isArchived ? [{ label: "Edit", icon: <Pencil size={14} />, onClick: () => openEdit(c) }] : []),
+                        ...(!c.isBlacklisted && !c.isArchived && c.applications[0] && !c.applications[0].currentStage
+                          ? [{ label: "Move to Pipeline", icon: <UserPlus size={14} />, onClick: () => startPipelineMut.mutate(c.applications[0].id) }]
+                          : []),
+                        ...(c.isBlacklisted
+                          ? [{ label: "Unblock", icon: <RotateCcw size={14} />, onClick: () => unblacklistMut.mutate(c.id) }]
+                          : [{ label: "Blacklist", icon: <Ban size={14} />, danger: true, onClick: () => { setBlacklistForm({ reason: "", duration: "permanent", customDays: 90 }); setBlacklistTarget(c); } }]),
+                        ...(c.isArchived
+                          ? [
+                              c.status === "CandOnHold"
+                                ? { label: "Resume", icon: <RotateCcw size={14} />, onClick: () => openResume(c) }
+                                : { label: "Restore", icon: <ArchiveRestore size={14} />, onClick: () => unarchiveMut.mutate(c.id) },
+                              { label: "Apply to role", icon: <UserPlus size={14} />, onClick: () => { setApplyReqId(""); setApplyTarget(c); } },
+                            ]
+                          : [
+                              // Candidate Pool — no application at all yet (e.g. an "Open
+                              // Application" website submission). This is how HR links them
+                              // to a specific job requisition + recruiter for the first time.
+                              ...(c.applications.length === 0
+                                ? [{ label: "Apply to role", icon: <UserPlus size={14} />, onClick: () => { setApplyReqId(""); setApplyTarget(c); } }]
+                                : []),
+                              // Park Candidate — profile isn't a fit for THIS role (not a
+                              // rejection), set aside with a reason for future reference.
+                              ...(c.status === "CandParked"
+                                ? [{ label: "Unpark", icon: <RotateCcw size={14} />, onClick: () => { if (c.applications[0]) unparkMut.mutate(c.applications[0].id); } }]
+                                : c.applications[0] && c.status !== "Hired" && c.status !== "CandRejected" && c.status !== "Withdrawn"
+                                  ? [{ label: "Park Candidate", icon: <PauseCircle size={14} />, onClick: () => { setParkForm({ reason: "", note: "" }); setParkTarget(c); } }]
+                                  : []),
+                              { label: "Archive", icon: <Archive size={14} />, onClick: () => { setArchiveReason(""); setArchiveTarget(c); } },
+                            ]),
+                      ]} />
                     </div>
                   </td>
                 </tr>
@@ -733,6 +902,27 @@ export default function CandidatesPage() {
         )}
       </Modal>
 
+      <Modal open={showSmartAdd} onClose={() => { setShowSmartAdd(false); setSmartResumeUrl(""); }}
+        title="Smart Add" subtitle="Upload a resume — we'll auto-fill the candidate form from it." size="md"
+        headerIcon={<Sparkles size={18} />}>
+        <div className="space-y-4">
+          <FileUploadInput value={smartResumeUrl} onChange={setSmartResumeUrl}
+            accept="application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            label="Resume" placeholder="Upload resume (PDF / DOCX, max 5MB)" />
+          <p className="text-xs text-gray-500">We'll read the resume and pre-fill name, contact info, current role, experience, skills and LinkedIn — you can review and edit everything before saving.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => { setShowSmartAdd(false); setSmartResumeUrl(""); }}
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="button" onClick={handleSmartParse} disabled={!smartResumeUrl || smartParsing}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
+              <Sparkles size={13} /> {smartParsing ? "Reading resume..." : "Parse & Continue"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }}
         title={editId ? "Edit Candidate" : "Add Candidate"} size="3xl"
         subtitle={editId ? "Update candidate details." : "Add candidate details and apply to requisitions."}
@@ -743,6 +933,7 @@ export default function CandidatesPage() {
           errors={errors}
           isIndiaLocation={isIndiaLocation}
           openReqs={openReqs}
+          recruiterOptions={recruiterOptions}
           editMode={!!editId}
           submitting={editId ? updateMut.isPending : createMut.isPending}
           onCancel={() => { setShowCreate(false); setEditId(null); }}
@@ -853,13 +1044,63 @@ export default function CandidatesPage() {
         )}
       </Modal>
 
+      <Modal open={!!parkTarget} onClose={() => setParkTarget(null)} title="Park Candidate" size="md">
+        {parkTarget && (
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const applicationId = parkTarget.applications[0]?.id;
+            if (!parkForm.reason || !applicationId) return;
+            if (parkForm.reason === "Other" && !parkForm.note.trim()) { toast.error("Please describe the reason"); return; }
+            parkMut.mutate({ applicationId, reason: parkForm.reason, note: parkForm.note.trim() || undefined });
+          }} className="space-y-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs">
+              <div className="flex items-center gap-2 mb-1">
+                <PauseCircle size={14} className="text-purple-600" />
+                <span className="font-semibold text-purple-900">{parkTarget.firstName} {parkTarget.lastName}</span>
+              </div>
+              <p className="text-xs text-purple-700">
+                Not a fit for this role — set aside (not rejected). They stay in the database for future roles.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
+              <Select
+                value={parkForm.reason}
+                onChange={(v) => setParkForm({ ...parkForm, reason: v as typeof parkForm.reason })}
+                placeholder="Select a reason"
+                options={PARK_REASONS.map((r) => ({ value: r.value, label: r.label }))}
+              />
+            </div>
+            {parkForm.reason === "Other" && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Describe the reason <span className="text-red-500">*</span></label>
+                <textarea rows={3} value={parkForm.note}
+                  onChange={(e) => setParkForm({ ...parkForm, note: e.target.value })}
+                  placeholder="e.g. Wrong domain background, location mismatch..."
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setParkTarget(null)}
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={!parkForm.reason || parkMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                <PauseCircle size={13} /> {parkMut.isPending ? "Parking..." : "Park Candidate"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       <Modal open={!!applyTarget} onClose={() => setApplyTarget(null)} title="Apply to a role" size="md">
         {applyTarget && (
-          <form onSubmit={(e) => { e.preventDefault(); if (applyReqId) applyFromArchiveMut.mutate({ id: applyTarget.id, requisitionId: applyReqId }); }} className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
-              <span className="font-semibold text-slate-900">{applyTarget.firstName} {applyTarget.lastName}</span>
-              <p className="text-slate-600 mt-1">This restores the candidate from archive and applies them to the selected role.</p>
-            </div>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!applyReqId) return;
+            const payload = { id: applyTarget.id, requisitionId: applyReqId, assignedRecruiterId: undefined };
+            if (applyTarget.isArchived) applyFromArchiveMut.mutate(payload);
+            else applyFromPoolMut.mutate(payload);
+          }} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Requisition <span className="text-red-500">*</span></label>
               <RequisitionPicker value={applyReqId} onChange={setApplyReqId} requisitions={openReqs} />
@@ -867,9 +1108,9 @@ export default function CandidatesPage() {
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setApplyTarget(null)}
                 className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button type="submit" disabled={!applyReqId || applyFromArchiveMut.isPending}
+              <button type="submit" disabled={!applyReqId || applyFromArchiveMut.isPending || applyFromPoolMut.isPending}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
-                <Briefcase size={13} /> {applyFromArchiveMut.isPending ? "Applying..." : "Apply to role"}
+                <Briefcase size={13} /> {(applyFromArchiveMut.isPending || applyFromPoolMut.isPending) ? "Applying..." : "Apply to role"}
               </button>
             </div>
           </form>
@@ -1048,20 +1289,83 @@ function avatarColor(seed: string): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-// One button in the grouped row-action bar: icon on top, coloured label below.
-function ActionBtn({ icon, label, color, onClick, title }: {
-  icon: React.ReactNode; label: string; color: string; onClick: () => void; title?: string;
-}) {
+interface MenuAction { label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean }
+
+// "More" button + portaled dropdown — same pattern as the Requisitions list,
+// used here now that a candidate row can have up to 5 conditional actions.
+// Portaled to <body> so the table's overflow can't clip it near the bottom row.
+function RowActionsMenu({ actions }: { actions: MenuAction[] }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; right: number } | null>(null);
+
+  const reposition = () => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    reposition();
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onScrollResize = () => reposition();
+    document.addEventListener("mousedown", onClick);
+    window.addEventListener("resize", onScrollResize);
+    window.addEventListener("scroll", onScrollResize, true);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
+    };
+  }, [open]);
+
+  if (actions.length === 0) return null;
+
   return (
-    <button type="button" onClick={onClick} title={title}
-      className="flex flex-col items-center justify-center gap-1 w-[72px] py-2 hover:bg-gray-50 transition">
-      <span className={color}>{icon}</span>
-      <span className={clsx("text-[11px] font-medium leading-none", color)}>{label}</span>
-    </button>
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        onClick={() => setOpen((v) => !v)}
+        aria-label="More actions"
+        className="inline-flex items-center gap-1 h-9 px-2.5 rounded-xl border border-gray-200 bg-white text-gray-600 text-xs font-medium hover:bg-gray-50 transition"
+      >
+        More <MoreVertical size={13} />
+      </button>
+      {open && rect && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: rect.top, right: rect.right, width: 200 }}
+          className="z-50 bg-white rounded-xl border border-gray-200 shadow-lg py-1.5"
+        >
+          {actions.map((a, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => { setOpen(false); a.onClick(); }}
+              className={clsx(
+                "w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-left transition",
+                a.danger ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-gray-50",
+              )}
+            >
+              {a.icon} {a.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
-function StatusCell({ status, stage }: { status: string; stage: string | null }) {
+function StatusCell({ status, stage, hasApplication }: { status: string; stage: string | null; hasApplication: boolean }) {
   const cleanStatus = status.replace("Cand", "");
   const s = stageStyle(stage);
   return (
@@ -1070,6 +1374,13 @@ function StatusCell({ status, stage }: { status: string; stage: string | null })
         <span className={clsx("inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-[11px] font-medium ring-1", s.bg, s.text, s.ring)}>
           <span className={clsx("w-1.5 h-1.5 rounded-full", s.dot)} />
           {stage}
+        </span>
+      ) : hasApplication ? (
+        // Has a real application, but not yet placed on the Hiring Pipeline
+        // board — e.g. a website apply awaiting HR review (see "Move to Pipeline").
+        <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-[11px] font-medium ring-1 bg-amber-50 text-amber-700 ring-amber-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          Pending Review
         </span>
       ) : (
         <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-[11px] font-medium ring-1 bg-slate-50 text-slate-500 ring-slate-200">
@@ -1421,6 +1732,7 @@ interface WizardProps {
   errors: CandFormErrors;
   isIndiaLocation: boolean;
   openReqs: Requisition[];
+  recruiterOptions: { value: string; label: string }[];
   submitting: boolean;
   editMode?: boolean;
   onCancel: () => void;
@@ -1434,7 +1746,7 @@ const WIZARD_STEPS = [
   { id: "requisition",    num: 4, title: "Apply to Requisition", subtitle: "Optional — can apply later",  icon: <Building2 size={16} /> },
 ] as const;
 
-function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, submitting, editMode, onCancel, onSubmit }: WizardProps) {
+function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, recruiterOptions, submitting, editMode, onCancel, onSubmit }: WizardProps) {
   const [step, setStep] = useState(0);
   // Editing an existing candidate doesn't re-apply to a requisition, so drop
   // that last step in edit mode.
@@ -1497,7 +1809,13 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
                   onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} className={inp(!!errors.phone)} />
               </Field>
               <Field label="Location" icon={<MapPin size={12} />}>
-                <input type="text" placeholder="Bengaluru" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={inputClass} />
+                <Select
+                  value={form.location}
+                  onChange={(v) => setForm({ ...form, location: v })}
+                  searchable
+                  placeholder="Search city…"
+                  options={INDIAN_CITIES.map((c) => ({ value: c, label: c }))}
+                />
               </Field>
               <Field label="Source">
                 <SourceSelect value={form.source} onChange={(v) => setForm({ ...form, source: v })} />
@@ -1559,7 +1877,7 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
 
         {step === 3 && (
           <section>
-            <SectionHeader icon={<Building2 size={18} />} title="Apply to Requisition" subtitle="Optional — choose a job requisition now, or skip and this candidate goes to the Candidate Pool for later." />
+            <SectionHeader icon={<Building2 size={18} />} title="Apply to Requisition" subtitle="Optional — choose a job requisition now, or skip and this candidate goes to Applications for later." />
             <div className="mt-3">
               <RequisitionPicker value={form.requisitionId} onChange={(v) => setForm({ ...form, requisitionId: v })} requisitions={openReqs} error={!!errors.requisitionId} />
               {errors.requisitionId
@@ -1568,6 +1886,14 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
                   ? <p className="mt-1.5 text-[11px] text-green-700">Candidate will go straight to Phone Screening.</p>
                   : <p className="mt-1.5 text-[11px] text-gray-400">No open requisitions? Create one under Recruit &rarr; Requisitions.</p>}
             </div>
+            {form.requisitionId && (
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Assigned Recruiter <span className="text-gray-400 font-normal">(optional)</span></label>
+                <Select value={form.assignedRecruiterId} onChange={(v) => setForm({ ...form, assignedRecruiterId: v })}
+                  searchable placeholder="— Select recruiter —" options={recruiterOptions} />
+                <p className="mt-1.5 text-[11px] text-gray-400">Who's personally handling this candidate — used for workload &amp; performance tracking. Leave blank to assign later.</p>
+              </div>
+            )}
           </section>
         )}
       </div>

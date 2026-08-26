@@ -42,7 +42,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     const where = {
       orgId,
       projectId,
-      isDeleted: false,
+      isDeleted: q.deleted === "true",
       ...(q.state ? { state: q.state } : {}),
       ...(q.source ? { source: q.source } : {}),
       ...(q.milestoneId ? { milestoneId: q.milestoneId } : {}),
@@ -64,6 +64,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           createdAt: true,
           closedAt: true,
           milestoneId: true,
+          // QUIKTR-338 — the spec's row shows "created by / date" and the planned
+          // window alongside the progress bar.
+          createdBy: true,
+          startDate: true,
+          endDate: true,
+          // The run's OWNER (QUIKTR-317). Distinct from per-test assignment.
+          assigneeId: true,
+          // Prefill for the edit panel — without these it would blank the fields it
+          // does not know about.
+          description: true,
+          refTickets: true,
+          // QUIKTR-341 — the edit panel's "Include test cases" picker needs to
+          // know whether the run already has a suite to browse.
+          suiteId: true,
+          // Lets the row render Restore instead of Delete in the deleted view.
+          isDeleted: true,
           _count: { select: { tests: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -97,6 +113,24 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       countsByRun.set(row.runId, bucket);
     }
 
+    // Creator names in ONE query for the whole page rather than per row. `User` is
+    // a global model (no orgId column); these ids come from rows already scoped to
+    // this org and project, so no membership is being disclosed.
+    // Creators AND owners in one lookup — they overlap heavily, so two queries
+    // would fetch mostly the same users twice.
+    const userIds = [
+      ...new Set(
+        runs.flatMap((r) => [r.createdBy, r.assigneeId]).filter(Boolean),
+      ),
+    ];
+    const users = userIds.length
+      ? await db.user.findMany({
+          where: { id: { in: userIds as string[] } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const creatorById = new Map(users.map((u) => [u.id, u]));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -104,6 +138,8 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           ...r,
           testCount: r._count.tests,
           counts: countsByRun.get(r.id) ?? {},
+          createdByUser: r.createdBy ? creatorById.get(r.createdBy) ?? null : null,
+          owner: r.assigneeId ? creatorById.get(r.assigneeId) ?? null : null,
         })),
         total,
         page: q.page,

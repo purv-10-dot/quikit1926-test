@@ -28,7 +28,7 @@ const requisitionBaseObject = z.object({
   pipelineId: z.string().min(1, "Pipeline required"),
   departmentId: z.string().min(1, "Department required"),
   reportingToId: z.string().optional(),
-  positions: z.number().int().min(1).max(500).default(1),
+  positions: z.number().int().min(1).max(100).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
   employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelance"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
@@ -67,14 +67,26 @@ const requisitionBaseObject = z.object({
   postToJobPortal: z.boolean().default(false),
   referralBonusAmount: z.number().min(0).max(1000000, "Referral bonus can’t exceed ₹10,00,000").optional(),
   hiringManagerId: z.string().min(1, "Hiring manager required"),
-  recruiterId: z.string().min(1, "Recruiter required"),
+  recruiterId: z.string().optional(),
+  // Recruiter Performance Dashboard — Job Level drives the default SLA;
+  // customSlaDays/Reason let HR override it for this one requisition.
+  jobLevelId: z.string().optional(),
+  customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
+  customSlaReason: z.string().max(1000).optional(),
+  // Optional multi-recruiter position split — e.g. 10 openings: 4 to
+  // Recruiter A, 3 to B, 3 to C. Omit entirely for the default single-
+  // recruiter case (recruiterId keeps working exactly as before).
+  recruiterAssignments: z.array(z.object({
+    employeeId: z.string().min(1),
+    positionsAssigned: z.number().int().min(1),
+  })).optional(),
 
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
   budget: z.number().nullable().optional(),
-  targetJoiningDate: z.string().optional(),
-  closedDate: z.string().optional(), // "Timeline to Close"
+  targetJoiningDate: z.string().min(1, "End Date required"), // UI label: "End Date"
+  closedDate: z.string().min(1, "Start Date required"), // UI label: "Start Date"
   etaToFillDays: z.number().int().optional(),
   jobGrade: z.string().optional(),
   costCenter: z.string().optional(),
@@ -111,11 +123,12 @@ function requisitionCrossFieldChecks(
   }
   // YYYY-MM-DD strings compare correctly lexicographically.
   if (d.targetJoiningDate && d.closedDate && d.targetJoiningDate < d.closedDate) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Target joining date should be on or after the close timeline", path: ["targetJoiningDate"] });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End Date should be on or after the Start Date", path: ["targetJoiningDate"] });
   }
 }
 
-export const createRequisitionSchema = requisitionBaseObject.superRefine(requisitionCrossFieldChecks);
+export const createRequisitionSchema = requisitionBaseObject
+  .superRefine(requisitionCrossFieldChecks);
 
 export const updateRequisitionSchema = requisitionBaseObject.partial().extend({
   status: z.enum(["ReqDraft", "PendingApproval", "ReqApproved", "ReqOpen", "ReqOnHold", "ReqClosed", "ReqCancelled"]).optional(),
@@ -158,14 +171,36 @@ export const createApplicationSchema = z.object({
   candidateId: z.string().min(1),
   requisitionId: z.string().min(1),
   currentStage: z.string().optional(),
+  // Recruiter & Position Tracking — who's personally handling this candidate.
+  assignedRecruiterId: z.string().optional(),
+  // Set ONLY by the "Add Candidate + JR immediately" wizard flow — when true
+  // and assignedRecruiterId wasn't explicitly chosen, the requesting user
+  // becomes the recruiter (they're creating AND linking in one action, so
+  // they own it). Every other flow (linking an EXISTING pool candidate later,
+  // regardless of who created it or who's doing the linking) omits this, so
+  // Round Robin decides instead — this is what actually fixes the "HR_Head
+  // adds a candidate, links it later" case: no self-assign just because they
+  // once created the record.
+  selfAssign: z.boolean().optional(),
 });
 
 export const updateApplicationSchema = z.object({
   currentStage: z.string().optional(),
-  status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
+  status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppParked", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
   rejectionReason: z.string().optional(),
   // Optional note recorded in stageHistory when moving/skipping stages.
   moveReason: z.string().optional(),
+  // Recruiter & Position Tracking (Phase 1) — (re)assign, or claim from the
+  // Unassigned queue. Pass null to clear it back to unassigned.
+  assignedRecruiterId: z.string().nullable().optional(),
+});
+
+// "Park Candidate" — not a fit for THIS role, set aside (not rejected) with a reason.
+export const parkApplicationSchema = z.object({
+  reason: z.enum(["LessExperience", "HighBudget", "NonRelevant", "Other"]),
+  note: z.string().trim().max(500).optional(),
+}).refine((d) => d.reason !== "Other" || !!d.note?.trim(), {
+  message: "Please describe the reason", path: ["note"],
 });
 
 // ─── Interview ──────────────────────────────────────────

@@ -1,13 +1,18 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
-    // Retained from the SDK's own tsconfig — the source was written under both
-    // flags, so keeping them preserves the author's intent while the rest of
-    // the config comes from tsconfig.base.json like every other package.
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "resolveJsonModule": true
   },
-  "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts"]
 }

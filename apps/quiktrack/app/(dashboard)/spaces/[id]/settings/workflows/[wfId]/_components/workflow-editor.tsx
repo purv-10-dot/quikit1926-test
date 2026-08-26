@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
+import { Loader2, Columns, GitBranch, Zap, Bot, MoreHorizontal, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Check, X, Pencil, History, Info } from "lucide-react";
 import { DiagramHelpDialog } from "./diagram-help-dialog";
 import { useWorkflowEditor } from "./use-workflow-editor";
 import { errorStatusIdSet } from "./diagram-canvas";
 import { TextView } from "./text-view";
-import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog, EditStatusDialog, ReplaceStatusDialog } from "./editor-dialogs";
+import { AddStatusDialog, AddTransitionDialog, SaveAsNewWorkflowDialog, EditStatusDialog, ReplaceStatusDialog, EditWorkflowMetaDialog } from "./editor-dialogs";
 import { FlowCanvas } from "./flow/flow-canvas";
 import { StatusPanel } from "./flow/status-panel";
 import { TransitionPanel } from "./flow/transition-panel";
@@ -75,6 +75,9 @@ async function fetchStatuses(projectId: string): Promise<StatusMeta[]> {
 
 export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: string }) {
   const router = useRouter();
+  // The Workflows list links "View as text" with ?view=text — open on that tab.
+  const searchParams = useSearchParams();
+  const initialTab: "diagram" | "text" = searchParams.get("view") === "text" ? "text" : "diagram";
   const rm = useQuery({ queryKey: ["quiktrack", "workflow", wfId], queryFn: () => fetchReadModel(wfId) });
   const pool = useQuery({ queryKey: ["quiktrack", "statuses", projectId], queryFn: () => fetchStatuses(projectId) });
 
@@ -97,6 +100,7 @@ export function WorkflowEditor({ projectId, wfId }: { projectId: string; wfId: s
       isActive={rm.data!.workflow.isActive}
       hasPendingDraft={rm.data!.draft !== null}
       pool={pool.data!}
+      initialTab={initialTab}
       onClose={() => router.push(`/spaces/${projectId}/settings/workflows`)}
     />
   );
@@ -114,6 +118,7 @@ function EditorBody({
   isActive,
   hasPendingDraft,
   pool,
+  initialTab = "diagram",
   onClose,
 }: {
   projectId: string;
@@ -122,11 +127,13 @@ function EditorBody({
   isActive: boolean;
   hasPendingDraft: boolean;
   pool: StatusMeta[];
+  /** Opening tab — "text" when the list linked "View as text" (?view=text). */
+  initialTab?: "diagram" | "text";
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const ed = useWorkflowEditor(wfId, initialDraft, hasPendingDraft);
-  const [tab, setTab] = useState<"diagram" | "text">("diagram");
+  const [tab, setTab] = useState<"diagram" | "text">(initialTab);
   const [showLabels, setShowLabels] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const [addStatusOpen, setAddStatusOpen] = useState(false);
@@ -137,6 +144,10 @@ function EditorBody({
   // "Update workflow ▾" split-button menu + the "Save as new workflow" dialog.
   const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
   const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
+  // The "⋯" overflow menu (Edit name/description · Restore version) + its dialog.
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [editMetaOpen, setEditMetaOpen] = useState(false);
   // The right detail panel is collapsible (Jira parity).
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // Edit-status / Replace-status modals (opened from the Status panel pencils).
@@ -154,6 +165,18 @@ function EditorBody({
     const t = setTimeout(() => setPublishToast(false), 4000);
     return () => clearTimeout(t);
   }, [ed.publish.isSuccess]);
+  // Close the "⋯" overflow menu on any outside click.
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [moreMenuOpen]);
+
   // The rule being configured — either a fresh pick (add) or an existing index (edit).
   const [rulePick, setRulePick] = useState<{ meta: RuleTypeMeta; index: number | null } | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
@@ -222,10 +245,11 @@ function EditorBody({
   );
 
   return (
-    // Pin to the viewport (minus the top nav) so the diagram body is bounded and
-    // fully on-screen — otherwise React Flow's 100%-height pane overflows below
-    // the fold and fitView centres content off-screen.
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+    // Fill the parent (the settings <main>) and clip our own overflow so the
+    // toolbar/sub-toolbar stay fixed and ONLY the diagram/panel body scrolls.
+    // (h-full not 100vh: the settings shell already accounts for the top nav, so
+    // 100vh would overflow <main> and scroll the whole editor, toolbar included.)
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Toolbar (Jira-style) */}
       <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2">
         <div className="min-w-0">
@@ -253,11 +277,13 @@ function EditorBody({
             onClick={() => {
               // Open the Add-rule catalog directly. Needs a target transition —
               // reuse the selected one, else default to the first transition.
-              const target =
-                selectedTransition?.id ?? ed.draft.transitions[0]?.id ?? null;
-              if (target) {
-                setSelection({ kind: "transition", transitionId: target });
-                setAddRuleBucket("CONDITION");
+              const targetTr =
+                selectedTransition ?? ed.draft.transitions[0] ?? null;
+              if (targetTr) {
+                setSelection({ kind: "transition", transitionId: targetTr.id });
+                // The Create (INITIAL) transition only allows Validate details /
+                // Perform actions, so open the catalog on a bucket it permits.
+                setAddRuleBucket(targetTr.type === "INITIAL" ? "VALIDATOR" : "CONDITION");
               }
             }}
             disabled={ed.draft.transitions.length < 1}
@@ -267,6 +293,15 @@ function EditorBody({
 
         <div className="flex items-center gap-2">
           {ed.saving && <span className="text-xs text-gray-400">Saving…</span>}
+          {/* Unpublished-changes signal. Rule/status edits save to the DRAFT and
+              do NOT gate work items until published — without this cue a user
+              edits rules, sees no gating change, and thinks rules are broken. */}
+          {!ed.published && !ed.saving && (
+            <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Unpublished changes — click Update workflow to apply
+            </span>
+          )}
           {/* "Update workflow" is always shown — disabled when there are no
               unpublished changes (just published / fresh), enabled the moment
               you edit again (no refresh needed). Split with ▾ "Save as new". */}
@@ -322,31 +357,66 @@ function EditorBody({
           >
             Close
           </button>
-          <button
-            type="button"
-            disabled
-            className="rounded border border-gray-300 p-1.5 text-gray-400"
-            title="More (coming soon)"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              className={`rounded border p-1.5 ${moreMenuOpen ? "border-accent-400 bg-accent-50 text-accent-700" : "border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700"}`}
+              title="More"
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-50 mt-1 w-72 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMoreMenuOpen(false); setEditMetaOpen(true); }}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <Pencil className="h-4 w-4 text-gray-400" />
+                  Edit workflow name and description
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled
+                  title="Version history is coming soon"
+                  className="flex w-full cursor-not-allowed items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-400"
+                >
+                  <History className="h-4 w-4 text-gray-300" />
+                  Restore workflow to an earlier version
+                </button>
+                <div className="mx-3 my-1 border-t border-gray-100" />
+                <div className="flex items-start gap-2 px-4 py-2 text-xs text-gray-500">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-500" />
+                  <span>You&apos;re using the latest workflow editor.</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Sub-toolbar: Diagram/Text + Show transition labels */}
-      <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-1.5">
-        <div className="flex rounded border border-gray-300 text-sm">
+      <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-1.5">
+        <div className="flex rounded border border-gray-300 dark:border-gray-600 text-sm">
           <button
             type="button"
             onClick={() => setTab("diagram")}
-            className={`px-3 py-1 ${tab === "diagram" ? "bg-accent-50 text-accent-700" : "text-gray-600"}`}
+            className={`px-3 py-1 ${tab === "diagram" ? "bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"}`}
           >
             Diagram
           </button>
           <button
             type="button"
             onClick={() => setTab("text")}
-            className={`border-l border-gray-300 px-3 py-1 ${tab === "text" ? "bg-accent-50 text-accent-700" : "text-gray-600"}`}
+            className={`border-l border-gray-300 dark:border-gray-600 px-3 py-1 ${tab === "text" ? "bg-accent-50 dark:bg-gray-700 text-accent-700 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"}`}
           >
             Text
           </button>
@@ -465,14 +535,17 @@ function EditorBody({
           )}
         </div>
 
-        {/* Right detail panel region + its left-edge collapse toggle. */}
-        <div className="relative flex min-h-0">
+        {/* Right detail panel region + its left-edge collapse toggle. When
+            collapsed the panels don't render, so keep a thin rail (w-6 + left
+            border) so the toggle button stays anchored inside the viewport and
+            fully visible instead of hanging off the right edge. */}
+        <div className={`relative flex min-h-0 ${panelCollapsed ? "w-6 shrink-0 border-l border-gray-200 bg-white" : ""}`}>
         {/* Small round collapse/expand button on the panel's LEFT edge (Jira). */}
         <button
           type="button"
           onClick={() => setPanelCollapsed((v) => !v)}
           title={panelCollapsed ? "Expand panel" : "Collapse panel"}
-          className="absolute -left-3 top-4 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
+          className="absolute -left-3 top-4 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
         >
           {panelCollapsed ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>
@@ -517,17 +590,25 @@ function EditorBody({
             }}
             onRemoveRule={(i) => ed.removeRule(selectedTransition.id, i)}
             conditionsMode={
-              // ANY = all conditions share one group; ALL = distinct groups.
+              // groupNo semantics: same group = OR (ANY), distinct groups = AND
+              // (ALL). ANY keeps every condition in group 0; ALL puts each in its
+              // own group starting at 1. With a SINGLE condition distinct-group
+              // counting can't tell the modes apart, so we read the intent from
+              // whether its group is 0 (ANY) or non-zero (ALL) — that's what lets
+              // the toggle actually stick for one condition.
               (() => {
                 const groups = selectedTransition.rules
                   .filter((r) => r.kind === "CONDITION")
                   .map((r) => r.groupNo ?? 0);
+                if (groups.length <= 1) return (groups[0] ?? 0) === 0 ? "ANY" : "ALL";
                 return new Set(groups).size <= 1 ? "ANY" : "ALL";
               })()
             }
             onSetConditionsMode={(mode) => {
-              // ALL → each condition its own group; ANY → all share group 0.
-              let g = 0;
+              // ANY → all conditions share group 0 (OR). ALL → each gets its own
+              // group starting at 1 (AND); starting at 1 (not 0) means a single
+              // ALL condition has a non-zero group, so the mode reads back as ALL.
+              let g = 1;
               const remapped = selectedTransition.rules.map((r) =>
                 r.kind === "CONDITION" ? { ...r, groupNo: mode === "ANY" ? 0 : g++ } : r,
               );
@@ -595,6 +676,12 @@ function EditorBody({
       {addRuleBucket && selectedTransition && (
         <AddRuleDialog
           initialBucket={addRuleBucket}
+          // The Create (INITIAL) transition only supports Validate details and
+          // Perform actions — hide the other rails so the catalog matches the
+          // panel.
+          allowedBuckets={
+            selectedTransition.type === "INITIAL" ? ["VALIDATOR", "POSTFUNCTION"] : undefined
+          }
           onPick={(meta) => { setAddRuleBucket(null); setRulePick({ meta, index: null }); }}
           onClose={() => setAddRuleBucket(null)}
         />
@@ -672,6 +759,15 @@ function EditorBody({
             void qc.invalidateQueries({ queryKey: ["quiktrack", "workflow-templates"] });
           }}
           onClose={() => setSaveAsNewOpen(false)}
+        />
+      )}
+      {editMetaOpen && (
+        <EditWorkflowMetaDialog
+          workflowId={wfId}
+          initialName={ed.draft.name}
+          initialDescription={ed.draft.description}
+          onSaved={(u) => ed.setMeta(u)}
+          onClose={() => setEditMetaOpen(false)}
         />
       )}
     </div>

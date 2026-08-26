@@ -1,4 +1,6 @@
 import type {
+  AssistApprovalDecision,
+  AssistApprovalListPage,
   CallHistoryItem,
   ChannelList,
   ChannelListItem,
@@ -207,6 +209,17 @@ export function createChannel(body: CreateChannelInput): Promise<ChannelListItem
 /** Open (find-or-create) the caller's AI-chat singleton. Idempotent. */
 export function openAiChat(): Promise<ChannelListItem> {
   return send<ChannelListItem>("/api/channels/ai", "POST");
+}
+
+/**
+ * "New chat": reset what the assistant can see in this AI chat.
+ *
+ * Resolves with the context-reset marker — an ordinary SystemActivity MessageDto —
+ * so the caller can put it straight into the message cache instead of refetching.
+ * Nothing is deleted server-side; the transcript and the KB scope both survive.
+ */
+export function resetAiChat(channelId: string): Promise<MessageDto> {
+  return send<MessageDto>(`/api/channels/${channelId}/ai-reset`, "POST");
 }
 
 /**
@@ -538,4 +551,105 @@ export function updateCalendarEvent(
 }
 export function deleteCalendarEvent(id: string): Promise<{ deleted: true }> {
   return send<{ deleted: true }>(`/api/calendar/events/${id}`, "DELETE");
+}
+
+// --- AI approvals (Phase 3): the caller's own parked writes ---
+
+/**
+ * The caller's approval ledger. Requester-only — identity comes from the session
+ * on the server and rides the minted agent token, so there is deliberately no
+ * userId parameter here to pass.
+ *
+ * No paging arguments on purpose. Activity is not a paginating surface, and the
+ * section that renders this states "showing N of M" rather than growing a
+ * "load more" this pane has nowhere to put. The relay's default page size (50)
+ * is the ceiling; `total` is the unpaged count and is what the caption reads.
+ *
+ * Throws on a non-2xx via `getJson` — and the caller MUST render that as an
+ * error, never as an empty list. `{ requests: [] }` means "you have none"; a
+ * throw means "we don't know", and the two look identical on screen while
+ * meaning opposite things.
+ */
+export function fetchApprovals(): Promise<AssistApprovalListPage> {
+  return getJson<AssistApprovalListPage>("/api/ai/requests");
+}
+
+/**
+ * React Query key for the ledger, defined next to its fetcher rather than in the
+ * section that renders it. TWO surfaces invalidate it — the Activity section and
+ * the live-turn card in `ConversationView` — and answering in either moves the
+ * same row. A key owned by one component would make the other import from it for
+ * no reason other than the string.
+ */
+export const APPROVALS_QUERY_KEY = ["ai-approvals"] as const;
+
+/**
+ * An approval decision that could not be RECORDED. Carries the relay's `code`
+ * so the card can branch without matching on the message text.
+ *
+ * Note what this is not: a decision that was recorded and whose write the target
+ * app then refused comes back as a resolved `AssistApprovalDecision` with
+ * `status: "failed"` on HTTP 200. That is an outcome, and the card renders it as
+ * one. Only a non-2xx throws this.
+ */
+export interface ApprovalDecisionFailure extends Error {
+  code?: string;
+  status: number;
+}
+
+/**
+ * Approve or reject one parked write.
+ *
+ * ⚠️ NOT IDEMPOTENT. A second call for the same id is refused with 409 by
+ * design, so this must never be wrapped in a retry — not by the caller, not by
+ * react-query, not by a helpful interceptor added later. The card's synchronous
+ * latch stops the double tap; the 409 is the backstop for anything that escapes
+ * it. If a timeout leaves the outcome unknown, the answer is to refetch the
+ * ledger and look, not to send this again.
+ */
+export async function decideApproval(
+  requestId: string,
+  action: "approve" | "reject",
+): Promise<AssistApprovalDecision> {
+  const res = await fetch(`/api/ai/requests/${encodeURIComponent(requestId)}/${action}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    const err = new Error(j.error ?? `${action} → ${res.status}`) as ApprovalDecisionFailure;
+    err.code = j.code;
+    err.status = res.status;
+    throw err;
+  }
+  return (await res.json()) as AssistApprovalDecision;
+}
+
+export interface ApprovalReconcileResult {
+  checked: number;
+  patched: number;
+  unconfirmed: number;
+  /** False when only part of the ledger was read — see the route. */
+  ledgerComplete: boolean;
+}
+
+/**
+ * Repair this channel's persisted approval cards against the runtime's ledger.
+ *
+ * Sends NOTHING but the channel id: the new state is read server-side with the
+ * caller's own token. A body carrying a status would let any channel member
+ * assert what an approval card says.
+ *
+ * Fire-and-forget from the caller's point of view — any card that actually moved
+ * arrives over the socket as `message_update`. Failures are deliberately quiet:
+ * this is a background repair, and a toast for it would interrupt the user about
+ * something they did not ask for and cannot fix.
+ */
+export async function reconcileChannelApprovals(
+  channelId: string,
+): Promise<ApprovalReconcileResult> {
+  return send<ApprovalReconcileResult>(
+    `/api/channels/${channelId}/approvals/reconcile`,
+    "POST",
+  );
 }

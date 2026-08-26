@@ -61,6 +61,16 @@ export async function getHubSpotCRMStats(userId: string, workspaceId?: string) {
     axios.get("https://api.hubapi.com/crm/v3/pipelines/deals", { headers }).catch(() => null),
   ]);
 
+  // Every call is individually .catch()'d to null, so a revoked token or a
+  // scope problem would otherwise render as a portal with zero contacts, zero
+  // deals and no pipeline — indistinguishable from a genuinely empty CRM. If
+  // NOTHING came back, that is a failure, not an empty portal: throw so the
+  // route reports it and the page stamps the section rather than publishing
+  // zeros as fact.
+  if (!contactCountRes && !recentContactsRes && !dealsRes && !pipelinesRes) {
+    throw new Error("HubSpot not connected: every request failed");
+  }
+
   const totalContacts  = contactCountRes?.data?.total ?? 0;
   const recentContacts = recentContactsRes?.data?.total ?? 0;
   const deals          = dealsRes?.data?.results ?? [];

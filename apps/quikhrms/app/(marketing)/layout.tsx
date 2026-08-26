@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Fraunces } from "next/font/google";
 import "./marketing.css";
 
+
 /**
  * Marketing route-group layout — wraps the public landing page at `/`.
  *
@@ -10,6 +11,7 @@ import "./marketing.css";
  * `.lp-root` wrapper, never on <body>) and imports marketing.css, which loads
  * after globals.css so its rules win inside the landing zone only.
  */
+
 
 const inter = Inter({
   subsets: ["latin"],

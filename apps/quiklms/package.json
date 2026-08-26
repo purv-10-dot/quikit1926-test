@@ -8,10 +8,10 @@
     "worker"
   ],
   "scripts": {
-    "dev": "next dev -p 3014",
+    "dev": "next dev -p 3016",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
-    "start": "next start -p 3014",
+    "start": "next start -p 3016",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -46,7 +46,7 @@
     "jose": "^5.9.6",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
-    "lucide-react": "^1.18.0",
+    "lucide-react": "^0.294.0",
     "next": "14.0.4",
     "next-auth": "^4.24.0",
     "next-intl": "^3.21.1",

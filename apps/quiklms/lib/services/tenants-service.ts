@@ -17,7 +17,7 @@ import { provisionOrgForTenant, provisionLmsUser } from './identity-service';
  * every row storing the identical `${BASE_URL}/login` string, which then went
  * stale the moment the deployment URL changed. Derived once here instead.
  */
-const TENANT_LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3014').replace(/\/$/, '')}/login`;
+const TENANT_LOGIN_URL = `${(process.env.NEXTAUTH_URL || 'http://localhost:3016').replace(/\/$/, '')}/login`;
 
 const SCHOOL_FEATURES = {
   enableCourses: false, enableScorm: false, enableCompliance: false, enableManagerReports: false, enableSelfEnrollment: false,

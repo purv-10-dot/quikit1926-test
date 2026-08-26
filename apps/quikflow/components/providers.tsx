@@ -3,6 +3,7 @@
 import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
+import { ConfirmProvider } from "@quikit/ui";
 import { useState } from "react";
 
 /**
@@ -11,6 +12,10 @@ import { useState } from "react";
  *
  * Do NOT reorder, add new providers without architect approval, or remove
  * any of the three. See CLAUDE.md "Provider Order" rule.
+ *
+ * ConfirmProvider (nested innermost, same as apps/quikscale) is the one
+ * addition to that chain — it backs `useConfirm()` for destructive-action
+ * confirmations (e.g. deleting a workflow) instead of `window.confirm`.
  */
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -26,7 +31,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider attribute="class" defaultTheme="light">
-          {children}
+          <ConfirmProvider>{children}</ConfirmProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </SessionProvider>

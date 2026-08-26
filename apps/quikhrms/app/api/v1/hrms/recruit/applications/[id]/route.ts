@@ -8,13 +8,14 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildOfferEmail } from "@/lib/email-templates/offer";
-import { triggerCandidateDocBundle } from "@/lib/services/candidate-doc-service";
+import { triggerCandidateDocRequest } from "@/lib/services/candidate-doc-service";
 import { buildOfferDefaultEmail } from "@/lib/email-templates/offer-default";
 import { generateOfferPdf } from "@/lib/services/offer-pdf";
 import { getStageConfig, stageNames } from "@/lib/services/pipeline-stages";
 import { whereEmployeeHasAnyRole } from "@/lib/rbac/queries";
 import { publishNotification } from "@/lib/services/realtime";
 import { offerSelect, offerFromApplication } from "@/lib/recruit/offer-shape";
+import { consumePositionOnHire, releasePositionOnUnhire } from "@/lib/services/requisition-positions";
 type MailFiredResult = { template: string; to?: string; skipped?: string } | null;
 
 function fmtDate(d: Date | null | undefined): string {
@@ -352,6 +353,10 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         }).catch(() => null);
       }
       if (data.status === "AppHired") {
+        // Stable hire timestamp — distinct from updatedAt, which any later
+        // unrelated edit (e.g. fixing a typo'd phone number) would otherwise
+        // move, silently corrupting Time-to-Hire / "hires this month".
+        if (existing.status !== "AppHired") updateData.hiredAt = new Date();
         // Atomic headcount claim: increment ONLY if a seat is still open, in a
         // single conditional UPDATE. Prevents two simultaneous hires from both
         // passing a separate "is it full?" check and overfilling the req.
@@ -364,11 +369,20 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
           return conflict("All positions for this requisition are already filled.");
         }
         await prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }).catch(() => null);
+        // Recruiter & Position Tracking (Phase 1) — consume one Open position
+        // allocated to this candidate's assigned recruiter. Attribution only,
+        // never blocks the hire (no-ops if unassigned or none left).
+        if (existing.status !== "AppHired") {
+          const assignedRows = await prisma.$queryRaw<{ assignedRecruiterId: string | null }[]>`
+            SELECT "assignedRecruiterId" FROM "app_quikhrms"."JobApplication" WHERE id = ${params.id}`;
+          await consumePositionOnHire(orgId, existing.requisitionId, assignedRows[0]?.assignedRecruiterId ?? null, params.id, userId);
+        }
       }
       // Un-hire → free the seat. A previously-hired candidate who is now
       // rejected/declined/withdrawn rolls filledPositions back and reopens the
       // requisition if it had been auto-closed by being fully filled.
       if (existing.status === "AppHired" && ["AppRejected", "AppDeclined", "AppWithdrawn"].includes(data.status)) {
+        updateData.hiredAt = null;
         const reqRow = await prisma.jobRequisition.findFirst({
           where: { id: existing.requisitionId, orgId, deletedAt: null },
           select: { filledPositions: true, status: true },
@@ -383,10 +397,18 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
             },
           });
         }
+        await releasePositionOnUnhire(orgId, params.id, userId);
       }
     }
 
     const app = await prisma.jobApplication.update({ where: { id: params.id }, data: updateData });
+
+    // Recruiter & Position Tracking (Phase 1) — (re)assign or clear the
+    // candidate's recruiter. Not in the generated client yet, so raw SQL.
+    if (data.assignedRecruiterId !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${data.assignedRecruiterId} WHERE id = ${params.id}`;
+    }
 
     const stageChanged = data.currentStage && data.currentStage !== existing.currentStage;
 
@@ -502,29 +524,29 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       });
       mailFired = { template: "queued" };
 
-      // Auto-trigger candidate document bundles on stage transitions
-      // Pre-offer: fired when stage name matches /offer/i (e.g. "Offer") BUT not final-offer-stage
-      // Post-offer: fired when stage name matches /hired|preJoining|joining/i
+      // Auto-trigger the candidate document request on stage transitions —
+      // one unified request per application now (no Before/After Offer
+      // split), fired the first time the candidate reaches the Offer stage
+      // or the Hired/joining stage. Idempotent: reuses/updates the existing
+      // Pending request if one's already out.
       void (async () => {
         try {
           const stage = (data.currentStage ?? "").toLowerCase();
           const isOfferStage = /offer/.test(stage) && !/post/.test(stage);
           const isJoiningStage = /hired|prejoining|joining/.test(stage);
-          if (isOfferStage) {
-            await triggerCandidateDocBundle(orgId, app.id, "PreOffer", userId);
-          } else if (isJoiningStage) {
-            await triggerCandidateDocBundle(orgId, app.id, "PostOffer", userId);
+          if (isOfferStage || isJoiningStage) {
+            await triggerCandidateDocRequest(orgId, app.id, userId);
           }
         } catch (err) {
-          console.error("[doc-bundle] auto-trigger failed:", err);
+          console.error("[doc-request] auto-trigger failed:", err);
         }
       })();
     }
 
     if (data.status === "AppHired" && existing.status !== "AppHired") {
       void (async () => {
-        try { await triggerCandidateDocBundle(orgId, app.id, "PostOffer", userId); }
-        catch (err) { console.error("[doc-bundle] post-offer trigger on hire failed:", err); }
+        try { await triggerCandidateDocRequest(orgId, app.id, userId); }
+        catch (err) { console.error("[doc-request] trigger on hire failed:", err); }
       })();
     }
 

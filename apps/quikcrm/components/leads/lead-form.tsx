@@ -92,6 +92,19 @@ interface LeadFormProps {
     ownerName: string;
     accountId: string;
     accountName: string;
+    /**
+     * ICP reference carried in from a converted prospect. There is deliberately
+     * NO ICP control on this form: the requirement is that the user is not asked
+     * to choose again during conversion. It is forwarded to the API untouched and
+     * surfaced read-only by the caller (see prospects-table.tsx).
+     */
+    icpId: string | null;
+    /**
+     * Resolved ICP name for the READ-ONLY Lead Information field. Display only —
+     * `icpId` remains the stored reference. Absent on create forms, where no ICP
+     * exists yet.
+     */
+    icpName: string | null;
     dynamicFields: Record<string, unknown> | null;
   }>;
   hideFooter?: boolean;
@@ -789,6 +802,10 @@ export function LeadForm({
       // If the user typed a name but never picked from the dropdown, accountId
       // stays empty and the lead is created unattached (which is valid).
       accountId: accountId || null,
+      // Pass-through only (no form control — see LeadFormProps.icpId). The key is
+      // omitted entirely when absent so a PATCH from a form that never knew about
+      // ICP cannot null out a lead's existing reference.
+      ...(initial?.icpId ? { icpId: initial.icpId } : {}),
       dynamicFields: (() => {
         const extra: Record<string, unknown> = {};
         if (numberOfEmployees.trim()) extra.numberOfEmployees = Number(numberOfEmployees);
@@ -895,6 +912,7 @@ export function LeadForm({
         setCompany={setCompany}
         industry={industry}
         setIndustry={setIndustry}
+        {...(initial?.id ? { icpName: initial.icpName ?? null } : {})}
         industryOptions={INDUSTRY_OPTIONS}
         annualRevenueDisplay={annualRevenueDisplay}
         setAnnualRevenueDisplay={setAnnualRevenueDisplay}

@@ -2,7 +2,8 @@
  * Outlook connector — OAuth (Microsoft identity platform) + the two Graph calls
  * QuikFlow needs (/me/sendMail, /me/messages). Plain fetch, no SDK.
  *
- * Env: MS_CLIENT_ID / MS_CLIENT_SECRET (Azure AD app registration), MS_TENANT
+ * Env: MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET (Azure AD app registration,
+ * shared with the Teams calendar connector — see ./teams.ts), MICROSOFT_TENANT_ID
  * (defaults to "common" for multi-tenant + personal accounts).
  * Inbound watermark (`cursor`) = the newest message's receivedDateTime (ISO),
  * used in a `$filter=receivedDateTime gt <ISO>` query.
@@ -14,19 +15,19 @@ const SCOPES = ["offline_access", "Mail.Send", "Mail.Read", "User.Read"];
 const MAX_MESSAGES_PER_POLL = 25;
 
 function tenant(): string {
-  return process.env.MS_TENANT || "common";
+  return process.env.MICROSOFT_TENANT_ID || "common";
 }
 function authBase(): string {
   return `https://login.microsoftonline.com/${tenant()}/oauth2/v2.0`;
 }
 function clientId(): string {
-  const v = process.env.MS_CLIENT_ID;
-  if (!v) throw new Error("MS_CLIENT_ID is not set.");
+  const v = process.env.MICROSOFT_CLIENT_ID;
+  if (!v) throw new Error("MICROSOFT_CLIENT_ID is not set.");
   return v;
 }
 function clientSecret(): string {
-  const v = process.env.MS_CLIENT_SECRET;
-  if (!v) throw new Error("MS_CLIENT_SECRET is not set.");
+  const v = process.env.MICROSOFT_CLIENT_SECRET;
+  if (!v) throw new Error("MICROSOFT_CLIENT_SECRET is not set.");
   return v;
 }
 

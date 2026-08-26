@@ -3,25 +3,19 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { ensureCandidateDocDefaults } from "@/lib/services/candidate-doc-setup";
-import type { DocumentBundle } from "@quikit/database";
 
 export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const { searchParams } = new URL(req.url);
-    const bundle = searchParams.get("bundle");
     const includeInactive = searchParams.get("includeInactive") === "1";
-    if (bundle && bundle !== "PreOffer" && bundle !== "PostOffer") {
-      return validationError("Invalid bundle");
-    }
     await ensureCandidateDocDefaults(orgId, userId);
 
     const where: Record<string, unknown> = { orgId, deletedAt: null };
     if (!includeInactive) where.isActive = true;
-    if (bundle) where.bundle = bundle as DocumentBundle;
 
     const types = await prisma.candidateDocumentType.findMany({
       where,
-      orderBy: [{ bundle: "asc" }, { sortOrder: "asc" }],
+      orderBy: [{ sortOrder: "asc" }],
     });
     return successResponse(types);
   } catch (e) {
@@ -38,9 +32,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const body = await req.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const bundle = body.bundle;
     if (!name) return validationError("Name required");
-    if (bundle !== "PreOffer" && bundle !== "PostOffer") return validationError("Invalid bundle");
 
     const codeRaw = typeof body.code === "string" && body.code.trim() ? body.code.trim() : slugify(name);
     const isRequired = body.isRequired !== false;
@@ -48,13 +40,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const sortOrder = typeof body.sortOrder === "number" ? body.sortOrder : 999;
 
     const dup = await prisma.candidateDocumentType.findUnique({
-      where: { orgId_code_bundle: { orgId, code: codeRaw, bundle } },
+      where: { orgId_code: { orgId, code: codeRaw } },
     }).catch(() => null);
-    if (dup) return validationError(`A document with code "${codeRaw}" already exists in ${bundle} bundle`);
+    if (dup) return validationError(`A document with code "${codeRaw}" already exists`);
 
     const created = await prisma.candidateDocumentType.create({
       data: {
-        orgId, name, code: codeRaw, bundle,
+        orgId, name, code: codeRaw,
         isRequired, helpText, sortOrder,
         isDefault: false, isActive: true,
         createdBy: userId, updatedBy: userId,

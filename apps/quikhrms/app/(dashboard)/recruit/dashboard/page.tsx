@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useApiClient } from "@/lib/hooks/use-api";
@@ -19,7 +20,10 @@ interface DashboardData {
     avgTimeToHire: number; offersSentMTD: number; offersAcceptedMTD: number; acceptanceRate: number;
   };
   funnel: { stage: string; label: string; count: number }[];
-  openReqAging: { id: string; title: string; requisitionNumber: string; recruiter: string; candidates: number; ageDays: number; etaDays: number; status: "on-track" | "aging" | "overdue" }[];
+  openReqAging: {
+    id: string; title: string; requisitionNumber: string; recruiter: string; candidates: number; ageDays: number; etaDays: number; status: "on-track" | "aging" | "overdue";
+    positions: number; onboarded: number; inOffer: number; stageCounts: Record<string, number>;
+  }[];
   recruiterWorkload: { id: string; name: string; count: number }[];
   activity: { type: "offer-accepted" | "offer-sent" | "interview"; name: string; detail: string; at: string }[];
 }
@@ -46,7 +50,7 @@ function relativeTime(iso: string): string {
 export default function RecruitDashboardPage() {
   const api = useApiClient();
   const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
-  const canView = hasPermission("hrms.recruit.read") || hasPermission("hrms.recruit.write");
+  const canView = hasPermission("hrms.recruit.read") || hasPermission("hrms.recruit.write") || hasPermission("hrms.recruit.read_self");
 
   const { data, isLoading } = useQuery({
     queryKey: ["recruit-dashboard"],
@@ -56,11 +60,21 @@ export default function RecruitDashboardPage() {
   });
   const d = data?.data;
 
+  // Funnel stage-strip — which stage's requisitions are shown in the table
+  // below. Defaults to the first stage with candidates once data loads.
+  const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!d || selectedStage) return;
+    const first = d.funnel.find((f) => f.count > 0) ?? d.funnel[0];
+    if (first) setSelectedStage(first.stage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [d]);
+
   if (!permsLoading && !canView) {
     return (
       <EmptyState
         variant="folder"
-        title="You don't have access to the Recruitment Dashboard"
+        title="You don't have access to the Company Dashboard"
         description="Recruitment analytics are restricted. Contact your administrator if you need access."
       />
     );
@@ -69,10 +83,10 @@ export default function RecruitDashboardPage() {
   const funnelMax = Math.max(1, ...(d?.funnel.map((f) => f.count) ?? [1]));
 
   const kpiTiles = d ? [
-    { icon: <Briefcase size={16} />, n: d.kpis.openRequisitions, l: "Open Requisitions", sub: `${d.kpis.openPositions} positions` },
-    { icon: <Users size={16} />, n: d.kpis.inPipeline, l: "In Pipeline" },
+    { icon: <Briefcase size={16} />, n: d.kpis.openRequisitions, l: "Open Requisitions", sub: `${d.kpis.openPositions} positions`, href: "/recruit/requisitions?status=ReqOpen" },
+    { icon: <Users size={16} />, n: d.kpis.inPipeline, l: "In Pipeline", href: "/recruit/pipeline" },
     { icon: <Calendar size={16} />, n: d.kpis.interviewsThisWeek, l: "Interviews / week" },
-    { icon: <FileText size={16} />, n: d.kpis.offersOut, l: "Offers Out" },
+    { icon: <FileText size={16} />, n: d.kpis.offersOut, l: "Offers Out", href: "/recruit/pipeline?stage=Offer" },
     { icon: <Award size={16} />, n: d.kpis.hiresMTD, l: "Hires (this month)" },
     { icon: <Clock size={16} />, n: d.kpis.avgTimeToHire, l: "Avg Time-to-Hire", suffix: "d" },
   ] : [];
@@ -83,7 +97,7 @@ export default function RecruitDashboardPage() {
       <PageBackground src="/images/pre-onboarding-bg.png" />
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-page-title text-gray-900">Recruitment Dashboard</h1>
+          <h1 className="text-page-title text-gray-900">Company Dashboard</h1>
           <p className="text-xs text-gray-500 mt-0.5">Hiring health across all open roles · this month</p>
         </div>
         <Link href="/recruit/pipeline" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm">
@@ -97,63 +111,127 @@ export default function RecruitDashboardPage() {
         <>
           {/* KPI tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {kpiTiles.map((k) => (
-              <div key={k.l} className="bg-white border border-gray-200 rounded-xl shadow-sm p-3.5">
-                <span className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">{k.icon}</span>
-                <div className="text-2xl font-bold text-gray-900 leading-none mt-2.5 tabular-nums">
-                  {k.n}{k.suffix && <span className="text-base font-semibold">{k.suffix}</span>}
-                </div>
-                <div className="text-[11.5px] text-gray-500 font-semibold mt-1">{k.l}</div>
-                {k.sub && <div className="text-[11px] text-gray-400 mt-0.5">{k.sub}</div>}
-              </div>
-            ))}
+            {kpiTiles.map((k) => {
+              const cls = clsx("bg-white border border-gray-200 rounded-xl shadow-sm p-3.5", k.href && "hover:border-green-300 hover:shadow-md transition-shadow cursor-pointer");
+              const body = (
+                <>
+                  <span className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">{k.icon}</span>
+                  <div className="text-2xl font-bold text-gray-900 leading-none mt-2.5 tabular-nums">
+                    {k.n}{k.suffix && <span className="text-base font-semibold">{k.suffix}</span>}
+                  </div>
+                  <div className="text-[11.5px] text-gray-500 font-semibold mt-1">{k.l}</div>
+                  {k.sub && <div className="text-[11px] text-gray-400 mt-0.5">{k.sub}</div>}
+                </>
+              );
+              return k.href ? (
+                <Link key={k.l} href={k.href} className={cls}>{body}</Link>
+              ) : (
+                <div key={k.l} className={cls}>{body}</div>
+              );
+            })}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
-            {/* Funnel */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
-              <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-                <h2 className="text-[13px] font-bold text-gray-900">Pipeline funnel</h2>
-                <span className="ml-auto text-[11.5px] text-gray-400">{d.kpis.inPipeline} active</span>
-              </div>
-              <div className="p-4 space-y-2.5">
+          {/* Hiring pipeline — stage-by-stage funnel strip with a click-to-drill requisition table */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div className="px-4 pt-4 pb-3 flex items-center gap-2 flex-wrap">
+              <h2 className="text-[13px] font-bold text-gray-900">Hiring pipeline</h2>
+              <span className="ml-auto text-[11.5px] text-gray-400">Stage by stage — click a stage to open it.</span>
+            </div>
+            <div className="px-4 pb-4 overflow-x-auto">
+              <div className="flex gap-3 min-w-max">
                 {d.funnel.map((f, i) => {
                   const prev = i > 0 ? d.funnel[i - 1].count : null;
                   const conv = prev && prev > 0 ? Math.round((f.count / prev) * 100) : null;
+                  const active = selectedStage === f.stage;
                   return (
-                    <div key={f.stage} className="grid grid-cols-[130px_1fr_54px] items-center gap-2.5">
-                      <span className="text-[12.5px] text-gray-600 font-medium truncate">{f.label}</span>
-                      <span className="h-6 rounded-md bg-gray-50 overflow-hidden">
-                        <span className="block h-full rounded-md transition-all" style={{ width: `${Math.max(3, (f.count / funnelMax) * 100)}%`, background: FUNNEL_COLORS[Math.min(i, FUNNEL_COLORS.length - 1)] }} />
-                      </span>
-                      <span className="text-[13px] font-bold text-gray-900 text-right tabular-nums">
-                        {f.count}{conv !== null && <span className="text-[10px] text-gray-400 font-semibold ml-1">{conv}%</span>}
-                      </span>
-                    </div>
+                    <button
+                      key={f.stage}
+                      type="button"
+                      onClick={() => setSelectedStage(f.stage)}
+                      className={clsx(
+                        "text-left w-[168px] shrink-0 rounded-lg border p-3 transition",
+                        active ? "bg-accent-50 border-accent-200" : "bg-white border-gray-200 hover:border-gray-300",
+                      )}
+                    >
+                      <div className={clsx("text-[10.5px] font-bold uppercase tracking-wide truncate", active ? "text-accent-600" : "text-gray-400")}>{f.label}</div>
+                      <div className={clsx("text-2xl font-extrabold leading-none mt-1.5 tabular-nums", active ? "text-accent-800" : "text-gray-900")}>{f.count}</div>
+                      <div className={clsx("h-1.5 rounded-full overflow-hidden mt-2", active ? "bg-accent-100" : "bg-gray-100")}>
+                        <div
+                          className={clsx("h-full rounded-full transition-all", active && "bg-accent-500")}
+                          style={{ width: `${Math.max(4, (f.count / funnelMax) * 100)}%`, background: active ? undefined : FUNNEL_COLORS[Math.min(i, FUNNEL_COLORS.length - 1)] }}
+                        />
+                      </div>
+                      <div className={clsx("text-[10.5px] font-medium mt-1.5 truncate", active ? "text-accent-600" : "text-gray-400")}>
+                        {conv !== null ? `${conv}% of ${d.funnel[i - 1].label}` : "Top of funnel"}
+                      </div>
+                    </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Offers & time-to-hire */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
-              <h2 className="text-[13px] font-bold text-gray-900 px-4 pt-4">Offers &amp; time-to-hire</h2>
-              <div className="p-4 grid grid-cols-2 gap-3">
-                <Stat n={d.kpis.offersSentMTD} l="Offers sent" />
-                <Stat n={d.kpis.offersAcceptedMTD} l="Accepted" />
-                <div className="col-span-2 bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center gap-4">
-                  <div className="relative grid place-items-center shrink-0">
-                    <div className="w-16 h-16 rounded-full" style={{ background: `conic-gradient(#16a34a ${d.kpis.acceptanceRate}%, #e5efe9 0)` }} />
-                    <div className="absolute w-11 h-11 rounded-full bg-white grid place-items-center text-[13px] font-extrabold text-gray-900 tabular-nums">{d.kpis.acceptanceRate}%</div>
+            {(() => {
+              const stage = d.funnel.find((f) => f.stage === selectedStage);
+              const rows = selectedStage ? d.openReqAging.filter((r) => (r.stageCounts[selectedStage] ?? 0) > 0) : [];
+              return (
+                <>
+                  <div className="px-4 pb-2 flex items-center gap-2 border-t border-gray-100 pt-3">
+                    <p className="text-[12.5px] text-gray-500">
+                      Showing <span className="font-semibold text-gray-700">{stage?.label ?? "—"}</span> — {rows.length} record{rows.length === 1 ? "" : "s"}.
+                    </p>
                   </div>
-                  <div>
-                    <div className="text-[11px] text-gray-500 font-semibold">Offer acceptance rate</div>
-                    <div className="text-xs text-gray-600 mt-1">{d.kpis.offersAcceptedMTD} of {d.kpis.offersSentMTD} offers this month</div>
-                  </div>
+                  {rows.length === 0 ? (
+                    <div className="px-4 pb-6 text-sm text-gray-400 text-center">No open requisitions have a candidate at this stage.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[12.5px]">
+                        <thead>
+                          <tr className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-gray-500 border-b border-gray-100">
+                            <th className="text-left px-4 py-2.5">Requisition</th>
+                            <th className="text-left px-4 py-2.5">Role</th>
+                            <th className="text-right px-4 py-2.5">Positions</th>
+                            <th className="text-right px-4 py-2.5">In Offer</th>
+                            <th className="text-right px-4 py-2.5">Onboarded</th>
+                            <th className="text-right px-4 py-2.5">Age</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((r) => (
+                            <tr key={r.id} className="border-b border-gray-100 last:border-none hover:bg-gray-50/60">
+                              <td className="px-4 py-2.5">
+                                <Link href="/recruit/requisitions" className="font-semibold text-gray-900 hover:text-green-700 hover:underline tabular-nums">{r.requisitionNumber}</Link>
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-700">{r.title}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">{r.positions}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{r.inOffer}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{r.onboarded}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">{r.ageDays}d</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Offers & time-to-hire */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+            <h2 className="text-[13px] font-bold text-gray-900 px-4 pt-4">Offers &amp; time-to-hire</h2>
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <Stat n={d.kpis.offersSentMTD} l="Offers sent" />
+              <Stat n={d.kpis.offersAcceptedMTD} l="Accepted" />
+              <div className="col-span-2 sm:col-span-1 bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center gap-3">
+                <div className="relative grid place-items-center shrink-0">
+                  <div className="w-14 h-14 rounded-full" style={{ background: `conic-gradient(#16a34a ${d.kpis.acceptanceRate}%, #e5efe9 0)` }} />
+                  <div className="absolute w-9 h-9 rounded-full bg-white grid place-items-center text-[11px] font-extrabold text-gray-900 tabular-nums">{d.kpis.acceptanceRate}%</div>
                 </div>
-                <Stat n={`${d.kpis.avgTimeToHire}d`} l="Avg time-to-hire" />
-                <Stat n={d.kpis.hiresMTD} l="Hires this month" />
+                <div className="text-[11px] text-gray-500 font-semibold leading-tight">Acceptance rate</div>
               </div>
+              <Stat n={`${d.kpis.avgTimeToHire}d`} l="Avg time-to-hire" />
+              <Stat n={d.kpis.hiresMTD} l="Hires this month" />
             </div>
           </div>
 

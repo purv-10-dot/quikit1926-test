@@ -10,6 +10,7 @@ import { seedDiscoveryDefaults } from "@/lib/services/discoveryDefaults";
 import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
 import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 import { PROJECT_TAB_PATHS } from "@/lib/projectTabs";
+import { listStarredProjectIds } from "@/lib/services/projectStars";
 
 // The "functional" (Kanban) template starts with Epics, List and Task Table
 // hidden — a Space Admin can re-enable them later via the tab customizer (+).
@@ -24,6 +25,8 @@ const KANBAN_HIDDEN_TABS = ["epics", "list", "task-table"];
 const PROJECT_VIEWS = ["active", "archived", "trash"] as const;
 type ProjectView = (typeof PROJECT_VIEWS)[number];
 
+// AI Runtime: agent-JWT opt-in (manifest read op `list_projects`). Reads only —
+// the POST below deliberately stays session/API-token.
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const search = url.searchParams.get("search")?.trim() || "";
@@ -124,6 +127,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     styleById = new Map(rows.map((r) => [r.id, r.managementStyle ?? "team-managed"]));
   }
 
+  // Per-user starred set — drives the list's star toggle + the sidebar's
+  // "Starred" group. Raw SQL (stale client doesn't know QtProjectStar).
+  const starredIds = new Set(await listStarredProjectIds(orgId, userId));
+
   const leadIds = Array.from(
     new Set(
       projects
@@ -164,6 +171,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const data = projects.map((p) => ({
     ...p,
     managementStyle: styleById.get(p.id) ?? "team-managed",
+    starred: starredIds.has(p.id),
     lead: p.leadUserId ? leadById.get(p.leadUserId) ?? null : null,
     canArchive: isAdmin || spaceAdminIds.has(p.id),
   }));
@@ -179,7 +187,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     // Restore, the Trash tab). The server still enforces every action.
     isAdmin,
   });
-});
+}, { allowAgentJwt: true });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   if (!(await userCan(userId, orgId, "Project", "create"))) return forbidden();
@@ -299,4 +307,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   );
 
   return NextResponse.json({ success: true, data: project }, { status: 201 });
-});
+}, { allowAgentJwt: true });

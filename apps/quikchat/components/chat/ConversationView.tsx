@@ -3,15 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AssistApprovalRequest,
   AssistSource,
   ChannelList,
   ChannelListItem,
   MentionRefInput,
   MessageDto,
 } from "@/lib/shared";
-import { Avatar, Pin, Segmented, Spinner, useToast } from "@/components/ui";
+import { Avatar, Modal, Pin, Segmented, Spinner, useToast } from "@/components/ui";
 import {
   addMember,
+  APPROVALS_QUERY_KEY,
+  decideApproval,
   deleteMessageApi,
   editMessageApi,
   fetchChannelDetail,
@@ -21,7 +24,9 @@ import {
   fetchPinned,
   forwardMessageApi,
   pinChannel,
+  reconcileChannelApprovals,
   removeMember,
+  resetAiChat,
   setMemberRole,
   updateChannel,
   deleteChannel,
@@ -37,8 +42,11 @@ import {
   updateInList,
 } from "@/lib/message-actions";
 import { whoIsTyping, type TypingState } from "@/lib/typing-store";
+import { mergeMessageEvent } from "@/lib/realtime-cache";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { useProfile } from "@/components/profile/ProfileProvider";
+import { fromApprovalRequest, readApprovalMessageData } from "@/lib/approval-card";
+import { ApprovalCard } from "./ApprovalCard";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { ForwardModal } from "./ForwardModal";
@@ -98,6 +106,17 @@ export interface ConversationViewProps {
   onRetryAssist?: () => void;
   /** Dismiss the assistant error bubble. */
   onDismissAssistError?: () => void;
+  /**
+   * A write the assistant parked for approval on THIS channel's turn (null when
+   * none). Terminal in the same way `assistError` is — the stream emitted it
+   * instead of `done`, so there is no answer bubble and this card IS the turn's
+   * result. Rendered from the same `ApprovalCard` the Activity list uses; the
+   * shape difference between an SSE frame and a ledger row is absorbed by
+   * `lib/approval-card.ts`, not by this view.
+   */
+  assistApproval?: AssistApprovalRequest | null;
+  /** Dismiss the live approval card (the request stays in Activity either way). */
+  onDismissAssistApproval?: () => void;
   /** Start a call in the current channel. */
   onCall?: () => void;
   /** Start a call linked to a meeting card. */
@@ -165,6 +184,8 @@ export function ConversationView({
   assistError,
   onRetryAssist,
   onDismissAssistError,
+  assistApproval,
+  onDismissAssistApproval,
   onCall,
   onStartMeetingCall,
   liveSources,
@@ -196,6 +217,11 @@ export function ConversationView({
   // Scheduling modal (S15a). Seeded with channel members (header button) or one
   // user (profile card "Schedule meeting"), which registers the opener below.
   const [scheduleSeed, setScheduleSeed] = useState<string[] | null>(null);
+  // "New chat" confirm (AI chat only). Two-step, matching InfoDrawer's Leave
+  // rather than its typed "DELETE": a reset destroys nothing, so the heavier
+  // ceremony would misrepresent what the button does.
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newChatBusy, setNewChatBusy] = useState(false);
 
   // Pane-wide file drop (Slack/Teams/WhatsApp accept a drop anywhere over the
   // conversation, not just the composer). This view owns the drag listeners
@@ -247,6 +273,79 @@ export function ConversationView({
     return () => registerScheduleWith(null);
   }, [registerScheduleWith, channelId]);
 
+  /**
+   * Is there anything for the reconcile pass to do here? True when a loaded
+   * message is an approval card that is MINE and still reads `pending`.
+   *
+   * Someone else's card is excluded because the ledger is token-scoped — we
+   * could not read its row even if we asked — and terminal cards are excluded
+   * because a decided card cannot become undecided.
+   */
+  /**
+   * Has the PERSISTED card for the live turn's request landed in the message
+   * list yet?
+   *
+   * Both cards exist on purpose — the ephemeral one appears the instant the
+   * `approval_needed` frame arrives, with no server round trip, and the
+   * persisted one is what survives a reload, a channel switch and a second
+   * device. What must NOT happen is both rendering at once: the same request,
+   * twice, one above the composer and one in the transcript, each with its own
+   * Approve button.
+   *
+   * So they hand over rather than stack. The ephemeral bubble covers the gap
+   * until the persisted message arrives over the socket, then stands down.
+   * Matching on `requestId` and not merely on “any approval card exists”, so an
+   * older card in the same channel cannot suppress a live one.
+   */
+  const liveApprovalIsPersisted = useMemo(() => {
+    const liveId = assistApproval?.requestId;
+    if (!liveId) return false;
+    return (messages ?? []).some((m) => {
+      if (m.type !== "ApprovalRequest") return false;
+      return readApprovalMessageData(m.data)?.requestId === liveId;
+    });
+  }, [messages, assistApproval]);
+
+  const hasReconcilableApproval = useMemo(
+    () =>
+      (messages ?? []).some((m) => {
+        if (m.type !== "ApprovalRequest") return false;
+        const d = readApprovalMessageData(m.data);
+        return !!d && d.requesterId === currentUserId && d.status === "pending";
+      }),
+    [messages, currentUserId],
+  );
+
+  /**
+   * LAYER 2 of the approval-drift bound: repair this channel's persisted cards
+   * against the runtime's ledger when the conversation is opened.
+   *
+   * A decision taken outside our relay — a direct runtime call, another device,
+   * the expiry sweep, a module-disable cancel — never reaches the patch in
+   * `decideApprovalRequest`, so our snapshot would say `pending` forever. The
+   * requester is the only person the token-scoped ledger will answer for, and
+   * running it repairs the card for every observer in the channel because the
+   * fanout goes to the channel.
+   *
+   * Deliberately fire-and-forget and deliberately silent: anything that moved
+   * arrives as `message_update`, and a failed background repair is not something
+   * to interrupt the reader about. The server refuses to conclude anything from
+   * a failed or partial ledger read, so a quiet failure changes nothing.
+   *
+   * Gated on there actually being one of MY still-pending cards in the loaded
+   * messages, so opening an ordinary channel costs nothing. The dependency is
+   * the derived boolean rather than `messages`, so this fires once when such a
+   * card first appears — including when scrolling back reveals one in an older
+   * page — and not again on every arrival.
+   *
+   * Not on an interval: the card's own expiry clock covers the common case with
+   * no server at all.
+   */
+  useEffect(() => {
+    if (!hasReconcilableApproval) return;
+    void reconcileChannelApprovals(channelId).catch(() => undefined);
+  }, [channelId, hasReconcilableApproval]);
+
   // Previewable attachments (image/video + PDF) in the loaded thread → the
   // lightbox gallery. PDFs render in an iframe; the rest as media.
   const gallery = useMemo<LightboxItem[]>(() => {
@@ -269,6 +368,35 @@ export function ConversationView({
     }
     return out;
   }, [messages]);
+
+  /**
+   * Reset what the assistant can see. The server drops a marker row and deletes
+   * nothing; `buildHistory` stops at it on the next turn.
+   *
+   * The marker is merged into the cache here rather than left to the `system`
+   * fanout. The echo does arrive (the actor is in the channel room), but it is a
+   * second, unordered transport — waiting on it leaves the user staring at an
+   * unchanged transcript after pressing the button, and leaves nothing at all if
+   * the socket is down. `mergeMessageEvent` keys on id, so the echo is a no-op
+   * when it lands.
+   */
+  const startNewChat = async () => {
+    setNewChatBusy(true);
+    try {
+      const marker = await resetAiChat(channelId);
+      qc.setQueryData<MessageDto[]>(["messages", channelId], (old) =>
+        mergeMessageEvent(old ?? [], marker, currentUserId),
+      );
+      setNewChatOpen(false);
+    } catch (e) {
+      toast.error({
+        title: "Couldn't start a new chat",
+        body: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setNewChatBusy(false);
+    }
+  };
 
   const refetchMembers = () => qc.invalidateQueries({ queryKey: ["members", channelId] });
 
@@ -406,6 +534,13 @@ export function ConversationView({
         }
       : undefined,
     liveSourcesById: liveSources,
+    // The persisted approval card answers through the SAME relay the live turn
+    // and Activity use. Answering here moves the same row Activity is listing,
+    // so the ledger is invalidated on settle exactly as it is there.
+    onDecideApproval: decideApproval,
+    onApprovalSettled: () => {
+      void qc.invalidateQueries({ queryKey: APPROVALS_QUERY_KEY });
+    },
   };
 
   const typingUsers: TypingUser[] = (typing ? whoIsTyping(typing, channelId, Date.now()) : [])
@@ -439,6 +574,7 @@ export function ConversationView({
           onSchedule={isAiChat ? undefined : () => setScheduleSeed(channel.members.map((m) => m.id))}
           onCall={isAiChat ? undefined : onCall}
           onTogglePin={() => void togglePin()}
+          onNewChat={isAiChat ? () => setNewChatOpen(true) : undefined}
         />
         <PinnedBanner count={pinnedQuery.data?.length ?? 0} onOpen={() => setInfoOpen(true)} />
         {loadingMessages && !messages ? (
@@ -519,6 +655,42 @@ export function ConversationView({
                   Dismiss
                 </button>
               </div>
+            </div>
+          </div>
+        ) : null}
+        {assistApproval && !liveApprovalIsPersisted ? (
+          <div className="qc-assist-approval" data-testid="assist-approval">
+            <Avatar name="Assistant" id="quikchat-assistant-bot" size={28} />
+            <div className="qc-assist-approval__body">
+              <div className="qc-assist-approval__head">
+                <span className="qc-assist-approval__name">Assistant</span>
+                <span className="qc-ai-badge">AI</span>
+                <button
+                  type="button"
+                  className="qc-link qc-assist-approval__dismiss"
+                  onClick={onDismissAssistApproval}
+                >
+                  Dismiss
+                </button>
+              </div>
+              {/*
+                Dismiss hides the bubble; it does NOT withdraw the request. The
+                write stays parked on the runtime either way, which is exactly
+                why "Your approvals" in Activity exists — closing this must not
+                be a way to lose track of something that will still execute if
+                approved elsewhere, or expire unanswered if not.
+              */}
+              <ApprovalCard
+                model={fromApprovalRequest(assistApproval)}
+                onDecide={decideApproval}
+                // Answering here moves the same row Activity is listing. Without
+                // this the two surfaces disagree for as long as that query stays
+                // fresh, and "Your approvals" keeps offering buttons on a
+                // request already decided one pane over.
+                onSettled={() => {
+                  void qc.invalidateQueries({ queryKey: APPROVALS_QUERY_KEY });
+                }}
+              />
             </div>
           </div>
         ) : null}
@@ -661,6 +833,49 @@ export function ConversationView({
           onCreated={() => toast.success({ title: "Meeting scheduled" })}
         />
       ) : null}
+
+      {/*
+        The copy states BOTH halves on purpose. "New chat" reasonably reads as
+        "drop everything", and two of the three things a user might expect to lose
+        are not lost: the transcript stays, and so do their knowledge-base
+        documents. Saying only what is reset would leave them guessing about the
+        rest — and a reset they think is destructive is one they won't use.
+      */}
+      <Modal
+        open={newChatOpen}
+        onClose={() => setNewChatOpen(false)}
+        title="Start a new chat?"
+        footer={
+          <>
+            <button
+              type="button"
+              className="qc-btn qc-btn--ghost"
+              onClick={() => setNewChatOpen(false)}
+              disabled={newChatBusy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="qc-btn qc-btn--primary"
+              data-testid="new-chat-confirm"
+              onClick={() => void startNewChat()}
+              disabled={newChatBusy}
+            >
+              {newChatBusy ? "Starting…" : "Start new chat"}
+            </button>
+          </>
+        }
+      >
+        <p className="qc-modal-text">
+          The assistant will stop seeing everything above this point, so it starts
+          fresh instead of carrying this conversation forward.
+        </p>
+        <p className="qc-modal-text">
+          Nothing is deleted — your messages stay in this chat, and your documents stay
+          in the knowledge base.
+        </p>
+      </Modal>
 
       <ForwardModal
         open={!!forwardTarget}

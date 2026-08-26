@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { createTestCase, TestCaseError } from "@/lib/services/testCases";
+import { buildCaseWhere } from "@/lib/test/caseFilterQuery";
 import { badRequest, gateProjectResolved, serverError } from "@/lib/test/gate";
 import {
   createTestCaseSchema,
@@ -47,25 +48,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     }
     const q = parsed.data;
 
-    const where = {
-      orgId,
-      projectId,
-      isDeleted: false,
-      ...(q.sectionId ? { sectionId: q.sectionId } : {}),
-      ...(q.suiteId ? { section: { suiteId: q.suiteId } } : {}),
-      ...(q.priority ? { priority: q.priority } : {}),
-      ...(q.type ? { type: q.type } : {}),
-      ...(q.automationStatus ? { automationStatus: q.automationStatus } : {}),
-      ...(q.approvalState ? { approvalState: q.approvalState } : {}),
-      ...(q.query
-        ? {
-            OR: [
-              { title: { contains: q.query, mode: "insensitive" as const } },
-              { automationId: { contains: q.query, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    };
+    // Filter → Prisma mapping lives in lib/test/caseFilterQuery.ts, so the
+    // cross-table filters (execution status, run, defect, coverage) are testable
+    // without building a NextRequest.
+    const where = buildCaseWhere(orgId, projectId, q);
 
     const [total, rows] = await Promise.all([
       db.qtTestCase.count({ where }),
@@ -85,6 +71,15 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
           ownerId: true,
           sectionId: true,
           updatedAt: true,
+          // QUIKTR-335 — optional list columns. Returned always rather than
+          // behind a `?fields=` param: they are three scalars and a small join,
+          // and the column customiser is a client-side preference, so gating the
+          // payload on it would mean a refetch every time a column is toggled.
+          estimateMs: true,
+          refTickets: true,
+          tags: {
+            select: { tag: { select: { id: true, name: true, color: true } } },
+          },
         },
         orderBy: [{ sectionId: "asc" }, { refId: "asc" }],
         skip: (q.page - 1) * q.pageSize,
@@ -92,9 +87,17 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       }),
     ]);
 
+    // Flatten the tag join-rows to a plain label list — the table renders
+    // labels, and leaving `{ tag: {...} }` nesting in the payload would push that
+    // unwrapping into every consumer.
+    const items = rows.map(({ tags, ...rest }) => ({
+      ...rest,
+      labels: tags.map((t) => t.tag),
+    }));
+
     return NextResponse.json({
       success: true,
-      data: { items: rows, total, page: q.page, pageSize: q.pageSize },
+      data: { items, total, page: q.page, pageSize: q.pageSize },
     });
   } catch (error: unknown) {
     return serverError(error);

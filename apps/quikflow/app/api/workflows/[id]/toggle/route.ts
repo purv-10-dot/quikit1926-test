@@ -18,6 +18,7 @@ export const PATCH = withOrgAuth<Params>(async ({ orgId, userId, isAdmin }, req,
     where: {
       id: params.id,
       orgId,
+      deletedAt: null,
       OR: [{ scope: "org" }, { scope: "personal", ownerId: userId }],
     },
   });

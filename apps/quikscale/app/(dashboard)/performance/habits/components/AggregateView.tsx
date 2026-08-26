@@ -54,7 +54,13 @@ export function AggregateView({ campaignId, onDeleted }: Props) {
   const [showFillModal, setShowFillModal] = useState(false);
 
   const isLegacy = (data as DetailResponse | undefined)?.legacy === true;
-  const { data: myResponse } = useMyHabitResponse(campaignId, !isLegacy);
+  // "Fill my response" (and its GET) only ever applies to an active campaign —
+  // a draft can't accept responses yet (the PUT route 400s) and a closed one
+  // no longer can either, so fetching it outside "active" is a guaranteed,
+  // wasted 404 against an endpoint whose only consumer is gated the same way
+  // below (`campaign.status === "active"`).
+  const campaignStatus = (data as DetailResponse | undefined)?.campaign?.status;
+  const { data: myResponse } = useMyHabitResponse(campaignId, !isLegacy && campaignStatus === "active");
   const adminHasSubmitted = !!myResponse;
 
   if (isLoading) return <DetailSkeleton />;
@@ -500,7 +506,7 @@ export function DeadlineEditor({
   async function save() {
     // `min` on the input already blocks this via the picker, but a browser
     // that doesn't enforce `min` on typed/pasted input needs a real guard.
-    if (pastDatesLocked && value && value < todayStr) {
+    if (minDate && value && value < minDate) {
       notify.error(new Error(PAST_DEADLINE_LOCKED_MESSAGE));
       return;
     }
@@ -549,8 +555,6 @@ export function DeadlineEditor({
           if (e.key === "Escape") setEditing(false);
         }}
         disabled={update.isPending}
-        min={pastDatesLocked ? todayStr : undefined}
-        title={pastDatesLocked ? PAST_DEADLINE_LOCKED_MESSAGE : undefined}
         aria-label="Deadline"
         className="px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
       />

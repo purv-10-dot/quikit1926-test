@@ -1,15 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Download, X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 
 interface Props {
   count: number;
   onClear: () => void;
   onDelete: () => Promise<void> | void;
-  onExport: () => void;
-  /** Show the Export button — false for read-only roles (Viewer). */
-  canExport?: boolean;
   /** Show the Delete button — false for roles without Issue:delete. */
   canDelete?: boolean;
 }
@@ -18,8 +15,6 @@ export function BulkActionBar({
   count,
   onClear,
   onDelete,
-  onExport,
-  canExport = true,
   canDelete = true,
 }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -49,16 +44,8 @@ export function BulkActionBar({
       </button>
       <span className="font-medium text-gray-900">{count} selected</span>
       <div className="ml-auto flex items-center gap-2">
-        {canExport && (
-          <button
-            type="button"
-            onClick={onExport}
-            className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1 text-gray-700 hover:bg-gray-50"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-        )}
+        {/* Export CSV removed from the bulk bar (QUIKTR-347: duplicate export —
+            the page-level Import/Export controls already cover CSV export). */}
         {!canDelete ? null : confirmDelete ? (
           <div className="flex items-center gap-2 rounded border border-red-200 bg-white px-3 py-1">
             <span className="text-xs text-red-700">Delete {count}?</span>

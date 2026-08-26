@@ -107,10 +107,14 @@ export const PERMISSION_TREE: PermModule[] = [
     key: "Recruit",
     label: "Recruitment",
     leaves: [
-      { resource: "Recruit", label: "Requisitions / Candidates", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.write"), update: c("hrms.recruit.write"), delete: NO } },
+      { resource: "Recruit.Requisition", label: "Job Requisitions (All)", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.requisition.write"), update: c("hrms.recruit.requisition.write"), delete: NO } },
+      { resource: "Recruit.Requisition.Self", label: "Job Openings, Candidates & Pipeline (Own)", actions: { view: c("hrms.recruit.read_self"), create: NO, update: NO, delete: NO } },
+      { resource: "Recruit.Candidate", label: "Candidates (All)", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.candidate.write"), update: c("hrms.recruit.candidate.write"), delete: NO } },
       { resource: "Recruit.Interview", label: "Interviews", actions: { view: NO, create: c("hrms.recruit.interview"), update: c("hrms.recruit.interview"), delete: NO } },
       { resource: "Recruit.Offer", label: "Offers", actions: { view: NO, create: c("hrms.recruit.offer"), update: c("hrms.recruit.offer"), delete: NO } },
       { resource: "Recruit.Approve", label: "Approve Requisitions", actions: { view: NO, create: NO, update: c("hrms.recruit.approve"), delete: NO } },
+      { resource: "Recruit.Performance", label: "Recruiter Performance (All)", actions: { view: c("hrms.recruit.performance.read"), create: NO, update: NO, delete: NO } },
+      { resource: "Recruit.Performance.Self", label: "Own Recruiter Performance", actions: { view: c("hrms.recruit.performance.read_self"), create: NO, update: NO, delete: NO } },
     ],
   },
   {

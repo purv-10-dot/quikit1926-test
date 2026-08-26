@@ -6,7 +6,7 @@
 
 // App's own public origin — the platform-standard NEXTAUTH_URL (its Vercel
 // domain in prod, localhost in dev). Replaces the app-local FRONTEND_URL.
-const FRONTEND_URL = (process.env.NEXTAUTH_URL || 'http://localhost:3014').trim().replace(/\/$/, '');
+const FRONTEND_URL = (process.env.NEXTAUTH_URL || 'http://localhost:3016').trim().replace(/\/$/, '');
 
 const ROLE_NAMES: Record<string, string> = {
   ADMIN: 'Super Administrator',

@@ -20,6 +20,14 @@ import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRol
 // an app role, so a fresh org admin would land with zero permissions (empty
 // sidebar). If the caller is an org/super admin and holds no QuikTrack role
 // yet, bind them to the freshly-seeded admin role. Idempotent.
+// DO NOT add { allowAgentJwt: true } or { allowPat: true } to this route.
+// Unlike every other withOrgAuth caller, this handler reads
+// session.user.isSuperAdmin / session.user.membershipRole directly instead
+// of going through ctx primitives + loadProjectAccess — the one deliberate
+// exception to "authorization reads from ctx, never from session" in this
+// codebase. Neither the PAT nor the agent-JWT identity path populates those
+// two session fields, so opting this route into either would silently
+// misclassify every agent caller as non-admin instead of erroring.
 export const GET = withOrgAuth(async ({ session, userId, orgId }) => {
   try {
     const { adminRoleId } = await seedAllDefaultRoles(orgId);

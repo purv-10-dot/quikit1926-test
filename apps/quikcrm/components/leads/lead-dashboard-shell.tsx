@@ -65,6 +65,9 @@ export interface LeadDashboardShellProps {
       score: number;
       country?: string | null;
       accountId?: string | null;
+      /** ICP reference + joined name. Displayed read-only; never edited here. */
+      icpId?: string | null;
+      icp?: { id: string; name: string } | null;
       dynamicFields?: Record<string, unknown> | null;
       updatedAt: string;
       company: string | null;
@@ -514,6 +517,8 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
               ownerName: lead.ownerName,
               accountId: lead.accountId,
               account: lead.account,
+              icpId: lead.icpId,
+              icp: lead.icp,
               convertedAt: lead.convertedAt,
               linkedContactId: lead.linkedContactId,
               dynamicFields: lead.dynamicFields ?? null,
@@ -575,6 +580,8 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
               website: lead.website ?? null,
               updatedAt: lead.updatedAt,
               account: lead.account,
+              icpId: lead.icpId,
+              icp: lead.icp,
             }}
           />
         </aside>

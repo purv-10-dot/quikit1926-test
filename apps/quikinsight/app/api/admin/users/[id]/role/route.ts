@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/withAuth";
-import { isOrgAdmin, type Role } from "@/lib/rbac";
+import { sessionRole, isOrgAdmin, normalizeRole, type Role } from "@/lib/rbac";
 
-// QuikInsight offers exactly two assignable roles. The legacy names stay
-// readable in lib/rbac.ts (existing rows carry them) but cannot be assigned.
-const ROLES: Role[] = ["ADMIN", "VIEWER"];
+// QuikInsight offers exactly two assignable roles, lowercase to match the rest
+// of the platform. The legacy names stay readable in lib/rbac.ts (existing rows
+// carry them) but cannot be assigned.
+const ROLES: Role[] = ["admin", "viewer"];
 // Both are org-wide and carry no team, so no team is ever required here.
-const ORG_WIDE: Role[] = ["ADMIN", "VIEWER"];
+const ORG_WIDE: Role[] = ["admin", "viewer"];
 
 // PATCH /api/admin/users/[id]/role — set a user's single role assignment.
 // Body: { role: Role; teamId: string | null }
-// Guarded to org admins (SUPER_ADMIN) via isOrgAdmin.
+// Guarded to org admins (admin / legacy super_admin) via isOrgAdmin.
 export const PATCH = withAuth(async (req, ctx) => {
-  if (!isOrgAdmin(req.session.user.role)) {
+  if (!isOrgAdmin(sessionRole(req.session))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -27,10 +28,13 @@ export const PATCH = withAuth(async (req, ctx) => {
   let teamId: string | null;
   try {
     const body = (await req.json()) as { role?: unknown; teamId?: unknown };
-    if (!ROLES.includes(body.role as Role)) {
+    // Accept either casing on the wire — the Admin Portal and older clients may
+    // still send "ADMIN" — but always PERSIST the canonical lowercase name.
+    const requested = normalizeRole(typeof body.role === "string" ? body.role : null);
+    if (!requested || !ROLES.includes(requested)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
-    role = body.role as Role;
+    role = requested;
     teamId = body.teamId == null || body.teamId === "" ? null : String(body.teamId);
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
@@ -44,7 +48,7 @@ export const PATCH = withAuth(async (req, ctx) => {
   }
 
   // Guard against an admin locking themselves out of the admin surface.
-  if (userId === req.session.user.id && role !== "ADMIN") {
+  if (userId === req.session.user.id && role !== "admin") {
     return NextResponse.json({ error: "You can't change your own admin role" }, { status: 400 });
   }
 

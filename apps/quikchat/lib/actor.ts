@@ -30,8 +30,16 @@ async function authContext(req: NextRequest): Promise<AuthContext> {
 
 /**
  * Resolve the unified actor for an internal request from QuikIT's JWT:
- *   - `actingAs === 'ai_agent'` → ai_agent, OR
- *   - otherwise → human.
+ *   - any non-`'user'` `actingAs` → ai_agent, OR
+ *   - `'user'` (or absent) → human.
+ *
+ * The test is `!== "user"`, NOT `=== "ai_agent"`. The auth service's vocabulary
+ * is `user | ai_agent | platform_service | scheduled_job`, and the previous
+ * equality check silently attributed `platform_service` and `scheduled_job` to
+ * `actorType: "human"` against the impersonated user — an agent action recorded
+ * as a human one, with no error and no rejection. `OrgActor.actorType` has only
+ * `human | ai_agent`, so all three agent values map to `ai_agent`; `agentId`
+ * carries whatever specificity the token supplied.
  *
  * QuikChat no longer verifies an inbound `Authorization: Bearer` agent JWT or
  * writes an AgentJwtIssuance audit row — QuikIT's withAuth carries the actor
@@ -40,11 +48,12 @@ async function authContext(req: NextRequest): Promise<AuthContext> {
  */
 export async function resolveActor(req: Request): Promise<OrgActor> {
   const ctx = await authContext(req as NextRequest);
-  if (ctx.actingAs === "ai_agent") {
+  if (ctx.actingAs !== "user") {
     return {
       orgId: ctx.orgId,
       actorType: "ai_agent",
       // AuthContext.actingAgentId is `string | null`; normalize null → undefined.
+      // Legitimately absent for platform_service / scheduled_job.
       agentId: ctx.actingAgentId ?? undefined,
       agentRunId: undefined,
       channelScope: undefined,

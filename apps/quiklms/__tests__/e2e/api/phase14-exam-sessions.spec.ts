@@ -38,7 +38,7 @@ import { apiAs, apiAnon, safeJson } from "../fixtures/api";
 import { loadManifest, mintSessionToken } from "../fixtures/auth";
 
 const m = loadManifest();
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3014";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3016";
 const MISSING = "00000000-0000-0000-0000-000000000000";
 const RUN = `AUDIT14-${Date.now()}`;
 const LEARNER_B_EMAIL = "e2e-learner-b@quiklms.test";

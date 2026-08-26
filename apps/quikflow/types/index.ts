@@ -19,6 +19,8 @@ export interface WorkflowDTO {
   triggerLabel: string | null;
   actionLabel: string | null;
   lastRunAt: string | null;
+  /** Outcome of the most recent run, independent of WfStatus (enabled/disabled). */
+  lastRunStatus: WfRunStatusT | null;
   updatedAt: string;
 }
 

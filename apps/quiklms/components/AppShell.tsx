@@ -1,19 +1,12 @@
 'use client';
-/**
- * Authenticated shell — sidebar + top bar, rendered by all eight role groups.
- *
- * The top bar follows quikhrms's (`components/hrms/layout/top-bar.tsx`): the
- * date and a time-of-day greeting anchor the left, and a single cluster of
- * round controls sits on the right — search, language, theme, the apps waffle
- * and the account menu. QuikLMS keeps two controls quikhrms has no use for
- * (locale and dark mode) and drops the one it cannot serve (notifications —
- * there is no notification store in this app).
- *
- * Everything is expressed in the app's own tokens, so a tenant's accent still
- * drives the hover and focus states.
- */
-import { useEffect, useState } from 'react';
-import { Sun, Moon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Sun, Moon, Check, Grid3x3, ExternalLink, Loader2 } from 'lucide-react';
+// Shared floating support widget, mounted at the bottom of this shell. The JSX
+// reference existed without this import, so EVERY authenticated page in the app
+// threw "ReferenceError: SupportLauncher is not defined" and 500'd — the shell
+// wraps all eight role groups. Imported from @quikit/ui (never a local copy),
+// the same path quikcrm/quikchat/quikinfra/quiktrack/quikasset use.
+import { SupportLauncher } from '@quikit/ui/support';
 import { Sidebar } from './Sidebar';
 import { NavSearch } from './NavSearch';
 import { AppSwitcher } from './AppSwitcher';

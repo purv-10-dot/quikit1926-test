@@ -13,9 +13,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:generate": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "db:push": "prisma db push --schema=../../packages/database/prisma/schema.prisma",
-    "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts"
+    "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts",
+    "db:seed:permissions-demo": "tsx --env-file=.env.local ../../packages/database/scripts/seed-permissions-demo.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -70,6 +72,7 @@
     "recharts": "^2.15.4",
     "sanitize-html": "^2.17.4",
     "tippy.js": "^6.3.7",
+    "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {

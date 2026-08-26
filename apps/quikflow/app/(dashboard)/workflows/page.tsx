@@ -3,22 +3,27 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import { useConfirm } from "@quikit/ui";
 import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState, EmptyState } from "@/components/ui/page-states";
+import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import type { WorkflowDTO } from "@/types";
 
 const TABS = ["All", "Live", "Paused", "Drafts", "Errors"] as const;
 type Tab = (typeof TABS)[number];
 
+// "Errors" is not a WfStatus (a workflow stays Active/Live while it's enabled,
+// even if every run has been failing) — it's workflows whose most recent run
+// failed, regardless of enabled state. Filtered separately below, not by status.
 const TAB_TO_STATUS: Record<Tab, string | null> = {
   All: null,
   Live: "Active",
   Paused: "Paused",
   Drafts: "Draft",
-  Errors: "Archived",
+  Errors: null,
 };
 
 function displayStatus(s: string): string {
@@ -39,6 +44,7 @@ function timeAgo(iso: string | null): string {
 export default function WorkflowsPage() {
   const [tab, setTab] = useState<Tab>("All");
   const qc = useQueryClient();
+  const confirm = useConfirm();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["workflows"],
@@ -49,10 +55,33 @@ export default function WorkflowsPage() {
     mutationFn: ({ id, on }: { id: string; on: boolean }) =>
       apiSend(`/api/workflows/${id}/toggle`, "PATCH", { on }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workflows"] }),
+    onError: (err) => notify.error(err, "Couldn't update the workflow"),
   });
 
+  const deleteWorkflow = useMutation({
+    mutationFn: (id: string) => apiSend(`/api/workflows/${id}`, "DELETE"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workflows"] });
+      notify.success("Workflow deleted");
+    },
+    onError: (err) => notify.error(err, "Couldn't delete the workflow"),
+  });
+
+  async function handleDelete(w: WorkflowDTO) {
+    const ok = await confirm({
+      title: `Delete "${w.name}"?`,
+      description: "This automation will stop running immediately. An admin can restore it later if needed.",
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
+    deleteWorkflow.mutate(w.id);
+  }
+
   const status = TAB_TO_STATUS[tab];
-  const rows = (data ?? []).filter((w) => (status ? w.status === status : true));
+  const rows = (data ?? []).filter((w) =>
+    tab === "Errors" ? w.lastRunStatus === "failed" : status ? w.status === status : true,
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -104,6 +133,9 @@ export default function WorkflowsPage() {
                   <th className="px-5 py-3 font-semibold">Last run</th>
                   <th className="px-5 py-3 font-semibold">Owner</th>
                   <th className="px-5 py-3 text-right font-semibold">On / Off</th>
+                  <th className="px-5 py-3 text-right font-semibold">
+                    <span className="sr-only">Delete</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -119,7 +151,12 @@ export default function WorkflowsPage() {
                       </p>
                     </td>
                     <td className="px-5 py-3">
-                      <StatusPill status={displayStatus(w.status)} label={displayStatus(w.status)} />
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <StatusPill status={displayStatus(w.status)} label={displayStatus(w.status)} />
+                        {w.lastRunStatus === "failed" ? (
+                          <StatusPill status="Error" label="Last run failed" />
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-5 py-3 text-gray-500">{timeAgo(w.lastRunAt)}</td>
                     <td className="px-5 py-3 text-gray-600">{w.ownerName ?? "—"}</td>
@@ -140,6 +177,17 @@ export default function WorkflowsPage() {
                             w.status === "Active" ? "translate-x-5" : "translate-x-0.5",
                           )}
                         />
+                      </button>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        type="button"
+                        aria-label={`Delete ${w.name}`}
+                        disabled={deleteWorkflow.isPending && deleteWorkflow.variables === w.id}
+                        onClick={() => handleDelete(w)}
+                        className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
                   </tr>

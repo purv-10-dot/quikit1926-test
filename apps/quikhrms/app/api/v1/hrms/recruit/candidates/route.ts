@@ -1,15 +1,32 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
+import { successResponse, validationError, conflict, internalError, forbidden } from "@/lib/api-response";
 import { createCandidateSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { liftExpiredBlacklists } from "@/lib/recruit/blacklist";
-import type { Prisma, CandidateStatus } from "@quikit/database";
+import { generateCandidateCode } from "@/lib/utils/candidate-code";
+import { stageNames } from "@/lib/services/pipeline-stages";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getMyJobRequisitionIds } from "@/lib/recruit/my-jobs";
+import { Prisma, type CandidateStatus } from "@quikit/database";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
+    const canSeeAll = permissions.includes("*") || permissions.includes("hrms.recruit.read");
+    const canSeeSelf = canSeeAll || permissions.includes("hrms.recruit.read_self");
+    if (!canSeeSelf) return forbidden("No recruitment read permission");
+
+    // Recruiter (self-only) scope: only candidates who have an application to
+    // one of their own requisitions — Candidate Pool (no application at all)
+    // is intentionally never visible to a self-scoped caller, by design.
+    let myJobIds: string[] | null = null;
+    if (!canSeeAll) {
+      const employeeId = await resolveEmployeeId(orgId, userId);
+      myJobIds = employeeId ? await getMyJobRequisitionIds(orgId, employeeId) : [];
+    }
+
     await liftExpiredBlacklists(orgId);
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
@@ -44,9 +61,15 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         : onlyArchived ? {} : { isBlacklisted: false }),
       ...(status && { status: status as Prisma.CandidateWhereInput["status"] }),
       ...(excludeStatus.length && { status: { notIn: excludeStatus as CandidateStatus[] } }),
-      ...(excludeStage.length && { applications: { none: { deletedAt: null, currentStage: { in: excludeStage } } } }),
-      ...(noApplication && { applications: { none: { deletedAt: null } } }),
-      ...(hasApplication && { applications: { some: { deletedAt: null } } }),
+      // Each of these targets `applications` independently — combined via AND
+      // (not spread onto the same key) so they don't silently overwrite one
+      // another when more than one is active at once.
+      AND: [
+        ...(excludeStage.length ? [{ applications: { none: { deletedAt: null, currentStage: { in: excludeStage } } } }] : []),
+        ...(noApplication ? [{ applications: { none: { deletedAt: null } } }] : []),
+        ...(hasApplication ? [{ applications: { some: { deletedAt: null } } }] : []),
+        ...(myJobIds !== null ? [{ applications: { some: { deletedAt: null, requisitionId: { in: myJobIds } } } }] : []),
+      ],
       ...(source && { source: source as Prisma.CandidateWhereInput["source"] }),
       ...((expMin || expMax) && {
         totalExperience: {
@@ -100,7 +123,7 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
             where: { deletedAt: null },
             orderBy: { appliedDate: "desc" },
             take: 1,
-            select: { id: true, currentStage: true, status: true, requisition: { select: { id: true, title: true, requisitionNumber: true } } },
+            select: { id: true, currentStage: true, status: true, requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true } } },
           },
         },
       }),
@@ -112,23 +135,54 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const APP_TO_CAND: Record<string, CandidateStatus> = {
       AppRejected: "CandRejected",
       AppOnHold: "CandOnHold",
+      AppParked: "CandParked",
       AppHired: "Hired",
-      AppActive: "InPipeline",
-      AppOffered: "InPipeline",
+      // AppActive/AppOffered are resolved below (New vs InPipeline depends on
+      // whether the application has actually left its pipeline's first stage).
+      // Previously missing — a withdrawn/declined application left the
+      // candidate's own status stuck at whatever it was before (often still
+      // "InPipeline"), so they kept showing as in-pipeline with a stage badge
+      // here even though the Pipeline board itself never shows AppWithdrawn
+      // applications at all (not even under "Show closed").
+      AppWithdrawn: "Withdrawn",
+      AppDeclined: "Withdrawn",
     };
+
+    // First-stage name per pipeline, so a candidate still sitting at their
+    // pipeline's raw first stage (no screening action taken yet) reads as
+    // "New" rather than "InPipeline" — matches how application creation
+    // itself decides New vs InPipeline (see POST /recruit/applications).
+    const pipelines = await prisma.hiringPipeline.findMany({ where: { orgId, deletedAt: null }, select: { id: true, stages: true, isDefault: true } });
+    const firstStageByPipelineId = new Map(pipelines.map((p) => [p.id, stageNames(p.stages)[0] ?? "Screening"]));
+    const defaultFirstStage = firstStageByPipelineId.get(pipelines.find((p) => p.isDefault)?.id ?? "") ?? "Screening";
+
     await Promise.all(candidates.map(async (c) => {
       if (c.isBlacklisted) return;
-      const appStatus = c.applications?.[0]?.status;
-      const want = appStatus ? APP_TO_CAND[appStatus] : undefined;
+      const latestApp = c.applications?.[0];
+      const appStatus = latestApp?.status;
+      let want = appStatus ? APP_TO_CAND[appStatus] : undefined;
+      if (!want && (appStatus === "AppActive" || appStatus === "AppOffered")) {
+        const pipelineId = latestApp?.requisition?.pipelineId;
+        const firstStage = (pipelineId && firstStageByPipelineId.get(pipelineId)) || defaultFirstStage;
+        want = latestApp?.currentStage === firstStage ? "New" : "InPipeline";
+      }
       if (want && c.status !== want) {
         c.status = want;
         await prisma.candidate.update({ where: { id: c.id }, data: { status: want } }).catch(() => null);
       }
     }));
 
-    return successResponse(candidates, paginationMeta(page, limit, total));
+    // candidateCode isn't in the generated Prisma client yet — merged in via raw SQL.
+    const codeRows = candidates.length
+      ? await prisma.$queryRaw<{ id: string; candidateCode: string | null }[]>`
+          SELECT id, "candidateCode" FROM "app_quikhrms"."Candidate" WHERE id IN (${Prisma.join(candidates.map((c) => c.id))})`
+      : [];
+    const codeById = new Map(codeRows.map((r) => [r.id, r.candidateCode]));
+    const withCodes = candidates.map((c) => ({ ...c, candidateCode: codeById.get(c.id) ?? null }));
+
+    return successResponse(withCodes, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/candidates error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.read"] });
+});
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -161,11 +215,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         createdBy: userId, updatedBy: userId,
       },
     });
+    // candidateCode isn't in the generated Prisma client yet — stamped via raw
+    // SQL right after create, same pattern as assignedRecruiterId.
+    const candidateCode = await generateCandidateCode(orgId);
+    await prisma.$executeRaw`UPDATE "app_quikhrms"."Candidate" SET "candidateCode" = ${candidateCode} WHERE id = ${candidate.id}`;
+
     void fireWorkflow({
       orgId, event: "recruit.candidate.created",
       payload: { candidateId: candidate.id, name: `${candidate.firstName} ${candidate.lastName}`, source: candidate.source },
     });
 
-    return successResponse(candidate, undefined, 201);
+    return successResponse({ ...candidate, candidateCode }, undefined, 201);
   } catch (error) { console.error("POST /recruit/candidates error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.write"] });
+}, { requiredPermissions: ["hrms.recruit.write", "hrms.recruit.candidate.write"], anyPermission: true });

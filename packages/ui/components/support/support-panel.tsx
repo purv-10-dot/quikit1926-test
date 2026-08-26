@@ -12,8 +12,9 @@
  * conditionally rendered rather than CSS-toggled, so leaving a view discards
  * its state — a half-typed request doesn't survive a trip to the guide.
  *
- * Docked bottom-right above the FAB, with no backdrop: the user should be able
- * to keep reading the page they're reporting a problem about.
+ * Docked to the FAB, with no backdrop: the user should be able to keep reading
+ * the page they're reporting a problem about. The FAB is draggable, so the panel
+ * follows it — see `anchor` below.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +24,7 @@ import type { GuideSection } from "@quikit/shared/supportContent";
 import { SupportMenu } from "./support-menu";
 import { SupportGuide } from "./support-guide";
 import { SupportRequestForm } from "./support-request-form";
+import { getAnchoredPanelStyle, type FabAnchor } from "./use-draggable-fab";
 import type { SupportView } from "./types";
 
 export interface SupportPanelProps {
@@ -36,8 +38,16 @@ export interface SupportPanelProps {
   /** Ref of the launcher button, so an outside-click on it doesn't double-toggle. */
   launcherRef?: React.RefObject<HTMLElement | null>;
   /** Distance from the viewport bottom, in px. Set by the launcher so the
-   *  panel clears the FAB even when the FAB is itself offset. */
+   *  panel clears the FAB even when the FAB is itself offset. Used only as the
+   *  pre-hydration fallback once `anchor` is supplied. */
   bottomPx?: number;
+  /**
+   * Live position of the draggable FAB. When set, the panel is positioned
+   * against it — right edges aligned, opening upward or downward depending on
+   * which side has more room. `null` (or omitted) keeps the original
+   * corner-docked layout, which is also what renders before hydration.
+   */
+  anchor?: FabAnchor | null;
 }
 
 export function SupportPanel({
@@ -49,9 +59,11 @@ export function SupportPanel({
   uploadBase,
   launcherRef,
   bottomPx = 96,
+  anchor = null,
 }: SupportPanelProps) {
   const [view, setView] = useState<SupportView>("menu");
   const panelRef = useRef<HTMLDivElement>(null);
+  const anchored = getAnchoredPanelStyle(anchor);
 
   const titles: Record<SupportView, string> = {
     menu: "How can we help?",
@@ -106,8 +118,20 @@ export function SupportPanel({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 16, scale: 0.97 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          style={{ bottom: bottomPx, maxHeight: `calc(100vh - ${bottomPx + 32}px)` }}
-          /* Anchored above the FAB (56px tall). On small screens it spans the
+          style={
+            anchored
+              ? {
+                  left: anchored.left,
+                  top: anchored.top,
+                  bottom: anchored.bottom,
+                  maxHeight: anchored.maxHeight,
+                }
+              : { bottom: bottomPx, maxHeight: `calc(100vh - ${bottomPx + 32}px)` }
+          }
+          /* Anchored to the FAB (56px tall) — bottom-right until the user drags
+             it elsewhere, at which point `anchored` supplies explicit
+             left/top/bottom and the corner classes drop out. On small screens it
+             spans the
              viewport width minus a gutter instead of overflowing.
              Height follows the VIEW rather than being fixed:
                - menu    → auto, so the short option list doesn't leave a big
@@ -118,7 +142,9 @@ export function SupportPanel({
                            attachments are added and removed.
              `maxHeight` still caps everything to the viewport, and the inner
              views own their scrolling via `flex-1 overflow-y-auto`. */
-          className={`fixed z-[201] right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary,#FFFFFF)] border border-[var(--color-border,#E2E8F0)] shadow-2xl overflow-hidden ${
+          className={`fixed z-[201] ${
+            anchored ? "" : "right-4 sm:right-6"
+          } w-[calc(100vw-2rem)] sm:w-[380px] flex flex-col rounded-2xl bg-[var(--color-bg-primary,#FFFFFF)] border border-[var(--color-border,#E2E8F0)] shadow-2xl overflow-hidden ${
             view === "menu" ? "" : "h-[560px]"
           }`}
         >

@@ -14,6 +14,8 @@ export interface PatAuthContext {
   projectId: string | null;
   /** Every PAT-authenticated caller is an automated tool, never a human at a keyboard. */
   actorType: "agent";
+  /** The PAT's own user-supplied name (e.g. "Claude Code — laptop") — identifies which tool/token acted, for the same rows that carry actorType. */
+  actingAgentId: string;
 }
 
 export type PatAuthResult =
@@ -54,6 +56,58 @@ function touchLastUsedAt(id: string, lastUsedAt: Date | null, now: Date): void {
     .catch(() => undefined);
 }
 
+const ACCESS_RECHECK_ATTEMPTS = 2;
+const ACCESS_RECHECK_BACKOFF_MS = 100;
+
+/**
+ * A distinct outcome from the negative case (`ok: true, hasAccess: false`) —
+ * every attempt at the live-access recheck THREW (DB timeout, connection
+ * blip, transient upstream error) rather than returning an answer. Callers
+ * must not treat this as "no access": a wrongly-revoked PAT is a developer
+ * silently losing automation with no obvious cause and no way to undo it,
+ * while honouring a PAT through a brief DB blip costs almost nothing — every
+ * request still re-checks access on its own. Same reasoning as the runtime's
+ * kill-switch lookup: a lookup error there fails OPEN, because turning a
+ * database blip into an outage is worse than the thing the check guards
+ * against.
+ */
+type AccessRecheckResult =
+  | { ok: true; hasAccess: true }
+  | { ok: true; hasAccess: false }
+  | { ok: false };
+
+/**
+ * Retries `check` up to `ACCESS_RECHECK_ATTEMPTS` times with a short backoff.
+ * Only a call that actually RETURNS (true or false) counts as an answer — a
+ * thrown error is a failed check, not a negative one, and is retried. If every
+ * attempt throws, the caller gets `{ ok: false }` and must NOT revoke on it.
+ *
+ * Takes a thunk rather than fixed ids so one retry covers BOTH access branches:
+ * `loadProjectAccess` for a legacy project-scoped PAT — which is four
+ * sequential queries (project lookup, two admin checks, membership), any of
+ * which can throw, so the retry must wrap the whole call and not just the
+ * first query — and `isActiveOrgMember` for a user-scoped one. The user-scoped
+ * branch is the common case today and has exactly the same exposure.
+ */
+async function recheckAccess(check: () => Promise<boolean>): Promise<AccessRecheckResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= ACCESS_RECHECK_ATTEMPTS; attempt++) {
+    try {
+      return (await check()) ? { ok: true, hasAccess: true } : { ok: true, hasAccess: false };
+    } catch (error: unknown) {
+      lastError = error;
+      if (attempt < ACCESS_RECHECK_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, ACCESS_RECHECK_BACKOFF_MS));
+      }
+    }
+  }
+  console.warn(
+    "[withPatAuth] live-access recheck failed after retries — leaving the PAT untouched, not revoking",
+    lastError,
+  );
+  return { ok: false };
+}
+
 /**
  * Resolves a PAT from a request's Authorization header to {userId, orgId,
  * projectId}, or a 401/429 outcome if missing/malformed/not-found/expired/
@@ -90,6 +144,7 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
       expiresAt: true,
       revokedAt: true,
       lastUsedAt: true,
+      name: true,
       failedAccessChecks: true,
     },
   });
@@ -104,10 +159,26 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
   // auto-revoke after several consecutive failures — that still gets a token
   // whose creator truly lost access flagged revoked in the PAT settings UI,
   // without one flaky read permanently killing a live token.
-  const accessOk = pat.projectId
-    ? Boolean(await loadProjectAccess(pat.orgId, pat.createdById, pat.projectId))
-    : await isActiveOrgMember(pat.orgId, pat.createdById);
-  if (!accessOk) {
+  //
+  // Retried, and a failed check is NOT the same thing as a genuine "no access"
+  // answer — see recheckAccess's doc comment. Only `hasAccess: false` (the
+  // check actually ran and came back negative) touches the counter. A recheck
+  // that errors on every attempt (`ok: false`) fails this one request and
+  // writes NOTHING: no revokedAt, no increment, and no reset either — a
+  // transient error is not evidence of success any more than it is of
+  // failure. Otherwise three DB blips in a row would revoke a live token.
+  //
+  // `projectId` is read into a local so the ternary narrows it for the closure
+  // (a non-null assertion would be the alternative, and this app forbids that
+  // class of escape hatch).
+  const projectId = pat.projectId;
+  const recheck = await recheckAccess(
+    projectId
+      ? async () => Boolean(await loadProjectAccess(pat.orgId, pat.createdById, projectId))
+      : () => isActiveOrgMember(pat.orgId, pat.createdById),
+  );
+  if (!recheck.ok) return { ok: false, status: 401 };
+  if (!recheck.hasAccess) {
     const failedAccessChecks = pat.failedAccessChecks + 1;
     await db.qtPersonalAccessToken
       .update({
@@ -135,6 +206,7 @@ export async function resolvePatAuth(req: Request): Promise<PatAuthResult> {
       orgId: pat.orgId,
       projectId: pat.projectId,
       actorType: "agent",
+      actingAgentId: pat.name,
     },
   };
 }

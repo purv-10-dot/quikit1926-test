@@ -33,9 +33,9 @@ interface Props {
 }
 
 const INPUT_BOXED =
-  "w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400";
+  "w-full h-9 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:text-gray-400";
 const INPUT_INLINE =
-  "w-full px-2 -mx-2 py-1 text-sm bg-transparent border border-transparent rounded hover:bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-500 disabled:text-gray-400 disabled:hover:bg-transparent";
+  "w-full px-2 -mx-2 py-1 text-sm bg-transparent dark:text-gray-100 border border-transparent rounded hover:bg-gray-50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-gray-900 focus:outline-none focus:border-blue-500 disabled:text-gray-400 disabled:hover:bg-transparent";
 
 /**
  * Renders the value input for any custom field type. Used in the admin
@@ -44,8 +44,8 @@ const INPUT_INLINE =
 export function FieldControl({ field, value, onChange, members = [], disabled, autoFocus, validate, forceShowError, inline }: Props) {
   const INPUT = inline ? INPUT_INLINE : INPUT_BOXED;
   const TEXTAREA = inline
-    ? "w-full px-2 -mx-2 py-1 text-sm bg-transparent border border-transparent rounded hover:bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-500 resize-y disabled:text-gray-400 disabled:hover:bg-transparent"
-    : "w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y disabled:bg-gray-50";
+    ? "w-full px-2 -mx-2 py-1 text-sm bg-transparent dark:text-gray-100 border border-transparent rounded hover:bg-gray-50 dark:hover:bg-gray-800 focus:bg-white dark:focus:bg-gray-900 focus:outline-none focus:border-blue-500 resize-y disabled:text-gray-400 disabled:hover:bg-transparent"
+    : "w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y disabled:bg-gray-50 dark:disabled:bg-gray-800";
   const activeOptions = field.options.filter((o) => o.isActive);
   const [touched, setTouched] = useState(false);
   const result = validate && (touched || forceShowError) ? validateFieldValue(field, value) : null;

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
+import { EncryptJWT } from "jose";
+import hkdf from "@panva/hkdf";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
@@ -16,6 +18,22 @@ const RAW_TOKEN = "test-raw-token-value";
 const ORG = "org_1";
 const PROJECT = "proj_1";
 const CREATED_BY = "user_1";
+const PAT_NAME = "Claude Code — laptop";
+const AGENT_NEXTAUTH_SECRET = "test-nextauth-secret-for-agent-jwt";
+
+async function mintAgentJwt(
+  claims: Record<string, unknown>,
+  opts: { ttlSeconds?: number } = {},
+) {
+  const key = await hkdf("sha256", AGENT_NEXTAUTH_SECRET, "", "NextAuth.js Generated Encryption Key", 32);
+  const now = Math.floor(Date.now() / 1000);
+  const { ttlSeconds = 300 } = opts;
+  return new EncryptJWT(claims)
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + ttlSeconds)
+    .encrypt(key);
+}
 
 function buildRequest(token?: string): NextRequest {
   const headers: Record<string, string> = {};
@@ -23,7 +41,9 @@ function buildRequest(token?: string): NextRequest {
   return new NextRequest("http://localhost/api/mcp", { headers });
 }
 
-function mockValidPat() {
+/** `overrides` lets a test flip the token to user-scoped (`projectId: null`)
+ * or start it on a different failed-check count. Defaults are unchanged. */
+function mockValidPat(overrides: Record<string, unknown> = {}) {
   mockDb.qtPersonalAccessToken.findFirst.mockResolvedValue({
     id: "pat_1",
     orgId: ORG,
@@ -34,9 +54,11 @@ function mockValidPat() {
     revokedAt: null,
     lastUsedAt: new Date(),
     createdAt: new Date(),
+    name: PAT_NAME,
     // One below the auto-revoke threshold, so a single failed access-recheck
     // in the "lost project access" test below crosses it and revokes.
     failedAccessChecks: 2,
+    ...overrides,
   } as never);
 }
 
@@ -53,20 +75,21 @@ beforeEach(() => {
 });
 
 describe("withOrgAuth({ allowPat: true })", () => {
-  it("resolves a valid PAT to projectId + actorType 'agent'", async () => {
+  it("resolves a valid PAT to projectId + actorType 'agent' + actingAgentId (the PAT's own name)", async () => {
     mockValidPat();
-    const seen: { projectId?: string | null; actorType?: string } = {};
+    const seen: { projectId?: string | null; actorType?: string; actingAgentId?: string } = {};
     const handler = withOrgAuth(
       async (ctx) => {
         seen.projectId = ctx.projectId;
         seen.actorType = ctx.actorType;
+        seen.actingAgentId = ctx.actingAgentId;
         return NextResponse.json({ success: true });
       },
       { allowPat: true },
     );
     const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
     expect(res.status).toBe(200);
-    expect(seen).toEqual({ projectId: PROJECT, actorType: "agent" });
+    expect(seen).toEqual({ projectId: PROJECT, actorType: "agent", actingAgentId: PAT_NAME });
   });
 
   it("returns the MCP-style 401 (not the app's generic shape) when the PAT is invalid", async () => {
@@ -119,6 +142,218 @@ describe("withOrgAuth({ allowPat: true })", () => {
         data: expect.objectContaining({ revokedAt: expect.any(Date) }),
       }),
     );
+  });
+
+  // PAT auto-revoke regression: a transient failure of the live-access
+  // recheck (DB timeout/blip) must NOT be treated as "creator lost access."
+  // Only an actual negative answer from the check revokes.
+  it("rejects the request but does NOT revoke the PAT when the access recheck throws on every attempt", async () => {
+    mockValidPat();
+    // The recheck's own project lookup throws every time — a stand-in for a
+    // transient DB error, not a real "project not found" answer.
+    mockDb.qtProject.findFirst.mockRejectedValue(new Error("connection reset"));
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+    // The load-bearing assertion: revokedAt is never written on a failed
+    // check, only on a genuine negative one.
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
+    );
+  });
+
+  it("retries the access recheck and succeeds if a later attempt returns cleanly", async () => {
+    mockValidPat();
+    mockDb.qtProject.findFirst
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce({ id: PROJECT } as never);
+    const seen: { actorType?: string } = {};
+    const handler = withOrgAuth(
+      async (ctx) => {
+        seen.actorType = ctx.actorType;
+        return NextResponse.json({ success: true });
+      },
+      { allowPat: true },
+    );
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(200);
+    expect(seen.actorType).toBe("agent");
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
+    );
+  });
+
+  // The two tests above cover the legacy project-scoped branch
+  // (loadProjectAccess). A user-scoped PAT — the modern kind, and the common
+  // case — rechecks via isActiveOrgMember instead, which has identical
+  // transient-failure exposure and had no coverage at all.
+  it("rejects but does NOT revoke a user-scoped PAT when the org-membership recheck throws on every attempt", async () => {
+    mockValidPat({ projectId: null });
+    mockDb.orgMember.findFirst.mockRejectedValue(new Error("connection reset"));
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+    // Retried on this branch too, not just the project-scoped one.
+    expect(mockDb.orgMember.findFirst).toHaveBeenCalledTimes(2);
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.anything() }) }),
+    );
+  });
+
+  it("does not touch failedAccessChecks when the recheck is exhausted — neither incrementing nor resetting it", async () => {
+    mockValidPat(); // failedAccessChecks: 2 — one blip below the revoke threshold
+    mockDb.qtProject.findFirst.mockRejectedValue(new Error("connection reset"));
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+    // The load-bearing assertion: if a transient error incremented the
+    // counter, three DB blips in a row would revoke a perfectly valid token.
+    // It must not RESET the counter either — a failed check is not evidence
+    // of success.
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ failedAccessChecks: expect.anything() }),
+      }),
+    );
+    // Stronger form of the same invariant: an exhausted recheck writes nothing at all.
+    expect(mockDb.qtPersonalAccessToken.update).not.toHaveBeenCalled();
+  });
+
+  it("still increments failedAccessChecks on a genuine access loss, and revokes once it hits the threshold", async () => {
+    // A real negative answer (not a throw) on a token with a clean counter:
+    // increments, but must not revoke yet.
+    mockValidPat({ failedAccessChecks: 0 });
+    mockDb.qtProjectMember.findFirst.mockResolvedValue(null as never);
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowPat: true });
+
+    expect((await handler(buildRequest(`Bearer ${RAW_TOKEN}`))).status).toBe(401);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith({
+      where: { id: "pat_1" },
+      data: { failedAccessChecks: 1 },
+    });
+
+    // Same genuine loss with the counter already one below the threshold —
+    // proves protecting the transient path didn't weaken real auto-revoke.
+    mockDb.qtPersonalAccessToken.update.mockClear();
+    mockValidPat({ failedAccessChecks: 2 });
+
+    expect((await handler(buildRequest(`Bearer ${RAW_TOKEN}`))).status).toBe(401);
+    expect(mockDb.qtPersonalAccessToken.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pat_1" },
+        data: expect.objectContaining({ revokedAt: expect.any(Date), failedAccessChecks: 3 }),
+      }),
+    );
+  });
+});
+
+describe("withOrgAuth({ allowAgentJwt: true })", () => {
+  beforeEach(() => {
+    process.env.NEXTAUTH_SECRET = AGENT_NEXTAUTH_SECRET;
+  });
+
+  afterEach(() => {
+    delete process.env.NEXTAUTH_SECRET;
+  });
+
+  it("resolves a valid agent JWT to actorType 'agent' + actingAgentId, with no projectId (org-wide, unlike a PAT)", async () => {
+    const token = await mintAgentJwt({
+      sub: CREATED_BY,
+      orgId: ORG,
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+    const seen: { userId?: string; orgId?: string; actorType?: string; actingAgentId?: string; projectId?: string | null } = {};
+    const handler = withOrgAuth(
+      async (ctx) => {
+        seen.userId = ctx.userId;
+        seen.orgId = ctx.orgId;
+        seen.actorType = ctx.actorType;
+        seen.actingAgentId = ctx.actingAgentId;
+        seen.projectId = ctx.projectId;
+        return NextResponse.json({ success: true });
+      },
+      { allowAgentJwt: true },
+    );
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    expect(res.status).toBe(200);
+    expect(seen).toEqual({
+      userId: CREATED_BY,
+      orgId: ORG,
+      actorType: "agent",
+      actingAgentId: "ai-runtime",
+      projectId: undefined,
+    });
+  });
+
+  it("returns 401 without consulting loadProjectAccess/the DB — the JWT's own exp is the only recheck", async () => {
+    const token = await mintAgentJwt({
+      sub: CREATED_BY,
+      orgId: ORG,
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    expect(res.status).toBe(200);
+    expect(mockDb.qtProject.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 for an expired agent JWT", async () => {
+    const token = await mintAgentJwt(
+      { sub: CREATED_BY, orgId: ORG, actingAs: "ai_agent", actingAgentId: "ai-runtime" },
+      { ttlSeconds: -10 },
+    );
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    expect(res.status).toBe(401);
+  });
+
+  // allowAgentJwt is ADDITIVE, not exclusive. This test previously asserted the
+  // opposite — that a session caller with no bearer got 401 — which is what
+  // made b9d6dfc82 ship: opting the eight read routes in silently turned them
+  // agent-JWT-only and 401'd every logged-in user of the browser app.
+  it("falls through to the session cookie when no bearer token is present", async () => {
+    setSession({ id: CREATED_BY, orgId: ORG, role: "owner" });
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest());
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 401 when there is neither a bearer token nor a session", async () => {
+    setSession(null);
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest());
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body).toEqual({ success: false, error: "Unauthorized" });
+  });
+
+  it("returns 401 when a PAT is sent as the bearer token — allowAgentJwt does not also accept PATs", async () => {
+    mockValidPat();
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true }), { allowAgentJwt: true });
+    const res = await handler(buildRequest(`Bearer ${RAW_TOKEN}`));
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("withOrgAuth without allowAgentJwt — the security property this feature depends on", () => {
+  it("rejects an agent JWT sent as a Bearer token on a route that did not opt into allowAgentJwt", async () => {
+    process.env.NEXTAUTH_SECRET = AGENT_NEXTAUTH_SECRET;
+    const token = await mintAgentJwt({
+      sub: CREATED_BY,
+      orgId: ORG,
+      actingAs: "ai_agent",
+      actingAgentId: "ai-runtime",
+    });
+    const handler = withOrgAuth(async () => NextResponse.json({ success: true, data: "should never run" }));
+    const res = await handler(buildRequest(`Bearer ${token}`));
+    // Falls through to the ordinary Bearer-API-token branch, which rejects
+    // it as an unrecognized token — never even attempts JWE decryption.
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body).toEqual({ success: false, error: "Unauthorized" });
+    delete process.env.NEXTAUTH_SECRET;
   });
 });
 

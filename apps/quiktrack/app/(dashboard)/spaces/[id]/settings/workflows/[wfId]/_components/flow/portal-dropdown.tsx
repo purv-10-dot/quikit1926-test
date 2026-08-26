@@ -18,8 +18,8 @@ export interface DropdownOption {
  * the modal instead of being clipped by it. Values are chosen — never typed.
  */
 export function PortalDropdown({
-  options,
-  selected,
+  options: optionsProp,
+  selected: selectedProp,
   onChange,
   multiple,
   placeholder = "Select option",
@@ -36,16 +36,56 @@ export function PortalDropdown({
   /** When true, the trigger is greyed out and won't open the menu. */
   disabled?: boolean;
 }) {
+  // Defensive: a caller passing an undefined config field (e.g. a brand-new rule
+  // whose config keys aren't set yet) must not crash the whole editor on
+  // `selected.length` / `options.length`. Treat missing arrays as empty.
+  const options = optionsProp ?? [];
+  const selected = selectedProp ?? [];
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [rect, setRect] = useState<{
+    left: number;
+    /** Set when opening downward — distance from viewport top to the menu top. */
+    top?: number;
+    /** Set when opening upward — distance from viewport bottom to the menu bottom. */
+    bottom?: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
 
+  // Position the menu below the trigger by default, but flip it ABOVE when the
+  // trigger sits near the viewport bottom (otherwise the fixed-position menu is
+  // clipped off-screen — e.g. the "Select field" dropdown at the end of a long
+  // Screens config). When flipping up we anchor the menu's BOTTOM to just above
+  // the trigger (not its top) so a short list hugs the trigger instead of
+  // floating high with empty space beneath it. Height is capped to the
+  // available space so it always fits and scrolls internally if long.
   const measure = () => {
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setRect({ left: r.left, top: r.bottom + 4, width: r.width });
+    const gap = 4;
+    const margin = 8; // keep a little breathing room from the viewport edge
+    const spaceBelow = window.innerHeight - r.bottom - gap - margin;
+    const spaceAbove = r.top - gap - margin;
+    const desired = 240; // matches the menu's max-h-60
+    const openUp = spaceBelow < Math.min(desired, 160) && spaceAbove > spaceBelow;
+    if (openUp) {
+      setRect({
+        left: r.left,
+        bottom: window.innerHeight - r.top + gap,
+        width: r.width,
+        maxHeight: Math.max(120, Math.min(desired, spaceAbove)),
+      });
+    } else {
+      setRect({
+        left: r.left,
+        top: r.bottom + gap,
+        width: r.width,
+        maxHeight: Math.max(120, Math.min(desired, spaceBelow)),
+      });
+    }
   };
 
   useLayoutEffect(() => {
@@ -123,8 +163,15 @@ export function PortalDropdown({
         createPortal(
           <div
             ref={menuRef}
-            style={{ position: "fixed", left: rect.left, top: rect.top, width: rect.width, zIndex: 60 }}
-            className="max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+            style={{
+              position: "fixed",
+              left: rect.left,
+              ...(rect.top !== undefined ? { top: rect.top } : { bottom: rect.bottom }),
+              width: rect.width,
+              maxHeight: rect.maxHeight,
+              zIndex: 60,
+            }}
+            className="overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
           >
             {options.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">No options</div>}
             {options.map((o) => {

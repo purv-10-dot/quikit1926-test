@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import SampleDataBanner from "@/components/ui/SampleDataBanner";
 import { useRouter } from "next/navigation";
 import { getGoogleAdsData, type GoogleAdsData } from "@/lib/api/google-ads";
 import Kpi from "@/components/ui/Kpi";
@@ -76,6 +77,7 @@ export default function GoogleAdsPage() {
 
   return (
     <div>
+      {data.isSampleData && <SampleDataBanner platform="Google Ads" />}
       {/* Header */}
       <div className="greet-row">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

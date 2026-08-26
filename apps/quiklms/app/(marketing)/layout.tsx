@@ -36,8 +36,8 @@ const fraunces = Fraunces({
  */
 const THEME_SCRIPT = `try{var t=localStorage.getItem('quikskill-theme');if(!t)t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}`;
 
-const SITE_URL = process.env.NEXT_PUBLIC_QUIKLMS_URL || 'http://localhost:3014';
-const TITLE = 'QuikLMS — the LMS that runs training, assessment and compliance';
+const SITE_URL = process.env.NEXT_PUBLIC_QUIKLMS_URL || 'http://localhost:3016';
+const TITLE = 'QuikSkill — the LMS that runs training, assessment and compliance';
 const DESCRIPTION =
   'Author courses, run proctored assessments, issue verifiable certificates and track compliance — for schools and enterprises, on one multi-tenant platform.';
 

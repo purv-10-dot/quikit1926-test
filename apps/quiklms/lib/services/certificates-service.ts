@@ -45,7 +45,7 @@ import {
 } from '@/lib/s3';
 import { sendTemplateEmail } from '@/lib/services/email-templates-service';
 
-const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3014';
+const FRONTEND_URL = process.env.NEXTAUTH_URL || 'http://localhost:3016';
 
 /**
  * Host for the PUBLIC certificate download link mailed to the learner

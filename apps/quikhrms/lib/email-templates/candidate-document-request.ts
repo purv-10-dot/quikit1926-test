@@ -3,7 +3,6 @@ import { emailShell, hero, checklist, alert, detailBlock, btnPrimary, para, esc 
 export interface CandidateDocRequestEmailData {
   candidateName: string;
   jobTitle: string;
-  bundle: "PreOffer" | "PostOffer";
   portalUrl: string;
   expiryDays: number;
   docs: Array<{ name: string; isRequired: boolean; helpText?: string | null }>;
@@ -20,11 +19,10 @@ export interface CandidateDocRequestEmailData {
 }
 
 export function buildCandidateDocRequestEmail(data: CandidateDocRequestEmailData): { subject: string; html: string } {
-  const isPre = data.bundle === "PreOffer";
   const isReminder = !!data.isReminder;
   const level = data.reminderLevel ?? 1;
 
-  const processWord = isPre ? "hiring" : "onboarding";
+  const processWord = "hiring";
 
   const docItems = data.docs.map((d) => {
     const bits: string[] = [];
@@ -62,9 +60,7 @@ export function buildCandidateDocRequestEmail(data: CandidateDocRequestEmailData
     helpPhone: data.senderPhone,
   });
 
-  const subjectBase = isPre
-    ? `Next steps — document submission (${data.candidateName})`
-    : `Offer & joining documents — ${data.jobTitle}`;
+  const subjectBase = `Next steps — document submission (${data.candidateName})`;
   const subject = isReminder
     ? (level === 1 ? `Reminder: please upload your documents — ${data.jobTitle}`
       : level === 2 ? `[2nd reminder] Documents pending — ${data.jobTitle}`

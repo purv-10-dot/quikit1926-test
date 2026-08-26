@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { recordActivity } from "@/lib/utils/history";
 import { AddPeopleModal } from "@/components/add-people-modal";
 import { ShareFeedbackModal } from "@/components/share-feedback-modal";
@@ -10,39 +10,21 @@ import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { SpaceIcon } from "@/components/space-icon";
 import {
   UserPlus,
-  Share2,
-  Zap,
   Link as LinkIcon,
   Settings as SettingsIcon,
   Maximize2,
   Minimize2,
-  Globe,
-  Calendar as CalendarIcon,
-  List as ListIcon,
-  ListChecks,
-  Code,
-  Archive,
-  FileText,
-  ArrowRight,
-  ListTree,
-  Columns,
-
-  ClipboardList,
-  Plus,
-  Clock,
-  LayoutGrid,
 } from "lucide-react";
 import { PROJECT_TABS } from "@/lib/projectTabs";
+import { backgroundCss } from "@/lib/spaceBackgrounds";
 import { ProjectTabBar } from "./project-tab-bar";
+import { SpaceActionsMenu } from "./space-actions-menu";
+import type { SpaceSummary } from "./space-actions-meta";
 
-interface Project {
-  id: string;
-  name: string;
-  projectKey: string;
-  icon?: string | null;
-  color?: string | null;
-  templateKey?: string | null;
-}
+// The header's Share + Automation buttons were removed as unbuilt placeholders.
+// TODO: restore them when those features land — see git history for the markup.
+
+type Project = SpaceSummary;
 
 export function ProjectHeader({ projectId }: { projectId: string }) {
   const pathname = usePathname();
@@ -51,18 +33,11 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const [autoOpen, setAutoOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const autoRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!autoOpen) return;
-    function onDoc(e: MouseEvent) {
-      if (autoRef.current && !autoRef.current.contains(e.target as Node)) setAutoOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [autoOpen]);
+  // Bumped by the "..." menu after a star / background change so the header
+  // re-reads the project instead of showing stale chrome.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
   function toggleFullscreen() {
     const next = !fullscreen;
@@ -108,9 +83,10 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadKey]);
 
   const isDiscovery = project?.templateKey === "discovery";
+  const bgCss = backgroundCss(project?.background ?? null);
   // When an idea detail drawer is open it carries its own breadcrumb, so the
   // discovery header hides (matches real JPD — no duplicate header / Feedback).
   const [ideaPanelOpen, setIdeaPanelOpen] = useState(false);
@@ -122,7 +98,14 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
     window.addEventListener("qt:idea-panel", onPanel as EventListener);
     return () => window.removeEventListener("qt:idea-panel", onPanel as EventListener);
   }, []);
-  const activeTab = PROJECT_TABS.find((t) => pathname.endsWith(`/${t.path}`))?.path ?? "board";
+  const activeTab =
+    PROJECT_TABS.find((t) => {
+      const marker = `/${t.path}`;
+      const i = pathname.indexOf(marker);
+      if (i === -1) return false;
+      const after = pathname.slice(i + marker.length);
+      return after === "" || after.startsWith("/");
+    })?.path ?? "board";
 
   useEffect(() => {
     if (!project || !pathname) return;
@@ -156,8 +139,12 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
     // Drawer open → suppress the header entirely (its breadcrumb takes over).
     if (ideaPanelOpen) return null;
     return (
-      <div className="bg-white">
-        <div className="flex items-center justify-between px-6 pt-4 pb-1">
+      <div className="bg-white" style={bgCss ? { background: bgCss } : undefined}>
+        <div
+          className={`flex items-center justify-between px-6 pt-4 pb-1 ${
+            bgCss ? "bg-white/75" : ""
+          }`}
+        >
           <div className="flex items-center gap-1.5 text-sm text-gray-600">
             <Link href="/spaces" className="text-gray-500 hover:underline">
               Spaces
@@ -165,6 +152,9 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             <span className="text-gray-300">/</span>
             <SpaceIcon icon={project.icon} name={project.name} color={project.color} size={18} radius={4} />
             <span className="font-medium text-gray-900" data-project-name={project.name}>{project.name}</span>
+            {/* Beside the space name here too, so the menu is in the same place
+                whichever header variant is rendered. */}
+            <SpaceActionsMenu projectId={projectId} space={project} onChanged={reload} />
           </div>
           <button
             type="button"
@@ -186,7 +176,14 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-white border-b border-gray-200">
-      <div className="px-6 pt-3 pb-2">
+      {/* The space background paints the outer band; the content sits on a
+          translucent white scrim in a CHILD element so every existing gray
+          text/icon colour stays readable on both pale and dark backgrounds.
+          The two must not be the same element — an inline `background` style
+          always beats a Tailwind background class, so the scrim would never
+          render. */}
+      <div style={bgCss ? { background: bgCss } : undefined}>
+        <div className={`px-6 pt-3 pb-2 ${bgCss ? "bg-white/75" : ""}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/spaces" className="text-xs text-gray-500 hover:underline">
@@ -217,40 +214,14 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
                 <UserPlus className="h-3.5 w-3.5 text-gray-600" />
               </button>
             )}
+            {/* Sits beside the space name (next to Add member), matching Jira —
+                these are the actions ON this space, as opposed to the view
+                controls (settings / feedback / fullscreen) on the right. */}
+            <SpaceActionsMenu projectId={projectId} space={project} onChanged={reload} />
           </div>
           <div className="flex items-center gap-1.5">
-            {/* TODO: Share + Automation — coming soon
-            <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100" aria-label="Share">
-              <Share2 className="h-3.5 w-3.5 text-gray-600" />
-            </button>
-            <div ref={autoRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setAutoOpen((v) => !v)}
-                className={`p-1.5 rounded border ${autoOpen ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:bg-gray-100"}`}
-                aria-label="Automation"
-              >
-                <Zap className={`h-3.5 w-3.5 ${autoOpen ? "text-blue-600" : "text-gray-600"}`} />
-              </button>
-              {autoOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-md shadow-xl z-30 p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center h-9 w-9 rounded bg-blue-50 text-blue-600 shrink-0">
-                      <Zap className="h-4 w-4" />
-                    </span>
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">Automation</h3>
-                      <p className="mt-1 text-xs text-gray-600 leading-snug">
-                        Coming soon — automate manual tasks so your team can focus on what matters.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            */}
             <Link
-              href={`/spaces/${projectId}/settings`}
+              href={`/spaces/${project?.projectKey ?? projectId}/settings`}
               className="p-1.5 rounded border border-gray-200 hover:bg-gray-100"
               aria-label="Settings"
               title="Settings"
@@ -280,6 +251,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
               )}
             </button>
           </div>
+        </div>
         </div>
       </div>
 

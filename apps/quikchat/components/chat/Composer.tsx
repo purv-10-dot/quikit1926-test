@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { useEditor, EditorContent, Extension, type Editor } from "@tiptap/react";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -89,6 +89,37 @@ export function parseAssistCommand(text: string): string | null {
   const m = /^\/(?:ai|ask)\s+([\s\S]+)$/i.exec(text.trim());
   return m ? m[1]!.trim() : null;
 }
+
+/**
+ * Re-binds the hard-break shortcuts to the same command PLUS `scrollIntoView()`.
+ *
+ * THE `.scrollIntoView()` IS NOT REDUNDANT — do not delete it as a no-op.
+ * `@tiptap/extension-hard-break`'s `setHardBreak` dispatches
+ * `chain().insertContent({ type: "hardBreak" }).command(…).run()`, and neither it
+ * nor `insertContentAt` ever marks the transaction to scroll. The plain-Enter path
+ * (`splitBlock`) DOES call `tr.scrollIntoView()`, which is why only Shift+Enter was
+ * affected — an upstream gap, not a bug in our own config.
+ *
+ * It only surfaces here because `.qc-composer__editor` is itself the scroll
+ * container (`max-height: 4lh; overflow-y: auto` — see theme.css). Once the box is
+ * at its 4-line cap, Shift+Enter opened a line BELOW the fold and left the caret
+ * invisible until the next character was typed: measured scrollTop 0 against a
+ * maxScroll of 21, then 21 against 43 on the next break.
+ *
+ * `priority` outranks StarterKit's own HardBreak binding so this keymap wins.
+ *
+ * Exported for `Composer.scroll.test.tsx`, which asserts the dispatched
+ * transaction is actually marked scrolled — the one thing jsdom can check, since
+ * it has no layout and every scroll metric there is 0.
+ */
+export const HardBreakScrollIntoView = Extension.create({
+  name: "hardBreakScrollIntoView",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    const insertAndFollow = () => this.editor.chain().setHardBreak().scrollIntoView().run();
+    return { "Shift-Enter": insertAndFollow, "Mod-Enter": insertAndFollow };
+  },
+});
 
 /** Debounce window for typing notifications — never emit more than once per 3s. */
 const TYPING_THROTTLE_MS = 3_000;
@@ -255,6 +286,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         horizontalRule: false,
       }),
       Placeholder.configure({ placeholder: placeholder ?? "Message" }),
+      HardBreakScrollIntoView,
     ],
     editorProps: {
       attributes: { class: "qc-composer__editor", "aria-label": "Message" },

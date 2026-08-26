@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Lock,
   Braces,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
@@ -60,7 +61,7 @@ const SECTIONS: PopoverSection[] = [
         label: "Notification settings",
         description: "Manage email and in-app notifications from QuikTrack",
         icon: Bell,
-        disabled: true,
+        href: "/settings/notifications",
       },
     ],
   },
@@ -98,6 +99,14 @@ const SECTIONS: PopoverSection[] = [
         href: "/settings/work-items/fields",
       },
       {
+        key: "test-statuses",
+        label: "QuikTest",
+        description:
+          "Test statuses and case templates, shared by every space in this org",
+        icon: FlaskConical,
+        href: "/settings/test-statuses",
+      },
+      {
         key: "api-docs",
         label: "API Documentation",
         description: "Reference and test the QuikTrack REST API for integrations",
@@ -129,7 +138,7 @@ const SECTIONS: PopoverSection[] = [
     items: [
       {
         key: "user-management",
-        label: "User management",
+        label: "User management and App configuration",
         description: "Manage users, groups, and access requests",
         icon: UsersIcon,
         href: "/settings/user-management",

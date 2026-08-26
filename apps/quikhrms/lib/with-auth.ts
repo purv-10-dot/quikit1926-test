@@ -7,7 +7,7 @@ import type { AuthContext } from "@/lib/types/api";
 import { getCached, invalidateKeys, cacheKeys } from "@/lib/services/cache";
 import { APP_ID, joinCode } from "@/lib/rbac/registry";
 import { expandDelegatedPermissions } from "@/lib/rbac/delegatable";
-import { provisionEmployee, provisionFromInvitation } from "@/lib/rbac/provisioning";
+import { provisionEmployee, provisionFromInvitation, applyInvitationRoles, applyCentralRoleIfAny } from "@/lib/rbac/provisioning";
 import { verifyJWT } from "@quikit/auth/jwt";
 
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -55,11 +55,25 @@ async function resolveEmployeeByAuthUser(claims: {
           data: { authUserId },
         });
         // Rare: an employee already existed AND a pending invite was raised for
-        // them — mark it Accepted so the admin's Users list reflects reality.
-        await prisma.invitation.updateMany({
+        // them — apply the invited role (mirrors provisionFromInvitation's
+        // brand-new-employee path, which this one previously skipped) and mark
+        // the invitation Accepted so the admin's Users list reflects reality.
+        const pendingInvite = await prisma.invitation.findFirst({
           where: { orgId, status: "Pending", deletedAt: null, email: { equals: email, mode: "insensitive" } },
-          data: { status: "Accepted", acceptedAt: new Date(), employeeId: byEmail.id },
+          select: { id: true, roleIds: true, invitedBy: true },
         });
+        if (pendingInvite) {
+          await applyInvitationRoles(orgId, byEmail.id, pendingInvite);
+          await prisma.invitation.updateMany({
+            where: { id: pendingInvite.id, status: "Pending" },
+            data: { status: "Accepted", acceptedAt: new Date(), employeeId: byEmail.id },
+          });
+        } else {
+          // No HRMS-native invite — this employee may still have been granted
+          // HRMS access via the Admin Portal's "Role in QuikHRMS" picker. Apply
+          // it now, on this first link, so it isn't silently lost.
+          await applyCentralRoleIfAny(orgId, byEmail.id, authUserId);
+        }
       }
       return byEmail.id;
     }
@@ -146,7 +160,7 @@ interface ServiceClaims {
 /**
  * AI Runtime service-auth (the runtime acting *as* a specific employee).
  *
- * The runtime presents `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` (a
+ * The runtime presents `x-internal-secret: INTERNAL_SECRET` (a
  * dedicated secret — deliberately NOT `INTERNAL_SECRET`, so a leak of the
  * launcher's handoff secret can never be used to impersonate an employee)
  * plus `x-org-id` + `x-acting-employee-id`. We validate the secret, confirm
@@ -162,7 +176,7 @@ interface ServiceClaims {
 async function resolveServiceIdentity(
   req: NextRequest
 ): Promise<{ orgId: string; userId: string; agent: ServiceClaims } | null> {
-  const secret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const secret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
   if (!secret || !provided || provided !== secret) return null;
 
@@ -641,7 +655,7 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
 
 /**
  * withAuth variant that additionally accepts the AI Runtime service-auth path
- * (P0-1): `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` + `x-org-id` +
+ * (P0-1): `x-internal-secret: INTERNAL_SECRET` + `x-org-id` +
  * `x-acting-employee-id` (optionally `x-acting-agent-id`, `x-acting-as`).
  *
  * The agent runs with exactly the acting employee's resolved permissions —

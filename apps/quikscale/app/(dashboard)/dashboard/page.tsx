@@ -24,7 +24,7 @@ import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { ChangeHistoryPanel } from "@/app/(dashboard)/kpi/components/ChangeHistoryPanel";
 import { useSessionState } from "@/lib/hooks/useSessionState";
 import { useWWWStatusFilter, DASHBOARD_DEFAULT_STATUSES } from "@/lib/hooks/useWWWStatusFilter";
-import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, ALL_STATUS_LABEL, type ItemStatus } from "@/lib/constants/status";
+import { STATUS_DOT, STATUS_META, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, ALL_STATUS_LABEL, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
@@ -41,6 +41,7 @@ import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { resolveProgressQtd, resolveProgressOverall, resolvePace, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
+import { computeWWWOverviewStats, explainAvgWWW } from "../www/components/wwwStats";
 import { FormulaTooltip } from "../kpi/components/FormulaTooltip";
 import { explainAvgKpi, explainOverall, explainQtd, explainQtr } from "../kpi/components/kpiFormulaTooltips";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -747,6 +748,131 @@ function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; cur
           <span className="text-[10px] text-gray-400 whitespace-nowrap">idle</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Collapsible container for the "WWW Overview" card on dashboard — same shape
+ * as `KPIOverviewContainer`, but summarizing WWW items by status instead of
+ * KPI achieved/goal. The AvgWWWCard summary pill lives inside the header, to
+ * the right of the item-count badge, and is visible even when collapsed.
+ */
+function WWWOverviewContainer({ count, loading, items, children }: { count: number; loading: boolean; items: WWWItem[]; children: React.ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm" style={{ overflow: "clip" }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded((e) => !e)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors select-none cursor-pointer"
+      >
+        <svg
+          className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">WWW Overview</span>
+        {!loading && count > 0 && (
+          <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full font-medium">
+            {count} {count === 1 ? "item" : "items"}
+          </span>
+        )}
+        {!loading && items.length > 0 && <AvgWWWCard items={items} />}
+        <span className="ml-auto text-[10px] text-gray-400 flex-shrink-0">
+          {expanded ? "Click to collapse" : "Click to expand"}
+        </span>
+      </div>
+      {expanded && (
+        <div className="border-t border-gray-100 px-4 pb-4">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AvgWWWCard({ items }: { items: WWWItem[] }) {
+  const stats = computeWWWOverviewStats(items);
+  const { avg, completed, onTrack, behindSchedule, notYetStarted, notApplicable } = stats;
+
+  const ringColor = avg >= 80 ? "#22c55e" : avg >= 50 ? "#f59e0b" : "#ef4444";
+  const textColor = avg >= 80 ? "text-green-600" : avg >= 50 ? "text-amber-500" : "text-red-500";
+  const border    = avg >= 80 ? "border-green-200 bg-green-50" : avg >= 50 ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50";
+
+  const R = 10, CIRC = 2 * Math.PI * R;
+  const dash = (Math.min(avg, 100) / 100) * CIRC;
+
+  return (
+    <div className={`flex items-center gap-3 px-4 py-1.5 rounded-full border ${border}`}>
+      <FormulaTooltip explain={explainAvgWWW(stats)} triggerClassName="flex items-center gap-3">
+        <svg width={28} height={28} viewBox="0 0 24 24" className="-rotate-90 flex-shrink-0">
+          <circle cx={12} cy={12} r={R} fill="none" stroke="#e5e7eb" strokeWidth={3} />
+          <circle cx={12} cy={12} r={R} fill="none" stroke={ringColor} strokeWidth={3}
+            strokeDasharray={`${dash} ${CIRC}`} strokeLinecap="round" />
+        </svg>
+        <span className={`text-sm font-bold ${textColor}`}>{avg}%</span>
+        <span className="text-xs text-gray-400">avg WWW</span>
+      </FormulaTooltip>
+      <span className="hidden sm:inline-block w-px h-4 bg-gray-300" />
+      <div className="hidden sm:flex items-center gap-3">
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-blue-600">{completed}</span>
+          <span className="text-[10px] text-blue-500 whitespace-nowrap">completed</span>
+        </div>
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-green-600">{onTrack}</span>
+          <span className="text-[10px] text-green-500 whitespace-nowrap">on track</span>
+        </div>
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-amber-500">{behindSchedule}</span>
+          <span className="text-[10px] text-amber-400 whitespace-nowrap">behind</span>
+        </div>
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-red-500">{notYetStarted}</span>
+          <span className="text-[10px] text-red-400 whitespace-nowrap">not started</span>
+        </div>
+        <div className="flex flex-col items-center leading-tight">
+          <span className="text-sm font-bold text-gray-500">{notApplicable}</span>
+          <span className="text-[10px] text-gray-400 whitespace-nowrap">n/a</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Expanded body of the WWW Overview card — one tile per status. */
+function WWWOverviewBreakdown({ items }: { items: WWWItem[] }) {
+  const stats = computeWWWOverviewStats(items);
+  const tiles: { key: ItemStatus; label: string; count: number }[] = [
+    { key: "not-applicable", label: "Not Applicable", count: stats.notApplicable },
+    { key: "not-yet-started", label: "Not Yet Started", count: stats.notYetStarted },
+    { key: "behind-schedule", label: "Behind Schedule", count: stats.behindSchedule },
+    { key: "on-track", label: "On Track", count: stats.onTrack },
+    { key: "completed", label: "Completed", count: stats.completed },
+  ];
+  return (
+    <div className="grid gap-4 pt-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+      {tiles.map(({ key, label, count }) => {
+        const meta = STATUS_META[key];
+        return (
+          <div key={key} className={`rounded-xl border px-4 py-3 ${meta.bg} ${meta.border}`}>
+            <div className={`text-xl font-bold ${meta.text}`}>{count}</div>
+            <div className={`text-xs font-medium ${meta.text}`}>{label}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1901,6 +2027,17 @@ export default function DashboardPage() {
             </div>
           )}
         </Section>
+
+        {/* WWW overview card — collapsed by default, mirrors the KPI Overview
+            card above. Fed `wwwSource` (the tab-scoped list BEFORE the WWW
+            table's own status multi-select filter is applied), so it always
+            reports on every item for the active tab regardless of what the
+            table below is currently filtered to. */}
+        {(kpisLoading || wwwSource.length > 0) && (
+          <WWWOverviewContainer count={wwwSource.length} loading={kpisLoading} items={wwwSource}>
+            <WWWOverviewBreakdown items={wwwSource} />
+          </WWWOverviewContainer>
+        )}
 
         {/* WWW section — visible on both tabs. Source already respects active
             tab + team-tab filter chain (A team scope + C owner). */}

@@ -503,6 +503,14 @@ function StepCard({ index, step, open, onToggle, onPatch, onPatchConfig, onDup, 
             )}
           </div>
 
+          <div className="mt-3 max-w-xs">
+            <label className="block text-[10px] uppercase tracking-wide text-gray-400 font-bold mb-1">Assigned Role</label>
+            <Select size="sm" value={step.assigneeRole}
+              onChange={(v) => onPatch({ assigneeRole: v as AssigneeRole })}
+              options={ASSIGN.map((a) => ({ value: a.role, label: a.label }))} />
+            <p className="text-[10px] text-gray-400 mt-1">Shown on the onboarding tracker; also decides whether this step appears in that role&apos;s self-view.</p>
+          </div>
+
           {step.stepType === "DocumentUpload" && (
             <div className="mt-3 p-3.5 border border-dashed border-gray-300 rounded-lg bg-gray-50/70">
               <div className="flex items-center justify-between mb-2.5">

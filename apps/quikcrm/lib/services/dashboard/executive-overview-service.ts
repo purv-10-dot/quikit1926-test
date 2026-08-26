@@ -518,8 +518,11 @@ export async function buildExecutiveOverview(
 
   const activityTrend = await Promise.all(
     dayBuckets.map(async (b) => {
-      const from = new Date(b.iso);
-      const to = endOfDayInTz(from, range.tz);
+      // Use the tz-snapped bounds buildDayBuckets already computed. Parsing
+      // b.iso ("YYYY-MM-DD") via new Date() would read it as UTC midnight and
+      // shift every bucket for non-UTC users (IST: 5.5h early).
+      const from = b.start;
+      const to = b.end;
       const count = await prisma.crmActivity.count({
         where: {
           orgId,
@@ -533,8 +536,11 @@ export async function buildExecutiveOverview(
 
   const leadTrend = await Promise.all(
     dayBuckets.map(async (b) => {
-      const from = new Date(b.iso);
-      const to = endOfDayInTz(from, range.tz);
+      // Use the tz-snapped bounds buildDayBuckets already computed. Parsing
+      // b.iso ("YYYY-MM-DD") via new Date() would read it as UTC midnight and
+      // shift every bucket for non-UTC users (IST: 5.5h early).
+      const from = b.start;
+      const to = b.end;
       const count = await prisma.crmLead.count({
         where: {
           orgId,
@@ -766,8 +772,11 @@ export async function buildExecutiveOverview(
 
   const revenueTrend = await Promise.all(
     dayBuckets.slice(-14).map(async (b) => {
-      const from = new Date(b.iso);
-      const to = endOfDayInTz(from, range.tz);
+      // Use the tz-snapped bounds buildDayBuckets already computed. Parsing
+      // b.iso ("YYYY-MM-DD") via new Date() would read it as UTC midnight and
+      // shift every bucket for non-UTC users (IST: 5.5h early).
+      const from = b.start;
+      const to = b.end;
       const rows = await prisma.crmOpportunity.findMany({
         where: {
           orgId,

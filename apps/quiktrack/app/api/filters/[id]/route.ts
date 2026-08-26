@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 import { parseCustomFilters, customFiltersToWhere } from "@/lib/customFields/filterQuery";
+import { parse as parseTql } from "@/lib/tql/parser";
+import { translate as translateTql } from "@/lib/tql/translator";
+import { TqlParseError } from "@/lib/tql/errors";
 
 /**
  * GET /api/filters/:id?search=&limit=&offset=
@@ -13,6 +17,11 @@ import { parseCustomFilters, customFiltersToWhere } from "@/lib/customFields/fil
  *
  * NOTE: "viewed-recently" has no view-tracking source yet; it falls back to
  * `updatedAt desc` and is flagged via `meta.fallback` so the UI can warn.
+ *
+ * Admin-only TQL mode: `?tql=<query>` bypasses the slug/toolbar where-building
+ * below entirely — regardless of which slug the request came in on — and
+ * instead compiles the query via lib/tql. Non-admins get a 403 before any
+ * parsing happens.
  */
 
 export type FilterId =
@@ -57,9 +66,27 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
   const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0));
 
+  // Presence of the param (not truthiness) is what means "TQL mode is
+  // active" — an admin can clear the query box entirely and expect all data
+  // back, same as Jira's JQL bar. `tqlRaw` stays "" in that case rather than
+  // falling through to the slug's own implicit filter below.
+  const isTql = url.searchParams.has("tql");
+  const tqlRaw = (url.searchParams.get("tql") ?? "").trim();
+
+  if (isTql) {
+    if (!(await hasAdminAccess(userId, orgId))) {
+      return NextResponse.json({ success: false, error: "TQL search is admin-only" }, { status: 403 });
+    }
+    // No slug restriction — a TQL query is self-contained and replaces
+    // whichever slug's implicit filter the request arrived under (matches
+    // Jira: switching Basic -> JQL on any saved search runs the raw query,
+    // not the search AND'd with the view you started from).
+  }
+  let tqlOrderBy: Prisma.QtIssueOrderByWithRelationInput[] | null = null;
+
   // Toolbar overrides — when set, they replace the slug's implicit filter
   // for that field. Slug-derived filters still apply for fields the toolbar
-  // doesn't touch.
+  // doesn't touch. Skipped entirely in TQL mode (see below).
   const oProjectId = url.searchParams.get("projectId")?.trim() || undefined;
   const oAssignee = url.searchParams.get("assignee")?.trim() || undefined;
   const oReporter = url.searchParams.get("reporter")?.trim() || undefined;
@@ -76,92 +103,134 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   const where: Prisma.QtIssueWhereInput = { orgId, isDeleted: false };
   let orderBy: Prisma.QtIssueOrderByWithRelationInput = { updatedAt: "desc" };
   let fallback: string | undefined;
+  let customFilterWhere: Prisma.QtIssueWhereInput[] = [];
 
-  switch (id) {
-    case "my-open":
-      where.assigneeId = userId;
-      where.status = { category: { not: "DONE" } };
-      break;
-    case "reported-by-me":
-      where.OR = [{ reporterId: userId }, { createdBy: userId }];
-      break;
-    case "all":
-      break;
-    case "open":
-      where.status = { category: { not: "DONE" } };
-      break;
-    case "done":
-      where.status = { category: "DONE" };
-      break;
-    case "viewed-recently":
-      // No view-tracking source exists yet — fall back to most-recently-updated.
-      orderBy = { updatedAt: "desc" };
-      fallback = "Showing most-recently-updated. View history isn't tracked yet.";
-      break;
-    case "created-recently":
-      orderBy = { createdAt: "desc" };
-      break;
-    case "resolved-recently":
-      where.status = { category: "DONE" };
-      orderBy = { updatedAt: "desc" };
-      break;
-    case "updated-recently":
-      orderBy = { updatedAt: "desc" };
-      break;
-  }
+  if (isTql) {
+    // TQL mode replaces the slug/toolbar/search/custom-filter where-building
+    // below entirely — the translated where/orderBy are the only source of
+    // truth for this request (orgId/isDeleted above are still applied). An
+    // empty query means "no filter" (all data), matching Jira's JQL bar —
+    // there's nothing to tokenize/parse, so that's handled without calling
+    // into lib/tql at all.
+    if (tqlRaw) {
+      try {
+        // cf[...] refs may be an id or a name — org-wide (TQL isn't
+        // project-scoped), so every active custom field in the org is
+        // fetched once and looked up by either key. Cheap: this is a small,
+        // admin-configured table, not per-issue data.
+        const customFields = await db.qtCustomField.findMany({
+          where: { orgId, status: "active", isDeleted: false },
+          select: { id: true, name: true, type: true },
+        });
+        const byId = new Map(customFields.map((f) => [f.id, f] as const));
+        const byName = new Map(customFields.map((f) => [f.name.toLowerCase(), f] as const));
+        const resolveCustomField = (ref: string) => {
+          const hit = byId.get(ref) ?? byName.get(ref.toLowerCase());
+          return hit ? { id: hit.id, type: hit.type } : undefined;
+        };
 
-  if (oProjectId) where.projectId = oProjectId;
-  if (oAssignee) {
-    if (oAssignee === "any") delete where.assigneeId;
-    else if (oAssignee === "me") where.assigneeId = userId;
-    else if (oAssignee === "unassigned") where.assigneeId = null;
-    else where.assigneeId = oAssignee;
-  }
-  if (oReporter) {
-    if (oReporter === "any") {
-      delete where.reporterId;
-      delete where.OR;
-    } else if (oReporter === "me") {
-      where.OR = [{ reporterId: userId }, { createdBy: userId }];
-    } else {
-      where.reporterId = oReporter;
+        const query = parseTql(tqlRaw);
+        const { where: tqlWhere, orderBy: builtOrderBy } = translateTql(query, { userId, resolveCustomField });
+        Object.assign(where, tqlWhere);
+        if (builtOrderBy.length > 0) {
+          tqlOrderBy = builtOrderBy;
+          orderBy = builtOrderBy[0]!;
+        }
+      } catch (error: unknown) {
+        if (error instanceof TqlParseError) {
+          return NextResponse.json(
+            { success: false, error: error.message, position: error.position },
+            { status: 400 },
+          );
+        }
+        throw error;
+      }
     }
-  }
-  if (oType.length > 0) {
-    where.type = oType.length === 1 ? (oType[0] as string) : { in: oType };
-  }
-  if (oStatusCat.length > 0) {
-    where.status = oStatusCat.length === 1
-      ? { category: oStatusCat[0] }
-      : { category: { in: oStatusCat } };
-  } else if (oResolution === "unresolved") {
-    where.status = { category: { not: "DONE" } };
-  } else if (oResolution === "done") {
-    where.status = { category: "DONE" };
-  } else if (oResolution === "any") {
-    delete where.status;
-  }
+  } else {
+    switch (id) {
+      case "my-open":
+        where.assigneeId = userId;
+        where.status = { category: { not: "DONE" } };
+        break;
+      case "reported-by-me":
+        where.OR = [{ reporterId: userId }, { createdBy: userId }];
+        break;
+      case "all":
+        break;
+      case "open":
+        where.status = { category: { not: "DONE" } };
+        break;
+      case "done":
+        where.status = { category: "DONE" };
+        break;
+      case "viewed-recently":
+        // No view-tracking source exists yet — fall back to most-recently-updated.
+        orderBy = { updatedAt: "desc" };
+        fallback = "Showing most-recently-updated. View history isn't tracked yet.";
+        break;
+      case "created-recently":
+        orderBy = { createdAt: "desc" };
+        break;
+      case "resolved-recently":
+        where.status = { category: "DONE" };
+        orderBy = { updatedAt: "desc" };
+        break;
+      case "updated-recently":
+        orderBy = { updatedAt: "desc" };
+        break;
+    }
 
-  if (search) {
-    const text: Prisma.QtIssueWhereInput = {
-      OR: [
-        { title: { contains: search, mode: "insensitive" } },
-        { key: { contains: search, mode: "insensitive" } },
-      ],
-    };
-    where.AND = where.AND ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), text] : text;
-  }
+    if (oProjectId) where.projectId = oProjectId;
+    if (oAssignee) {
+      if (oAssignee === "any") delete where.assigneeId;
+      else if (oAssignee === "me") where.assigneeId = userId;
+      else if (oAssignee === "unassigned") where.assigneeId = null;
+      else where.assigneeId = oAssignee;
+    }
+    if (oReporter) {
+      if (oReporter === "any") {
+        delete where.reporterId;
+        delete where.OR;
+      } else if (oReporter === "me") {
+        where.OR = [{ reporterId: userId }, { createdBy: userId }];
+      } else {
+        where.reporterId = oReporter;
+      }
+    }
+    if (oType.length > 0) {
+      where.type = oType.length === 1 ? (oType[0] as string) : { in: oType };
+    }
+    if (oStatusCat.length > 0) {
+      where.status = oStatusCat.length === 1
+        ? { category: oStatusCat[0] }
+        : { category: { in: oStatusCat } };
+    } else if (oResolution === "unresolved") {
+      where.status = { category: { not: "DONE" } };
+    } else if (oResolution === "done") {
+      where.status = { category: "DONE" };
+    } else if (oResolution === "any") {
+      delete where.status;
+    }
 
-  // Custom-field value filters — each becomes an AND'd `fieldValues.some` clause
-  // (same helper the Backlog/Board use). The UI only offers these once a project
-  // is chosen, since field definitions are project-scoped.
-  const customFilterWhere = customFiltersToWhere(
-    parseCustomFilters(url.searchParams.get("customFilters")),
-  );
-  if (customFilterWhere.length > 0) {
-    where.AND = where.AND
-      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...customFilterWhere]
-      : customFilterWhere;
+    if (search) {
+      const text: Prisma.QtIssueWhereInput = {
+        OR: [
+          { title: { contains: search, mode: "insensitive" } },
+          { key: { contains: search, mode: "insensitive" } },
+        ],
+      };
+      where.AND = where.AND ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), text] : text;
+    }
+
+    // Custom-field value filters — each becomes an AND'd `fieldValues.some` clause
+    // (same helper the Backlog/Board use). The UI only offers these once a project
+    // is chosen, since field definitions are project-scoped.
+    customFilterWhere = customFiltersToWhere(parseCustomFilters(url.searchParams.get("customFilters")));
+    if (customFilterWhere.length > 0) {
+      where.AND = where.AND
+        ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...customFilterWhere]
+        : customFilterWhere;
+    }
   }
 
   const issueSelect = {
@@ -221,13 +290,15 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   // we over-fetch issues to `offset+limit` and cap ideas to a sane ceiling.
   // Custom-field filters target QtIssueFieldValue; ideas use a different value
   // relation, so when custom filters are active we don't merge ideas (they'd
-  // otherwise appear unfiltered).
+  // otherwise appear unfiltered). TQL queries never merge ideas either — the
+  // translator's where-clause targets QtIssue only and ideas would appear
+  // unfiltered against it.
   const includeIdeas =
-    ideasEligible && !restrictsToIssueStatus && customFilterWhere.length === 0;
+    !isTql && ideasEligible && !restrictsToIssueStatus && customFilterWhere.length === 0;
   const [issueRows, issueCount, ideaRows, ideaCount] = await Promise.all([
     db.qtIssue.findMany({
       where,
-      orderBy,
+      orderBy: tqlOrderBy ?? orderBy,
       take: includeIdeas ? offset + limit : limit,
       skip: includeIdeas ? 0 : offset,
       select: issueSelect,
@@ -292,6 +363,8 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     success: true,
     data,
     total,
-    meta: { title: FILTER_TITLES[id], fallback },
+    // A TQL query replaces the slug's meaning entirely, so its title shouldn't
+    // still say e.g. "My open work items" once the query no longer means that.
+    meta: { title: isTql ? "TQL search" : FILTER_TITLES[id], fallback },
   });
 });

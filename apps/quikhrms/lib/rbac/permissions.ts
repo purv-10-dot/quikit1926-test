@@ -55,10 +55,15 @@ export const PERMISSIONS: PermissionDef[] = [
 
   // ── Recruit ──
   { code: "hrms.recruit.read", category: "Recruit", name: "View Recruitment", description: "View requisitions, candidates, applications" },
-  { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates" },
+  { code: "hrms.recruit.read_self", category: "Recruit", name: "View Own Recruitment", description: "View only job openings, candidates and pipeline for jobs you're assigned to" },
+  { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates (legacy — grants both of the two below)" },
+  { code: "hrms.recruit.requisition.write", category: "Recruit", name: "Manage Job Requisitions", description: "Create/update/close job requisitions" },
+  { code: "hrms.recruit.candidate.write", category: "Recruit", name: "Manage Candidates", description: "Create/update candidates" },
   { code: "hrms.recruit.offer", category: "Recruit", name: "Manage Offers", description: "Send/withdraw offers" },
   { code: "hrms.recruit.interview", category: "Recruit", name: "Manage Interviews", description: "Schedule and score interviews" },
   { code: "hrms.recruit.approve", category: "Recruit", name: "Approve Requisitions", description: "Approve/reject raised requisitions" },
+  { code: "hrms.recruit.performance.read", category: "Recruit", name: "View Recruiter Performance (All)", description: "View performance/workload for every recruiter" },
+  { code: "hrms.recruit.performance.read_self", category: "Recruit", name: "View Own Recruiter Performance", description: "View own performance/workload only" },
 
   // ── Performance ──
   { code: "hrms.performance.read", category: "Performance", name: "View Performance", description: "View goals, appraisals (all)" },

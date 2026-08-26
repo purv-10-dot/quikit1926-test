@@ -7,7 +7,15 @@ import {
   BookOpen,
   ListTree,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import {
+  IssueAppsMenu,
+  loadIssueApps,
+  onIssueAppsChanged,
+  saveIssueApps,
+  type IssueApp,
+} from "@/components/issue-apps-menu";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { LinkedWorkItems } from "@/components/linked-work-items";
@@ -92,12 +100,17 @@ export function IssueFullView({
     },
   });
 
-  // Project name for the breadcrumb pill.
-  const { data: projectName = "Project" } = useApiData<string>(
+  // Project name + key for the breadcrumb pill. The key drives readable
+  // breadcrumb links (/spaces/KEY/board) so navigating away from an issue never
+  // exposes the project UUID in the URL.
+  const { data: project } = useApiData<{ name?: string; projectKey?: string } | null>(
     ["quiktrack", "project-name", projectId],
     `/api/projects/${projectId}`,
-    { select: (d) => (d as { name?: string } | null)?.name ?? "Project" },
+    { select: (d) => d as { name?: string; projectKey?: string } | null },
   );
+  const projectName = project?.name ?? "Project";
+  // Fall back to the id so links still resolve (the /spaces route accepts both).
+  const projectKey = project?.projectKey ?? projectId;
 
   // Project members — feed the @-mention list and the details panel (passed
   // down so the panel doesn't refetch the same list).
@@ -111,6 +124,24 @@ export function IssueFullView({
       },
     },
   );
+
+  // Same permission the edit drawer gates on. `perms.loading` counts as allowed so
+  // the title does not flicker read-only on load; the API re-enforces it anyway.
+  const perms = useMyProjectPermissions(projectId);
+  const canUpdateIssue = perms.loading || perms.has("Issue", "update");
+
+  // Attached apps (QuikTest), shared with the edit drawer's + menu. Read AFTER
+  // mount — localStorage is unavailable during SSR, so seeding state from it
+  // directly would hydrate with different markup than the server rendered.
+  const [quikTestApps, setQuikTestApps] = useState<Set<IssueApp>>(new Set());
+  useEffect(() => {
+    const id = issue?.id;
+    if (!id) return;
+    setQuikTestApps(loadIssueApps(id));
+    // Re-read when the drawer (mounted OVER this page) adds or hides the panel —
+    // otherwise this page keeps showing the old state until a reload.
+    return onIssueAppsChanged(id, () => setQuikTestApps(loadIssueApps(id)));
+  }, [issue?.id]);
 
   // Reflect the issue in the browser tab (Jira-style "[SCRUM-58] title"), and
   // restore the previous title when navigating away so other pages aren't left
@@ -144,6 +175,8 @@ export function IssueFullView({
     return <IssueViewSkeleton />;
   }
 
+  const quikTestAdded = quikTestApps.has("quiktest");
+
   const T = TYPE_META[issue.type] ?? TYPE_META.TASK;
 
   // People list for @-mentions in the comment editor.
@@ -165,23 +198,62 @@ export function IssueFullView({
         <IssueHeaderSections
           issue={issue}
           projectId={projectId}
+          projectKey={projectKey}
           projectName={projectName}
           typeIcon={T}
           onPatch={patch}
           mentions={memberMentions}
+          // Inline title editing (parity with the drawer). Gated on the same
+          // permission the drawer uses; `perms.loading` counts as allowed so the
+          // title does not flicker read-only on every page load.
+          canUpdate={canUpdateIssue}
+          // The apps `+` — same menu as the drawer, so a panel can be attached
+          // without opening the drawer at all.
+          appsMenu={
+            <IssueAppsMenu
+              issueId={issue.id}
+              apps={quikTestApps}
+              onChange={(next) => {
+                setQuikTestApps(next);
+                saveIssueApps(issue.id, next);
+              }}
+            />
+          }
         />
 
         <LinkedWorkItems
           issueId={issue.id}
           projectId={projectId}
-          onOpenIssue={(id) => {
-            window.location.href = `/spaces/${projectId}/work/${id}`;
+          onOpenIssue={(_id, key) => {
+            // Keep the URL readable (/browse/KEY) instead of exposing UUIDs.
+            window.location.href = `/browse/${key}`;
           }}
         />
         {/* QuikTest — tests covering this item, and results that raised it as a
             defect. Sits between Linked work items and Development, matching the
-            TestRail-for-Jira panel placement. */}
-        <QuikTestResultsPanel issueKey={issue.key} projectId={projectId} />
+            TestRail-for-Jira panel placement.
+            Collapsible here too, and gated on the SAME per-item "app added" choice
+            the drawer's + menu writes — otherwise removing the app in the drawer
+            would leave the panel still showing here. Defaults OPEN on the full page
+            because there is room for it. */}
+        {quikTestAdded ? (
+          <QuikTestResultsPanel
+            issueKey={issue.key}
+            // Pass the readable key — the panel uses it only to build
+            // /spaces/{x}/test links, and the route accepts key-or-id.
+            projectId={projectKey}
+            collapsible
+            defaultOpen
+            // Hiding DETACHES the app, so this page and the drawer's + menu always
+            // agree — the panel returns via the Add button below.
+            onHide={() => {
+              const next = new Set(quikTestApps);
+              next.delete("quiktest");
+              setQuikTestApps(next);
+              saveIssueApps(issue.id, next);
+            }}
+          />
+        ) : null}
         {/* Separate "Attachments" section — mirrors the files embedded in the
             description as cards (same as shown inside Description), plus the
             migration-imported attachments below. */}
@@ -193,7 +265,7 @@ export function IssueFullView({
       {/* Right rail — sticks to the top of the scrolling viewport so it stays
           visible while the long left column scrolls. */}
       <div className="sticky top-0 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pt-6">
-        <IssueDetailsPanel issue={issue} members={members} onPatch={patch} />
+        <IssueDetailsPanel issue={issue} projectKey={projectKey} members={members} onPatch={patch} />
         {/* Development sits directly under Details (branches/commits/PRs +
             action links), the same place the issue drawer puts it — it belongs
             with the work item's metadata, not stranded mid-page in the content

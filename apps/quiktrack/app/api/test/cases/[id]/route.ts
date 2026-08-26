@@ -59,7 +59,37 @@ export const GET = withOrgAuth<Params>(
         );
       }
 
-      return NextResponse.json({ success: true, data: row });
+      // The read-only detail panel (QUIKTR-336) shows Assigned To / Template as
+      // names. Resolved here rather than client-side so the panel doesn't need
+      // two more round-trips just to avoid printing a cuid. `User` is a global
+      // model (no orgId column) — membership is already established by the
+      // project gate above.
+      const [owner, template] = await Promise.all([
+        row.ownerId
+          ? db.user.findUnique({
+              where: { id: row.ownerId },
+              select: { id: true, firstName: true, lastName: true, avatar: true },
+            })
+          : null,
+        row.templateId
+          ? db.qtTestTemplate.findFirst({
+              where: { id: row.templateId, orgId },
+              select: { id: true, name: true, kind: true },
+            })
+          : null,
+      ]);
+
+      return NextResponse.json({
+        success: true,
+        // Labels flattened to match the list endpoint's shape, so the table and
+        // the panel consume one thing rather than two.
+        data: {
+          ...row,
+          labels: row.tags.map((t) => t.tag),
+          owner,
+          template,
+        },
+      });
     } catch (error: unknown) {
       return serverError(error);
     }

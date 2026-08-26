@@ -7,7 +7,6 @@ import { signOut } from "next-auth/react";
 import {
   Building2,
   MapPin,
-  Wallet,
   Check,
   ArrowRight,
   Rocket,
@@ -33,7 +32,6 @@ const ITEM_THEME: Record<HrmsSetupItemKey, { icon: React.ReactNode; bg: string; 
   departments: { icon: <Building2 size={18} />, bg: "bg-emerald-50 dark:bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400" },
   locations: { icon: <MapPin size={18} />, bg: "bg-emerald-50 dark:bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400" },
   coreApprovalChains: { icon: <ShieldAlert size={18} />, bg: "bg-teal-50 dark:bg-teal-500/10", text: "text-teal-600 dark:text-teal-400" },
-  payroll: { icon: <Wallet size={18} />, bg: "bg-blue-50 dark:bg-blue-500/10", text: "text-blue-600 dark:text-blue-400" },
   roles: { icon: <ShieldCheck size={18} />, bg: "bg-emerald-50 dark:bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400" },
   leaveTypes: { icon: <Palmtree size={18} />, bg: "bg-amber-50 dark:bg-amber-500/10", text: "text-amber-600 dark:text-amber-400" },
   leaveGroups: { icon: <Users size={18} />, bg: "bg-violet-50 dark:bg-violet-500/10", text: "text-violet-600 dark:text-violet-400" },

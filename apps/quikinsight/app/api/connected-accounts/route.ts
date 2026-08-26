@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/withAuth";
-import { canViewAllTeams, getTeamFilter } from "@/lib/rbac";
+import { sessionRole, canViewAllTeams, getTeamFilter } from "@/lib/rbac";
 
 // GET /api/connected-accounts — team-scoped list of connected accounts, using
 // the same scoping rules as /api/dashboards. The filter is applied in the
@@ -10,7 +10,7 @@ import { canViewAllTeams, getTeamFilter } from "@/lib/rbac";
 // NOTE: `credentials` (OAuth tokens / API keys) are deliberately NOT selected —
 // they must never leave the server.
 export const GET = withAuth(async (req) => {
-  const role = req.session.user.role;
+  const role = sessionRole(req.session);
 
   let where: { teamId?: string } | undefined;
   if (canViewAllTeams(role)) {

@@ -173,9 +173,12 @@ const employeeBaseSchema = z.object({
   status: z.enum(["PreBoarding", "Active", "OnLeave", "OnNotice", "Suspended", "Relieved", "Absconding"]).default("Active"),
   roleId: z.string().min(1, "Role required"),
 
-  // Initial salary assignment — required on create so onboarded employees always have a salary.
-  salaryTemplateId: z.string().min(1, "Salary template required"),
-  ctcLpa: z.number().positive("CTC (LPA) required").max(10000, "CTC (LPA) is unrealistically large"),
+  // Initial salary assignment — optional on create. HR can add an employee
+  // before any salary template exists and fill this in later via Payroll →
+  // Employee Salaries (same pattern as recruit-onboarding and bulk import,
+  // which already skip salary assignment when no template is picked).
+  salaryTemplateId: z.string().optional(),
+  ctcLpa: z.number().positive("CTC (LPA) required").max(10000, "CTC (LPA) is unrealistically large").optional(),
 
   // When true, send a portal-access invite (account-setup email) instead of the
   // informational welcome email. Decided via the popup on the Add Employee form.
@@ -202,6 +205,10 @@ function employeeDateChecks(
   }
   if (d.dateOfBirth && d.dateOfJoining && d.dateOfBirth >= d.dateOfJoining) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date of birth must be before the date of joining", path: ["dateOfBirth"] });
+  }
+  // Only enforced on create — updateEmployeeSchema omits dateOfJoining entirely.
+  if (d.dateOfJoining && d.dateOfJoining < new Date().toISOString().slice(0, 10)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date of joining cannot be in the past", path: ["dateOfJoining"] });
   }
   if (d.probationEndDate && d.dateOfJoining && d.probationEndDate < d.dateOfJoining) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Probation end date must be on or after the date of joining", path: ["probationEndDate"] });

@@ -15,15 +15,22 @@ import {
 } from "@/lib/test/statuses";
 
 /**
- * Run summary widget — the donut plus the two count columns, matching the
- * TestRail reference UI:
+ * Run summary widget — a true RING (hole in the middle, QUIKTR-341 restyle) plus
+ * the two count columns, each row showing its count and share inline:
  *
- *        ●  0 Passed        ● 0 Automation Passed
- *    ◯   ●  0 Blocked       ● 0 Automation Failed
- *        ●  0 Skipped       ● 0 Automation Error
- *        ●  0 Failed
- *              0% Passed
- *          18 / 18 untested (100%)
+ *              ● 0 Passed      0%     ● 0 Automation Passed   0%
+ *      ⬭ 100%  ● 0 Blocked     0%     ● 0 Automation Failed   0%
+ *              ● 0 Skipped     0%     ● 0 Automation Error    0%
+ *              ● 0 Failed      0%
+ *
+ * Previously a filled disc (solid conic-gradient circle) with the percentage
+ * spelled out on its own line below each count — this cuts a hole in the
+ * middle via a radial-gradient mask and moves the percentage onto the same
+ * line as the count, both to match the reference UI directly.
+ *
+ * Shared by the runner page AND the work-item QuikTest panel
+ * (quiktest-results-panel.tsx) — restyled here once so both stay visually
+ * consistent, rather than forking a second ring component.
  *
  * The manual/automation split is the point of the widget, so the two columns
  * are fixed rather than collapsed when automation counts are zero — a run with
@@ -47,16 +54,11 @@ function CountRow({ statusKey, counts }: { statusKey: TestStatusKey; counts: Sta
   const share = total === 0 ? 0 : Math.round((n / total) * 100);
 
   return (
-    <div className="flex items-start gap-2">
-      <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${meta.dot}`} />
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-gray-900">
-          {n} <span className="font-normal text-gray-700">{meta.label}</span>
-        </div>
-        <div className="truncate text-[11px] text-gray-500">
-          {share}% set to {meta.label}
-        </div>
-      </div>
+    <div className="flex items-center gap-2">
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${meta.dot}`} />
+      <span className="text-sm font-semibold text-gray-900">{n}</span>
+      <span className="truncate text-sm text-gray-700">{meta.label}</span>
+      <span className="ml-auto shrink-0 text-xs text-gray-400">{share}%</span>
     </div>
   );
 }
@@ -78,24 +80,36 @@ export function RunSummary({ counts, size = "md" }: RunSummaryProps) {
     .join(", ")})`;
 
   const ring = size === "sm" ? "h-24 w-24" : "h-36 w-36";
+  // Punches the hole: a radial-gradient mask over the conic-gradient background
+  // rather than an inner absolutely-positioned circle, so the ring works at any
+  // size (including a future custom `ring` class) without a second element to
+  // keep centred.
+  const holeMask =
+    "radial-gradient(circle, transparent 58%, black 58.5%)";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-        <div
-          className={`${ring} shrink-0 rounded-full`}
-          style={{ background: gradient }}
-          role="img"
-          aria-label={`${rate}% passed of ${executed} executed tests`}
-        />
+        <div className="relative shrink-0">
+          <div
+            className={`${ring} rounded-full`}
+            style={{ background: gradient, WebkitMaskImage: holeMask, maskImage: holeMask }}
+            role="img"
+            aria-label={`${rate}% passed of ${executed} executed tests`}
+          />
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-sm font-semibold text-gray-900">{rate}%</span>
+            <span className="text-[10px] text-gray-500">Passed</span>
+          </div>
+        </div>
 
         <div className="flex flex-1 flex-wrap gap-x-10 gap-y-2">
-          <div className="space-y-2">
+          <div className="min-w-[160px] space-y-1.5">
             {MANUAL_STATUS_ORDER.map((key) => (
               <CountRow key={key} statusKey={key} counts={counts} />
             ))}
           </div>
-          <div className="space-y-2">
+          <div className="min-w-[160px] space-y-1.5">
             {AUTOMATION_STATUS_ORDER.map((key) => (
               <CountRow key={key} statusKey={key} counts={counts} />
             ))}
