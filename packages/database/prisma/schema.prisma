@@ -11599,6 +11599,64 @@ model CrmUpworkJob {
   projectPrice     String?
   projectTime      String?
   requiredConnects String?
+  
+  // ─── Submitted proposal (captured from /nx/proposals/{proposalId}) ──────────
+  //
+  // DISTINCT FROM the two job-listing fields above, which keep their original
+  // meanings and are never written by proposal capture:
+  //   `requiredConnects` — what the LISTING says a proposal costs to submit
+  //   `proposals`        — the listing's proposal-count range ("20 to 50")
+  // The fields below are what the freelancer ACTUALLY spent on their own
+  // submitted proposal, which only the proposal page exposes.
+  //
+  // All nullable: a captured job normally has NO proposal (most jobs are saved
+  // for research), and proposal capture is a separate, optional user action.
+
+  /// Upwork's own proposal id, from the /nx/proposals/{id} URL. The stable
+  /// identity for proposal capture — re-extracting the same proposal updates
+  /// these fields in place rather than creating anything new.
+  proposalId String?
+
+  /// When the proposal was submitted, per the proposal page. Null when Upwork
+  /// rendered only a relative time ("2 days ago"), which is NOT parsed into a
+  /// date — a wrong date is worse than none.
+  proposalSubmittedAt DateTime?
+
+  /// Connects consumed by the submitted proposal.
+  ///
+  /// Int, not String like the scraped listing fields: this is a real quantity
+  /// Sales Cost multiplies by a cost-per-Connect rate, so it is stored as a
+  /// number rather than re-parsed from text at read time.
+  ///
+  /// SOURCE (business rule): the Connects a proposal costs are the ones the
+  /// listing stated, so this is set from THIS ROW's own `requiredConnects`,
+  /// parsed to an Int when the proposal is saved. It is not scraped from the
+  /// proposal page, which only exposes the account wallet balance. See
+  /// app/api/upwork/[id]/proposal/route.ts.
+  ///
+  /// Null when the job had no usable `requiredConnects` — never defaulted to 0,
+  /// which would read as a real figure ("no Connects were spent") rather than
+  /// as an absence.
+  connectsUsed Int?
+
+  /// Additional Connects spent boosting the proposal, when Upwork shows Boost
+  /// as a separate line. Kept apart from `connectsUsed` rather than summed, so
+  /// the base spend stays recoverable. Null = not boosted OR not exposed.
+  boostConnects Int?
+
+  /// The cover letter as submitted with the proposal, scraped from the proposal
+  /// detail page.
+  ///
+  /// DISTINCT FROM `clientMessage` below, which is owned by the AI flow
+  /// (saveUpworkAiAnalysis) and holds the AI-suggested / user-written message.
+  /// Conflating the two would let one overwrite the other, so the submitted
+  /// letter gets its own column.
+  ///
+  /// Stored as TEXT with newlines intact — the scraper reads innerText, so
+  /// paragraph breaks and bullet lines survive. No length cap: a cover letter is
+  /// bounded by Upwork's own composer, and truncating evidence of what was
+  /// actually sent would be worse than storing it whole.
+  proposalCoverLetter String?
 
   /// Everything the scraper produced, verbatim. Kept so a scraper change or a
   /// field we did not model can still be recovered from an existing row.

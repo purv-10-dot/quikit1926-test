@@ -55,6 +55,16 @@ export default async function UpworkJobDetailPage({
   const job = await getUpworkJob(user.orgId, id, upworkOwnerScope(user));
   if (!job) notFound();
 
+  // A proposal exists if ANY proposal field was captured. Checking all four (not
+  // just proposalId) means a partial capture — e.g. Upwork showed the Connects
+  // but no id — still surfaces rather than hiding data the user saved.
+  const hasProposal =
+    job.proposalId !== null ||
+    job.proposalSubmittedAt !== null ||
+    job.connectsUsed !== null ||
+    job.boostConnects !== null ||
+    job.proposalCoverLetter !== null;
+
   // Has this job already been converted? Looked up ORG-WIDE (not owner-scoped):
   // a colleague's conversion still counts, and offering a second one would only
   // fail against the unique constraint.
@@ -164,6 +174,65 @@ export default async function UpworkJobDetailPage({
             <p className="text-sm text-crm-muted">No description captured.</p>
           )}
         </section>
+
+        {/*
+          Proposal — the freelancer's own submitted bid, captured by the
+          extension's "Extract Proposal". Rendered only when a proposal exists:
+          most captured jobs are saved for research and never bid on, so an
+          empty Proposal card on every job would be noise.
+
+          `connectsUsed` is the SUBMISSION cost (Upwork exposes no historical
+          spend figure), kept distinct from the listing's "Required Connects"
+          shown in Job details above.
+        */}
+        {hasProposal && (
+          <section className="rounded-lg border border-crm-border bg-white p-4">
+            <h2 className="mb-3 text-sm font-semibold text-crm-text">Proposal</h2>
+            <FieldGrid
+              fields={[
+                { label: "Proposal ID", value: job.proposalId },
+                {
+                  label: "Submitted",
+                  value: job.proposalSubmittedAt
+                    ? job.proposalSubmittedAt.toLocaleString("en-IN", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })
+                    : null,
+                },
+                // Numbers, not free text — String() so a real 0 renders as "0"
+                // rather than being swallowed by FieldGrid's `|| "—"` fallback.
+                {
+                  label: "Connects Used",
+                  value: job.connectsUsed === null ? null : String(job.connectsUsed),
+                },
+                {
+                  label: "Boost Connects",
+                  value: job.boostConnects === null ? null : String(job.boostConnects),
+                },
+              ]}
+            />
+
+            <div className="mt-4 border-t border-crm-border pt-4">
+              <h3 className="mb-2 text-xs uppercase tracking-wider text-crm-muted">
+                Cover Letter
+              </h3>
+              {job.proposalCoverLetter ? (
+                // Same treatment as the job description: scraped plain text, so
+                // whitespace-pre-wrap keeps the letter's paragraphs, blank lines
+                // and bullet lines intact WITHOUT rendering it as HTML. Capped
+                // height with overflow-y-auto so a long letter scrolls in place
+                // instead of pushing the timeline off-screen — the text itself
+                // is never truncated.
+                <p className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-crm-text">
+                  {job.proposalCoverLetter}
+                </p>
+              ) : (
+                <p className="text-sm text-crm-muted">Cover letter not available</p>
+              )}
+            </div>
+          </section>
+        )}
 
         <UpworkActivityTimeline
           sourceSystem={UPWORK_SOURCE_SYSTEM}

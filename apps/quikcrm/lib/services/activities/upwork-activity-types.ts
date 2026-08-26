@@ -52,6 +52,37 @@ export const UPWORK_ACTIVITY_TYPES = {
       `Converted the Upwork job "${jobTitle}" to a prospect.`,
     oncePerJob: true,
   },
+  /**
+   * Logged when a submitted proposal is saved onto this job.
+   *
+   * oncePerJob, matching what the save actually does: the proposal lives in
+   * columns ON the job row, so re-running "Extract Proposal" UPDATES those
+   * fields rather than adding anything. A second timeline row would claim a
+   * second proposal existed. The key therefore omits the timestamp, and
+   * logActivity()'s upsert makes a repeat save a database-level no-op.
+   */
+  UPWORK_PROPOSAL_SAVED: {
+    subject: (jobTitle) => `Saved Upwork proposal: ${jobTitle}`,
+    describe: (jobTitle) =>
+      `Saved the Upwork proposal for "${jobTitle}" to CRM.`,
+    oncePerJob: true,
+  },
+  /**
+   * One scraped Upwork message (client ↔ freelancer) from the Messages room
+   * linked to this job.
+   *
+   * NOT oncePerJob: a conversation is many messages, and re-extracting the same
+   * room must not collapse them into one row. Uniqueness comes from the Upwork
+   * message id instead — see buildUpworkMessageExternalId, which bypasses
+   * buildUpworkActivityExternalId entirely rather than keying on a timestamp.
+   * That is what makes a repeat extraction a database-level no-op per message.
+   */
+  UPWORK_CONVERSATION_MESSAGE: {
+    subject: (jobTitle) => `Upwork message: ${jobTitle}`,
+    describe: (jobTitle) =>
+      `Message in the Upwork conversation for "${jobTitle}".`,
+    oncePerJob: false,
+  },
 } as const satisfies Record<string, UpworkActivityDescriptor>;
 
 export type UpworkActivityType = keyof typeof UPWORK_ACTIVITY_TYPES;
@@ -125,4 +156,25 @@ export function buildManualUpworkActivityExternalId(
   activityId: string,
 ): string {
   return `${jobId}:MANUAL:${activityId}`;
+}
+
+/**
+ * externalId for ONE scraped conversation message.
+ *
+ * Deliberately not routed through buildUpworkActivityExternalId: that helper
+ * discriminates repeatable types by `occurredAt`, which would mint a fresh key
+ * every time the same message is re-scraped (Upwork renders relative times, and
+ * a re-parse can shift the resolved timestamp by a second). Keying on Upwork's
+ * own message id makes the row identity independent of when it was scraped, so
+ * extracting the same room twice upserts over the same rows.
+ *
+ * Keeps the shared `<jobId>:` prefix, so these messages appear on the job
+ * timeline through the same prefix query as every other Upwork activity, and
+ * the `MSG:` segment namespaces them away from system events and `MANUAL:` rows.
+ */
+export function buildUpworkMessageExternalId(
+  jobId: string,
+  upworkMessageId: string,
+): string {
+  return `${jobId}:MSG:${upworkMessageId}`;
 }

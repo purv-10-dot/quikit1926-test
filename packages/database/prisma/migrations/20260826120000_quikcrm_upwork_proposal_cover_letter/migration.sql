@@ -1,0 +1,34 @@
+-- QuikCRM: submitted proposal cover letter on CrmUpworkJob.
+--
+-- Stores the cover letter as submitted with the proposal, scraped from the
+-- Upwork proposal detail page.
+--
+-- WHY A NEW COLUMN rather than reusing an existing one -- every candidate was
+-- already owned by another flow, and reusing one would have let the two
+-- overwrite each other:
+--   "clientMessage" -- written by saveUpworkAiAnalysis (the AI-suggested /
+--                      user-written message to the client). A different text.
+--   "rawData"       -- written once by createUpworkJob and documented as what
+--                      the JOB scraper produced; it is also .omit()ed from the
+--                      update schema, so the proposal flow must not touch it.
+--   job-listing columns ("jobDescription", "proposals", "requiredConnects")
+--                   -- different meanings; repurposing them corrupts the listing.
+--
+-- BACKWARD COMPATIBLE ON LIVE DATA. Nullable, no default, no constraint:
+--   * Postgres adds a nullable column without rewriting the table, so this is
+--     safe on a populated CrmUpworkJob;
+--   * existing rows read back NULL, which is correct -- a captured job normally
+--     has no proposal at all, and cover-letter capture is an optional action;
+--   * every existing query, insert and the (orgId, dedupeKey) duplicate guard
+--     behave exactly as before. Nothing here participates in dedupe.
+--
+-- TEXT, uncapped: newlines are preserved (the scraper reads innerText, so
+-- paragraph breaks and bullet lines survive), and truncating evidence of what
+-- was actually sent to a client would be worse than storing it whole.
+--
+-- No index: read per-job on a row already located by id; never a search key.
+--
+-- Idempotent (IF NOT EXISTS) to match the conventions of the other migrations.
+
+ALTER TABLE "app_quikcrm"."CrmUpworkJob"
+  ADD COLUMN IF NOT EXISTS "proposalCoverLetter" TEXT;

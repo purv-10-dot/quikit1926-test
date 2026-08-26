@@ -23,6 +23,7 @@ import {
   resolveVersionForPeriod,
   startOfMonthUtc,
 } from "./period";
+import { isUpworkConnectsTool } from "@/lib/services/sales-cost/connects-shared";
 import {
   type OtherCostLine,
   type RepCostBreakdown,
@@ -301,6 +302,38 @@ export interface ToolDto {
   allocations: ToolAllocationDto[];
   /** Sum of allocation percentages currently open-ended — the shared-tool hint. */
   allocatedPercentage: number;
+}
+
+/**
+ * A tool's cost for the selected period, as it should COUNT toward that
+ * period's total.
+ *
+ * Identical to `monthlyCostOf` for every tool except Upwork Connects.
+ *
+ * WHY UPWORK CONNECTS IS SPECIAL. `monthlyCostOf` maps `one_time` to 0 on
+ * purpose: a one-off purchase is not a recurring monthly cost, and amortising it
+ * across an arbitrary window would make cost-per-lead depend on a period nobody
+ * chose. That rule is right for a one-off purchase such as a hardware buy, and
+ * is deliberately left alone for every other tool.
+ *
+ * Connects are different in kind. They are not a purchase that keeps delivering
+ * value across later months — they are the metered cost of proposal activity
+ * that happened INSIDE the selected period, already aggregated from that
+ * period's proposals. So the figure belongs to that one month in full, and to no
+ * other. Returning its real cost here is what makes it a one-time cost that is
+ * counted once, in its own period, rather than a subscription that recurs.
+ *
+ * There is no double counting: the Connects tool row is the ONLY place this cost
+ * enters the total. The `connects-usage` aggregation is what produced the stored
+ * price; it is not added again at read time.
+ *
+ * Matching is by tool NAME through the shared `isUpworkConnectsTool` helper —
+ * the same exact-string rule the Add Tool preset writes — so generic `one_time`
+ * behaviour is untouched for every other tool, present or future.
+ */
+function periodCostOf(toolName: string, cost: number, frequency: string): number {
+  if (frequency === "one_time" && isUpworkConnectsTool(toolName)) return cost;
+  return monthlyCostOf(cost, frequency);
 }
 
 type ToolWithRelations = Prisma.CrmSalesToolGetPayload<{
@@ -1008,7 +1041,9 @@ export async function getRepBreakdown(
     if (!price) continue; // No price configured for this month → no cost.
 
     const toolCost = num(price.cost);
-    const toolMonthly = round2(monthlyCostOf(toolCost, price.billingFrequency));
+    // periodCostOf, not monthlyCostOf: Upwork Connects is metered spend that
+    // belongs to THIS period in full. Every other tool is unaffected.
+    const toolMonthly = round2(periodCostOf(t.name, toolCost, price.billingFrequency));
     const pct = num(a.percentage);
 
     tools.push({
@@ -1114,7 +1149,11 @@ export async function getOrgSummary(
     // the per-rep breakdown can never disagree about a tool's cost.
     const price = resolvePriceForPeriod(a.tool.prices, period);
     if (!price) continue;
-    const monthly = round2(monthlyCostOf(num(price.cost), price.billingFrequency));
+    // Same periodCostOf the detail view uses — otherwise the summary row and
+    // the per-rep breakdown would disagree about the Connects cost.
+    const monthly = round2(
+      periodCostOf(a.tool.name, num(price.cost), price.billingFrequency),
+    );
     const share = allocatedCost(monthly, num(a.percentage));
     toolsByUser.set(a.userId, round2((toolsByUser.get(a.userId) ?? 0) + share));
   }
