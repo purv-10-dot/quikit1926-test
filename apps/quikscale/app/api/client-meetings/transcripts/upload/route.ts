@@ -91,6 +91,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       summary: true,
       actionItems: true,
       rawText: true,
+      rawSegments: true,
       matchStatus: true,
     },
   });

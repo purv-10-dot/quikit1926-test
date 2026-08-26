@@ -27,9 +27,24 @@ export const dynamic = "force-dynamic";
  * Nothing is ever dropped: an unresolved transcript is still stored with
  * matchStatus UNMATCHED/AMBIGUOUS (clientId null) for the "Unassigned" bucket.
  */
+/**
+ * NOTE — `z.object` STRIPS unknown keys, and the parsed value is what gets
+ * written to `attendees` below. So any field not named here is silently deleted
+ * at this boundary, however faithfully the connector emitted it. That is why
+ * the invitee/identified distinction has to be declared explicitly.
+ *
+ * Explicit fields rather than `.passthrough()`: passthrough would let arbitrary
+ * vendor data — including PII we never reviewed — into a Json column, and the
+ * whole point of this work is knowing exactly what we store.
+ */
 const attendeeSchema = z.object({
   name: z.string().nullable().optional(),
   email: z.string().nullable().optional(),
+  /** On the calendar invite. */
+  isInvitee: z.boolean().optional(),
+  /** Identified by Fathom as actually present — its UI shows these separately. */
+  isIdentified: z.boolean().optional(),
+  linkedinUrl: z.string().nullable().optional(),
 });
 
 const bodySchema = z.object({
@@ -53,6 +68,13 @@ const bodySchema = z.object({
    */
   rawSegments: z.array(z.any()).nullable().optional(),
   summary: z.string().nullable().optional(),
+  /**
+   * Deliberately loose, unlike `attendees` above: `z.any()` passes every field
+   * through, so an action item's assignee, timestamp and completed state reach
+   * the Json column without this schema needing to know about them. The
+   * asymmetry is intentional — attendees are pinned because that list is the
+   * one the client matcher reads.
+   */
   actionItems: z.array(z.any()).optional().default([]),
   // Manual overrides (builder params) — pin the match.
   clientId: z.string().optional(),

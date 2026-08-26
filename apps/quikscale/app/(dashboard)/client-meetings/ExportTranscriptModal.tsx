@@ -38,6 +38,13 @@ import { WeeklyMeetingReportPanel } from "./WeeklyMeetingReportPanel";
 import { MonthlyReportPanel } from "./MonthlyReportPanel";
 import { ConfirmDeleteDialog, runDelete, type DeleteTarget } from "./ConfirmDeleteDialog";
 import { Banner, EmptyState, Skeleton } from "./reportUi";
+import { cleanFathomSummary, parseSummaryBlocks } from "@/lib/meetings/summaryFormat";
+import { buildTranscriptTurns, formatClock, turnsToPlainText } from "@/lib/meetings/transcriptView";
+import {
+  actionItemLine,
+  attendeeGroups,
+  attendeesToPlainText,
+} from "@/lib/meetings/meetingParts";
 
 interface ClientOpt { id: string; name: string }
 
@@ -51,10 +58,33 @@ interface TranscriptRow {
   startedAt: string | null;
   endedAt: string | null;
   durationMinutes: number | null;
-  attendees: { name?: string | null; email?: string | null }[] | null;
+  /**
+   * Every field past name/email is OPTIONAL on purpose: rows ingested before
+   * the connector learned to carry them will never have them, so the UI has to
+   * degrade rather than render "—" placeholders forever.
+   */
+  attendees:
+    | {
+        name?: string | null;
+        email?: string | null;
+        isInvitee?: boolean;
+        isIdentified?: boolean;
+        linkedinUrl?: string | null;
+      }[]
+    | null;
   summary: string | null;
-  actionItems: { text?: string }[] | null;
+  actionItems:
+    | {
+        text?: string | null;
+        assignee?: string | null;
+        dueDate?: string | null;
+        /** Offset into the recording — Fathom shows this as "@ 0:49". */
+        timestampSeconds?: number | null;
+      }[]
+    | null;
   rawText: string | null;
+  /** Structured turns with real per-segment timings, when the recorder gave us any. */
+  rawSegments: { speaker?: string | null; text?: string | null; timestamp?: number | string | null }[] | null;
   matchStatus: string;
   clientName: string | null;
 }
@@ -108,9 +138,200 @@ function attendeeText(rows: TranscriptRow["attendees"]): string {
   return rows.map((a) => a?.name || a?.email).filter(Boolean).join(", ");
 }
 
-/** Collapse runs of 3+ blank lines (common after docx/paragraph extraction) down to one, and trim the ends — display only, doesn't touch the stored rawText. */
-function trimBlankLines(text: string): string {
-  return text.replace(/\n{3,}/g, "\n\n").trim();
+/**
+ * Fathom's summary is markdown whose every bullet ends in a citation link back
+ * into the recording, which rendered as a raw URL on every line. Cleaned and
+ * structured for display; the stored `summary` is left exactly as ingested.
+ */
+function SummaryView({ summary }: { summary: string }) {
+  const blocks = parseSummaryBlocks(cleanFathomSummary(summary));
+  if (blocks.length === 0) return null;
+
+  // Consecutive bullets render as one list so the markers line up.
+  const out: React.ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = (key: string) => {
+    if (bullets.length === 0) return;
+    out.push(
+      <ul key={key} className="list-disc space-y-1 pl-5 text-sm text-gray-700">
+        {bullets.map((b, i) => (
+          <li key={i}>{b}</li>
+        ))}
+      </ul>,
+    );
+    bullets = [];
+  };
+
+  blocks.forEach((b, i) => {
+    if (b.kind === "bullet") {
+      bullets.push(b.text);
+      return;
+    }
+    flush(`ul-${i}`);
+    out.push(
+      b.kind === "heading" ? (
+        <h5 key={i} className="mt-3 text-sm font-semibold text-gray-900 first:mt-0">
+          {b.text}
+        </h5>
+      ) : (
+        <p key={i} className="text-sm text-gray-700">
+          {b.text}
+        </p>
+      ),
+    );
+  });
+  flush("ul-end");
+
+  return <div className="space-y-2">{out}</div>;
+}
+
+/**
+ * Action items with the timestamp and assignee Fathom shows beside each one.
+ *
+ * We previously rendered `a.text` alone, so the "@ 0:49" marker and the owner —
+ * the two things that make an action item actionable — were invisible even
+ * though the assignee was sitting in the database.
+ *
+ * Three deliberate divergences from Fathom's own panel:
+ *   · no interactive checkbox. Nothing here would persist to Fathom, and a
+ *     checkbox that silently forgets is worse than no checkbox.
+ *   · no DELETE ALL. These are Fathom's items; we don't own them.
+ *   · the "AI generated" note appears once as a footnote rather than as a
+ *     sparkle on every row, which is pure noise when every row is AI-generated.
+ */
+function ActionItemsView({ items, recordingUrl }: { items: TranscriptRow["actionItems"]; recordingUrl: string | null }) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+
+  return (
+    <section>
+      <h4 className="mb-1 text-sm font-semibold text-gray-800">Action items</h4>
+      <ul className="space-y-2">
+        {items.map((a, i) => {
+          const clock = a?.timestampSeconds != null ? formatClock(a.timestampSeconds * 1000) : null;
+          const meta = [clock, a?.assignee, a?.dueDate].filter(Boolean);
+          return (
+            <li key={i} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <p className="text-sm text-gray-800">{a?.text}</p>
+              {meta.length ? (
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                  {clock ? (
+                    recordingUrl ? (
+                      <a
+                        href={`${recordingUrl}${recordingUrl.includes("?") ? "&" : "?"}timestamp=${a!.timestampSeconds}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="tabular-nums text-gray-500 underline-offset-2 hover:underline"
+                      >
+                        @ {clock}
+                      </a>
+                    ) : (
+                      <span className="tabular-nums">@ {clock}</span>
+                    )
+                  ) : null}
+                  {a?.assignee ? <span>{a.assignee}</span> : null}
+                  {a?.dueDate ? <span>due {a.dueDate}</span> : null}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-1 text-xs text-gray-400">Action items generated by Fathom AI.</p>
+    </section>
+  );
+}
+
+/**
+ * Attendees in the two groups Fathom itself shows: the people it identified as
+ * actually present, and the calendar invitees.
+ *
+ * The old single line did `name || email`, which hid the address whenever a
+ * name existed — exactly the pairing the user needs to see. Rows ingested
+ * before the connector carried the flags have no groups at all, so those fall
+ * back to the original flat line rather than being forced into a wrong bucket.
+ */
+function AttendeesView({ attendees }: { attendees: TranscriptRow["attendees"] }) {
+  if (!Array.isArray(attendees) || attendees.length === 0) return null;
+
+  const { identified, invitees, ungrouped } = attendeeGroups(attendees);
+
+  // Legacy row: nothing is flagged, so there are no groups to show.
+  if (ungrouped) {
+    return (
+      <p className="text-xs text-gray-600">
+        <span className="font-medium">Attendees:</span> {attendeeText(attendees)}
+      </p>
+    );
+  }
+
+  const row = (a: NonNullable<TranscriptRow["attendees"]>[number], i: number) => (
+    <li key={i} className="text-xs text-gray-700">
+      {a?.name ? <span className="font-medium text-gray-800">{a.name}</span> : null}
+      {a?.name && a?.email ? <span className="text-gray-400"> · </span> : null}
+      {a?.email ? <span>{a.email}</span> : null}
+      {a?.linkedinUrl ? (
+        <a
+          href={a.linkedinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-1 text-gray-400 underline-offset-2 hover:underline"
+        >
+          in
+        </a>
+      ) : null}
+    </li>
+  );
+
+  return (
+    <section className="space-y-2">
+      {identified.length ? (
+        <div>
+          <h5 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Attendees</h5>
+          <ul className="mt-0.5 space-y-0.5">{identified.map(row)}</ul>
+        </div>
+      ) : null}
+      {invitees.length ? (
+        <div>
+          <h5 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Invited</h5>
+          <ul className="mt-0.5 space-y-0.5">{invitees.map(row)}</ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Speaker turns instead of one undifferentiated blob. Prefers `rawSegments`
+ * (real per-turn timings from the Fathom API) and falls back to parsing
+ * `rawText`, which also covers the glued `Name  0:09Text` grammar that Fathom's
+ * .docx export produces.
+ */
+function TranscriptView({ row }: { row: TranscriptRow }) {
+  const turns = buildTranscriptTurns({ rawText: row.rawText, rawSegments: row.rawSegments });
+
+  if (turns.length === 0) {
+    return (
+      <p className="rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-500">
+        No transcript text saved.
+      </p>
+    );
+  }
+
+  return (
+    <div className="max-h-[45vh] space-y-3 overflow-y-auto rounded-xl border border-gray-200 bg-white p-3">
+      {turns.map((t, i) => (
+        <div key={i}>
+          {t.speaker || t.time ? (
+            <div className="flex items-baseline gap-2">
+              {t.speaker ? <span className="text-sm font-semibold text-gray-900">{t.speaker}</span> : null}
+              {t.time ? <span className="text-xs tabular-nums text-gray-400">{t.time}</span> : null}
+            </div>
+          ) : null}
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{t.text}</p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ExportTranscriptModal({
@@ -233,19 +454,23 @@ export function ExportTranscriptModal({
   }, []);
 
   const downloadTxt = (t: TranscriptRow) => {
+    // Same cleaning + turn-shaping the viewer uses, so the download matches
+    // what the user just read (and carries no recorder citation URLs).
+    const summary = cleanFathomSummary(t.summary);
+    const turns = buildTranscriptTurns({ rawText: t.rawText, rawSegments: t.rawSegments });
     const parts = [
       t.title || "Meeting transcript",
       `Client: ${t.clientName ?? "—"}`,
       `Type: ${t.type ?? "—"}`,
       `Date: ${fmtDate(t.meetingDate)}`,
-      `Attendees: ${attendeeText(t.attendees) || "—"}`,
+      attendeesToPlainText(t.attendees) || "Attendees: —",
       "",
-      t.summary ? `SUMMARY\n${t.summary}\n` : "",
+      summary ? `SUMMARY\n${summary}\n` : "",
       Array.isArray(t.actionItems) && t.actionItems.length
-        ? `ACTION ITEMS\n${t.actionItems.map((a) => `- ${a.text ?? ""}`).join("\n")}\n`
+        ? `ACTION ITEMS\n${t.actionItems.map(actionItemLine).join("\n")}\n`
         : "",
       "TRANSCRIPT",
-      t.rawText ?? "No transcript text.",
+      turns.length ? turnsToPlainText(turns) : "No transcript text.",
     ];
     const blob = new Blob([parts.join("\n")], { type: "text/plain;charset=utf-8" });
     triggerDownload(blob, `${(t.title || t.clientName || "transcript").replace(/[^\w.-]+/g, "_").slice(0, 60)}.txt`);
@@ -662,35 +887,20 @@ export function ExportTranscriptModal({
                       />
                     ) : (
                       <div className="space-y-4">
-                        {attendeeText(selected.attendees) ? (
-                          <p className="text-xs text-gray-600">
-                            <span className="font-medium">Attendees:</span> {attendeeText(selected.attendees)}
-                          </p>
-                        ) : null}
+                        <AttendeesView attendees={selected.attendees} />
 
                         {selected.summary ? (
                           <section>
                             <h4 className="mb-1 text-sm font-semibold text-gray-800">Summary</h4>
-                            <p className="whitespace-pre-wrap text-sm text-gray-700">{selected.summary}</p>
+                            <SummaryView summary={selected.summary} />
                           </section>
                         ) : null}
 
-                        {Array.isArray(selected.actionItems) && selected.actionItems.length ? (
-                          <section>
-                            <h4 className="mb-1 text-sm font-semibold text-gray-800">Action items</h4>
-                            <ul className="list-disc pl-5 text-sm text-gray-700">
-                              {selected.actionItems.map((a, i) => (
-                                <li key={i}>{a.text}</li>
-                              ))}
-                            </ul>
-                          </section>
-                        ) : null}
+                        <ActionItemsView items={selected.actionItems} recordingUrl={selected.recordingUrl} />
 
                         <section>
                           <h4 className="mb-1 text-sm font-semibold text-gray-800">Transcript</h4>
-                          <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-white p-3 font-sans text-sm text-gray-700">
-                            {selected.rawText ? trimBlankLines(selected.rawText) : "No transcript text saved."}
-                          </pre>
+                          <TranscriptView row={selected} />
                         </section>
                       </div>
                     )}

@@ -14,7 +14,7 @@
 import { db } from "@/lib/db";
 import { enqueueEvent, getRedis } from "@/lib/queue/queue";
 import { getFathomKey } from "@/lib/connectors";
-import { listMeetingsSince, meetingToEventData } from "@/lib/connectors/fathom";
+import { listMeetingsSince, meetingToEventData, withFullDetail } from "@/lib/connectors/fathom";
 import { FATHOM_APP_SLUG, FATHOM_EVENT_TRANSCRIBED } from "@/lib/catalog/fathom";
 
 const CURSOR_PREFIX = "fathom:cursor:";
@@ -57,13 +57,18 @@ export async function runFathomScan(): Promise<{ fired: number }> {
 
     for (const m of result.meetings) {
       try {
+        // `include_*=true` usually inlines everything, but not always — fill in
+        // a missing transcript, summary or action items from the per-recording
+        // endpoint rather than saving a half-empty meeting that nothing ever
+        // revisits. Costs zero extra requests when the payload was complete.
+        const meeting = await withFullDetail(conn.apiKey, m);
         await enqueueEvent({
           app: FATHOM_APP_SLUG,
           event: FATHOM_EVENT_TRANSCRIBED,
           orgId,
-          dedupeKey: `fathom:${m.recordingId}`,
-          data: meetingToEventData(m),
-          occurredAt: m.startedAt ?? undefined,
+          dedupeKey: `fathom:${meeting.recordingId}`,
+          data: meetingToEventData(meeting),
+          occurredAt: meeting.startedAt ?? undefined,
         });
         fired += 1;
       } catch {

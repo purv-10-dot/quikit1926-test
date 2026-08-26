@@ -25,6 +25,7 @@ interface UploadedTranscript {
   summary: string | null;
   actionItems: { text?: string }[] | null;
   rawText: string | null;
+  rawSegments: { speaker?: string | null; text?: string | null; timestamp?: number | string | null }[] | null;
   matchStatus: string;
   clientName: string | null;
 }

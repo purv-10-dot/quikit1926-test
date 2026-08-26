@@ -67,6 +67,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       summary: true,
       actionItems: true,
       rawText: true,
+      // The viewer prefers these over rawText: they carry the real per-turn
+      // timings, which the flattened "Speaker: text" rendering throws away.
+      rawSegments: true,
       matchStatus: true,
       client: { select: { name: true } },
     },

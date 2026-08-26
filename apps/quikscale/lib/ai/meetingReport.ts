@@ -16,6 +16,7 @@
 import { z } from "zod";
 import { generateContent } from "./geminiKeyPool";
 import { QUIKSCALE_OVERVIEW } from "./quikscaleOverview";
+import { summaryToPlainText } from "../meetings/summaryFormat";
 
 export type ReportType = "DAILY" | "WEEKLY" | "GENERAL";
 
@@ -242,6 +243,10 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
     .join(", ");
   const rawText = (t.rawText ?? "").slice(0, RAW_TEXT_CAP);
   const truncated = (t.rawText ?? "").length > RAW_TEXT_CAP;
+  // Fathom's summary carries a recorder citation URL on every bullet. Feeding
+  // those to the model wastes tokens and lets a `fathom.video` link surface in
+  // generated report prose, so the prompt gets the cleaned text.
+  const sourceSummary = summaryToPlainText(t.summary);
 
   const templateGuidance =
     type === "DAILY"
@@ -282,7 +287,7 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
     `- Date: ${t.meetingDate ?? "(unknown)"}`,
     `- Duration (min): ${t.durationMinutes ?? "(unknown)"}`,
     `- Attendees: ${attendees || "(unknown)"}`,
-    t.summary ? `\nSOURCE SUMMARY:\n${t.summary}` : "",
+    sourceSummary ? `\nSOURCE SUMMARY:\n${sourceSummary}` : "",
     t.actionItems && t.actionItems.length
       ? `\nSOURCE ACTION ITEMS:\n${t.actionItems.map((a) => `- ${a?.text ?? ""}`).join("\n")}`
       : "",

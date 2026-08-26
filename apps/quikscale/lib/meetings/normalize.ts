@@ -31,6 +31,13 @@
  *          Augustine Vaz: Continue with the second group weekly meeting...
  *          Harjinder (Bobby) Kohli: Thank you. Good morning, Reena.
  *
+ *   3. FATHOM .docx EXPORT read through mammoth — speaker, timestamp and the
+ *      first words arrive concatenated in one paragraph:
+ *          Vijay Chaurasia  0:09Good.
+ *          Dhruv Sharma  0:27Guys, I have joined online.
+ *      See `GLUED_HEADER`. Until v2 this matched nothing and the whole meeting
+ *      became a single speakerless segment.
+ *
  * Grammar 2 is the common case today and it has no time information at all,
  * which would defeat time-windowed chunking, evidence timestamps and the
  * time-weighted coverage gate. So timings are INTERPOLATED across the meeting's
@@ -56,7 +63,13 @@
  * re-extraction — which is correct, because the facts were derived from
  * differently-shaped input.
  */
-export const NORMALIZATION_VERSION = 1;
+/*
+ * v2 — added the GLUED grammar (`Name  0:09Text`, Fathom's .docx export via
+ * mammoth). Transcripts uploaded that way previously parsed as ONE speakerless
+ * segment, so their extraction had no speaker attribution at all; bumping this
+ * forces those to re-extract, which is the point.
+ */
+export const NORMALIZATION_VERSION = 2;
 
 /** Where a segment's start/end times came from. */
 export type TimingSource =
@@ -169,6 +182,21 @@ const TS_HEADER = /^@\s*(\d{1,3}:\d{2}(?::\d{2})?)\s*[-–—]\s*(.+?)\s*$/;
 
 /** `[00:04:32] Speaker:` — an alternative export shape. */
 const BRACKET_HEADER = /^\[\s*(\d{1,3}:\d{2}(?::\d{2})?)\s*\]\s*(.+?)\s*:\s*(.*)$/;
+
+/**
+ * `Vijay Chaurasia  0:09Good.` — the fourth grammar, and the one that made
+ * uploaded transcripts useless.
+ *
+ * Fathom's .docx export puts the speaker, the timestamp and the first words of
+ * the turn in ONE paragraph as separate runs, and `mammoth.extractRawText`
+ * concatenates runs with no separator. The result matches no other rule here,
+ * so a whole meeting collapsed into a single speakerless UNKNOWN segment —
+ * silently destroying per-participant adherence in the Daily Huddle report.
+ *
+ * The name is validated by `looksLikeSpeaker`, so prose containing a clock time
+ * ("let's meet at 4:30 tomorrow") cannot be mistaken for a turn header.
+ */
+const GLUED_HEADER = /^(.{1,60}?)\s+(\d{1,3}:\d{2}(?::\d{2})?)\s*(.*)$/;
 
 /**
  * Recorder chrome that is not speech.
@@ -351,6 +379,20 @@ function parseText(rawText: string): ParseResult {
       turns.push(current);
       if (br[3]?.trim()) current.lines.push(br[3].trim());
       continue;
+    }
+
+    // `Speaker  0:09text` — Fathom .docx export, runs concatenated.
+    const glued = GLUED_HEADER.exec(line);
+    if (glued) {
+      const name = glued[1].trim().replace(/:$/, "").trim();
+      if (looksLikeSpeaker(name)) {
+        if (!sawTsHeader) droppedNonContent += dropLeadingPreamble(turns);
+        sawTsHeader = true;
+        current = { startMs: parseTimestampMs(glued[2]), speakerRaw: name, lines: [] };
+        turns.push(current);
+        if (glued[3]?.trim()) current.lines.push(glued[3].trim());
+        continue;
+      }
     }
 
     // `Speaker: text` — only when the prefix genuinely looks like a name.
