@@ -7,6 +7,7 @@ import { holdApplicationsForRequisition } from "@/lib/recruit/requisition-hold";
 import { createAuditLog } from "@/lib/utils/audit";
 import { countBusinessDays, getHolidayDateSet } from "@/lib/recruit/sla";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId, userId, permissions }, params) => {
   try {
@@ -113,6 +114,20 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         updatedBy: userId,
       },
     });
+
+    // Backfill RequisitionPosition seats to match the current Positions count.
+    // Seats are only ever generated up front at create time
+    // (generatePositionsForRequisition, see requisitions/route.ts POST) — raising
+    // Positions on an edit (e.g. 1 → 3) never created the missing -02/-03 seats,
+    // so Assign Recruiter / position tracking kept only seeing the original 1.
+    // Re-running this on every edit (not just when `positions` is part of THIS
+    // request) also self-heals any requisition already stuck from that gap
+    // before this fix existed. Idempotent (ON CONFLICT DO NOTHING on
+    // sequenceNo) — never touches an existing seat, only adds missing ones.
+    // Positions DECREASED is deliberately left alone: an existing seat may
+    // already have a recruiter/candidate on it, so shrinking the count never
+    // auto-deletes a seat; HR cancels one manually if it's truly unneeded.
+    await generatePositionsForRequisition(orgId, params.id, existing.requisitionNumber, r.positions, userId);
 
     // Full-replace the recruiter split when HR explicitly resubmits it. Omit
     // `recruiterAssignments` entirely on an edit to leave the existing split

@@ -38,6 +38,8 @@ interface Requisition {
   employmentType: string;
   workLocation: string;
   department: { id: string; name: string } | null;
+  recruiter?: { id: string; firstName: string; lastName: string } | null;
+  recruiterSplits?: { employeeId: string; positionsAssigned: number }[];
   _count?: { applications: number };
 }
 
@@ -425,7 +427,22 @@ export default function CandidatesPage() {
     queryKey: ["employees-picker"],
     queryFn: () => api.get<{ id: string; firstName: string; lastName: string; employeeCode: string | null }[]>("/api/v1/hrms/employees?picker=1&limit=200"),
   });
-  const recruiterOptions = (recruitersData?.data ?? []).map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() + (e.employeeCode ? ` (${e.employeeCode})` : "") }));
+  const allRecruiterOptions = (recruitersData?.data ?? []).map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName}`.trim() + (e.employeeCode ? ` (${e.employeeCode})` : "") }));
+  // Once a requisition is picked, only show recruiters actually assigned to
+  // IT (recruiterSplits, or the legacy single recruiterId) — not every
+  // recruiter in the org. Falls back to the full list when no requisition is
+  // selected yet, or the selected one has no recruiter assigned at all (an
+  // empty, unusable dropdown would be worse than an unfiltered one).
+  const selectedReq = form.requisitionId ? openReqs.find((r) => r.id === form.requisitionId) : null;
+  const assignedRecruiterIds = selectedReq
+    ? new Set([
+        ...(selectedReq.recruiterSplits ?? []).map((s) => s.employeeId),
+        ...(selectedReq.recruiter ? [selectedReq.recruiter.id] : []),
+      ])
+    : null;
+  const recruiterOptions = assignedRecruiterIds && assignedRecruiterIds.size > 0
+    ? allRecruiterOptions.filter((o) => assignedRecruiterIds.has(o.value))
+    : allRecruiterOptions;
 
   const createMut = useMutation({
     mutationFn: async (body: typeof form) => {

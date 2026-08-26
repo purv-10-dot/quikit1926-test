@@ -79,7 +79,7 @@ interface RecruiterRow {
   activeRequisitionsList: { id: string; title: string; requisitionNumber: string; status: string; filledPositions: number; positions: number }[];
   activeCandidatesList: { id: string; candidateId: string; name: string; requisitionTitle: string; currentStage: string | null; appliedDate: Date }[];
   hiresThisMonthList: { id: string; candidateId: string; name: string; requisitionTitle: string; hiredAt: Date | null }[];
-  interviewsThisWeekList: { id: string; candidateId: string; name: string; requisitionTitle: string; type: string; round: number; scheduledAt: Date }[];
+  interviewsThisWeekList: { id: string; candidateId: string; name: string; requisitionTitle: string; type: string; round: number; stageName: string; scheduledAt: Date }[];
   offersSentThisWeekList: { id: string; candidateId: string; name: string; requisitionTitle: string; offerStatus: string | null; offerSentAt: Date | null }[];
   // Performance Score (8-KPI weighted) — HR/Admin only for now; stripped
   // from the response for a self-scoped caller until explicitly turned on.
@@ -141,6 +141,14 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       const names = stageNames(hiringPipeline?.stages);
       return names.length ? names : ["Screening", "PhoneScreen", "HRInterview", "Offer", "Hired"];
     })();
+    // An Interview's `round` is stamped at scheduling time as the 1-based
+    // index into the requisition's OWN pipeline stage list (see pipeline/page.tsx's
+    // scheduleMut: `STAGES.indexOf(scheduleApp.stage) + 1`) — not a meaningless
+    // sequential counter. Reversing that against the org's default pipeline
+    // (same simplification funnelStageOrder already makes; per-requisition
+    // pipeline resolution is a later phase) turns "round 4" back into an
+    // actual stage name ("Manager Interview") for display.
+    const roundToStageName = (round: number): string => funnelStageOrder[round - 1] ?? `Round ${round}`;
     const positionToOfferSlaByLevel = new Map(jobLevels.map((l) => [l.id, l.positionToOfferSlaDays]));
     const sourcedToInterviewSlaByLevel = new Map(jobLevels.map((l) => [l.id, l.sourcedToInterviewSlaDays]));
     const slaDaysByLevel = new Map(jobLevels.map((l) => [l.id, l.slaDays]));
@@ -324,7 +332,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
           id: iv.id, candidateId: app?.candidateId ?? "",
           name: app ? `${app.candidate.firstName} ${app.candidate.lastName}`.trim() : "Unknown",
           requisitionTitle: app ? (reqById.get(app.requisitionId)?.title ?? "Unknown") : "Unknown",
-          type: iv.type, round: iv.round, scheduledAt: iv.scheduledAt,
+          type: iv.type, round: iv.round, stageName: prettyStage(roundToStageName(iv.round)), scheduledAt: iv.scheduledAt,
         };
       });
       const myOffersThisWeek = myApps.filter((a) => a.offerStatus && a.offerSentAt && a.offerSentAt >= weekStart && a.offerSentAt < weekEnd);

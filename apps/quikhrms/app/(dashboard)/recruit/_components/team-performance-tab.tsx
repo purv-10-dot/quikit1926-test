@@ -62,7 +62,7 @@ export interface RecruiterRow {
   activeRequisitionsList: { id: string; title: string; requisitionNumber: string; status: string; filledPositions: number; positions: number }[];
   activeCandidatesList: { id: string; candidateId: string; name: string; requisitionTitle: string; currentStage: string | null; appliedDate: string }[];
   hiresThisMonthList: { id: string; candidateId: string; name: string; requisitionTitle: string; hiredAt: string | null }[];
-  interviewsThisWeekList: { id: string; candidateId: string; name: string; requisitionTitle: string; type: string; round: number; scheduledAt: string }[];
+  interviewsThisWeekList: { id: string; candidateId: string; name: string; requisitionTitle: string; type: string; round: number; stageName: string; scheduledAt: string }[];
   offersSentThisWeekList: { id: string; candidateId: string; name: string; requisitionTitle: string; offerStatus: string | null; offerSentAt: string | null }[];
   // 7-KPI weighted Performance Score — present only for an HR/Admin-scope
   // caller (recruiters don't see their own score yet).
@@ -710,7 +710,7 @@ export function TeamPerformanceTab({ toolbarContainer }: { toolbarContainer?: HT
                   className="block px-2.5 py-2 text-xs hover:bg-gray-50 transition">
                   <div className="flex items-center gap-2">
                     <span className="flex-1 font-medium text-gray-800 truncate">{iv.name}</span>
-                    <span className="inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-medium bg-purple-50 text-purple-700">{iv.type} · round {iv.round}</span>
+                    <span className="inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-medium bg-purple-50 text-purple-700">{iv.type} · {iv.stageName}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-gray-400">
                     <span className="truncate">{iv.requisitionTitle}</span>

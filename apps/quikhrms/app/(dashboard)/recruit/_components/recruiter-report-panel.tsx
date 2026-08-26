@@ -20,7 +20,7 @@ interface ReportEventItem { id: string; candidateId: string; name: string; requi
 interface RecruiterReportData {
   recruiter: { id: string; name: string };
   range: { from: string; to: string };
-  interviews: { count: number; items: (ReportEventItem & { type: string; round: number; scheduledAt: string })[] };
+  interviews: { count: number; items: (ReportEventItem & { type: string; round: number; stageName: string; scheduledAt: string })[] };
   offers: { count: number; items: (ReportEventItem & { offerStatus: string | null; offerSentAt: string })[] };
   hires: { count: number; items: (ReportEventItem & { hiredAt: string })[] };
   timeToFill: { avgDays: number | null; medianDays: number | null; closedCount: number };
@@ -168,9 +168,9 @@ export function RecruiterReportPanel({ recruiters }: { recruiters: { employeeId:
           {
             name: "Interviews", columns: [
               { header: "Candidate", key: "name" }, { header: "Requisition", key: "requisitionTitle" },
-              { header: "Type", key: "type" }, { header: "Round", key: "round", width: 10 }, { header: "Scheduled At", key: "scheduledAt", width: 22 },
+              { header: "Type", key: "type" }, { header: "Stage", key: "stageName", width: 16 }, { header: "Scheduled At", key: "scheduledAt", width: 22 },
             ],
-            rows: report.interviews.items.map((iv) => ({ name: iv.name, requisitionTitle: iv.requisitionTitle, type: iv.type, round: iv.round, scheduledAt: fmtDateTime(iv.scheduledAt) })),
+            rows: report.interviews.items.map((iv) => ({ name: iv.name, requisitionTitle: iv.requisitionTitle, type: iv.type, stageName: iv.stageName, scheduledAt: fmtDateTime(iv.scheduledAt) })),
           },
           {
             name: "Offers", columns: [

@@ -133,6 +133,18 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     // attribution the live dashboard uses for interviews/offers/hires).
     const myApps = applications.filter((a) => primaryByReq.get(a.requisitionId) === recruiterId);
 
+    // Fetched here (not down by the Recruitment Funnel section that also uses
+    // it) so interviewItems below can resolve each Interview's `round` — a
+    // 1-based index into the requisition's pipeline stages, stamped at
+    // scheduling time (pipeline/page.tsx's scheduleMut) — back into an actual
+    // stage name instead of showing a meaningless "round 4".
+    const hiringPipeline = await prisma.hiringPipeline.findFirst({ where: { orgId, isDefault: true, deletedAt: null }, select: { stages: true } });
+    const funnelStageOrder = (() => {
+      const names = stageNames(hiringPipeline?.stages);
+      return names.length ? names : ["Screening", "PhoneScreen", "HRInterview", "Offer", "Hired"];
+    })();
+    const roundToStageName = (round: number): string => funnelStageOrder[round - 1] ?? `Round ${round}`;
+
     const interviews = applicationIds.length
       ? await prisma.interview.findMany({
           where: { orgId, deletedAt: null, applicationId: { in: applicationIds } },
@@ -155,6 +167,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         return {
           id: iv.id, candidateId: app.candidateId, name: `${app.candidate.firstName} ${app.candidate.lastName}`.trim(),
           requisitionTitle: reqById.get(app.requisitionId)?.title ?? "Unknown", type: iv.type, round: iv.round,
+          stageName: prettyStage(roundToStageName(iv.round)),
           scheduledAt: iv.scheduledAt.toISOString(),
         };
       });
@@ -375,11 +388,6 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     // as the live dashboard, scoped to this recruiter's own candidates
     // (myApps — not range-filtered, since a funnel is workload shape, not
     // "what happened this week"). ──
-    const hiringPipeline = await prisma.hiringPipeline.findFirst({ where: { orgId, isDefault: true, deletedAt: null }, select: { stages: true } });
-    const funnelStageOrder = (() => {
-      const names = stageNames(hiringPipeline?.stages);
-      return names.length ? names : ["Screening", "PhoneScreen", "HRInterview", "Offer", "Hired"];
-    })();
     const reachedCounts = new Map<string, number>();
     for (const a of myApps) {
       const history = Array.isArray(a.stageHistory) ? (a.stageHistory as unknown[]) : [];
