@@ -105,6 +105,12 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.reports.read", category: "Reports", name: "View Reports", description: "Run report templates" },
   { code: "hrms.reports.manage", category: "Reports", name: "Manage Report Templates", description: "Create/edit report templates" },
 
+  // ── Payroll ──
+  { code: "hrms.payroll.read", category: "Payroll", name: "View Payroll (Read-only)", description: "View payroll/compensation analytics and colleagues' payslips without full Settings access" },
+
+  // ── Tasks ──
+  { code: "hrms.task.read_all", category: "Tasks", name: "View All Tasks", description: "View every employee's tasks org-wide (not just your own/managed/requested)" },
+
   // ── Settings / RBAC ──
   { code: "hrms.settings.read", category: "Settings", name: "View Settings", description: "View tenant settings" },
   { code: "hrms.settings.write", category: "Settings", name: "Manage Settings", description: "Update tenant settings" },

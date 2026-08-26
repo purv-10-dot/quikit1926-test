@@ -23,23 +23,12 @@ import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
 import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
 import { PageBackground } from "@/components/hrms/page-background";
-import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
-import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
+import { CITIES } from "@/lib/data/cities";
 
-// city (lowercased) → state, built once from the "City, State" dataset. Used to
-// auto-fill Country + State when a known Indian city is typed in the address.
-const CITY_STATE: Map<string, string> = (() => {
-  const m = new Map<string, string>();
-  for (const entry of INDIAN_CITIES) {
-    const i = entry.lastIndexOf(",");
-    if (i === -1) continue;
-    const city = entry.slice(0, i).trim().toLowerCase();
-    const state = entry.slice(i + 1).trim();
-    if (city && state && !m.has(city)) m.set(city, state);
-  }
-  return m;
-})();
+/** Composite key so same-named cities in different states/countries stay distinct
+ * (e.g. two "Springfield"s) — same pattern as Settings → Office Locations. */
+const cityKey = (c: { city: string; state: string; country: string }) => `${c.city}|${c.state}|${c.country}`;
 
 type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
@@ -49,7 +38,7 @@ type Gender = "Male" | "Female" | "Transgender" | "NonBinary" | "PreferNotToSay"
 interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
 interface Location { id: string; name: string; }
-interface Employee { id: string; firstName: string; lastName: string; }
+interface Employee { id: string; firstName: string; lastName: string; employeeCode?: string | null; }
 
 type NoticePeriodOption = { id: string; name: string; duration: number; unit: "Days" | "Weeks" | "Months" };
 /** Convert a configured notice period to whole days (same math as offboarding). */
@@ -107,12 +96,6 @@ const FAMILY_RELATIONS = ["Spouse", "Father", "Mother", "Son", "Daughter", "Brot
 interface Certification { name: string; courseName: string; issuingAuthority: string; year: string; expiryDate: string; credentialUrl: string; }
 const emptyCertification: Certification = { name: "", courseName: "", issuingAuthority: "", year: "", expiryDate: "", credentialUrl: "" };
 
-const COUNTRY_OPTS = [
-  { value: "IN", label: "India" },
-  { value: "US", label: "United States" },
-  { value: "UK", label: "United Kingdom" },
-];
-
 function hasAddress(a: Address): boolean {
   return !!(a.line1 || a.line2 || a.city || a.state || a.country || a.postalCode);
 }
@@ -158,7 +141,7 @@ function NewEmployeePageInner() {
     firstName: "", lastName: "", middleName: "",
     workEmail: "", personalEmail: "", personalPhone: "", workPhone: "",
     gender: "" as Gender | "",
-    dateOfBirth: "",
+    dateOfBirth: "2000-01-01",
     isHandicapped: false,
     isSeniorCitizen: false,
     // Statutory applicability — default true; admin unchecks only for legitimate exclusions.
@@ -214,6 +197,23 @@ function NewEmployeePageInner() {
   const updateEducation = (i: number, key: keyof Education, v: string) =>
     setForm((f) => ({ ...f, educations: f.educations.map((e, idx) => idx === i ? { ...e, [key]: v } : e) }));
 
+  // Percentage / CGPA — max 3 digits (covers "8.5", "82%", "100"), one
+  // optional decimal point, one optional trailing "%". No letters.
+  const sanitizeGrade = (v: string) => {
+    let out = "", digits = 0, dotUsed = false, percentUsed = false;
+    for (const ch of v) {
+      if (ch >= "0" && ch <= "9") {
+        if (digits >= 3) continue;
+        digits++; out += ch;
+      } else if (ch === "." && !dotUsed && !percentUsed) {
+        dotUsed = true; out += ch;
+      } else if (ch === "%" && !percentUsed && out.length > 0) {
+        percentUsed = true; out += ch;
+      }
+    }
+    return out;
+  };
+
   const addExperience = () => setForm((f) => ({ ...f, pastExperiences: [...f.pastExperiences, { ...emptyExperience }] }));
   const removeExperience = (i: number) => setForm((f) => ({ ...f, pastExperiences: f.pastExperiences.filter((_, idx) => idx !== i) }));
   const updateExperience = (i: number, key: keyof Experience, v: string | boolean) =>
@@ -236,16 +236,53 @@ function NewEmployeePageInner() {
 
   const scrollToStep = (id: StepId) => setActiveStep(id);
 
+  // Personal step bundles Personal Details + Contact + Identity — its mandatory
+  // fields must be filled before the wizard allows moving further, mirroring the
+  // equivalent checks already run at final submit.
+  const validatePersonalStep = (): string | null => {
+    if (!form.firstName.trim() || !form.lastName.trim()) return "First and last name are mandatory.";
+    if (!form.gender) return "Select gender.";
+    if (!form.dateOfBirth) return "Select date of birth.";
+    const today = new Date().toISOString().slice(0, 10);
+    const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 14);
+    const minAgeDate = cutoff.toISOString().slice(0, 10);
+    if (form.dateOfBirth > today) return "Date of birth cannot be in the future.";
+    if (form.dateOfBirth > minAgeDate) return "Employee must be at least 14 years old.";
+    if (!form.workEmail.trim()) return "Work email is mandatory.";
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(form.workEmail.trim())) return "Enter a valid work email address.";
+    if (form.personalEmail.trim() && !emailPattern.test(form.personalEmail.trim())) return "Enter a valid personal email address.";
+    if (!form.personalPhone.trim()) return "Personal phone is mandatory.";
+    if (!PHONE_REGEX.test(form.personalPhone.trim())) return "Personal phone must be a valid 10-digit mobile.";
+    if (form.workPhone.trim() && !PHONE_LOOSE_REGEX.test(form.workPhone.trim())) return "Enter a valid work phone number.";
+    if (!form.panNumber.trim()) return "PAN number is mandatory.";
+    if (!PAN_REGEX.test(form.panNumber.trim().toUpperCase())) return "PAN format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F).";
+    if (!form.aadhaarNumber.trim()) return "Aadhaar number is mandatory.";
+    if (!AADHAAR_REGEX.test(form.aadhaarNumber.trim())) return "Aadhaar must be 12 digits starting 2-9.";
+    return null;
+  };
+  const stepValidators: Partial<Record<StepId, () => string | null>> = { personal: validatePersonalStep };
+
   const stepIdx = STEPS.findIndex((s) => s.id === activeStep);
   const isFirstStep = stepIdx <= 0;
   const isLastStep = stepIdx >= STEPS.length - 1;
-  const goNext = () => { if (!isLastStep) setActiveStep(STEPS[stepIdx + 1].id); };
+  // Blocks moving to a LATER step until the current step's mandatory fields are
+  // filled. Moving backward (e.g. an error-jump from Review) is never gated.
+  const goToStep = (id: StepId) => {
+    const targetIdx = STEPS.findIndex((s) => s.id === id);
+    if (targetIdx > stepIdx) {
+      const err = stepValidators[activeStep]?.();
+      if (err) { toast.error("Complete this step first", err); return; }
+    }
+    setActiveStep(id);
+  };
+  const goNext = () => { if (!isLastStep) goToStep(STEPS[stepIdx + 1].id); };
   const goBack = () => { if (!isFirstStep) setActiveStep(STEPS[stepIdx - 1].id); };
 
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100&picker=1") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=1000&picker=1") });
   const { data: noticePeriodsData } = useQuery({ queryKey: ["notice-periods", "all"], queryFn: () => api.get<NoticePeriodOption[]>("/api/v1/hrms/offboarding/notice-periods?limit=100") });
   const noticePeriods = noticePeriodsData?.data ?? [];
   const { data: roles } = useRoles();
@@ -331,11 +368,6 @@ function NewEmployeePageInner() {
     }
     if (!form.dateOfJoining) {
       toast.error("Date of joining required", "Select date of joining in Employment step.");
-      scrollToStep("employment");
-      return;
-    }
-    if (form.dateOfJoining < new Date().toISOString().slice(0, 10)) {
-      toast.error("Invalid date of joining", "Date of joining cannot be in the past.");
       scrollToStep("employment");
       return;
     }
@@ -592,7 +624,7 @@ function NewEmployeePageInner() {
                 <div key={s.id} className="flex items-center flex-1 last:flex-none">
                   <button
                     type="button"
-                    onClick={() => scrollToStep(s.id)}
+                    onClick={() => goToStep(s.id)}
                     title={`${s.num}. ${s.title} — ${s.subtitle}`}
                     aria-label={`${s.num}. ${s.title}`}
                     className={clsx(
@@ -646,14 +678,14 @@ function NewEmployeePageInner() {
                     <input required placeholder="Enter first name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
-                <Field label="Last Name" required>
-                  <IconInput icon={<User size={14} />}>
-                    <input required placeholder="Enter last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className={inputCls} />
-                  </IconInput>
-                </Field>
                 <Field label="Middle Name">
                   <IconInput icon={<User size={14} />}>
                     <input placeholder="Enter middle name" value={form.middleName} onChange={(e) => setForm({ ...form, middleName: e.target.value })} className={inputCls} />
+                  </IconInput>
+                </Field>
+                <Field label="Last Name" required>
+                  <IconInput icon={<User size={14} />}>
+                    <input required placeholder="Enter last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className={inputCls} />
                   </IconInput>
                 </Field>
                 <Field label="Gender" required>
@@ -668,28 +700,6 @@ function NewEmployeePageInner() {
                       { value: "NonBinary", label: "Non-Binary" },
                       { value: "PreferNotToSay", label: "Prefer not to say" },
                     ]}
-                  />
-                </Field>
-                <Field label="Date of Birth" required>
-                  <input
-                    type="date"
-                    required
-                    max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 14); return d.toISOString().slice(0, 10); })()}
-                    value={form.dateOfBirth}
-                    onChange={(e) => {
-                      const dob = e.target.value;
-                      let isSenior = false;
-                      if (dob) {
-                        const birth = new Date(dob);
-                        const today = new Date();
-                        let age = today.getFullYear() - birth.getFullYear();
-                        const m = today.getMonth() - birth.getMonth();
-                        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age -= 1;
-                        isSenior = age > 60;
-                      }
-                      setForm({ ...form, dateOfBirth: dob, isSeniorCitizen: isSenior });
-                    }}
-                    className={inputCls}
                   />
                 </Field>
                 <div className="col-span-full flex items-center gap-4 pt-1">
@@ -909,7 +919,7 @@ function NewEmployeePageInner() {
                     onChange={(v) => setForm({ ...form, reportingManagerId: v })}
                     placeholder="Search manager"
                     searchable
-                    options={(managers?.data ?? []).map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` }))}
+                    options={(managers?.data ?? []).map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName} (${m.employeeCode})` }))}
                   />
                 </Field>
                 <Field label="Role" required>
@@ -966,7 +976,7 @@ function NewEmployeePageInner() {
                   );
                 })()}
                 <Field label="Date of Joining" required>
-                  <input type="date" required min={new Date().toISOString().slice(0, 10)} value={form.dateOfJoining} onChange={(e) => setForm({ ...form, dateOfJoining: e.target.value })} className={inputCls} />
+                  <input type="date" required value={form.dateOfJoining} onChange={(e) => setForm({ ...form, dateOfJoining: e.target.value })} className={inputCls} />
                 </Field>
                 <Field label="Employment Type">
                   <Select
@@ -1032,7 +1042,7 @@ function NewEmployeePageInner() {
                         <td className="px-1 py-2"><FormInput value={e.fieldOfStudy} onChange={(ev) => updateEducation(i, "fieldOfStudy", ev.target.value)} /></td>
                         <td className="px-1 py-2"><FormInput type="number" inputMode="numeric" placeholder="2018" value={e.startYear} onChange={(ev) => updateEducation(i, "startYear", ev.target.value)} /></td>
                         <td className="px-1 py-2"><FormInput type="number" inputMode="numeric" placeholder="2022" value={e.endYear} onChange={(ev) => updateEducation(i, "endYear", ev.target.value)} /></td>
-                        <td className="px-1 py-2"><FormInput placeholder="e.g. 8.5 CGPA or 82%" value={e.grade} onChange={(ev) => updateEducation(i, "grade", ev.target.value)} /></td>
+                        <td className="px-1 py-2"><FormInput placeholder="e.g. 8.5 CGPA or 82%" maxLength={5} value={e.grade} onChange={(ev) => updateEducation(i, "grade", sanitizeGrade(ev.target.value))} /></td>
                         <td className="px-1 py-2 text-center">
                           {form.educations.length > 1 && (
                             <button type="button" onClick={() => removeEducation(i)} className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50">
@@ -1209,6 +1219,28 @@ function NewEmployeePageInner() {
                     Per EPF Act, once Actual is selected, employee cannot revert to Restricted.
                   </p>
                 </Field>
+                <Field label="Date of Birth" required>
+                  <input
+                    type="date"
+                    required
+                    max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 14); return d.toISOString().slice(0, 10); })()}
+                    value={form.dateOfBirth}
+                    onChange={(e) => {
+                      const dob = e.target.value;
+                      let isSenior = false;
+                      if (dob) {
+                        const birth = new Date(dob);
+                        const today = new Date();
+                        let age = today.getFullYear() - birth.getFullYear();
+                        const m = today.getMonth() - birth.getMonth();
+                        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age -= 1;
+                        isSenior = age > 60;
+                      }
+                      setForm({ ...form, dateOfBirth: dob, isSeniorCitizen: isSenior });
+                    }}
+                    className={inputCls}
+                  />
+                </Field>
               </div>
             </Section>
 
@@ -1371,7 +1403,7 @@ function AddressBlock({
         if (!d) return;
         onChange("city", d.city);
         onChange("state", d.state);
-        onChange("country", d.country === "India" ? "IN" : d.country || "IN");
+        onChange("country", d.country || "India");
       })
       .catch(() => { /* leave fields as-is on lookup failure */ });
   };
@@ -1384,36 +1416,42 @@ function AddressBlock({
     ) : null;
 
   return (
-    <div className="grid grid-cols-6 gap-3">
-      <div className="col-span-3">
+    <div className="grid grid-cols-12 gap-3">
+      <div className="col-span-6">
         <Lbl text="Address Line 1" star />
         <FormInput placeholder="Address line 1" value={value.line1} onChange={(e) => onChange("line1", e.target.value)} />
       </div>
-      <div className="col-span-3">
+      <div className="col-span-6">
         <Lbl text="Address Line 2" />
         <FormInput placeholder="Address line 2" value={value.line2} onChange={(e) => onChange("line2", e.target.value)} />
       </div>
-      <div className="col-span-2">
-        <Lbl text="City" star />
-        <FormInput placeholder="City" value={value.city} onChange={(e) => {
-          const city = e.target.value;
-          onChange("city", city);
-          // Auto-fill Country + State when a known Indian city is entered.
-          const st = CITY_STATE.get(city.trim().toLowerCase());
-          if (st) { onChange("country", "IN"); onChange("state", st); }
-        }} />
-      </div>
-      <div className="col-span-2">
-        <Lbl text="Country" star />
-        <Select value={value.country} onChange={(v) => onChange("country", v)} placeholder="Country" options={COUNTRY_OPTS} />
-      </div>
-      <div className="col-span-2">
-        <Lbl text="State" star />
-        <Select value={value.state} onChange={(v) => onChange("state", v)} placeholder="State" searchable options={STATE_OPTS} />
-      </div>
-      <div className="col-span-2">
+      <div className="col-span-3">
         <Lbl text="Postal Code" star />
         <FormInput placeholder="6-digit PIN — auto-fills city/state" inputMode="numeric" maxLength={6} value={value.postalCode} onChange={(e) => onPin(e.target.value)} />
+      </div>
+      <div className="col-span-3">
+        <Lbl text="City" star />
+        <Select
+          value={value.city ? cityKey({ city: value.city, state: value.state, country: value.country }) : ""}
+          onChange={(v) => {
+            const rec = CITIES.find((c) => cityKey(c) === v);
+            if (!rec) return;
+            onChange("city", rec.city);
+            onChange("state", rec.state);
+            onChange("country", rec.country);
+          }}
+          searchable
+          placeholder="Search city..."
+          options={CITIES.map((c) => ({ value: cityKey(c), label: c.city, description: `${c.state}, ${c.country}` }))}
+        />
+      </div>
+      <div className="col-span-3">
+        <Lbl text="Country" star />
+        <FormInput placeholder="Select city first" value={value.country} disabled readOnly />
+      </div>
+      <div className="col-span-3">
+        <Lbl text="State" star />
+        <FormInput placeholder="Select city first" value={value.state} disabled readOnly />
       </div>
     </div>
   );

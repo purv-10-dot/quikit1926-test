@@ -23,7 +23,7 @@ interface Experience { occupation: string; company: string; summary: string; dur
 interface Family { name: string; relation: string; dob: string; occupation: string }
 interface Certification { name: string; courseName: string; issuingAuthority: string; year: string; expiryDate: string; credentialUrl: string }
 
-interface RefItem { id: string; name?: string; title?: string; firstName?: string; lastName?: string }
+interface RefItem { id: string; name?: string; title?: string; firstName?: string; lastName?: string; employeeCode?: string | null }
 
 const emptyAddr = (): Addr => ({ line1: "", line2: "", city: "", state: "", postalCode: "", country: "" });
 const emptyEmergency = (): Emergency => ({ name: "", relationship: "", phone: "", email: "", address: "" });
@@ -105,7 +105,7 @@ export function AddCandidateWizard({ open, onClose, onCreated }: Props) {
   const locOpts = ((locs?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? "" }));
   const roleOpts = ((roles?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? "" }));
   const salaryOpts = ((templatesData?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? d.id }));
-  const mgrOpts = ((managers?.data ?? []) as RefItem[]).map((m) => ({ value: m.id, label: `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || m.id }));
+  const mgrOpts = ((managers?.data ?? []) as RefItem[]).map((m) => ({ value: m.id, label: (`${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || m.id) + (m.employeeCode ? ` (${m.employeeCode})` : "") }));
   const onbOpts = ((onbTemplates?.data ?? []) as RefItem[]).map((d) => ({ value: d.id, label: d.name ?? "" }));
 
   const reset = () => {

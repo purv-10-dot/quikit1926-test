@@ -112,7 +112,7 @@ export async function processBulkOnboardingCandidates(
           },
         });
 
-        await tx.onboardingInstance.create({
+        const instance = await tx.onboardingInstance.create({
           data: {
             orgId,
             employeeId: employee.id,
@@ -133,6 +133,17 @@ export async function processBulkOnboardingCandidates(
             },
           },
         });
+
+        // This bulk importer is only reachable from the Pre-Onboarding screen's
+        // "Bulk Upload" button, so every row lands in the PreOnboarding phase —
+        // same as the single "Add Candidate" wizard (see onboarding/candidates
+        // route.ts). Without this, imported candidates silently default to the
+        // "Onboarding" phase and never show up on the Pre-Onboarding roster.
+        // `phase` is a raw-SQL column (Prisma client wasn't regenerated for it).
+        await tx.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingInstance" SET phase = 'PreOnboarding' WHERE id = ${instance.id}`;
+        await tx.$executeRaw`
+          UPDATE "app_quikhrms"."OnboardingTask" SET phase = 'PreOnboarding' WHERE "instanceId" = ${instance.id}`;
         });
       }
       result.success++;

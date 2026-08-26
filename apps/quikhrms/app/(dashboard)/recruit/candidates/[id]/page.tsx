@@ -31,6 +31,8 @@ interface Application {
     comments?: string;
     submittedAt?: string;
   } | null;
+  appliedDate?: string | null;
+  stageHistory?: { stage?: string; date?: string; movedBy?: string; reason?: string }[] | null;
 }
 interface Candidate {
   id: string;
@@ -147,7 +149,7 @@ export default function CandidateDetailPage() {
       {tab === "feedback" && <FeedbackTab appId={appId} />}
       {tab === "documents" && <DocumentsTab appId={appId} />}
       {tab === "mail" && <MailTab candidateId={id} email={c?.email ?? ""} />}
-      {tab === "activity" && <ActivityTab candidateId={id} />}
+      {tab === "activity" && <ActivityTab candidateId={id} applications={c?.applications ?? []} />}
     </div>
   );
 }
@@ -701,29 +703,29 @@ interface TimelineResponse {
   entries: Array<{ id: string; kind: string; title: string; description?: string | null; actor?: { name: string; jobTitle?: string | null } | null; at: string }>;
 }
 
-const KIND_META: Record<string, { dot: string; icon: React.ReactNode }> = {
-  CandidateCreated:   { dot: "bg-[#22c55e]", icon: <User size={11} /> },
-  CandidateUpdated:   { dot: "bg-slate-500", icon: <User size={11} /> },
-  ApplicationCreated: { dot: "bg-[#22c55e]", icon: <FileText size={11} /> },
-  StageChanged:       { dot: "bg-green-500", icon: <ChevronDown size={11} /> },
-  InterviewScheduled: { dot: "bg-amber-500", icon: <Briefcase size={11} /> },
-  InterviewCompleted: { dot: "bg-sky-500", icon: <Check size={11} /> },
-  FeedbackSubmitted:  { dot: "bg-emerald-500", icon: <Check size={11} /> },
-  OfferCreated:       { dot: "bg-purple-500", icon: <FileText size={11} /> },
-  OfferSent:          { dot: "bg-violet-500", icon: <Mail size={11} /> },
-  ApplicationRejected:{ dot: "bg-red-500", icon: <ShieldX size={11} /> },
-  ApplicationHired:   { dot: "bg-green-500", icon: <Rocket size={11} /> },
-  DocumentsRequested: { dot: "bg-indigo-500", icon: <FileText size={11} /> },
-  DocumentUploaded:   { dot: "bg-sky-500", icon: <FileText size={11} /> },
-  DocumentApproved:   { dot: "bg-emerald-500", icon: <Check size={11} /> },
-  DocumentRejected:   { dot: "bg-red-500", icon: <X size={11} /> },
-  Blacklisted:        { dot: "bg-red-600", icon: <Ban size={11} /> },
-  Unblacklisted:      { dot: "bg-emerald-500", icon: <RotateCcw size={11} /> },
-  Archived:           { dot: "bg-slate-500", icon: <Archive size={11} /> },
-  Unarchived:         { dot: "bg-slate-500", icon: <ArchiveRestore size={11} /> },
+const KIND_META: Record<string, { ring: string; icon: React.ReactNode }> = {
+  CandidateCreated:   { ring: "border-green-200 text-green-600", icon: <User size={13} /> },
+  CandidateUpdated:   { ring: "border-slate-200 text-slate-500", icon: <User size={13} /> },
+  ApplicationCreated: { ring: "border-green-200 text-green-600", icon: <FileText size={13} /> },
+  StageChanged:       { ring: "border-green-200 text-green-600", icon: <ChevronDown size={13} /> },
+  InterviewScheduled: { ring: "border-amber-200 text-amber-600", icon: <Briefcase size={13} /> },
+  InterviewCompleted: { ring: "border-sky-200 text-sky-600", icon: <Check size={13} /> },
+  FeedbackSubmitted:  { ring: "border-emerald-200 text-emerald-600", icon: <Check size={13} /> },
+  OfferCreated:       { ring: "border-purple-200 text-purple-600", icon: <FileText size={13} /> },
+  OfferSent:          { ring: "border-violet-200 text-violet-600", icon: <Mail size={13} /> },
+  ApplicationRejected:{ ring: "border-red-200 text-red-600", icon: <ShieldX size={13} /> },
+  ApplicationHired:   { ring: "border-green-200 text-green-600", icon: <Rocket size={13} /> },
+  DocumentsRequested: { ring: "border-indigo-200 text-indigo-600", icon: <FileText size={13} /> },
+  DocumentUploaded:   { ring: "border-sky-200 text-sky-600", icon: <FileText size={13} /> },
+  DocumentApproved:   { ring: "border-emerald-200 text-emerald-600", icon: <Check size={13} /> },
+  DocumentRejected:   { ring: "border-red-200 text-red-600", icon: <X size={13} /> },
+  Blacklisted:        { ring: "border-red-300 text-red-600", icon: <Ban size={13} /> },
+  Unblacklisted:      { ring: "border-emerald-200 text-emerald-600", icon: <RotateCcw size={13} /> },
+  Archived:           { ring: "border-slate-200 text-slate-500", icon: <Archive size={13} /> },
+  Unarchived:         { ring: "border-slate-200 text-slate-500", icon: <ArchiveRestore size={13} /> },
 };
 
-function ActivityTab({ candidateId }: { candidateId: string }) {
+function ActivityTab({ candidateId, applications }: { candidateId: string; applications: Application[] }) {
   const api = useApiClient();
   const { data, isLoading } = useQuery({
     queryKey: ["candidate-timeline", candidateId],
@@ -732,33 +734,126 @@ function ActivityTab({ candidateId }: { candidateId: string }) {
   const entries = data?.data?.entries ?? [];
 
   if (isLoading) return <CardSkeleton />;
-  if (entries.length === 0) return <EmptyState icon={<Clock size={28} />} title="No activity yet" sub="Candidate activity will appear here." />;
+
+  const stageTimelines = applications.filter((a) => a.appliedDate || (a.stageHistory ?? []).length > 0);
+
+  if (entries.length === 0 && stageTimelines.length === 0) {
+    return <EmptyState icon={<Clock size={28} />} title="No activity yet" sub="Candidate activity will appear here." />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stage timeline — how long the candidate spent moving between stages,
+          computed from stageHistory dates (+ applied date as the start). One
+          block per application, since each requisition is its own pipeline. */}
+      {stageTimelines.map((a) => (
+        <StageTimelineCard key={a.id} app={a} showRequisitionLabel={applications.length > 1} />
+      ))}
+
+      {entries.length > 0 && <ActivityDateGroups entries={entries} />}
+    </div>
+  );
+}
+
+/** Day-grouped vertical timeline — a bold date header per calendar day, then
+ * each entry as a time / icon-node / content row, with a connecting line
+ * running through that day's nodes (restarts fresh for the next day). */
+function ActivityDateGroups({ entries }: { entries: TimelineResponse["entries"] }) {
+  const groups: { dateLabel: string; items: TimelineResponse["entries"] }[] = [];
+  for (const e of entries) {
+    const dateLabel = new Date(e.at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    const last = groups[groups.length - 1];
+    if (last && last.dateLabel === dateLabel) last.items.push(e);
+    else groups.push({ dateLabel, items: [e] });
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-5">
+      {groups.map((g) => (
+        <div key={g.dateLabel}>
+          <div className="flex items-baseline gap-3 pb-2.5">
+            <span className="w-12 shrink-0" />
+            <span className="text-[13px] font-bold text-gray-900">{g.dateLabel}</span>
+          </div>
+          <div className="relative">
+            <div className="absolute left-[62px] top-0 bottom-0 w-px bg-gray-200" />
+            <ul className="space-y-4">
+              {g.items.map((e) => {
+                const meta = KIND_META[e.kind] ?? KIND_META.CandidateUpdated;
+                return (
+                  <li key={e.id} className="flex items-start gap-3">
+                    <span className="w-12 shrink-0 text-right text-[11px] text-gray-400 pt-1.5">
+                      {new Date(e.at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className={clsx("relative z-10 w-7 h-7 rounded-full bg-white border flex items-center justify-center shrink-0", meta.ring)}>
+                      {meta.icon}
+                    </span>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <p className="text-[13px] font-semibold text-gray-900">{e.title}</p>
+                      {e.description && <p className="text-xs text-gray-500 mt-0.5">{e.description}</p>}
+                      {e.actor && (
+                        <p className="text-[11px] text-accent-600 font-medium mt-1">
+                          by {e.actor.name}{e.actor.jobTitle ? ` · ${e.actor.jobTitle}` : ""}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StageTimelineCard({ app, showRequisitionLabel }: { app: Application; showRequisitionLabel: boolean }) {
+  const now = Date.now();
+  const fmtD = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+  const daysBetween = (a: string, b: number | string) =>
+    Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000));
+  // `date` is the field every real stage-move write uses; `at` is a legacy
+  // alias some older seeded rows carry — accept either so a mismatch never
+  // silently drops the entry (see seed-recruit-demo.ts fix).
+  const moves = (app.stageHistory ?? [])
+    .map((h) => ({ stage: h.stage, date: h.date ?? (h as { at?: string }).at }))
+    .filter((h): h is { stage: string; date: string } => !!h.stage && !!h.date)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const events: { label: string; date: string }[] = [];
+  if (app.appliedDate) events.push({ label: "Applied", date: app.appliedDate });
+  for (const m of moves) events.push({ label: m.stage.replace(/([A-Z])/g, " $1").trim(), date: m.date });
+  if (events.length === 0) return null;
+
+  const totalDays = daysBetween(events[0].date, now);
+  const inStage = daysBetween(events[events.length - 1].date, now);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <div className="relative">
-        <div className="absolute left-[13px] top-2 bottom-2 w-0.5 bg-gray-100" />
-        <ul className="space-y-3">
-          {entries.map((e) => {
-            const meta = KIND_META[e.kind] ?? KIND_META.CandidateUpdated;
-            return (
-              <li key={e.id} className="relative pl-9">
-                <span className={clsx("absolute left-0 top-1 w-7 h-7 rounded-full ring-4 ring-white flex items-center justify-center text-white shadow-sm", meta.dot)}>
-                  {meta.icon}
-                </span>
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <p className="text-[13px] font-semibold text-gray-900">{e.title}</p>
-                    <span className="text-[11px] text-gray-400">{new Date(e.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
-                  </div>
-                  {e.description && <p className="text-xs text-gray-600 mt-1">{e.description}</p>}
-                  {e.actor && <p className="text-[11px] text-gray-400 mt-1.5">by <span className="font-medium text-gray-700">{e.actor.name}</span>{e.actor.jobTitle ? ` · ${e.actor.jobTitle}` : ""}</p>}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      <div className="flex items-center gap-2 mb-3">
+        <Clock size={13} className="text-green-600" />
+        <h3 className="text-xs font-bold text-gray-900">
+          Stage Timeline{showRequisitionLabel && app.requisition ? ` — ${app.requisition.title}` : ""}
+        </h3>
+        <span className="ml-auto text-[11px] font-semibold text-green-700 bg-green-50 rounded-full px-2 py-0.5">{totalDays}d total</span>
       </div>
+      <ol className="space-y-2">
+        {events.map((e, i) => (
+          <li key={i} className="flex items-center gap-2 text-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+            <span className="font-medium text-gray-800">{e.label}</span>
+            <span className="text-gray-400">{fmtD(e.date)}</span>
+            {i > 0 && (
+              <span className="ml-auto text-[11px] font-semibold text-gray-500" title="Time since the previous stage">
+                +{daysBetween(events[i - 1].date, e.date)}d
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 text-[11px] text-gray-500">
+        Currently in <b className="text-gray-700">{(app.currentStage ?? "—").replace(/([A-Z])/g, " $1").trim()}</b> · {inStage} day{inStage === 1 ? "" : "s"} in this stage.
+      </p>
     </div>
   );
 }

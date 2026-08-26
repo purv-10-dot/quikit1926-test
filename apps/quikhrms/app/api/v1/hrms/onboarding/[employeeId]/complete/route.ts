@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, internalError } from "@/lib/api-response";
 import { createAuditLog } from "@/lib/utils/audit";
 import { allocateProRataLeaveBalances } from "@/lib/services/leave-allocation";
+import { finalizePositionOnOnboard } from "@/lib/services/requisition-positions";
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -62,7 +63,6 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         const docRequests = await prisma.candidateDocumentRequest.findMany({
           where: { orgId, applicationId: application.id, deletedAt: null, status: { not: "Cancelled" } },
           select: {
-            bundle: true,
             uploads: {
               where: { deletedAt: null },
               orderBy: { uploadedAt: "desc" },
@@ -70,7 +70,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
             },
           },
         });
-        const missing: { bundle: string; name: string }[] = [];
+        const missing: { name: string }[] = [];
         for (const r of docRequests) {
           const latest = new Map<string, { status: "Pending" | "Approved" | "Rejected"; name: string }>();
           for (const u of r.uploads) {
@@ -79,7 +79,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
             if (!latest.has(key)) latest.set(key, { status: u.status, name });
           }
           for (const { status, name } of latest.values()) {
-            if (status !== "Approved") missing.push({ bundle: r.bundle, name });
+            if (status !== "Approved") missing.push({ name });
           }
         }
         if (missing.length > 0) {
@@ -98,6 +98,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         data: { status: "Active", inviteStatus: "Invited", updatedBy: userId },
       }),
     ]);
+
+    // Recruiter & Position Tracking — a seat only closes (Filled) once the
+    // employee actually onboards, not at offer-accept or hire. This IS that
+    // moment: flip the seat reserved back at hire-time from PendingOnboarding
+    // to Filled.
+    if (updatedEmployee.workEmail) {
+      const hiredApp = await prisma.jobApplication.findFirst({
+        where: { orgId, status: "AppHired", candidate: { email: updatedEmployee.workEmail } },
+        select: { id: true },
+      });
+      if (hiredApp) await finalizePositionOnOnboard(orgId, hiredApp.id, userId);
+    }
 
     if (updatedEmployee.dateOfJoining) {
       try {

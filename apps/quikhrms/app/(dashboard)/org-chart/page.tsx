@@ -800,7 +800,7 @@ export default function OrgChartPage() {
               size="sm"
               options={[
                 { value: "", label: "All managers" },
-                ...managerOptions.map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` })),
+                ...managerOptions.map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName} (${m.employeeCode})` })),
               ]}
             />
           </div>

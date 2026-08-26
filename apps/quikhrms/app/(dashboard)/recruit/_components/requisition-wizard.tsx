@@ -7,7 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon, GripVertical } from "lucide-react";
+import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon, GripVertical, HelpCircle } from "lucide-react";
 import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 export interface DeptOption { id: string; name: string; code?: string | null; }
@@ -305,6 +305,11 @@ function calcEtaDays(startDate: string, endDate: string): number {
   const end = new Date(endDate + "T00:00:00").getTime();
   return Math.max(0, Math.ceil((end - start) / 86400000));
 }
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 const errRing = "border-red-400 focus:border-red-500 focus:ring-red-500/20";
 const errText = "text-[11px] text-red-600 mt-1";
 
@@ -394,6 +399,17 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.closedDate, form.targetJoiningDate]);
 
+  // End Date defaults to Start Date + the level's standard SLA (or the
+  // approved custom ETA, if overridden) — only while End Date is still
+  // empty, so this never clobbers a date HR has already picked/edited.
+  useEffect(() => {
+    if (!form.closedDate || form.targetJoiningDate) return;
+    const slaDays = form.customSlaDays ?? jobLevels.find((l) => l.id === form.jobLevelId)?.slaDays;
+    if (!slaDays) return;
+    setForm((p) => ({ ...p, targetJoiningDate: addDays(form.closedDate, slaDays) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.jobLevelId, form.closedDate, form.customSlaDays]);
+
   const empOpts: MSOption[] = employees.map((e) => ({
     value: e.id,
     label: (e.displayName?.trim() || `${e.firstName} ${e.lastName}`).trim(),
@@ -410,7 +426,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   const expRangeError = (form.experienceMin ?? 0) > 50 || (form.experienceMax ?? 0) > 50
     || (form.experienceMin != null && form.experienceMax != null && form.experienceMin > form.experienceMax);
   const expFilledIfRaise = !showJustification || (form.experienceMin != null && form.experienceMax != null);
-  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk && jobLocationOk
+  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && !!form.jobLevelId && justificationOk && jobLocationOk
     && expFilledIfRaise && (!showJustification || !expRangeError);
   // Raise mode never shows this step's fields — hiringManagerId is never
   // collected there, so it can't gate anything. pipelineId is still required,
@@ -579,7 +595,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             </div>
             <div className={clsx("grid grid-cols-2 gap-4", showJustification ? "md:grid-cols-6" : "md:grid-cols-4")}>
               <div>
-                <label className={reqLabel}>Level <span className="text-gray-400 font-normal">(optional)</span></label>
+                <label className={reqLabel}>Level <span className="text-red-500">*</span></label>
                 <Select value={form.jobLevelId} onChange={(v) => setForm({ ...form, jobLevelId: v })} searchable
                   placeholder={jobLevels.length === 0 ? "No levels — create under Settings → Job Levels" : "— Select —"}
                   options={jobLevels.map((l) => ({ value: l.id, label: `${l.code} — ${l.name}`, description: `${l.slaDays} day SLA` }))} />
@@ -682,7 +698,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     <Sparkles size={13} className={generating ? "animate-pulse" : ""} /> {generating ? "Generating…" : "Generate with AI"}
                   </button>
                 </div>
-                <textarea rows={3} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
+                <textarea rows={4} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
                   placeholder="Overview of the role, scope and impact." className={clsx(reqInput, "resize-y")} />
               </div>
             )}
@@ -814,6 +830,9 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     }}
                     className={clsx(reqInput, compErrors.targetJoiningDate && errRing)} />
                   {compErrors.targetJoiningDate && <p className={errText}>{compErrors.targetJoiningDate}</p>}
+                  {!compErrors.targetJoiningDate && form.jobLevelId && (
+                    <p className="mt-1 text-[11px] text-gray-400">Auto-filled from the Level's SLA — edit anytime.</p>
+                  )}
                 </div>
                 <div>
                   <label className={reqLabel}>Budget (LPA)</label>
@@ -878,8 +897,13 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   </div>
                   <div>
                     <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
-                    <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
+                    <NumberInput allowDecimal={false} min={1950} max={2100} maxLength={4} value={form.passingYear}
                       onChange={(v) => setForm({ ...form, passingYear: v })}
+                      onBlur={() => {
+                        if (form.passingYear == null) return;
+                        if (form.passingYear < 1950) setForm((p) => ({ ...p, passingYear: 1950 }));
+                        else if (form.passingYear > 2100) setForm((p) => ({ ...p, passingYear: 2100 }));
+                      }}
                       placeholder="e.g. 2020" className={reqInput} />
                   </div>
                 </div>
@@ -893,12 +917,11 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             (see the "role" folded into visibleSteps' label above). */}
         {currentStepId === "role" && (
           <div className="space-y-3 mt-5 pt-4 border-t border-gray-100">
-          <p className={clsx(reqSectionAccent, "mb-1")}>Scorecard &amp; Skills</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <div className="rounded-lg border border-green-200 bg-gradient-to-br from-green-50/60 to-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-green-800"><Sparkles size={14} /> ATS Skill Weights</div>
+                  <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-green-800"><Sparkles size={14} /> Scorecard &amp; Skills</div>
                   <p className="text-[11px] text-gray-600 mt-0.5">Weight = importance (1 low, 10 critical). Used to score candidate resumes. Example: React → 9, AWS → 5</p>
                 </div>
                 <span className="text-[11px] text-gray-500 whitespace-nowrap">{form.skillWeights.length} skill{form.skillWeights.length === 1 ? "" : "s"}</span>
@@ -962,15 +985,15 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             </div>
 
             {/* Technical Questions — merged into Scorecard & Skills */}
-            <div>
-              <p className={clsx(reqSection, "mb-1")}>Screening Technical Questions <span className="text-red-500">*</span></p>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Add role-specific questions the interview panel should ask candidates for this job. At least one is required.
-              </p>
+            <div className="rounded-lg border border-rose-200 bg-gradient-to-br from-rose-50/60 to-white p-3">
+              <div className="mb-2">
+                <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-rose-800">
+                  <HelpCircle size={14} /> Screening Technical Questions <span className="text-red-500">*</span>
+                </div>
+              </div>
               <BulletListField
                 label="Questions"
                 accent="rose"
-                max={20}
                 placeholder="e.g. Explain the difference between useMemo and useCallback"
                 items={form.technicalQuestions}
                 onChange={(v) => setForm({ ...form, technicalQuestions: v })}
@@ -1020,13 +1043,14 @@ const BULLET_ACCENTS = {
 } as const;
 
 function BulletListField({
-  label, placeholder, items, onChange, accent = "violet", max = 10,
+  label, placeholder, items, onChange, accent = "violet", max,
 }: {
   label: string;
   placeholder: string;
   items: string[];
   onChange: (next: string[]) => void;
   accent?: keyof typeof BULLET_ACCENTS;
+  // No cap by default — add as many as needed. Pass a number to keep a hard limit.
   max?: number;
 }) {
   const [draft, setDraft] = useState("");
@@ -1034,13 +1058,29 @@ function BulletListField({
   const dragFrom = useRef<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const colors = BULLET_ACCENTS[accent];
-  const atMax = items.length >= max;
+  const atMax = max != null && items.length >= max;
+  const toast = useToast();
 
   const add = () => {
     const v = draft.trim();
     if (!v || atMax) return;
     onChange([...items, v]);
     setDraft("");
+  };
+
+  // Pasting a multi-line block (one requirement per line/paragraph) splits it
+  // into individual bullets instead of dumping it all into one entry.
+  const addPastedLines = (raw: string) => {
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return;
+    if (max == null) { onChange([...items, ...lines]); return; }
+    const room = Math.max(0, max - items.length);
+    const toAdd = lines.slice(0, room);
+    if (toAdd.length === 0) { toast.error(`${label} is already at the ${max} limit.`); return; }
+    onChange([...items, ...toAdd]);
+    if (lines.length > toAdd.length) {
+      toast.error(`Added ${toAdd.length} of ${lines.length} — ${label} is capped at ${max}.`);
+    }
   };
 
   const reorder = (from: number, to: number) => {
@@ -1057,7 +1097,7 @@ function BulletListField({
         <div className="flex items-center gap-1.5">
           <span className={clsx("text-[11px] font-bold uppercase tracking-wide", colors.text)}>{label}</span>
           <span className={clsx("inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ring-1 tabular-nums", colors.badge)}>
-            {items.length}/{max}
+            {max != null ? `${items.length}/${max}` : items.length}
           </span>
         </div>
         <button
@@ -1118,6 +1158,14 @@ function BulletListField({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text");
+              if (/\r?\n/.test(text.trim())) {
+                e.preventDefault();
+                addPastedLines(text);
+                setDraft("");
+              }
+            }}
             // Commit only on Enter or the "+" button — no onBlur add, so clicking
             // Next doesn't silently push a half-typed entry.
             placeholder={placeholder}
