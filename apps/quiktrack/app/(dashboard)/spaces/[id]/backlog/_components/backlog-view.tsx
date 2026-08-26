@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { showToast } from "@/lib/ui/toast";
 import { confirmDialog } from "@/lib/ui/confirm";
@@ -16,9 +17,14 @@ import {
   toLocalDateInput,
   toLocalTimeInput,
 } from "@/lib/utils/datetime-input";
+import {
+  DUE_DATE_FILTER_OPTIONS,
+  appendDueDateParams,
+} from "@/lib/utils/due-date";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
 import { BulkEditPopover } from "./bulk-edit-popover";
+import { DueDateCell } from "./due-date-cell";
 import { CustomFieldFilters, isFilterableField } from "@/components/custom-fields/custom-field-filters";
 import type { CustomFilter } from "@/lib/customFields/filterQuery";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
@@ -231,6 +237,7 @@ function InlineCreatorInner({
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
   const assigneeRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 0);
@@ -245,10 +252,23 @@ function InlineCreatorInner({
         setDatePopoverOpen(false);
       if (assigneePopoverOpen && assigneeRef.current && !assigneeRef.current.contains(t))
         setAssigneePopoverOpen(false);
+      // Close the whole inline creator when clicking outside it. Only when the
+      // title is empty and nothing is submitting — so a click-away never
+      // discards text the user has started typing.
+      if (
+        open &&
+        rootRef.current &&
+        !rootRef.current.contains(t) &&
+        !title.trim() &&
+        !submitting
+      ) {
+        setError(null);
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [typeMenuOpen, datePopoverOpen, assigneePopoverOpen]);
+  }, [typeMenuOpen, datePopoverOpen, assigneePopoverOpen, open, title, submitting]);
 
   async function submit() {
     const t = title.trim();
@@ -318,7 +338,7 @@ function InlineCreatorInner({
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
-    <div className="mx-3 my-2">
+    <div className="mx-3 my-2" ref={rootRef}>
     <div className={`flex items-center h-9 px-1.5 border rounded-md bg-white ${error ? "border-red-500" : "border-blue-500"}`}>
       <div className="relative" ref={typeMenuRef}>
         <button
@@ -1190,8 +1210,9 @@ function IssueRow({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
   // Tooltip shown only when the title is actually clipped (scrollWidth >
-  // clientWidth). Recomputed on each hover so it tracks resize/zoom.
-  const [showTitleTip, setShowTitleTip] = useState(false);
+  // clientWidth). Portaled to <body> with a fixed position computed from the
+  // title's rect on hover, so a row/section with `overflow` can't clip it.
+  const [titleTip, setTitleTip] = useState<{ top: number; left: number } | null>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
@@ -1365,9 +1386,14 @@ function IssueRow({
           className="relative flex-1 flex items-center gap-1.5 min-w-0"
           onMouseEnter={() => {
             const el = titleRef.current;
-            setShowTitleTip(!!el && el.scrollWidth > el.clientWidth);
+            if (el && el.scrollWidth > el.clientWidth) {
+              const r = el.getBoundingClientRect();
+              setTitleTip({ top: r.bottom + 4, left: r.left });
+            } else {
+              setTitleTip(null);
+            }
           }}
-          onMouseLeave={() => setShowTitleTip(false)}
+          onMouseLeave={() => setTitleTip(null)}
           onClick={() => {
             setTitleDraft(issue.title);
             setTitleEditing(true);
@@ -1375,15 +1401,24 @@ function IssueRow({
         >
           <span ref={titleRef} className={`text-sm truncate cursor-text ${isDone ? "text-gray-400 line-through" : "text-gray-900"}`}>{issue.title}</span>
           <Pencil className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
-          {/* Tooltip — only when the title is truncated; full title, dark style. */}
-          {showTitleTip && (
-            <span
-              role="tooltip"
-              className="pointer-events-none absolute left-0 top-full z-50 mt-1 max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
-            >
-              {issue.title}
-            </span>
-          )}
+          {/* Tooltip — only when the title is truncated; full title, dark style.
+              Portaled so an overflow-clipped row/section can't cut it off. */}
+          {titleTip &&
+            createPortal(
+              <span
+                role="tooltip"
+                style={{
+                  position: "fixed",
+                  top: titleTip.top,
+                  left: Math.max(8, Math.min(titleTip.left, window.innerWidth - 8 - 448)),
+                  zIndex: 1000,
+                }}
+                className="pointer-events-none max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
+              >
+                {issue.title}
+              </span>,
+              document.body,
+            )}
         </div>
       )}
 
@@ -1542,22 +1577,16 @@ function IssueRow({
         />
       )}
 
-      {/* Overdue badge — shows the due date with a warning when it's past. */}
-      {(() => {
-        if (!issue.dueDate) return null;
-        const due = new Date(issue.dueDate);
-        if (Number.isNaN(due.getTime())) return null;
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        if (due >= today) return null;
-        const label = due.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-        return (
-          <span className="inline-flex items-center h-5 px-1.5 rounded border border-red-200 bg-red-50 text-red-600 text-[10px] font-medium shrink-0">
-            <AlertTriangle className="h-3 w-3 mr-1" />
-            {label}
-          </span>
-        );
-      })()}
+      {/* Due date — inline editable chip (red once overdue, amber on the day).
+          Replaces the old read-only overdue-only badge: a date can now be set,
+          changed, or cleared without opening the work item. */}
+      {fields.dueDate && (
+        <DueDateCell
+          dueDate={issue.dueDate}
+          issueKey={issue.key}
+          onChange={(iso) => void patch({ dueDate: iso })}
+        />
+      )}
 
       {fields.assignee && (() => {
         const assigneeMember = issue.assigneeId
@@ -2021,6 +2050,8 @@ function SectionBody({
     assigneeId: string;
     type: string;
     priority: string;
+    /** Due-date preset ("overdue" / "today" / "week" / "month" / "none"). */
+    dueDate: string;
     epicId: string;
     customFilters: string;
   };
@@ -2064,6 +2095,7 @@ function SectionBody({
       if (filters.assigneeId) params.set("assigneeId", filters.assigneeId);
       if (filters.type) params.set("type", filters.type);
       if (filters.priority) params.set("priority", filters.priority);
+      appendDueDateParams(params, filters.dueDate);
       if (filters.epicId) params.set("epicId", filters.epicId);
       if (filters.customFilters) params.set("customFilters", filters.customFilters);
       if (!initial && state.cursor) params.set("cursor", state.cursor);
@@ -2095,7 +2127,7 @@ function SectionBody({
         setState((s) => ({ ...s, loading: false }));
       }
     },
-    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters],
+    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.dueDate, filters.epicId, filters.customFilters],
   );
 
   // First-time load when expanded.
@@ -2120,7 +2152,7 @@ function SectionBody({
     // their next expand.
     genRef.current += 1;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
-  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters]);
+  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.dueDate, filters.epicId, filters.customFilters]);
 
   // IntersectionObserver — load more when the sentinel scrolls into view of the
   // accordion's own scroll container. `enabled` re-attaches the observer on the
@@ -2267,15 +2299,55 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [sprintsHasMore, setSprintsHasMore] = useState(true);
   const [sprintsLoading, setSprintsLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
-  const [sectionStates, setSectionStates] = useState<Record<string, SectionState>>({
-    backlog: { ...emptySection(), expanded: true },
+  // Per-viewer memory of which accordion sections are expanded, so a reload keeps
+  // the same sprints/backlog open. localStorage (not the URL) because it's a set
+  // of booleans that's a viewer convenience, not shareable state. Keyed per
+  // project; guarded because storage can throw or be unavailable.
+  const expandedStorageKey = `qt:backlog:expanded:${projectId}`;
+  const readExpandedKeys = (): Set<string> | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(expandedStorageKey);
+      if (!raw) return null;
+      const arr = JSON.parse(raw) as unknown;
+      return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === "string")) : null;
+    } catch {
+      return null;
+    }
+  };
+  // Read once for this mount; sprint sections consult it as they materialise.
+  const persistedExpandedRef = useRef<Set<string> | null>(null);
+  if (persistedExpandedRef.current === null) persistedExpandedRef.current = readExpandedKeys();
+
+  const [sectionStates, setSectionStates] = useState<Record<string, SectionState>>(() => {
+    // Backlog defaults open; honor a persisted collapse of it.
+    const persisted = typeof window === "undefined" ? null : (() => {
+      try {
+        const raw = window.localStorage.getItem(`qt:backlog:expanded:${projectId}`);
+        if (!raw) return null;
+        const arr = JSON.parse(raw) as unknown;
+        return Array.isArray(arr) ? new Set(arr as string[]) : null;
+      } catch {
+        return null;
+      }
+    })();
+    const backlogExpanded = persisted ? persisted.has("backlog") : true;
+    return { backlog: { ...emptySection(), expanded: backlogExpanded } };
   });
   const [menuOpenForSprint, setMenuOpenForSprint] = useState<string | null>(null);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
   const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
   const [startingSprint, setStartingSprint] = useState<Sprint | null>(null);
   const [completingSprint, setCompletingSprint] = useState<Sprint | null>(null);
-  const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
+  // The open work-item drawer is mirrored to a `?selected=<id>` query param so a
+  // reload reopens it instead of dropping the user back to a bare backlog. Seed
+  // the initial state from that param (client-only; SSR renders it closed then
+  // hydrates to the same value). See the sync effect below that keeps the URL in
+  // step as the drawer opens/closes.
+  const [editingIssueId, setEditingIssueId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("selected");
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveOpen, setMoveOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -2293,6 +2365,10 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  // Due-date filter, held as a preset key; resolved to an absolute range at
+  // query time so "today" always means the viewer's today, even if the tab
+  // has been open across midnight.
+  const [filterDueDate, setFilterDueDate] = useState("");
   // Custom-field filters (serialized into the `customFilters` query param).
   const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   // Epic filter — set by selecting an epic in the left EpicPanel. Empty = none.
@@ -2378,10 +2454,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
       assigneeId: filterAssigneeIds.join(","),
       type: filterType,
       priority: filterPriority,
+      dueDate: filterDueDate,
       epicId: filterEpicId,
       customFilters: customFilters.length ? JSON.stringify(customFilters) : "",
     }),
-    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterDueDate, filterEpicId, customFilters],
   );
 
   // Auto-persist backlog filters per user+project (no Save button).
@@ -2400,6 +2477,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       }
       if (typeof s.type === "string") setFilterType(s.type);
       if (typeof s.priority === "string") setFilterPriority(s.priority);
+      if (typeof s.dueDate === "string") setFilterDueDate(s.dueDate);
       if (typeof s.epicId === "string") setFilterEpicId(s.epicId);
       if (typeof s.customFilters === "string") {
         try {
@@ -2416,7 +2494,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // UNfiltered sprint, so it must be hidden while filtering — otherwise it
   // contradicts the filtered "(N work items)" header count.
   const filtersActive = Boolean(
-    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length,
+    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterDueDate || filterEpicId || customFilters.length,
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2458,6 +2536,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     if (sectionFilters.assigneeId) params.set("assigneeId", sectionFilters.assigneeId);
     if (sectionFilters.type) params.set("type", sectionFilters.type);
     if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
+    appendDueDateParams(params, sectionFilters.dueDate);
     if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
     if (sectionFilters.customFilters) params.set("customFilters", sectionFilters.customFilters);
     try {
@@ -2503,7 +2582,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // a filter now costs one request regardless of sprint count.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterDueDate || filterEpicId || customFilters.length);
     if (!hasActive) {
       setFilteredCounts({});
       setFilteredBadges({});
@@ -2511,12 +2590,20 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }
     let cancelled = false;
     const sprintIds = activeSectionKey ? activeSectionKey.split(",") : [];
-    const params = new URLSearchParams({ projectId });
+    const params = new URLSearchParams({
+      projectId,
+      // The section bodies below fetch with these two, and the header count has
+      // to describe exactly the rows they render — without them a section read
+      // "2 work items" collapsed and "No items in this sprint" expanded.
+      excludeType: "EPIC,SUBTASK",
+      boardMappedOnly: "1",
+    });
     if (appliedSearch) params.set("search", appliedSearch);
     if (filterStatusId) params.set("statusId", filterStatusId);
     if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
     if (filterType) params.set("type", filterType);
     if (filterPriority) params.set("priority", filterPriority);
+    appendDueDateParams(params, filterDueDate);
     if (filterEpicId) params.set("epicId", filterEpicId);
     if (customFilters.length) params.set("customFilters", JSON.stringify(customFilters));
     fetch(`/api/issues/section-counts?${params.toString()}`)
@@ -2551,7 +2638,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         }
       });
     return () => { cancelled = true; };
-  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters]);
+  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterDueDate, filterEpicId, customFilters]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2745,6 +2832,56 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sectionStates]);
+
+  // Keep the URL's `?selected=<id>` in step with the open drawer so a reload
+  // restores it. history.replaceState (not router) — a real navigation would
+  // remount the backlog and reload every section; this only rewrites the address
+  // bar, leaving the mounted tree (and the just-opened drawer) untouched.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (editingIssueId) url.searchParams.set("selected", editingIssueId);
+    else url.searchParams.delete("selected");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [editingIssueId]);
+
+  // As sprint sections become known (after the sprints load), seed each one's
+  // expanded flag from the persisted set so a reload reopens the sprints that
+  // were open. Only fills gaps — never overrides a section the user has since
+  // toggled this session. Cleared once applied so it doesn't fight live toggles.
+  useEffect(() => {
+    const persisted = persistedExpandedRef.current;
+    if (!persisted || sprints.length === 0) return;
+    setSectionStates((all) => {
+      let changed = false;
+      const next = { ...all };
+      for (const s of sprints) {
+        const key = `sprint:${s.id}`;
+        if (!next[key] && persisted.has(key)) {
+          next[key] = { ...emptySection(), expanded: true };
+          changed = true;
+        }
+      }
+      return changed ? next : all;
+    });
+  }, [sprints]);
+
+  // Persist the set of currently-expanded section keys whenever it changes, so
+  // the next mount can restore them. Guarded — storage may be unavailable.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const openKeys = Object.entries(sectionStates)
+      .filter(([, s]) => s.expanded)
+      .map(([k]) => k);
+    try {
+      window.localStorage.setItem(expandedStorageKey, JSON.stringify(openKeys));
+    } catch {
+      // ignore (private mode / quota / disabled storage)
+    }
+  }, [sectionStates, expandedStorageKey]);
 
   // Boot — fetch session + first page of sprints + epics. (Statuses and
   // members are loaded via React Query above, so they're not in this batch.)
@@ -3016,6 +3153,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     if (sectionFilters.assigneeId) params.set("assigneeId", sectionFilters.assigneeId);
     if (sectionFilters.type) params.set("type", sectionFilters.type);
     if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
+    appendDueDateParams(params, sectionFilters.dueDate);
     if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
     if (sectionFilters.customFilters) params.set("customFilters", sectionFilters.customFilters);
     const [res] = await Promise.all([
@@ -3229,6 +3367,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               (filterAssigneeIds.length ? 1 : 0) +
               (filterType ? 1 : 0) +
               (filterPriority ? 1 : 0) +
+              (filterDueDate ? 1 : 0) +
               customFilters.length;
             return (
               <div ref={filterBtnRef} className="relative">
@@ -3284,6 +3423,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                                 setFilterAssigneeIds([]);
                                 setFilterType("");
                                 setFilterPriority("");
+                                setFilterDueDate("");
                                 setCustomFilters([]);
                               }}
                               className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
@@ -3344,6 +3484,20 @@ export function BacklogView({ projectId }: { projectId: string }) {
                               { value: "LOWEST", label: "Lowest" },
                             ]}
                           />
+                          {/* Presets rather than a date range: grooming a
+                              backlog is "what's late / what's next", and the
+                              range is resolved per request so it stays correct
+                              across midnight. */}
+                          <FilterRow
+                            label="Due date"
+                            value={filterDueDate}
+                            onChange={setFilterDueDate}
+                            options={DUE_DATE_FILTER_OPTIONS.map((o) => ({
+                              value: o.value,
+                              label: o.label,
+                              muted: o.value === "",
+                            }))}
+                          />
                           {/* `contents` lets each custom field become its own grid
                               cell alongside the built-in filters. */}
                           <CustomFieldFilters
@@ -3360,7 +3514,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               </div>
             );
           })()}
-          {(Boolean(filterStatusId) || filterAssigneeIds.length > 0 || Boolean(filterType) || Boolean(filterPriority) || Boolean(appliedSearch) || customFilters.length > 0) && (
+          {(Boolean(filterStatusId) || filterAssigneeIds.length > 0 || Boolean(filterType) || Boolean(filterPriority) || Boolean(filterDueDate) || Boolean(appliedSearch) || customFilters.length > 0) && (
             <button
               type="button"
               onClick={() => {
@@ -3368,6 +3522,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 setFilterAssigneeIds([]);
                 setFilterType("");
                 setFilterPriority("");
+                setFilterDueDate("");
                 setCustomFilters([]);
                 setSearch("");
               }}
@@ -3919,6 +4074,14 @@ export function BacklogView({ projectId }: { projectId: string }) {
               setSprintCursor(res.nextCursor ?? null);
               setSprintsHasMore(!!res.nextCursor);
             }
+            // Starting a sprint changes the shared sprint list that other tabs
+            // (Grouped Kanban, Task Table, issue panels) read via React Query.
+            // Without this invalidation those views keep a stale cached list for
+            // up to staleTime, so the new sprint intermittently fails to appear
+            // in their Sprint filter dropdown. Invalidate so they refetch.
+            void queryClient.invalidateQueries({
+              queryKey: ["quiktrack", "project-sprints", projectId],
+            });
           }}
         />
       )}
@@ -3950,6 +4113,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
               setSprintCursor(res.nextCursor ?? null);
               setSprintsHasMore(!!res.nextCursor);
             }
+            // Completing a sprint removes it from the active list other tabs read
+            // via React Query — invalidate so their Sprint filters update too.
+            void queryClient.invalidateQueries({
+              queryKey: ["quiktrack", "project-sprints", projectId],
+            });
             setSectionStates({ backlog: { ...emptySection(), expanded: true } });
           }}
         />

@@ -638,7 +638,14 @@ export async function getDefaultStatusId(
  * classic "Create → Open"). Otherwise (no workflow) it falls back to the first
  * status by order — today's ungated behaviour.
  */
-export async function getInitialStatusId(
+/**
+ * The workflow's INITIAL status for a project — the "Create" transition's target
+ * — but ONLY when a published (active) workflow governs the project. Returns null
+ * for an ungated project (no active workflow) so callers can fall back to a
+ * free/default status. This is the single legal starting status for new work
+ * items under a workflow, used to gate creation.
+ */
+export async function getWorkflowInitialStatusId(
   tx: Prisma.TransactionClient,
   projectId: string,
 ): Promise<string | null> {
@@ -646,20 +653,26 @@ export async function getInitialStatusId(
     where: { projectId, isActive: true, isDeleted: false, initialTransitionId: { not: null } },
     select: { initialTransitionId: true },
   });
-  if (wf?.initialTransitionId) {
-    const t = await tx.qtWorkflowTransition.findUnique({
-      where: { id: wf.initialTransitionId },
-      select: { toStatusId: true },
-    });
-    if (t?.toStatusId) {
-      // Only use it if the status is still live (not deleted).
-      const s = await tx.qtIssueStatus.findFirst({
-        where: { id: t.toStatusId, projectId, isDeleted: false },
-        select: { id: true },
-      });
-      if (s) return s.id;
-    }
-  }
+  if (!wf?.initialTransitionId) return null;
+  const t = await tx.qtWorkflowTransition.findUnique({
+    where: { id: wf.initialTransitionId },
+    select: { toStatusId: true },
+  });
+  if (!t?.toStatusId) return null;
+  // Only use it if the status is still live (not deleted).
+  const s = await tx.qtIssueStatus.findFirst({
+    where: { id: t.toStatusId, projectId, isDeleted: false },
+    select: { id: true },
+  });
+  return s?.id ?? null;
+}
+
+export async function getInitialStatusId(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+): Promise<string | null> {
+  const gated = await getWorkflowInitialStatusId(tx, projectId);
+  if (gated) return gated;
   return getDefaultStatusId(tx, projectId);
 }
 

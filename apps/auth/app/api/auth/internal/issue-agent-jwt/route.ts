@@ -27,7 +27,7 @@ import type { NextRequest } from "next/server";
 import { encode } from "next-auth/jwt";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { isAllowedInternalService } from "@quikit/shared";
+import { isAllowedInternalService, AGENT_JWT_ISSUER } from "@quikit/shared";
 
 const TTL_MIN_SECONDS = 60;
 const TTL_MAX_SECONDS = 900;
@@ -246,8 +246,21 @@ export async function POST(req: NextRequest) {
     return errorResponse(404, "NOT_FOUND", "User not found", traceId);
   }
 
+  // `sub` and `id` deliberately carry the SAME value — the user id.
+  //
+  // This is the canonical shape documented in
+  // docs/12-auth-service-integration-response.md §2, not a new convention:
+  // next-auth stamps `sub: user.id` on every session it mints itself, and all
+  // 17 `auth-handoff` routes stamp `sub` and `id` side by side. This route was
+  // the sole outlier because it hand-builds its payload and passes it straight
+  // to `encode()`, which only adds `iat`/`exp`/`jti` — it never supplies `sub`
+  // the way the sign-in flow does. Consumers reading `id` (packages/auth's
+  // `withAuth`) and consumers reading `sub` (QuikTrack's `verifyAgentJwt`) now
+  // both resolve to the same user. Do not drop either key.
   const jwtPayload = {
     id: user.id,
+    sub: user.id,
+    iss: AGENT_JWT_ISSUER,
     email: user.email,
     orgId: body.orgId,
     membershipRole: membership.role,

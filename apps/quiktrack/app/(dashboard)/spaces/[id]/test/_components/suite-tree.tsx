@@ -1,16 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  FolderPlus,
-  Layers,
-  Plus,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, FolderPlus, Layers, Plus, Trash2 } from "lucide-react";
 import { groupSections } from "@/lib/test/caseSelection";
 import { orphanFolderCount, suiteCaseCount } from "@/lib/test/suiteTree";
 import type { SectionNode } from "./case-meta";
+import { SuiteTreeFolderRow } from "./suite-tree-folder-row";
 
 /**
  * Left pane: ONE tree of suites, each containing its folders.
@@ -43,6 +38,10 @@ interface SuiteTreeProps {
   onAddSuite: () => void;
   onAddSection: (parentId: string | null) => void;
   canEdit: boolean;
+  /** Omit to hide delete controls entirely — a viewer with no delete rights
+   *  gets no dead trash icons. */
+  onDeleteSuite?: (suiteId: string, name: string) => void;
+  onDeleteSection?: (sectionId: string, name: string) => void;
 }
 
 
@@ -55,6 +54,8 @@ export function SuiteTree({
   onAddSuite,
   onAddSection,
   canEdit,
+  onDeleteSuite,
+  onDeleteSection,
 }: SuiteTreeProps) {
   // Collapsed rather than expanded state, so a freshly loaded tree is open by
   // default (a QA lead wants to see the whole suite, not click into it).
@@ -79,93 +80,8 @@ export function SuiteTree({
     return map;
   }, [suites]);
 
-  const renderFolders = (
-    suiteId: string,
-    parentId: string | null,
-    depth: number,
-  ): React.ReactNode => {
-    const nodes = byParentPerSuite.get(suiteId)?.get(parentId) ?? [];
-
-    return nodes.map((node) => {
-      const kids = byParentPerSuite.get(suiteId)?.get(node.id) ?? [];
-      const isCollapsed = collapsed.has(node.id);
-      const isActive = node.id === activeSectionId && suiteId === activeSuiteId;
-
-      return (
-        <div key={node.id}>
-          <div
-            className={`group flex items-center rounded-md pr-1 ${
-              isActive ? "bg-accent-50" : "hover:bg-gray-50"
-            }`}
-            style={{ paddingLeft: `${depth * 12 + 22}px` }}
-          >
-            {kids.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => toggle(node.id)}
-                className="shrink-0 rounded p-0.5 text-gray-400 hover:text-gray-700"
-                aria-label={isCollapsed ? "Expand" : "Collapse"}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-              </button>
-            ) : (
-              <span className="w-[18px] shrink-0" />
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                if (suiteId !== activeSuiteId) onSelectSuite(suiteId);
-                onSelectSection(node.id);
-              }}
-              className={`flex-1 truncate py-1.5 text-left text-[13px] ${
-                isActive ? "font-medium text-accent-800" : "text-gray-700"
-              }`}
-            >
-              {node.name}
-            </button>
-
-            {/* QUIKTR-332 — always rendered, INCLUDING 0. An empty folder that
-                looks identical to one whose count hasn't loaded is exactly what a
-                QA lead needs to spot before building a run from it. */}
-            {typeof node.caseCount === "number" && (
-              <span
-                className={`shrink-0 rounded px-1.5 text-[11px] tabular-nums ${
-                  node.caseCount === 0 ? "text-gray-300" : "text-gray-500"
-                }`}
-              >
-                {node.caseCount}
-              </span>
-            )}
-
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (suiteId !== activeSuiteId) onSelectSuite(suiteId);
-                  onAddSection(node.id);
-                }}
-                className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 hover:text-gray-700 focus:opacity-100 group-hover:opacity-100"
-                aria-label={`Add a folder inside ${node.name}`}
-                title="Add folder inside"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {!isCollapsed && renderFolders(suiteId, node.id, depth + 1)}
-        </div>
-      );
-    });
-  };
-
   return (
-    <div className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50/50">
+    <div className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
           Suites &amp; folders
@@ -216,7 +132,7 @@ export function SuiteTree({
               <div key={suite.id} className="mt-0.5">
                 <div
                   className={`group flex items-center rounded-md pr-1 ${
-                    showingAll ? "bg-accent-100" : "hover:bg-gray-100"
+                    showingAll ? "bg-accent-100 dark:bg-gray-700" : "hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   <button
@@ -249,7 +165,7 @@ export function SuiteTree({
                     <span
                       className={`truncate text-[13px] ${
                         showingAll
-                          ? "font-semibold text-accent-800"
+                          ? "font-semibold text-accent-800 dark:text-accent-200"
                           : "font-medium text-gray-800"
                       }`}
                     >
@@ -268,18 +184,44 @@ export function SuiteTree({
                         onSelectSuite(suite.id);
                         onAddSection(null);
                       }}
-                      className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 hover:text-gray-700 focus:opacity-100 group-hover:opacity-100"
+                      className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 focus:opacity-100 group-hover:opacity-100"
                       aria-label={`Add a folder in ${suite.name}`}
                       title="Add folder"
                     >
                       <FolderPlus className="h-3.5 w-3.5" />
                     </button>
                   )}
+
+                  {onDeleteSuite && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteSuite(suite.id, suite.name)}
+                      className="shrink-0 rounded p-0.5 text-gray-400 opacity-0 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:text-rose-700 dark:hover:text-rose-300 focus:opacity-100 group-hover:opacity-100"
+                      aria-label={`Delete ${suite.name}`}
+                      title="Delete suite"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {!isCollapsed && (
                   <>
-                    {renderFolders(suite.id, null, 0)}
+                    <SuiteTreeFolderRow
+                      suiteId={suite.id}
+                      parentId={null}
+                      depth={0}
+                      byParent={byParentPerSuite.get(suite.id)}
+                      collapsed={collapsed}
+                      onToggle={toggle}
+                      activeSuiteId={activeSuiteId}
+                      activeSectionId={activeSectionId}
+                      onSelectSuite={onSelectSuite}
+                      onSelectSection={onSelectSection}
+                      onAddSection={onAddSection}
+                      canEdit={canEdit}
+                      onDeleteSection={onDeleteSection}
+                    />
                     {suite.sections.length === 0 && (
                       <p className="py-1 pl-[40px] text-[11px] text-gray-400">
                         No folders yet

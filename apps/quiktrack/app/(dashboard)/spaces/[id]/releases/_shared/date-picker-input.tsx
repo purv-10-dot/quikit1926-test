@@ -57,7 +57,11 @@ export function DatePickerInput({
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setRect({ left: r.left, top: r.bottom + 4 });
+    // Clamp so the 280px calendar never runs off the right/left of the viewport
+    // (the release right-rail sits close to the screen edge, which clipped it).
+    const CAL_W = 280;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - CAL_W - 8));
+    setRect({ left, top: r.bottom + 4 });
   };
   useLayoutEffect(() => { if (open) measure(); }, [open]);
   useEffect(() => {
@@ -95,9 +99,9 @@ export function DatePickerInput({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-full items-center justify-between rounded border border-gray-300 px-3 text-sm text-left hover:bg-gray-50 focus:border-blue-500 focus:outline-none"
+        className="flex h-9 w-full items-center justify-between rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 px-3 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 focus:border-blue-500 focus:outline-none"
       >
-        <span className={value ? "text-gray-800" : "text-gray-400"}>
+        <span className={value ? "text-gray-800 dark:text-gray-100" : "text-gray-400 dark:text-gray-500"}>
           {value ? displayDate(value) : placeholder}
         </span>
         {value && (
@@ -115,15 +119,15 @@ export function DatePickerInput({
         createPortal(
           <div
             ref={calRef}
-            style={{ position: "fixed", left: rect.left, top: rect.top, zIndex: 60, width: 280 }}
-            className="rounded-md border border-gray-200 bg-white p-3 shadow-lg"
+            style={{ position: "fixed", left: rect.left, top: rect.top, zIndex: 1500, width: 280 }}
+            className="rounded-md border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800"
           >
             <div className="mb-2 flex items-center justify-between">
-              <button type="button" onClick={() => stepMonth(-1)} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+              <button type="button" onClick={() => stepMonth(-1)} className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-sm font-medium text-gray-800">{MONTHS[view.m0]} {view.y}</span>
-              <button type="button" onClick={() => stepMonth(1)} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{MONTHS[view.m0]} {view.y}</span>
+              <button type="button" onClick={() => stepMonth(1)} className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -140,7 +144,7 @@ export function DatePickerInput({
                     key={iso}
                     type="button"
                     onClick={() => { onChange(iso); setOpen(false); }}
-                    className={`rounded py-1 text-sm ${selected ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-100"}`}
+                    className={`rounded py-1 text-sm ${selected ? "bg-blue-600 text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"}`}
                   >
                     {d}
                   </button>

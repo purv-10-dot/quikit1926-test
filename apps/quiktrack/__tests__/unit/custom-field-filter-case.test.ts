@@ -32,3 +32,28 @@ describe("customFiltersToWhere — case sensitivity", () => {
       .toEqual([{ fieldValues: { some: { fieldId: "f1", valueText: { in: ["High", "Low"] } } } }]);
   });
 });
+
+/**
+ * gte/lte were added for TQL's cf[...] `>=`/`<=` support (lib/tql/translator.ts).
+ * lt/gt/gte/lte all branch on f.type so a DATE-typed field compares valueDate
+ * instead of valueNumber — matching the `between` operator's existing pattern.
+ */
+describe("customFiltersToWhere — numeric vs. date comparison operators", () => {
+  it("lt/gt/gte/lte compare valueNumber for a NUMBER field", () => {
+    expect(customFiltersToWhere([{ fieldId: "f1", type: "NUMBER", op: "lt", value: 5 }]))
+      .toEqual([{ fieldValues: { some: { fieldId: "f1", valueNumber: { lt: 5 } } } }]);
+    expect(customFiltersToWhere([{ fieldId: "f1", type: "NUMBER", op: "gt", value: 5 }]))
+      .toEqual([{ fieldValues: { some: { fieldId: "f1", valueNumber: { gt: 5 } } } }]);
+    expect(customFiltersToWhere([{ fieldId: "f1", type: "NUMBER", op: "gte", value: 5 }]))
+      .toEqual([{ fieldValues: { some: { fieldId: "f1", valueNumber: { gte: 5 } } } }]);
+    expect(customFiltersToWhere([{ fieldId: "f1", type: "NUMBER", op: "lte", value: 5 }]))
+      .toEqual([{ fieldValues: { some: { fieldId: "f1", valueNumber: { lte: 5 } } } }]);
+  });
+
+  it("lt/gt/gte/lte compare valueDate for a DATE field", () => {
+    expect(customFiltersToWhere([{ fieldId: "f1", type: "DATE", op: "gte", value: "2026-01-01" }]))
+      .toEqual([{ fieldValues: { some: { fieldId: "f1", valueDate: { gte: new Date("2026-01-01") } } } }]);
+    expect(customFiltersToWhere([{ fieldId: "f1", type: "DATE", op: "lte", value: "2026-01-01" }]))
+      .toEqual([{ fieldValues: { some: { fieldId: "f1", valueDate: { lte: new Date("2026-01-01") } } } }]);
+  });
+});

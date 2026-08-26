@@ -15,22 +15,23 @@ import {
 /**
  * "QuikTest: Results" — the test-management panel on a work item.
  *
- * Mirrors the TestRail-for-Jira panel: a six-tab strip over the tests, cases,
- * runs, plans and milestones related to this work item, a status donut, and rows
- * that expand to Project / Milestone / Test Run.
+ * Mirrors the TestRail-for-Jira panel: a tab strip over the tests, cases and
+ * runs related to this work item, a status donut, and rows that expand to
+ * Project / Milestone / Test Run. (Plans/Milestones tabs were removed per
+ * product.)
  *
  * "Related" means two things at once — cases that COVER this issue as a
  * requirement, and results that RAISED it as a defect. One endpoint resolves
  * both (see app/api/test/issues/[key]/results).
  */
 
+// Plans / Milestones removed from this panel per product — only Results/Tests/
+// Cases/Runs are surfaced on a work item.
 const TABS = [
   { key: "all", label: "All Results" },
   { key: "tests", label: "Tests" },
   { key: "cases", label: "Cases" },
   { key: "runs", label: "Runs" },
-  { key: "plans", label: "Plans" },
-  { key: "milestones", label: "Milestones" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -54,13 +55,6 @@ interface RunRow {
   build: string | null;
   milestone: { id: string; name: string } | null;
   plan: { id: string; name: string } | null;
-}
-
-interface GroupRow {
-  id: string;
-  name: string;
-  state?: string;
-  dueDate?: string | null;
 }
 
 interface PanelResponse {
@@ -241,15 +235,6 @@ export function QuikTestResultsPanel({
                     />
                   ))}
 
-                {(tab === "plans" || tab === "milestones") &&
-                  (data.items as GroupRow[]).map((g) => (
-                    <SimpleRow
-                      key={g.id}
-                      left={tab === "plans" ? "Plan" : "M"}
-                      title={g.name}
-                      meta={g.state ?? null}
-                    />
-                  ))}
               </div>
             )}
 

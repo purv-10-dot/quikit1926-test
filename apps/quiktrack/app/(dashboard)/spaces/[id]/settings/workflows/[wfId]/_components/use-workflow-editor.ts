@@ -210,9 +210,15 @@ export function useWorkflowEditor(wfId: string, initial: EditorDraft, hasPending
           let next = rule;
           if (rule.kind === "CONDITION") {
             const condGroups = t.rules.filter((r) => r.kind === "CONDITION").map((r) => r.groupNo ?? 0);
-            const isAnyMode = condGroups.length > 0 && new Set(condGroups).size === 1;
+            // ANY mode = the user chose "Can be any", i.e. every existing
+            // condition sits in group 0 (OR-ed). A single condition in a non-zero
+            // group means ALL mode (see the ALL/ANY toggle's 0-vs-nonzero
+            // convention in workflow-editor.tsx). In ANY mode keep the new one in
+            // group 0; otherwise (ALL) give it its own group = max+1.
+            const isAnyMode =
+              condGroups.length > 0 && condGroups.every((g) => g === 0);
             const groupNo = isAnyMode
-              ? condGroups[0]
+              ? 0
               : condGroups.length === 0
                 ? 0
                 : Math.max(...condGroups) + 1;

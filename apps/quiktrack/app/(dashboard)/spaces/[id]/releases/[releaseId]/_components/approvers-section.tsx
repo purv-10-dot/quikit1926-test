@@ -85,7 +85,7 @@ export function ApproversSection({
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <button
           type="button"
@@ -121,7 +121,7 @@ export function ApproversSection({
             type="button"
             disabled={!pickerUserId}
             onClick={addApprover}
-            className="h-9 px-2.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500"
+            className="h-9 px-2.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
           >
             Add
           </button>
@@ -131,7 +131,7 @@ export function ApproversSection({
               setPickerOpen(false);
               setPickerUserId("");
             }}
-            className="h-9 px-2 text-xs text-gray-700 hover:bg-gray-100 rounded"
+            className="h-9 px-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
           >
             Cancel
           </button>

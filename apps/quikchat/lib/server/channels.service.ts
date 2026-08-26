@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { HttpError } from "@/lib/auth-shims";
-import { db as prisma } from "@quikit/database";
+import { db as prisma, Prisma } from "@quikit/database";
 import {
   ASSISTANT_BOT_USER_ID,
   publishFanout,
@@ -12,13 +12,18 @@ import {
   type DiscoverChannelItem,
   type InviteDto,
   type InvitePreview,
+  type MessageDto,
   type OrgContext,
   type PublicUser,
   type UpdateChannelInput,
 } from "@/lib/shared";
 import { getStorage } from "@/lib/server/storage";
 import { displayNameOf, loadPublicUsers, toMessageDto, type MessageRow } from "./helpers";
-import { ensureAssistantBot } from "./assistant.service";
+import {
+  AI_CONTEXT_RESET_KIND,
+  AI_CONTEXT_RESET_TEXT,
+  ensureAssistantBot,
+} from "./assistant.service";
 import * as notifications from "./notifications.service";
 import { userCan } from "@/lib/authz/permissions";
 
@@ -147,7 +152,21 @@ async function resolveGroupAvatar(
 // System messages → persist + publishFanout (Step 5)
 // ============================================================================
 
-async function emitSystemMessage(ctx: OrgContext, channelId: string, text: string): Promise<void> {
+/**
+ * `data` is optional and used only by machine-readable system rows (today: the
+ * AI-chat context-reset marker). A join/leave notice passes nothing and persists
+ * `undefined`, exactly as before.
+ *
+ * Deliberately NOT routed through `messages.send()`: that path also mints
+ * per-recipient notification rows and a search-index entry, neither of which a
+ * system notice should produce.
+ */
+async function emitSystemMessage(
+  ctx: OrgContext,
+  channelId: string,
+  text: string,
+  data?: Prisma.InputJsonValue,
+): Promise<MessageDto> {
   const saved = await prisma.qcMessage.create({
     data: {
       orgId: ctx.orgId,
@@ -155,18 +174,20 @@ async function emitSystemMessage(ctx: OrgContext, channelId: string, text: strin
       senderId: ctx.userId,
       type: "SystemActivity",
       content: text,
-      data: undefined,
+      data,
       reactions: {},
     },
   });
   // Publish a FULL MessageDto so the gateway can treat `system` exactly like
   // `message` (no DB access on the gateway for serialization).
+  const message = toMessageDto(saved as MessageRow, null);
   await publishFanout({
     orgId: ctx.orgId,
     channelId,
     event: "system",
-    payload: toMessageDto(saved as MessageRow, null),
+    payload: message,
   });
+  return message;
 }
 
 /**
@@ -338,6 +359,38 @@ export async function findOrCreateAiChat(ctx: OrgContext): Promise<ChannelListIt
   });
 
   return findById(ctx, channelId);
+}
+
+/**
+ * "New chat" for the AI conversation.
+ *
+ * Drops a context-reset marker so `buildHistory` stops sending everything above
+ * it to the runtime. NOTHING IS DELETED: the transcript stays readable, and the
+ * channel's knowledge-base scope — derived from ingest markers on Media messages,
+ * not from conversation state — is untouched by design. A reset targets a poisoned
+ * context window, not the user's uploaded documents.
+ *
+ * The marker fans out as `system`, which the client routes through the same
+ * `onMessage` handler as any message, so every member of the channel renders it as
+ * the ordinary centred divider rather than a blank row. (An AI chat is a per-user
+ * singleton whose only other member is the bot, so in practice there is no one
+ * else — but the fanout path is shared, so it has to be correct either way.)
+ *
+ * AI-chat only: on a normal channel the notion has no meaning, and a stray marker
+ * there would silently truncate the `/ai` context for every member.
+ */
+export async function resetAiChatContext(
+  ctx: OrgContext,
+  channelId: string,
+): Promise<MessageDto> {
+  // Membership first, then type: answering "not an AI chat" to a non-member would
+  // tell them something about a channel they have no access to.
+  await requireMember(ctx, channelId);
+  const channel = await getChannelOr404(ctx, channelId);
+  if (channel.type !== "ai") throw new HttpError(400, "Not an AI chat");
+  return emitSystemMessage(ctx, channelId, AI_CONTEXT_RESET_TEXT, {
+    kind: AI_CONTEXT_RESET_KIND,
+  });
 }
 
 async function findExistingAiChat(ctx: OrgContext): Promise<ChannelRow | null> {

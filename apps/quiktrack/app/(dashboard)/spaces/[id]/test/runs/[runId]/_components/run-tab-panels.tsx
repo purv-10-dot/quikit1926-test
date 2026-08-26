@@ -1,20 +1,14 @@
 "use client";
 
 import type { MemberOption } from "./assignee-picker";
-import { CaseDetailPane } from "./case-detail-pane";
-import { ResultEntryPane } from "./result-entry-pane";
+import type { RunnerFilterKey } from "./runner-filters";
+import type { RunnerSort } from "./runner-toolbar";
 import { RunActivityPane } from "./run-activity-pane";
-import { RunDefectsPane } from "./run-defects-pane";
 import { RunProgressPane } from "./run-progress-pane";
 import type { RunTab } from "./run-tabs";
-import { TestListPane, type RunnerFilter } from "./test-list-pane";
+import { TestsTab } from "./tests-tab";
 import type { RunActivity } from "./run-activity-types";
-import type {
-  RunSummaryData,
-  RunnerTest,
-  TestDetail,
-  TestStatusLite,
-} from "./runner-types";
+import type { RunSummaryData, RunnerTest, TestStatusLite } from "./runner-types";
 import type { StatusCounts } from "@/lib/test/statuses";
 
 /**
@@ -23,30 +17,45 @@ import type { StatusCounts } from "@/lib/test/statuses";
  * Split from `runner-view.tsx`, which reached 331 lines once four tabs landed —
  * over the 300 ceiling in apps/quiktrack/CLAUDE.md. The view keeps the data and
  * handlers; this file only decides which pane is on screen.
+ *
+ * QUIKTR-341 — the Tests tab is now `TestsTab`: a TestRail-style grid (Sort +
+ * Filter toolbar, section grouping, bulk selection) rather than
+ * list+detail+entry-form. That whole tab's composition lives in tests-tab.tsx,
+ * not here, since it needs selection state the other three tabs have no use
+ * for. The detail pane is rendered by `runner-view.tsx` directly, as a card
+ * SIBLING to this whole component (not a child of any one tab) — it needs to
+ * sit outside the main card's border, matching the reference UI's two-card
+ * layout.
  */
 
 interface RunTabPanelsProps {
   tab: RunTab;
   projectId: string;
+  runId: string;
   run: RunSummaryData | undefined;
   // Tests tab
   tests: RunnerTest[];
   testsTotal: number;
   testsLoading: boolean;
   activeTestId: string | null;
-  onSelectTest: (id: string) => void;
-  filter: RunnerFilter;
-  onFilterChange: (f: RunnerFilter) => void;
-  assigneeName: (userId: string) => string;
-  detail: TestDetail | null;
-  detailLoading: boolean;
+  onOpenDetail: (id: string) => void;
   statuses: TestStatusLite[];
-  onSubmit: (input: { statusId: string; comment?: string }) => Promise<boolean>;
-  submitting: boolean;
-  onAdvance: () => void;
   members: MemberOption[];
-  onReassign: (userId: string | null) => Promise<void>;
-  // Activity / Defects
+  onSetStatus: (testId: string, statusId: string) => Promise<boolean>;
+  onReassign: (testId: string, userId: string | null) => Promise<void>;
+  onSetCaseField: (
+    testId: string,
+    caseId: string,
+    field: string,
+    value: string,
+  ) => Promise<boolean>;
+  onLabelsChanged: () => void;
+  sort: RunnerSort;
+  onSortChange: (s: RunnerSort) => void;
+  filters: Partial<Record<RunnerFilterKey, string>>;
+  onSetFilter: (key: RunnerFilterKey, value: string | undefined) => void;
+  onClearFilters: () => void;
+  // Activity
   activity: RunActivity | undefined;
   activityLoading: boolean;
 }
@@ -54,54 +63,51 @@ interface RunTabPanelsProps {
 export function RunTabPanels({
   tab,
   projectId,
+  runId,
   run,
   tests,
   testsTotal,
   testsLoading,
   activeTestId,
-  onSelectTest,
-  filter,
-  onFilterChange,
-  assigneeName,
-  detail,
-  detailLoading,
+  onOpenDetail,
   statuses,
-  onSubmit,
-  submitting,
-  onAdvance,
   members,
+  onSetStatus,
   onReassign,
+  onSetCaseField,
+  onLabelsChanged,
+  sort,
+  onSortChange,
+  filters,
+  onSetFilter,
+  onClearFilters,
   activity,
   activityLoading,
 }: RunTabPanelsProps) {
   if (tab === "tests") {
     return (
-      <div className="flex min-h-0 flex-1">
-        <TestListPane
-          tests={tests}
-          total={testsTotal}
-          activeTestId={activeTestId}
-          onSelect={onSelectTest}
-          filter={filter}
-          onFilterChange={onFilterChange}
-          loading={testsLoading}
-          assigneeName={assigneeName}
-        />
-        <CaseDetailPane
-          detail={detail}
-          loading={detailLoading}
-          members={members}
-          onReassign={onReassign}
-          assignDisabled={submitting || run?.state === "closed"}
-        />
-        <ResultEntryPane
-          detail={detail}
-          statuses={statuses}
-          onSubmit={onSubmit}
-          submitting={submitting}
-          onAdvance={onAdvance}
-        />
-      </div>
+      <TestsTab
+        runId={runId}
+        projectId={projectId}
+        tests={tests}
+        testsTotal={testsTotal}
+        testsLoading={testsLoading}
+        activeTestId={activeTestId}
+        onOpenDetail={onOpenDetail}
+        statuses={statuses}
+        members={members}
+        readOnly={run?.state === "closed"}
+        onSetStatus={onSetStatus}
+        onReassign={onReassign}
+        onSetCaseField={onSetCaseField}
+        onLabelsChanged={onLabelsChanged}
+        sort={sort}
+        onSortChange={onSortChange}
+        filters={filters}
+        onSetFilter={onSetFilter}
+        onClearFilters={onClearFilters}
+        onBulkDone={onLabelsChanged}
+      />
     );
   }
 
@@ -113,24 +119,12 @@ export function RunTabPanels({
     );
   }
 
-  if (tab === "progress") {
-    return (
-      <div className="min-h-0 flex-1 overflow-auto">
-        <RunProgressPane
-          counts={(run?.counts ?? {}) as StatusCounts}
-          state={run?.state ?? "open"}
-          testCount={testsTotal}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <RunDefectsPane
-        data={activity}
-        loading={activityLoading}
-        projectId={projectId}
+      <RunProgressPane
+        counts={(run?.counts ?? {}) as StatusCounts}
+        state={run?.state ?? "open"}
+        testCount={testsTotal}
       />
     </div>
   );

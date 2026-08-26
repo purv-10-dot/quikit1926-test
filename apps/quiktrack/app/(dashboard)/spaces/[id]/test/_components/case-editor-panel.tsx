@@ -35,6 +35,12 @@ interface CaseEditorPanelProps {
   sectionId: string | null;
   projectId: string;
   onSaved: () => void;
+  /**
+   * A work item to auto-link as coverage on CREATE (QUIKTR-341 — "QuikTest:
+   * Cases" opened from a work item's Details panel). Ignored on edit: an
+   * existing case already has its own Coverage section for that.
+   */
+  linkToIssue?: { id: string; key: string } | null;
 }
 
 export function CaseEditorPanel({
@@ -44,21 +50,41 @@ export function CaseEditorPanel({
   sectionId,
   projectId,
   onSaved,
+  linkToIssue,
 }: CaseEditorPanelProps) {
   const f = useCaseForm({ open, caseId, sectionId, projectId });
 
   const submit = async () => {
-    if (await f.save()) {
-      onSaved();
-      onClose();
+    const result = await f.save();
+    if (!result.ok) return;
+
+    // Auto-link coverage to the originating work item. Best-effort: the case is
+    // already saved at this point, so a failed link here must not look like a
+    // failed case creation — it's surfaced via the case's own Coverage section
+    // (which the user can always fix by hand) rather than blocking the close.
+    if (!f.isEdit && linkToIssue && result.caseId) {
+      try {
+        await fetch(`/api/test/cases/${result.caseId}/work-item-coverage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ issueId: linkToIssue.id, type: "covers" }),
+        });
+      } catch {
+        // Swallowed deliberately — see comment above.
+      }
     }
+
+    onSaved();
+    onClose();
   };
 
   const subtitle = f.isEdit
     ? `${f.refId !== null ? caseRef(f.refId) : ""}${
         f.version !== null ? ` · saving creates version ${f.version + 1}` : ""
       }`
-    : "New test case";
+    : linkToIssue
+      ? `New test case · will cover ${linkToIssue.key}`
+      : "New test case";
 
   return (
     <RightPanel
@@ -121,7 +147,7 @@ export function CaseEditorPanel({
           </FormSection>
 
           <FormSection title="What to test">
-            <Field label="Description">
+            <Field label={f.kind === "TEXT" ? "Steps" : "Description"}>
               <Textarea
                 rows={3}
                 value={f.description}

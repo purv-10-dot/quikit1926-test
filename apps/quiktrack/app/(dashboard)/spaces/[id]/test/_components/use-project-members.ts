@@ -46,8 +46,14 @@ export interface ProjectMembersApi {
 
 export function useProjectMembers(projectId: string): ProjectMembersApi {
   // Cached longer than run data: membership changes far less often than results.
+  // Own cache key ("...-options") — NOT the shared "project-members" key. Other
+  // consumers (issue view, board, timeline) register that key with a DIFFERENT
+  // `select` that returns the raw `{userId, user}` rows. Sharing the key meant
+  // whichever observer resolved first could leave this hook reading a value its
+  // own `select` couldn't map (name came out blank), and it only corrected after
+  // a reload re-ran the transform. A dedicated key makes this fetch independent.
   const { data } = useApiData<MemberOption[]>(
-    ["quiktrack", "project-members", projectId],
+    ["quiktrack", "project-members-options", projectId],
     `/api/projects/${projectId}/members`,
     {
       staleTime: 5 * 60_000,

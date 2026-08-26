@@ -40,8 +40,28 @@ interface ResultHistoryEntry {
   }>;
 }
 
+/**
+ * One-line headline for the latest entry — "Passed on build pw-439110 · 2 min
+ * 14s" (QUIKTR-341's detail-panel restyle). The panel below still lists every
+ * entry (append-only, nothing overwritten); this line is what a tester reads
+ * first without expanding anything.
+ */
+function latestSummary(e: ResultHistoryEntry): string {
+  const parts = [e.status?.label ?? "Unknown status"];
+  if (e.build) parts.push(`on build ${e.build}`);
+  const bits = [parts.join(" ")];
+  if (e.elapsedMs != null && e.elapsedMs > 0) {
+    const totalSeconds = Math.round(e.elapsedMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    bits.push(minutes > 0 ? `${minutes} min ${seconds}s` : `${seconds}s`);
+  }
+  return bits.join(" · ");
+}
+
 export function ResultHistory({ testId }: { testId: string | null }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
 
   const { data, isLoading } = useApiData<ResultHistoryEntry[]>(
     ["quiktrack", "test-results", testId],
@@ -50,6 +70,7 @@ export function ResultHistory({ testId }: { testId: string | null }) {
   );
 
   const entries = data ?? [];
+  const latest = entries[0];
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -76,11 +97,28 @@ export function ResultHistory({ testId }: { testId: string | null }) {
         </p>
       ) : (
         <>
-          <p className="mt-1 text-[11px] text-gray-400">
-            {entries.length} result{entries.length === 1 ? "" : "s"}, newest first.
-            Results are append-only, so this is the full record.
-          </p>
+          {/* The one-line headline a tester reads first — the full list below
+              stays reachable but starts collapsed once there's more than one
+              entry, so a test with a long history doesn't push everything else
+              off screen by default. */}
+          {latest && <p className="mt-1 text-sm text-gray-700">{latestSummary(latest)}</p>}
 
+          {entries.length > 1 && !showAll ? (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="mt-1 text-[11px] text-gray-500 hover:text-gray-800"
+            >
+              Show all {entries.length} results
+            </button>
+          ) : (
+            <p className="mt-1 text-[11px] text-gray-400">
+              {entries.length} result{entries.length === 1 ? "" : "s"}, newest first.
+              Results are append-only, so this is the full record.
+            </p>
+          )}
+
+          {(showAll || entries.length === 1) && (
           <ol className="mt-2 space-y-1.5">
             {entries.map((e, i) => {
               const isOpen = expanded.has(e.id);
@@ -219,6 +257,7 @@ export function ResultHistory({ testId }: { testId: string | null }) {
               );
             })}
           </ol>
+          )}
         </>
       )}
     </div>

@@ -33,6 +33,23 @@ export default function SpaceLayout({
   const pathname = usePathname();
   const router = useRouter();
   const perms = useMyProjectPermissions(params.id);
+  // Whole-project fetch used purely to detect a deleted / inaccessible space.
+  // The API returns 404 when the project is gone or the caller can't see it;
+  // useApiData throws on !ok, so `isError` is our "space not found" signal.
+  // Without this a deleted space (e.g. arrived via the browser Back button)
+  // leaves every tab stuck on its loading shimmer instead of saying so.
+  // staleTime 0 so this always re-validates on mount instead of serving a stale
+  // cached success — a space deleted moments ago (then reached via Back) must
+  // show "not found" immediately, not after the default 60s cache window.
+  const projectQuery = useApiData<unknown>(
+    ["quiktrack", "project-detail", params.id],
+    `/api/projects/${params.id}`,
+    // staleTime 0 → always re-validate on mount (no stale cached success).
+    // retry false → a 404 is authoritative; retrying would only delay the
+    // "not found" message by several seconds of backoff.
+    { staleTime: 0, retry: false },
+  );
+  const projectMissing = projectQuery.isError;
   // tabConfig: undefined while loading, then string[] (enabled paths) or null
   // (unconfigured → all tabs). Shares React Query cache with the header's fetch.
   const { data: tabConfig } = useApiData<string[] | null>(
@@ -46,6 +63,33 @@ export default function SpaceLayout({
     { select: (d) => (d as { templateKey?: string | null } | null)?.templateKey ?? null },
   );
   const configLoaded = tabConfig !== undefined;
+
+  // Canonicalize the URL to the readable project KEY. Any link that still uses
+  // the project UUID (or a deep-link that resolved to an id) is rewritten in
+  // place to /spaces/<KEY>/... so the address bar never exposes the UUID and
+  // navigation from that page stays on the readable key. Routes accept either
+  // form, so this is purely cosmetic + keeps the URL stable.
+  const { data: projectKey } = useApiData<string | null>(
+    ["quiktrack", "project-key", params.id],
+    `/api/projects/${params.id}`,
+    { select: (d) => (d as { projectKey?: string | null } | null)?.projectKey ?? null },
+  );
+  useEffect(() => {
+    if (!projectKey || !pathname) return;
+    // params.id is the raw URL segment; if it isn't already the key, swap it.
+    // IMPORTANT: use history.replaceState, NOT router.replace. router.replace
+    // triggers a real Next navigation that remounts the route subtree — which
+    // made deep-linked panels (e.g. /test/runs?createRun=1) flash closed then
+    // reopen and caused visible flicker. replaceState only rewrites the address
+    // bar (cosmetic), leaving the mounted tree untouched. Routes accept both the
+    // id and the key, so the already-rendered page keeps working unchanged.
+    if (params.id !== projectKey && typeof window !== "undefined") {
+      const rest = pathname.split("/").slice(3).join("/"); // segment after /spaces/<id>
+      const qs = window.location.search;
+      const next = `/spaces/${projectKey}${rest ? `/${rest}` : ""}${qs}`;
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [projectKey, params.id, pathname]);
 
   // Tabs valid for this project's template — a discovery-only tab (Ideas) is not
   // a real destination on a non-discovery space even via direct URL.
@@ -91,6 +135,32 @@ export default function SpaceLayout({
     isSettings, isWorkItem, isTab, perms.loading, configLoaded,
     roleForbidden, tabDisabled, segment, fallbackPath, router, params.id,
   ]);
+
+  // Space deleted or no longer accessible (e.g. deleted in another tab, then
+  // reached here via the browser Back button). Show a clear message instead of
+  // leaving each tab's shimmer / a blank settings form spinning forever. Takes
+  // precedence over the tab/permission gates below — the project itself is gone.
+  if (projectMissing) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 py-16">
+        <div className="max-w-sm text-center">
+          <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            Space not found
+          </h1>
+          <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">
+            The space might have been deleted or you don&apos;t have permission.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.replace("/dashboard")}
+            className="mt-5 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Go to your work
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // While verifying / before the redirect fires, don't render the blocked
   // sub-route — avoids a flash of forbidden or hidden content.

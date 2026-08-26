@@ -67,7 +67,22 @@ function yamlRaw() {
 }
 
 // Vitest 3 + Vite 5 — runs on Node 20.14+ (no Rolldown / Vitest 4 native bindings).
-// Other monorepo apps may use Vitest 4; quikchat is pinned via root package.json overrides.
+//
+// HOW THE 3.x PIN ACTUALLY WORKS — there is no patch and no override. The root
+// `package.json` `overrides` block holds only `react`/`react-dom`; it has never
+// mentioned vitest. What pins this app is the ordinary exact
+// `"vitest": "3.2.4"` in `apps/quikchat/package.json`: the workspace root hoists
+// 4.1.10 for everyone else, npm cannot satisfy 3.2.4 from that, so it nests a
+// second copy at `apps/quikchat/node_modules/vitest` and `npm run test` here
+// resolves to it. Plain npm nesting, reproducible from the lockfile.
+//
+// Consequence, and the reason this is worth a comment at all: the nested tree is
+// fragile across merges. A branch that bumps the shared deps for the hoisted
+// workspaces and not this one leaves the nested copy asking for packages nothing
+// else in the tree installs, and the break surfaces as `ERR_MODULE_NOT_FOUND` on
+// a transitive dep (`loupe`, `strip-literal`) rather than as a version error. A
+// clean `npm ci` repairs it. Aligning both stragglers on 4.x retires the whole
+// class — see QUIKCHAT_BACKLOG.md.
 export default defineConfig({
   plugins: [react(), yamlRaw()],
   test: {

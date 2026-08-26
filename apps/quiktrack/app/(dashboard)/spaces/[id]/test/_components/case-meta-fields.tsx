@@ -28,6 +28,12 @@ export interface TemplateOption {
   id: string;
   name: string;
   kind: TemplateKind;
+  /**
+   * The org's pre-selected template for a new case. Exactly one org-wide template
+   * carries this (enforced by a partial unique index), so the editor can honour the
+   * org's choice instead of hardcoding a layout.
+   */
+  isDefault?: boolean;
 }
 
 export interface MetaValues {

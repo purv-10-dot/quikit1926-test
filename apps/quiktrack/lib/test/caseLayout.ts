@@ -30,13 +30,32 @@ export interface TestTemplateSeed {
 }
 
 export const TEST_TEMPLATE_SEED: readonly TestTemplateSeed[] = [
-  // STEPS is the default because it is what every case authored so far uses —
-  // making TEXT the default would change how existing cases render.
+  // Mirrors the migration's seed EXACTLY — do not change these flags to alter what
+  // the create form pre-selects. This list exists so a provisioned org is
+  // indistinguishable from a seeded one; editing it would create drift between the
+  // two without touching any org that already exists (ensureTestTemplates fills
+  // gaps, it never updates).
+  //
+  // The create form's pre-selection is a UI concern and lives in
+  // `lib/test/caseLayout.ts` → PREFERRED_NEW_CASE_KIND, applied by use-case-form.ts.
   { name: "Test Case (Steps)", kind: "STEPS", isDefault: true },
   { name: "Test Case (Text)", kind: "TEXT", isDefault: false },
   { name: "BDD / Gherkin", kind: "BDD", isDefault: false },
   { name: "Exploratory Session", kind: "EXPLORATORY", isDefault: false },
 ];
+
+/**
+ * Which template the CREATE form pre-selects.
+ *
+ * A UI default, deliberately separate from `QtTestTemplate.isDefault` in the database:
+ * the owner wanted the form to open on "Test Case (Text)" without a data migration, and
+ * every org already provisioned has STEPS flagged in the DB.
+ *
+ * Falls back gracefully — if an org has no TEXT template (a customised set), the form
+ * uses the org's own default, then the first template, so it never opens with nothing
+ * selected. See `use-case-form.ts`.
+ */
+export const PREFERRED_NEW_CASE_KIND: TemplateKind = "TEXT";
 
 /** Unknown/missing template falls back to STEPS, matching the seeded default. */
 export function normaliseKind(kind: string | null | undefined): TemplateKind {

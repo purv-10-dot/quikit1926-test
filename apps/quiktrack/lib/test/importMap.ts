@@ -1,5 +1,14 @@
 import { normaliseHeader, type RawRow } from "./importParse";
 import { parseEstimate } from "./estimate";
+import type { TemplateKind } from "./caseLayout";
+import {
+  hiddenByLayout,
+  inferTemplateKind,
+  parseTemplateKind,
+} from "./importTemplate";
+
+// Re-exported so existing importers (and the tests) keep one entry point.
+export { inferTemplateKind, parseTemplateKind } from "./importTemplate";
 
 /**
  * Maps spreadsheet rows onto test cases, and validates them.
@@ -19,6 +28,12 @@ export const IMPORT_COLUMNS = {
   steps: ["Steps", "Test Steps", "Step"],
   expected: ["Expected Result", "Expected", "Expected Results"],
   estimate: ["Estimate"],
+  /**
+   * Which body layout the case is authored in. Optional: when absent the layout is
+   * INFERRED from what the row actually contains (see inferTemplateKind), which is
+   * what most spreadsheets will rely on.
+   */
+  template: ["Template", "Template Type", "Case Type", "Layout"],
   automation: ["Automation", "Is Automated", "Automation Status"],
   automationId: ["Automation ID", "AutomationId"],
   references: ["References", "Refs"],
@@ -44,8 +59,13 @@ function pick(row: RawRow, col: ImportColumn): string {
 /** Vocabularies. Import is forgiving about case and spacing, strict about values. */
 const PRIORITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "LOWEST"];
 const TYPES = [
-  "FUNCTIONAL", "REGRESSION", "SMOKE", "UAT", "SECURITY",
-  "PERFORMANCE", "COMPATIBILITY", "NEGATIVE", "BDD", "EXPLORATORY",
+  "FUNCTIONAL", "REGRESSION", "SMOKE", "SANITY", "INTEGRATION", "UI", "API",
+  "DATABASE", "PERFORMANCE", "SECURITY", "COMPATIBILITY", "POSITIVE",
+  "NEGATIVE", "BOUNDARY_VALUE", "USABILITY", "ACCESSIBILITY", "EXPLORATORY",
+  "BDD",
+  // Not offered going forward, but still accepted so a CSV re-exported from
+  // this app before the list widened still imports cleanly.
+  "UAT",
 ];
 
 function normaliseEnum(value: string, allowed: string[]): string | null {
@@ -103,6 +123,11 @@ export interface MappedCase {
   /** 1-based row number in the FILE (header is row 1), for error messages. */
   rowNumber: number;
   title: string;
+  /**
+   * Body layout: taken from a Template column when given, else inferred from the
+   * row's content. The service resolves this to a real `templateId` per org.
+   */
+  templateKind: TemplateKind;
   sectionPath: string[];
   description: string | null;
   preconditions: string | null;
@@ -216,34 +241,68 @@ export function mapRows(rows: RawRow[], headers: string[]): MapResult {
       });
     }
 
+    const steps = parseSteps(pick(row, "steps"));
+    const preconditions = pick(row, "preconditions") || null;
+    const expectedResult = pick(row, "expected") || null;
+
+    // Explicit Template column wins; otherwise infer from the content.
+    const rawTemplate = pick(row, "template");
+    const explicitKind = rawTemplate ? parseTemplateKind(rawTemplate) : null;
+    if (rawTemplate && !explicitKind) {
+      issues.push({
+        rowNumber,
+        severity: "warning",
+        message: `Template "${rawTemplate}" is not recognised; the layout was chosen from the row's content instead.`,
+      });
+    }
+    const templateKind =
+      explicitKind ?? inferTemplateKind({ steps, expectedResult, preconditions });
+
+    // Content the chosen layout will not display is worth flagging: it is preserved
+    // on the case, but a user who cannot see it will think the import dropped it.
+    // See hiddenByLayout for what is deliberately NOT reported.
+    const hidden = hiddenByLayout(templateKind, steps.length);
+    if (hidden) {
+      issues.push({ rowNumber, severity: "warning", message: hidden });
+    }
+
     cases.push({
       rowNumber,
       title,
+      templateKind,
       sectionPath: parseSectionPath(pick(row, "section")),
       description: pick(row, "description") || null,
-      preconditions: pick(row, "preconditions") || null,
-      expectedResult: pick(row, "expected") || null,
+      preconditions,
+      expectedResult,
       priority: priority ?? "MEDIUM",
       type: type ?? "FUNCTIONAL",
       automationStatus,
       automationId,
       refTickets: pick(row, "references") || null,
       estimateMs,
-      steps: parseSteps(pick(row, "steps")),
+      steps,
     });
   });
 
   return { cases, issues, unknownHeaders };
 }
 
-/** The sample file offered in the modal. Real content, not lorem ipsum. */
-export const SAMPLE_CSV = `Title,Section,Priority,Type,Preconditions,Steps,Expected Result,Estimate,Automation,Automation ID,References
-"User can log in with valid credentials",Login,High,Functional,"A verified account exists","1. Open /login
+/**
+ * The sample file offered in the modal. Real content, not lorem ipsum — and one row
+ * per LAYOUT, so the file doubles as documentation for the Template column.
+ *
+ * Row 1 omits Template on purpose: it has steps, so the layout is inferred as Steps.
+ * That is the common case and the sample should show it working without ceremony.
+ */
+export const SAMPLE_CSV = `Title,Section,Template,Priority,Type,Preconditions,Steps,Expected Result,Estimate,Automation,Automation ID,References
+"User can log in with valid credentials",Login,,High,Functional,"A verified account exists","1. Open /login
 2. Enter valid email and password => Form accepts input
 3. Submit","Dashboard loads and the user's name is shown",5m,Manual,,
-"Locked account shows a clear message","Login / Errors",Medium,Negative,"Account locked after 5 failed attempts","1. Open /login
+"Locked account shows a clear message","Login / Errors",Steps,Medium,Negative,"Account locked after 5 failed attempts","1. Open /login
 2. Submit credentials for the locked account","A message explains the account is locked, not 'wrong password'",3m,Manual,,QUIKTR-114
-"Password reset email arrives within 60 seconds",Login,High,Functional,"A verified email address exists","1. Open /forgot-password
-2. Submit the account email
-3. Check the inbox","A reset email arrives and the link opens the set-password page",10m,Automated,auth.spec.ts::password_reset_email,
+"Password reset email arrives within 60 seconds",Login,Text,High,Functional,"A verified email address exists",,"A reset email arrives within 60 seconds and its link opens the set-password page",10m,Automated,auth.spec.ts::password_reset_email,
+"Checkout applies a percentage discount code",Checkout,BDD,High,Functional,"A 10% code exists and the cart holds one item",,"Given a cart with one GBP 100 item
+When the shopper applies code SAVE10
+Then the total shows GBP 90",8m,Manual,,
+"Explore the checkout flow for confusing states",Checkout,Exploratory,Medium,Exploratory,"Time-box: 45 minutes. Focus on error and empty states across payment methods.",,,45m,Manual,,
 `;

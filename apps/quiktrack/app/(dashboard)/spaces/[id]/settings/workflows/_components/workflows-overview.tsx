@@ -202,10 +202,10 @@ export function WorkflowsOverview({ projectId }: { projectId: string }) {
             </button>
           </div>
 
-          <div className="overflow-hidden rounded-md border border-gray-200">
+          <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-accent-50 text-left text-gray-600">
+                <tr className="border-b border-gray-200 dark:border-gray-700 bg-accent-50 dark:bg-gray-900 text-left text-gray-600 dark:text-gray-400">
                   <th className="px-4 py-2 font-medium">Workflow</th>
                   <th className="px-4 py-2 font-medium">Work Types</th>
                   <th className="px-4 py-2 font-medium text-right">Actions</th>

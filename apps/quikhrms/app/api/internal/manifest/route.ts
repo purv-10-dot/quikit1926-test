@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * in lib/ai/claude.ts.
  *
  * Auth: service-to-service only. Accepts the dedicated AI-runtime secret
- * (INTERNAL_AI_RUNTIME_SECRET) OR the shared launcher secret (INTERNAL_SECRET),
+ * (INTERNAL_SECRET) OR the shared launcher secret (INTERNAL_SECRET),
  * so both the runtime and the platform launcher can discover the surface. Read
  * only — no DB work, no per-tenant data.
  *
@@ -177,7 +177,7 @@ const ENTITIES = [
 ];
 
 export async function GET(req: NextRequest) {
-  const runtimeSecret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const runtimeSecret = process.env.INTERNAL_SECRET;
   const sharedSecret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
   const ok =
@@ -195,7 +195,7 @@ export async function GET(req: NextRequest) {
       // Service-auth contract the runtime uses to call as an employee (P0-1).
       serviceAuth: {
         header: "x-internal-secret",
-        secretEnvVar: "INTERNAL_AI_RUNTIME_SECRET",
+        secretEnvVar: "INTERNAL_SECRET",
         requiredHeaders: ["x-org-id", "x-acting-employee-id"],
         optionalHeaders: ["x-acting-agent-id", "x-acting-as"],
       },

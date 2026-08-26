@@ -11,7 +11,10 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],
     include: ["__tests__/**/*.test.{ts,tsx}"],
-    exclude: ["__tests__/e2e/**", "node_modules/**"],
+    // `__tests__/integration/**` needs a real Postgres and runs from
+    // `vitest.integration.config.ts` (npm run test:integration). Excluded here
+    // so `npm run test` stays runnable on CI, which has no database.
+    exclude: ["__tests__/e2e/**", "__tests__/integration/**", "node_modules/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
@@ -24,6 +27,10 @@ export default defineConfig({
       { find: "@", replacement: path.resolve(__dirname, ".") },
       { find: "@quikit/database", replacement: path.resolve(__dirname, "../../packages/database") },
       { find: "@quikit/auth", replacement: path.resolve(__dirname, "../../packages/auth") },
+      // Subpath alias must come BEFORE the bare "@quikit/ui" entry — aliases are
+      // matched in order, and the bare one would rewrite "@quikit/ui/support"
+      // to a non-existent packages/ui/support.
+      { find: /^@quikit\/ui\/support$/, replacement: path.resolve(__dirname, "../../packages/ui/components/support/index.ts") },
       { find: "@quikit/ui", replacement: path.resolve(__dirname, "../../packages/ui") },
       // Subpath aliases for @quikit/shared/<file> imports — must come BEFORE
       // the bare package alias so they win the prefix match.
@@ -37,6 +44,7 @@ export default defineConfig({
       { find: /^@quikit\/shared\/redisCache$/, replacement: path.resolve(__dirname, "../../packages/shared/lib/redisCache.ts") },
       { find: /^@quikit\/shared\/dateFormat$/, replacement: path.resolve(__dirname, "../../packages/shared/lib/dateFormat.ts") },
       { find: /^@quikit\/shared\/sso-domain-server$/, replacement: path.resolve(__dirname, "../../packages/shared/lib/sso-domain-server.ts") },
+      { find: /^@quikit\/shared\/supportContent$/, replacement: path.resolve(__dirname, "../../packages/shared/lib/supportContent.ts") },
       { find: /^@quikit\/shared\/types$/, replacement: path.resolve(__dirname, "../../packages/shared/types/index.ts") },
       { find: "@quikit/shared", replacement: path.resolve(__dirname, "../../packages/shared") },
     ],

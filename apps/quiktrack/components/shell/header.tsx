@@ -7,7 +7,8 @@ import { useParams, usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { HelpCircle, Settings, Plus, PanelLeft, ListChecks } from "lucide-react";
-import { UserMenu, globalSignOut } from "@quikit/ui";
+import { globalSignOut } from "@quikit/ui";
+import { UserMenuWithOrg } from "@/components/shell/user-menu-with-org";
 import { CreateIdeaModal } from "@/app/(dashboard)/spaces/[id]/ideas/_components/create-idea-modal";
 import { ChecklistDrawer } from "@/components/checklist/checklist-drawer";
 import { NotificationsPopover } from "@/components/shell/notifications-popover";
@@ -188,7 +189,9 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
                 anchorRef={settingsBtnRef}
               />
             </div>
-            <UserMenu
+            {/* Local menu, not @quikit/ui's: it adds a display-only row naming
+                the active organisation above Sign out. See the file header. */}
+            <UserMenuWithOrg
               user={{ name: fullName, email }}
               onSignOut={handleSignOut}
               avatarClassName="bg-blue-600"
