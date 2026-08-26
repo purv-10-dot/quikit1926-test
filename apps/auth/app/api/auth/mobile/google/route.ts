@@ -24,6 +24,7 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { encode } from "next-auth/jwt";
 import { z } from "zod";
 import {
   acceptPendingInvites,
@@ -142,10 +143,52 @@ export async function POST(req: NextRequest) {
     const handoff = new URL("/auth-handoff", normalizedOrigin);
     handoff.searchParams.set("token", token);
 
-    return NextResponse.json(
+    // Native login gets a NextAuth session cookie on this (auth) host for
+    // free from NextAuth's own signIn flow. Google SSO mints a handoff
+    // token straight to the target app and skips that — but /api/post-login
+    // (needed by the launcher's Organizations/Other Apps bridge) reads
+    // getServerSession() on THIS host, so without this cookie it always
+    // redirects to /login and the bridge fails for Google-SSO sessions.
+    const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+    if (!nextAuthSecret) {
+      return NextResponse.json(
+        { success: false, error: "Server misconfigured" },
+        { status: 500 },
+      );
+    }
+    const authHostSessionToken = await encode({
+      token: {
+        sub: result.dbUser.id,
+        id: result.dbUser.id,
+        orgId: orgContext.orgId ?? undefined,
+        isSuperAdmin: result.dbUser.isSuperAdmin,
+        membershipRole: orgContext.membershipRole ?? undefined,
+        email: orgContext.email ?? undefined,
+        firstName: orgContext.firstName ?? undefined,
+        lastName: orgContext.lastName ?? undefined,
+        name: orgContext.name ?? undefined,
+        sessionId,
+      },
+      secret: nextAuthSecret,
+      maxAge: 30 * 24 * 60 * 60,
+    });
+
+    const response = NextResponse.json(
       { success: true, data: { handoffUrl: handoff.toString() } },
       { status: 200 },
     );
+    const cookieName =
+      process.env.NODE_ENV === "production"
+        ? "__Secure-next-auth.session-token"
+        : "next-auth.session-token";
+    response.cookies.set(cookieName, authHostSessionToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 30 * 24 * 60 * 60,
+    });
+    return response;
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Native Google login failed";
