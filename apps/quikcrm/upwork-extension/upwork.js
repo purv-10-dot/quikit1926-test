@@ -1254,3 +1254,1290 @@ function showToast(toastId, message, bgColorClass) {
     }, 1000);
   }
 }
+
+/* ==========================================================================
+ * Conversation extraction (Upwork Messages room)  —  ADDITIVE
+ *
+ * Everything below is independent of the job-scraping flow above. It shares no
+ * ids, no state and no functions with scrapeData / #save, so the existing
+ * Job -> CRM path is unaffected.
+ *
+ * Flow:
+ *   user opens a Messages room -> #extractChat -> executeScript(scrapeConversation)
+ *   -> resolve candidate CRM job -> USER CONFIRMS -> POST
+ *      /api/upwork/{id}/conversation
+ *
+ * The job is never attached automatically on a weak signal. A match is only
+ * pre-selected when Upwork gave us a hard identifier (a "~0..." job ticket id
+ * found in the room); anything softer is offered as a searchable list with
+ * nothing pre-selected.
+ * ========================================================================== */
+
+/** Console prefix, matching the extension's existing ad-hoc console logging. */
+const QCHAT_LOG = "[QuikCRM chat]";
+
+/**
+ * Shown when Extract Conversation is clicked (or hovered) somewhere that has no
+ * conversation — a job page, or a proposal page. Kept as one constant so the
+ * button tooltip, the disabled-click message and the hint-clearing check below
+ * can never drift apart.
+ */
+const CHAT_UNAVAILABLE_MSG = "Open an Upwork Messages conversation first.";
+
+/** True when #chatStatus currently holds the unavailable hint (and so may be
+ *  cleared on navigation) rather than a real extraction status. */
+function chatStatusIsUnavailableHint() {
+  const el = document.getElementById("chatStatus");
+  return !!el && (el.textContent || "").trim() === CHAT_UNAVAILABLE_MSG;
+}
+
+/** True when a URL is an Upwork Messages room. */
+function isUpworkMessagesUrl(url) {
+  return typeof url === "string" && /upwork\.com\/(ab\/)?messages\b/i.test(url);
+}
+
+function setChatStatus(text, tone) {
+  const el = document.getElementById("chatStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.color =
+    tone === "error" ? "#dc2626" : tone === "success" ? "#16a34a" : "";
+}
+
+/**
+ * Scrape the open Messages room.
+ *
+ * RUNS IN THE UPWORK TAB, serialized across the process boundary by
+ * chrome.scripting.executeScript — so it must stay entirely self-contained: no
+ * outer-scope references, no helpers from this file. Same constraint the README
+ * documents for scrapeData/retrunFunction.
+ *
+ * Returns { ok, reason, thread } and never throws across the boundary; a thrown
+ * error would surface only as an opaque undefined result.
+ */
+function scrapeConversation() {
+  try {
+    const out = {
+      threadId: null,
+      conversationUrl: window.location.href,
+      clientName: null,
+      jobTicketId: null,
+      jobTitleHint: null,
+      messages: [],
+      truncated: false,
+    };
+
+    // --- thread id: from the URL, the most stable identifier the room exposes.
+    // /ab/messages/rooms/room_<hash>  (older layouts: /messages/<id>)
+    const roomMatch = window.location.pathname.match(
+      /\/(?:rooms|messages)\/([A-Za-z0-9_~-]{4,})/
+    );
+    if (roomMatch) out.threadId = roomMatch[1];
+
+    // --- job ticket id: the ONLY hard job link Upwork sometimes renders in a
+    // room (a contract/job link in the header or a pinned job card). When it is
+    // absent we say so rather than guessing — the panel then asks the user.
+    const jobAnchor = document.querySelector(
+      'a[href*="~0"][href*="/jobs/"], a[href*="~0"][href*="/proposals/"], a[href*="~0"][href*="/contracts/"]'
+    );
+    if (jobAnchor) {
+      const m = jobAnchor.getAttribute("href").match(/~([0-9a-z]{10,})/i);
+      if (m) out.jobTicketId = "~" + m[1];
+      const t = (jobAnchor.textContent || "").trim();
+      if (t) out.jobTitleHint = t;
+    }
+
+    // --- room header: client/counterparty name and, on many rooms, the job
+    // title as the room subject.
+    const header =
+      document.querySelector('[data-test="room-header"]') ||
+      document.querySelector('[data-testid="room-header"]') ||
+      document.querySelector("header");
+    if (header) {
+      const nameEl =
+        header.querySelector('[data-test*="name"], [data-testid*="name"]') ||
+        header.querySelector("h1, h2, h3");
+      const nm = nameEl && (nameEl.textContent || "").trim();
+      if (nm) out.clientName = nm;
+      if (!out.jobTitleHint) {
+        const subj = header.querySelector(
+          '[data-test*="subject"], [data-testid*="subject"], [class*="subject"]'
+        );
+        const st = subj && (subj.textContent || "").trim();
+        if (st) out.jobTitleHint = st;
+      }
+    }
+
+    // --- messages. Prefer stable data-* hooks; fall back to a structural
+    // selector only if Upwork rendered none, and bail rather than scraping
+    // arbitrary page text.
+    let nodes = document.querySelectorAll(
+      '[data-test="message-story"], [data-testid="message-story"], [data-test*="story-item"]'
+    );
+    if (!nodes.length) {
+      const list =
+        document.querySelector('[data-test="messages-list"]') ||
+        document.querySelector('[data-testid="messages-list"]') ||
+        document.querySelector('[class*="message-list"], [class*="story-list"]');
+      if (list)
+        nodes = list.querySelectorAll('[class*="story"], [class*="message"]');
+    }
+    if (!nodes.length) {
+      return { ok: false, reason: "NO_MESSAGES", thread: out };
+    }
+
+    // Who am I? Upwork marks own messages with an alignment/ownership hook.
+    // When it does not, senderType stays null rather than being guessed.
+    const CAP = 500;
+    let order = 0;
+    const seen = Object.create(null);
+
+    for (let i = 0; i < nodes.length; i++) {
+      if (out.messages.length >= CAP) {
+        out.truncated = true;
+        break;
+      }
+      const node = nodes[i];
+
+      const bodyEl =
+        node.querySelector(
+          '[data-test="message-body"], [data-testid="message-body"], [class*="message-body"]'
+        ) || node;
+      const text = (bodyEl.innerText || bodyEl.textContent || "").trim();
+      if (!text) continue;
+
+      // Sender name.
+      const senderEl = node.querySelector(
+        '[data-test*="author"], [data-testid*="author"], [class*="author"], [class*="sender"]'
+      );
+      const senderName = senderEl
+        ? (senderEl.textContent || "").trim() || null
+        : null;
+
+      // Sender type: only from an explicit ownership marker.
+      let senderType = null;
+      const cls = (node.className && String(node.className)) || "";
+      if (/\b(is-)?own\b|self|outgoing|sent-by-me/i.test(cls)) senderType = "user";
+      else if (/incoming|received|other/i.test(cls)) senderType = "client";
+      if (!senderType && node.getAttribute("data-test-own") === "true")
+        senderType = "user";
+
+      // Timestamp: only an absolute one. Upwork's relative labels ("2 days ago")
+      // are NOT parsed into a date — a wrong date is worse than none.
+      let sentAt = null;
+      const timeEl = node.querySelector("time[datetime], [datetime]");
+      const dt = timeEl && timeEl.getAttribute("datetime");
+      if (dt) {
+        const parsed = new Date(dt);
+        if (!isNaN(parsed.getTime())) sentAt = parsed.toISOString();
+      }
+
+      // Message id. Upwork's own id when present; otherwise a STABLE synthetic
+      // one derived from thread + content (never random, never index-only), so
+      // re-extracting the same room upserts instead of duplicating.
+      let id =
+        node.getAttribute("data-story-id") ||
+        node.getAttribute("data-message-id") ||
+        node.getAttribute("data-test-story-id") ||
+        (node.id && /\d/.test(node.id) ? node.id : null);
+      if (!id) {
+        let h = 5381;
+        const basis =
+          (out.threadId || "room") + "|" + (senderName || "") + "|" + text;
+        for (let c = 0; c < basis.length; c++) {
+          h = ((h << 5) + h + basis.charCodeAt(c)) >>> 0;
+        }
+        id = "syn_" + h.toString(36) + "_" + text.length;
+      }
+      if (seen[id]) continue;
+      seen[id] = true;
+
+      out.messages.push({
+        id,
+        text,
+        senderName,
+        senderType,
+        sentAt,
+        order: order++,
+      });
+    }
+
+    if (!out.messages.length)
+      return { ok: false, reason: "NO_MESSAGES", thread: out };
+    return { ok: true, reason: null, thread: out };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "SCRAPE_ERROR",
+      error: String((err && err.message) || err),
+    };
+  }
+}
+
+/** Fetch candidate CRM Upwork jobs (optionally filtered) for the confirm step. */
+async function fetchUpworkJobCandidates(query) {
+  const store = await new Promise((resolve) =>
+    chrome.storage.local.get(["token", "selectedOrganization"], resolve)
+  );
+  const params = new URLSearchParams({ page: "1", pageSize: "50" });
+  if (query) params.set("q", query);
+  if (store.selectedOrganization && store.selectedOrganization.id) {
+    params.set("orgId", store.selectedOrganization.id);
+  }
+  const res = await fetch(`${QCRM_API_BASE_URL}/api/upwork?${params.toString()}`, {
+    headers: { Authorization: "Bearer " + store.token },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body || body.success === false) {
+    throw new Error(
+      (body && body.error) ||
+        (res.status === 401
+          ? "Session expired. Please sign in again."
+          : "Could not load jobs.")
+    );
+  }
+  const data = body.data || {};
+  return data.items || [];
+}
+
+/**
+ * Render the confirm step.
+ *
+ * `preselectId` is set ONLY on a hard identifier match (job ticket id). With a
+ * soft signal the list is shown with a blank first option, so the user must make
+ * a deliberate choice — no conversation is ever attached by default.
+ */
+function renderChatJobChoices(jobs, preselectId) {
+  const select = document.getElementById("chatJobSelect");
+  if (!select) return;
+  select.innerHTML = "";
+
+  if (!preselectId) {
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "— Select the matching job —";
+    select.appendChild(blank);
+  }
+  jobs.forEach((job) => {
+    const opt = document.createElement("option");
+    opt.value = job.id;
+    // textContent, not innerHTML: job titles are scraped third-party text.
+    opt.textContent = job.jobTitle || "(untitled job)";
+    if (preselectId && job.id === preselectId) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  document.getElementById("chatConfirm").style.display = "block";
+}
+
+/** Wire the conversation UI. Called on panel load, alongside the job handlers. */
+function handleExtractChatClick() {
+  const button = document.getElementById("extractChat");
+  const section = document.getElementById("chatsection");
+  if (!button || !section) return;
+
+  // The section is ALWAYS VISIBLE. Only the button's availability tracks the
+  // current URL — visibility and availability are deliberately separate
+  // concerns, so the panel's action list never changes shape as the user moves
+  // around Upwork.
+  //
+  // Re-evaluated on navigation, not just once at bootstrap: the side panel stays
+  // open while the user moves around Upwork, so a single check would leave the
+  // button stuck in whatever state the panel happened to open in.
+  const syncChatAvailability = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs && tabs[0] && tabs[0].url;
+      const available = isUpworkMessagesUrl(url);
+      button.disabled = !available;
+      // Keep the reason visible on the button itself, not only after a click.
+      button.title = available
+        ? "Extract this Upwork conversation"
+        : CHAT_UNAVAILABLE_MSG;
+      // Clear a stale unavailable-message once the user reaches a real room, but
+      // never clobber a live status (extracting / results / an error).
+      if (available && chatStatusIsUnavailableHint()) setChatStatus("");
+    });
+  };
+  syncChatAvailability();
+
+  // Both events matter: onUpdated catches in-page navigation within one tab
+  // (Upwork is a SPA, so opening a room often fires only a URL change), and
+  // onActivated catches the user switching to a different tab entirely.
+  if (chrome.tabs.onUpdated && chrome.tabs.onUpdated.addListener) {
+    chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+      if (changeInfo.url || changeInfo.status === "complete") syncChatAvailability();
+    });
+  }
+  if (chrome.tabs.onActivated && chrome.tabs.onActivated.addListener) {
+    chrome.tabs.onActivated.addListener(syncChatAvailability);
+  }
+
+  // Scraped thread awaiting confirmation. Cleared on save/cancel so a stale
+  // thread can never be saved against a later, unrelated confirmation.
+  let pendingThread = null;
+
+  const resetConfirm = () => {
+    pendingThread = null;
+    const c = document.getElementById("chatConfirm");
+    if (c) c.style.display = "none";
+  };
+
+  document.getElementById("chatCancel").addEventListener("click", () => {
+    resetConfirm();
+    setChatStatus("Cancelled.");
+    console.log(QCHAT_LOG, "extraction cancelled by user");
+  });
+
+  // Search re-queries the CRM; nothing is auto-selected from a search result.
+  let searchTimer = null;
+  document.getElementById("chatJobSearch").addEventListener("input", (e) => {
+    const q = e.target.value.trim();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      try {
+        const jobs = await fetchUpworkJobCandidates(q);
+        renderChatJobChoices(jobs, null);
+        if (!jobs.length) setChatStatus("No matching jobs in CRM.", "error");
+        else setChatStatus(`${jobs.length} job(s) — pick the right one.`);
+      } catch (err) {
+        setChatStatus(err.message || "Could not search jobs.", "error");
+      }
+    }, 300);
+  });
+
+  button.addEventListener("click", () => {
+    resetConfirm();
+    setChatStatus("Extracting…");
+    console.log(QCHAT_LOG, "extraction started");
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab) return setChatStatus("No active tab.", "error");
+
+      // Belt-and-braces: the button is disabled off a Messages room, but the
+      // active tab can change between the last sync and this click.
+      if (!isUpworkMessagesUrl(tab.url)) {
+        setChatStatus(CHAT_UNAVAILABLE_MSG, "error");
+        return;
+      }
+
+      chrome.scripting.executeScript(
+        { target: { tabId: tab.id }, function: scrapeConversation },
+        async (results) => {
+          if (chrome.runtime.lastError) {
+            console.error(
+              QCHAT_LOG,
+              "injection failed",
+              chrome.runtime.lastError.message
+            );
+            return setChatStatus(
+              "Extraction failed — reload the Upwork tab.",
+              "error"
+            );
+          }
+          const res = results && results[0] && results[0].result;
+          if (!res) {
+            console.error(QCHAT_LOG, "no result from injected scraper");
+            return setChatStatus("Extraction failed.", "error");
+          }
+          if (!res.ok) {
+            if (res.reason === "NO_MESSAGES") {
+              console.log(QCHAT_LOG, "no conversation found");
+              return setChatStatus(
+                "No conversation found on this page.",
+                "error"
+              );
+            }
+            console.error(QCHAT_LOG, "scrape error", res.error);
+            return setChatStatus("Extraction failed.", "error");
+          }
+
+          const thread = res.thread;
+          pendingThread = thread;
+          console.log(QCHAT_LOG, "conversation detected", {
+            threadId: thread.threadId,
+            jobTicketId: thread.jobTicketId,
+            messages: thread.messages.length,
+            truncated: thread.truncated,
+          });
+          setChatStatus(
+            `${thread.messages.length} message(s) extracted` +
+              (thread.truncated ? " (capped at 500)" : "") +
+              " — confirm the job."
+          );
+
+          // Resolve a candidate. A hard job-ticket-id match is the ONLY basis
+          // for pre-selecting; the title hint merely seeds the search box.
+          try {
+            let jobs = await fetchUpworkJobCandidates(
+              thread.jobTicketId ? "" : thread.jobTitleHint || ""
+            );
+            let preselect = null;
+            if (thread.jobTicketId) {
+              const hit = jobs.find(
+                (j) => j.upworkJobId === thread.jobTicketId
+              );
+              if (hit) {
+                preselect = hit.id;
+                console.log(
+                  QCHAT_LOG,
+                  "job matched by ticket id",
+                  thread.jobTicketId
+                );
+              } else {
+                jobs = await fetchUpworkJobCandidates(thread.jobTitleHint || "");
+              }
+            }
+            if (!preselect) {
+              console.log(QCHAT_LOG, "no hard job match — user must select");
+            }
+            if (!jobs.length) {
+              setChatStatus(
+                "No Upwork jobs in CRM to link to. Save the job first.",
+                "error"
+              );
+              return;
+            }
+            const search = document.getElementById("chatJobSearch");
+            if (search && !preselect && thread.jobTitleHint) {
+              search.value = thread.jobTitleHint;
+            }
+            renderChatJobChoices(jobs, preselect);
+          } catch (err) {
+            console.error(QCHAT_LOG, "candidate lookup failed", err);
+            setChatStatus(err.message || "Could not load jobs.", "error");
+          }
+        }
+      );
+    });
+  });
+
+  // Save — only reachable after the user picked a job.
+  document
+    .getElementById("chatConfirmSave")
+    .addEventListener("click", async () => {
+      if (!pendingThread)
+        return setChatStatus("Extract a conversation first.", "error");
+      const jobId = document.getElementById("chatJobSelect").value;
+      if (!jobId) return setChatStatus("Select the matching job first.", "error");
+
+      setChatStatus("Saving…");
+      console.log(QCHAT_LOG, "CRM save started", {
+        jobId,
+        messages: pendingThread.messages.length,
+      });
+      try {
+        const store = await new Promise((resolve) =>
+          chrome.storage.local.get(["token"], resolve)
+        );
+        const res = await fetch(
+          `${QCRM_API_BASE_URL}/api/upwork/${jobId}/conversation`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + store.token,
+            },
+            body: JSON.stringify({
+              threadId: pendingThread.threadId,
+              conversationUrl: pendingThread.conversationUrl,
+              clientName: pendingThread.clientName,
+              messages: pendingThread.messages,
+            }),
+          }
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body || body.success === false) {
+          const message =
+            (body && body.error) ||
+            (res.status === 401
+              ? "Session expired. Please sign in again."
+              : "Could not save the conversation.");
+          console.error(QCHAT_LOG, "CRM save failed", message);
+          setChatStatus(message, "error");
+          errormsg(message);
+          return;
+        }
+        const data = body.data || {};
+        console.log(QCHAT_LOG, "CRM save completed", data);
+        // Re-saving an already-saved thread is a successful no-op server-side
+        // (upsert), so this reads as success rather than a duplicate error.
+        const note = data.failed ? ` (${data.failed} failed)` : "";
+        setChatStatus(`Saved ${data.saved} message(s)${note}.`, "success");
+        sucessmsg(`Conversation saved to CRM (${data.saved} message(s)).`);
+        resetConfirm();
+      } catch (err) {
+        console.error(QCHAT_LOG, "CRM save error", err);
+        setChatStatus(err.message || "Could not save the conversation.", "error");
+      }
+    });
+}
+
+
+/* ==========================================================================
+ * Proposal extraction (Upwork submitted proposal)  —  ADDITIVE
+ *
+ * Captures the Connects the freelancer ACTUALLY spent on their own submitted
+ * proposal, which only /nx/proposals/{proposalId} exposes. Independent of both
+ * the job-scraping and conversation flows; shares no ids or state with either.
+ *
+ * NEVER substitutes another Connects value. The job listing's "Required
+ * Connects", the account's available Connects balance, and the listing's
+ * proposal-count range are all DIFFERENT quantities; when the proposal page does
+ * not state actual spend, this reports null and the panel says so.
+ * ========================================================================== */
+
+const QPROP_LOG = "[QuikCRM proposal]";
+
+/**
+ * Shown when Extract Proposal is unavailable. Covers BOTH "not a proposal page"
+ * and the proposal LIST page (/nx/proposals/ with no id): the list has no single
+ * proposal to read, so extraction must not run there either.
+ */
+const PROPOSAL_UNAVAILABLE_MSG = "Open a submitted proposal first.";
+
+function proposalStatusIsUnavailableHint() {
+  const el = document.getElementById("proposalStatus");
+  return !!el && (el.textContent || "").trim() === PROPOSAL_UNAVAILABLE_MSG;
+}
+
+/**
+ * Total Connects attributed to one proposal for Sales Cost:
+ *   total = submission Connects + boost Connects
+ *
+ * Returns null when the submission amount is unknown — a boost figure alone is
+ * not a total, and returning 0 there would read as a real, free proposal. A
+ * missing/null boost counts as 0, which is the documented data contract
+ * ("no boost" and "boost not exposed" are both "nothing extra was charged").
+ */
+function upworkTotalConnects(connectsUsed, boostConnects) {
+  if (connectsUsed === null || connectsUsed === undefined) return null;
+  const boost =
+    boostConnects === null || boostConnects === undefined ? 0 : boostConnects;
+  return connectsUsed + boost;
+}
+
+/**
+ * True only for an INDIVIDUAL submitted proposal, never the proposal list.
+ *
+ * `/nx/proposals/` (and `/nx/proposals/submitted`, `/nx/proposals/archived`, …)
+ * are index pages with no single proposal to read, so extraction must not run
+ * there — a trailing-slash-only match would wrongly enable the button on the
+ * list. An id segment is therefore required, and the known list sub-routes are
+ * excluded by name.
+ */
+const PROPOSAL_LIST_SEGMENTS = /^(submitted|archived|active|drafts|offers|declined)$/i;
+
+function isUpworkProposalUrl(url) {
+  if (typeof url !== "string") return false;
+  const m = url.match(/upwork\.com\/nx\/proposals\/(?:[a-z-]+\/)?([~A-Za-z0-9_-]+)/i);
+  if (!m) return false;
+  const id = m[1];
+  if (!id || id.length < 4) return false;
+  return !PROPOSAL_LIST_SEGMENTS.test(id);
+}
+
+function setProposalStatus(text, tone) {
+  const el = document.getElementById("proposalStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.color =
+    tone === "error" ? "#dc2626" : tone === "success" ? "#16a34a" : "";
+}
+
+/**
+ * Scrape the open submitted-proposal page.
+ *
+ * RUNS IN THE UPWORK TAB — serialized across the process boundary, so it must
+ * stay entirely self-contained (no outer-scope references), exactly like
+ * scrapeData and scrapeConversation.
+ *
+ * Returns { ok, reason, proposal } and never throws across the boundary.
+ */
+function scrapeProposal() {
+  try {
+    const out = {
+      proposalId: null,
+      proposalUrl: window.location.href,
+      proposalSubmittedAt: null,
+      connectsUsed: null,
+      boostConnects: null,
+      jobTicketId: null,
+      jobTitleHint: null,
+      coverLetter: null,
+    };
+
+    // --- proposal id: straight from the URL. The stable identifier.
+    const idMatch = window.location.pathname.match(
+      /\/nx\/proposals\/(?:[a-z-]+\/)?([~A-Za-z0-9_-]{4,})/i
+    );
+    if (idMatch) out.proposalId = idMatch[1];
+
+    // --- job ticket id + title: a proposal page normally links to its job.
+    const jobAnchor = document.querySelector(
+      'a[href*="~0"][href*="/jobs/"], a[href*="~0"][href*="/applicants/"]'
+    );
+    if (jobAnchor) {
+      const m = jobAnchor.getAttribute("href").match(/~([0-9a-z]{10,})/i);
+      if (m) out.jobTicketId = "~" + m[1];
+      const t = (jobAnchor.textContent || "").trim();
+      if (t) out.jobTitleHint = t;
+    }
+    if (!out.jobTitleHint) {
+      const h = document.querySelector("h1, h2");
+      const ht = h && (h.textContent || "").trim();
+      if (ht) out.jobTitleHint = ht;
+    }
+
+    // --- submitted date: only from an absolute datetime attribute. Upwork's
+    // relative labels ("2 days ago") are NOT parsed — a wrong date is worse
+    // than none.
+    const timeEl = document.querySelector("time[datetime], [datetime]");
+    const dt = timeEl && timeEl.getAttribute("datetime");
+    if (dt) {
+      const parsed = new Date(dt);
+      if (!isNaN(parsed.getTime())) out.proposalSubmittedAt = parsed.toISOString();
+    }
+
+    // --- Connects.
+    //
+    // Read from the LABELLED line only. We locate a label that states actual
+    // spend for THIS proposal, then take the number from that same line. A bare
+    // number found anywhere on the page is ignored, because the page also shows
+    // the account's available balance and the listing's required amount — both
+    // of which would be plausible-looking wrong answers.
+    //
+    // Matching is done on normalised text so a markup change (number in its own
+    // <span>, extra whitespace) does not break it.
+    const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+
+    // Candidate lines: small-ish elements that contain the word "connect".
+    const candidates = [];
+    const all = document.querySelectorAll("li, p, div, span, td, dd, dt");
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      const text = norm(el.textContent);
+      if (!text || text.length > 200) continue;
+      if (!/connect/i.test(text)) continue;
+      // Prefer leaf-ish nodes so we do not read a whole container's text.
+      if (el.querySelector("li, p, div, table")) continue;
+      candidates.push(text);
+    }
+
+    // WHAT COUNTS AS THIS PROPOSAL'S CONNECTS COST.
+    //
+    // Upwork does not expose a historical "actual spend" figure on these pages.
+    // What it DOES label is the submission price, live text:
+    //     "Required Connects to submit a proposal: 19"
+    // By product decision that submission amount is our Sales Cost proxy, so
+    // `connectsUsed` here means "Connects required/charged to submit this
+    // proposal" - NOT a verified historical deduction. Written down because the
+    // field name alone does not convey it.
+    //
+    // Still EXCLUDED, because it is a different quantity that must never land
+    // in connectsUsed:
+    //     "Available Connects: 107" / "Connects balance" / "remaining"
+    // That is the ACCOUNT wallet, unrelated to any single proposal.
+    //
+    // This does NOT touch CrmUpworkJob.requiredConnects: that column is written
+    // only by the job scraper from the job LISTING and is left exactly as-is.
+    //
+    // `[\d,]+` not `\d+`: Upwork thousands-separates large figures.
+    const SUBMISSION =
+      /\b(required\s+connects?|connects?\s+required|connects?\s+(used|spent|charged)|(used|spent|charged)\s+[\d,]+\s+connects?|cost\s+to\s+submit)\b/i;
+    const BOOST = /\bboost/i;
+    // "available/balance/remaining/left/you have" are the words Upwork uses for
+    // the wallet. Keeping them is what stops "Available Connects: 107" being
+    // read as a 107-Connect proposal cost.
+    const EXCLUDE = /\b(available|balance|remaining|left|you\s+have)\b/i;
+
+    /**
+     * The Connects figure on an already-label-matched line.
+     *
+     * Upwork puts the number on EITHER side of the word, and the gap can be
+     * long: "Required Connects to submit a proposal: 19" has 20+ characters
+     * between "Connects" and "19", so a tight bounded gap silently returned
+     * null on the real live string. Strategy, in order:
+     *   1. "<n> Connects"            e.g. "Boost: 10 Connects"
+     *   2. trailing "...: <n>"       e.g. "Required Connects to submit a proposal: 19"
+     *   3. the only number on the line
+     * Bounded to digits/commas so a price ("$2,500") on the same line cannot be
+     * mistaken for a Connects count - by then the line has already had to match
+     * a Connects label, so any number here belongs to that label.
+     */
+    const numberIn = (text) => {
+      const toInt = (raw) => {
+        if (!raw) return null;
+        const n = parseInt(String(raw).replace(/,/g, ""), 10);
+        return Number.isFinite(n) ? n : null;
+      };
+      // 1. number immediately before the word
+      let m = text.match(/(\d[\d,]*)\s*connects?\b/i);
+      if (m) return toInt(m[1]);
+      // 2. number after a colon / dash anywhere later on the line
+      m = text.match(/connects?\b[^\d]*?[:\-\u2013]\s*(\d[\d,]*)/i);
+      if (m) return toInt(m[1]);
+      // 3. the line's only number
+      const all = text.match(/\d[\d,]*/g);
+      if (all && all.length === 1) return toInt(all[0]);
+      return null;
+    };
+
+    for (let i = 0; i < candidates.length; i++) {
+      const text = candidates[i];
+      if (EXCLUDE.test(text)) continue;
+
+      if (BOOST.test(text)) {
+        if (out.boostConnects === null) {
+          const n = numberIn(text);
+          if (n !== null) out.boostConnects = n;
+        }
+        continue;
+      }
+      if (SUBMISSION.test(text) && out.connectsUsed === null) {
+        const n = numberIn(text);
+        if (n !== null) out.connectsUsed = n;
+      }
+    }
+
+    // --- cover letter.
+    //
+    // innerText, NOT textContent: textContent concatenates every node with no
+    // separators, collapsing paragraphs and bullet lines into one unreadable
+    // run. innerText renders as displayed, so blank lines between paragraphs and
+    // one-bullet-per-line survive - which is the whole point of storing it.
+    //
+    // Located by its LABEL rather than a CSS class, matching how the Connects
+    // values are found: walk headings/labels that read "Cover letter" and take
+    // the nearest following content block. Falls back to a labelled container's
+    // own text when Upwork renders the label and body in one element.
+    /**
+     * Block text with line structure intact.
+     *
+     * innerText is preferred: the browser renders it as displayed, so paragraph
+     * breaks and one-bullet-per-line survive. But textContent is NOT a safe
+     * fallback on its own - it concatenates every node with no separator, so
+     * "<p>A</p><p>B</p>" collapses to "AB" and the letter's structure (the
+     * reason we store it) is destroyed.
+     *
+     * So when innerText is unavailable we reconstruct the breaks by walking
+     * block-level elements and <br>, rather than accepting the collapsed text.
+     */
+    const blockText = (node) => {
+      if (!node) return "";
+      if (typeof node.innerText === "string" && node.innerText.trim()) {
+        return node.innerText;
+      }
+      const BLOCK = /^(P|DIV|LI|UL|OL|SECTION|ARTICLE|H[1-6]|BR|TR|BLOCKQUOTE)$/;
+      let out = "";
+      const walk = (n) => {
+        for (let i = 0; i < n.childNodes.length; i++) {
+          const c = n.childNodes[i];
+          if (c.nodeType === 3) {
+            out += c.nodeValue;
+          } else if (c.nodeType === 1) {
+            const isBlock = BLOCK.test(c.tagName);
+            if (c.tagName === "BR") {
+              out += "\n";
+              continue;
+            }
+            if (isBlock && out && !out.endsWith("\n")) out += "\n";
+            walk(c);
+            if (isBlock && out && !out.endsWith("\n")) out += "\n";
+          }
+        }
+      };
+      walk(node);
+      return out;
+    };
+
+    const readCover = () => {
+      const LABEL = /^\s*cover\s*letter\s*:?\s*$/i;
+      const heads = document.querySelectorAll(
+        "h1, h2, h3, h4, h5, h6, strong, b, label, dt, span, div"
+      );
+      for (let i = 0; i < heads.length; i++) {
+        const el = heads[i];
+        const t = (el.textContent || "").trim();
+        if (!LABEL.test(t)) continue;
+        const candidates = [
+          el.nextElementSibling,
+          el.parentElement && el.parentElement.nextElementSibling,
+        ];
+        for (let c = 0; c < candidates.length; c++) {
+          const node = candidates[c];
+          if (!node) continue;
+          const body = blockText(node).trim();
+          if (body && !LABEL.test(body)) return body;
+        }
+      }
+      // Fallback: a container whose own text STARTS with the label - strip the
+      // label and keep the remainder. Uses the same structure-preserving read.
+      const all = document.querySelectorAll("section, article, div, li");
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i];
+        const t = blockText(el).trim();
+        if (!/^cover\s*letter\s*:?\s*(\n|$)/i.test(t)) continue;
+        if (el.querySelector("section, article")) continue;
+        const body = t.replace(/^cover\s*letter\s*:?\s*\n?/i, "").trim();
+        if (body) return body;
+      }
+      return null;
+    };
+    out.coverLetter = readCover();
+
+    if (!out.proposalId) {
+      return { ok: false, reason: "NO_PROPOSAL", proposal: out };
+    }
+    // A proposal with no stated spend is a valid, reportable outcome — the
+    // panel tells the user rather than inventing a number.
+    return { ok: true, reason: null, proposal: out };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "SCRAPE_ERROR",
+      error: String((err && err.message) || err),
+    };
+  }
+}
+
+/**
+ * Render the proposal confirm step.
+ *
+ * A job is pre-selected ONLY on a hard ticket-id match; otherwise the list opens
+ * on a blank option so the user must choose deliberately and a proposal is never
+ * attached to an arbitrary job.
+ *
+ * Each option shows the title AND Upwork's job ticket id, because two captures
+ * can share a title (a client reposting the same brief) and the id is the only
+ * thing that tells them apart.
+ */
+function renderProposalJobChoices(jobs, preselectId) {
+  const select = document.getElementById("proposalJobSelect");
+  if (!select) return;
+  select.innerHTML = "";
+  if (!preselectId) {
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "— Select the matching job —";
+    select.appendChild(blank);
+  }
+  jobs.forEach((job) => {
+    const opt = document.createElement("option");
+    opt.value = job.id;
+    // textContent, not innerHTML: titles are scraped third-party text.
+    const title = job.jobTitle || "(untitled job)";
+    opt.textContent = job.upworkJobId
+      ? `${title} — ${job.upworkJobId}`
+      : title;
+    if (preselectId && job.id === preselectId) opt.selected = true;
+    select.appendChild(opt);
+  });
+  document.getElementById("proposalConfirm").style.display = "block";
+}
+
+/** Title of the job currently chosen in the picker, for confirmation messages. */
+function selectedProposalJobTitle() {
+  const select = document.getElementById("proposalJobSelect");
+  if (!select || !select.value) return null;
+  const label = select.options[select.selectedIndex].textContent || "";
+  // Strip the " — ~02…" suffix added above; the user thinks in titles.
+  return label.split(" — ")[0] || label;
+}
+
+/** Wire the proposal UI. */
+function handleExtractProposalClick() {
+  const button = document.getElementById("extractProposal");
+  const section = document.getElementById("proposalsection");
+  if (!button || !section) return;
+
+  // Always visible; only availability reacts to the URL — same split as the
+  // conversation block above.
+  const syncProposalAvailability = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs && tabs[0] && tabs[0].url;
+      const available = isUpworkProposalUrl(url);
+      button.disabled = !available;
+      button.title = available
+        ? "Extract this submitted proposal"
+        : PROPOSAL_UNAVAILABLE_MSG;
+      if (available && proposalStatusIsUnavailableHint()) setProposalStatus("");
+    });
+  };
+  syncProposalAvailability();
+  if (chrome.tabs.onUpdated && chrome.tabs.onUpdated.addListener) {
+    chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+      if (changeInfo.url || changeInfo.status === "complete") syncProposalAvailability();
+    });
+  }
+  if (chrome.tabs.onActivated && chrome.tabs.onActivated.addListener) {
+    chrome.tabs.onActivated.addListener(syncProposalAvailability);
+  }
+
+  let pendingProposal = null;
+  const resetConfirm = () => {
+    pendingProposal = null;
+    const c = document.getElementById("proposalConfirm");
+    if (c) c.style.display = "none";
+  };
+
+  document.getElementById("proposalCancel").addEventListener("click", () => {
+    resetConfirm();
+    setProposalStatus("Cancelled.");
+    console.log(QPROP_LOG, "extraction cancelled by user");
+  });
+
+  // Live CRM search. Matches job title, description, skills, location AND the
+  // Upwork job ticket id (see buildUpworkWhere), so pasting "~0220846…" finds
+  // its job directly. An empty box restores the full list rather than clearing
+  // it — the user must always be able to get back to every job.
+  let searchTimer = null;
+  document.getElementById("proposalJobSearch").addEventListener("input", (e) => {
+    const q = e.target.value.trim();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      try {
+        // Keep whatever the user already picked selected if it survives the
+        // filter, so typing does not silently discard a correct choice.
+        const select = document.getElementById("proposalJobSelect");
+        const current = select ? select.value : "";
+        const jobs = await fetchUpworkJobCandidates(q);
+        const keep = jobs.some((j) => j.id === current) ? current : null;
+        renderProposalJobChoices(jobs, keep);
+        if (!jobs.length) {
+          setProposalStatus(
+            q
+              ? "No CRM jobs match that search — clear the box to see all jobs."
+              : "No Upwork jobs are available in CRM. Add the job to CRM first.",
+            "error"
+          );
+        } else {
+          setProposalStatus(`${jobs.length} job(s) — pick the right one.`);
+        }
+      } catch (err) {
+        setProposalStatus(err.message || "Could not search jobs.", "error");
+      }
+    }, 300);
+  });
+
+  // Echo the chosen job back so the user can verify the link before saving.
+  const proposalSelectEl = document.getElementById("proposalJobSelect");
+  if (proposalSelectEl) {
+    proposalSelectEl.addEventListener("change", () => {
+      const title = selectedProposalJobTitle();
+      if (!title || !pendingProposal) return;
+      const p = pendingProposal;
+      const bits = [`Proposal ID: ${p.proposalId}`];
+      if (p.connectsUsed !== null) {
+        bits.push(`Connects Used: ${p.connectsUsed}`);
+        bits.push(`Boost Connects: ${p.boostConnects === null ? 0 : p.boostConnects}`);
+      } else {
+        bits.push("Connects: not found");
+      }
+      bits.push(
+        p.coverLetter
+          ? `Cover Letter: ${p.coverLetter.length} characters`
+          : "Cover Letter: not found"
+      );
+      bits.push(`Selected Job: ${title}`);
+      setProposalStatus(bits.join(" · "));
+    });
+  }
+
+  button.addEventListener("click", () => {
+    resetConfirm();
+    setProposalStatus("Extracting…");
+    console.log(QPROP_LOG, "extraction started");
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab) return setProposalStatus("No active tab.", "error");
+      if (!isUpworkProposalUrl(tab.url)) {
+        setProposalStatus(PROPOSAL_UNAVAILABLE_MSG, "error");
+        return;
+      }
+
+      chrome.scripting.executeScript(
+        { target: { tabId: tab.id }, function: scrapeProposal },
+        async (results) => {
+          if (chrome.runtime.lastError) {
+            console.error(
+              QPROP_LOG,
+              "injection failed",
+              chrome.runtime.lastError.message
+            );
+            return setProposalStatus(
+              "Extraction failed — reload the Upwork tab.",
+              "error"
+            );
+          }
+          const res = results && results[0] && results[0].result;
+          if (!res) {
+            console.error(QPROP_LOG, "no result from injected scraper");
+            return setProposalStatus("Extraction failed.", "error");
+          }
+          if (!res.ok) {
+            if (res.reason === "NO_PROPOSAL") {
+              console.log(QPROP_LOG, "no proposal found on this page");
+              return setProposalStatus("No proposal found on this page.", "error");
+            }
+            console.error(QPROP_LOG, "scrape error", res.error);
+            return setProposalStatus("Extraction failed.", "error");
+          }
+
+          const proposal = res.proposal;
+          pendingProposal = proposal;
+          console.log(QPROP_LOG, "proposal detected", {
+            proposalId: proposal.proposalId,
+            jobTicketId: proposal.jobTicketId,
+            connectsUsed: proposal.connectsUsed,
+            boostConnects: proposal.boostConnects,
+            // Length only — the letter itself is client correspondence and
+            // does not belong in the console.
+            coverLetterChars: proposal.coverLetter ? proposal.coverLetter.length : 0,
+          });
+
+          // Show base / boost / total so the user can VERIFY the Connects
+          // figures before saving, and report honestly when Upwork stated none
+          // rather than showing a fabricated number. The save is still allowed
+          // with no Connects (proposal id + date are useful on their own).
+          // Character count only — never the letter itself. The side panel is
+          // narrow and the text is long; the count is enough to confirm the
+          // right letter was picked up before saving.
+          const coverNote = proposal.coverLetter
+            ? ` · Cover letter: ${proposal.coverLetter.length} characters`
+            : " · Cover letter: not found";
+
+          if (proposal.connectsUsed === null) {
+            // Display-only: the "Connects not found on this page" prefix is
+            // deliberately omitted here. Nothing about the extraction changes —
+            // connectsUsed stays null and is still sent to the API as null.
+            // `.replace` strips coverNote's leading " · " separator, which only
+            // makes sense when something precedes it.
+            setProposalStatus(
+              coverNote.replace(/^ · /, "") +
+                " — confirm the job to save the proposal.",
+              
+            );
+          } else {
+            const boost = proposal.boostConnects === null ? 0 : proposal.boostConnects;
+            setProposalStatus(
+              `Base Connects: ${proposal.connectsUsed} · Boost Connects: ${boost} · ` +
+                `Total Connects Used: ${upworkTotalConnects(proposal.connectsUsed, proposal.boostConnects)}` +
+                coverNote +
+                " — confirm the job."
+            );
+          }
+
+          try {
+            // Job resolution, in order of confidence. The guiding rule: a
+            // failed AUTO-MATCH must never look like "there are no jobs".
+            // Those are different states, and conflating them is what made an
+            // already-captured job unlinkable a day later.
+            //
+            //   1. hard match on Upwork's job ticket id  -> pre-select it
+            //   2. otherwise -> show the FULL CRM job list for manual choice
+            //
+            // The list is always fetched live from /api/upwork, so a job added
+            // days before this proposal was opened is present and selectable.
+            const allJobs = await fetchUpworkJobCandidates("");
+            let jobs = allJobs;
+            let preselect = null;
+
+            if (proposal.jobTicketId) {
+              const hit = allJobs.find(
+                (j) => j.upworkJobId === proposal.jobTicketId
+              );
+              if (hit) {
+                preselect = hit.id;
+                console.log(
+                  QPROP_LOG,
+                  "job matched by ticket id",
+                  proposal.jobTicketId
+                );
+              }
+            }
+
+            if (!preselect) {
+              console.log(
+                QPROP_LOG,
+                "no hard job match — showing " + allJobs.length + " CRM job(s) to select"
+              );
+            }
+
+            // ONLY a genuinely empty CRM is a dead end. Previously this fired
+            // whenever a title-filtered query returned nothing, which is why an
+            // existing job reported "Save the job first".
+            if (!allJobs.length) {
+              setProposalStatus(
+                "No Upwork jobs are available in CRM. Add the job to CRM first.",
+                "error"
+              );
+              return;
+            }
+
+            // Seed the search box with the page's job title as a CONVENIENCE
+            // only - the full list is already rendered, so a title that matches
+            // nothing narrows the view without ever hiding the jobs themselves.
+            const search = document.getElementById("proposalJobSearch");
+            if (search && !preselect && proposal.jobTitleHint) {
+              search.value = proposal.jobTitleHint;
+              const narrowed = await fetchUpworkJobCandidates(
+                proposal.jobTitleHint
+              );
+              if (narrowed.length) {
+                jobs = narrowed;
+              } else {
+                // Nothing matched the hint: clear it so the box does not look
+                // like a filter that is hiding results.
+                search.value = "";
+              }
+            }
+            renderProposalJobChoices(jobs, preselect);
+          } catch (err) {
+            console.error(QPROP_LOG, "candidate lookup failed", err);
+            setProposalStatus(err.message || "Could not load jobs.", "error");
+          }
+        }
+      );
+    });
+  });
+
+  document
+    .getElementById("proposalConfirmSave")
+    .addEventListener("click", async () => {
+      if (!pendingProposal)
+        return setProposalStatus("Extract a proposal first.", "error");
+      const jobId = document.getElementById("proposalJobSelect").value;
+      if (!jobId)
+        return setProposalStatus("Select the matching job first.", "error");
+
+      // Read the title BEFORE the await: resetConfirm() clears the picker on
+      // success, so reading it afterwards would yield nothing to name.
+      const jobTitleAtSave = selectedProposalJobTitle();
+      setProposalStatus("Saving…");
+      console.log(QPROP_LOG, "CRM save started", {
+        jobId,
+        jobTitle: jobTitleAtSave,
+        proposalId: pendingProposal.proposalId,
+        coverLetterChars: pendingProposal.coverLetter
+          ? pendingProposal.coverLetter.length
+          : 0,
+      });
+      try {
+        const store = await new Promise((resolve) =>
+          chrome.storage.local.get(["token"], resolve)
+        );
+        const res = await fetch(
+          `${QCRM_API_BASE_URL}/api/upwork/${jobId}/proposal`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + store.token,
+            },
+            body: JSON.stringify({
+              proposalId: pendingProposal.proposalId,
+              proposalSubmittedAt: pendingProposal.proposalSubmittedAt,
+              connectsUsed: pendingProposal.connectsUsed,
+              boostConnects: pendingProposal.boostConnects,
+              proposalCoverLetter: pendingProposal.coverLetter,
+            }),
+          }
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body || body.success === false) {
+          const message =
+            (body && body.error) ||
+            (res.status === 401
+              ? "Session expired. Please sign in again."
+              : "Could not save the proposal.");
+          console.error(QPROP_LOG, "CRM save failed", message);
+          setProposalStatus(message, "error");
+          errormsg(message);
+          return;
+        }
+        const data = body.data || {};
+        console.log(QPROP_LOG, "CRM save completed", data);
+        // Re-extracting the same proposal updates the same columns, so this is
+        // a success, not a duplicate error.
+        const savedTo = data.jobTitle || jobTitleAtSave || "the selected job";
+        const connectsNote =
+          data.connectsUsed === null || data.connectsUsed === undefined
+            ? "Connects: not found"
+            : `Connects: saved (${upworkTotalConnects(
+                data.connectsUsed,
+                data.boostConnects
+              )} total)`;
+        const coverNoteSaved = data.coverLetterLength
+          ? "Cover letter: saved"
+          : "Cover letter: not found";
+        setProposalStatus(
+          `Proposal saved to: ${savedTo} · ${coverNoteSaved} · ${connectsNote}`,
+          "success"
+        );
+        sucessmsg(`Proposal saved to ${savedTo}.`);
+        resetConfirm();
+      } catch (err) {
+        console.error(QPROP_LOG, "CRM save error", err);
+        setProposalStatus(err.message || "Could not save the proposal.", "error");
+      }
+    });
+}
+
+/**
+ * Bootstrap the conversation UI once its markup exists.
+ *
+ * WHY THIS IS NOT A PLAIN getElementById CHECK: popup.js loads the panel body
+ * with `loadHTML(html)` — a fetch().then() — and then calls
+ * detectAndLoadScript() on the very next line, synchronously. So this script is
+ * appended to the document BEFORE the awaited HTML is injected, and at the
+ * moment it first runs #extractChat does not exist yet. A one-shot check here
+ * silently no-ops and the Extract Conversation button never appears, even though
+ * the markup shows up in the DOM a tick later.
+ *
+ * The job-scraping handlers above have the same race but tolerate it for an
+ * unrelated reason, so this is fixed HERE rather than in popup.js's shared
+ * loader — changing that loader's ordering would alter the boot sequence the
+ * existing job flow depends on.
+ *
+ * MutationObserver rather than a fixed timeout: it fires as soon as the node
+ * lands, and it also covers a panel re-render (changeScript re-appends this
+ * script when the user switches tabs). Disconnects on the first hit, and gives
+ * up after a bounded wait so a genuinely absent block does not leave an observer
+ * running forever.
+ */
+function bootstrapChatUi() {
+  // Both additive UIs are bootstrapped together: they land in the same injected
+  // markup, so one observer serves both rather than two racing observers.
+  const wire = () => {
+    handleExtractChatClick();
+    handleExtractProposalClick();
+  };
+  if (document.getElementById("extractChat")) {
+    wire();
+    return;
+  }
+  if (!document.body) {
+    document.addEventListener("DOMContentLoaded", bootstrapChatUi, { once: true });
+    return;
+  }
+  let done = false;
+  const observer = new MutationObserver(() => {
+    if (done || !document.getElementById("extractChat")) return;
+    done = true;
+    observer.disconnect();
+    wire();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  // Safety valve: stop observing if the markup never arrives (e.g. an older
+  // upwork.html without the chat block).
+  setTimeout(() => {
+    if (!done) {
+      done = true;
+      observer.disconnect();
+    }
+  }, 10000);
+}
+
+bootstrapChatUi();

@@ -189,11 +189,72 @@
           </div>
         </div>
       </div>
-
-      <div class="form-actions">
-        <button type="button" class="save-button" id="save">Add to CRM</button>
-      </div>
     </form>
+  </div>
+
+  <!--
+    Conversation extraction (Upwork Messages room). Additive and independent of
+    the job-scraping flow above: its own button, status line and confirm block,
+    sharing none of the job form's ids. Hidden unless the active tab is a
+    Messages room. ALWAYS VISIBLE: upwork.js toggles the BUTTON's disabled
+    state by URL, never the section's visibility (see syncChatAvailability).
+  -->
+  <div id="chatsection" class="fetch-section">
+    <button id="extractChat" type="button" class="save-button">
+      <span id="extractChatText">Extract Conversation</span>
+    </button>
+    <p id="chatStatus" class="qf-subtitle" style="margin-top: 8px;"></p>
+
+    <!-- Job confirmation. Revealed only after a scrape returns messages; the
+         save is impossible until the user picks a job here. -->
+    <div id="chatConfirm" style="display: none; margin-top: 10px;">
+      <label class="form-label" for="chatJobSelect">Matched Job</label>
+      <div class="field">
+        <select class="form-input" id="chatJobSelect"></select>
+      </div>
+      <div class="field" style="margin-top: 8px;">
+        <input type="text" class="form-input" id="chatJobSearch"
+          placeholder="Search CRM Upwork jobs…" />
+      </div>
+      <div class="form-actions" style="margin-top: 8px;">
+        <button type="button" class="save-button" id="chatConfirmSave">Confirm &amp; Save</button>
+        <button type="button" id="chatCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    Proposal extraction (Upwork submitted proposal, /nx/proposals/{id}).
+    Additive and independent of BOTH flows above: its own button, status line and
+    confirm block, sharing no ids with the job form or the chat block. ALWAYS
+    VISIBLE: only the button's disabled state reacts to the current URL.
+  -->
+  <div id="proposalsection" class="fetch-section">
+    <button id="extractProposal" type="button" class="save-button">
+      <span id="extractProposalText">Extract Proposal</span>
+    </button>
+    <p id="proposalStatus" class="qf-subtitle" style="margin-top: 8px;"></p>
+
+    <div id="proposalConfirm" style="display: none; margin-top: 10px;">
+      <label class="form-label" for="proposalJobSelect">Matched Job</label>
+      <div class="field">
+        <select class="form-input" id="proposalJobSelect"></select>
+      </div>
+      <div class="field" style="margin-top: 8px;">
+        <input type="text" class="form-input" id="proposalJobSearch"
+          placeholder="Search CRM Upwork jobs…" />
+      </div>
+      <div class="form-actions" style="margin-top: 8px;">
+        <button type="button" class="save-button" id="proposalConfirmSave">Confirm &amp; Save</button>
+        <button type="button" id="proposalCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Primary save. Stays the LAST action in the panel, directly below the two
+       extraction buttons above. Markup, id and handler are unchanged. -->
+  <div class="form-actions" id="saveActions">
+    <button type="button" class="save-button" id="save">Add to CRM</button>
   </div>
 
   <!-- Loader overlay. JS toggles .hidden / .block. -->

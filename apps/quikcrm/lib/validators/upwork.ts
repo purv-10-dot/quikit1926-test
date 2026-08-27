@@ -124,3 +124,81 @@ export const listUpworkJobsQuerySchema = z.object({
 });
 
 export type ListUpworkJobsQuery = z.infer<typeof listUpworkJobsQuerySchema>;
+
+/**
+ * Conversation extracted from an Upwork Messages room, posted by the extension
+ * AFTER the user confirmed which captured job it belongs to.
+ *
+ * The job is addressed by the route path (/api/upwork/[id]/conversation), never
+ * by anything inside this body — so a mis-scrape cannot re-target the write.
+ *
+ * Every descriptive field is optional because Upwork does not render all of them
+ * in every room; the extension sends null rather than guessing. `messages[].id`
+ * and `messages[].text` are the two exceptions: without an id there is no dedupe
+ * key, and an empty message is not worth a timeline row.
+ */
+export const upworkConversationSchema = z.object({
+  threadId: z.string().trim().max(200).optional().nullable(),
+  conversationUrl: z.string().trim().max(2000).optional().nullable(),
+  clientName: z.string().trim().max(200).optional().nullable(),
+  messages: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(300),
+        text: z.string().trim().min(1).max(5000),
+        senderName: z.string().trim().max(200).optional().nullable(),
+        senderType: z.enum(["client", "user"]).optional().nullable(),
+        sentAt: z.string().datetime().optional().nullable(),
+        order: z.number().int().min(0).optional().nullable(),
+      }),
+    )
+    .min(1, "A conversation must contain at least one message")
+    // Bounded so one runaway scrape cannot write thousands of rows in a single
+    // request; the panel reports when it had to cap.
+    .max(500),
+});
+
+export type UpworkConversationInput = z.infer<typeof upworkConversationSchema>;
+
+/**
+ * Submitted-proposal data scraped from /nx/proposals/{proposalId}, posted by the
+ * extension AFTER the user confirmed which captured job it belongs to.
+ *
+ * The job is addressed by the route path, never by anything in this body, so a
+ * mis-scrape cannot re-target the write.
+ *
+ * Connects are `.int()` and non-negative, and every field is optional: Upwork
+ * does not render all of them on every proposal. The extension sends null rather
+ * than guessing — in particular it NEVER falls back to the listing's
+ * `requiredConnects`, and null must stay distinguishable from a real 0.
+ */
+export const upworkProposalSchema = z.object({
+  proposalId: z.string().trim().min(1).max(200),
+  proposalSubmittedAt: z.string().datetime().optional().nullable(),
+  /** Connects actually consumed by this proposal. */
+  connectsUsed: z.number().int().min(0).max(10_000).optional().nullable(),
+  /** Extra Connects spent on Boost, when Upwork shows it as its own line. */
+  boostConnects: z.number().int().min(0).max(10_000).optional().nullable(),
+  /**
+   * The cover letter as submitted, scraped from the proposal page.
+   *
+   * NOT run through `scrapedText()` like the job-listing fields: that helper
+   * trims and collapses an empty string to undefined, and its length caps are
+   * tuned for single-line values. A cover letter's paragraph breaks, blank lines
+   * and bullet lines are the content, so only the outer whitespace is trimmed
+   * and the interior is stored verbatim. Empty/whitespace-only becomes null
+   * rather than an empty string — "no cover letter" is an absence, not a value.
+   */
+  proposalCoverLetter: z
+    .string()
+    .max(50_000)
+    .optional()
+    .nullable()
+    .transform((v) => {
+      if (v === undefined || v === null) return v;
+      const trimmed = v.trim();
+      return trimmed === "" ? null : trimmed;
+    }),
+});
+
+export type UpworkProposalInput = z.infer<typeof upworkProposalSchema>;

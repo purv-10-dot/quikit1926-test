@@ -26,6 +26,14 @@ import {
   BILLING_FREQUENCY_LABEL,
   type BillingFrequency,
 } from "@/lib/services/sales-cost/period";
+// From connects-shared, NOT connects-config: this is a client component and
+// connects-config imports Prisma.
+import {
+  UPWORK_CONNECTS_TOOL_NAME,
+  isUpworkConnectsTool,
+  DEFAULT_UPWORK_CONNECTS_CONFIG,
+  type UpworkConnectsConfig,
+} from "@/lib/services/sales-cost/connects-shared";
 
 const API = "/api/settings/sales-cost";
 
@@ -158,6 +166,19 @@ interface PeriodOption {
   label: string;
 }
 
+/** GET /connects-usage — one rep's Upwork Connects spend for one period. */
+interface ConnectsUsageDto {
+  period: string;
+  userId: string;
+  proposalCount: number;
+  baseConnects: number;
+  boostConnects: number;
+  totalConnectsUsed: number;
+  config: UpworkConnectsConfig;
+  costUsd: number;
+  costInr: number;
+}
+
 // --------------------------------------------------------------------------
 // Formatting
 // --------------------------------------------------------------------------
@@ -239,6 +260,7 @@ export function SalesCostPageClient() {
   const [editingTool, setEditingTool] = useState<ToolDto | null>(null);
   const [pricingTool, setPricingTool] = useState<ToolDto | null>(null);
   const [otherModalOpen, setOtherModalOpen] = useState(false);
+  const [connectsSettingsOpen, setConnectsSettingsOpen] = useState(false);
   const [editingOther, setEditingOther] = useState<OtherCostDto | null>(null);
 
   const load = useCallback(
@@ -325,6 +347,7 @@ export function SalesCostPageClient() {
               setToolModalOpen(true);
             }}
             onDeleted={refresh}
+            onConnectsSettings={() => setConnectsSettingsOpen(true)}
           />
 
           <OtherCostsSection
@@ -394,6 +417,16 @@ export function SalesCostPageClient() {
           onClose={() => setPricingTool(null)}
           onSaved={() => {
             setPricingTool(null);
+            void refresh();
+          }}
+        />
+      )}
+
+      {connectsSettingsOpen && (
+        <ConnectsSettingsModal
+          onClose={() => setConnectsSettingsOpen(false)}
+          onSaved={() => {
+            setConnectsSettingsOpen(false);
             void refresh();
           }}
         />
@@ -575,6 +608,7 @@ function ToolsSection({
   onAdd,
   onEdit,
   onDeleted,
+  onConnectsSettings,
 }: {
   tools: ToolCostLine[];
   // Each tool line carries its own currency (a tool can be billed in a
@@ -583,6 +617,8 @@ function ToolsSection({
   onAdd: () => void;
   onEdit: (t: ToolDto) => void;
   onDeleted: () => void;
+  /** Opens the org-level Upwork Connects pricing dialog. */
+  onConnectsSettings: () => void;
 }) {
   const toast = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -613,10 +649,15 @@ function ToolsSection({
       <CardBody>
         <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-crm-text">Tools</h3>
-          <Button size="sm" onClick={onAdd}>
-            <Plus size={14} />
-            Add Tool
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={onConnectsSettings}>
+              Connects Pricing
+            </Button>
+            <Button size="sm" onClick={onAdd}>
+              <Plus size={14} />
+              Add Tool
+            </Button>
+          </div>
         </div>
 
         {tools.length === 0 ? (
@@ -1132,6 +1173,11 @@ function ToolModal({
   );
   const [endDate, setEndDate] = useState(tool ? monthInputValue(tool.endDate) : "");
   const [active, setActive] = useState(tool?.active ?? true);
+  // Upwork Connects: the cost is derived from real consumption, so it is
+  // fetched rather than typed. `null` = not loaded yet / not applicable.
+  const [connects, setConnects] = useState<ConnectsUsageDto | null>(null);
+  const [connectsLoading, setConnectsLoading] = useState(false);
+  const [connectsError, setConnectsError] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<AllocationDraft[]>(() => {
     if (tool && tool.allocations.length > 0) {
       return tool.allocations.map((a) => ({
@@ -1145,14 +1191,67 @@ function ToolModal({
 
   const totalPct = allocations.reduce((acc, a) => acc + (Number(a.percentage) || 0), 0);
 
+  // Connects mode is driven by the tool NAME matching the preset exactly, so an
+  // existing "Upwork Connects" tool behaves the same as a newly picked one.
+  const isConnects = isUpworkConnectsTool(name);
+
+  // Whose consumption to price: the first allocated rep, falling back to the
+  // rep selected on the page. Connects belong to the rep who captured them, and
+  // the allocation percentage still decides what share of that cost they carry.
+  const connectsUserId = allocations[0]?.userId || defaultRepId;
+
+  // Load consumption whenever the rep or the period behind it changes. Only in
+  // create mode: on edit the cost is versioned and changed via Change Price.
+  useEffect(() => {
+    if (!isConnects || editing || !connectsUserId) {
+      setConnects(null);
+      setConnectsError(null);
+      return;
+    }
+    let cancelled = false;
+    setConnectsLoading(true);
+    setConnectsError(null);
+    const qs = new URLSearchParams({ userId: connectsUserId, period });
+    fetch(`${API}/connects-usage?${qs.toString()}`, { credentials: "include" })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error ?? "Failed to load Connects usage");
+        }
+        if (!cancelled) setConnects(json.data as ConnectsUsageDto);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setConnects(null);
+          setConnectsError(e instanceof Error ? e.message : "Failed to load Connects usage");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setConnectsLoading(false);
+      });
+    // Ignore an in-flight response once the inputs have moved on.
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnects, editing, connectsUserId, period]);
+
+  // The INR figure is what gets submitted as the tool's cost; USD stays a
+  // verification value only.
+  const connectsCostInr = connects?.costInr ?? 0;
+
   const setAlloc = (i: number, patch: Partial<AllocationDraft>) => {
     setAllocations((prev) => prev.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
   };
 
   const submit = async () => {
-    const costValue = Number(cost);
+    // For Upwork Connects the cost is derived from consumption, never typed.
+    const costValue = isConnects ? connectsCostInr : Number(cost);
     if (!name.trim()) {
       toast.error("Tool name is required");
+      return;
+    }
+    if (!editing && isConnects && connectsLoading) {
+      toast.error("Still calculating Connects cost — try again in a moment");
       return;
     }
     // Cost is only submitted on create. On edit it is not part of this form.
@@ -1189,7 +1288,15 @@ function ToolModal({
         allocations: cleaned,
         // Only the create payload carries price — the PATCH schema rejects these
         // fields, because repricing must go through .../price to stay versioned.
-        ...(editing ? {} : { cost: costValue, billingFrequency }),
+        //
+        // Connects are a consumed quantity for one month, not a subscription, so
+        // they are billed one_time and stored in INR. Normal tools keep whatever
+        // frequency and default currency they had.
+        ...(editing
+          ? {}
+          : isConnects
+            ? { cost: costValue, billingFrequency: "one_time", currency: "INR" }
+            : { cost: costValue, billingFrequency }),
       };
       const res = await fetch(editing ? `${API}/tools/${tool.id}` : `${API}/tools`, {
         method: editing ? "PATCH" : "POST",
@@ -1229,10 +1336,25 @@ function ToolModal({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-crm-muted">Tool Name</span>
+            {/* Preset picker + free-text input. The picker only WRITES the name;
+              * custom tools are still typed exactly as before. Choosing the
+              * preset guarantees the exact string, so "Upwork connect" and other
+              * near-misses can't silently create a non-Connects tool. */}
+            <Select
+              className="mb-2"
+              value={isConnects ? UPWORK_CONNECTS_TOOL_NAME : ""}
+              onChange={(e) =>
+                setName(e.target.value === UPWORK_CONNECTS_TOOL_NAME ? e.target.value : "")
+              }
+            >
+              <option value="">Custom tool…</option>
+              <option value={UPWORK_CONNECTS_TOOL_NAME}>{UPWORK_CONNECTS_TOOL_NAME}</option>
+            </Select>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="LinkedIn Sales Navigator"
+              readOnly={isConnects}
             />
           </label>
           <label className="block">
@@ -1254,9 +1376,13 @@ function ToolModal({
                   type="number"
                   min={0}
                   step="0.01"
-                  value={cost}
+                  // Calculated from real consumption for Connects, so it is
+                  // displayed but not editable.
+                  value={isConnects ? String(connectsCostInr) : cost}
                   onChange={(e) => setCost(e.target.value)}
                   placeholder="16000"
+                  readOnly={isConnects}
+                  disabled={isConnects}
                 />
               </label>
               <label className="block">
@@ -1264,8 +1390,11 @@ function ToolModal({
                   Billing Frequency
                 </span>
                 <Select
-                  value={billingFrequency}
+                  // Connects are a one-off consumption for the selected month,
+                  // not a recurring subscription.
+                  value={isConnects ? "one_time" : billingFrequency}
                   onChange={(e) => setBillingFrequency(e.target.value as BillingFrequency)}
+                  disabled={isConnects}
                 >
                   {BILLING_FREQUENCIES.map((f) => (
                     <option key={f} value={f}>
@@ -1295,6 +1424,60 @@ function ToolModal({
             />
           </label>
         </div>
+
+        {/* Connects breakdown — shown only for the preset tool, so the normal
+          * Add Tool form is visually unchanged for every other tool. Exists so
+          * the calculated cost can be checked against Upwork by hand. */}
+        {isConnects && !editing && (
+          <div className="rounded-xl border border-crm-border p-3 text-xs">
+            <p className="mb-2 text-xs font-semibold text-crm-text">
+              {UPWORK_CONNECTS_TOOL_NAME}
+            </p>
+            {connectsLoading ? (
+              <p className="text-crm-muted">Calculating from Upwork proposals…</p>
+            ) : connectsError ? (
+              <p className="text-red-600">{connectsError}</p>
+            ) : connects ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <dt className="text-crm-muted">Period</dt>
+                <dd className="text-crm-text">{periodLabel(connects.period)}</dd>
+
+                <dt className="text-crm-muted">Connects Used</dt>
+                <dd className="text-crm-text">
+                  {connects.totalConnectsUsed}
+                  {connects.boostConnects > 0
+                    ? ` (${connects.baseConnects} + ${connects.boostConnects} boost)`
+                    : ""}
+                </dd>
+
+                <dt className="text-crm-muted">Proposals</dt>
+                <dd className="text-crm-text">{connects.proposalCount}</dd>
+
+                <dt className="text-crm-muted">Rate</dt>
+                <dd className="text-crm-text">
+                  {connects.config.packageConnects} Connects = $
+                  {connects.config.packagePriceUsd}
+                </dd>
+
+                <dt className="text-crm-muted">USD/INR</dt>
+                <dd className="text-crm-text">₹{connects.config.usdToInr}</dd>
+
+                <dt className="text-crm-muted">Cost (USD)</dt>
+                <dd className="text-crm-text">${connects.costUsd}</dd>
+
+                <dt className="text-crm-muted">Calculated Cost</dt>
+                <dd className="font-semibold text-crm-text">₹{connects.costInr}</dd>
+              </dl>
+            ) : (
+              <p className="text-crm-muted">Select a sales rep to calculate Connects cost.</p>
+            )}
+            {connects && connects.totalConnectsUsed === 0 && (
+              <p className="mt-2 text-crm-muted">
+                No Connects recorded for this rep in this period.
+              </p>
+            )}
+          </div>
+        )}
 
         <label className="flex items-center gap-2 text-sm text-crm-text">
           <input
@@ -1435,6 +1618,177 @@ function ToolModal({
  * Posts to .../price, which closes the open version at that month and inserts a
  * new one — so August stays ₹8,000 after September becomes ₹10,000.
  */
+/**
+ * Org-level Upwork Connects pricing.
+ *
+ * Persisted server-side (workspace settings), never only in React state, so a
+ * changed price survives a refresh and applies to every future calculation.
+ */
+function ConnectsSettingsModal({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [cfg, setCfg] = useState<UpworkConnectsConfig>(DEFAULT_UPWORK_CONNECTS_CONFIG);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API}/connects-config`, { credentials: "include" })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok || !json?.success) throw new Error(json?.error ?? "Failed to load");
+        if (!cancelled) setCfg(json.data as UpworkConnectsConfig);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          toast.error(e instanceof Error ? e.message : "Failed to load Connects pricing");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `toast` is stable; this must run once per open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const submit = async () => {
+    if (!Number.isFinite(cfg.packageConnects) || cfg.packageConnects <= 0) {
+      toast.error("Package size must be greater than 0");
+      return;
+    }
+    if (!Number.isFinite(cfg.packagePriceUsd) || cfg.packagePriceUsd < 0) {
+      toast.error("Enter a valid package price");
+      return;
+    }
+    if (!Number.isFinite(cfg.usdToInr) || cfg.usdToInr <= 0) {
+      toast.error("Conversion rate must be greater than 0");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/connects-config`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          packageConnects: cfg.packageConnects,
+          packagePriceUsd: cfg.packagePriceUsd,
+          currency: cfg.currency,
+          usdToInr: cfg.usdToInr,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.success) throw new Error(json?.error ?? "Failed to save");
+      toast.success("Connects pricing updated");
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save Connects pricing");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Live preview of the configured rate, so the effect of a change is visible
+  // before saving.
+  const perConnectUsd =
+    cfg.packageConnects > 0 ? cfg.packagePriceUsd / cfg.packageConnects : 0;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Upwork Connects Pricing"
+      width="max-w-lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={saving || loading}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
+    >
+      {loading ? (
+        <p className="text-sm text-crm-muted">Loading…</p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-crm-muted">
+            Used to price Upwork Connects consumption. Changing these values affects
+            future calculations only — costs already saved on a tool keep their amount.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-crm-muted">
+                Connects package size
+              </span>
+              <Input
+                type="number"
+                min={1}
+                step="1"
+                value={String(cfg.packageConnects)}
+                onChange={(e) =>
+                  setCfg((p) => ({ ...p, packageConnects: Number(e.target.value) }))
+                }
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-crm-muted">
+                Package price (USD)
+              </span>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={String(cfg.packagePriceUsd)}
+                onChange={(e) =>
+                  setCfg((p) => ({ ...p, packagePriceUsd: Number(e.target.value) }))
+                }
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-crm-muted">Currency</span>
+              <Input
+                value={cfg.currency}
+                onChange={(e) => setCfg((p) => ({ ...p, currency: e.target.value }))}
+                maxLength={3}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-crm-muted">
+                USD → INR rate
+              </span>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={String(cfg.usdToInr)}
+                onChange={(e) => setCfg((p) => ({ ...p, usdToInr: Number(e.target.value) }))}
+              />
+            </label>
+          </div>
+          <div className="rounded-xl border border-crm-border p-3 text-xs">
+            <p className="text-crm-muted">
+              {cfg.packageConnects} Connects = ${cfg.packagePriceUsd} &nbsp;·&nbsp; 1 Connect
+              = ${perConnectUsd.toFixed(4)} &nbsp;·&nbsp; {cfg.packageConnects} Connects = ₹
+              {(cfg.packagePriceUsd * cfg.usdToInr).toFixed(2)}
+            </p>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function ChangePriceModal({
   tool,
   period,
