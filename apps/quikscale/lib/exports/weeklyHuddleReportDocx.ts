@@ -109,6 +109,12 @@ export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: strin
     new Paragraph({
       children: [
         new TextRun({ text: `${orgName} · ${report.clientName} · ${report.weekLabel}`, size: 18, color: "64748B" }),
+        // A reader of a downloaded file cannot see the on-screen badge, and is
+        // entitled to know a section was written by a facilitator rather than
+        // generated from the transcripts.
+        ...(report.manualEdit
+          ? [new TextRun({ text: "  ·  Contains manual edits", size: 18, color: "92400E" })]
+          : []),
       ],
       spacing: { after: 200 },
     }),
