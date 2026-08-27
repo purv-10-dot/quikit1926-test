@@ -10,6 +10,10 @@ const updateJobLevelSchema = z.object({
   code: z.string().trim().min(1).max(20).optional(),
   name: z.string().trim().min(1).max(120).optional(),
   slaDays: z.number().int().min(1).max(3650).optional(),
+  // Multi-Stage TAT — per-stage SLA targets. null explicitly clears it (that
+  // stage's TAT stops being rated for this level).
+  positionToOfferSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
+  sourcedToInterviewSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });
@@ -45,6 +49,8 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       SET code = COALESCE(${d.code ?? null}, code),
           name = COALESCE(${d.name ?? null}, name),
           "slaDays" = COALESCE(${d.slaDays ?? null}, "slaDays"),
+          "positionToOfferSlaDays" = COALESCE(${d.positionToOfferSlaDays ?? null}, "positionToOfferSlaDays"),
+          "sourcedToInterviewSlaDays" = COALESCE(${d.sourcedToInterviewSlaDays ?? null}, "sourcedToInterviewSlaDays"),
           "sortOrder" = COALESCE(${d.sortOrder ?? null}, "sortOrder"),
           "isActive" = COALESCE(${d.isActive ?? null}, "isActive"),
           "updatedBy" = ${userId},

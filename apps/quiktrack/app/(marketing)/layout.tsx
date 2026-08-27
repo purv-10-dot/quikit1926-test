@@ -3,6 +3,7 @@ import { Fraunces, Inter } from "next/font/google";
 import { headers } from "next/headers";
 import "./marketing.css";
 
+
 /**
  * Marketing layout for the public landing page at `/`.
  *

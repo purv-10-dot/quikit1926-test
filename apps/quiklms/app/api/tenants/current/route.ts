@@ -12,16 +12,16 @@ export const GET = route(async (req) => {
   //
   // Keyed on the `isSuperAdmin` claim, not the role: an org's founding admin now
   // resolves to an LMS role of ADMIN (lib/auth/founding-admin.ts) but has a
-  // real tenant, and the role test served them the "QuikSkill Platform" placeholder
+  // real tenant, and the role test served them the "QuikLMS Platform" placeholder
   // instead of their own org's name, branding and localization.
   if (actor.isSuperAdmin === true || !actor.orgId) {
     return json({
       success: true,
       data: {
         id: null,
-        name: 'QuikSkill',
+        name: 'QuikLMS',
         tenantType: null,
-        orgName: 'QuikSkill Platform',
+        orgName: 'QuikLMS Platform',
         status: 'ACTIVE',
         branding: { logo: null, primaryColor: '#3B82F6', secondaryColor: '#1E40AF' },
         localization: { timezone: 'UTC', defaultLanguage: 'en', enabledLanguages: ['en'], locale: 'en', currency: 'USD' },

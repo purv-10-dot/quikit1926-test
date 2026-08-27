@@ -186,7 +186,7 @@ export async function onboardTenant(dto: OnboardInput) {
 
   // The tenant admin receives exactly ONE email: the invitation dispatched by
   // provisionLmsUser above (temp password + single-use accept link). A second
-  // "Welcome to QuikSkill LMS" kit email used to go out here too, which meant
+  // "Welcome to QuikLMS LMS" kit email used to go out here too, which meant
   // two near-identical messages arriving seconds apart; it was dropped so the
   // account-setup mail stands alone. The welcome-kit PDF is still available on
   // demand through GET /api/upload/welcome-kit.

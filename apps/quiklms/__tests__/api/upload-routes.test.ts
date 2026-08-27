@@ -77,7 +77,7 @@ describe('GET /api/upload/welcome-kit', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('application/pdf');
     expect(res.headers.get('Content-Disposition')).toBe(
-      'attachment; filename="QuikSkill_Welcome_Guide.pdf"',
+      'attachment; filename="QuikLMS_Welcome_Guide.pdf"',
     );
     expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('%PDF-1.4 fake pdf bytes');
   });
@@ -85,7 +85,7 @@ describe('GET /api/upload/welcome-kit', () => {
   it('reads the fixed legacy key', async () => {
     h.getObjectBuffer.mockResolvedValue(Buffer.from('x'));
     await welcomeKitGET(req('http://x/api/upload/welcome-kit'), {});
-    expect(h.getObjectBuffer).toHaveBeenCalledWith('welcome-kit/QuikSkill_Welcome_Guide.pdf');
+    expect(h.getObjectBuffer).toHaveBeenCalledWith('welcome-kit/QuikLMS_Welcome_Guide.pdf');
   });
 
   it('400s with the legacy message when the object is missing', async () => {

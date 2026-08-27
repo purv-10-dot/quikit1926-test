@@ -440,7 +440,7 @@ export default function RequisitionApprovalsPage() {
               {viewReq.jobDescription && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job Description</p>
-                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">{viewReq.jobDescription}</p>
+                  <div className="max-w-none whitespace-pre-line leading-relaxed text-gray-700">{viewReq.jobDescription}</div>
                 </div>
               )}
               {viewExtra?.skillWeights && viewExtra.skillWeights.length > 0 && (

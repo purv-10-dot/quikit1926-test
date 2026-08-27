@@ -2,7 +2,7 @@
  * Infinite marquee — the track is doubled so the CSS loop is seamless.
  *
  * The QuikHRMS original scrolls invented customer names. This scrolls what
- * QuikSkill actually ships instead: naming imaginary schools and employers as
+ * QuikLMS actually ships instead: naming imaginary schools and employers as
  * customers on a live marketing page is a claim, not a decoration. Swap this
  * list for real logos once there are real ones to show.
  */

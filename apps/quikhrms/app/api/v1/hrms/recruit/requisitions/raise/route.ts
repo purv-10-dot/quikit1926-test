@@ -10,6 +10,7 @@ import { notifyRequisitionNextApprover } from "@/lib/services/requisition-notifi
 import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
 import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
 import { generateRequisitionNumber } from "@/lib/utils/requisition-number";
+import { createAuditLog } from "@/lib/utils/audit";
 
 const schema = z.object({
   title: z.string().min(2).max(200),
@@ -23,7 +24,7 @@ const schema = z.object({
   reportingToId: z.string().optional(),
   hiringManagerId: z.string().optional(),
   recruiterId: z.string().optional(),
-  jobLevelId: z.string().optional(),
+  jobLevelId: z.string().min(1, "Job level required"),
   customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
   customSlaReason: z.string().max(1000).optional(),
   interviewPanelIds: z.array(z.string()).optional(),
@@ -115,6 +116,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         etaToFillDays: data.etaToFillDays,
+        // Frozen at creation — Deadline TAT compares later revisions against
+        // this to know whether the ORIGINAL commitment was also missed.
+        originalTargetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
+        originalEtaToFillDays: data.etaToFillDays,
         jobGrade: data.jobGrade,
         costCenter: data.costCenter,
         jobDescription: data.jobDescription,
@@ -145,6 +150,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     // Recruiter & Position Tracking (Phase 1) — one RequisitionPosition row per
     // opening, generated up front. The requisition itself is never duplicated.
     await generatePositionsForRequisition(orgId, requisition.id, requisitionNumber, data.positions, userId);
+
+    void createAuditLog({
+      orgId, userId, action: "Create", entityType: "Requisition", entityId: requisition.id,
+      changes: { title: requisition.title, requisitionNumber, positions: requisition.positions, raised: true },
+    });
 
     if (data.recruiterId) {
       await prisma.requisitionRecruiter.create({

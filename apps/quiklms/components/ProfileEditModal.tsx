@@ -1,6 +1,6 @@
 'use client';
 /**
- * ProfileEditModal — ported from the old QuikSkills frontend
+ * ProfileEditModal — ported from the old QuikLMSs frontend
  * (src/components/ProfileEditModal.tsx).
  *
  * Modal for editing the current user's first/last name and profile picture:

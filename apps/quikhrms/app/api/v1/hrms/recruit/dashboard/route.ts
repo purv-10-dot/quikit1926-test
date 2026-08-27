@@ -16,6 +16,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
   try {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const sixMoStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     // Current week, Monday–Sunday.
     const weekStart = new Date(now);
     weekStart.setHours(0, 0, 0, 0);
@@ -31,7 +32,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     const [
       openReqCount, openReqs, inPipeline, stageGroups, reqCounts,
       interviewsThisWeek, offersOut, offersSentMTD, offersAcceptedMTD, offersDeclinedMTD,
-      hiresMTD, hiredApps,
+      hiresMTD, hiredApps, hiresForTrend,
       recentOfferApps, upcomingInterviews,
     ] = await Promise.all([
       prisma.jobRequisition.count({ where: { orgId, deletedAt: null, status: "ReqOpen" } }),
@@ -51,6 +52,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
       prisma.jobApplication.count({ where: { orgId, deletedAt: null, offerStatus: "OfferDeclined", offerRespondedAt: { gte: monthStart } } }),
       prisma.jobApplication.count({ where: { orgId, deletedAt: null, status: "AppHired", updatedAt: { gte: monthStart } } }),
       prisma.jobApplication.findMany({ where: { orgId, deletedAt: null, status: "AppHired" }, select: { appliedDate: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 50 }),
+      prisma.jobApplication.findMany({ where: { orgId, deletedAt: null, status: "AppHired", hiredAt: { gte: sixMoStart } }, select: { hiredAt: true } }),
       prisma.jobApplication.findMany({
         where: { orgId, deletedAt: null, offerSentAt: { not: null } },
         select: { id: true, offerStatus: true, offerSentAt: true, offerRespondedAt: true, candidate: { select: { firstName: true, lastName: true } }, requisition: { select: { title: true } } },
@@ -154,6 +156,16 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
 
     const openPositions = openReqs.reduce((s, r) => s + Math.max(0, r.positions - r.filledPositions), 0);
 
+    // ── Hires per month — last 6 calendar months (oldest → newest) ──
+    const monthlyHires: { month: string; hires: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const bucketStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const bucketEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const monthLabel = bucketStart.toLocaleDateString("en-US", { month: "short" });
+      const hires = hiresForTrend.filter((a) => a.hiredAt && a.hiredAt >= bucketStart && a.hiredAt < bucketEnd).length;
+      monthlyHires.push({ month: monthLabel, hires });
+    }
+
     return successResponse({
       kpis: {
         openRequisitions: openReqCount,
@@ -170,6 +182,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
       funnel,
       openReqAging,
       recruiterWorkload,
+      monthlyHires,
       activity: activity.slice(0, 8),
     });
   } catch (error) {

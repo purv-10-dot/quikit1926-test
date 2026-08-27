@@ -374,7 +374,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       || await resolveAssignedRecruiter(orgId, requisitionId);
     if (finalRecruiterId) {
       await prisma.$executeRaw`
-        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${finalRecruiterId} WHERE id = ${app.id}`;
+        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${finalRecruiterId}, "assignedRecruiterAt" = NOW() WHERE id = ${app.id}`;
     }
 
     // Update candidate status — a fresh, un-actioned application sitting at

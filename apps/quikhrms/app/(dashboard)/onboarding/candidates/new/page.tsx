@@ -26,7 +26,7 @@ type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" 
 interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
 interface Location { id: string; name: string; }
-interface Manager { id: string; firstName: string; lastName: string; }
+interface Manager { id: string; firstName: string; lastName: string; employeeCode?: string | null; }
 interface Role { id: string; code: string; name: string; }
 interface SalaryTemplate { id: string; name: string; code: string; }
 
@@ -143,7 +143,7 @@ export default function NewCandidatePage() {
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
-  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Manager[]>("/api/v1/hrms/employees?limit=100&picker=1") });
+  const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Manager[]>("/api/v1/hrms/employees?limit=1000&picker=1") });
   const { data: roles } = useRoles();
   const { data: salaryTemplates } = useSalaryTemplates();
   const { data: templates } = useQuery({ queryKey: ["onboarding-templates"], queryFn: () => api.get<{ id: string; name: string; tasks: unknown[] }[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=50") });
@@ -632,7 +632,7 @@ export default function NewCandidatePage() {
                   </FormField>
                   <FormField label="Reporting Manager" required>
                     <Select value={form.reportingManagerId} onChange={(v) => setForm({ ...form, reportingManagerId: v })}
-                      options={(managers?.data ?? []).map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` }))}
+                      options={(managers?.data ?? []).map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName} (${m.employeeCode})` }))}
                       placeholder="Search manager" searchable clearable />
                   </FormField>
                   <FormField label="Role" required>

@@ -209,13 +209,12 @@ export const navigation: NavItem[] = [
     section: "growth",
     perms: ["hrms.recruit.read", "hrms.recruit.write", "hrms.recruit.read_self", "hrms.recruit.performance.read", "hrms.recruit.performance.read_self"],
     children: [
-      { label: "Company Dashboard", href: "/recruit/dashboard", perms: ["hrms.recruit.read", "hrms.recruit.write", "hrms.recruit.read_self"], navKey: "recruit.dashboard" },
-      { label: "Job Openings", href: "/recruit/requisitions", perms: ["hrms.recruit.read", "hrms.recruit.read_self"], navKey: "recruit.requisitions" },
-      { label: "Candidates", href: "/recruit/candidates", perms: ["hrms.recruit.read", "hrms.recruit.read_self"], navKey: "recruit.candidates" },
+      { label: "Dashboard", href: "/recruit/dashboard", perms: ["hrms.recruit.read", "hrms.recruit.write", "hrms.recruit.read_self", "hrms.recruit.performance.read", "hrms.recruit.performance.read_self"], navKey: "recruit.dashboard" },
+      { label: "Current Job Openings", href: "/recruit/requisitions", perms: ["hrms.recruit.read", "hrms.recruit.read_self"], navKey: "recruit.requisitions" },
+      { label: "Candidate Database", href: "/recruit/candidates", perms: ["hrms.recruit.read", "hrms.recruit.read_self"], navKey: "recruit.candidates" },
       { label: "Hiring Pipeline", href: "/recruit/pipeline", perms: ["hrms.recruit.read", "hrms.recruit.read_self"], navKey: "recruit.pipeline" },
-      { label: "Interviews", href: "/recruit/interviews", perms: ["hrms.recruit.interview"], navKey: "recruit.interviews" },
-      { label: "Recruiter Performance", href: "/recruit/recruiter-performance", perms: ["hrms.recruit.performance.read", "hrms.recruit.performance.read_self"], navKey: "recruit.performance" },
-      { label: "Document Types", href: "/settings/candidate-documents", perms: ["hrms.recruit.write", "hrms.recruit.requisition.write"], navKey: "recruit.candidate-doc-types" },
+      { label: "Interview Pipeline", href: "/recruit/interviews", perms: ["hrms.recruit.interview"], navKey: "recruit.interviews" },
+      { label: "Candidate Document", href: "/settings/candidate-documents", perms: ["hrms.recruit.write", "hrms.recruit.requisition.write"], navKey: "recruit.candidate-doc-types" },
     ],
   },
   {
@@ -483,14 +482,6 @@ export function Sidebar() {
                 );
               }
               const a = leafActive(child.href!, pathname, currentTab, item.children ?? []);
-              // Same page serves two audiences (a recruiter's own numbers vs
-              // every recruiter's), so the nav label reflects which one THIS
-              // viewer actually gets — "My Performance" never implies HR_Head
-              // only sees themselves, and a recruiter never sees their own
-              // name pointed at with "Recruiter Performance" like an audit.
-              const label = child.href === "/recruit/recruiter-performance"
-                ? (isSuper || permissions.includes("hrms.recruit.performance.read") ? "Team Performance" : "My Performance")
-                : child.label;
               return (
                 <Link
                   key={child.href}
@@ -500,7 +491,7 @@ export function Sidebar() {
                     a ? "bg-[#eaf1fe] text-[#1f2937] font-semibold" : "text-slate-500 font-medium hover:bg-gray-100 hover:text-[#374151]",
                   )}
                 >
-                  {label}
+                  {child.label}
                 </Link>
               );
             })}

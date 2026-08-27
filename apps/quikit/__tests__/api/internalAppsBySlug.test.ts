@@ -30,7 +30,7 @@ const PRODUCT_APP = {
   baseUrl: "https://uatscale.quikit.ai",
   status: "active",
   requiresOrgAdmin: false,
-  oauthClient: { clientId: "client-abc" },
+  oauthClients: [{ clientId: "client-abc" }],
 };
 
 const OPS_APP = {
@@ -143,11 +143,29 @@ describe("GET /api/internal/apps/[slug]", () => {
   });
 
   it("reports hasOAuthClient=false when the app has no OAuth client", async () => {
-    mockDb.app.findUnique.mockResolvedValue({ ...PRODUCT_APP, oauthClient: null } as never);
+    mockDb.app.findUnique.mockResolvedValue({ ...PRODUCT_APP, oauthClients: [] } as never);
 
     const res = await call("quikscale", SECRET);
     const body = await res.json();
     expect(body.data.hasOAuthClient).toBe(false);
+  });
+
+  // Regression: DCR (ce20fd585) turned App.oauthClient into the one-to-many
+  // App.oauthClients and updated /api/super/apps but not this route, leaving a
+  // select for a field that no longer exists. Mocked Prisma ignores an unknown
+  // select key, so only asserting on the query itself catches this — a runtime
+  // assertion cannot. `!!app.oauthClients` would also be true for an empty list.
+  it("selects the first-party client off the one-to-many relation", async () => {
+    mockDb.app.findUnique.mockResolvedValue({ ...PRODUCT_APP, oauthClients: [] } as never);
+
+    await call("quikscale", SECRET);
+    expect(mockDb.app.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          oauthClients: { where: { purpose: "first_party" }, select: { clientId: true }, take: 1 },
+        }),
+      }),
+    );
   });
 
   it("returns a non-active app rather than filtering it, so the caller decides", async () => {

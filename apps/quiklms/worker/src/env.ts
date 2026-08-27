@@ -15,5 +15,5 @@ export const env = {
   SMTP_PORT: Number(process.env.SMTP_PORT || 587),
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASS: process.env.SMTP_PASS || '',
-  SMTP_FROM: process.env.SMTP_FROM || 'QuikSkill <no-reply@quikskill.ai>',
+  SMTP_FROM: process.env.SMTP_FROM || 'QuikLMS <no-reply@quikskill.ai>',
 };

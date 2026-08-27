@@ -88,7 +88,7 @@ export default async function LandingPage({
       {/* Signed in but not entitled to this app: bounced here with
           ?reason=no_app_access by lib/auth/page-guard. Same shared modal the
           other QuikIT apps use — it self-gates on the URL marker client-side. */}
-      {deniedAppAccess && <AppAccessDeniedPopup appName="QuikSkill" />}
+      {deniedAppAccess && <AppAccessDeniedPopup appName="QuikLMS" />}
       {loggedOut && (
         <div role="status" className="lp-notice lp-notice-ok">
           <span>

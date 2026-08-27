@@ -13,6 +13,8 @@ interface Row {
   code: string;
   name: string;
   slaDays: number;
+  positionToOfferSlaDays: number | null;
+  sourcedToInterviewSlaDays: number | null;
   sortOrder: number;
   isActive: boolean;
   requisitionCount: number;
@@ -22,6 +24,10 @@ const createJobLevelSchema = z.object({
   code: z.string().trim().min(1, "Code required").max(20),
   name: z.string().trim().min(1, "Name required").max(120),
   slaDays: z.number().int().min(1, "SLA days required").max(3650),
+  // Multi-Stage TAT — per-stage SLA targets. Optional: null = that stage's
+  // TAT isn't rated for this level.
+  positionToOfferSlaDays: z.number().int().min(1).max(3650).nullish(),
+  sourcedToInterviewSlaDays: z.number().int().min(1).max(3650).nullish(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });
@@ -33,7 +39,9 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const includeInactive = searchParams.get("includeInactive") === "1";
 
     const rows = await prisma.$queryRaw<Row[]>`
-      SELECT jl.id, jl.code, jl.name, jl."slaDays", jl."sortOrder", jl."isActive",
+      SELECT jl.id, jl.code, jl.name, jl."slaDays",
+             jl."positionToOfferSlaDays", jl."sourcedToInterviewSlaDays",
+             jl."sortOrder", jl."isActive",
              COALESCE(cnt.c, 0)::int AS "requisitionCount"
       FROM "app_quikhrms"."JobLevel" jl
       LEFT JOIN (
@@ -52,6 +60,8 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       code: r.code,
       name: r.name,
       slaDays: r.slaDays,
+      positionToOfferSlaDays: r.positionToOfferSlaDays,
+      sourcedToInterviewSlaDays: r.sourcedToInterviewSlaDays,
       sortOrder: r.sortOrder,
       isActive: r.isActive,
       _count: { requisitions: r.requisitionCount },
@@ -72,7 +82,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!parsed.success) {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
-    const { code, name, slaDays, sortOrder, isActive } = parsed.data;
+    const { code, name, slaDays, positionToOfferSlaDays, sourcedToInterviewSlaDays, sortOrder, isActive } = parsed.data;
 
     const existing = await prisma.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "app_quikhrms"."JobLevel"
@@ -86,13 +96,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const id = randomUUID();
     await prisma.$executeRaw`
       INSERT INTO "app_quikhrms"."JobLevel"
-        (id, "orgId", code, name, "slaDays", "sortOrder", "isActive", "createdBy", "updatedBy", "createdAt", "updatedAt")
+        (id, "orgId", code, name, "slaDays", "positionToOfferSlaDays", "sourcedToInterviewSlaDays", "sortOrder", "isActive", "createdBy", "updatedBy", "createdAt", "updatedAt")
       VALUES
-        (${id}, ${orgId}, ${code}, ${name}, ${slaDays}, ${sortOrder ?? 0}, ${isActive ?? true}, ${userId}, ${userId}, NOW(), NOW())
+        (${id}, ${orgId}, ${code}, ${name}, ${slaDays}, ${positionToOfferSlaDays ?? null}, ${sourcedToInterviewSlaDays ?? null}, ${sortOrder ?? 0}, ${isActive ?? true}, ${userId}, ${userId}, NOW(), NOW())
     `;
 
     return successResponse(
-      { id, code, name, slaDays, sortOrder: sortOrder ?? 0, isActive: isActive ?? true, _count: { requisitions: 0 } },
+      {
+        id, code, name, slaDays,
+        positionToOfferSlaDays: positionToOfferSlaDays ?? null, sourcedToInterviewSlaDays: sourcedToInterviewSlaDays ?? null,
+        sortOrder: sortOrder ?? 0, isActive: isActive ?? true, _count: { requisitions: 0 },
+      },
       undefined,
       201,
     );

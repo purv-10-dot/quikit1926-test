@@ -21,7 +21,7 @@ import {
  * Fail-open: when Redis is unreachable, isAuthSessionActive() returns true.
  */
 const SESSION_CHECK_INTERVAL = 30 * 1000;
-import { setOAuthPrefill } from "./oauth-prefill-store";
+import { resolveOAuthIdentity } from "./mobile";
 
 export interface AuthConfig {
   signInPage: string;
@@ -206,94 +206,36 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
        */
       async signIn({ user, account }) {
         if (account?.provider === "google" || account?.provider === "azure-ad") {
-          const email = (user.email ?? "").toLowerCase();
-          if (!email) {
-            console.warn("[auth.signIn] OAuth attempt with no email on profile");
-            return "/login?reason=invalid_user_info";
-          }
-          // Case-insensitive lookup so historical rows that were inserted
-          // with the original mixed-case email (e.g. "Pravin.Sharma@quikit.ai")
-          // still match a lowercased OAuth email. Postgres' `mode: "insensitive"`
-          // uses ILIKE under the hood, which still benefits from a regular
-          // index on lower(email) — but for our membership volumes a normal
-          // index scan is fine.
-          const dbUser = await db.user.findFirst({
-            where: { email: { equals: email, mode: "insensitive" } },
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              isSuperAdmin: true,
-            },
-          });
-          if (!dbUser) {
-            console.warn("[auth.signIn] OAuth login rejected — unknown email:", email);
-            return "/login?reason=invalid_user_info";
-          }
-          // FRD FR-SA-006 / FR-OA-004 — auto-accept any pending SSO invitation
-          // for this user. We promote OrgMember rows where inviteMethod=sso and
-          // status=invited to status=active, granting the corresponding
-          // UserAppAccess rows. This is the SSO equivalent of the native
-          // accept-invite endpoint POST handler.
+          // FRD FR-SA-006 / FR-OA-004 — resolve the OAuth email to an
+          // existing QuikIT user (no auto-provisioning), then auto-accept
+          // any pending SSO invitation for them (OrgMember rows where
+          // inviteMethod=sso and status=invited → active, granting the
+          // corresponding UserAppAccess rows). This is the SSO equivalent
+          // of the native accept-invite endpoint's POST handler.
           //
           // BR-005 — the SSO-authenticated email must equal the email the
           // invitation was sent to. Because OrgMember.userId points at the
-          // User row whose `email` column we just matched, this equality is
-          // automatic: a different OAuth email would have produced a different
-          // (or null) `dbUser` above. So no explicit comparison is needed
-          // here, but the audit log captures the link for traceability.
-          const pendingInvites = await db.orgMember.findMany({
-            where: {
-              userId: dbUser.id,
-              status: "invited",
-              inviteMethod: "sso",
-            },
+          // User row whose `email` column resolveOAuthIdentity matched,
+          // this equality is automatic: a different OAuth email would have
+          // produced a different (or no) matched user.
+          //
+          // Shared with the native mobile Google sign-in endpoint
+          // (packages/auth/mobile.ts) — one implementation, not two.
+          const result = await resolveOAuthIdentity({
+            provider: account.provider,
+            email: user.email,
+            oauthFirstName: (user as AuthUser).oauthFirstName,
+            oauthLastName: (user as AuthUser).oauthLastName,
           });
-          for (const inv of pendingInvites) {
-            await db.orgMember.update({
-              where: { id: inv.id },
-              data: {
-                status: "active",
-                acceptedAt: new Date(),
-                invitationToken: null,
-              },
-            });
-            if (inv.inviteAppIds && inv.inviteAppIds.length > 0) {
-              const userAppRole = inv.role === "app_admin" ? "admin" : "member";
-              await db.userAppAccess.createMany({
-                data: inv.inviteAppIds.map((appId) => ({
-                  userId: dbUser.id,
-                  orgId: inv.orgId,
-                  appId,
-                  role: userAppRole,
-                  grantedBy: inv.createdBy,
-                })),
-                skipDuplicates: true,
-              });
-            }
+          if (!result.ok) {
+            return "/login?reason=invalid_user_info";
           }
 
           // Replace the provider-supplied id with the actual DB id so
           // downstream callbacks find the right OrgMember rows.
-          user.id = dbUser.id;
-          user.email = dbUser.email;
-          (user as AuthUser).isSuperAdmin = dbUser.isSuperAdmin;
-
-          // Stash OAuth names for the post-login form to pre-fill. Always
-          // write — even if the DB row already has names — so the form
-          // can show the latest provider-supplied values when users want
-          // to refresh. Cleared by the PATCH endpoint on save.
-          const oauthFirst = (user as AuthUser).oauthFirstName ?? "";
-          const oauthLast = (user as AuthUser).oauthLastName ?? "";
-          try {
-            await setOAuthPrefill(dbUser.id, {
-              firstName: oauthFirst,
-              lastName: oauthLast,
-            });
-          } catch (err) {
-            console.error("[auth.signIn] failed to stash OAuth pre-fill:", err);
-          }
+          user.id = result.dbUser.id;
+          user.email = result.dbUser.email;
+          (user as AuthUser).isSuperAdmin = result.dbUser.isSuperAdmin;
           return true;
         }
         return true;

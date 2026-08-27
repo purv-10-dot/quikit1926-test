@@ -4,6 +4,7 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { badRequest, gateProjectResolved, serverError } from "@/lib/test/gate";
 import { createSuiteSchema } from "@/lib/validation/testCase";
+import { createTestSuite } from "@/lib/services/testSuites";
 
 /**
  * GET  /api/test/suites?projectId= — suites with their full section tree
@@ -89,17 +90,9 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
 
     // A suite with no section has nowhere to put a case, so seed one root
     // folder — the user can rename it. Same transaction so the suite is never
-    // left unusable.
-    const created = await db.$transaction(async (tx) => {
-      const suite = await tx.qtTestSuite.create({
-        data: { orgId, projectId, name, description: description ?? null, createdBy: userId },
-        select: { id: true, name: true },
-      });
-      await tx.qtTestSection.create({
-        data: { orgId, suiteId: suite.id, name: "All test cases", orderNo: 0 },
-      });
-      return suite;
-    });
+    // left unusable. Shared with the create_test_suite MCP tool — see
+    // lib/services/testSuites.ts.
+    const created = await createTestSuite(orgId, projectId, userId, { name, description });
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (error: unknown) {

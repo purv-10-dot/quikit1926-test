@@ -172,7 +172,7 @@ export async function runTeacherLatenessScan(): Promise<void> {
             </tbody>
           </table>
           <p style="margin:0 0 12px;">Please try to join on time so students can start promptly.</p>
-          <p style="margin:0;color:#6b7280;font-size:12px;">QuikSkill LMS</p>
+          <p style="margin:0;color:#6b7280;font-size:12px;">QuikLMS LMS</p>
         </div>`;
 
       await sendEmail(teacher.email, `Reminder: Please join ${className} on time`, html);

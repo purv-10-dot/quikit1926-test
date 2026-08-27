@@ -1,6 +1,6 @@
 'use client';
 /**
- * ProctoredQuizWrapper — ported from the old QuikSkills frontend.
+ * ProctoredQuizWrapper — ported from the old QuikLMSs frontend.
  *
  * Wraps a quiz in a proctored session:
  *   1. disclosure  — rules screen; "Accept & Start" opens a quiz-proctoring
@@ -11,7 +11,7 @@
  *                    a no-op when @mediapipe/tasks-vision is not installed).
  *   3. submitted   — completes the session (POST /api/quiz-proctoring/:id/complete).
  *
- * The actual quiz UI is delegated to QuikSkill's QuizTakingComponent.
+ * The actual quiz UI is delegated to QuikLMS's QuizTakingComponent.
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import {

@@ -1,6 +1,6 @@
 'use client';
 /**
- * WelcomeKitEditor — ported 1:1 from the old QuikSkills frontend
+ * WelcomeKitEditor — ported 1:1 from the old QuikLMSs frontend
  * (src/components/WelcomeKitEditor.tsx). Replaces the "coming soon" stub.
  *
  * Super-admin modal that does two things:
@@ -59,11 +59,11 @@ export const WelcomeKitEditor: React.FC<WelcomeKitEditorProps> = ({
   <body>
     <div class="container">
       <div class="header">
-        <h1>Welcome to QuikSkill LMS!</h1>
+        <h1>Welcome to QuikLMS LMS!</h1>
       </div>
       <div class="content">
         <p>Dear {{contactName}},</p>
-        <p>Congratulations! Your organization <strong>{{tenantName}}</strong> has been successfully onboarded to QuikSkill LMS.</p>
+        <p>Congratulations! Your organization <strong>{{tenantName}}</strong> has been successfully onboarded to QuikLMS LMS.</p>
 
         <div class="info-box">
           <h3>Your Login Credentials</h3>
@@ -81,14 +81,14 @@ export const WelcomeKitEditor: React.FC<WelcomeKitEditorProps> = ({
 
         <p>If you have any questions, please don't hesitate to contact our support team.</p>
 
-        <p>Best regards,<br>The QuikSkill Team</p>
+        <p>Best regards,<br>The QuikLMS Team</p>
       </div>
     </div>
   </body>
   </html>`;
   };
 
-  const defaultSubject = 'Welcome to QuikSkill LMS - {{tenantName}}';
+  const defaultSubject = 'Welcome to QuikLMS LMS - {{tenantName}}';
   const defaultHtmlContent = getDefaultTemplate();
 
   // PDF Upload State
@@ -216,7 +216,7 @@ export const WelcomeKitEditor: React.FC<WelcomeKitEditorProps> = ({
       const url = window.URL.createObjectURL(new Blob([blob]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'QuikSkill_Startup_Guide.pdf');
+      link.setAttribute('download', 'QuikLMS_Startup_Guide.pdf');
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -430,7 +430,7 @@ export const WelcomeKitEditor: React.FC<WelcomeKitEditorProps> = ({
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         className="input-field"
-                        placeholder="Welcome to QuikSkill LMS - {{tenantName}}"
+                        placeholder="Welcome to QuikLMS LMS - {{tenantName}}"
                         disabled={uploading || savingTemplate}
                       />
                       <p className="text-xs text-gray-500 mt-1">

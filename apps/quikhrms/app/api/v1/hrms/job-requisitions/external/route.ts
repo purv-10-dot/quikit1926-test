@@ -42,6 +42,19 @@ function toJson(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+// jobDescription is authored as rich-text HTML in HRMS, but consuming career
+// sites render `desc`/`overview` as plain escaped text (no HTML rendering) —
+// send plain text so raw tags don't show up literally on their pages.
+function stripHtml(html?: string | null): string {
+  if (!html) return "";
+  return html
+    .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export async function GET(req: NextRequest) {
   const apiKey = req.headers.get("x-api-key");
 
@@ -84,8 +97,8 @@ export async function GET(req: NextRequest) {
       openings: Math.max(0, j.positions - j.filledPositions),
       // We only have one description field — same text fills both the card
       // summary ("desc") and the detail-page body ("overview").
-      desc: j.jobDescription ?? "",
-      overview: j.jobDescription ?? "",
+      desc: stripHtml(j.jobDescription),
+      overview: stripHtml(j.jobDescription),
       responsibilities: toJson(j.responsibilities),
       requirements: toJson(j.requirements),
       offer: toJson(j.benefits),

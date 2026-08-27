@@ -9,6 +9,7 @@ import { IssueFullView } from "@/components/issue-full-view/issue-full-view";
 // Session-scoped, per-request — the issue is resolved from the live org.
 export const dynamic = "force-dynamic";
 
+
 /**
  * Jira-style readable work-item URL: `/browse/SCRUM-58`.
  *

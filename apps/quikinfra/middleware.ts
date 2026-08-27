@@ -24,7 +24,10 @@ function generateRequestId(): string {
 
 const sharedMiddleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/invite", "/auth-handoff", "/api/auth"],
+  // `/.well-known` must stay unauthenticated and redirect-free: Android
+  // fetches /.well-known/assetlinks.json at App Link verification time with
+  // no session, and a redirect to /login breaks verification outright.
+  publicRoutes: ["/invite", "/auth-handoff", "/api/auth", "/.well-known"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
   // Remote session validation (Redis TTL/revoke → session_expired) on every

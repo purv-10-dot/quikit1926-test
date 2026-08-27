@@ -1,7 +1,7 @@
 /**
  * `lib/api.ts` — the 401 → /login hard nav, and which routes are exempt.
  *
- * REGRESSION GUARD for the "sign out flashes the QuikSkill landing then jumps
+ * REGRESSION GUARD for the "sign out flashes the QuikLMS landing then jumps
  * to the QuikIT login page" bug.
  *
  * The server side of logout was never wrong: `globalSignOut` lands the user on

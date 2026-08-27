@@ -7,7 +7,7 @@
  * canvases inside a scrollable container; scroll depth drives the
  * completion percentage. 90 % scroll is mandatory.
  *
- * Ported from the old QuikSkills frontend `src/components/learner/PdfProgressViewer.tsx`.
+ * Ported from the old QuikLMSs frontend `src/components/learner/PdfProgressViewer.tsx`.
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';

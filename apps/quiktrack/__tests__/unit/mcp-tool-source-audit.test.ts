@@ -30,4 +30,15 @@ describe("lib/mcp/server.ts source audit (QUIKTR-118)", () => {
     expect(source).toMatch(/import\s*{\s*mcpDb as db\s*}\s*from\s*"@\/lib\/mcp\/guardedDb"/);
     expect(source).not.toMatch(/import\s*{\s*db\s*}\s*from\s*"@\/lib\/db"/);
   });
+
+  /**
+   * QUIKTR-121 — every mutating tool must call logMcpAction at least once
+   * (its success path, at minimum). Doesn't guarantee every failure branch
+   * is covered too, but catches the more likely mistake: a whole new write
+   * tool shipped without the audit-log hook wired in at all.
+   */
+  it("calls logMcpAction at least once per the 10 mutating tools", () => {
+    const calls = source.match(/logMcpAction\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(10);
+  });
 });

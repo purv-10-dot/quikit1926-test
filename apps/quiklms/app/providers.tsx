@@ -20,7 +20,7 @@ const DEFAULT_SECONDARY = '#3730a3';
 
 interface Branding { logo: string | null; primaryColor: string; secondaryColor: string; name: string; tenantType: 'corporate' | 'school' | null }
 const BrandingCtx = createContext<{ branding: Branding; refresh: () => Promise<void> }>({
-  branding: { logo: null, primaryColor: DEFAULT_PRIMARY, secondaryColor: DEFAULT_SECONDARY, name: 'QuikSkill', tenantType: null },
+  branding: { logo: null, primaryColor: DEFAULT_PRIMARY, secondaryColor: DEFAULT_SECONDARY, name: 'QuikLMS', tenantType: null },
   refresh: async () => {},
 });
 export const useBranding = () => useContext(BrandingCtx);
@@ -75,7 +75,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
 function AppProviders({ children }: { children: ReactNode }) {
   const { status } = useSession();
-  const [branding, setBranding] = useState<Branding>({ logo: null, primaryColor: DEFAULT_PRIMARY, secondaryColor: DEFAULT_SECONDARY, name: 'QuikSkill', tenantType: null });
+  const [branding, setBranding] = useState<Branding>({ logo: null, primaryColor: DEFAULT_PRIMARY, secondaryColor: DEFAULT_SECONDARY, name: 'QuikLMS', tenantType: null });
   const [feature, setFeature] = useState<Omit<FeatureState, 'refresh'>>({ tenantType: null, features: {}, availableRoles: [], roleLabels: {}, config: {}, loaded: false });
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [dark, setDark] = useState(false);

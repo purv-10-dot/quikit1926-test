@@ -90,6 +90,6 @@ describe('notifyUsers — email body escaping', () => {
     await notify('Q&A session');
     const { html } = h.sendEmail.mock.calls[0][0];
     expect(html).toContain('Q&amp;A session');
-    expect(html).toContain('Open QuikSkill');
+    expect(html).toContain('Open QuikLMS');
   });
 });

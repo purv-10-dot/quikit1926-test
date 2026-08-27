@@ -1,6 +1,6 @@
 'use client';
 /**
- * AudioPlayerResource — ported from the old QuikSkills frontend
+ * AudioPlayerResource — ported from the old QuikLMSs frontend
  * (src/components/learner/AudioPlayerResource.tsx).
  *
  * Plays an audio resource with a Web Audio frequency visualizer and tracks

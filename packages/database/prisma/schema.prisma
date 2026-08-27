@@ -44,13 +44,7 @@ model App {
 
 model OAuthClient {
   id           String   @id @default(cuid())
-  /// Null = a dynamically-registered client (RFC 7591) that didn't declare
-  /// a `resource` at registration time (e.g. Claude Desktop's MCP OAuth
-  /// client, which has no such field in its registration request). Such a
-  /// client is bound to an app later, per-request, by authorize.ts reading
-  /// the RFC 8707 `resource` indicator it sends there instead — see
-  /// `resolveAppByResource()` in lib/oauth.ts.
-  appId        String?
+  appId        String
   /// "first_party" = the app's own SSO client, human-managed via the Super
   /// Admin OAuth panel (at most one per app, enforced in application code —
   /// see apps/quikit/app/api/super/apps/[id]/oauth/route.ts).
@@ -71,7 +65,7 @@ model OAuthClient {
   grantTypes   String[] @default(["authorization_code", "refresh_token"])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  app          App?     @relation(fields: [appId], references: [id], onDelete: Cascade)
+  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([appId])
@@ -6864,6 +6858,56 @@ model QtMcpAccessLog {
   @@index([orgId, createdAt])
   @@index([userId, createdAt])
   @@index([projectId])
+  @@schema("app_quiktrack")
+}
+
+/// QUIKTR-121 — one row per mutating MCP tool invocation, with the actual
+/// entity/payload/before-after diff/result. Distinct from QtMcpAccessLog
+/// above (QUIKTR-119), which logs permission GATE decisions only (allow/
+/// deny, no entity or diff data) and fires once or twice per call, before
+/// the tool's own work runs. This table fires exactly once per mutating
+/// tool call, from inside the tool handler, after the gates pass. Written
+/// by apps/quiktrack/lib/mcp/server.ts's write tools via
+/// apps/quiktrack/lib/mcp/actionLog.ts's logMcpAction(). See
+/// docs/mcp-action-log-schema.md for the read/write scope decision (reads
+/// stay covered by QtMcpAccessLog only — this table is mutations-only).
+model QtMcpActionLog {
+  id           String   @id @default(cuid())
+  orgId        String
+  userId       String
+  /// "user" | "agent" — always "agent" for MCP calls today; kept generic
+  /// in case a future non-MCP caller reuses this log.
+  actorType    String
+  /// "mcp" today; reserved for a future non-MCP caller of this same table.
+  source       String   @default("mcp")
+  projectId    String?
+  /// MCP tool name, e.g. "create_issue", "move_issue".
+  tool         String
+  /// "CREATE" | "UPDATE" | "MOVE" | "DELETE"
+  action       String
+  /// "issue" | "sprint" | "comment" | "worklog" | "remote_link" | "issue_link" | "test_case"
+  entityType   String
+  entityId     String?
+  /// Human-readable key when one exists, e.g. "QUIKTR-121". Null for
+  /// entities without one (sprint, comment, worklog, remote_link, issue_link).
+  entityKey    String?
+  /// Sanitized request params (see actionLog.ts's sanitize()).
+  payload      Json?
+  /// Field-level snapshot before the mutation. Null for pure creates.
+  before       Json?
+  /// Field-level snapshot after the mutation. Null when result = "error"
+  /// and the mutation never ran.
+  after        Json?
+  /// "success" | "error"
+  result       String
+  /// Present only when result = "error".
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([entityType, entityId])
   @@schema("app_quiktrack")
 }
 
@@ -15142,6 +15186,12 @@ model JobRequisition {
   budget            Decimal?  @db.Decimal(15, 2)
   etaToFillDays     Int?
   targetJoiningDate DateTime? @db.Date
+  // Frozen the first time targetJoiningDate/etaToFillDays are set — never
+  // touched again. targetJoiningDate/etaToFillDays above stay "live" (the
+  // active/revised deadline); this is what Deadline-TAT compares the revision
+  // against to know whether the ORIGINAL commitment was also missed.
+  originalTargetJoiningDate DateTime? @db.Date
+  originalEtaToFillDays     Int?
   jobGrade          String?
   costCenter        String?
 
@@ -15199,7 +15249,20 @@ model JobLevel {
 
   code      String // e.g. "L1", "SP2" — short label shown everywhere
   name      String // e.g. "Entry / Junior"
-  slaDays   Int // standard hiring SLA in days for this level
+  slaDays   Int // standard hiring SLA in days for this level (overall requisition deadline)
+  // Stage-level SLA targets (Multi-Stage TAT tracking). Null = that stage's
+  // TAT isn't rated for this level.
+  positionToOfferSlaDays     Int?
+  sourcedToInterviewSlaDays  Int?
+  // Daily pipeline-throughput targets ("minimum candidates/day per stage for
+  // this level") — a productivity benchmark, separate from the SLA fields
+  // above (which measure elapsed days, not daily volume). Keyed by stage
+  // name: the org's own live pipeline stage names (dynamic, from
+  // HiringPipeline.stages) plus the two fixed bookends "Sourcing" (before a
+  // candidate enters any formal stage) and "Onboarding" (after Hired).
+  // Shape: { [stageName: string]: number }. Null/missing key = no target set
+  // for that stage. e.g. { "Sourcing": 4, "Screening": 3, "Onboarding": 0 }
+  stageDailyTargets Json?
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
@@ -15249,6 +15312,10 @@ model RequisitionRecruiter {
 
 enum RequisitionPositionStatus {
   Open
+  // A candidate has accepted an offer for this seat but hasn't finished
+  // onboarding yet — the seat is spoken for, but not yet "Filled" (see
+  // RequisitionPosition.filledAt, stamped only once onboarding completes).
+  PendingOnboarding
   Filled
   Cancelled
 
@@ -15277,9 +15344,32 @@ model RequisitionPosition {
 
   recruiterId String?
   status      RequisitionPositionStatus @default(Open)
+  // Stamped the moment a recruiter is (re)assigned to this seat — the
+  // Position → Offer TAT clock starts here. Reassigning to a different
+  // recruiter restarts it (a fresh handoff, not the prior recruiter's delay).
+  assignedAt  DateTime?
 
   filledByApplicationId String?
   filledAt              DateTime?
+
+  // SLA revision — once this seat's Position -> Offer SLA is crossed (MISSED),
+  // HR can explicitly revise it: the deadline is pushed out by the level's
+  // base SLA days again, and this count goes up. A revised position is
+  // ALWAYS treated as non-compliant for scoring, even once it falls back
+  // inside the pushed-out deadline — the recruiter doesn't get credit for a
+  // goalpost they moved themselves. See revisePositionSla().
+  slaRevisionCount Int @default(0)
+  slaExtensionDays Int @default(0)
+  // Why the most recent revision was made — optional, free text. The full
+  // history of every revision (who, when, reason) lives in the audit log;
+  // this is just the latest one, kept here for a quick glance on the row.
+  slaRevisionReason String?
+
+  // Idempotency marker for the daily SLA-check cron ("AT_RISK" | "MISSED" |
+  // null) — mirrors JobRequisition.lastSlaAlertLevel, just scoped to this one
+  // seat's Position -> Offer clock instead of the requisition's overall
+  // deadline. Prevents re-alerting every day for an unchanged breach.
+  lastSlaAlertLevel String?
 
   createdBy String?
   updatedBy String?
@@ -15466,6 +15556,11 @@ model JobApplication {
   // `positionId` is stamped only at hire time, once a specific open seat is
   // consumed — see RequisitionPosition.
   assignedRecruiterId String?
+  // Stamped the moment assignedRecruiterId is (re)set — the Recruiter
+  // Performance score's SLA clock starts here (assignment -> offer decision),
+  // not at requisition approval. Reassigning to a different recruiter
+  // restarts it, same as RequisitionPosition.assignedAt.
+  assignedRecruiterAt DateTime?
   positionId           String?
 
   createdBy String?
