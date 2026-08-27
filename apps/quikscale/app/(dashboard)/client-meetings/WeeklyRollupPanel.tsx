@@ -29,10 +29,20 @@ import {
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
 import type { ValidationResult } from "@/lib/ai/weeklyReportValidation";
 import { WeeklyHuddleReportView } from "./WeeklyHuddleReportView";
+import { UnmappedSpeakersTray, type RosterOption } from "./UnmappedSpeakersTray";
+import type { UnmappedSpeaker } from "@/lib/services/unmappedSpeakers";
 import { useWwwExport, type ExportCandidate } from "./www/useWwwExport";
 import { DownloadWeeklyReportButtons } from "./DownloadWeeklyReportButtons";
 import { ConfirmDeleteDialog, runDelete, type DeleteTarget } from "./ConfirmDeleteDialog";
-import { Banner, ConfidenceBadge, EmptyState, SignOffBar, Skeleton } from "./reportUi";
+import {
+  Banner,
+  ConfidenceBadge,
+  EditToolbar,
+  EmptyState,
+  ManualEditBadge,
+  SignOffBar,
+  Skeleton,
+} from "./reportUi";
 
 interface WeekSource {
   date: string;
@@ -124,6 +134,13 @@ export function WeeklyRollupPanel({
   const [cache, setCache] = useState<CacheVerdict | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [weekEnd, setWeekEnd] = useState("");
+  /**
+   * Names the recordings used that matched nobody, plus this client's roster to
+   * map them onto. Live data from the week, not the stored report: it says what
+   * needs fixing now, and a row disappears as soon as its alias is saved.
+   */
+  const [unmapped, setUnmapped] = useState<UnmappedSpeaker[]>([]);
+  const [roster, setRoster] = useState<RosterOption[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -150,7 +167,17 @@ export function WeeklyRollupPanel({
   // would make a report component depend on a provider purely to fill a gap
   // that is usually absent. Only fetched when a candidate actually needs an
   // owner, so a clean report costs no extra request.
-  const needsOwnerPicker = candidates.some((c) => wwwExport.gapsFor(c).includes("who"));
+  // Deliberately intrinsic to the candidate, NOT derived from the drafts: a
+  // draft-derived flag flips to false the moment the last gap is filled, which
+  // withdraws the options from EVERY row — one row's edit would then wipe the
+  // pickers (and the date inputs, which share the same editable flag) on all
+  // the others.
+  const needsOwnerPicker = candidates.some(
+    (c) =>
+      !c.linkedWwwItemId &&
+      !c.dismissedAt &&
+      !(c.who?.confidence === "RESOLVED" && c.who?.userId),
+  );
   const [ownerOptions, setOwnerOptions] = useState<
     { id: string; firstName: string; lastName: string; email: string }[]
   >([]);
@@ -202,10 +229,13 @@ export function WeeklyRollupPanel({
       setCache((d.cache as CacheVerdict | null) ?? null);
       setCanEdit(Boolean(d.canEdit));
       setWeekEnd(d.weekEnd ?? "");
+      setUnmapped((d.unmappedSpeakers as UnmappedSpeaker[] | undefined) ?? []);
+      setRoster((d.roster as RosterOption[] | undefined) ?? []);
     } catch (e) {
       setError((e as Error).message);
       setSources([]);
       setReport(null);
+      setUnmapped([]);
     } finally {
       setLoading(false);
     }
@@ -250,6 +280,104 @@ export function WeeklyRollupPanel({
       setGenerating(false);
     }
   }, [clientId, weekStart, selected, load]);
+
+  /**
+   * The edit draft. Non-null IS edit mode — one piece of state rather than a
+   * boolean plus a copy that can disagree with it.
+   *
+   * The panel owns this because the view is presentational: it renders the draft
+   * while editing and reports mutations back, and never holds report state of
+   * its own.
+   */
+  const [draft, setDraft] = useState<StoredWeeklyReport | null>(null);
+  const editing = draft !== null;
+
+  /** Apply a mutation to a fresh copy, so React sees a new object every time. */
+  const updateDraft = useCallback((mutate: (d: StoredWeeklyReport) => void) => {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev);
+      mutate(next);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Has anything actually changed? Compared against the saved report rather
+   * than tracked per keystroke, so typing a character and deleting it again
+   * correctly reads as clean.
+   */
+  const dirty = useMemo(
+    () => (draft && report ? JSON.stringify(draft) !== JSON.stringify(report) : false),
+    [draft, report],
+  );
+
+  const saveEdits = useCallback(async () => {
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/client-meetings/reports/weekly", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, weekStart, report: draft }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error ?? "Failed to save your changes");
+
+      // The server returns the MERGED document — prose from the draft, every
+      // computed field from the stored row. Trusting the response rather than
+      // the draft is what makes the allow-list visible in the UI: a field the
+      // server declined to change simply snaps back.
+      const saved = json.data?.report as StoredWeeklyReport | undefined;
+      if (saved) setReport(saved);
+      if (json.data?.validation !== undefined) {
+        setValidation((json.data.validation as ValidationResult | null) ?? null);
+      }
+      setValidatedAt(json.data?.validatedAt ?? null);
+      setDraft(null);
+
+      const changed: string[] = json.data?.changedFields ?? [];
+      setNotice(
+        changed.length
+          ? `Saved ${changed.length} change${changed.length === 1 ? "" : "s"}. Regenerating this report would discard them.`
+          : "Nothing needed saving.",
+      );
+      // Staleness may have moved (an edit clears sign-off), so re-read the
+      // banner state rather than guessing at it.
+      void load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, clientId, weekStart, load]);
+
+  /**
+   * Regenerate, with the two things it destroys stated first.
+   *
+   * A generation replaces the whole document, so it discards manual edits and
+   * clears a sign-off. Both are recoverable from version snapshots, but neither
+   * should happen because someone pressed a button that did not say so —
+   * regeneration also costs a model call, which makes an accidental one
+   * expensive as well as destructive.
+   */
+  const requestGenerate = useCallback(() => {
+    const willDiscardEdits = Boolean(report?.manualEdit);
+    if (!willDiscardEdits) {
+      void generate();
+      return;
+    }
+
+    const fields = report?.manualEdit?.fields.length ?? 0;
+    const confirmed = window.confirm(
+      `This report has ${fields} manually edited field${fields === 1 ? "" : "s"}.\n\n` +
+        "Regenerating rewrites every written section from the transcripts, so those edits will be discarded " +
+        "(the previous version is kept in the report's history).\n\nRegenerate anyway?",
+    );
+    if (confirmed) void generate();
+  }, [report, generate]);
 
   const setSignOff = useCallback(
     async (validated: boolean) => {
@@ -444,9 +572,11 @@ export function WeeklyRollupPanel({
               </p>
             ) : null}
           </div>
+          {/* Disabled mid-edit: regenerating would throw away the draft the
+              user is still typing into. */}
           <button
-            onClick={generate}
-            disabled={generating || !selected.size}
+            onClick={requestGenerate}
+            disabled={generating || !selected.size || editing}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {generating ? (
@@ -480,6 +610,22 @@ export function WeeklyRollupPanel({
             </Banner>
           ) : null}
 
+          {/* OUTSIDE the report branch on purpose. An unmapped speaker changes
+              what every number in the report means, and mapping one before the
+              first generation saves paying for a second: generate → see phantom
+              rows → map → regenerate is two AI calls for one report. `load()`
+              re-runs after a mapping, which drops the row and lets the staleness
+              banner offer the regeneration — never automatically. */}
+          <UnmappedSpeakersTray
+            speakers={unmapped}
+            roster={roster}
+            canEdit={canEdit}
+            onMapped={(message) => {
+              setNotice(message);
+              void load();
+            }}
+          />
+
           {loading && !report ? (
             <Skeleton rows={6} />
           ) : !report ? (
@@ -498,9 +644,21 @@ export function WeeklyRollupPanel({
                   </p>
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <ConfidenceBadge value={confidence ?? report.overallConfidence} />
+                    <ManualEditBadge manualEdit={report.manualEdit} />
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
+                  <EditToolbar
+                    editing={editing}
+                    dirty={dirty}
+                    saving={saving}
+                    canEdit={canEdit}
+                    onEdit={() => setDraft(structuredClone(report))}
+                    onCancel={() => setDraft(null)}
+                    onSave={() => void saveEdits()}
+                  />
+                  {/* Downloads render the SAVED report, never the draft: a file
+                      handed to a client must match what the app stores. */}
                   <DownloadWeeklyReportButtons report={report} clientId={clientId} weekStart={weekStart} />
                   {canEdit ? (
                     <button
@@ -548,18 +706,20 @@ export function WeeklyRollupPanel({
               />
 
               <WeeklyHuddleReportView
-                report={report}
+                report={draft ?? report}
                 validation={validation}
+                edit={editing ? { editing: true, update: updateDraft } : undefined}
                 newWwwProps={{
                   selected: wwwExport.selected,
                   onSelectionChange: wwwExport.setSelected,
                   gapsFor: wwwExport.gapsFor,
                   onDraftChange: wwwExport.setDraft,
                   drafts: wwwExport.drafts,
-                  // Only supplied when a row actually needs an owner: without
-                  // options the cell stays read-only, which is right for a
-                  // report where nothing is missing.
-                  ownerOptions: needsOwnerPicker ? ownerOptions : undefined,
+                  // Only fetched when a row actually needs an owner, and never
+                  // withdrawn once fetched: without options the cell stays
+                  // read-only, which is right for a report where nothing is
+                  // missing but wrong once a human has started filling gaps.
+                  ownerOptions: ownerOptions.length ? ownerOptions : undefined,
                   exportBar: (
                     <div className="mt-2 space-y-1.5">
                       {wwwExport.error ? (

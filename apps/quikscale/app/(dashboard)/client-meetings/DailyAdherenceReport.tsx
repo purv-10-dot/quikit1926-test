@@ -13,41 +13,9 @@
  */
 import type { StoredMeetingReport } from "@/lib/ai/meetingReport";
 import { summarizeAdherence } from "@/lib/ai/dailyAdherenceFormat";
+import { RatingBadge, RatingCell } from "./adherenceRating";
 
 type AdherenceRow = NonNullable<StoredMeetingReport["adherence"]>[number];
-
-const RATING_CELL: Record<string, string> = {
-  YES: "bg-green-50 text-green-700",
-  PARTIAL: "bg-amber-50 text-amber-700",
-  NO: "bg-red-50 text-red-700",
-};
-
-const RATING_LABEL: Record<string, string> = { YES: "Yes", PARTIAL: "Partial", NO: "No" };
-
-function RatingCell({ value }: { value: string | null | undefined }) {
-  if (!value) return <td className="px-2 py-1.5 text-center text-gray-400">—</td>;
-  return (
-    <td className={`px-2 py-1.5 text-center text-xs font-medium ${RATING_CELL[value] ?? ""}`}>
-      {RATING_LABEL[value] ?? value}
-    </td>
-  );
-}
-
-const OVERALL_BADGE: Record<string, string> = {
-  full: "bg-green-100 text-green-700",
-  good: "bg-green-50 text-green-600",
-  partial: "bg-amber-100 text-amber-700",
-  poor: "bg-red-100 text-red-700",
-};
-
-function RatingBadge({ rating }: { rating: string | null | undefined }) {
-  const key = (rating ?? "").trim().toLowerCase();
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${OVERALL_BADGE[key] ?? "bg-gray-100 text-gray-600"}`}>
-      {rating ?? "—"}
-    </span>
-  );
-}
 
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;

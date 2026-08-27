@@ -12,7 +12,7 @@ const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.
 
 const querySchema = z.object({
   clientId: z.string().min(1),
-  weekStart: z.string().regex(/^d{4}-d{2}-d{2}$/),
+  weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "weekStart must be yyyy-mm-dd"),
 });
 
 /**

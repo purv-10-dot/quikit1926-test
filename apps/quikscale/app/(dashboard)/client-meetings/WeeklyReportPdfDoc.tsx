@@ -10,17 +10,33 @@
  */
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
+import {
+  buildWeeklyAdherenceSnapshot,
+  SNAPSHOT_FLAG_LABEL,
+  type SnapshotFlag,
+} from "@/lib/ai/weeklyAdherenceSnapshot";
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n}%`);
 
 /** Suffix marking a member who is shown but not scored. */
 const TYPE_LABEL: Record<string, string> = { OPTIONAL: "Optional", EXTERNAL: "External" };
 
+/**
+ * Attendance marks.
+ *
+ * WinAnsi ONLY. react-pdf's built-in Helvetica is a standard PDF font limited
+ * to the WinAnsi character set, and any glyph outside it is dropped SILENTLY —
+ * which is exactly how the on-screen ✓ / ◐ / ✗ turned this table into a grid of
+ * blank cells in the downloaded PDF while "NA" and "—" (both WinAnsi) still
+ * printed. Letters + a legend below the table keep it readable in print and in
+ * black and white. Do not reintroduce Unicode symbols here without registering
+ * an embedded font that actually carries them.
+ */
 const ATTENDANCE: Record<string, { mark: string; bg: string; color: string }> = {
-  PRESENT: { mark: "✓", bg: "#F0FDF4", color: "#166534" },
+  PRESENT: { mark: "P", bg: "#F0FDF4", color: "#166534" },
   // Joined, but under the presence threshold — counted as half.
-  PARTIAL: { mark: "◐", bg: "#FFFBEB", color: "#92400E" },
-  ABSENT: { mark: "✗", bg: "#FEF2F2", color: "#991B1B" },
+  PARTIAL: { mark: "½", bg: "#FFFBEB", color: "#92400E" },
+  ABSENT: { mark: "A", bg: "#FEF2F2", color: "#991B1B" },
   NA: { mark: "NA", bg: "#F8FAFC", color: "#94A3B8" },
   // No evidence either way. Rendered blank rather than guessed, and excluded
   // from the percentage.
@@ -32,6 +48,8 @@ const STATUS: Record<string, { label: string; color: string }> = {
   IN_PROGRESS: { label: "In Progress", color: "#B45309" },
   RESOLVED: { label: "Resolved", color: "#166534" },
 };
+
+const flag = (v: SnapshotFlag | null) => (v ? SNAPSHOT_FLAG_LABEL[v] : "—");
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: 28, paddingVertical: 26, fontFamily: "Helvetica", fontSize: 9, color: "#1F2937" },
@@ -98,6 +116,7 @@ export default function WeeklyReportPdfDoc({
 }) {
   const { meetingDetails: md, executive, attendance, heatMap, stucks, facilitatorObservations: fo } = report;
   const team = heatMap.teamAverage;
+  const snapshot = buildWeeklyAdherenceSnapshot(heatMap);
   // Rows are loosely typed because the shape is owned by
   // `lib/reports/wwwReview.ts`; duplicating it here would create a second
   // definition to keep in step.
@@ -150,6 +169,14 @@ export default function WeeklyReportPdfDoc({
             <Text style={styles.reportSub}>
               {report.clientName} · {report.weekLabel}
             </Text>
+            {/* A reader of a downloaded file cannot see the app badge, and is
+                entitled to know a section was written by a facilitator rather
+                than generated from the transcripts. */}
+            {report.manualEdit ? (
+              <Text style={[styles.reportSub, { color: "#92400E" }]}>
+                Contains manual edits
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -248,15 +275,70 @@ export default function WeeklyReportPdfDoc({
               ))}
             </View>
             <Text style={styles.note}>
+              P = present · ½ = partial (joined below the presence threshold, counted as half) · A = absent ·
+              — = no evidence either way, excluded from the percentage.
+            </Text>
+            <Text style={styles.note}>
               NA = no huddle held that day, or the member was on planned leave — excluded from the percentage.
             </Text>
           </>
         ) : null}
 
-        {/* 4. Adherence Heat Map */}
+        {/* 4. Adherence — Snapshot first, then the Heat Map it derives from. */}
         {heatMap.rows.length ? (
           <>
-            <Text style={styles.h2}>4. Adherence Heat Map</Text>
+            <Text style={styles.h2}>4. Adherence</Text>
+            <Text style={styles.h3}>Adherence Snapshot</Text>
+            <Text style={styles.note}>
+              Rating Scale: Yes — complete, specific answer given. Partial — vague or incomplete.
+              No — not addressed.
+            </Text>
+            <View style={styles.table}>
+              <View style={styles.tHead}>
+                <Text style={[styles.th, { width: "32%" }]}>Participant</Text>
+                <Text style={[styles.th, { width: "14%", textAlign: "center" }]}>Achievement</Text>
+                <Text style={[styles.th, { width: "12%", textAlign: "center" }]}>Focus</Text>
+                <Text style={[styles.th, { width: "16%", textAlign: "center" }]}>
+                  Stuck / Blockers
+                </Text>
+                <Text style={[styles.th, { width: "13%", textAlign: "center" }]}>Score</Text>
+                <Text style={[styles.th, { width: "13%", textAlign: "center" }]}>Rating</Text>
+              </View>
+              {snapshot.rows.map((row) => (
+                <View key={row.memberId ?? row.participant} style={styles.tRow}>
+                  <Text style={[styles.td, { width: "32%" }]}>
+                    {row.unmapped ? `${row.participant}  [Unmapped]` : row.participant}
+                  </Text>
+                  <Text style={[styles.tdCenter, { width: "14%" }]}>{flag(row.achievement)}</Text>
+                  <Text style={[styles.tdCenter, { width: "12%" }]}>{flag(row.focus)}</Text>
+                  <Text style={[styles.tdCenter, { width: "16%" }]}>{flag(row.stuck)}</Text>
+                  <Text style={[styles.tdCenter, { width: "13%" }]}>{row.scoreLabel ?? "—"}</Text>
+                  <Text style={[styles.tdCenter, styles.bold, { width: "13%" }]}>
+                    {row.rating ?? "—"}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <View style={[styles.tilesRow, { marginTop: 6 }]}>
+              {([
+                ["Full Adherence", snapshot.tiles.full],
+                ["Good", snapshot.tiles.good],
+                ["Partial", snapshot.tiles.partial],
+                ["Poor", snapshot.tiles.poor],
+                ["Total Attendees", snapshot.tiles.total],
+              ] as const).map(([label, value]) => (
+                <View key={label} style={styles.tile}>
+                  <Text style={styles.tileValue}>{value}</Text>
+                  <Text style={styles.tileLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.note}>
+              A flag summarises the whole week: answering on some days but not others reads as
+              Partial. Totals count roster members only.
+            </Text>
+
+            <Text style={styles.h3}>Adherence Heat Map</Text>
             <View style={styles.table}>
               <View style={styles.tHead}>
                 <Text style={[styles.th, { width: "32%" }]}>Team Member</Text>

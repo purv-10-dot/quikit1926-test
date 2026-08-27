@@ -257,6 +257,23 @@ export const storedWeeklyReportSchema = z.object({
       hasReport: z.boolean(),
     }),
   ),
+  /**
+   * Set once a human has edited any of this report's prose — see
+   * `lib/reports/reportEditMerge.ts` for what may be edited and what may not.
+   *
+   * Lives inside the document rather than in a column so it travels with the
+   * report into version snapshots, DOCX and PDF: a reader months later can tell
+   * a generated sentence from an edited one. Absent on every generated report,
+   * and cleared by the next generation — which is exactly why the Regenerate
+   * confirmation has to warn that regenerating discards manual edits.
+   */
+  manualEdit: z
+    .object({
+      at: z.string(),
+      by: z.string(),
+      fields: z.array(z.string()).default([]),
+    })
+    .nullish(),
 });
 
 export type StoredWeeklyReport = z.infer<typeof storedWeeklyReportSchema>;

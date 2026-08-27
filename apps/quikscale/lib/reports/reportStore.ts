@@ -305,6 +305,15 @@ export async function saveReportEdit(
   input: {
     report: unknown;
     metrics: unknown;
+    /**
+     * Re-run consistency result. Undefined leaves the stored one in place —
+     * correct for a sign-off-only save, where the document did not change.
+     *
+     * An edit MUST pass this. The consistency banner reads as a statement about
+     * the words on screen, so leaving a generation-time result beside edited
+     * prose would vouch for text the validator never saw.
+     */
+    validation?: unknown;
     reportConfidence?: number | null;
     /** Undefined leaves the sign-off untouched. */
     validated?: boolean;
@@ -317,6 +326,7 @@ export async function saveReportEdit(
     data: {
       report: json(input.report),
       metrics: json(input.metrics),
+      ...(input.validation === undefined ? {} : { validation: json(input.validation) }),
       reportConfidence: input.reportConfidence ?? null,
       updatedAt: now,
       updatedBy: input.userId,

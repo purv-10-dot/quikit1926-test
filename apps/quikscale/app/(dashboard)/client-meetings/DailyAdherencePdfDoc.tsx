@@ -166,8 +166,10 @@ export default function DailyAdherencePdfDoc({
                   Not Present ({notPresent.length}){report.attendance?.comparisonNote ? ` — ${report.attendance.comparisonNote}` : ""}
                 </Text>
                 <View style={styles.attendeeGrid}>
+                  {/* "•" not "▪": Helvetica is WinAnsi-only in react-pdf and
+                      drops anything outside it without warning. */}
                   {notPresent.map((name, i) => (
-                    <Text key={i} style={styles.attendeeItem}>▪ {name}</Text>
+                    <Text key={i} style={styles.attendeeItem}>• {name}</Text>
                   ))}
                 </View>
               </View>

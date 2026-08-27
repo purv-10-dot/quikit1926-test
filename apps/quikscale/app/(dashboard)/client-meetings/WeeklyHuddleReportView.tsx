@@ -17,6 +17,9 @@
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
 import type { ValidationResult, ValidationSeverity } from "@/lib/ai/weeklyReportValidation";
 import { WwwReviewSection, type WwwReviewRowView } from "./www/WwwReviewSection";
+import { RatingBadge, RatingCell, RatingScaleLegend } from "./adherenceRating";
+import { EditableList, EditableSelect, EditableText } from "./reportUi";
+import { buildWeeklyAdherenceSnapshot } from "@/lib/ai/weeklyAdherenceSnapshot";
 import {
   NewWwwSection,
   type NewWwwRowView,
@@ -74,6 +77,20 @@ const BLOCKER_STATUS: Record<string, { label: string; cls: string }> = {
   IN_PROGRESS: { label: "In Progress", cls: "bg-amber-100 text-amber-800" },
   RESOLVED: { label: "Resolved", cls: "bg-green-100 text-green-700" },
 };
+
+/**
+ * Status choices in edit mode.
+ *
+ * The empty option is not a blank: null means the transcript never stated a
+ * status, which is a real and different answer from OPEN. A facilitator who
+ * over-set a status must be able to put it back.
+ */
+const STATUS_OPTIONS: { value: string | null; label: string }[] = [
+  { value: null, label: "— not stated" },
+  { value: "OPEN", label: "Open" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "RESOLVED", label: "Resolved" },
+];
 
 const SEVERITY: Record<ValidationSeverity, { cls: string; dot: string; label: string }> = {
   ERROR: { cls: "text-red-800", dot: "bg-red-500", label: "Error" },
@@ -157,9 +174,25 @@ export function WeeklyHuddleReportView({
   newWwwProps,
   report,
   validation,
+  edit,
 }: {
   report: StoredWeeklyReport;
   validation: ValidationResult | null;
+  /**
+   * Edit mode. Absent for a read-only render — a downloaded report, a
+   * historical version, or a viewer without `ClientMeetings.Report: update`.
+   *
+   * The view stays presentational: it renders whatever `report` it is handed
+   * (the panel passes the DRAFT while editing) and reports changes back through
+   * `update`. It holds no state and decides nothing about what may be edited —
+   * the server allow-list in `lib/reports/reportEditMerge.ts` does that, and a
+   * field it would ignore simply never gets an input here.
+   */
+  edit?: {
+    editing: boolean;
+    /** Apply a mutation to a copy of the draft. */
+    update: (mutate: (draft: StoredWeeklyReport) => void) => void;
+  };
   /**
    * Selection, gap-filling and the Export action. Omitted for a read-only
    * render — a downloaded or historical report has nothing to export against.
@@ -167,15 +200,21 @@ export function WeeklyHuddleReportView({
   newWwwProps?: Partial<NewWwwSectionProps>;
 }) {
   const { meetingDetails: md, executive, attendance, heatMap, stucks, facilitatorObservations: fo } = report;
+  const editing = Boolean(edit?.editing);
+  /** No-op outside edit mode, so call sites stay unconditional. */
+  const patch = (mutate: (draft: StoredWeeklyReport) => void) => edit?.update(mutate);
   const team = heatMap.teamAverage;
+  // Derived from the stored heat map, so an existing report gains the
+  // snapshot without a regenerate.
+  const snapshot = buildWeeklyAdherenceSnapshot(heatMap);
 
-  const observationRows: [string, typeof fo.strongPerformers][] = [
-    ["Attendance & Participation", fo.attendanceParticipation],
-    ["Strong Performers", fo.strongPerformers],
-    ["Achievement Gap", fo.achievementGap],
-    ["Focus Specificity", fo.focusSpecificity],
-    ["Stuck Protocol", fo.stuckProtocol],
-    ["Recommendations", fo.recommendations],
+  const observationRows: [keyof typeof fo, string, typeof fo.strongPerformers][] = [
+    ["attendanceParticipation", "Attendance & Participation", fo.attendanceParticipation],
+    ["strongPerformers", "Strong Performers", fo.strongPerformers],
+    ["achievementGap", "Achievement Gap", fo.achievementGap],
+    ["focusSpecificity", "Focus Specificity", fo.focusSpecificity],
+    ["stuckProtocol", "Stuck Protocol", fo.stuckProtocol],
+    ["recommendations", "Recommendations", fo.recommendations],
   ];
 
   return (
@@ -261,14 +300,21 @@ export function WeeklyHuddleReportView({
           </table>
         </div>
 
-        {executive.keyHighlights.length ? (
+        {/* Editing shows the list even when empty — otherwise a report whose
+            highlights the model left blank could never gain any. */}
+        {executive.keyHighlights.length || editing ? (
           <>
             <h4 className="mb-1 mt-3 text-xs font-semibold text-gray-700">Key Highlights</h4>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-gray-700">
-              {executive.keyHighlights.map((h, i) => (
-                <li key={i}>{h}</li>
-              ))}
-            </ul>
+            <EditableList
+              items={executive.keyHighlights}
+              editing={editing}
+              ariaLabel="Key highlight"
+              onChange={(next) =>
+                patch((draft) => {
+                  draft.executive.keyHighlights = next;
+                })
+              }
+            />
           </>
         ) : null}
       </section>
@@ -354,9 +400,15 @@ export function WeeklyHuddleReportView({
           {attendance.rows.some((r) => r.unmapped) ? (
             <p className="mt-1 text-[11px] text-amber-700">
               {attendance.rows.filter((r) => r.unmapped).length} of {attendance.rows.length}{" "}
-              participants heard in the uploaded transcript are not on the client roster. They are
-              shown as <strong>Unmapped</strong> and are not scored — add them under Client Members
-              to include them in the attendance and adherence percentages.
+              participants heard in the uploaded transcript did not match anyone on the client
+              roster. They are shown as <strong>Unmapped</strong> and are not scored.
+              {/* Two different problems, two different fixes — and the old copy
+                  gave only the second. Telling someone to "add" a name that is
+                  merely a misspelling of an existing member creates a DUPLICATE
+                  member, which is how one person ends up as two rows. */}{" "}
+              A misspelling of someone already on the roster is fixed by mapping it in{" "}
+              <strong>Unmapped speakers</strong> above the report; a genuinely new person needs
+              adding under Client Members and to this client&apos;s team.
             </p>
           ) : null}
           <p className="mt-1 text-[11px] text-gray-400">
@@ -372,10 +424,85 @@ export function WeeklyHuddleReportView({
         </section>
       ) : null}
 
-      {/* §4.4 Adherence Heat Map */}
+      {/* §4.4 Adherence — the Snapshot reads the week as Yes/Partial/No, the
+          Heat Map below it shows the percentages those flags came from. One
+          section, so the numbering of 5–8 is unchanged. */}
       {heatMap.rows.length ? (
         <section>
-          <SectionHeading>4. Adherence Heat Map</SectionHeading>
+          <SectionHeading>4. Adherence</SectionHeading>
+
+          <h5 className="mb-1.5 text-xs font-semibold text-gray-700">Adherence Snapshot</h5>
+          <RatingScaleLegend />
+          <div className="overflow-x-auto rounded-lg border border-gray-100">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-accent-50">
+                  <th className="px-2 py-1.5">Participant</th>
+                  <th className="px-2 py-1.5 text-center">Achievement</th>
+                  <th className="px-2 py-1.5 text-center">Focus</th>
+                  <th className="px-2 py-1.5 text-center">Stuck / Blockers</th>
+                  <th className="px-2 py-1.5 text-center">Score</th>
+                  <th className="px-2 py-1.5 text-center">Rating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.rows.map((row) => (
+                  <tr
+                    key={row.memberId ?? row.participant}
+                    className="border-b border-gray-100 last:border-0"
+                  >
+                    <td className="px-2 py-1.5">
+                      <div className="font-medium text-gray-800">
+                        {row.participant}
+                        {row.unmapped ? (
+                          <span
+                            className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                            title="Heard in the uploaded transcript but not on the client roster — scored individually, excluded from the totals below"
+                          >
+                            Unmapped
+                          </span>
+                        ) : null}
+                      </div>
+                      {row.role ? (
+                        <div className="text-[10px] italic text-gray-400">{row.role}</div>
+                      ) : null}
+                    </td>
+                    <RatingCell value={row.achievement} />
+                    <RatingCell value={row.focus} />
+                    <RatingCell value={row.stuck} />
+                    <td className="px-2 py-1.5 text-center font-medium text-gray-700">
+                      {row.scoreLabel ?? "—"}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <RatingBadge rating={row.rating} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 grid grid-cols-5 gap-2 text-center">
+            {([
+              ["Full Adherence", snapshot.tiles.full, "text-green-700"],
+              ["Good", snapshot.tiles.good, "text-green-600"],
+              ["Partial", snapshot.tiles.partial, "text-amber-600"],
+              ["Poor", snapshot.tiles.poor, "text-red-600"],
+              ["Total Attendees", snapshot.tiles.total, "text-gray-700"],
+            ] as const).map(([label, value, color]) => (
+              <div key={label} className="rounded-lg border border-gray-100 bg-gray-50 py-2">
+                <div className={`text-lg font-bold ${color}`}>{value}</div>
+                <div className="text-[10px] text-gray-500">{label}</div>
+              </div>
+            ))}
+          </div>
+          {/* Said plainly, because a reader who assumes otherwise draws a
+              conclusion the data does not support. */}
+          <p className="mt-1.5 text-[11px] text-gray-500">
+            A flag summarises the whole week: answering on some days but not others reads as
+            Partial. Totals count roster members only.
+          </p>
+
+          <h5 className="mb-1.5 mt-4 text-xs font-semibold text-gray-700">Adherence Heat Map</h5>
           <div className="overflow-x-auto rounded-lg border border-gray-100">
             <table className="w-full text-left text-xs">
               <thead>
@@ -453,19 +580,72 @@ export function WeeklyHuddleReportView({
                   <tr key={`${b.huddleId}-${i}`} className="border-b border-gray-100 align-top last:border-0">
                     <td className="whitespace-nowrap px-3 py-1.5 text-gray-600">{b.date}</td>
                     <td className="px-3 py-1.5 font-medium text-gray-800">{b.raisedBy}</td>
-                    <td className="px-3 py-1.5 text-gray-700">{b.raisedFor ?? "—"}</td>
                     <td className="px-3 py-1.5 text-gray-700">
-                      <div className="font-medium">{b.description}</div>
-                      {b.impact ? <div className="text-gray-500">Impact: {b.impact}</div> : null}
+                      <EditableText
+                        value={b.raisedFor}
+                        editing={editing}
+                        ariaLabel={`Raised for, row ${i + 1}`}
+                        onChange={(next) =>
+                          patch((draft) => {
+                            draft.stucks.all[i].raisedFor = next.trim() ? next : null;
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-700">
+                      <div className="font-medium">
+                        <EditableText
+                          value={b.description}
+                          editing={editing}
+                          multiline
+                          ariaLabel={`Blocker description, row ${i + 1}`}
+                          onChange={(next) =>
+                            patch((draft) => {
+                              draft.stucks.all[i].description = next;
+                            })
+                          }
+                        />
+                      </div>
+                      {/* Impact appears in edit mode even when empty, so it can
+                          be added; in read mode a blank impact stays hidden. */}
+                      {b.impact || editing ? (
+                        <div className="mt-0.5 text-gray-500">
+                          {editing ? null : "Impact: "}
+                          <EditableText
+                            value={b.impact}
+                            editing={editing}
+                            multiline
+                            placeholder={editing ? "Impact (optional)" : ""}
+                            ariaLabel={`Impact, row ${i + 1}`}
+                            onChange={(next) =>
+                              patch((draft) => {
+                                draft.stucks.all[i].impact = next.trim() ? next : null;
+                              })
+                            }
+                          />
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-3 py-1.5">
-                      {b.status ? (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${BLOCKER_STATUS[b.status].cls}`}>
-                          {BLOCKER_STATUS[b.status].label}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
+                      <EditableSelect
+                        value={b.status ?? null}
+                        editing={editing}
+                        ariaLabel={`Status, row ${i + 1}`}
+                        options={STATUS_OPTIONS}
+                        onChange={(next) =>
+                          patch((draft) => {
+                            draft.stucks.all[i].status = next as typeof b.status;
+                          })
+                        }
+                      >
+                        {b.status ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${BLOCKER_STATUS[b.status].cls}`}>
+                            {BLOCKER_STATUS[b.status].label}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </EditableSelect>
                     </td>
                   </tr>
                 ))}
@@ -492,7 +672,19 @@ export function WeeklyHuddleReportView({
               <tbody>
                 {stucks.recurring.map((g, i) => (
                   <tr key={i} className="border-b border-gray-100 last:border-0">
-                    <td className="px-3 py-1.5 font-medium text-gray-800">{g.blocker}</td>
+                    <td className="px-3 py-1.5 font-medium text-gray-800">
+                      <EditableText
+                        value={g.blocker}
+                        editing={editing}
+                        multiline
+                        ariaLabel={`Recurring stuck ${i + 1}`}
+                        onChange={(next) =>
+                          patch((draft) => {
+                            draft.stucks.recurring[i].blocker = next;
+                          })
+                        }
+                      />
+                    </td>
                     <td className="px-3 py-1.5 text-center">{g.occurrences}</td>
                     <td className="px-3 py-1.5 text-gray-700">{g.raisedBy.join(", ") || "—"}</td>
                     <td className="px-3 py-1.5 text-gray-700">{g.raisedFor.join(", ") || "—"}</td>
@@ -521,11 +713,24 @@ export function WeeklyHuddleReportView({
         <div className="overflow-hidden rounded-lg border border-gray-100">
           <table className="w-full text-left text-xs">
             <tbody>
-              {observationRows.map(([label, obs]) => (
-                <tr key={label} className="border-b border-gray-100 align-top last:border-0">
+              {observationRows.map(([key, label, obs]) => (
+                <tr key={key} className="border-b border-gray-100 align-top last:border-0">
                   <td className="w-52 bg-gray-50 px-3 py-2 font-semibold text-gray-700">{label}</td>
                   <td className="px-3 py-2 text-gray-700">
-                    {obs.text}
+                    <EditableText
+                      value={obs.text}
+                      editing={editing}
+                      multiline
+                      ariaLabel={`${label} observation`}
+                      onChange={(next) =>
+                        patch((draft) => {
+                          draft.facilitatorObservations[key].text = next;
+                        })
+                      }
+                    />
+                    {/* Evidence dates stay as generated: the validator checks the
+                        prose against them, so an editable pair could certify
+                        itself. Rewording an observation keeps its provenance. */}
                     {obs.sourceDates.length ? (
                       <div className="mt-1 text-[10px] text-gray-400">Evidence: {obs.sourceDates.join(", ")}</div>
                     ) : null}
@@ -554,6 +759,21 @@ export function WeeklyHuddleReportView({
         {...(newWwwProps ?? {})}
         legacySuggestions={report.newWww?.rows?.length ? [] : report.wwwSuggestions}
         unavailableReason={report.newWww?.unavailableReason ?? null}
+        edit={
+          edit
+            ? {
+                editing: edit.editing,
+                onFieldChange: (index, field, value) =>
+                  patch((draft) => {
+                    const rows = (draft.newWww?.rows ?? []) as Record<string, unknown>[];
+                    if (!rows[index]) return;
+                    // Optional fields clear to null; `what` is required, so the
+                    // server keeps the stored text if it arrives blank.
+                    rows[index][field] = value.trim() ? value : field === "what" ? value : null;
+                  }),
+              }
+            : undefined
+        }
       />
     </div>
   );

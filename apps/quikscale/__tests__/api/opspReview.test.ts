@@ -23,6 +23,13 @@ function buildPOST(body: unknown): NextRequest {
   });
 }
 
+// The withOrgAuth wrapper's returned handler takes Next's route context as a
+// required second argument. This route has no dynamic segments, so `params` is
+// always empty — these callers keep that noise out of the 17 call sites below.
+const ROUTE_CTX = { params: {} };
+const callGET = (req: NextRequest) => GET(req, ROUTE_CTX);
+const callPOST = (req: NextRequest) => POST(req, ROUTE_CTX);
+
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.orgMember.findFirst.mockResolvedValue({
@@ -78,7 +85,7 @@ beforeEach(() => {
 
 describe("GET /api/opsp/review — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await GET(buildGET());
+    const res = await callGET(buildGET());
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -92,7 +99,7 @@ describe("GET /api/opsp/review — auth", () => {
       orgId: TENANT,
       status: "active",
     } as any);
-    const res = await GET(buildGET());
+    const res = await callGET(buildGET());
     expect(res.status).toBe(403);
   });
 });
@@ -107,7 +114,7 @@ describe("GET /api/opsp/review — happy path", () => {
   it("returns empty data when no OPSP exists", async () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(null);
 
-    const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
+    const res = await callGET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -120,7 +127,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
     mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
-    const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
+    const res = await callGET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -148,7 +155,7 @@ describe("GET /api/opsp/review — happy path", () => {
     ] as any);
     mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
-    const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
+    const res = await callGET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     const body = await res.json();
     expect(body.data.rows[0].periods.m1.achieved).toBe(1.5);
     expect(body.data.rows[0].periods.m1.target).toBe(2);
@@ -160,7 +167,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
     mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
-    const res = await GET(buildGET("year=2026&quarter=Q1&horizon=yearly"));
+    const res = await callGET(buildGET("year=2026&quarter=Q1&horizon=yearly"));
     const body = await res.json();
     expect(body.data.rows).toHaveLength(1); // Revenue goals
     expect(body.data.rows[0].periods.q1.target).toBe(2); // per-period from goalRow
@@ -172,7 +179,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
     mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
-    const res = await GET(buildGET("year=2026&quarter=Q1&horizon=3to5year"));
+    const res = await callGET(buildGET("year=2026&quarter=Q1&horizon=3to5year"));
     const body = await res.json();
     expect(body.data.rows).toHaveLength(1);
     expect(body.data.rows[0].periods.y1.target).toBe(8);
@@ -180,7 +187,7 @@ describe("GET /api/opsp/review — happy path", () => {
   });
 
   it("rejects invalid horizon", async () => {
-    const res = await GET(buildGET("horizon=invalid"));
+    const res = await callGET(buildGET("horizon=invalid"));
     expect(res.status).toBe(400);
   });
 });
@@ -191,7 +198,7 @@ describe("GET /api/opsp/review — happy path", () => {
 
 describe("POST /api/opsp/review — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await POST(
+    const res = await callPOST(
       buildPOST({
         year: 2026, quarter: "Q1", horizon: "quarter",
         rowIndex: 0, category: "Revenue",
@@ -210,12 +217,12 @@ describe("POST /api/opsp/review — validation", () => {
   beforeEach(asAdmin);
 
   it("returns 400 for missing required fields", async () => {
-    const res = await POST(buildPOST({ year: 2026 }));
+    const res = await callPOST(buildPOST({ year: 2026 }));
     expect(res.status).toBe(400);
   });
 
   it("returns 400 for invalid horizon", async () => {
-    const res = await POST(
+    const res = await callPOST(
       buildPOST({
         year: 2026, quarter: "Q1", horizon: "weekly",
         rowIndex: 0, category: "Revenue",
@@ -226,7 +233,7 @@ describe("POST /api/opsp/review — validation", () => {
   });
 
   it("returns 400 for invalid period", async () => {
-    const res = await POST(
+    const res = await callPOST(
       buildPOST({
         year: 2026, quarter: "Q1", horizon: "quarter",
         rowIndex: 0, category: "Revenue",
@@ -254,7 +261,7 @@ describe("POST /api/opsp/review — happy path", () => {
     } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    const res = await POST(
+    const res = await callPOST(
       buildPOST({
         year: 2026,
         quarter: "Q1",
@@ -277,7 +284,7 @@ describe("POST /api/opsp/review — happy path", () => {
   it("returns 404 when OPSP does not exist", async () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(null);
 
-    const res = await POST(
+    const res = await callPOST(
       buildPOST({
         year: 2026,
         quarter: "Q1",
@@ -300,7 +307,7 @@ describe("POST /api/opsp/review — happy path", () => {
     } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    const res = await POST(
+    const res = await callPOST(
       buildPOST({
         year: 2026,
         quarter: "Q1",
@@ -326,7 +333,7 @@ describe("POST /api/opsp/review — happy path", () => {
     } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    await POST(
+    await callPOST(
       buildPOST({
         year: 2026, quarter: "Q1", horizon: "quarter",
         rowIndex: 0, category: "Revenue",
@@ -347,7 +354,7 @@ describe("POST /api/opsp/review — happy path", () => {
     } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    await POST(
+    await callPOST(
       buildPOST({
         year: 2026, quarter: "Q1", horizon: "quarter",
         rowIndex: 0, category: "Revenue",

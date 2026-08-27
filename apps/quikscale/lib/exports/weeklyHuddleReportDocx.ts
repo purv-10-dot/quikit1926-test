@@ -21,6 +21,11 @@ import {
   WidthType,
 } from "docx";
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
+import {
+  buildWeeklyAdherenceSnapshot,
+  SNAPSHOT_FLAG_LABEL,
+  type SnapshotFlag,
+} from "@/lib/ai/weeklyAdherenceSnapshot";
 
 const HEADER_FILL = "EFF6FF";
 const LABEL_FILL = "F8FAFC";
@@ -79,6 +84,15 @@ function h3(text: string) {
 
 const spacer = () => new Paragraph({ text: "", spacing: { after: 80 } });
 
+/** A muted caption under a table — same treatment the other notes already use. */
+const note = (text: string) =>
+  new Paragraph({
+    children: [new TextRun({ text, size: 16, italics: true, color: "64748B" })],
+    spacing: { before: 60 },
+  });
+
+const flag = (v: SnapshotFlag | null) => (v ? SNAPSHOT_FLAG_LABEL[v] : "—");
+
 /** Loose report rows carry `unknown`; render a string or nothing. */
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -86,6 +100,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: string): Document {
   const { meetingDetails: md, executive, attendance, heatMap, stucks, facilitatorObservations: fo } = report;
   const team = heatMap.teamAverage;
+  const snapshot = buildWeeklyAdherenceSnapshot(heatMap);
   const children: (Paragraph | Table)[] = [];
 
   // Title
@@ -202,9 +217,52 @@ export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: strin
     );
   }
 
-  // §4.4 Adherence Heat Map
+  // §4.4 Adherence — Snapshot first, then the Heat Map it derives from. One
+  // section, so 5–8 keep their existing numbers.
   if (heatMap.rows.length) {
-    children.push(h2("4. Adherence Heat Map"));
+    children.push(h2("4. Adherence"));
+
+    children.push(h3("Adherence Snapshot"));
+    children.push(
+      note(
+        "Rating Scale: Yes — complete, specific answer given. Partial — vague or incomplete. No — not addressed.",
+      ),
+    );
+    children.push(
+      table([
+        headerRow(["Participant", "Achievement", "Focus", "Stuck / Blockers", "Score", "Rating"]),
+        ...snapshot.rows.map(
+          (row) =>
+            new TableRow({
+              children: [
+                cell(row.unmapped ? `${row.participant}  [Unmapped]` : row.participant),
+                cell(flag(row.achievement), { align: true }),
+                cell(flag(row.focus), { align: true }),
+                cell(flag(row.stuck), { align: true }),
+                cell(row.scoreLabel ?? "—", { align: true }),
+                cell(row.rating ?? "—", { align: true, bold: true }),
+              ],
+            }),
+        ),
+        new TableRow({
+          children: [
+            cell("Totals (roster only)", { bold: true, fill: LABEL_FILL }),
+            cell(`Full ${snapshot.tiles.full}`, { align: true, fill: LABEL_FILL }),
+            cell(`Good ${snapshot.tiles.good}`, { align: true, fill: LABEL_FILL }),
+            cell(`Partial ${snapshot.tiles.partial}`, { align: true, fill: LABEL_FILL }),
+            cell(`Poor ${snapshot.tiles.poor}`, { align: true, fill: LABEL_FILL }),
+            cell(`Attendees ${snapshot.tiles.total}`, { align: true, bold: true, fill: LABEL_FILL }),
+          ],
+        }),
+      ]),
+    );
+    children.push(
+      note(
+        "A flag summarises the whole week: answering on some days but not others reads as Partial. Totals count roster members only.",
+      ),
+    );
+
+    children.push(h3("Adherence Heat Map"));
     children.push(
       table([
         headerRow(["Team Member", "Yesterday Achievement", "Today Focus", "Stuck", "Avg Score"]),

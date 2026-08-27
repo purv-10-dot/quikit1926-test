@@ -93,8 +93,19 @@ describe("POST /api/org/users — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when password missing", async () => {
+  // Password is OPTIONAL on create: Native invitees get a server-generated
+  // temporary password emailed to them, and the Users drawer never collects
+  // one (see lib/utils/userPayload). A missing password must therefore not be
+  // a validation error.
+  it("does not reject a create with no password", async () => {
     const res = await POST(buildPOST({ email: "x@y.com", firstName: "A", lastName: "B" }), routeCtx);
+    expect(res.status).not.toBe(400);
+  });
+
+  it("returns 400 when a supplied password is shorter than 8 characters", async () => {
+    const res = await POST(buildPOST({
+      email: "x@y.com", firstName: "A", lastName: "B", password: "short",
+    }), routeCtx);
     expect(res.status).toBe(400);
   });
 });

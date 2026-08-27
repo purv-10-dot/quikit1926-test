@@ -12,7 +12,7 @@
  */
 
 import type { ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Download, FileText, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Download, FileText, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
 
 /* ───────────────────────────── layout ───────────────────────────── */
@@ -304,3 +304,262 @@ export function Chip({ children, className = "" }: { children: ReactNode; classN
 
 export const pctText = (v: number | null | undefined, digits = 0) =>
   v == null ? "—" : `${v.toFixed(digits)}%`;
+
+/* ───────────────────────────── editing ───────────────────────────── */
+
+/**
+ * Inline edit primitives for report prose.
+ *
+ * Reports are read far more often than they are edited, so editing is a MODE
+ * rather than a permanent field: `editing === false` renders exactly the text a
+ * reader saw before any of this existed, with no boxes or affordances in the
+ * way. Only in edit mode do the same values become inputs, in place, so a
+ * facilitator never loses the surrounding table while correcting one cell.
+ *
+ * What may be edited is decided on the SERVER, by the allow-list in
+ * `lib/reports/reportEditMerge.ts`. These components are the hands, not the
+ * rules: an input rendered over a computed number would simply be ignored on
+ * save — which is why no number gets one.
+ */
+
+/** A single prose field. `multiline` turns it into an auto-sized textarea. */
+export function EditableText({
+  value,
+  editing,
+  onChange,
+  multiline = false,
+  placeholder = "—",
+  className = "",
+  ariaLabel,
+}: {
+  value: string | null | undefined;
+  editing: boolean;
+  onChange: (next: string) => void;
+  multiline?: boolean;
+  /** Shown when the value is empty — as text in read mode, as a hint in edit. */
+  placeholder?: string;
+  className?: string;
+  ariaLabel: string;
+}) {
+  if (!editing) {
+    const text = (value ?? "").trim();
+    return <span className={className}>{text.length ? text : placeholder}</span>;
+  }
+
+  const shared =
+    "w-full rounded border border-amber-300 bg-amber-50/40 px-1.5 py-1 text-inherit " +
+    "focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300";
+
+  return multiline ? (
+    <textarea
+      aria-label={ariaLabel}
+      value={value ?? ""}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      // Grows with its content: a six-line observation in a two-line box is how
+      // an editor ends up rewriting text they cannot see.
+      rows={Math.min(12, Math.max(2, Math.ceil((value ?? "").length / 90) + 1))}
+      className={`${shared} resize-y leading-relaxed ${className}`}
+    />
+  ) : (
+    <input
+      type="text"
+      aria-label={ariaLabel}
+      value={value ?? ""}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={`${shared} ${className}`}
+    />
+  );
+}
+
+/**
+ * A bullet list (the §4.2 highlights).
+ *
+ * Add and remove live here rather than in `EditableText` because a list is the
+ * one editable shape where the number of items is itself the edit.
+ */
+export function EditableList({
+  items,
+  editing,
+  onChange,
+  ariaLabel,
+  addLabel = "Add bullet",
+}: {
+  items: string[];
+  editing: boolean;
+  onChange: (next: string[]) => void;
+  ariaLabel: string;
+  addLabel?: string;
+}) {
+  if (!editing) {
+    return (
+      <ul className="list-disc space-y-1 pl-5 text-sm text-gray-700">
+        {items.map((item, i) => (
+          <li key={i}>{item}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  const replace = (i: number, next: string) =>
+    onChange(items.map((item, idx) => (idx === i ? next : item)));
+
+  return (
+    <div className="space-y-1.5">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-start gap-1.5">
+          <span className="pt-1.5 text-gray-400">•</span>
+          <EditableText
+            value={item}
+            editing
+            multiline
+            onChange={(next) => replace(i, next)}
+            ariaLabel={`${ariaLabel} ${i + 1}`}
+            className="text-sm"
+          />
+          <button
+            type="button"
+            aria-label={`Remove ${ariaLabel} ${i + 1}`}
+            onClick={() => onChange(items.filter((_, idx) => idx !== i))}
+            className="mt-1 rounded px-1.5 text-xs text-gray-400 hover:bg-red-50 hover:text-red-600"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...items, ""])}
+        className="rounded border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-500 hover:border-accent-300 hover:text-accent-700"
+      >
+        + {addLabel}
+      </button>
+    </div>
+  );
+}
+
+/** A small enum field (a stuck status). Renders `children` when not editing. */
+export function EditableSelect({
+  value,
+  editing,
+  options,
+  onChange,
+  ariaLabel,
+  children,
+}: {
+  value: string | null;
+  editing: boolean;
+  /** `value: null` is offered when the underlying field is nullable. */
+  options: { value: string | null; label: string }[];
+  onChange: (next: string | null) => void;
+  ariaLabel: string;
+  children: ReactNode;
+}) {
+  if (!editing) return <>{children}</>;
+
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      className="rounded border border-amber-300 bg-amber-50/40 px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-300"
+    >
+      {options.map((o) => (
+        <option key={o.value ?? "__null"} value={o.value ?? ""}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Edit-mode toolbar: Edit, or Save/Cancel with a dirty indicator.
+ *
+ * Save is disabled while clean — there is nothing to send — but Cancel is always
+ * live, so nobody gets stuck in edit mode after an accidental keystroke.
+ */
+export function EditToolbar({
+  editing,
+  dirty,
+  saving,
+  canEdit,
+  onEdit,
+  onSave,
+  onCancel,
+}: {
+  editing: boolean;
+  dirty: boolean;
+  saving: boolean;
+  canEdit: boolean;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  if (!canEdit) return null;
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={onEdit}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-accent-300 hover:text-accent-700"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit report
+      </button>
+    );
+  }
+
+  return (
+    <div className="inline-flex items-center gap-2">
+      <span className="text-[11px] text-amber-700">
+        {dirty ? "Unsaved changes" : "Editing — nothing changed yet"}
+      </span>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={saving}
+        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving || !dirty}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+      >
+        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        Save changes
+      </button>
+    </div>
+  );
+}
+
+/**
+ * "Edited by a human" marker.
+ *
+ * Shown wherever the report is read, because a reader is entitled to know that
+ * a sentence was written by a facilitator rather than generated — and because it
+ * is the honest counterpart to the warning that regenerating discards it.
+ */
+export function ManualEditBadge({
+  manualEdit,
+}: {
+  manualEdit?: { at: string; by: string; fields: string[] } | null;
+}) {
+  if (!manualEdit) return null;
+  const count = manualEdit.fields.length;
+  return (
+    <span
+      title={`Edited fields: ${manualEdit.fields.join(", ")}`}
+      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800"
+    >
+      <Pencil className="h-3 w-3" />
+      Manually edited
+      {count ? ` · ${count} field${count === 1 ? "" : "s"}` : ""}
+    </span>
+  );
+}

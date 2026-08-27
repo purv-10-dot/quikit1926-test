@@ -443,6 +443,24 @@ export default function ClientsPage() {
     return m;
   }, [rows]);
 
+  // Sticky id -> display-name cache for everything that renders a picked member
+  // by name (the Attendance rows, the Teams-invite preview). `memberOptions` is
+  // only the current paginated/searched slice of client members, and `rows` only
+  // covers the visible page of already-saved clients - so neither on its own can
+  // name a member the user just picked in a *new* client form. Accumulating into
+  // a ref means a name never regresses to a raw id once it has been seen.
+  const memberNameCache = useRef<Map<string, string>>(new Map());
+  const resolveMemberName = useMemo(() => {
+    const cache = memberNameCache.current;
+    const put = (id: string, name: string) => { if (name) cache.set(id, name); };
+    const label = (u: PickerUser) =>
+      [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email || "";
+    for (const u of memberOptions) put(u.id, label(u));
+    for (const u of editSeedMembers) put(u.id, label(u));
+    for (const c of rows) for (const tm of c.teamMembers) put(tm.id, tm.name);
+    return (id: string) => cache.get(id) ?? id;
+  }, [memberOptions, editSeedMembers, rows]);
+
   // Clients list — DB-level pagination + search + status/client filters + sort.
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -1113,10 +1131,10 @@ export default function ClientsPage() {
                 </div>
                 <ul className="max-h-56 divide-y divide-gray-100 overflow-y-auto">
                   {editing.form.teamMemberIds.map((id) => {
-                    const m = memberNameById.get(id);
+                    const m = resolveMemberName(id);
                     return (
                       <li key={id} className="flex items-center justify-between gap-3 px-3 py-2">
-                        <span className="min-w-0 truncate text-xs text-gray-700">{m ?? id}</span>
+                        <span className="min-w-0 truncate text-xs text-gray-700">{m}</span>
                         <Segmented
                           value={editing.form.teamMemberTypes[id] === "EXTERNAL" ? "EXTERNAL" : "REQUIRED"}
                           onChange={(v) =>
@@ -1270,11 +1288,7 @@ export default function ClientsPage() {
                 weeklyDay={editing.form.weeklyDay}
                 dailyDays={editing.form.dailyDays}
                 until={editing.form.meetingUntil}
-                attendeeNames={editing.form.teamMemberIds.map((id) => {
-                  const opt = memberOptions.find((o) => o.id === id);
-                  const optName = opt ? [opt.firstName, opt.lastName].filter(Boolean).join(" ").trim() || opt.email : "";
-                  return optName || memberNameById.get(id) || id;
-                })}
+                attendeeNames={editing.form.teamMemberIds.map(resolveMemberName)}
               />
 
               {/* Direct create — makes both recurring Teams meetings now. Saving
