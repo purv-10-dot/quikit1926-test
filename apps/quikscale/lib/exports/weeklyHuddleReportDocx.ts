@@ -173,7 +173,13 @@ export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: strin
           (row) =>
             new TableRow({
               children: [
-                cell(row.attendanceType === "REQUIRED" ? row.name : `${row.name}  [${TYPE_LABEL[row.attendanceType]}]`),
+                cell(
+                  row.unmapped
+                    ? `${row.name}  [Unmapped]`
+                    : row.attendanceType === "REQUIRED"
+                      ? row.name
+                      : `${row.name}  [${TYPE_LABEL[row.attendanceType]}]`,
+                ),
                 ...row.cells.map((c) => cell(ATTENDANCE_MARK[c.state] ?? "—", { align: true })),
                 cell(pct(row.attendancePct), { align: true, bold: true }),
               ],
@@ -206,7 +212,7 @@ export function buildWeeklyReportDocx(report: StoredWeeklyReport, orgName: strin
           (row) =>
             new TableRow({
               children: [
-                cell(row.participant),
+                cell(row.memberId === null ? `${row.participant}  [Unmapped]` : row.participant),
                 cell(pct(row.achievementPct), { align: true }),
                 cell(pct(row.focusPct), { align: true }),
                 cell(pct(row.stuckPct), { align: true }),

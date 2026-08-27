@@ -22,6 +22,7 @@ import {
   buildAttendanceMatrix,
   collectWeekBlockers,
   computeExecutiveMetrics,
+  isUploadedTranscript,
   type HuddleDay,
   type RosterMember,
   type WeeklyClientConfig,
@@ -83,6 +84,11 @@ const attendanceMatrixSchema = z.object({
       onLeaveDays: z.number(),
       /** Days excluded from the percentage for want of evidence. */
       unknownDays: z.number().default(0),
+      /**
+       * A speaker from an uploaded transcript who is not on the roster.
+       * Defaulted so every report stored before this existed still parses.
+       */
+      unmapped: z.boolean().default(false),
     }),
   ),
   averageAttendancePct: z.number(),
@@ -276,8 +282,21 @@ export function computeDeterministicWeek(input: {
 }): DeterministicWeek {
   const { config, roster, days, weekStart, onLeave } = input;
 
-  const attendance = buildAttendanceMatrix({ config, roster, days, weekStart, onLeave });
-  const heatMap = buildAdherenceHeatMap({ roster, days });
+  // A week containing at least one uploaded transcript opens the
+  // unmapped-speaker path. The per-day `transcriptSource === "manual"` guard
+  // inside both builders is what actually scopes it, so a mixed week shows the
+  // uploaded days' speakers and leaves its Fathom days exactly as they were.
+  const includeUnmappedSpeakers = days.some(isUploadedTranscript);
+
+  const attendance = buildAttendanceMatrix({
+    config,
+    roster,
+    days,
+    weekStart,
+    onLeave,
+    includeUnmappedSpeakers,
+  });
+  const heatMap = buildAdherenceHeatMap({ roster, days, includeUnmappedSpeakers });
   const metrics = computeExecutiveMetrics({
     config,
     days,

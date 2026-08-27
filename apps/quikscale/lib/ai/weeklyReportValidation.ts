@@ -52,6 +52,17 @@ export interface ValidateInput {
   ai: WeeklyReportAi;
   /** Items at or below this confidence are flagged INFO. Default 0.4. */
   lowConfidenceThreshold?: number;
+  /**
+   * Names that ARE reported as participants despite not being roster members —
+   * the unmapped speakers an uploaded transcript puts in the tables.
+   *
+   * "Not on the roster" is only worth warning about when it means "this person
+   * is nowhere in the report". Once someone has a row in §3 and §4, repeating
+   * the warning for every blocker they raised produces a wall of noise that
+   * buries the findings a reader actually needs. Omitted by every other
+   * caller, which keeps the existing warnings exactly as they were.
+   */
+  visibleSpeakers?: string[];
 }
 
 /** Members who attended under half the huddles held — the only people the
@@ -126,6 +137,7 @@ export function validateWeeklyReport(input: ValidateInput): ValidationResult {
 
   const inWeek = (d: string) => d >= weekStart && d <= weekEnd;
   const observations = Object.entries(ai.facilitatorObservations);
+  const visible = new Set((input.visibleSpeakers ?? []).map(normalizeName));
 
   // --- 3. Roster containment -----------------------------------------------
   // Every name the AI claims to have used must resolve to a roster member.
@@ -167,6 +179,9 @@ export function validateWeeklyReport(input: ValidateInput): ValidationResult {
       ["raisedFor", b.raisedFor],
     ] as const) {
       if (!value) continue;
+      // Already visible as an unmapped participant — the reader can see exactly
+      // who this is, so there is nothing left to confirm.
+      if (visible.has(normalizeName(value))) continue;
       if (!resolveParticipant(value, roster).memberId) {
         issues.push({
           code: "BLOCKER_UNKNOWN_PERSON",
@@ -315,6 +330,18 @@ export function validateWeeklyReport(input: ValidateInput): ValidationResult {
       code: "ROSTER_LIKELY_INCOMPLETE",
       severity: "ERROR",
       message: `${unrecognized.length} of ${unrecognized.length + matched} speakers could not be matched to the client roster (${roster.length} member${roster.length === 1 ? "" : "s"}). Add the missing people under Client Members — the adherence and attendance tables cover only matched members.`,
+      location: "heatMap",
+    });
+  }
+
+  // Unmapped speakers are shown rather than excluded, so this is advice, not a
+  // defect: the tables are complete, but these people still belong on the
+  // roster if their adherence is ever to be scored.
+  if (visible.size) {
+    issues.push({
+      code: "UNMAPPED_SPEAKERS_INCLUDED",
+      severity: "INFO",
+      message: `${visible.size} speaker${visible.size === 1 ? " is" : "s are"} shown as Unmapped — heard in the uploaded transcript but not on the client roster. Add them under Client Members to include them in adherence and attendance scoring.`,
       location: "heatMap",
     });
   }

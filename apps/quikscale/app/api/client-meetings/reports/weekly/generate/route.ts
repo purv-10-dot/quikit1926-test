@@ -329,6 +329,11 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     heatMap: deterministic.heatMap,
     blockers: deterministic.blockers,
     unrecognized: deterministic.heatMap.unrecognized,
+    // Speakers from an uploaded transcript that the tables now show as Unmapped.
+    // Empty for a Fathom-only week, which leaves every existing warning intact.
+    visibleSpeakers: deterministic.heatMap.rows
+      .filter((r) => r.memberId === null)
+      .map((r) => r.participant),
     ai,
   });
 

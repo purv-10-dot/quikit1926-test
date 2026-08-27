@@ -25,6 +25,7 @@
 import { isPunctual } from "@/lib/services/clientMeetingsMath";
 import { attendanceKnown, attendanceVerdict } from "@/lib/meetings/occurrenceAttendance";
 import type { TeamsAttendanceEvidence } from "@/lib/meetings/occurrenceAttendance";
+import { looksLikeOrganisation } from "@/lib/ai/participantMatch";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -183,6 +184,18 @@ export interface HuddleDay {
   adherence: DayAdherenceRow[];
   blockers: DayBlocker[];
   transcriptId: string | null;
+  /**
+   * Where this day's transcript came from: `"manual"` for a human `.docx`
+   * upload, `"fathom"` (or null, on legacy rows) for a recorder.
+   *
+   * Only `"manual"` opens the unmapped-speaker path. A human chose the file and
+   * the meeting, so every speaker in it is real and hiding the ones missing
+   * from the roster reports a four-person meeting as a one-person meeting. A
+   * recorder-derived name carries no such warrant: the roster stays the
+   * authoritative statement of who is on the team, and an unattributable label
+   * must not silently become a participant.
+   */
+  transcriptSource?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +323,67 @@ export function resolveParticipant(raw: string, roster: RosterMember[]): NameRes
 }
 
 // ---------------------------------------------------------------------------
+// Unmapped speakers from uploaded transcripts
+// ---------------------------------------------------------------------------
+
+/** A transcript speaker who is not on the roster but must still be reported. */
+export interface UnmappedSpeaker {
+  /** Synthetic, stable, and never a `ClientMember` id. */
+  key: string;
+  /** First-seen spelling — the one a human will recognise. */
+  name: string;
+  /** `ymd` dates this speaker was heard on. */
+  dates: Set<string>;
+}
+
+/** `true` when this day's transcript was uploaded by a human, not a recorder. */
+export function isUploadedTranscript(day: HuddleDay): boolean {
+  return day.transcriptSource === "manual";
+}
+
+/**
+ * Every speaker in the week's UPLOADED transcripts who did not resolve onto the
+ * roster, de-duplicated case-insensitively and in first-seen order.
+ *
+ * Both §3 (attendance) and §4 (heat map) read this one function, so the two
+ * tables can never disagree about who was in the room — deriving them
+ * separately is how a report ends up listing someone in one table and not the
+ * other.
+ *
+ * Organisation labels ("Hexaware AWS Team", "Client (Shivam project)") are
+ * excluded: a blocker raised for a team is a legitimate party, not a person,
+ * and turning one into an attendance row invents a participant.
+ */
+export function collectUnmappedSpeakers(
+  days: HuddleDay[],
+  roster: RosterMember[],
+): UnmappedSpeaker[] {
+  const found = new Map<string, UnmappedSpeaker>();
+
+  for (const day of days) {
+    if (!isUploadedTranscript(day)) continue;
+    const date = ymd(day.meetingDate);
+
+    for (const row of day.adherence) {
+      const res = resolveParticipant(row.participant, roster);
+      if (res.memberId) continue;
+      const norm = normalizeName(res.canonicalName);
+      if (!norm) continue;
+      if (looksLikeOrganisation(res.canonicalName)) continue;
+
+      const key = `unmapped:${norm}`;
+      const existing = found.get(key);
+      // First spelling wins, so "Ajay Baheti" and "Ajay baheti" are one person
+      // under the name a reader saw first rather than two half-attended rows.
+      if (existing) existing.dates.add(date);
+      else found.set(key, { key, name: res.canonicalName, dates: new Set([date]) });
+    }
+  }
+
+  return [...found.values()];
+}
+
+// ---------------------------------------------------------------------------
 // §4.1 — planned huddle days
 // ---------------------------------------------------------------------------
 
@@ -413,6 +487,13 @@ export interface AttendanceRow {
   onLeaveDays: number;
   /** Days with no usable evidence — excluded from the percentage. */
   unknownDays: number;
+  /**
+   * True for a speaker heard in an uploaded transcript who is not on the client
+   * roster. Shown so the meeting is reported at its real size, never scored,
+   * and never a `ClientMember` — `memberId` is a synthetic `unmapped:` key that
+   * exists only inside this report.
+   */
+  unmapped: boolean;
 }
 
 export interface AttendanceMatrix {
@@ -429,8 +510,21 @@ export function buildAttendanceMatrix(input: {
   weekStart: Date;
   /** Planned leave per member id — those cells render NA, not ABSENT. */
   onLeave?: Record<string, Date[]>;
+  /**
+   * Add a shown-but-unscored row for every speaker in an UPLOADED transcript
+   * who is not on the roster. Off by default, so every existing caller and
+   * every Fathom-sourced day behaves exactly as before.
+   */
+  includeUnmappedSpeakers?: boolean;
 }): AttendanceMatrix {
-  const { config, roster, days, weekStart, onLeave = {} } = input;
+  const {
+    config,
+    roster,
+    days,
+    weekStart,
+    onLeave = {},
+    includeUnmappedSpeakers = false,
+  } = input;
 
   const byDate = new Map(days.map((d) => [ymd(d.meetingDate), d]));
   // Columns are the days a huddle was expected, plus any unexpected extra day
@@ -542,8 +636,49 @@ export function buildAttendanceMatrix(input: {
       // fully-attended week libels someone. `expectedDays: 0` already excludes
       // the row from the exec summary's <50% list, which reads this as null.
       attendancePct: !scoredMember || !expected ? null : round1((scored / expected) * 100),
+      unmapped: false,
     };
   });
+
+  // Speakers from an uploaded transcript who are not on the roster. Appended
+  // AFTER the roster rows and never mixed into them, so the block above is
+  // untouched by this feature.
+  //
+  // Their cells are built here rather than through `attendanceVerdict`: that
+  // ladder takes a roster member and reasons about marked-absence, leave and
+  // Teams records, none of which exist for someone who was never invited. All
+  // an uploaded `.docx` can prove about them is that they spoke on a given day
+  // — so a day they were heard on is PRESENT, and every other held day is
+  // UNKNOWN rather than ABSENT. Silence here is not evidence of absence; it is
+  // the absence of evidence.
+  if (includeUnmappedSpeakers) {
+    for (const speaker of collectUnmappedSpeakers(days, roster)) {
+      const cells: AttendanceCell[] = columns.map((col) => {
+        if (!col.held) return { date: col.date, state: "NA", evidence: "NA_NOT_HELD" };
+        if (speaker.dates.has(col.date)) {
+          return { date: col.date, state: "PRESENT", evidence: "PRESENT_SPOKE" };
+        }
+        return { date: col.date, state: "UNKNOWN", evidence: "NO_DATA" };
+      });
+
+      rows.push({
+        memberId: speaker.key,
+        name: speaker.name,
+        role: null,
+        // EXTERNAL is the existing "shown but not scored" classification. Reusing
+        // it means `expectedDays` stays 0 and the team tile below — which already
+        // counts REQUIRED rows only — cannot move by so much as a decimal.
+        attendanceType: "EXTERNAL",
+        cells,
+        presentDays: cells.filter((c) => c.state === "PRESENT").length,
+        expectedDays: 0,
+        onLeaveDays: 0,
+        unknownDays: cells.filter((c) => c.state === "UNKNOWN").length,
+        attendancePct: null,
+        unmapped: true,
+      });
+    }
+  }
 
   // Tile value: the mean of each day's own attendance rate, so a day with only
   // two assessable members doesn't outweigh a day with ten. Days where nobody
@@ -619,12 +754,23 @@ interface Accum {
  * "Ashwin Singone" on Monday collapse into a single row. Anyone who cannot be
  * resolved is reported in `unrecognized` rather than becoming a phantom row —
  * a name we can't attribute is a data-quality signal, not a participant.
+ *
+ * `includeUnmappedSpeakers` inverts that last judgement for UPLOADED
+ * transcripts only. There a human chose the file, so an unresolved speaker is a
+ * real person the roster is missing rather than a name of doubtful provenance:
+ * they get a row with their real scores, and they are NOT listed as
+ * `unrecognized`, because nothing about them was excluded.
  */
 export function buildAdherenceHeatMap(input: {
   roster: RosterMember[];
   days: HuddleDay[];
+  /** Off by default — every existing caller keeps today's roster-only rows. */
+  includeUnmappedSpeakers?: boolean;
 }): AdherenceHeatMap {
-  const { roster, days } = input;
+  const { roster, days, includeUnmappedSpeakers = false } = input;
+  const unmappedKeys = includeUnmappedSpeakers
+    ? new Map(collectUnmappedSpeakers(days, roster).map((s) => [s.key, s.name]))
+    : new Map<string, string>();
 
   const accums = new Map<string, Accum>();
   const unresolved = new Map<string, UnrecognizedSpeaker>();
@@ -633,18 +779,28 @@ export function buildAdherenceHeatMap(input: {
     for (const row of day.adherence) {
       const res = resolveParticipant(row.participant, roster);
 
-      if (!res.memberId) {
-        const existing = unresolved.get(res.canonicalName);
+      // The accumulator key: a real member id, or — on the uploaded path only —
+      // a synthetic `unmapped:` key for a speaker the roster is missing.
+      const unmappedKey = `unmapped:${normalizeName(res.canonicalName)}`;
+      const accKey = res.memberId ?? (unmappedKeys.has(unmappedKey) ? unmappedKey : null);
+
+      if (!accKey) {
+        // Keyed on the NORMALISED name, not the raw string: without this
+        // "Ajay Baheti" and "Ajay baheti" become two entries with the week's
+        // days split between them, which reads as two people who each showed
+        // up half the time. The first-seen spelling is what gets displayed.
+        const norm = normalizeName(res.canonicalName);
+        const existing = unresolved.get(norm);
         if (existing) existing.days += 1;
-        else unresolved.set(res.canonicalName, { name: res.canonicalName, reason: res.reason, days: 1 });
+        else unresolved.set(norm, { name: res.canonicalName, reason: res.reason, days: 1 });
         continue;
       }
 
-      let acc = accums.get(res.memberId);
+      let acc = accums.get(accKey);
       if (!acc) {
         acc = {
           memberId: res.memberId,
-          participant: res.canonicalName,
+          participant: res.memberId ? res.canonicalName : (unmappedKeys.get(accKey) ?? res.canonicalName),
           role: row.role ?? null,
           achievement: [],
           focus: [],
@@ -652,7 +808,7 @@ export function buildAdherenceHeatMap(input: {
           days: 0,
           noStuckDays: 0,
         };
-        accums.set(res.memberId, acc);
+        accums.set(accKey, acc);
       }
 
       acc.days += 1;
@@ -674,30 +830,43 @@ export function buildAdherenceHeatMap(input: {
     }
   }
 
+  const toRow = (acc: Accum): HeatMapRow => {
+    const achievementPct = mean(acc.achievement);
+    const focusPct = mean(acc.focus);
+    const stuckPct = mean(acc.stuck);
+    const dims = [achievementPct, focusPct, stuckPct].filter((n): n is number => n !== null);
+    return {
+      memberId: acc.memberId,
+      participant: acc.participant,
+      role: acc.role,
+      achievementPct: achievementPct === null ? null : round1(achievementPct),
+      focusPct: focusPct === null ? null : round1(focusPct),
+      stuckPct: stuckPct === null ? null : round1(stuckPct),
+      avgScorePct: dims.length ? Math.round(dims.reduce((x, y) => x + y, 0) / dims.length) : null,
+      daysAssessed: acc.days,
+      noStuckDays: acc.noStuckDays,
+    };
+  };
+
   // Preserve roster order so the table is stable across regenerations.
-  const rows: HeatMapRow[] = roster
+  const rosterRows: HeatMapRow[] = roster
     .map((m) => accums.get(m.id))
     .filter((a): a is Accum => Boolean(a))
-    .map((acc) => {
-      const achievementPct = mean(acc.achievement);
-      const focusPct = mean(acc.focus);
-      const stuckPct = mean(acc.stuck);
-      const dims = [achievementPct, focusPct, stuckPct].filter((n): n is number => n !== null);
-      return {
-        memberId: acc.memberId,
-        participant: acc.participant,
-        role: acc.role,
-        achievementPct: achievementPct === null ? null : round1(achievementPct),
-        focusPct: focusPct === null ? null : round1(focusPct),
-        stuckPct: stuckPct === null ? null : round1(stuckPct),
-        avgScorePct: dims.length ? Math.round(dims.reduce((x, y) => x + y, 0) / dims.length) : null,
-        daysAssessed: acc.days,
-        noStuckDays: acc.noStuckDays,
-      };
-    });
+    .map(toRow);
 
+  // Unmapped speakers follow the roster, in first-seen order — also stable.
+  const unmappedRows: HeatMapRow[] = [...unmappedKeys.keys()]
+    .map((key) => accums.get(key))
+    .filter((a): a is Accum => Boolean(a))
+    .map(toRow);
+
+  const rows = [...rosterRows, ...unmappedRows];
+
+  // Team Average is the mean over ROSTER rows only. Letting an unmapped speaker
+  // move it would silently redefine what the number means the moment a roster
+  // gap appears, and make this week incomparable with last week's.
   const avgOf = (pick: (r: HeatMapRow) => number | null): number | null => {
-    const vals = rows.map(pick).filter((n): n is number => n !== null);
+    const vals = rosterRows.map(pick).filter((n): n is number => n !== null);
     const m = mean(vals);
     return m === null ? null : round1(m);
   };

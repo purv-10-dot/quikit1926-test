@@ -20,6 +20,7 @@ import {
   resolvedMemberId,
   type RosterIndex,
 } from "@/lib/ai/participantMatch";
+import { normalizeName } from "@/lib/ai/weeklyHuddleAggregate";
 import type {
   DayAdherenceRow,
   DayAttendance,
@@ -277,6 +278,11 @@ export async function loadWeekContext(
         // Whether that list was ticked by a human (authoritative both ways) or
         // derived from a recorder (proves presence only). See the column doc.
         attendeesSource: true,
+        // "manual" for a human .docx upload, "fathom" for a recorder. Distinct
+        // from `attendeesSource`, which is null on an upload whose uploader
+        // skipped the attendee ticks — so only this one reliably identifies an
+        // uploaded transcript.
+        source: true,
       },
     }),
     // Synced Teams attendance reports for this week. The only source with join
@@ -430,7 +436,11 @@ export async function loadWeekContext(
       // An org/team label is a legitimate party, not a missing person — keeping
       // it out of the tray is what stops genuine roster gaps being buried.
       if (match.reason === "external") return;
-      if (unresolved.some((u) => u.name === name)) return;
+      // Compared on the normalised key, not the raw string: "Ajay Baheti" and
+      // "Ajay baheti" are one person, and listing them twice turns a single
+      // roster gap into two.
+      const key = normalizeName(name);
+      if (unresolved.some((u) => normalizeName(u.name) === key)) return;
       unresolved.push({
         name,
         email,
@@ -564,6 +574,7 @@ export async function loadWeekContext(
       adherence,
       blockers: blockersOf(report),
       transcriptId: transcript?.id ?? null,
+      transcriptSource: transcript?.source ?? null,
     });
   }
 
@@ -624,6 +635,7 @@ export async function loadWeekContext(
       adherence,
       blockers: blockersOf(report),
       transcriptId: t.id,
+      transcriptSource: t.source,
     });
   }
 

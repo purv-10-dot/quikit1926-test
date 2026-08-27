@@ -295,7 +295,14 @@ export function WeeklyHuddleReportView({
                   <tr key={row.memberId} className="border-b border-gray-100 last:border-0">
                     <td className="px-3 py-1.5 font-medium text-gray-800">
                       {row.name}
-                      {row.attendanceType !== "REQUIRED" ? (
+                      {row.unmapped ? (
+                        <span
+                          className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                          title="Heard in the uploaded transcript but not on the client roster — shown for visibility, excluded from the attendance percentage"
+                        >
+                          Unmapped
+                        </span>
+                      ) : row.attendanceType !== "REQUIRED" ? (
                         <span
                           className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500"
                           title="Shown for visibility, but excluded from the attendance percentage"
@@ -342,13 +349,23 @@ export function WeeklyHuddleReportView({
               );
             })()}
           </p>
+          {/* An uploaded transcript reports the meeting at its real size, so
+              say plainly how much of it the roster actually covers. */}
+          {attendance.rows.some((r) => r.unmapped) ? (
+            <p className="mt-1 text-[11px] text-amber-700">
+              {attendance.rows.filter((r) => r.unmapped).length} of {attendance.rows.length}{" "}
+              participants heard in the uploaded transcript are not on the client roster. They are
+              shown as <strong>Unmapped</strong> and are not scored — add them under Client Members
+              to include them in the attendance and adherence percentages.
+            </p>
+          ) : null}
           <p className="mt-1 text-[11px] text-gray-400">
             NA = no huddle held that day, or the member was on planned leave — excluded from the percentage.
             {attendance.rows.some((r) => r.attendanceType !== "REQUIRED") ? (
               <>
                 {" "}
-                Optional and External members are shown for visibility only: they neither raise nor
-                lower the team average.
+                Optional, External and Unmapped participants are shown for visibility only: they
+                neither raise nor lower the team average.
               </>
             ) : null}
           </p>
@@ -374,7 +391,17 @@ export function WeeklyHuddleReportView({
                 {heatMap.rows.map((row) => (
                   <tr key={row.memberId ?? row.participant} className="border-b border-gray-100 last:border-0">
                     <td className="px-3 py-1.5">
-                      <div className="font-medium text-gray-800">{row.participant}</div>
+                      <div className="font-medium text-gray-800">
+                        {row.participant}
+                        {row.memberId === null ? (
+                          <span
+                            className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                            title="Heard in the uploaded transcript but not on the client roster — scored individually, excluded from the Team Average"
+                          >
+                            Unmapped
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="text-[10px] text-gray-400">
                         assessed over {row.daysAssessed} huddle{row.daysAssessed === 1 ? "" : "s"}
                       </div>

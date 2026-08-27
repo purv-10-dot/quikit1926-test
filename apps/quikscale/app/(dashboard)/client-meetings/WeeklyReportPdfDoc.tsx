@@ -226,9 +226,11 @@ export default function WeeklyReportPdfDoc({
               {attendance.rows.map((row) => (
                 <View key={row.memberId} style={styles.tRow}>
                   <Text style={[styles.td, { width: "30%" }]}>
-                    {row.attendanceType === "REQUIRED"
-                      ? row.name
-                      : `${row.name}  [${TYPE_LABEL[row.attendanceType]}]`}
+                    {row.unmapped
+                      ? `${row.name}  [Unmapped]`
+                      : row.attendanceType === "REQUIRED"
+                        ? row.name
+                        : `${row.name}  [${TYPE_LABEL[row.attendanceType]}]`}
                   </Text>
                   {row.cells.map((cell) => {
                     const a = ATTENDANCE[cell.state];
@@ -265,7 +267,9 @@ export default function WeeklyReportPdfDoc({
               </View>
               {heatMap.rows.map((row) => (
                 <View key={row.memberId ?? row.participant} style={styles.tRow}>
-                  <Text style={[styles.td, { width: "32%" }]}>{row.participant}</Text>
+                  <Text style={[styles.td, { width: "32%" }]}>
+                    {row.memberId === null ? `${row.participant}  [Unmapped]` : row.participant}
+                  </Text>
                   <Text style={[styles.tdCenter, { width: "20%" }]}>{pct(row.achievementPct)}</Text>
                   <Text style={[styles.tdCenter, { width: "16%" }]}>{pct(row.focusPct)}</Text>
                   <Text style={[styles.tdCenter, { width: "16%" }]}>{pct(row.stuckPct)}</Text>
