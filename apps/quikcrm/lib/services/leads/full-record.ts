@@ -47,7 +47,12 @@ export async function getFullLeadRecord(opts: { user: SessionUser; leadId: strin
   // searchable input without a second round-trip.
   const lead = await prisma.crmLead.findUnique({
     where: { id: leadId },
-    include: { account: { select: { id: true, name: true } } },
+    include: {
+      account: { select: { id: true, name: true } },
+      // ICP is stored on the lead as a reference only (icpId). Join the name for
+      // the read-only display on the detail page rather than duplicating it.
+      icp: { select: { id: true, name: true } },
+    },
   });
   if (!lead || lead.orgId !== user.orgId) return null;
   await assertAccountAccess(user, lead.accountId);

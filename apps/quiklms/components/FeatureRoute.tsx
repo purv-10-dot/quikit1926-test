@@ -1,6 +1,6 @@
 'use client';
 /**
- * FeatureRoute — ported from the old QuikSkills frontend
+ * FeatureRoute — ported from the old QuikLMSs frontend
  * (src/components/FeatureRoute.tsx).
  *
  * Gates children behind a tenant feature flag. The legacy version was a

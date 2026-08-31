@@ -28,6 +28,7 @@ import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { notify } from "@/lib/utils/notify";
+import { buildUserPayload } from "@/lib/utils/userPayload";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {

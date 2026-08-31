@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Zap, GitBranch, HelpCircle } from "lucide-react";
 import { TransitionScreenModal, type TransitionScreenData } from "./transition-screen-modal";
 
@@ -84,6 +84,7 @@ export function WorkflowStatusControl({
   size?: "sm" | "md";
   disabled?: boolean;
 }) {
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -149,9 +150,21 @@ export function WorkflowStatusControl({
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
 
+  // A status move can change which transitions are legal — not just for THIS
+  // item but for its PARENT (subtask-status conditions) and siblings. The
+  // available-transitions set is recomputed server-side, so drop every cached
+  // "issue-transitions" entry to force a fresh fetch next time a menu opens.
+  // Broad (no issueId) on purpose: the mover doesn't know who depends on it.
+  const invalidateTransitions = () =>
+    qc.invalidateQueries({ queryKey: ["quiktrack", "issue-transitions"] });
+
   /** Perform the move via the API with optional screen inputs, then notify parent. */
   const doMove = async (statusId: string, inputs?: Record<string, unknown>) => {
-    if (!inputs) { await onChange(statusId); return; }
+    if (!inputs) {
+      await onChange(statusId);
+      void invalidateTransitions();
+      return;
+    }
     setMoving(true);
     setMoveError(null);
     try {
@@ -164,6 +177,7 @@ export function WorkflowStatusControl({
       if (!r.ok || !j.success) throw new Error(j.error ?? "Failed to move");
       setScreenPrompt(null);
       await onChange(statusId); // let the parent refresh its view
+      void invalidateTransitions();
     } catch (e: unknown) {
       setMoveError(e instanceof Error ? e.message : "Failed to move");
     } finally {
@@ -179,6 +193,7 @@ export function WorkflowStatusControl({
       setScreenPrompt({ screen, toStatusId: statusId, transitionName });
     } else {
       await onChange(statusId);
+      void invalidateTransitions();
     }
   };
 
@@ -189,12 +204,12 @@ export function WorkflowStatusControl({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1.5 rounded font-semibold uppercase tracking-wider ${pad} ${statusPillClass(
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded font-semibold uppercase tracking-wider ${pad} ${statusPillClass(
           currentStatusCategory,
         )} disabled:opacity-60`}
       >
-        {currentStatusName}
-        <ChevronDown className="h-3 w-3" />
+        <span className="truncate">{currentStatusName}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
 
       {open && pos && typeof document !== "undefined" && createPortal(

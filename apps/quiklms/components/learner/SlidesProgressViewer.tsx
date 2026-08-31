@@ -1,6 +1,6 @@
 'use client';
 /**
- * SlidesProgressViewer — ported from the old QuikSkills frontend
+ * SlidesProgressViewer — ported from the old QuikLMSs frontend
  * (src/components/learner/SlidesProgressViewer.tsx).
  *
  * Slide-based presentation viewer: no scrolling — Next/Prev (and thumbnail /

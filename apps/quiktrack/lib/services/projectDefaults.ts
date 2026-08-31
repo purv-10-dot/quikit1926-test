@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import {
+  ensureTestStatusesTx,
+  ensureTestTemplatesTx,
+} from "./testStatusProvisioning";
+import {
   allPermissionPairs,
   SPACE_ADMIN_ROLE_NAME,
 } from "@/lib/api/permissionsRegistry";
@@ -495,6 +499,23 @@ export async function seedProjectDefaults(
   // rule: "no workflow until you turn it on."
   await seedBoardColumns(tx, projectId);
 
+  // QuikTest's status catalogue is ORG-scoped, not per project — so this is
+  // "ensure the org has it", not "create a set for this project". Done here because
+  // every route into QuikTest goes through a project, so the nine statuses are
+  // guaranteed to exist before any suite, case or run can need one.
+  //
+  // Without this, an org created after the QuikTest migration ran had NO statuses
+  // (that seed was a CROSS JOIN over then-existing orgs), and the first "Create
+  // run" failed with "No default test status is configured for this organisation."
+  // Gap-filling only: an org that renamed a status keeps its label.
+  await ensureTestStatusesTx(tx, orgId);
+
+  // Same story for the four case templates (Steps / Text / BDD / Exploratory),
+  // seeded by the parity migration with the same one-shot CROSS JOIN. Missing
+  // templates fail QUIETLY — the editor falls back to STEPS — so an org without them
+  // silently loses the text-based layouts rather than seeing an error.
+  await ensureTestTemplatesTx(tx, orgId);
+
   // Seed the 3 starter project roles + their grants. Idempotent: if a role
   // with the same name already exists for this project, skip both the role
   // create AND the grants fill (don't clobber admin edits). Fetch the existing
@@ -617,7 +638,14 @@ export async function getDefaultStatusId(
  * classic "Create → Open"). Otherwise (no workflow) it falls back to the first
  * status by order — today's ungated behaviour.
  */
-export async function getInitialStatusId(
+/**
+ * The workflow's INITIAL status for a project — the "Create" transition's target
+ * — but ONLY when a published (active) workflow governs the project. Returns null
+ * for an ungated project (no active workflow) so callers can fall back to a
+ * free/default status. This is the single legal starting status for new work
+ * items under a workflow, used to gate creation.
+ */
+export async function getWorkflowInitialStatusId(
   tx: Prisma.TransactionClient,
   projectId: string,
 ): Promise<string | null> {
@@ -625,20 +653,26 @@ export async function getInitialStatusId(
     where: { projectId, isActive: true, isDeleted: false, initialTransitionId: { not: null } },
     select: { initialTransitionId: true },
   });
-  if (wf?.initialTransitionId) {
-    const t = await tx.qtWorkflowTransition.findUnique({
-      where: { id: wf.initialTransitionId },
-      select: { toStatusId: true },
-    });
-    if (t?.toStatusId) {
-      // Only use it if the status is still live (not deleted).
-      const s = await tx.qtIssueStatus.findFirst({
-        where: { id: t.toStatusId, projectId, isDeleted: false },
-        select: { id: true },
-      });
-      if (s) return s.id;
-    }
-  }
+  if (!wf?.initialTransitionId) return null;
+  const t = await tx.qtWorkflowTransition.findUnique({
+    where: { id: wf.initialTransitionId },
+    select: { toStatusId: true },
+  });
+  if (!t?.toStatusId) return null;
+  // Only use it if the status is still live (not deleted).
+  const s = await tx.qtIssueStatus.findFirst({
+    where: { id: t.toStatusId, projectId, isDeleted: false },
+    select: { id: true },
+  });
+  return s?.id ?? null;
+}
+
+export async function getInitialStatusId(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+): Promise<string | null> {
+  const gated = await getWorkflowInitialStatusId(tx, projectId);
+  if (gated) return gated;
   return getDefaultStatusId(tx, projectId);
 }
 

@@ -48,7 +48,14 @@ export function CreateIdeaModal({
         const list = (j?.data ?? []) as SpaceOption[];
         setProjects(list);
         // Default the space to the current project, else the first one.
-        setSelectedId((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id ?? cur));
+        // `cur` (the URL segment) may be a project KEY rather than a cuid —
+        // the URL is canonicalized to /spaces/<KEY>/… — so match on either the
+        // id or the projectKey and normalize to the resolved cuid. Without this,
+        // a key wouldn't match any p.id and we'd wrongly fall back to list[0].
+        setSelectedId((cur) => {
+          const match = cur ? list.find((p) => p.id === cur || p.projectKey === cur) : undefined;
+          return match?.id ?? list[0]?.id ?? cur;
+        });
       })
       .catch(() => undefined);
     return () => { alive = false; };
@@ -106,6 +113,26 @@ export function CreateIdeaModal({
         initialProjectId={selectedId}
         onProjectChange={setSelectedId}
       />
+    );
+  }
+
+  // Type not resolved yet → render a neutral loading shell instead of the idea
+  // form. Otherwise a non-discovery space (the common case) briefly shows the
+  // idea layout before flipping to Create Task once the type fetch returns —
+  // the visible glitch. A tiny spinner is honest and doesn't commit to a form.
+  if (!typeKnown && selectedId) {
+    return (
+      <div
+        className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/30 p-6"
+        onMouseDown={onClose}
+      >
+        <div
+          className="mt-10 flex w-full max-w-2xl items-center justify-center rounded-lg bg-white py-16 shadow-2xl"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+        </div>
+      </div>
     );
   }
 

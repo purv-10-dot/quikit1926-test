@@ -87,6 +87,11 @@ export interface PermissionModule {
  *   Sprint         — create + update via /api/sprints[/:id]. No view (sprints
  *                    are visible to members in the backlog, not gated) and no
  *                    delete (no sprint-delete enforcement).
+ *   Release        — full CRUD via /api/releases[/:id]; `view` also gates the
+ *                    Releases tab. ReleaseApprover create/update/delete gates
+ *                    roster management (add/remove approvers); an approver's
+ *                    own approve/request-changes action is ownership-checked
+ *                    in the route, not a separate grant.
  *   Issue          — create / update / delete via /api/issues[/:id]. No view:
  *                    issue visibility is membership-based, not gated by a grant.
  *   IssueComment   — create via /api/issues/:id/comments. No view (comments
@@ -118,6 +123,19 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [
       // No view (membership-based, not gated) and no delete (not enforced).
       { resource: "Sprint", label: "Sprint", actions: ["create", "update"] },
+    ],
+  },
+  {
+    key: "Releases",
+    label: "Releases",
+    leaves: [
+      // `view` gates the Releases tab (see PROJECT_TABS) in addition to the
+      // usual CRUD grants.
+      { resource: "Release", label: "Release", actions: ACTIONS },
+      // Add/remove approver rows on a release. An approver acting on their
+      // OWN row (approve / request changes / comment) is an ownership check
+      // in the route, not a grant — same pattern as IssueComment edit/delete.
+      { resource: "ReleaseApprover", label: "Release approver", actions: ["create", "update", "delete"] },
     ],
   },
   {
@@ -208,6 +226,17 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "Report", label: "Reports", actions: ["view"] },
     ],
   },
+  {
+    key: "Teams",
+    label: "Teams",
+    leaves: [
+      // Create only, mirroring Sprint/Issue: GET /api/teams has no permission
+      // check today (any org member can list), and there's no update/delete
+      // grant enforced anywhere — only create replaces the inline
+      // hasAdminAccess check in POST /api/teams.
+      { resource: "Team", label: "Team", actions: ["create"] },
+    ],
+  },
   // Page-level sidebar destinations with no CRUD of their own. Modelled as
   // view-only rows (like Reports) so a single `view` grant both gates the page
   // and surfaces its sidebar row via ENTITY_TO_NAV — no separate Navigation tab.
@@ -241,6 +270,7 @@ export const APP_WIDE_ONLY_RESOURCES: ReadonlySet<string> = new Set([
   "Home",
   "Dashboard",
   "Report",
+  "Team",
 ]);
 
 export function isAppWideOnly(resource: string): boolean {

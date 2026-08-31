@@ -25,6 +25,15 @@ export const createTestRunSchema = z
     environment: z.string().trim().max(255).optional(),
     assigneeId: z.string().min(1).optional(),
     /**
+     * Planned execution window (QUIKTR-320). Both optional — a CI run has no
+     * planned dates. Date-only strings from an <input type="date">; the DB also
+     * enforces endDate >= startDate.
+     */
+    startDate: z.string().date().optional(),
+    endDate: z.string().date().optional(),
+    /** Free-text ticket references for the run, e.g. "JIRA-1, JIRA-3". */
+    refTickets: z.string().trim().max(2_000).optional(),
+    /**
      * Draft cases are excluded by default (the approval workflow's whole
      * point). Set true to include them anyway — useful for a smoke run over
      * work-in-progress cases.
@@ -34,6 +43,12 @@ export const createTestRunSchema = z
   .refine((v) => Boolean(v.suiteId) !== Boolean(v.caseIds?.length), {
     message: "Provide either a suiteId or a non-empty caseIds list, not both.",
     path: ["suiteId"],
+  })
+  // Caught here as well as by the DB CHECK, so the form can show the error on
+  // the End date field instead of surfacing a raw constraint violation.
+  .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
+    message: "End date cannot be before the start date.",
+    path: ["endDate"],
   });
 
 /**
@@ -72,6 +87,8 @@ export const recordResultSchema = z.object({
 
 export const listRunsSchema = z.object({
   projectId: z.string().min(1).optional(),
+  /** Show soft-deleted runs instead of live ones — the "Deleted" view. */
+  deleted: z.enum(["true", "false"]).default("false"),
   state: runStateEnum.optional(),
   source: runSourceEnum.optional(),
   milestoneId: z.string().min(1).optional(),
@@ -80,11 +97,35 @@ export const listRunsSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+/** Comma-separated ids/keys → a validated array. Mirrors the case-list filter
+ *  bar's csvOf helper in lib/validation/testCase.ts — same URL convention. */
+function csvIds(max = 50) {
+  return z
+    .string()
+    .transform((s) => s.split(",").map((v) => v.trim()).filter(Boolean))
+    .pipe(z.array(z.string().min(1).max(64)).max(max))
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined));
+}
+
+export const runTestSortEnum = z.enum(["section", "title", "priority", "status"]);
+
 export const listRunTestsSchema = z.object({
-  /** Filter by current status key, e.g. "untested" or "failed". */
+  /** Filter by current status key, e.g. "untested" or "failed". Superseded by
+   *  `statusId` below for the grid's filter bar; kept for the "mine"/keyboard
+   *  shortcut call sites that still filter by key. */
   status: z.string().min(1).optional(),
   /** Only tests assigned to the caller. */
   mine: z.coerce.boolean().optional(),
+
+  // ── Grid filter bar (QUIKTR-341) ─────────────────────────────────────────
+  statusId: csvIds(),
+  assignee: csvIds(),
+  priority: csvIds(),
+  label: csvIds(),
+
+  sort: runTestSortEnum.default("section"),
+
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(500).default(100),
 });

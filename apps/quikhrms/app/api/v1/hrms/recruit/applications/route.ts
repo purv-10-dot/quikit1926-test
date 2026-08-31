@@ -1,20 +1,52 @@
 import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { withAuth, withServiceAuth } from "@/lib/with-auth";
-import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
+import { successResponse, validationError, conflict, internalError, forbidden } from "@/lib/api-response";
 import { createApplicationSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { stageNames } from "@/lib/services/pipeline-stages";
 import { scoreResumeAgainstJD, parsedResumeToText, type SkillWeight } from "@/lib/ai/ats-scorer";
+import { resolveAssignedRecruiter } from "@/lib/services/assign-recruiter";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { getMyJobRequisitionIds } from "@/lib/recruit/my-jobs";
 
-export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId, permissions }) => {
   try {
+    const canSeeAll = permissions.includes("*") || permissions.includes("hrms.recruit.read");
+    const canSeeSelf = canSeeAll || permissions.includes("hrms.recruit.read_self");
+    if (!canSeeSelf) return forbidden("No recruitment read permission");
+
+    // Recruiter (self-only) scope — the Hiring Pipeline board only ever shows
+    // applications tied to a requisition they're assigned to.
+    let myJobIds: string[] | null = null;
+    if (!canSeeAll) {
+      const employeeId = await resolveEmployeeId(orgId, userId);
+      myJobIds = employeeId ? await getMyJobRequisitionIds(orgId, employeeId) : [];
+    }
+
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const requisitionId = searchParams.get("requisitionId");
     const status = searchParams.get("status");
     const stage = searchParams.get("stage");
+    // Recruiter & Position Tracking (Phase 1) — "unassigned" surfaces the claim
+    // queue (mainly website/career-page applicants no one has picked up yet);
+    // an employee id filters to just that recruiter's assigned candidates.
+    // Not in the generated Prisma client yet, so resolved via raw SQL first.
+    const assignedRecruiterId = searchParams.get("assignedRecruiterId");
+    let recruiterFilterIds: string[] | null = null;
+    if (assignedRecruiterId) {
+      const rows = assignedRecruiterId === "unassigned"
+        ? await prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM "app_quikhrms"."JobApplication"
+            WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND "assignedRecruiterId" IS NULL`
+        : await prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM "app_quikhrms"."JobApplication"
+            WHERE "orgId" = ${orgId} AND "deletedAt" IS NULL AND "assignedRecruiterId" = ${assignedRecruiterId}`;
+      recruiterFilterIds = rows.map((r) => r.id);
+    }
 
     // `status` accepts a single value or a comma-separated list (e.g.
     // "AppActive,AppOffered") so the pipeline board can show candidates through
@@ -27,13 +59,20 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
       // Blacklisted / archived candidates drop off the active pipeline (reversible
       // — un-archiving or lifting the blacklist brings their applications back).
       candidate: { isBlacklisted: false, isArchived: false },
-      ...(requisitionId && { requisitionId }),
       ...(statuses.length === 1
         ? { status: statuses[0] }
         : statuses.length > 1
           ? { status: { in: statuses } }
           : {}),
       ...(stage && { currentStage: stage }),
+      ...(recruiterFilterIds !== null && { id: { in: recruiterFilterIds } }),
+      // requisitionId (explicit query filter) and myJobIds (self-scope) both
+      // target the same field — combined via AND so neither silently drops
+      // the other when both are present.
+      AND: [
+        ...(requisitionId ? [{ requisitionId }] : []),
+        ...(myJobIds !== null ? [{ requisitionId: { in: myJobIds } }] : []),
+      ],
     };
 
     const [apps, total] = await Promise.all([
@@ -57,7 +96,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
       location: string | null; meetingLink: string | null;
       interviewer: { id: string; firstName: string; lastName: string } | null;
     }>();
-    // PostOffer document-request status per application — powers the Offer-stage
+    // Document-request status per application — powers the Offer-stage
     // card's "Send Reminder" / "Docs received" states (mirrors /recruit/offers).
     const docRequestMap = new Map<string, {
       status: "Pending" | "Completed" | "Cancelled";
@@ -87,16 +126,15 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
           },
         }),
         prisma.candidateDocumentRequest.findMany({
-          where: { orgId, applicationId: { in: appIds }, bundle: "PostOffer", deletedAt: null },
+          where: { orgId, applicationId: { in: appIds }, deletedAt: null },
           select: { applicationId: true, status: true, lastReminderAt: true, reminderCount: true },
         }),
-        // All (non-cancelled) doc requests across both bundles — powers the
-        // "all requested docs must be approved before advancing" gate. A request
-        // is fully approved only when its status is "Completed".
+        // Powers the "all requested docs must be approved before advancing"
+        // gate. A request is fully approved only when its status is "Completed".
         prisma.candidateDocumentRequest.findMany({
           where: { orgId, applicationId: { in: appIds }, deletedAt: null, status: { not: "Cancelled" } },
           select: {
-            applicationId: true, status: true, bundle: true,
+            applicationId: true, status: true,
             uploads: {
               where: { deletedAt: null },
               select: { status: true, customLabel: true, fileName: true, documentType: { select: { name: true } } },
@@ -131,10 +169,10 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
       for (const r of allDocReqs) {
         const entry = docGateMap.get(r.applicationId) ?? { blocking: false, pending: [] };
         // Only block on documents the candidate has actually UPLOADED that HR
-        // hasn't approved yet (Pending review or Rejected). A bundle that's
-        // merely requested with nothing uploaded must NOT block — post-offer
-        // docs are collected after the offer is accepted, so requiring them
-        // first would deadlock the offer.
+        // hasn't approved yet (Pending review or Rejected). A request that's
+        // merely sent with nothing uploaded yet must NOT block — documents are
+        // often collected only after the offer is accepted, so requiring them
+        // upfront would deadlock the offer.
         const awaitingReview = r.uploads.filter((u) => u.status !== "Approved");
         for (const u of awaitingReview) {
           entry.blocking = true;
@@ -144,6 +182,19 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         docGateMap.set(r.applicationId, entry);
       }
     }
+
+    // Recruiter & Position Tracking (Phase 1) — assignedRecruiterId isn't in
+    // the generated Prisma client yet, fetch it (+ recruiter name) via raw SQL.
+    const recruiterMap = new Map<string, { id: string; name: string }>();
+    if (apps.length) {
+      const rows = await prisma.$queryRaw<{ applicationId: string; recruiterId: string; firstName: string; lastName: string }[]>`
+        SELECT ja.id AS "applicationId", ja."assignedRecruiterId" AS "recruiterId", e."firstName", e."lastName"
+        FROM "app_quikhrms"."JobApplication" ja
+        JOIN "app_quikhrms"."Employee" e ON e.id = ja."assignedRecruiterId"
+        WHERE ja.id IN (${Prisma.join(apps.map((a) => a.id))})`;
+      for (const r of rows) recruiterMap.set(r.applicationId, { id: r.recruiterId, name: `${r.firstName} ${r.lastName}`.trim() });
+    }
+
     const enriched = apps.map((a) => ({
       ...a,
       _count: { ...a._count, scorecards: scorecardCount.get(a.id) ?? 0 },
@@ -162,11 +213,28 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         : null,
       docRequest: docRequestMap.get(a.id) ?? null,
       docGate: docGateMap.get(a.id) ?? null,
+      assignedRecruiterId: recruiterMap.get(a.id)?.id ?? null,
+      assignedRecruiterName: recruiterMap.get(a.id)?.name ?? null,
     }));
 
-    return successResponse(enriched, paginationMeta(page, limit, total));
+    // Recruiter & Position Tracking flow change — a Hired application whose
+    // Employee record still isn't Confirmed (status "PreBoarding") stays
+    // hidden from the Pipeline board entirely (same as the Employees
+    // directory) until HR clicks "Confirm Employee". No direct FK from
+    // Employee back to JobApplication exists, so this matches by email (the
+    // same key convertApplicationToEmployee itself uses to detect duplicates).
+    const hiredAppEmails = apps.filter((a) => a.status === "AppHired").map((a) => a.candidate.email);
+    const preBoardingEmails = hiredAppEmails.length
+      ? new Set((await prisma.employee.findMany({
+          where: { orgId, workEmail: { in: hiredAppEmails }, status: "PreBoarding", deletedAt: null },
+          select: { workEmail: true },
+        })).map((e) => e.workEmail))
+      : new Set<string>();
+    const visible = enriched.filter((a) => !(a.status === "AppHired" && preBoardingEmails.has(a.candidate.email)));
+
+    return successResponse(visible, paginationMeta(page, limit, total));
   } catch (error) { console.error("GET /recruit/applications error:", error); return internalError(); }
-}, { requiredPermissions: ["hrms.recruit.read"] });
+});
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
@@ -174,11 +242,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const parsed = createApplicationSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
-    const { candidateId, requisitionId, currentStage } = parsed.data;
+    const { candidateId, requisitionId, currentStage, assignedRecruiterId, selfAssign } = parsed.data;
 
     const candidateCheck = await prisma.candidate.findFirst({
       where: { id: candidateId, orgId, deletedAt: null },
-      select: { id: true, isBlacklisted: true, blacklistReason: true, blacklistedUntil: true, isArchived: true, firstName: true, lastName: true },
+      select: { id: true, isBlacklisted: true, blacklistReason: true, blacklistedUntil: true, isArchived: true, firstName: true, lastName: true, createdBy: true },
     });
     if (!candidateCheck) return validationError("Candidate not found");
     if (candidateCheck.isBlacklisted) {
@@ -295,8 +363,26 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           },
         });
 
-    // Update candidate status
-    await prisma.candidate.update({ where: { id: candidateId }, data: { status: "InPipeline" } });
+    // Recruiter & Position Tracking — assignedRecruiterId isn't in the
+    // generated Prisma client yet, so it's stamped via raw SQL after create/revive.
+    // If HR didn't explicitly pick one: `selfAssign` (only sent by the "Add
+    // Candidate + JR immediately" wizard) makes the requesting user the
+    // recruiter; otherwise Round Robin decides among recruiters with an open
+    // allocated seat on this requisition.
+    const finalRecruiterId = assignedRecruiterId
+      || (selfAssign ? await resolveEmployeeId(orgId, userId) : null)
+      || await resolveAssignedRecruiter(orgId, requisitionId);
+    if (finalRecruiterId) {
+      await prisma.$executeRaw`
+        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${finalRecruiterId}, "assignedRecruiterAt" = NOW() WHERE id = ${app.id}`;
+    }
+
+    // Update candidate status — a fresh, un-actioned application sitting at
+    // its pipeline's very first stage hasn't actually "started" yet (no
+    // screening/action taken), so it stays "New" rather than "InPipeline".
+    // Anything placed beyond that first stage (e.g. manual-add's explicit
+    // skip to Phone Screening — HR already vetted them) has genuinely begun.
+    await prisma.candidate.update({ where: { id: candidateId }, data: { status: initialStage === firstStage ? "New" : "InPipeline" } });
 
     void fireWorkflow({
       orgId, event: "recruit.application.received",

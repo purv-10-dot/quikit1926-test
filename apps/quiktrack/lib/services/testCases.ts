@@ -65,6 +65,10 @@ interface CaseSnapshot {
   title: string;
   description: string | null;
   preconditions: string | null;
+  /** Case-level expectation (TEXT/BDD layouts). Captured so a rollback to this
+   *  version restores it — omitting it would silently drop the expected result
+   *  of every text-template case that gets rolled back. */
+  expectedResult: string | null;
   priority: string;
   type: string;
   steps: Array<{ orderNo: number; action: string; expected: string | null }>;
@@ -74,6 +78,7 @@ function buildSnapshot(input: {
   title: string;
   description: string | null;
   preconditions: string | null;
+  expectedResult: string | null;
   priority: string;
   type: string;
   steps: TestStepInput[];
@@ -82,6 +87,7 @@ function buildSnapshot(input: {
     title: input.title,
     description: input.description,
     preconditions: input.preconditions,
+    expectedResult: input.expectedResult,
     priority: input.priority,
     type: input.type,
     steps: input.steps.map((s, i) => ({
@@ -108,11 +114,110 @@ function rethrowAsConflict(error: unknown): never {
 }
 
 /**
- * Creates a case with version 1.
- *
- * One transaction: allocate refId → insert case → insert steps → write the v1
- * snapshot. If any part fails the whole thing rolls back, so a case can never
- * exist without its version-1 snapshot (which every historical run relies on).
+ * Verify the section belongs to this project before writing anything —
+ * otherwise a caller could plant a case in another project's tree. Takes a
+ * transaction client so it can run inside a caller-owned transaction
+ * (QUIKTR-122's createTestCaseInTransaction) as well as standalone.
+ */
+async function assertSectionInProject(
+  client: Prisma.TransactionClient,
+  orgId: string,
+  projectId: string,
+  sectionId: string,
+): Promise<void> {
+  const section = await client.qtTestSection.findFirst({
+    where: { id: sectionId, orgId, isDeleted: false },
+    select: { id: true, suite: { select: { projectId: true } } },
+  });
+  if (!section || section.suite.projectId !== projectId) {
+    throw new TestCaseError("Section not found in this project.", 404, "SECTION_NOT_FOUND");
+  }
+}
+
+/**
+ * The write core shared by createTestCase and createTestCaseInTransaction:
+ * allocate refId → insert case → insert steps → write the v1 snapshot. Must
+ * run inside a transaction (caller-owned or self-opened) so a case can never
+ * exist without its version-1 snapshot, which every historical run relies on.
+ */
+async function runCreateTestCase(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  projectId: string,
+  userId: string,
+  input: CreateTestCaseInput,
+) {
+  const refId = await nextRefId(tx, orgId, projectId, "case");
+
+  const created = await tx.qtTestCase.create({
+    data: {
+      orgId,
+      projectId,
+      sectionId: input.sectionId,
+      refId,
+      title: input.title,
+      description: input.description ?? null,
+      preconditions: input.preconditions ?? null,
+      expectedResult: input.expectedResult ?? null,
+      priority: input.priority,
+      type: input.type,
+      automationStatus: input.automationStatus,
+      automationId: input.automationId ?? null,
+      automationTool: input.automationTool ?? null,
+      automationCandidate: input.automationCandidate ?? null,
+      refTickets: input.refTickets ?? null,
+      ownerId: input.ownerId ?? null,
+      estimateMs: input.estimateMs ?? null,
+      templateId: input.templateId ?? null,
+      currentVersion: 1,
+      createdBy: userId,
+    },
+    select: { id: true, refId: true, title: true, sectionId: true, createdAt: true },
+  });
+
+  if (input.steps.length > 0) {
+    await tx.qtTestCaseStep.createMany({
+      data: input.steps.map((s, i) => ({
+        orgId,
+        caseId: created.id,
+        orderNo: i + 1,
+        action: s.action,
+        expected: s.expected ?? null,
+      })),
+    });
+  }
+
+  await tx.qtTestCaseVersion.create({
+    data: {
+      orgId,
+      caseId: created.id,
+      versionNo: 1,
+      snapshot: buildSnapshot({
+        title: input.title,
+        description: input.description ?? null,
+        preconditions: input.preconditions ?? null,
+        expectedResult: input.expectedResult ?? null,
+        priority: input.priority,
+        type: input.type,
+        steps: input.steps,
+      }) as unknown as Prisma.InputJsonValue,
+      editedBy: userId,
+    },
+  });
+
+  if (input.tagIds && input.tagIds.length > 0) {
+    await tx.qtTestCaseTag.createMany({
+      data: input.tagIds.map((tagId) => ({ orgId, caseId: created.id, tagId })),
+      skipDuplicates: true,
+    });
+  }
+
+  return created;
+}
+
+/**
+ * Creates a case with version 1, in its own transaction. Used by the REST
+ * route (app/api/test/cases/route.ts).
  */
 export async function createTestCase(
   orgId: string,
@@ -125,81 +230,34 @@ export async function createTestCase(
   // both hide the case from id-based queries and let duplicate automation ids
   // through. Routes resolve via gateProjectResolved before calling in.
   assertResolvedProjectId(projectId);
-
-  // Verify the section belongs to this project before writing anything —
-  // otherwise a caller could plant a case in another project's tree.
-  const section = await db.qtTestSection.findFirst({
-    where: { id: input.sectionId, orgId, isDeleted: false },
-    select: { id: true, suite: { select: { projectId: true } } },
-  });
-  if (!section || section.suite.projectId !== projectId) {
-    throw new TestCaseError("Section not found in this project.", 404, "SECTION_NOT_FOUND");
-  }
+  await assertSectionInProject(db, orgId, projectId, input.sectionId);
 
   try {
-    return await db.$transaction(async (tx) => {
-      const refId = await nextRefId(tx, orgId, projectId, "case");
+    return await db.$transaction((tx) => runCreateTestCase(tx, orgId, projectId, userId, input));
+  } catch (error: unknown) {
+    rethrowAsConflict(error);
+  }
+}
 
-      const created = await tx.qtTestCase.create({
-        data: {
-          orgId,
-          projectId,
-          sectionId: input.sectionId,
-          refId,
-          title: input.title,
-          description: input.description ?? null,
-          preconditions: input.preconditions ?? null,
-          priority: input.priority,
-          type: input.type,
-          automationStatus: input.automationStatus,
-          automationId: input.automationId ?? null,
-          ownerId: input.ownerId ?? null,
-          estimateMs: input.estimateMs ?? null,
-          templateId: input.templateId ?? null,
-          currentVersion: 1,
-          createdBy: userId,
-        },
-        select: { id: true, refId: true },
-      });
+/**
+ * QUIKTR-122 — creates a case with version 1 inside a transaction the CALLER
+ * already owns (the create_test_case MCP tool's own transaction, or
+ * create_issue's bundled test-case creation — see lib/mcp/testCaseBundle.ts).
+ * Same write core and P2002→409 mapping as createTestCase; throwing here
+ * aborts the caller's whole transaction.
+ */
+export async function createTestCaseInTransaction(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  projectId: string,
+  userId: string,
+  input: CreateTestCaseInput,
+) {
+  assertResolvedProjectId(projectId);
+  await assertSectionInProject(tx, orgId, projectId, input.sectionId);
 
-      if (input.steps.length > 0) {
-        await tx.qtTestCaseStep.createMany({
-          data: input.steps.map((s, i) => ({
-            orgId,
-            caseId: created.id,
-            orderNo: i + 1,
-            action: s.action,
-            expected: s.expected ?? null,
-          })),
-        });
-      }
-
-      await tx.qtTestCaseVersion.create({
-        data: {
-          orgId,
-          caseId: created.id,
-          versionNo: 1,
-          snapshot: buildSnapshot({
-            title: input.title,
-            description: input.description ?? null,
-            preconditions: input.preconditions ?? null,
-            priority: input.priority,
-            type: input.type,
-            steps: input.steps,
-          }) as unknown as Prisma.InputJsonValue,
-          editedBy: userId,
-        },
-      });
-
-      if (input.tagIds && input.tagIds.length > 0) {
-        await tx.qtTestCaseTag.createMany({
-          data: input.tagIds.map((tagId) => ({ orgId, caseId: created.id, tagId })),
-          skipDuplicates: true,
-        });
-      }
-
-      return created;
-    });
+  try {
+    return await runCreateTestCase(tx, orgId, projectId, userId, input);
   } catch (error: unknown) {
     rethrowAsConflict(error);
   }
@@ -226,6 +284,7 @@ export async function updateTestCase(
       title: true,
       description: true,
       preconditions: true,
+      expectedResult: true,
       priority: true,
       type: true,
       currentVersion: true,
@@ -265,6 +324,10 @@ export async function updateTestCase(
       input.preconditions === undefined
         ? existing.preconditions
         : input.preconditions,
+    expectedResult:
+      input.expectedResult === undefined
+        ? existing.expectedResult
+        : input.expectedResult,
     priority: input.priority ?? existing.priority,
     type: input.type ?? existing.type,
   };
@@ -280,10 +343,18 @@ export async function updateTestCase(
           title: merged.title,
           description: merged.description,
           preconditions: merged.preconditions,
+          expectedResult: merged.expectedResult,
           priority: merged.priority,
           type: merged.type,
           ...(input.automationStatus ? { automationStatus: input.automationStatus } : {}),
           ...(input.automationId !== undefined ? { automationId: input.automationId } : {}),
+          ...(input.automationTool !== undefined
+            ? { automationTool: input.automationTool }
+            : {}),
+          ...(input.automationCandidate !== undefined
+            ? { automationCandidate: input.automationCandidate }
+            : {}),
+          ...(input.refTickets !== undefined ? { refTickets: input.refTickets } : {}),
           ...(input.ownerId !== undefined ? { ownerId: input.ownerId } : {}),
           ...(input.estimateMs !== undefined ? { estimateMs: input.estimateMs } : {}),
           ...(input.templateId !== undefined ? { templateId: input.templateId } : {}),
@@ -366,6 +437,9 @@ export async function rollbackTestCase(
     title: snap.title,
     description: snap.description,
     preconditions: snap.preconditions,
+    // `?? null` not `?? undefined`: an older snapshot predating this field must
+    // CLEAR the current value, not silently leave today's text in place.
+    expectedResult: snap.expectedResult ?? null,
     priority: snap.priority as UpdateTestCaseInput["priority"],
     type: snap.type as UpdateTestCaseInput["type"],
     steps: (snap.steps ?? []).map((s) => ({

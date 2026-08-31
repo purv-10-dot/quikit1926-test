@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import path from "path";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
@@ -7,7 +8,8 @@ import { rateLimitOrResponse } from "@/lib/rate-limit";
 import { putObject } from "@/lib/storage";
 import { contentMatchesClaim } from "@/lib/utils/file-signature";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { stageNames } from "@/lib/services/pipeline-stages";
+import { generateCandidateCode } from "@/lib/utils/candidate-code";
+import { resolveAssignedRecruiter } from "@/lib/services/assign-recruiter";
 
 // PUBLIC (API-key gated, no login) — an org's OWN careers website POSTs a
 // candidate's application here. Two shapes are supported:
@@ -175,6 +177,8 @@ export async function POST(req: NextRequest) {
             updatedBy: "careers-external-api",
           },
         });
+        const candidateCode = await generateCandidateCode(orgId);
+        await prisma.$executeRaw`UPDATE "app_quikhrms"."Candidate" SET "candidateCode" = ${candidateCode} WHERE id = ${candidate.id}`;
       } catch {
         candidate = await prisma.candidate.findFirst({ where: { orgId, email, deletedAt: null } });
         if (!candidate) throw new Error("Candidate lookup failed after create race");
@@ -237,20 +241,18 @@ export async function POST(req: NextRequest) {
       return err("You've already applied for this position. We'll be in touch.", 409);
     }
 
-    const pipeline = await prisma.hiringPipeline.findFirst({
-      where: { orgId, deletedAt: null, ...(requisition.pipelineId ? { id: requisition.pipelineId } : { isDefault: true }) },
-      select: { stages: true },
-    });
-    const stages = stageNames(pipeline?.stages);
-    const initialStage = stages[0] ?? "Screening";
-    const freshHistory = JSON.parse(JSON.stringify([{ stage: initialStage, date: new Date().toISOString(), movedBy: "careers-external-api" }]));
-
+    // Website applications land here with currentStage/stageHistory left null
+    // — a "pending review" application, deliberately NOT yet on the Hiring
+    // Pipeline board (that board only shows applications with a real stage).
+    // HR reviews it from the Candidates → Active list and explicitly moves it
+    // onto the board (POST .../start-pipeline), which is where a real stage —
+    // and the first stageHistory entry — first gets assigned.
     const application = existingApp
       ? await prisma.jobApplication.update({
           where: { id: existingApp.id },
           data: {
-            deletedAt: null, status: "AppActive", currentStage: initialStage,
-            appliedDate: new Date(), stageHistory: freshHistory,
+            deletedAt: null, status: "AppActive", currentStage: null,
+            appliedDate: new Date(), stageHistory: Prisma.DbNull,
             rejectionReason: null, rejectionStage: null, rejectionExempt: false,
             ...(screeningAnswers ? { screeningAnswers } : {}),
             updatedBy: "careers-external-api",
@@ -259,15 +261,25 @@ export async function POST(req: NextRequest) {
       : await prisma.jobApplication.create({
           data: {
             orgId, candidateId: candidate.id, requisitionId: jobId,
-            currentStage: initialStage, stageHistory: freshHistory,
             ...(screeningAnswers ? { screeningAnswers } : {}),
             createdBy: "careers-external-api", updatedBy: "careers-external-api",
           },
         });
 
-    await prisma.candidate.update({ where: { id: candidate.id }, data: { status: "InPipeline" } });
+    // Candidate status stays "New" (the pre-pipeline/intake status) — it only
+    // becomes "InPipeline" once start-pipeline actually stages the application.
+    await prisma.candidate.update({ where: { id: candidate.id }, data: { status: "New" } });
 
-    void fireWorkflow({ orgId, event: "recruit.application.received", payload: { applicationId: application.id, candidateId: candidate.id, requisitionId: jobId, stage: initialStage } });
+    // Recruiter assignment — always Round Robin here, among recruiters with
+    // an open allocated seat on this requisition. A website apply has no
+    // logged-in human action to self-assign to.
+    const assignedRecruiterId = await resolveAssignedRecruiter(orgId, jobId);
+    if (assignedRecruiterId) {
+      await prisma.$executeRaw`
+        UPDATE "app_quikhrms"."JobApplication" SET "assignedRecruiterId" = ${assignedRecruiterId}, "assignedRecruiterAt" = NOW() WHERE id = ${application.id}`;
+    }
+
+    void fireWorkflow({ orgId, event: "recruit.application.received", payload: { applicationId: application.id, candidateId: candidate.id, requisitionId: jobId, stage: null } });
 
     return ok({ applied: true, applicationId: application.id });
   } catch (error) {

@@ -160,7 +160,7 @@ interface ServiceClaims {
 /**
  * AI Runtime service-auth (the runtime acting *as* a specific employee).
  *
- * The runtime presents `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` (a
+ * The runtime presents `x-internal-secret: INTERNAL_SECRET` (a
  * dedicated secret — deliberately NOT `INTERNAL_SECRET`, so a leak of the
  * launcher's handoff secret can never be used to impersonate an employee)
  * plus `x-org-id` + `x-acting-employee-id`. We validate the secret, confirm
@@ -176,7 +176,7 @@ interface ServiceClaims {
 async function resolveServiceIdentity(
   req: NextRequest
 ): Promise<{ orgId: string; userId: string; agent: ServiceClaims } | null> {
-  const secret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const secret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
   if (!secret || !provided || provided !== secret) return null;
 
@@ -655,7 +655,7 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
 
 /**
  * withAuth variant that additionally accepts the AI Runtime service-auth path
- * (P0-1): `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` + `x-org-id` +
+ * (P0-1): `x-internal-secret: INTERNAL_SECRET` + `x-org-id` +
  * `x-acting-employee-id` (optionally `x-acting-agent-id`, `x-acting-as`).
  *
  * The agent runs with exactly the acting employee's resolved permissions —

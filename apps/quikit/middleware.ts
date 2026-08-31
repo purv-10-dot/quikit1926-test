@@ -32,6 +32,12 @@ const launcherPublicRoutes = [
   // returning JSON, which breaks MCP OAuth discovery before it ever reaches
   // the (already-working) OIDC endpoint.
   "/.well-known/oauth-authorization-server",
+  // Android Digital Asset Links verification — Android fetches this
+  // unauthenticated to verify `com.quikinfra.app` may open this domain's
+  // https:// links as App Links. Without this exemption the middleware
+  // redirects it to /login, which isn't JSON, so Android permanently falls
+  // back to opening invite links in the browser instead of the app.
+  "/.well-known/assetlinks.json",
   // Native-invite acceptance — the "Set Up My Account" link in onboarding
   // emails now targets the launcher (:3001) so the Set-Password page is
   // served from here instead of bouncing to the auth app on :3000.

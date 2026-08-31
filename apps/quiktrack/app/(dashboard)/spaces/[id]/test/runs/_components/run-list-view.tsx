@@ -1,54 +1,142 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ClipboardList, Plus } from "lucide-react";
 import { Button, EmptyState, TableSkeleton } from "@quikit/ui";
+import { confirmDialog } from "@/lib/ui/confirm";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
-import { passRate, totalTests, type StatusCounts } from "@/lib/test/statuses";
+import {
+  groupByLifecycle,
+  LIFECYCLE_HINT,
+  LIFECYCLE_LABEL,
+  LIFECYCLE_ORDER,
+} from "@/lib/test/runLifecycle";
+import { EditRunPanel } from "./edit-run-panel";
 import { NewRunPanel } from "./new-run-panel";
+import { RunRow } from "./run-row";
+import type { RunRow as RunRowData } from "./run-types";
+import { useLinkIssueRunDeeplink } from "./use-link-issue-run-deeplink";
 
 /**
- * Runs list — the way into the runner.
+ * Runs list, grouped by lifecycle (QUIKTR-338).
  *
- * Shows pass rate per run computed with the SAME helpers the runner and the
- * work-item panel use, so a number never differs between screens.
+ * Open · Completion Pending · Completed. Only the last is stored; "Completion
+ * Pending" is derived (`state=open` AND nothing untested) — see
+ * `lib/test/runLifecycle.ts`. It is the section that earns its keep: those runs
+ * are the ones waiting to be signed off, and in the old flat table they were
+ * indistinguishable from runs still in progress.
+ *
+ * Rates come from the same helpers the runner and the work-item panel use, so a
+ * number never differs between screens.
  */
-
-interface RunRow {
-  id: string;
-  refId: number;
-  name: string;
-  source: string;
-  state: string;
-  build: string | null;
-  environment: string | null;
-  createdAt: string;
-  closedAt: string | null;
-  testCount: number;
-  counts: StatusCounts;
-}
-
 export function RunListView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canCreate = perms.loading || perms.has("TestRun", "create");
-  const [panelOpen, setPanelOpen] = useState(false);
+  const canClose = perms.loading || perms.has("TestRun", "update");
 
-  const runsKey = ["quiktrack", "test-runs", projectId] as const;
-  const { data, isLoading } = useApiData<{ items: RunRow[]; total: number }>(
+  const [panelOpen, setPanelOpen] = useState(false);
+  /** Seeded from "QuikTest: Runs" on a work item (QUIKTR-341); see the hook below. */
+  const [prefillRefTickets, setPrefillRefTickets] = useState<string | undefined>();
+
+  useLinkIssueRunDeeplink({
+    onOpen: (issueKey) => {
+      setPrefillRefTickets(issueKey);
+      setPanelOpen(true);
+    },
+  });
+  /** The run being edited; null closes the edit panel. */
+  const [editingRun, setEditingRun] = useState<RunRowData | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  /** "Deleted" view — how restore is reached. */
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  // showDeleted is part of the key: the two lists are different data.
+  const runsKey = [
+    "quiktrack",
+    "test-runs",
+    projectId,
+    showDeleted ? "deleted" : "live",
+  ] as const;
+  const { data, isLoading } = useApiData<{ items: RunRowData[]; total: number }>(
     runsKey,
-    `/api/test/runs?projectId=${projectId}`,
+    `/api/test/runs?projectId=${projectId}&deleted=${showDeleted ? "true" : "false"}`,
     { staleTime: 0 },
   );
 
-  const runs = data?.items ?? [];
+  /**
+   * Soft-delete or restore a run. Results are KEPT on delete — stated in the
+   * confirmation with the real count, because "delete" reads as destroying the
+   * execution history and here it does not.
+   *
+   * `confirm` is a `confirmDialog()` options object rather than a raw string:
+   * the app-wide confirm host (lib/ui/confirm.ts + <ConfirmHost/>, mounted in
+   * dashboard-shell.tsx) replaces the native `window.confirm` everywhere in
+   * this app, not just here.
+   */
+  const mutateRun = async (
+    action: "delete" | "restore",
+    ids: string[],
+    confirm?: Parameters<typeof confirmDialog>[0],
+  ) => {
+    if (confirm && !(await confirmDialog(confirm))) return;
+    setPendingId(ids[0] ?? null);
+    setError(null);
+    try {
+      const res = await fetch("/api/test/runs/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action, ids }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!json.success) {
+        setError(json.error ?? `Could not ${action} the run.`);
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["quiktrack", "test-runs"] });
+    } catch {
+      setError(`Could not ${action} the run.`);
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  // Memoised off `data` rather than a fresh `?? []` literal: the fallback array
+  // has a new identity every render, so the grouping would re-run each time.
+  const runs = useMemo(() => data?.items ?? [], [data]);
+  const groups = useMemo(() => groupByLifecycle(runs), [runs]);
+
+  const closeRun = async (runId: string) => {
+    setClosingId(runId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/test/runs/${runId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "close" }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!json.success) {
+        setError(json.error ?? "Could not close the run.");
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: runsKey });
+    } catch {
+      setError("Could not close the run.");
+    } finally {
+      setClosingId(null);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+      <div className="flex items-start justify-between gap-3 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div>
           <Link
             href={`/spaces/${projectId}/test`}
@@ -57,22 +145,49 @@ export function RunListView({ projectId }: { projectId: string }) {
             <ArrowLeft className="h-3 w-3" />
             Test cases
           </Link>
-          <h1 className="text-base font-semibold text-gray-900">Test runs</h1>
+          <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Test runs</h1>
           <p className="text-xs text-gray-500">
             Each run is an immutable record of one execution pass.
           </p>
         </div>
-        {canCreate && (
-          <Button
-            size="sm"
-            className="bg-accent-600 text-white hover:bg-accent-700"
-            onClick={() => setPanelOpen(true)}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            New run
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Only for users who can delete: nobody else has anything to restore. */}
+          {canClose && (
+            <div className="flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
+              {([false, true] as const).map((v) => (
+                <button
+                  key={String(v)}
+                  type="button"
+                  onClick={() => setShowDeleted(v)}
+                  className={`rounded px-2 py-1 text-[11px] ${
+                    showDeleted === v
+                      ? "bg-accent-100 dark:bg-gray-700 font-medium text-accent-800 dark:text-gray-100"
+                      : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                  }`}
+                >
+                  {v ? "Deleted" : "Active"}
+                </button>
+              ))}
+            </div>
+          )}
+          {canCreate && !showDeleted && (
+            <Button
+              size="sm"
+              className="bg-accent-600 text-white hover:bg-accent-700"
+              onClick={() => setPanelOpen(true)}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              New run
+            </Button>
+          )}
+        </div>
       </div>
+
+      {error && (
+        <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -93,74 +208,74 @@ export function RunListView({ projectId }: { projectId: string }) {
             />
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0">
-              <tr className="text-left">
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Run</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Name</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Source</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Tests</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">Passed</th>
-                <th className="bg-accent-50 px-4 py-2 font-medium text-gray-700">State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => {
-                const total = totalTests(run.counts);
-                return (
-                  <tr
+          LIFECYCLE_ORDER.map((phase) => {
+            const list = groups[phase];
+            // Empty sections are hidden rather than shown with a 0: three
+            // headings over one run is noise, and "Completion Pending (0)" is not
+            // information a QA lead needs.
+            if (list.length === 0) return null;
+
+            return (
+              <section key={phase}>
+                <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-gray-200 dark:border-gray-700 bg-accent-50 dark:bg-gray-900 px-4 py-1.5">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+                    {LIFECYCLE_LABEL[phase]}
+                  </h2>
+                  <span className="text-[11px] text-gray-500">{list.length}</span>
+                  <span className="truncate text-[11px] text-gray-400">
+                    {LIFECYCLE_HINT[phase]}
+                  </span>
+                </div>
+                {list.map((run) => (
+                  <RunRow
                     key={run.id}
-                    className="border-b border-gray-100 hover:bg-blue-50"
-                  >
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-900">
-                      R{run.refId}
-                    </td>
-                    <td className="px-4 py-2">
-                      <Link
-                        href={`/spaces/${projectId}/test/runs/${run.id}`}
-                        className="text-gray-900 hover:underline"
-                      >
-                        {run.name}
-                      </Link>
-                      {run.build && (
-                        <span className="ml-2 text-[11px] text-gray-400">
-                          build {run.build}
-                        </span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-500">
-                      {run.source}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-500">
-                      {run.testCount}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-gray-700">
-                      {total === 0 ? "—" : `${passRate(run.counts)}%`}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          run.state === "closed"
-                            ? "bg-gray-100 text-gray-600"
-                            : "bg-green-100 text-green-800"
-                        }`}
-                      >
-                        {run.state}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    run={run}
+                    projectId={projectId}
+                    canClose={canClose}
+                    onClose={closeRun}
+                    onEdit={setEditingRun}
+                    onDelete={(r) =>
+                      void mutateRun("delete", [r.id], {
+                        title: `Delete "${r.name}"?`,
+                        message:
+                          `It will be hidden from the runs list. Its ${r.testCount} ` +
+                          `test${r.testCount === 1 ? "" : "s"} and any recorded results ` +
+                          `are KEPT — the execution history stays intact, and you can ` +
+                          `restore the run later.`,
+                        confirmText: "Delete",
+                        danger: true,
+                      })
+                    }
+                    onRestore={(id) => void mutateRun("restore", [id])}
+                    closing={closingId === run.id}
+                    busy={pendingId === run.id}
+                  />
+                ))}
+              </section>
+            );
+          })
         )}
       </div>
 
       <NewRunPanel
         open={panelOpen}
-        onClose={() => setPanelOpen(false)}
+        onClose={() => {
+          setPanelOpen(false);
+          setPrefillRefTickets(undefined);
+        }}
         projectId={projectId}
         onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: runsKey });
+        }}
+        prefillRefTickets={prefillRefTickets}
+      />
+
+      <EditRunPanel
+        open={editingRun !== null}
+        run={editingRun}
+        projectId={projectId}
+        onClose={() => setEditingRun(null)}
+        onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: runsKey });
         }}
       />

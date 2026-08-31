@@ -3,7 +3,11 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
-import { customFiltersToWhere, parseCustomFilters } from "@/lib/customFields/filterQuery";
+import {
+  boardMappedStatusIds,
+  issueFilterFragments,
+  parseIssueFilters,
+} from "@/lib/services/issueFilters";
 
 async function userIsProjectMember(
   userId: string,
@@ -25,10 +29,13 @@ async function userIsProjectMember(
  * section) with a single grouped query, so applying a filter fires ONE request
  * regardless of how many sprints the project has.
  *
- * Accepts the same filter params the backlog sends to `/api/issues`
- * (search, statusId, assigneeId, type, priority, epicId, customFilters) — the
- * `where` here is a straight copy of that route's, minus the sprintId/parentId
- * clauses (we group by sprint instead) and always excluding EPIC/SUBTASK.
+ * Accepts the same filter params the backlog sends to `/api/issues`, and
+ * builds its `where` from the SAME shared fragments (lib/services/issueFilters)
+ * — minus the sprintId/parentId clauses, since it groups by sprint instead.
+ * That sharing is load-bearing: these numbers label sections whose rows come
+ * from `/api/issues`, so a filter honoured by one route and not the other
+ * shows up as a section reading "2 work items" collapsed and "No items in this
+ * sprint" once expanded. Do not hand-roll a clause here.
  *
  * Returns, keyed by `sprint:<id>` and `backlog`, the total and the
  * To Do / In Progress / Done split for the filtered set. Sprints with zero
@@ -56,58 +63,35 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
 
-  const filterType = url.searchParams.get("type");
-  const filterStatusId = url.searchParams.get("statusId");
-  const filterEpicId = url.searchParams.get("epicId");
-  const filterAssigneeId = url.searchParams.get("assigneeId");
-  const filterPriority = url.searchParams.get("priority");
-  const search = url.searchParams.get("search")?.trim();
-  const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
-  const customFilterWhere = customFiltersToWhere(customFilters);
+  // Every filter clause comes from the shared builder, so this endpoint cannot
+  // drift from the `/api/issues` query that produces the rows these numbers
+  // are supposed to describe. `excludeType` defaults to the backlog's
+  // structural EPIC/SUBTASK exclusion when the caller doesn't send one.
+  const filters = parseIssueFilters(url);
+  const fragments = issueFilterFragments({
+    ...filters,
+    excludeType: filters.excludeType ?? "EPIC,SUBTASK",
+  });
 
-  // assigneeId: same four shapes as /api/issues (null / id / csv / null+ids).
-  const assigneeClause: Prisma.QtIssueWhereInput | null = (() => {
-    if (!filterAssigneeId) return null;
-    const parts = filterAssigneeId.split(",").map((s) => s.trim()).filter(Boolean);
-    if (parts.length === 0) return null;
-    const wantsUnassigned = parts.includes("null");
-    const ids = parts.filter((p) => p !== "null");
-    if (wantsUnassigned && ids.length)
-      return { OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] };
-    if (wantsUnassigned) return { assigneeId: null };
-    if (ids.length === 1) return { assigneeId: ids[0] };
-    return { assigneeId: { in: ids } };
-  })();
-
-  // A specific `type` filter wins; otherwise the backlog's structural exclusion.
-  const typeWhere: Prisma.QtIssueWhereInput = filterType
-    ? { type: filterType }
-    : { type: { notIn: ["EPIC", "SUBTASK"] } };
+  // The backlog only lists items whose status is mapped to a board column, so
+  // a count describing it must hide the same items — otherwise a section reads
+  // "2 work items" collapsed and "No items in this sprint" expanded.
+  //
+  // An explicit `statusId` filter takes precedence over the mapped-status
+  // restriction, exactly as in `/api/issues` — the two must agree on this or
+  // filtering by an unmapped status would produce the same contradiction in
+  // the opposite direction.
+  const mappedStatusIds =
+    url.searchParams.get("boardMappedOnly") === "1" && !filters.statusId
+      ? await boardMappedStatusIds(projectId)
+      : null;
 
   const where: Prisma.QtIssueWhereInput = {
     orgId,
     projectId,
     isDeleted: false,
-    ...typeWhere,
-    ...(filterStatusId ? { statusId: filterStatusId } : {}),
-    ...(filterEpicId === "null"
-      ? { epicId: null }
-      : filterEpicId
-        ? { epicId: filterEpicId }
-        : {}),
-    ...(filterPriority ? { priority: filterPriority } : {}),
-    ...(search
-      ? {
-          OR: [
-            { title: { contains: search, mode: "insensitive" as const } },
-            { description: { contains: search, mode: "insensitive" as const } },
-            { key: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
-    ...(customFilterWhere.length || assigneeClause
-      ? { AND: [...customFilterWhere, ...(assigneeClause ? [assigneeClause] : [])] }
-      : {}),
+    ...(mappedStatusIds ? { statusId: { in: mappedStatusIds } } : {}),
+    ...(fragments.length ? { AND: fragments } : {}),
   };
 
   // One grouped query covers every sprint + the backlog (sprintId null).

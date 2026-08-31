@@ -16,11 +16,19 @@ import {
   ValidationFailedError,
   type ExecuteResult,
 } from "@/lib/services/workflow";
+import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
 
+// `[id]` accepts the cuid or the issue key — see the resolution note in
+// app/api/issues/[id]/route.ts. Use the resolved cuid, never `params.id`.
 export const PATCH = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
+    const resolved = await resolveIssueIdOrKey(orgId, params.id);
+    if (!resolved) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const issueId = resolved.id;
     const issue = await db.qtIssue.findFirst({
-      where: { id: params.id, orgId: orgId, isDeleted: false },
+      where: { id: issueId, orgId: orgId, isDeleted: false },
       select: {
         id: true,
         projectId: true,
@@ -120,7 +128,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // append-only transition-log row must commit or roll back together (WF-4.2/4.3).
     const updated = await db.$transaction(async (tx) => {
       const issueAfter = await tx.qtIssue.update({
-        where: { id: params.id },
+        where: { id: issueId },
         data: {
           statusId: parsed.data.statusId,
           sprintId: parsed.data.sprintId === undefined ? undefined : parsed.data.sprintId,
@@ -167,4 +175,5 @@ export const PATCH = withOrgAuth<{ id: string }>(
     });
     return NextResponse.json({ success: true, data: updated });
   },
+  { allowAgentJwt: true },
 );

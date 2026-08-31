@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zPhoneLooseOptional } from "./identifiers";
+import { zPhoneLooseOptional, zPanOptional, zAadhaarOptional, zIfscOptional, zBankAccountOptional } from "./identifiers";
 
 // ─── Delegation ─────────────────────────────────────────
 
@@ -71,8 +71,8 @@ export const bulkEmployeeRowSchema = z.object({
   workLocation: z.string().optional(),
   officeLocation: z.string().optional(),
   jobTitle: z.string().optional(),
-  panNumber: z.string().optional(),
-  aadhaarNumber: z.string().optional(),
+  panNumber: zPanOptional,
+  aadhaarNumber: zAadhaarOptional,
   gender: z.string().optional(),
   maritalStatus: z.string().optional(),
   bloodGroup: z.string().optional(),
@@ -101,8 +101,8 @@ export const bulkEmployeeRowSchema = z.object({
   emergencyContactEmail: z.string().optional(),
   // Bank
   bankName: z.string().optional(),
-  bankAccountNumber: z.string().optional(),
-  bankIfsc: z.string().optional(),
+  bankAccountNumber: zBankAccountOptional,
+  bankIfsc: zIfscOptional,
   bankAccountHolder: z.string().optional(),
   // Reporting manager (lookup by code)
   reportingManagerCode: z.string().optional(),

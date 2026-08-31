@@ -19,6 +19,7 @@ import { getTemplate } from "./templates-meta";
 import { applyDocEditToCache } from "./use-docs";
 import { ShareDialog } from "./share-dialog";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { uploadProjectImage, uploadProjectFile } from "@/lib/upload-image";
 
 interface DocFull {
   id: string;
@@ -288,16 +289,10 @@ export function DocEditor({
    * Each render the proxy mints a fresh presigned GET, so the URLs in the
    * doc body never expire.
    */
+  // Delegate to the shared uploaders so size validation + the friendly
+  // too-large message (see lib/upload-image.ts) are applied here too.
   async function uploadImageToS3(file: File): Promise<string> {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("projectId", projectId);
-    const res = await fetch(`/api/docs/upload`, { method: "POST", body: fd });
-    const j = await res.json().catch(() => null);
-    if (!res.ok || !j?.success) {
-      throw new Error(j?.error || `Upload failed (${res.status})`);
-    }
-    return j.data.url as string;
+    return uploadProjectImage(projectId, file);
   }
 
   /**
@@ -308,20 +303,7 @@ export function DocEditor({
   async function uploadFileToS3(
     file: File,
   ): Promise<{ url: string; fileName: string; mimeType: string; size: number }> {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("projectId", projectId);
-    const res = await fetch(`/api/docs/upload`, { method: "POST", body: fd });
-    const j = await res.json().catch(() => null);
-    if (!res.ok || !j?.success) {
-      throw new Error(j?.error || `Upload failed (${res.status})`);
-    }
-    return {
-      url: j.data.url as string,
-      fileName: j.data.fileName as string,
-      mimeType: j.data.mimeType as string,
-      size: j.data.size as number,
-    };
+    return uploadProjectFile(projectId, file);
   }
 
   return (

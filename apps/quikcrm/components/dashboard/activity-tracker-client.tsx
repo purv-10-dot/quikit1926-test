@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Settings2, Target, HelpCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, RefreshCw, Settings2, Target, HelpCircle } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Modal } from "@/components/ui/modal";
@@ -186,6 +187,7 @@ function CompletionHelp() {
 
 export function ActivityTrackerClient() {
   const toast = useToast();
+  const router = useRouter();
   const [data, setData] = useState<TrackerDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -226,11 +228,11 @@ export function ActivityTrackerClient() {
   }, [data]);
 
   const tiles = [
-    { label: "Daily Target", value: summary.dailyTarget },
+    { label: "Team Daily Target", value: summary.dailyTarget },
     { label: "Today's Activities", value: summary.todayActivities },
     { label: "Remaining", value: summary.remaining },
-    { label: "Completion %", value: `${summary.completionPct}%` },
-    { label: "Weekly Target", value: summary.weeklyTarget },
+    { label: "Team Completion", value: `${summary.completionPct}%` },
+    { label: "Team Weekly Target", value: summary.weeklyTarget },
     { label: "Weekly Activities", value: summary.weeklyActivities },
   ];
 
@@ -258,6 +260,14 @@ export function ActivityTrackerClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-crm-border px-3 py-2 text-sm font-medium text-crm-text transition hover:bg-crm-panel"
+          >
+            <ArrowLeft size={15} />
+            Back
+          </button>
           <button
             type="button"
             onClick={load}

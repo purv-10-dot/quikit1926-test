@@ -14,8 +14,8 @@
 export const FAQS: { q: string; a: string; cat?: string }[] = [
   {
     cat: 'product',
-    q: 'What is QuikSkill?',
-    a: 'QuikSkill is a multi-tenant learning management system covering the full training lifecycle — authoring courses, delivering them through a SCORM-capable player, assessing with proctored quizzes and exams, issuing verifiable certificates, and reporting on progress and compliance.',
+    q: 'What is QuikLMS?',
+    a: 'QuikLMS is a multi-tenant learning management system covering the full training lifecycle — authoring courses, delivering them through a SCORM-capable player, assessing with proctored quizzes and exams, issuing verifiable certificates, and reporting on progress and compliance.',
   },
   {
     cat: 'product',

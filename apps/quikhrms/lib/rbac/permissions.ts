@@ -55,6 +55,7 @@ export const PERMISSIONS: PermissionDef[] = [
 
   // ── Recruit ──
   { code: "hrms.recruit.read", category: "Recruit", name: "View Recruitment", description: "View requisitions, candidates, applications" },
+  { code: "hrms.recruit.read_self", category: "Recruit", name: "View Own Recruitment", description: "View only job openings, candidates and pipeline for jobs you're assigned to" },
   { code: "hrms.recruit.write", category: "Recruit", name: "Manage Recruitment", description: "Create/update requisitions, candidates (legacy — grants both of the two below)" },
   { code: "hrms.recruit.requisition.write", category: "Recruit", name: "Manage Job Requisitions", description: "Create/update/close job requisitions" },
   { code: "hrms.recruit.candidate.write", category: "Recruit", name: "Manage Candidates", description: "Create/update candidates" },
@@ -103,6 +104,12 @@ export const PERMISSIONS: PermissionDef[] = [
   // ── Reports ──
   { code: "hrms.reports.read", category: "Reports", name: "View Reports", description: "Run report templates" },
   { code: "hrms.reports.manage", category: "Reports", name: "Manage Report Templates", description: "Create/edit report templates" },
+
+  // ── Payroll ──
+  { code: "hrms.payroll.read", category: "Payroll", name: "View Payroll (Read-only)", description: "View payroll/compensation analytics and colleagues' payslips without full Settings access" },
+
+  // ── Tasks ──
+  { code: "hrms.task.read_all", category: "Tasks", name: "View All Tasks", description: "View every employee's tasks org-wide (not just your own/managed/requested)" },
 
   // ── Settings / RBAC ──
   { code: "hrms.settings.read", category: "Settings", name: "View Settings", description: "View tenant settings" },

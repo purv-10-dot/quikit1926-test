@@ -116,7 +116,17 @@ export function withOrgAuth(
     try {
       const ctx = await authContext(req as NextRequest);
       const orgCtx: OrgContext = { userId: ctx.userId, orgId: ctx.orgId };
-      const base = { orgId: ctx.orgId, actorType: "human", userId: ctx.userId };
+      // Request-log attribution only (these fields go to `done(...)`, not to any
+      // authorization decision). Derived from `actingAs` rather than hardcoded
+      // "human": this gate accepts any JWT `withAuth` accepts, and agent JWTs
+      // are session-shaped, so a hardcoded "human" mislabelled every agent
+      // caller — `ai_agent` included — in the request log.
+      const base = {
+        orgId: ctx.orgId,
+        actorType: ctx.actingAs === "user" ? "human" : "ai_agent",
+        userId: ctx.userId,
+        ...(ctx.actingAgentId ? { agentId: ctx.actingAgentId } : {}),
+      };
       // ENTITLEMENT. `withAuth` above proves a valid JWT with an orgId — it does
       // NOT check UserAppAccess, and middleware.ts's matcher excludes /api/*
       // entirely. Without this line the only app-access gate in the whole app is

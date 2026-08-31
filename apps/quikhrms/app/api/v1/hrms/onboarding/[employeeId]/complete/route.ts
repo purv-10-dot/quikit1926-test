@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, internalError } from "@/lib/api-response";
 import { createAuditLog } from "@/lib/utils/audit";
 import { allocateProRataLeaveBalances } from "@/lib/services/leave-allocation";
+import { finalizePositionOnOnboard } from "@/lib/services/requisition-positions";
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -43,6 +44,50 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       return conflict(`${pendingMandatory.length} mandatory tasks pending. Pass ?force=true to override.`);
     }
 
+    // Document-approval gate — moved here from the old manual "Onboard" click
+    // (Employee creation is now automatic at offer-accept, before documents
+    // are typically even collected, so gating there would block every hire).
+    // Block ONLY on documents the candidate has actually uploaded that HR
+    // hasn't approved yet — a bundle that's requested but never uploaded
+    // must not block, or post-offer docs collected during onboarding would
+    // deadlock this exact step.
+    if (!force) {
+      const employeeRow = await prisma.employee.findFirst({ where: { id: employeeId, orgId }, select: { workEmail: true } });
+      const application = employeeRow?.workEmail
+        ? await prisma.jobApplication.findFirst({
+            where: { orgId, status: "AppHired", candidate: { email: employeeRow.workEmail } },
+            select: { id: true },
+          })
+        : null;
+      if (application) {
+        const docRequests = await prisma.candidateDocumentRequest.findMany({
+          where: { orgId, applicationId: application.id, deletedAt: null, status: { not: "Cancelled" } },
+          select: {
+            uploads: {
+              where: { deletedAt: null },
+              orderBy: { uploadedAt: "desc" },
+              select: { documentTypeId: true, status: true, customLabel: true, fileName: true, documentType: { select: { name: true } } },
+            },
+          },
+        });
+        const missing: { name: string }[] = [];
+        for (const r of docRequests) {
+          const latest = new Map<string, { status: "Pending" | "Approved" | "Rejected"; name: string }>();
+          for (const u of r.uploads) {
+            const name = u.documentType?.name ?? u.customLabel ?? u.fileName ?? "Document";
+            const key = u.documentTypeId ?? name;
+            if (!latest.has(key)) latest.set(key, { status: u.status, name });
+          }
+          for (const { status, name } of latest.values()) {
+            if (status !== "Approved") missing.push({ name });
+          }
+        }
+        if (missing.length > 0) {
+          return conflict(`${missing.length} uploaded document(s) still awaiting your approval. Pass ?force=true to override.`);
+        }
+      }
+    }
+
     const [updatedInstance, updatedEmployee] = await prisma.$transaction([
       prisma.onboardingInstance.update({
         where: { id: instance.id },
@@ -53,6 +98,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         data: { status: "Active", inviteStatus: "Invited", updatedBy: userId },
       }),
     ]);
+
+    // Recruiter & Position Tracking — a seat only closes (Filled) once the
+    // employee actually onboards, not at offer-accept or hire. This IS that
+    // moment: flip the seat reserved back at hire-time from PendingOnboarding
+    // to Filled.
+    if (updatedEmployee.workEmail) {
+      const hiredApp = await prisma.jobApplication.findFirst({
+        where: { orgId, status: "AppHired", candidate: { email: updatedEmployee.workEmail } },
+        select: { id: true },
+      });
+      if (hiredApp) await finalizePositionOnOnboard(orgId, hiredApp.id, userId);
+    }
 
     if (updatedEmployee.dateOfJoining) {
       try {

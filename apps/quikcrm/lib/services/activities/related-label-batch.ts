@@ -14,12 +14,23 @@ const ORPHANED_LABEL = "(deleted)";
 const FALLBACK_LABEL = "—";
 const STANDALONE_LABEL = "—"; // standalone (unlinked) activities show no record
 
-function normalizeKind(k: string): "lead" | "opportunity" | "contact" | "account" | "unknown" {
+type NormalizedKind =
+  | "lead"
+  | "opportunity"
+  | "contact"
+  | "account"
+  | "prospect"
+  | "upwork"
+  | "unknown";
+
+function normalizeKind(k: string): NormalizedKind {
   const lower = k.toLowerCase();
   if (lower === "lead") return "lead";
   if (lower === "opportunity") return "opportunity";
   if (lower === "contact") return "contact";
   if (lower === "account") return "account";
+  if (lower === "prospect") return "prospect";
+  if (lower === "upwork") return "upwork";
   return "unknown";
 }
 
@@ -28,11 +39,13 @@ export async function resolveRelatedLabels(
   rows: ReadonlyArray<RowLike>,
 ): Promise<Map<string, string>> {
   const live = rows.filter((r) => !r.relatedOrphanedAt);
-  const byKind: Record<"lead" | "opportunity" | "contact" | "account", Set<string>> = {
+  const byKind: Record<Exclude<NormalizedKind, "unknown">, Set<string>> = {
     lead: new Set(),
     opportunity: new Set(),
     contact: new Set(),
     account: new Set(),
+    prospect: new Set(),
+    upwork: new Set(),
   };
   for (const r of live) {
     const k = normalizeKind(r.relatedKind);
@@ -40,7 +53,7 @@ export async function resolveRelatedLabels(
     byKind[k].add(r.relatedObjectId);
   }
 
-  const [leads, opps, contacts, accounts] = await Promise.all([
+  const [leads, opps, contacts, accounts, prospects, upworkJobs] = await Promise.all([
     byKind.lead.size
       ? prisma.crmLead.findMany({
           where: { orgId, id: { in: [...byKind.lead] } },
@@ -65,6 +78,18 @@ export async function resolveRelatedLabels(
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
+    byKind.prospect.size
+      ? prisma.crmProspect.findMany({
+          where: { orgId, id: { in: [...byKind.prospect] } },
+          select: { id: true, name: true, company: true },
+        })
+      : Promise.resolve([]),
+    byKind.upwork.size
+      ? prisma.crmUpworkJob.findMany({
+          where: { orgId, id: { in: [...byKind.upwork] } },
+          select: { id: true, jobTitle: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const map = new Map<string, string>();
@@ -77,6 +102,13 @@ export async function resolveRelatedLabels(
     map.set(key("contact", c.id), label);
   }
   for (const a of accounts) map.set(key("account", a.id), a.name || FALLBACK_LABEL);
+  for (const p of prospects) {
+    // Same "Name — Company" shape the prospect picker shows, so the label in the
+    // activities list matches what the user selected in the composer.
+    const label = p.company ? `${p.name || FALLBACK_LABEL} — ${p.company}` : p.name;
+    map.set(key("prospect", p.id), label || FALLBACK_LABEL);
+  }
+  for (const j of upworkJobs) map.set(key("upwork", j.id), j.jobTitle || FALLBACK_LABEL);
 
   // Build per-row label map keyed by raw `relatedObjectId` for caller convenience.
   // Caller looks up via labelOf(row) below — we expose that helper too.

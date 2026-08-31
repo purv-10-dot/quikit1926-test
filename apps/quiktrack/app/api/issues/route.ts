@@ -3,14 +3,19 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
-import { getInitialStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
+import { getInitialStatusId, getWorkflowInitialStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
 import { emailIssueAssigned } from "@/lib/email/sendEmail";
+import { isEmailEnabled } from "@/lib/notifications/notify";
 import { validateIssueValues, writeIssueValues } from "@/lib/services/customFieldValues";
 import type { FieldValue } from "@/lib/customFields/registry";
-import { customFiltersToWhere, parseCustomFilters } from "@/lib/customFields/filterQuery";
+import {
+  boardMappedStatusIds,
+  issueFilterFragments,
+  parseIssueFilters,
+} from "@/lib/services/issueFilters";
 
 async function userIsProjectMember(
   userId: string,
@@ -25,6 +30,8 @@ async function userIsProjectMember(
   return !!pm;
 }
 
+// AI Runtime: agent-JWT opt-in (manifest read op `list_issues`). Reads only —
+// the POST below deliberately stays session/API-token.
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const idOrKey = url.searchParams.get("projectId");
@@ -47,8 +54,6 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
 
-  const filterType = url.searchParams.get("type");
-  const excludeType = url.searchParams.get("excludeType");
   const filterStatusId = url.searchParams.get("statusId");
   // Board columns can map several statuses to one column: `statusIds` is a
   // comma-separated IN-list. Takes precedence over the single `statusId`.
@@ -70,37 +75,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : null;
   const filterSprintId = url.searchParams.get("sprintId");
   const filterParentId = url.searchParams.get("parentId");
-  const filterEpicId = url.searchParams.get("epicId");
-  const filterAssigneeId = url.searchParams.get("assigneeId");
-  const filterPriority = url.searchParams.get("priority");
+  // Releases (Fix Versions) are a many-to-many join (QtIssueRelease), unlike
+  // sprint/epic which are direct columns — resolve to an id-IN filter instead
+  // of a where-clause spread.
+  const filterReleaseId = url.searchParams.get("releaseId");
   // When set, also return a To Do / In Progress / Done breakdown for the
   // filtered set (used by the backlog section badges so they reflect filters).
   const wantStatusCounts = url.searchParams.get("statusCounts") === "1";
-  const search = url.searchParams.get("search")?.trim();
-  // Custom field filters: JSON array of { fieldId, type, op, value, value2 }.
-  const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
-  const customFilterWhere = customFiltersToWhere(customFilters);
-
-  // assigneeId supports four shapes, mirroring sprintId:
-  //   "null"            → unassigned only
-  //   "id"              → single assignee
-  //   "id1,id2,id3"     → IN-list (multi-assignee filter)
-  //   "null,id1,id2"    → unassigned OR any of the listed assignees
-  // The clause is nested inside the top-level AND (below) rather than spread
-  // directly, so its OR (mixed unassigned + ids case) can't collide with the
-  // search OR.
-  const assigneeClause: Prisma.QtIssueWhereInput | null = (() => {
-    if (!filterAssigneeId) return null;
-    const parts = filterAssigneeId.split(",").map((s) => s.trim()).filter(Boolean);
-    if (parts.length === 0) return null;
-    const wantsUnassigned = parts.includes("null");
-    const ids = parts.filter((p) => p !== "null");
-    if (wantsUnassigned && ids.length)
-      return { OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] };
-    if (wantsUnassigned) return { assigneeId: null };
-    if (ids.length === 1) return { assigneeId: ids[0] };
-    return { assigneeId: { in: ids } };
-  })();
+  // Every shared filter clause (type/status/epic/priority/search/assignee/
+  // due date/custom fields) is built by the same helper `/api/issues/section-
+  // counts` uses, so the backlog's collapsed header count and its expanded row
+  // list can't disagree about what "filtered" means. Status is excluded here:
+  // this route has richer handling for it (id list / category / board-mapped)
+  // resolved below.
+  const sharedFilterFragments = issueFilterFragments(parseIssueFilters(url), {
+    includeStatus: false,
+  });
 
   // Two pagination modes share this route:
   //   - cursor mode (board/backlog): `cursor` + `limit`
@@ -134,41 +124,28 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     ? [{ [sortKey]: sortOrder } as Prisma.QtIssueOrderByWithRelationInput, { id: sortOrder }]
     : [{ orderInColumn: "asc" }, { createdAt: "desc" }, { id: "asc" }];
 
-  // Resolve the `type` clause ONCE. A specific `type` filter (e.g. BUG) wins over
-  // `excludeType` (the section's structural EPIC/SUBTASK exclusion) — otherwise a
-  // second `type:` key in the spread would clobber the first, so picking a type
-  // silently fell back to "everything except epics/subtasks".
-  const typeWhere: Prisma.QtIssueWhereInput = filterType
-    ? { type: filterType }
-    : excludeType
-      ? excludeType.includes(",")
-        ? { type: { notIn: excludeType.split(",").filter(Boolean) } }
-        : { type: { not: excludeType } }
-      : {};
+  // Board-mapped restriction: the set of status ids mapped to a board column.
+  // Shared with /api/issues/section-counts so the backlog's counts and its rows
+  // hide exactly the same unmapped-status items.
+  const mappedStatusIds = boardMappedOnly ? await boardMappedStatusIds(projectId) : null;
 
-  // Board-mapped restriction: the set of status ids that are mapped to a board
-  // column. Only applied when the project actually has configured columns —
-  // otherwise every status is effectively "on the board".
-  let mappedStatusIds: string[] | null = null;
-  if (boardMappedOnly) {
-    const hasColumns = await db.qtBoardColumn.findFirst({
-      where: { projectId },
-      select: { id: true },
+  // Resolve the release's linked issue ids ONCE (outside the where object) so
+  // an empty result set short-circuits to `{ id: { in: [] } }` instead of
+  // silently matching every issue.
+  let releaseIssueIds: string[] | null = null;
+  if (filterReleaseId) {
+    const links = await db.qtIssueRelease.findMany({
+      where: { releaseId: filterReleaseId },
+      select: { issueId: true },
     });
-    if (hasColumns) {
-      const mapped = await db.qtBoardColumnStatus.findMany({
-        where: { column: { projectId } },
-        select: { statusId: true },
-      });
-      mappedStatusIds = mapped.map((m) => m.statusId);
-    }
+    releaseIssueIds = links.map((l) => l.issueId);
   }
 
   const where = {
     orgId: orgId,
     projectId,
     isDeleted: false,
-    ...typeWhere,
+    ...(releaseIssueIds ? { id: { in: releaseIssueIds } } : {}),
     ...(filterStatusIds.length > 0
       ? { statusId: { in: filterStatusIds } }
       : filterStatusId
@@ -201,24 +178,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : filterParentId
         ? { parentId: filterParentId }
         : {}),
-    ...(filterEpicId === "null"
-      ? { epicId: null }
-      : filterEpicId
-        ? { epicId: filterEpicId }
-        : {}),
-    ...(filterPriority ? { priority: filterPriority } : {}),
-    ...(search
-      ? {
-          OR: [
-            { title: { contains: search, mode: "insensitive" as const } },
-            { description: { contains: search, mode: "insensitive" as const } },
-            { key: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
-    ...(customFilterWhere.length || assigneeClause
-      ? { AND: [...customFilterWhere, ...(assigneeClause ? [assigneeClause] : [])] }
-      : {}),
+    // type / epic / priority / search / assignee / due date / custom fields —
+    // see `sharedFilterFragments` above. Nested in AND so the clauses that
+    // carry their own OR (assignee, search) can't collide.
+    ...(sharedFilterFragments.length ? { AND: sharedFilterFragments } : {}),
   };
 
   // idsOnly mode: return every matching id for the current filter, unpaginated.
@@ -438,7 +401,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     total,
     ...(statusCounts ? { statusCounts } : {}),
   });
-});
+}, { allowAgentJwt: true });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = createIssueSchema.safeParse(await req.json());
@@ -485,11 +448,16 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const issue = await db.$transaction(async (tx) => {
-    // New issues start on the workflow's INITIAL status (e.g. classic "Open")
-    // when a published workflow governs the project; otherwise the first status
-    // by order. A client-supplied status still wins.
-    const statusId =
-      parsed.data.statusId ?? (await getInitialStatusId(tx, project.id));
+    // A work item is CREATED via the workflow's "Create" transition, so its only
+    // legal starting status is the workflow's INITIAL status. When a published
+    // workflow governs the project we force that status and ignore any other
+    // client-supplied value (the Create modal / API must not bypass the workflow
+    // — Jira parity). Only when the project is UNGATED (no active workflow) do we
+    // honor a client status, falling back to the first status by order.
+    const gatedInitial = await getWorkflowInitialStatusId(tx, project.id);
+    const statusId = gatedInitial
+      ? gatedInitial
+      : (parsed.data.statusId ?? (await getInitialStatusId(tx, project.id)));
     if (!statusId) throw new Error("Project has no statuses");
 
     // Derive the key from the MAX existing suffix, not count()+1 — the latter
@@ -538,6 +506,21 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     void recalcParentRollup(issue.parentId, orgId);
   }
 
+  // Auto-watch: the reporter (always the creator) and the initial assignee
+  // (if different) start watching, matching Jira's default. Manual unwatch
+  // still works afterwards — this only seeds the initial watcher set.
+  void db.qtIssueWatcher
+    .createMany({
+      data: [
+        { orgId, issueId: issue.id, userId, source: "AUTO" },
+        ...(issue.assigneeId && issue.assigneeId !== userId
+          ? [{ orgId, issueId: issue.id, userId: issue.assigneeId, source: "AUTO" }]
+          : []),
+      ],
+      skipDuplicates: true,
+    })
+    .catch((e) => console.error("[watch] auto-watch on create failed:", e));
+
   // Email anyone @-mentioned in the new issue's description.
   if (issue.description) {
     void notifyMentions({
@@ -570,7 +553,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
             select: { email: true, firstName: true, lastName: true },
           }),
         ]);
-        if (assignee?.email) {
+        if (assignee?.email && (await isEmailEnabled(assigneeId))) {
           await emailIssueAssigned({
             to: assignee.email,
             assigneeName:
@@ -581,6 +564,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
               title: issue.title,
               projectId: issue.projectId,
               projectName: project.name ?? null,
+              orgId,
             },
             reassignedBy: actor
               ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || actor.email
@@ -594,4 +578,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });
-});
+}, { allowAgentJwt: true });

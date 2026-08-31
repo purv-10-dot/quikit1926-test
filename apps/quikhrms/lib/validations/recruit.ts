@@ -48,7 +48,7 @@ const requisitionBaseObject = z.object({
   })).optional(),
   education: z.string().optional(),
   passingYear: z.number().int().min(1950).max(2100).nullable().optional(),
-  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question").max(50),
+  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question"),
   benefits: z.array(z.string()).optional(),
 
   // Role scorecard — optional. Captures the JD-Scorecard pattern at hiring time.
@@ -70,7 +70,7 @@ const requisitionBaseObject = z.object({
   recruiterId: z.string().optional(),
   // Recruiter Performance Dashboard — Job Level drives the default SLA;
   // customSlaDays/Reason let HR override it for this one requisition.
-  jobLevelId: z.string().optional(),
+  jobLevelId: z.string().min(1, "Job level required"),
   customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
   customSlaReason: z.string().max(1000).optional(),
   // Optional multi-recruiter position split — e.g. 10 openings: 4 to
@@ -171,14 +171,36 @@ export const createApplicationSchema = z.object({
   candidateId: z.string().min(1),
   requisitionId: z.string().min(1),
   currentStage: z.string().optional(),
+  // Recruiter & Position Tracking — who's personally handling this candidate.
+  assignedRecruiterId: z.string().optional(),
+  // Set ONLY by the "Add Candidate + JR immediately" wizard flow — when true
+  // and assignedRecruiterId wasn't explicitly chosen, the requesting user
+  // becomes the recruiter (they're creating AND linking in one action, so
+  // they own it). Every other flow (linking an EXISTING pool candidate later,
+  // regardless of who created it or who's doing the linking) omits this, so
+  // Round Robin decides instead — this is what actually fixes the "HR_Head
+  // adds a candidate, links it later" case: no self-assign just because they
+  // once created the record.
+  selfAssign: z.boolean().optional(),
 });
 
 export const updateApplicationSchema = z.object({
   currentStage: z.string().optional(),
-  status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
+  status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppParked", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
   rejectionReason: z.string().optional(),
   // Optional note recorded in stageHistory when moving/skipping stages.
   moveReason: z.string().optional(),
+  // Recruiter & Position Tracking (Phase 1) — (re)assign, or claim from the
+  // Unassigned queue. Pass null to clear it back to unassigned.
+  assignedRecruiterId: z.string().nullable().optional(),
+});
+
+// "Park Candidate" — not a fit for THIS role, set aside (not rejected) with a reason.
+export const parkApplicationSchema = z.object({
+  reason: z.enum(["LessExperience", "HighBudget", "NonRelevant", "Other"]),
+  note: z.string().trim().max(500).optional(),
+}).refine((d) => d.reason !== "Other" || !!d.note?.trim(), {
+  message: "Please describe the reason", path: ["note"],
 });
 
 // ─── Interview ──────────────────────────────────────────

@@ -37,6 +37,7 @@ interface Space {
   color?: string | null;
   projectType?: string;
   managementStyle?: string;
+  starred?: boolean;
   status?: string;
   updatedAt?: string;
   lead?: Lead | null;
@@ -154,10 +155,36 @@ export function SpacesGrid() {
       .catch(() => undefined);
   }, []);
 
+  // Optimistic per-row star overrides so a click flips instantly (the fetched
+  // `starred` is the source of truth once a refetch lands).
+  const [starOverrides, setStarOverrides] = useState<Record<string, boolean>>({});
   const spaces = resp?.data ?? [];
   const totalPages = resp?.totalPages ?? 1;
   const isAdmin = resp?.isAdmin ?? false;
   const visibleTabs = VIEW_TABS.filter((t) => !t.adminOnly || isAdmin);
+
+  function isStarred(s: Space): boolean {
+    return starOverrides[s.id] ?? s.starred ?? false;
+  }
+  async function toggleStar(s: Space) {
+    const next = !isStarred(s);
+    setStarOverrides((prev) => ({ ...prev, [s.id]: next }));
+    try {
+      const res = await fetch(`/api/projects/${s.id}/star`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starred: next }),
+      }).then((r) => r.json());
+      if (!res?.success) {
+        setStarOverrides((prev) => ({ ...prev, [s.id]: !next })); // revert
+        return;
+      }
+      // Tell the sidebar to refresh its Starred group.
+      window.dispatchEvent(new CustomEvent("quiktrack:stars-changed"));
+    } catch {
+      setStarOverrides((prev) => ({ ...prev, [s.id]: !next })); // revert
+    }
+  }
 
   const visibleKeys = useMemo(() => {
     const q = keyQuery.trim().toLowerCase();
@@ -373,7 +400,21 @@ export function SpacesGrid() {
             {!loading && spaces.map((s) => (
               <tr key={s.id} className="border-b border-gray-200 last:border-b-0 hover:bg-blue-50/40">
                 <td className="px-4 py-3">
-                  <Star className="h-4 w-4 text-gray-300 hover:text-yellow-400 cursor-pointer" />
+                  <button
+                    type="button"
+                    onClick={() => void toggleStar(s)}
+                    aria-label={isStarred(s) ? "Unstar" : "Star"}
+                    title={isStarred(s) ? "Unstar" : "Star"}
+                    className="rounded p-0.5"
+                  >
+                    <Star
+                      className={`h-4 w-4 cursor-pointer ${
+                        isStarred(s)
+                          ? "fill-yellow-400 text-yellow-400"
+                          : "text-gray-300 hover:text-yellow-400"
+                      }`}
+                    />
+                  </button>
                 </td>
                 <td className="px-4 py-3">
                   {view === "trash" ? (

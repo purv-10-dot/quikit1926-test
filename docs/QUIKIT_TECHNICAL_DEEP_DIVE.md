@@ -357,7 +357,7 @@ consumer middleware (next nav): /api/verify-token → verifyJWT → isAuthSessio
 - **Profile completion** — first sign-in without a name prompts a form (SSO values prefill from a Redis `oauth-prefill:*` key).
 - **Forgot / temp password** — OTP-based reset (Redis) or a "forced re-invite" temp-password path (`mustChangePassword` gate).
 - **Invitation auto-accept** — pending `OrgMember (status="invited")` rows promote to `active` on first login; matching `UserAppAccess` rows are created.
-- **Agent JWTs** — `/api/auth/internal/issue-agent-jwt` mints ≤15-min session-shaped JWTs with `actingAs`/`actingAgentId` claims for trusted internal services; allow-listed, audited in `AgentJwtIssuance`, deliberately **no `sessionId`** (short-TTL, non-revocable).
+- **Agent JWTs** — `/api/auth/internal/issue-agent-jwt` mints ≤15-min session-shaped JWTs with `actingAs`/`actingAgentId` claims for trusted internal services; allow-listed, audited in `AgentJwtIssuance`, deliberately **no `sessionId`** (short-TTL, non-revocable). Carry `sub` and `id` set to the same user id, plus `iss: "auth-service-internal"` (`AGENT_JWT_ISSUER` in `@quikit/shared`) — **emitted only, not enforced**: they share a signing key with ordinary session cookies, which carry no `iss`, so an `iss` requirement in the shared session path would reject every live session. See `docs/12-auth-service-integration-response.md` (2026-08-19 amendment).
 
 ---
 

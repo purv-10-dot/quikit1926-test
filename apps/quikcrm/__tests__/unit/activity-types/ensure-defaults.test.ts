@@ -30,14 +30,17 @@ const KEY_RE = /^[a-z0-9_]+$/;
 const CODE_RE = /^[a-z0-9_]+$/;
 
 describe("DEFAULT_ACTIVITY_TYPES — data contract", () => {
-  it("defines exactly the 12 requested default types", () => {
-    expect(DEFAULT_ACTIVITY_TYPES).toHaveLength(12);
+  it("defines exactly the 13 requested default types", () => {
+    expect(DEFAULT_ACTIVITY_TYPES).toHaveLength(13);
     expect(DEFAULT_ACTIVITY_TYPES.map((t) => t.label)).toEqual([
       "Call",
       "Meeting",
       "Email",
       "Task",
       "Note",
+      // Logged automatically by the LinkedIn extension — one per prospect per
+      // calendar day. See lib/services/activities/linkedin-conversation-activity.ts.
+      "LinkedIn Conversation",
       "WhatsApp",
       "Demo",
       "Site Visit",
@@ -135,8 +138,8 @@ describe("ensureDefaultActivityTypes", () => {
     return call?.data ?? [];
   }
 
-  it("seeds all 12 types and their fields on an empty org", async () => {
-    // No existing types; the re-fetch after create returns the 12 new ones.
+  it("seeds all default types and their fields on an empty org", async () => {
+    // No existing types; the re-fetch after create returns all the new ones.
     db.crmActivityType.findMany
       .mockResolvedValueOnce([] as never) // load existing → none
       .mockResolvedValueOnce(
@@ -150,14 +153,14 @@ describe("ensureDefaultActivityTypes", () => {
     await ensureDefaultActivityTypes("t1");
 
     const typeData = createdData(db.crmActivityType.createMany);
-    expect(typeData).toHaveLength(12);
+    expect(typeData).toHaveLength(DEFAULT_ACTIVITY_TYPES.length);
     expect(new Set(typeData.map((d) => d.code))).toEqual(
       new Set(DEFAULT_ACTIVITY_TYPES.map((t) => t.code)),
     );
     expect(createdData(db.crmActivityFieldDefinition.createMany)).toHaveLength(ALL_FIELDS);
   });
 
-  it("BUG REPRO: org with only custom types (Linkedin/Upwork) backfills the 12 defaults and leaves customs untouched", async () => {
+  it("BUG REPRO: org with only custom types (Linkedin/Upwork) backfills the defaults and leaves customs untouched", async () => {
     // Existing org state: two admin-created custom types, none of the defaults.
     db.crmActivityType.findMany
       .mockResolvedValueOnce([
@@ -175,8 +178,8 @@ describe("ensureDefaultActivityTypes", () => {
     await ensureDefaultActivityTypes("t1");
 
     const typeData = createdData(db.crmActivityType.createMany);
-    // Exactly the 12 defaults are created — NOT the existing customs.
-    expect(typeData).toHaveLength(12);
+    // Exactly the defaults are created — NOT the existing customs.
+    expect(typeData).toHaveLength(DEFAULT_ACTIVITY_TYPES.length);
     const createdCodes = new Set(typeData.map((d) => d.code));
     expect(createdCodes).toEqual(new Set(DEFAULT_ACTIVITY_TYPES.map((t) => t.code)));
     expect(createdCodes.has("linkedin")).toBe(false);
@@ -184,7 +187,7 @@ describe("ensureDefaultActivityTypes", () => {
   });
 
   it("no-ops writes when every default type and field already exists", async () => {
-    // All 12 defaults present, each with all its default field keys.
+    // All defaults present, each with all its default field keys.
     const existing = DEFAULT_ACTIVITY_TYPES.map((t, i) => ({ id: `type-${i}`, code: t.code }));
     db.crmActivityType.findMany.mockResolvedValueOnce(existing as never);
     db.crmActivityFieldDefinition.findMany.mockResolvedValue(
@@ -221,7 +224,7 @@ describe("ensureDefaultActivityTypes", () => {
     );
     await ensureDefaultActivityTypes("t1");
 
-    // No new types (all 12 codes present).
+    // No new types (all default codes present).
     expect(db.crmActivityType.createMany).not.toHaveBeenCalled();
     // Only call's missing fields are created — keyed to its id, matching its field keys.
     const fieldData = createdData(db.crmActivityFieldDefinition.createMany);

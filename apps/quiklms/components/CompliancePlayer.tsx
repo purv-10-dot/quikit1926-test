@@ -1,6 +1,6 @@
 'use client';
 /**
- * CompliancePlayer — ported from the old QuikSkills frontend
+ * CompliancePlayer — ported from the old QuikLMSs frontend
  * (`src/components/CompliancePlayer.tsx`).
  *
  * Compliance-gated content player:

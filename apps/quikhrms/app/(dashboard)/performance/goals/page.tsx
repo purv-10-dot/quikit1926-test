@@ -101,7 +101,7 @@ export default function GoalsPage() {
 
   const { data: employeesData } = useQuery({
     queryKey: ["employees-for-goals"],
-    queryFn: () => api.get<Array<{ id: string; firstName: string; lastName: string; employeeCode: string }>>("/api/v1/hrms/employees?limit=200"),
+    queryFn: () => api.get<Array<{ id: string; firstName: string; lastName: string; employeeCode: string }>>("/api/v1/hrms/employees?limit=1000&picker=1"),
   });
   const employees = employeesData?.data ?? [];
 

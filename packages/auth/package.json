@@ -24,7 +24,8 @@
     "./assign-app-roles": "./assign-app-roles.ts",
     "./accept-invitation": "./accept-invitation.ts",
     "./invite-redirect": "./invite-redirect.ts",
-    "./app-access": "./app-access.ts"
+    "./app-access": "./app-access.ts",
+    "./mobile": "./mobile.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -36,6 +37,8 @@
     "@quikit/redis": "*",
     "@quikit/shared": "*",
     "bcryptjs": "^2.4.3",
+    "google-auth-library": "^9.15.1",
+    "jose": "^5.10.0",
     "next-auth": "^4.24.0"
   },
   "devDependencies": {

@@ -45,4 +45,5 @@ export const PATCH = withOrgAuth<{ id: string }>(
     });
     return NextResponse.json({ success: true, data: updated });
   },
+  { allowAgentJwt: true },
 );

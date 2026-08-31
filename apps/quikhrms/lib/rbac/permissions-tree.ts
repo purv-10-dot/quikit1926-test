@@ -56,7 +56,7 @@ export const PERMISSION_TREE: PermModule[] = [
     key: "Org",
     label: "Organization",
     leaves: [
-      { resource: "Org", label: "Departments / Teams / Designations / Grades", actions: { view: c("hrms.org.read"), create: c("hrms.org.write"), update: c("hrms.org.write"), delete: NO } },
+      { resource: "Org", label: "Departments / Designations / Work Locations", actions: { view: c("hrms.org.read"), create: c("hrms.org.write"), update: c("hrms.org.write"), delete: NO } },
     ],
   },
   {
@@ -107,8 +107,9 @@ export const PERMISSION_TREE: PermModule[] = [
     key: "Recruit",
     label: "Recruitment",
     leaves: [
-      { resource: "Recruit.Requisition", label: "Job Requisitions", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.requisition.write"), update: c("hrms.recruit.requisition.write"), delete: NO } },
-      { resource: "Recruit.Candidate", label: "Candidates", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.candidate.write"), update: c("hrms.recruit.candidate.write"), delete: NO } },
+      { resource: "Recruit.Requisition", label: "Job Requisitions (All)", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.requisition.write"), update: c("hrms.recruit.requisition.write"), delete: NO } },
+      { resource: "Recruit.Requisition.Self", label: "Job Openings, Candidates & Pipeline (Own)", actions: { view: c("hrms.recruit.read_self"), create: NO, update: NO, delete: NO } },
+      { resource: "Recruit.Candidate", label: "Candidates (All)", actions: { view: c("hrms.recruit.read"), create: c("hrms.recruit.candidate.write"), update: c("hrms.recruit.candidate.write"), delete: NO } },
       { resource: "Recruit.Interview", label: "Interviews", actions: { view: NO, create: c("hrms.recruit.interview"), update: c("hrms.recruit.interview"), delete: NO } },
       { resource: "Recruit.Offer", label: "Offers", actions: { view: NO, create: c("hrms.recruit.offer"), update: c("hrms.recruit.offer"), delete: NO } },
       { resource: "Recruit.Approve", label: "Approve Requisitions", actions: { view: NO, create: NO, update: c("hrms.recruit.approve"), delete: NO } },
@@ -166,6 +167,20 @@ export const PERMISSION_TREE: PermModule[] = [
     ],
   },
   {
+    key: "Payroll",
+    label: "Payroll",
+    leaves: [
+      { resource: "Payroll", label: "Payroll & Compensation (Read-only)", actions: { view: c("hrms.payroll.read"), create: NO, update: NO, delete: NO } },
+    ],
+  },
+  {
+    key: "Tasks",
+    label: "Tasks",
+    leaves: [
+      { resource: "Tasks", label: "All Tasks (Org-wide)", actions: { view: c("hrms.task.read_all"), create: NO, update: NO, delete: NO } },
+    ],
+  },
+  {
     key: "Audit",
     label: "Audit",
     leaves: [
@@ -178,6 +193,7 @@ export const PERMISSION_TREE: PermModule[] = [
     leaves: [
       { resource: "Settings", label: "Tenant Settings",       actions: { view: c("hrms.settings.read"), create: NO, update: c("hrms.settings.write"), delete: NO } },
       { resource: "RBAC",     label: "Roles & Permissions",   actions: { view: NO, create: NO, update: c("hrms.rbac.manage"), delete: NO } },
+      { resource: "Users",    label: "Invite Users",          actions: { view: c("hrms.user.invite"), create: c("hrms.user.invite"), update: NO, delete: NO } },
     ],
   },
 ];
@@ -219,7 +235,6 @@ export const NAV_TREE: NavGroup[] = [
     // grantable (gated in expenses/_components/expense-tabs.tsx).
     items: [
       { key: "expenses.claims", label: "Claims" },
-      { key: "expenses.approvals", label: "Approvals" },
       { key: "expenses.policies", label: "Policies" },
       { key: "expenses.reports", label: "Reports" },
     ],
@@ -231,7 +246,7 @@ export const NAV_TREE: NavGroup[] = [
       // Directory is one sidebar link opening a tabbed page (gated in org-chart/page.tsx).
       { key: "people.directory.list", label: "Directory" },
       { key: "people.directory.orgchart", label: "Org Chart" },
-      { key: "people.history", label: "Employment Logs" },
+      { key: "people.history", label: "Employee Log" },
       { key: "people.delegations", label: "Delegations" },
       { key: "people.pre-onboarding", label: "Pre-Onboarding" },
       { key: "people.onboarding", label: "Onboarding" },
@@ -253,7 +268,6 @@ export const NAV_TREE: NavGroup[] = [
       { key: "time.attendance-admin", label: "Team Attendance" },
       { key: "time.regularizations", label: "Approve Regularizations" },
       { key: "time.roster", label: "Shift Roster" },
-      { key: "time.shifts", label: "Shifts" },
     ],
   },
   {
@@ -261,7 +275,7 @@ export const NAV_TREE: NavGroup[] = [
     label: "Leaves",
     items: [
       { key: "leave.my", label: "My Leaves" },
-      { key: "leave.team", label: "Team Leaves" },
+      { key: "leave.team", label: "Team Approvals" },
       { key: "leave.calendar", label: "Leave Calendar" },
       // Leave Settings is a single sidebar link that opens a tabbed page; each
       // tab below is individually grantable (gated in leaves/policies/page.tsx).

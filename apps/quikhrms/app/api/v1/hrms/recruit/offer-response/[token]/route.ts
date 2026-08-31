@@ -6,6 +6,7 @@ import { resolveAndSend } from "@/lib/email/resolve";
 import { buildOfferResponseEmail } from "@/lib/email-templates/offer-response";
 import { publishNotification } from "@/lib/services/realtime";
 import { rateLimitOrResponse, clientIp } from "@/lib/rate-limit";
+import { convertApplicationToEmployee } from "@/lib/services/onboard-application";
 
 // PUBLIC (token-gated, no login) — the offer accept/decline page a candidate
 // opens from the emailed link. Mirrors the exit-interview token flow.
@@ -101,6 +102,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if (!accepted) data.status = "AppDeclined";
 
   await prisma.jobApplication.update({ where: { id: app.id }, data });
+
+  // Auto-convert to Employee the moment the candidate accepts — no HR click
+  // needed. The Employee stays hidden (status "PreBoarding") from the
+  // directory and Pipeline's Hired column until HR later clicks "Confirm
+  // Employee" at the end of the Onboarding checklist. Best-effort: never
+  // blocks the candidate's own accept/decline response.
+  if (accepted) {
+    try {
+      await convertApplicationToEmployee(app.orgId, "candidate-offer-accept", app.id);
+    } catch (e) {
+      console.error("auto-onboard on candidate offer-accept failed:", e);
+    }
+  }
 
   void fireWorkflow({
     orgId: app.orgId,

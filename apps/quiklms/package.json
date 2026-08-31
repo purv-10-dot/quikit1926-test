@@ -3,7 +3,7 @@
   "name": "quiklms",
   "version": "1.0.0",
   "private": true,
-  "description": "QuikSkill LMS — unified Next.js (App Router) + PostgreSQL/Prisma re-platform",
+  "description": "QuikLMS LMS — unified Next.js (App Router) + PostgreSQL/Prisma re-platform",
   "workspaces": [
     "worker"
   ],

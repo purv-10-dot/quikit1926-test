@@ -81,9 +81,20 @@ export async function PUT(req: Request) {
     );
   }
 
+  // orgId is NOT NULL on the table. Without it the create half of this upsert
+  // fails with P2011 — which only shows up for a user who has never saved
+  // settings before, since the update half never touches the column.
+  const orgId = session.user.orgId;
+  if (!orgId) {
+    return NextResponse.json(
+      { error: "No organization selected for this session" },
+      { status: 400 }
+    );
+  }
+
   const settings = await prisma.emailReportSettings.upsert({
     where: { userId: session.user.id },
-    create: { userId: session.user.id, enabled, recipients, frequency },
+    create: { userId: session.user.id, orgId, enabled, recipients, frequency },
     update: { enabled, recipients, frequency },
   });
 

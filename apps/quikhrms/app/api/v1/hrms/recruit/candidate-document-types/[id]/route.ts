@@ -13,7 +13,6 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     const body = await req.json().catch(() => ({}));
     const update: Record<string, unknown> = { updatedBy: userId };
     if (typeof body.name === "string" && body.name.trim()) update.name = body.name.trim();
-    if (body.bundle === "PreOffer" || body.bundle === "PostOffer") update.bundle = body.bundle;
     if (typeof body.isRequired === "boolean") update.isRequired = body.isRequired;
     if (typeof body.isActive === "boolean") update.isActive = body.isActive;
     if (typeof body.helpText === "string" || body.helpText === null) update.helpText = body.helpText?.trim?.() || null;

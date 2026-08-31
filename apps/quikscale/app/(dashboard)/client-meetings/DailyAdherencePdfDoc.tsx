@@ -13,6 +13,7 @@ import { summarizeAdherence } from "@/lib/ai/dailyAdherenceFormat";
 
 type AdherenceRow = NonNullable<StoredMeetingReport["adherence"]>[number];
 
+
 const RATING_COLOR: Record<string, { bg: string; text: string }> = {
   YES: { bg: "#F0FDF4", text: "#166534" },
   PARTIAL: { bg: "#FFFBEB", text: "#92400E" },

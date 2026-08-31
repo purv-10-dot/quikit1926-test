@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
+import { WatchButton } from "@/components/issue-full-view/watch-button";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { sanitizeRichText } from "@/lib/sanitize";
 import {
@@ -29,8 +31,6 @@ import {
   Plus,
   MoreHorizontal,
   Lock,
-  Eye,
-  Share2,
   ZapIcon,
   SlidersHorizontal,
   Link2,
@@ -48,6 +48,17 @@ import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { IssueDevelopment } from "@/components/issue-full-view/issue-development";
+import { QuikTestResultsPanel } from "@/components/issue-full-view/quiktest-results-panel";
+import { ChildWorkItems } from "@/components/issue-full-view/child-work-items";
+import { IssueTitleEditor } from "@/components/issue-title-editor";
+import { CopyIssueLinkButton } from "@/components/copy-issue-link-button";
+import {
+  IssueAppsMenu,
+  loadIssueApps,
+  onIssueAppsChanged,
+  saveIssueApps,
+  type IssueApp,
+} from "@/components/issue-apps-menu";
 import { DescriptionAttachments } from "@/components/description-attachments";
 import { RichTextView } from "@/components/rich-text-view";
 import { WorkflowStatusControl } from "@/components/workflow-status-control";
@@ -87,6 +98,12 @@ interface EpicOption {
   id: string;
   key: string;
   title: string;
+}
+
+interface ReleaseOption {
+  id: string;
+  name: string;
+  status: string;
 }
 
 interface IssueFull {
@@ -285,6 +302,7 @@ export function EditIssueModal({
   // controls the user can't actually use.
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
+  const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
@@ -299,9 +317,13 @@ export function EditIssueModal({
   const [members, setMembers] = useState<Member[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [epics, setEpics] = useState<EpicOption[]>([]);
+  const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  const [issueReleaseIds, setIssueReleaseIds] = useState<string[]>([]);
 
+  // `title` is still tracked because other parts of this component read it (the
+  // header, and the subtask-create flow). The editing FLAG moved into
+  // IssueTitleEditor, which owns its own draft state.
   const [title, setTitle] = useState("");
-  const [titleEditing, setTitleEditing] = useState(false);
   const [description, setDescription] = useState("");
   const [descEditing, setDescEditing] = useState(false);
   const [statusId, setStatusId] = useState("");
@@ -370,6 +392,12 @@ export function EditIssueModal({
   const [loading, setLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [subtasksOpen, setSubtasksOpen] = useState(true);
+
+  // Apps attached to this work item (QuikTest). Read AFTER mount — localStorage is
+  // unavailable during SSR, so seeding state from it directly would hydrate with
+  // different markup than the server rendered.
+  const [issueApps, setIssueApps] = useState<Set<IssueApp>>(new Set());
+  const quikTestAdded = issueApps.has("quiktest");
 
   // Subtasks state — managed independently so we can paginate by scroll.
   interface SubtaskRow {
@@ -497,6 +525,18 @@ export function EditIssueModal({
     void loadSubtasks(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentIssueId]);
+
+  // Attached apps are per work item, and the drawer swaps issues without
+  // remounting — so this reloads on every change rather than only on first open.
+  useEffect(() => {
+    if (!currentIssueId) return;
+    setIssueApps(loadIssueApps(currentIssueId));
+    // Also react to a change made on the full page behind this drawer, or in
+    // another tab.
+    return onIssueAppsChanged(currentIssueId, () =>
+      setIssueApps(loadIssueApps(currentIssueId)),
+    );
+  }, [currentIssueId]);
   // IntersectionObserver-based scroll pagination.
   useEffect(() => {
     const el = subtaskSentinelRef.current;
@@ -613,8 +653,10 @@ export function EditIssueModal({
       fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
       fetch(`/api/sprints?projectId=${projectId}&limit=50`).then((r) => r.json()),
       fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=100`).then((r) => r.json()),
+      fetch(`/api/releases?projectId=${projectId}&limit=50`).then((r) => r.json()),
+      fetch(`/api/issues/${currentIssueId}/releases`).then((r) => r.json()),
     ])
-      .then(([i, s, m, sp, ep]) => {
+      .then(([i, s, m, sp, ep, rel, issueRel]) => {
         if (!alive) return;
         if (i?.success && i.data) {
           const d = i.data as IssueFull;
@@ -653,6 +695,15 @@ export function EditIssueModal({
             title: e.title,
           })),
         );
+        const releaseData = rel?.success ? rel.data ?? [] : [];
+        setReleases(
+          releaseData.map((r: { id: string; name: string; status: string }) => ({
+            id: r.id,
+            name: r.name,
+            status: r.status,
+          })),
+        );
+        setIssueReleaseIds(issueRel?.success ? (issueRel.data as string[]) ?? [] : []);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -672,7 +723,35 @@ export function EditIssueModal({
         body: JSON.stringify(body),
       }).then((r) => r.json());
       if (res?.success) {
-        setIssue((cur) => (cur ? { ...cur, ...body } : cur));
+        // Merge the SERVER's returned row, not just the fields we sent — a
+        // status change can run workflow post-functions (e.g. "Assign to
+        // current user") that mutate other columns (assigneeId / resolution)
+        // server-side. Trusting only `body` would leave those stale until a
+        // manual refresh. Fall back to the local merge if no data came back.
+        const serverData = (res.data ?? null) as Partial<IssueFull> | null;
+        setIssue((cur) => (cur ? { ...cur, ...body, ...(serverData ?? {}) } : cur));
+        // Reflect post-function changes in the panel's own field states (they're
+        // tracked separately from `issue`): assignee, and description (e.g. a
+        // "Copy Summary → Description" rule). Don't stomp a description the user
+        // is actively editing.
+        if (serverData && "assigneeId" in serverData) {
+          setAssigneeId((serverData.assigneeId as string | null) ?? "");
+        }
+        if (serverData && "description" in serverData && !descEditing) {
+          setDescription((serverData.description as string | null) ?? "");
+        }
+        // A status change can run post-functions that ADD a comment and always
+        // writes a history row — both live in separate React Query caches that
+        // IssueActivity reads. Invalidate them so the Activity feed shows the
+        // workflow's comment / status-change entry without a manual refresh.
+        if ("statusId" in body) {
+          void queryClient.invalidateQueries({
+            queryKey: ["quiktrack", "issue-comments", issue.id],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["quiktrack", "issue-history", issue.id],
+          });
+        }
         // Carry the issue's resulting sprint so listeners (the backlog) can also
         // refresh the DESTINATION section on a sprint move — not just the source
         // the issue was found in. Falls back to the current sprint for non-move
@@ -688,6 +767,25 @@ export function EditIssueModal({
       } else {
         // The change didn't persist (e.g. a field that's read-only for the
         // caller's role). Surface it instead of silently losing the edit.
+        showToast(res?.error || "That change couldn't be saved.", "error");
+      }
+    } catch {
+      showToast("Couldn't save your change. Please try again.", "error");
+    }
+  }
+
+  // Fix versions live in a separate many-to-many join (QtIssueRelease), not a
+  // column on QtIssue, so they get their own PUT rather than going through
+  // the generic `patch()` PATCH helper.
+  async function patchReleases(releaseIds: string[]) {
+    if (!issue) return;
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/releases`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ releaseIds }),
+      }).then((r) => r.json());
+      if (!res?.success) {
         showToast(res?.error || "That change couldn't be saved.", "error");
       }
     } catch {
@@ -951,6 +1049,7 @@ export function EditIssueModal({
                       >
                         {issue.key}
                       </Link>
+                      <CopyIssueLinkButton issueKey={issue.key} />
                       {typeMenuOpen && (
                         <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
                           <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
@@ -995,23 +1094,11 @@ export function EditIssueModal({
                       >
                         {issue.key}
                       </Link>
+                      <CopyIssueLinkButton issueKey={issue.key} />
                     </span>
                   )}
                 </div>
-                {/* <div className="inline-flex items-center gap-1 text-gray-500">
-                  <button className="p-1 hover:bg-gray-100 rounded" aria-label="Lock">
-                    <Lock className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="p-1 rounded bg-blue-50 text-blue-600" aria-label="Watching">
-                    <Eye className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="p-1 hover:bg-gray-100 rounded" aria-label="Share">
-                    <Share2 className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="p-1 hover:bg-gray-100 rounded" aria-label="More">
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                </div> */}
+                <WatchButton issueId={issue.id} projectId={projectId} />
               </div>
 
               {/* Time-exceeded banner — shows when total logged hours
@@ -1037,40 +1124,17 @@ export function EditIssueModal({
                 );
               })()}
 
-              {/* Title */}
-              {titleEditing ? (
-                <input
-                  autoFocus
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onBlur={() => {
-                    setTitleEditing(false);
-                    if (title.trim() && title !== issue.title) {
-                      void patch({ title: title.trim() });
-                    } else {
-                      setTitle(issue.title);
-                    }
+              {/* Title — shared editor with the full page, so ✓/✕ behave identically. */}
+              <div className="mb-3">
+                <IssueTitleEditor
+                  value={issue.title}
+                  canUpdate={canUpdateIssue}
+                  onSave={(next) => {
+                    setTitle(next);
+                    void patch({ title: next });
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    if (e.key === "Escape") {
-                      setTitle(issue.title);
-                      setTitleEditing(false);
-                    }
-                  }}
-                  className="w-full text-2xl font-semibold text-gray-900 px-2 py-1 -ml-2 border border-blue-500 rounded focus:outline-none"
                 />
-              ) : (
-                <h1
-                  onClick={() => canUpdateIssue && setTitleEditing(true)}
-                  className={`text-2xl font-semibold text-gray-900 mb-3 px-2 py-1 -ml-2 rounded ${
-                    canUpdateIssue ? "cursor-text hover:bg-gray-50" : "cursor-default"
-                  }`}
-                >
-                  {title}
-                </h1>
-              )}
-
+              </div>
               {/* Action toolbar: Add, More, Status, lightning */}
               <div className="flex items-center gap-2 mb-5">
                 {/* <button className="inline-flex items-center justify-center h-7 w-7 rounded border border-gray-300 hover:bg-gray-50 text-gray-600" aria-label="Add">
@@ -1095,6 +1159,17 @@ export function EditIssueModal({
                     onViewWorkflow={() =>
                       window.open(`/spaces/${projectId}/settings/workflows`, "_blank")
                     }
+                  />
+                )}
+
+                {/* Add apps (Jira parity) — attaches the QuikTest panel to this
+                    work item. Not permanently mounted: an item with no tests should
+                    not carry an empty test panel. */}
+                {issue?.id && (
+                  <IssueAppsMenu
+                    issueId={issue.id}
+                    apps={issueApps}
+                    onChange={setIssueApps}
                   />
                 )}
 
@@ -1406,12 +1481,42 @@ export function EditIssueModal({
               })()}
               {/* end Subtasks */}
 
+              {/* Child work items — Epics group their tasks/stories/bugs via
+                  epicId (not parentId), so they get this section in place of
+                  Subtasks. Lets you create a child already attached to the epic,
+                  or attach an existing one. */}
+              {issue?.type === "EPIC" && issue.id && issue.projectId && (
+                <ChildWorkItems epicId={issue.id} projectId={issue.projectId} />
+              )}
+
               {/* Linked work items */}
               {issue?.id && issue.projectId && (
                 <LinkedWorkItems
                   issueId={issue.id}
                   projectId={issue.projectId}
                   onOpenIssue={(id) => setCurrentIssueId(id)}
+                />
+              )}
+
+              {/* QuikTest results — the same panel the full view shows, as a
+                  COLLAPSIBLE section here because the drawer is narrow and this
+                  sits among several others. Only rendered once the app is added to
+                  the item (see the + menu in the header), matching how Jira treats
+                  Zephyr/TestRail panels. */}
+              {issue?.key && issue.projectId && quikTestAdded && (
+                <QuikTestResultsPanel
+                  issueKey={issue.key}
+                  projectId={issue.projectId}
+                  collapsible
+                  defaultOpen={false}
+                  // "Hide" DETACHES the app rather than setting a private flag, so
+                  // the + menu's checkmark and the panel can never disagree.
+                  onHide={() => {
+                    const next = new Set(issueApps);
+                    next.delete("quiktest");
+                    setIssueApps(next);
+                    saveIssueApps(issue.id, next);
+                  }}
                 />
               )}
 
@@ -1574,6 +1679,33 @@ export function EditIssueModal({
                       </DetailRow>
                     )}
 
+                    {/* Fix versions — Jira "Fix Version(s)": many-to-many, so
+                        Epics can carry them too (unlike Sprint, which is a
+                        single-assignment field epics don't participate in). */}
+                    {locked("releases") ? (
+                      <DetailRow label="Fix versions">
+                        <LockedChip>
+                          {issueReleaseIds
+                            .map((id) => releases.find((r) => r.id === id)?.name)
+                            .filter(Boolean)
+                            .join(", ") || "—"}
+                        </LockedChip>
+                      </DetailRow>
+                    ) : (
+                      <DetailRow label="Fix versions">
+                        <FixVersionsPicker
+                          releases={releases}
+                          value={issueReleaseIds}
+                          onChange={(ids) => {
+                            setIssueReleaseIds(ids);
+                            void patchReleases(ids);
+                          }}
+                          onCreated={(r) => setReleases((prev) => [...prev, r])}
+                          projectId={projectId}
+                        />
+                      </DetailRow>
+                    )}
+
                     <DetailRow label="Start date">
                       {(() => {
                         if (locked("startDate")) {
@@ -1697,6 +1829,34 @@ export function EditIssueModal({
                         );
                       })()}
                     </DetailRow>
+
+                    {/* QuikTest deep links — same fields as the full-page Details
+                        panel (issue-full-view/issue-details-panel.tsx). The drawer
+                        had been missing these since QuikTest shipped. Carries
+                        create+link params so the destination opens a NEW case/run
+                        already associated with this work item rather than a
+                        generic list — see use-link-issue-deeplink.ts /
+                        use-link-issue-run-deeplink.ts. */}
+                    {issue?.projectId && issue.key && (
+                      <>
+                        <DetailRow label="QuikTest: Cases">
+                          <Link
+                            href={`/spaces/${issue.projectId}/test?createCase=1&linkIssueId=${encodeURIComponent(issue.id)}&linkIssueKey=${encodeURIComponent(issue.key)}`}
+                            className="text-sm text-blue-700 hover:underline dark:text-blue-400"
+                          >
+                            Open QuikTest: Cases
+                          </Link>
+                        </DetailRow>
+                        <DetailRow label="QuikTest: Runs">
+                          <Link
+                            href={`/spaces/${issue.projectId}/test/runs?createRun=1&linkIssueKey=${encodeURIComponent(issue.key)}`}
+                            className="text-sm text-blue-700 hover:underline dark:text-blue-400"
+                          >
+                            Open QuikTest: Runs
+                          </Link>
+                        </DetailRow>
+                      </>
+                    )}
 
                     {customFields.length > 0 && (
                       <CustomFieldsSection
@@ -2639,6 +2799,179 @@ function SprintOption({
         active ? "bg-blue-50 border-l-2 border-blue-600" : "hover:bg-gray-50"
       }`}
     >
+      <span className="text-gray-800">{name}</span>
+    </button>
+  );
+}
+
+/**
+ * Jira-style "Fix versions" multi-select. Grouped by Unreleased/Released so
+ * the active release set is easy to scan, with an inline "+ Create new
+ * version" row (mirrors Jira's picker) that creates the release via the
+ * releases API and immediately selects it — no separate modal round trip.
+ */
+function FixVersionsPicker({
+  releases,
+  value,
+  onChange,
+  onCreated,
+  projectId,
+}: {
+  releases: ReleaseOption[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  onCreated: (release: ReleaseOption) => void;
+  projectId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false));
+
+  const selected = releases.filter((r) => value.includes(r.id));
+  const filtered = query
+    ? releases.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()))
+    : releases;
+  const unreleased = filtered.filter((r) => r.status === "UNRELEASED");
+  const other = filtered.filter((r) => r.status !== "UNRELEASED");
+
+  function toggle(id: string) {
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  }
+
+  async function createVersion() {
+    const name = query.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/releases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, name }),
+      }).then((r) => r.json());
+      if (res?.success) {
+        const created: ReleaseOption = { id: res.data.id, name: res.data.name, status: res.data.status };
+        onCreated(created);
+        onChange([...value, created.id]);
+        setQuery("");
+      } else {
+        showToast(res?.error || "Couldn't create the version.", "error");
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`text-sm text-left px-2 -mx-2 py-1 rounded w-full ${
+          open ? "border border-blue-500 ring-2 ring-blue-500 bg-white" : "hover:bg-gray-50"
+        }`}
+      >
+        {selected.length > 0 ? (
+          <span className="flex flex-wrap gap-1">
+            {selected.map((r) => (
+              <span
+                key={r.id}
+                className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-xs"
+              >
+                {r.name}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-gray-500">Select version</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-[320px] bg-white border border-gray-200 rounded shadow-lg z-50 max-h-80 overflow-hidden flex flex-col">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Select version"
+              className="w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="overflow-y-auto">
+            {unreleased.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-gray-500 uppercase">
+                  Unreleased
+                </div>
+                {unreleased.map((r) => (
+                  <FixVersionOption
+                    key={r.id}
+                    name={r.name}
+                    checked={value.includes(r.id)}
+                    onClick={() => toggle(r.id)}
+                  />
+                ))}
+              </>
+            )}
+            {other.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-gray-500 uppercase">
+                  Released
+                </div>
+                {other.map((r) => (
+                  <FixVersionOption
+                    key={r.id}
+                    name={r.name}
+                    checked={value.includes(r.id)}
+                    onClick={() => toggle(r.id)}
+                  />
+                ))}
+              </>
+            )}
+            {filtered.length === 0 && (
+              <div className="px-3 py-3 text-xs text-gray-500">No versions found.</div>
+            )}
+          </div>
+          {query.trim() && !releases.some((r) => r.name.toLowerCase() === query.trim().toLowerCase()) && (
+            <div className="border-t border-gray-100">
+              <button
+                type="button"
+                disabled={creating}
+                onClick={createVersion}
+                className="flex items-center gap-1.5 w-full px-3 py-2 text-sm text-left text-blue-600 hover:bg-blue-50 disabled:opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {creating ? "Creating…" : `Create new version "${query.trim()}"`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FixVersionOption({
+  name,
+  checked,
+  onClick,
+}: {
+  name: string;
+  checked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50"
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => undefined}
+        className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-400 pointer-events-none"
+      />
       <span className="text-gray-800">{name}</span>
     </button>
   );

@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { CrudTable, type Column } from "@/components/hrms/crud-table";
 import { Modal } from "@/components/hrms/modal";
+import { Select } from "@/components/hrms/ui/select";
 import { PageBackground } from "@/components/hrms/page-background";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { CITIES } from "@/lib/data/cities";
-import { ChevronDown, MapPin } from "lucide-react";
+
+/** Same composite-key pattern as the city dropdown itself — keeps same-named
+ * cities in different states/countries distinct (e.g. two "Springfield"s). */
+const cityKey = (c: { city: string; state: string; country: string }) => `${c.city}|${c.state}|${c.country}`;
 
 interface Loc {
   id: string;
@@ -88,13 +92,15 @@ export default function LocationsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-              <CityAutocomplete
-                value={form.city}
-                onChange={(city) => setForm({ ...form, city })}
-                onSelect={(rec) => setForm({
-                  ...form,
-                  city: rec.city, state: rec.state, country: rec.country, timezone: rec.timezone,
-                })}
+              <Select
+                value={form.city ? cityKey({ city: form.city, state: form.state, country: form.country }) : ""}
+                onChange={(v) => {
+                  const rec = CITIES.find((c) => cityKey(c) === v);
+                  if (rec) setForm({ ...form, city: rec.city, state: rec.state, country: rec.country, timezone: rec.timezone });
+                }}
+                searchable
+                placeholder="Search city..."
+                options={CITIES.map((c) => ({ value: cityKey(c), label: c.city, description: `${c.state}, ${c.country}` }))}
               />
             </div>
             <div>
@@ -130,71 +136,5 @@ export default function LocationsPage() {
         </form>
       </Modal>
     </>
-  );
-}
-
-function CityAutocomplete({
-  value, onChange, onSelect,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSelect: (r: typeof CITIES[number]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(value);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { setQuery(value); }, [value]);
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return CITIES.slice(0, 12);
-    return CITIES.filter((c) =>
-      c.city.toLowerCase().includes(q) ||
-      c.state.toLowerCase().includes(q) ||
-      c.country.toLowerCase().includes(q)
-    ).slice(0, 20);
-  }, [query]);
-
-  return (
-    <div className="relative" ref={ref}>
-      <div className="relative">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-          placeholder="Search city..."
-          className="w-full border border-[var(--border)] rounded-lg pl-3 pr-8 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
-        />
-        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-      </div>
-      {open && matches.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-auto">
-          {matches.map((r) => (
-            <button
-              type="button"
-              key={`${r.city}-${r.state}-${r.country}`}
-              onClick={() => { onSelect(r); setQuery(r.city); setOpen(false); }}
-              className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-[#dcfce7]"
-            >
-              <MapPin size={14} className="text-[#22c55e] mt-0.5 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-gray-900">{r.city}</div>
-                <div className="text-[11px] text-gray-500 truncate">{r.state} · {r.country} · {r.timezone}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

@@ -97,9 +97,34 @@ export interface WorkflowReadModel {
   draft: EditorDraft | null;
 }
 
+/**
+ * Coerce a persisted draft into a well-formed EditorDraft. A `draftJson` written
+ * by an OLDER build may lack fields the editor now treats as required arrays
+ * (e.g. a transition saved before `triggers`/`rules` existed). Reading
+ * `transition.triggers.length` on such a draft throws "Cannot read properties of
+ * undefined (reading 'length')" and trips the error boundary — intermittently,
+ * since it only affects workflows with an old-shape stored draft. Defaulting the
+ * arrays here makes the editor resilient to any historical draft shape.
+ */
+export function normalizeDraft(d: EditorDraft): EditorDraft {
+  return {
+    ...d,
+    statuses: (d.statuses ?? []).map((s) => ({
+      ...s,
+      properties: s.properties,
+    })),
+    transitions: (d.transitions ?? []).map((t) => ({
+      ...t,
+      fromStatusIds: t.fromStatusIds ?? [],
+      rules: t.rules ?? [],
+      triggers: t.triggers ?? [],
+    })),
+  };
+}
+
 /** Build an editor draft from the live read-model (used when no draft exists). */
 export function draftFromReadModel(rm: WorkflowReadModel): EditorDraft {
-  if (rm.draft) return rm.draft;
+  if (rm.draft) return normalizeDraft(rm.draft);
   const wf = rm.workflow;
   return {
     workflowId: wf.id,

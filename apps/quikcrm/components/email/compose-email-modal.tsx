@@ -22,6 +22,8 @@ export interface ComposePrefill {
   to?: string[];
   cc?: string[];
   subject?: string;
+  /** Pre-written HTML body (e.g. an AI draft). Empty for a blank compose. */
+  body?: string;
   /** CrmEmailMessage.id being replied to (threads the send). */
   inReplyToMessageId?: string;
 }
@@ -29,7 +31,14 @@ export interface ComposePrefill {
 interface Props {
   open: boolean;
   onClose: () => void;
-  relatedKind: "Lead" | "Contact" | "Account" | "Opportunity";
+  /**
+   * "Prospect" is accepted because the whole send path already supports it —
+   * ACTIVITY_PRIMARY_KINDS, sendEmailSchema and assertActivityTargetExists all
+   * list it. Only this prop's union was narrower.
+   */
+  relatedKind: "Lead" | "Contact" | "Account" | "Opportunity" | "Prospect";
+  /** Rendered above the form, e.g. to flag that the body is an AI draft. */
+  notice?: React.ReactNode;
   relatedObjectId: string;
   prefill?: ComposePrefill;
   onSent?: () => void;
@@ -41,6 +50,7 @@ export function ComposeEmailModal({
   relatedKind,
   relatedObjectId,
   prefill,
+  notice,
   onSent,
 }: Props) {
   const toast = useToast();
@@ -79,21 +89,25 @@ export function ComposeEmailModal({
     }
   }
 
-  const footer = hasMailbox ? (
+  // Close is always available; Send appears only once a mailbox is connected,
+  // so the form can be read and edited either way.
+  const footer = (
     <div className="flex justify-end gap-2">
       <button type="button" onClick={onClose} className="crm-btn-ghost text-sm">
-        Cancel
+        {hasMailbox ? "Cancel" : "Close"}
       </button>
-      <button
-        type="button"
-        onClick={send}
-        disabled={sending}
-        className="crm-btn-primary text-sm"
-      >
-        {sending ? "Sending…" : "Send"}
-      </button>
+      {hasMailbox && (
+        <button
+          type="button"
+          onClick={send}
+          disabled={sending}
+          className="crm-btn-primary text-sm"
+        >
+          {sending ? "Sending…" : "Send"}
+        </button>
+      )}
     </div>
-  ) : undefined;
+  );
 
   return (
     <Modal
@@ -103,18 +117,22 @@ export function ComposeEmailModal({
       width="max-w-2xl"
       footer={footer}
     >
-      {hasMailbox === false ? (
-        <div className="space-y-3 py-4 text-center">
+      {/* No mailbox blocks SENDING, not composing. The form still renders so a
+          pre-filled draft stays visible and copyable — hiding it would throw
+          away work the user already paid for (an AI draft is a model call) and
+          make a solvable setup problem look like a failed feature. */}
+      {hasMailbox === false && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-crm-border bg-crm-panel/40 px-3 py-2">
           <p className="text-sm text-crm-text">
-            Connect your mailbox to send email from the CRM.
+            Connect your mailbox to send this from the CRM.
           </p>
-          <Link href="/settings/email" className="crm-btn-primary inline-block text-sm">
+          <Link href="/settings/email" className="crm-btn-primary text-xs">
             Connect Mailbox
           </Link>
         </div>
-      ) : (
-        <EmailComposeFields value={value} onChange={setValue} />
       )}
+      {notice}
+      <EmailComposeFields value={value} onChange={setValue} />
     </Modal>
   );
 }

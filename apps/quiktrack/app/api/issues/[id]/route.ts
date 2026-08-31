@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
+import { notifyDirect, notifyWatchers, isEmailEnabled } from "@/lib/notifications/notify";
 import {
   executeTransition,
   postFunctionPatchToPrisma,
@@ -28,6 +29,30 @@ import {
 } from "@/lib/services/customFieldValues";
 import { renderCfValue } from "@/lib/customFields/render";
 import type { FieldValue } from "@/lib/customFields/registry";
+import { resolveIssueIdOrKey } from "@/lib/mcp/resolveIssue";
+
+/* ──────────────── `[id]` accepts a cuid OR an issue key ────────────────
+ *
+ * Every handler in this file resolves the path parameter through
+ * `resolveIssueIdOrKey` FIRST and then uses the resolved cuid — the raw
+ * `params.id` must never reach a query. That is not style: three of the
+ * queries below filter by the issue id without going through the initial
+ * lookup, and a key reaching them returns the WRONG ANSWER rather than an
+ * error —
+ *
+ *   • GET's subtasks (`parentId`) and time logs (`issueId`) → empty arrays
+ *     inside a 200. A plausible, silently incorrect payload.
+ *   • DELETE's epic-child unlink (`epicId`) and subtask cascade (`parentId`)
+ *     → children silently untouched before the final update throws.
+ *
+ * `__tests__/unit/issue-id-resolution-guard.test.ts` enforces this
+ * mechanically: in any route that carries the resolver, every `params.id`
+ * must be an argument to `resolveIssueIdOrKey`.
+ *
+ * The resolver is org-scoped by its first argument, which must always be
+ * `ctx.orgId` and never a request value — this is a lookup by a
+ * human-guessable identifier, so cross-org leakage is the risk it prevents.
+ */
 
 async function loadIssueForTenant(orgId: string, issueId: string) {
   return db.qtIssue.findFirst({
@@ -42,7 +67,12 @@ async function loadIssueForTenant(orgId: string, issueId: string) {
 
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
-    const issue = await loadIssueForTenant(orgId, params.id);
+    const resolved = await resolveIssueIdOrKey(orgId, params.id);
+    if (!resolved) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const issueId = resolved.id;
+    const issue = await loadIssueForTenant(orgId, issueId);
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
@@ -55,7 +85,7 @@ export const GET = withOrgAuth<{ id: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const subtasks = await db.qtIssue.findMany({
-      where: { parentId: params.id, isDeleted: false },
+      where: { parentId: issueId, isDeleted: false },
       orderBy: { orderInColumn: "asc" },
       select: {
         id: true,
@@ -70,7 +100,7 @@ export const GET = withOrgAuth<{ id: string }>(
       },
     });
     const timeLogs = await db.qtTimesheetEntry.findMany({
-      where: { issueId: params.id, isDeleted: false },
+      where: { issueId, isDeleted: false },
       orderBy: { entryDate: "desc" },
       take: 50,
       select: {
@@ -103,14 +133,22 @@ export const GET = withOrgAuth<{ id: string }>(
       },
     });
   },
+  // AI Runtime: agent-JWT opt-in (manifest read op `get_issue`). Reads only —
+  // the PATCH/DELETE below deliberately stay session/API-token.
+  { allowAgentJwt: true },
 );
 
 export const PATCH = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
+    const resolved = await resolveIssueIdOrKey(orgId, params.id);
+    if (!resolved) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const issueId = resolved.id;
     // Snapshot enough of the pre-update issue to detect what changed
     // (assignee, status) so we can fire the right notification emails.
     const issue = await db.qtIssue.findFirst({
-      where: { id: params.id, orgId: orgId, isDeleted: false },
+      where: { id: issueId, orgId: orgId, isDeleted: false },
       select: {
         id: true,
         key: true,
@@ -254,7 +292,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     // roll back together (WF-4.2/4.3, parity with /move).
     const updated = await db.$transaction(async (tx) => {
       const issueAfter = await tx.qtIssue.update({
-        where: { id: params.id },
+        where: { id: issueId },
         data: {
           ...allowedFields,
           startDate: dateValue("startDate"),
@@ -379,6 +417,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
 
     return NextResponse.json({ success: true, data: updated });
   },
+  { allowAgentJwt: true },
 );
 
 /**
@@ -398,6 +437,7 @@ async function notifyOnUpdate(args: {
     const userIds = new Set<string>();
     if (args.actorUserId) userIds.add(args.actorUserId);
     if (args.assigneeChanged && args.after.assigneeId) userIds.add(args.after.assigneeId);
+    if (args.assigneeChanged && args.before.assigneeId) userIds.add(args.before.assigneeId);
     if (args.statusChanged && args.after.assigneeId) userIds.add(args.after.assigneeId);
 
     const [users, project, statusesNeeded] = await Promise.all([
@@ -432,23 +472,52 @@ async function notifyOnUpdate(args: {
       title: args.before.title,
       projectId: args.before.projectId,
       projectName: project?.name ?? null,
+      // Emailed deep-links carry the owning org (`?org=`) so a recipient whose
+      // session is on another org lands here instead of a 404.
+      orgId: args.orgId,
     };
+
+    const directRecipients: string[] = [];
 
     if (args.assigneeChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
-      if (a?.email) {
+      let emailSent = false;
+      if (a?.email && (await isEmailEnabled(args.after.assigneeId))) {
         await emailIssueAssigned({
           to: a.email,
           assigneeName: [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || null,
           issue: issueRef,
           reassignedBy: actorName,
         });
+        emailSent = true;
       }
+      directRecipients.push(args.after.assigneeId);
+      // Auto-watch: a newly assigned person starts watching, matching Jira.
+      // skipDuplicates so re-assigning back to an existing (manual or auto)
+      // watcher is a no-op rather than an error.
+      await db.qtIssueWatcher
+        .createMany({
+          data: [{ orgId: args.orgId, issueId: issueRef.id, userId: args.after.assigneeId, source: "AUTO" }],
+          skipDuplicates: true,
+        })
+        .catch((e) => console.error("[watch] auto-watch on assign failed:", e));
+      await notifyDirect({
+        orgId: args.orgId,
+        recipientId: args.after.assigneeId,
+        actorId: args.actorUserId,
+        type: "ASSIGNED",
+        projectId: issueRef.projectId,
+        issueId: issueRef.id,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        emailSent,
+      });
     }
 
     if (args.statusChanged && args.after.assigneeId) {
       const a = userById.get(args.after.assigneeId);
-      if (a?.email) {
+      let emailSent = false;
+      if (a?.email && (await isEmailEnabled(args.after.assigneeId))) {
         await emailIssueStatusChanged({
           to: a.email,
           recipientName: [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || null,
@@ -457,7 +526,57 @@ async function notifyOnUpdate(args: {
           toStatus: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
           changedBy: actorName,
         });
+        emailSent = true;
       }
+      directRecipients.push(args.after.assigneeId);
+      await notifyDirect({
+        orgId: args.orgId,
+        recipientId: args.after.assigneeId,
+        actorId: args.actorUserId,
+        type: "STATUS_CHANGED",
+        projectId: issueRef.projectId,
+        issueId: issueRef.id,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: statusById.get(args.before.statusId)?.name ?? null,
+        toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
+        emailSent,
+      });
+    }
+
+    if (args.assigneeChanged) {
+      const nameOf = (id: string | null) => {
+        if (!id) return "Unassigned";
+        const u = userById.get(id);
+        return u ? [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email : "Unassigned";
+      };
+      await notifyWatchers({
+        orgId: args.orgId,
+        issueId: issueRef.id,
+        actorId: args.actorUserId,
+        type: "REASSIGNED",
+        projectId: issueRef.projectId,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: nameOf(args.before.assigneeId),
+        toValue: nameOf(args.after.assigneeId),
+        skipRecipientIds: directRecipients,
+      });
+    }
+
+    if (args.statusChanged) {
+      await notifyWatchers({
+        orgId: args.orgId,
+        issueId: issueRef.id,
+        actorId: args.actorUserId,
+        type: "STATUS_CHANGED",
+        projectId: issueRef.projectId,
+        issueKey: issueRef.key,
+        issueTitle: issueRef.title,
+        fromValue: statusById.get(args.before.statusId)?.name ?? null,
+        toValue: statusById.get(args.after.statusId)?.name ?? args.after.statusId,
+        skipRecipientIds: directRecipients,
+      });
     }
   } catch (e) {
     console.error("[email] notifyOnUpdate failed:", e instanceof Error ? e.message : e);
@@ -469,8 +588,13 @@ export const DELETE = withOrgAuth<{ id: string }>(
     const subtaskMode = new URL(req.url).searchParams.get("subtaskMode") === "detach"
       ? "detach"
       : "cascade";
+    const resolved = await resolveIssueIdOrKey(orgId, params.id);
+    if (!resolved) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const issueId = resolved.id;
     const issue = await db.qtIssue.findFirst({
-      where: { id: params.id, orgId: orgId, isDeleted: false },
+      where: { id: issueId, orgId: orgId, isDeleted: false },
       select: {
         id: true,
         projectId: true,
@@ -511,7 +635,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
     const result = await db.$transaction(async (tx) => {
       if (issue.type === "EPIC") {
         await tx.qtIssue.updateMany({
-          where: { epicId: params.id, isDeleted: false },
+          where: { epicId: issueId, isDeleted: false },
           data: { epicId: null },
         });
       }
@@ -519,19 +643,19 @@ export const DELETE = withOrgAuth<{ id: string }>(
       let detachedChildCount = 0;
       if (subtaskMode === "detach") {
         const detach = await tx.qtIssue.updateMany({
-          where: { parentId: params.id, isDeleted: false },
+          where: { parentId: issueId, isDeleted: false },
           data: { parentId: null, updatedBy: userId },
         });
         detachedChildCount = detach.count;
       } else {
         const cascade = await tx.qtIssue.updateMany({
-          where: { parentId: params.id, isDeleted: false },
+          where: { parentId: issueId, isDeleted: false },
           data: { isDeleted: true, updatedBy: userId },
         });
         deletedChildCount = cascade.count;
       }
       await tx.qtIssue.update({
-        where: { id: params.id },
+        where: { id: issueId },
         data: { isDeleted: true, updatedBy: userId },
       });
       return { deletedChildCount, detachedChildCount };
@@ -544,10 +668,13 @@ export const DELETE = withOrgAuth<{ id: string }>(
     return NextResponse.json({
       success: true,
       data: {
-        id: params.id,
+        // The resolved cuid, never the caller's key — clients (and the AI
+        // Runtime) chain this id into follow-up calls.
+        id: issueId,
         deletedChildCount: result.deletedChildCount,
         detachedChildCount: result.detachedChildCount,
       },
     });
   },
+  { allowAgentJwt: true },
 );

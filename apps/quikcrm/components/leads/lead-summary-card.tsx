@@ -21,6 +21,13 @@ interface Lead {
   website?: string | null;
   updatedAt: string | Date;
   account?: { id: string; name: string } | null;
+  /**
+   * Ideal Customer Profile — reference (`icpId`) plus the joined name for display.
+   * Read-only here: the ICP is inherited from the prospect at conversion and is
+   * not editable from the lead detail page.
+   */
+  icpId?: string | null;
+  icp?: { id: string; name: string } | null;
 }
 
 export function LeadSummaryCard({ lead }: { lead: Lead }) {
@@ -56,6 +63,18 @@ export function LeadSummaryCard({ lead }: { lead: Lead }) {
 
       <Field label="Industry">
         <span>{lead.industry || "—"}</span>
+      </Field>
+
+      {/* ICP — READ-ONLY. Always rendered (not conditional on a value) so the
+          field is discoverable on leads that have none; shows "Not Assigned"
+          rather than being absent. Not a link/input: assignment happens on the
+          prospect before conversion, or via the API. */}
+      <Field label="ICP">
+        {lead.icp ? (
+          <span className="font-medium">{lead.icp.name}</span>
+        ) : (
+          <span className="text-crm-muted">Not Assigned</span>
+        )}
       </Field>
 
       {lead.status ? (

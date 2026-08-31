@@ -1081,7 +1081,7 @@ function JobOpeningDetailModal({ id, onClose }: { id: string; onClose: () => voi
             {r.jobDescription && (
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job Description</p>
-                <p className="text-gray-700 whitespace-pre-line leading-relaxed">{r.jobDescription}</p>
+                <div className="max-w-none whitespace-pre-line leading-relaxed text-gray-700">{r.jobDescription}</div>
               </div>
             )}
             {lists.map(([label, items]) =>

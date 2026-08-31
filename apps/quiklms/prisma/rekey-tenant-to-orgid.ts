@@ -1,7 +1,7 @@
 /**
  * Make QuikLMS orgId-native (quikscale parity, by VALUE).
  *
- * Two actions against the LMS db (quikskill_lms):
+ * Two actions against the LMS db (quiklms_lms):
  *   1. PURGE hardcoded demo tenants (fixed-UUID seed fixtures) and every row
  *      scoped to them across all `tenantId` tables.
  *   2. RE-KEY each remaining tenant that has a platform link (`orgId`) so that

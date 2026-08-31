@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pencil, ChevronDown } from "lucide-react";
 import { ComboSelect, type ComboOption } from "./combo-select";
+import { dueDateInputToISO } from "@/lib/utils/due-date";
 
 export interface BulkEditStatus {
   id: string;
@@ -118,10 +119,13 @@ export function BulkEditPopover({
     if (assignee) p.assigneeId = assignee === NONE ? null : assignee;
     if (priority) p.priority = priority;
     if (epic) p.epicId = epic === NONE ? null : epic;
+    // UTC midnight, matching the drawer and the backlog's inline due-date chip.
+    // Local midnight (the previous behaviour) lands on the day before in any
+    // zone ahead of UTC, so a bulk "due 12 Aug" showed as 11 Aug afterwards.
     if (clearStart) p.startDate = null;
-    else if (startDate) p.startDate = new Date(`${startDate}T00:00:00`).toISOString();
+    else if (startDate) p.startDate = dueDateInputToISO(startDate);
     if (clearDue) p.dueDate = null;
-    else if (dueDate) p.dueDate = new Date(`${dueDate}T00:00:00`).toISOString();
+    else if (dueDate) p.dueDate = dueDateInputToISO(dueDate);
     if (eta.trim() !== "") {
       const n = Number(eta);
       if (!Number.isNaN(n) && n >= 0) p.eta = n;

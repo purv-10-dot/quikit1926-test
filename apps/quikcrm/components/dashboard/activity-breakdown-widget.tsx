@@ -33,8 +33,14 @@ import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-f
 
 // ── fetchers ──────────────────────────────────────────────────────────────
 // Shared with role-kpi-grid: same key + same fetcher → react-query dedupes.
-async function fetchRoleMetrics(): Promise<{ success: boolean; data: RoleMetricsDto }> {
-  const res = await fetch("/api/dashboard/metrics", { credentials: "include" });
+async function fetchRoleMetrics(
+  qs: string,
+  tz: string,
+): Promise<{ success: boolean; data: RoleMetricsDto }> {
+  const res = await fetch(`/api/dashboard/metrics?${qs}`, {
+    credentials: "include",
+    headers: { "X-Client-TZ": tz },
+  });
   if (!res.ok) throw new Error(`Role metrics fetch failed (${res.status})`);
   return res.json() as Promise<{ success: boolean; data: RoleMetricsDto }>;
 }
@@ -154,12 +160,18 @@ function PerRepTable({ fields }: { fields: ActivityFieldAggregate[] }) {
 // ── widget ────────────────────────────────────────────────────────────────
 export const ActivityBreakdownWidget = memo(function ActivityBreakdownWidget({
   userRole: _userRole,
+  qs,
+  tz,
 }: {
   userRole: string;
+  /** Active dashboard filters — must match role-kpi-grid's so the shared
+   *  ["dashboard","role-metrics",qs] key still dedupes to ONE request. */
+  qs: string;
+  tz: string;
 }) {
   const metricsQuery = useQuery<{ success: boolean; data: RoleMetricsDto }>({
-    queryKey: ["dashboard", "role-metrics"],
-    queryFn: fetchRoleMetrics,
+    queryKey: ["dashboard", "role-metrics", qs],
+    queryFn: () => fetchRoleMetrics(qs, tz),
     staleTime: 60_000,
     refetchInterval: 60_000,
   });

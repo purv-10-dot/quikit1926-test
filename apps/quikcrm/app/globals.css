@@ -90,6 +90,22 @@
     @apply normal-case text-black;
   }
 
+  /* Opt-in column separators: a hairline between columns, running from the
+   * header through every body row. Deliberately lighter than `--crm-border`
+   * (#e2e8f0, used for the row rules) so the verticals read as a faint guide
+   * rather than a grid — the horizontal rules stay the dominant structure.
+   *
+   * Drawn with `border-left` on every cell EXCEPT the first (`:first-child`),
+   * so no line appears at the table's leading edge and the outer border is
+   * untouched. Using border-left rather than border-right means the trailing
+   * edge is also naturally free. Adds no width or height: a 1px left border on
+   * an already-padded cell does not change the rendered column widths or row
+   * heights. Scoped to `crm-table-col-dividers` so other tables are unaffected. */
+  .crm-table-col-dividers thead th:not(:first-child),
+  .crm-table-col-dividers tbody td:not(:first-child) {
+    border-left: 1px solid #f1f5f9; /* slate-100 — one step lighter than the row rules */
+  }
+
   /* Wraps a <table> to provide horizontal scroll on small viewports without
    * adding a scrollbar to the page. Pair with `crm-hscroll` if you want the
    * branded thin scrollbar. Use as the direct parent of <table>. */

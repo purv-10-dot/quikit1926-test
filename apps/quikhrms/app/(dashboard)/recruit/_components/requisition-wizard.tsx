@@ -7,7 +7,7 @@ import { useToast } from "@/components/hrms/toast";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon } from "lucide-react";
+import { Plus, X, Check, ChevronDown, Sparkles, Trash2, ArrowLeft, ArrowRight, Search as SearchIcon, GripVertical, HelpCircle } from "lucide-react";
 import { INDIAN_CITIES } from "@/lib/data/indian-cities";
 
 export interface DeptOption { id: string; name: string; code?: string | null; }
@@ -305,6 +305,11 @@ function calcEtaDays(startDate: string, endDate: string): number {
   const end = new Date(endDate + "T00:00:00").getTime();
   return Math.max(0, Math.ceil((end - start) / 86400000));
 }
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 const errRing = "border-red-400 focus:border-red-500 focus:ring-red-500/20";
 const errText = "text-[11px] text-red-600 mt-1";
 
@@ -394,6 +399,17 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.closedDate, form.targetJoiningDate]);
 
+  // End Date defaults to Start Date + the level's standard SLA (or the
+  // approved custom ETA, if overridden) — only while End Date is still
+  // empty, so this never clobbers a date HR has already picked/edited.
+  useEffect(() => {
+    if (!form.closedDate || form.targetJoiningDate) return;
+    const slaDays = form.customSlaDays ?? jobLevels.find((l) => l.id === form.jobLevelId)?.slaDays;
+    if (!slaDays) return;
+    setForm((p) => ({ ...p, targetJoiningDate: addDays(form.closedDate, slaDays) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.jobLevelId, form.closedDate, form.customSlaDays]);
+
   const empOpts: MSOption[] = employees.map((e) => ({
     value: e.id,
     label: (e.displayName?.trim() || `${e.firstName} ${e.lastName}`).trim(),
@@ -410,7 +426,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   const expRangeError = (form.experienceMin ?? 0) > 50 || (form.experienceMax ?? 0) > 50
     || (form.experienceMin != null && form.experienceMax != null && form.experienceMin > form.experienceMax);
   const expFilledIfRaise = !showJustification || (form.experienceMin != null && form.experienceMax != null);
-  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && justificationOk && jobLocationOk
+  const canStep1 = form.title.trim().length > 0 && !!form.departmentId && !!form.jobLevelId && justificationOk && jobLocationOk
     && expFilledIfRaise && (!showJustification || !expRangeError);
   // Raise mode never shows this step's fields — hiringManagerId is never
   // collected there, so it can't gate anything. pipelineId is still required,
@@ -579,7 +595,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             </div>
             <div className={clsx("grid grid-cols-2 gap-4", showJustification ? "md:grid-cols-6" : "md:grid-cols-4")}>
               <div>
-                <label className={reqLabel}>Level <span className="text-gray-400 font-normal">(optional)</span></label>
+                <label className={reqLabel}>Level <span className="text-red-500">*</span></label>
                 <Select value={form.jobLevelId} onChange={(v) => setForm({ ...form, jobLevelId: v })} searchable
                   placeholder={jobLevels.length === 0 ? "No levels — create under Settings → Job Levels" : "— Select —"}
                   options={jobLevels.map((l) => ({ value: l.id, label: `${l.code} — ${l.name}`, description: `${l.slaDays} day SLA` }))} />
@@ -682,7 +698,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     <Sparkles size={13} className={generating ? "animate-pulse" : ""} /> {generating ? "Generating…" : "Generate with AI"}
                   </button>
                 </div>
-                <textarea rows={3} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
+                <textarea rows={4} value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
                   placeholder="Overview of the role, scope and impact." className={clsx(reqInput, "resize-y")} />
               </div>
             )}
@@ -814,6 +830,9 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                     }}
                     className={clsx(reqInput, compErrors.targetJoiningDate && errRing)} />
                   {compErrors.targetJoiningDate && <p className={errText}>{compErrors.targetJoiningDate}</p>}
+                  {!compErrors.targetJoiningDate && form.jobLevelId && (
+                    <p className="mt-1 text-[11px] text-gray-400">Auto-filled from the Level's SLA — edit anytime.</p>
+                  )}
                 </div>
                 <div>
                   <label className={reqLabel}>Budget (LPA)</label>
@@ -846,39 +865,47 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             <div className={reqDivider}>
               <p className={clsx(reqSectionAccent, "mb-2")}>Requirements &amp; Posting</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <BulletListField label="Requirements" placeholder="e.g. 5+ yrs building distributed systems"
+                <BulletListField label="Requirements (must-have)" accent="violet" placeholder="e.g. 5+ yrs building distributed systems"
                   items={form.requirements} onChange={(v) => setForm({ ...form, requirements: v })} />
-                <BulletListField label="Nice to have" placeholder="e.g. Open-source contributions"
+                <BulletListField label="Nice to have" accent="green" placeholder="e.g. Open-source contributions"
                   items={form.niceToHave} onChange={(v) => setForm({ ...form, niceToHave: v })} />
                 {!showJustification && (
-                  <BulletListField label="Benefits &amp; Perks" placeholder="e.g. Health insurance, ESOPs, flexible hours"
+                  <BulletListField label="Benefits &amp; Perks" accent="sky" placeholder="e.g. Health insurance, ESOPs, flexible hours"
                     items={form.benefits} onChange={(v) => setForm({ ...form, benefits: v })} />
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-                <BulletListField label="Responsibilities" placeholder="e.g. Run discovery workshops and consulting discussions"
+              <p className="text-[11px] text-gray-400 mt-1.5">Drag to reorder · Click × to remove.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                <BulletListField label="Responsibilities" accent="amber" placeholder="e.g. Run discovery workshops and consulting discussions"
                   items={form.responsibilities} onChange={(v) => setForm({ ...form, responsibilities: v })} />
-                <div>
-                  <label className={reqLabel}>Education qualification required</label>
-                  <Select
-                    value={form.education}
-                    onChange={(v) => setForm({ ...form, education: v })}
-                    placeholder="Select minimum qualification"
-                    options={[
-                      "Class 10 (Secondary)",
-                      "Class 12 (Intermediate)",
-                      "Diploma",
-                      "Graduation/Diploma",
-                      "Post Graduation",
-                      "Doctorate/PhD",
-                    ].map((q) => ({ value: q, label: q }))}
-                  />
-                </div>
-                <div>
-                  <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <NumberInput allowDecimal={false} clamp min={1950} max={2100} maxLength={4} value={form.passingYear}
-                    onChange={(v) => setForm({ ...form, passingYear: v })}
-                    placeholder="e.g. 2020" className={reqInput} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={reqLabel}>Education qualification required</label>
+                    <Select
+                      value={form.education}
+                      onChange={(v) => setForm({ ...form, education: v })}
+                      placeholder="Select minimum qualification"
+                      options={[
+                        "Class 10 (Secondary)",
+                        "Class 12 (Intermediate)",
+                        "Diploma",
+                        "Graduation/Diploma",
+                        "Post Graduation",
+                        "Doctorate/PhD",
+                      ].map((q) => ({ value: q, label: q }))}
+                    />
+                  </div>
+                  <div>
+                    <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <NumberInput allowDecimal={false} min={1950} max={2100} maxLength={4} value={form.passingYear}
+                      onChange={(v) => setForm({ ...form, passingYear: v })}
+                      onBlur={() => {
+                        if (form.passingYear == null) return;
+                        if (form.passingYear < 1950) setForm((p) => ({ ...p, passingYear: 1950 }));
+                        else if (form.passingYear > 2100) setForm((p) => ({ ...p, passingYear: 2100 }));
+                      }}
+                      placeholder="e.g. 2020" className={reqInput} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -890,12 +917,11 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             (see the "role" folded into visibleSteps' label above). */}
         {currentStepId === "role" && (
           <div className="space-y-3 mt-5 pt-4 border-t border-gray-100">
-          <p className={clsx(reqSectionAccent, "mb-1")}>Scorecard &amp; Skills</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <div className="rounded-lg border border-green-200 bg-gradient-to-br from-green-50/60 to-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-green-800"><Sparkles size={14} /> ATS Skill Weights</div>
+                  <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-green-800"><Sparkles size={14} /> Scorecard &amp; Skills</div>
                   <p className="text-[11px] text-gray-600 mt-0.5">Weight = importance (1 low, 10 critical). Used to score candidate resumes. Example: React → 9, AWS → 5</p>
                 </div>
                 <span className="text-[11px] text-gray-500 whitespace-nowrap">{form.skillWeights.length} skill{form.skillWeights.length === 1 ? "" : "s"}</span>
@@ -959,13 +985,15 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             </div>
 
             {/* Technical Questions — merged into Scorecard & Skills */}
-            <div>
-              <p className={clsx(reqSection, "mb-1")}>Screening Technical Questions <span className="text-red-500">*</span></p>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Add role-specific questions the interview panel should ask candidates for this job. At least one is required.
-              </p>
+            <div className="rounded-lg border border-rose-200 bg-gradient-to-br from-rose-50/60 to-white p-3">
+              <div className="mb-2">
+                <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-rose-800">
+                  <HelpCircle size={14} /> Screening Technical Questions <span className="text-red-500">*</span>
+                </div>
+              </div>
               <BulletListField
                 label="Questions"
+                accent="rose"
                 placeholder="e.g. Explain the difference between useMemo and useCallback"
                 items={form.technicalQuestions}
                 onChange={(v) => setForm({ ...form, technicalQuestions: v })}
@@ -1006,61 +1034,150 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 }
 
 
+const BULLET_ACCENTS = {
+  violet: { text: "text-violet-700", badge: "bg-violet-50 text-violet-700 ring-violet-200", ghost: "text-violet-600 hover:bg-violet-50" },
+  green: { text: "text-green-700", badge: "bg-green-50 text-green-700 ring-green-200", ghost: "text-green-600 hover:bg-green-50" },
+  sky: { text: "text-sky-700", badge: "bg-sky-50 text-sky-700 ring-sky-200", ghost: "text-sky-600 hover:bg-sky-50" },
+  amber: { text: "text-amber-700", badge: "bg-amber-50 text-amber-700 ring-amber-200", ghost: "text-amber-600 hover:bg-amber-50" },
+  rose: { text: "text-rose-700", badge: "bg-rose-50 text-rose-700 ring-rose-200", ghost: "text-rose-600 hover:bg-rose-50" },
+} as const;
+
 function BulletListField({
-  label, placeholder, items, onChange,
+  label, placeholder, items, onChange, accent = "violet", max,
 }: {
   label: string;
   placeholder: string;
   items: string[];
   onChange: (next: string[]) => void;
+  accent?: keyof typeof BULLET_ACCENTS;
+  // No cap by default — add as many as needed. Pass a number to keep a hard limit.
+  max?: number;
 }) {
   const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dragFrom = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const colors = BULLET_ACCENTS[accent];
+  const atMax = max != null && items.length >= max;
+  const toast = useToast();
+
   const add = () => {
     const v = draft.trim();
-    if (!v) return;
+    if (!v || atMax) return;
     onChange([...items, v]);
     setDraft("");
   };
+
+  // Pasting a multi-line block (one requirement per line/paragraph) splits it
+  // into individual bullets instead of dumping it all into one entry.
+  const addPastedLines = (raw: string) => {
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return;
+    if (max == null) { onChange([...items, ...lines]); return; }
+    const room = Math.max(0, max - items.length);
+    const toAdd = lines.slice(0, room);
+    if (toAdd.length === 0) { toast.error(`${label} is already at the ${max} limit.`); return; }
+    onChange([...items, ...toAdd]);
+    if (lines.length > toAdd.length) {
+      toast.error(`Added ${toAdd.length} of ${lines.length} — ${label} is capped at ${max}.`);
+    }
+  };
+
+  const reorder = (from: number, to: number) => {
+    if (from === to) return;
+    const next = items.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onChange(next);
+  };
+
   return (
-    <div>
-      <label className="block text-gray-700 mb-1 text-xs font-bold uppercase tracking-wide">{label}</label>
+    <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-col">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className={clsx("text-[11px] font-bold uppercase tracking-wide", colors.text)}>{label}</span>
+          <span className={clsx("inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ring-1 tabular-nums", colors.badge)}>
+            {max != null ? `${items.length}/${max}` : items.length}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => { if (draft.trim()) add(); else inputRef.current?.focus(); }}
+          disabled={atMax}
+          className={clsx("inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed", colors.ghost)}
+        >
+          <Plus size={11} /> Add
+        </button>
+      </div>
+
       {items.length > 0 && (
-        <ul className="space-y-1 mb-1.5">
+        <ul className="space-y-1.5 mb-2 max-h-[168px] overflow-y-auto pr-0.5">
           {items.map((it, i) => (
-            <li key={i} className="flex items-center gap-2 bg-gray-50 ring-1 ring-gray-100 rounded px-2 py-1 text-xs text-gray-800">
-              <span className="text-gray-300">•</span>
-              <span className="flex-1">{it}</span>
+            <li
+              key={i}
+              draggable
+              onDragStart={() => { dragFrom.current = i; }}
+              onDragOver={(e) => { e.preventDefault(); setDragOverIdx(i); }}
+              onDragLeave={() => setDragOverIdx((cur) => (cur === i ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragFrom.current != null) reorder(dragFrom.current, i);
+                dragFrom.current = null;
+                setDragOverIdx(null);
+              }}
+              onDragEnd={() => { dragFrom.current = null; setDragOverIdx(null); }}
+              className={clsx(
+                "flex items-center gap-2 bg-gray-50/70 ring-1 rounded-lg px-2 py-1.5 text-xs text-gray-800",
+                dragOverIdx === i ? "ring-2 ring-offset-1 ring-gray-300" : "ring-gray-100",
+              )}
+            >
+              <span className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder">
+                <GripVertical size={13} />
+              </span>
+              <span className="flex-1 min-w-0 break-words">{it}</span>
               <button
                 type="button"
                 onClick={() => onChange(items.filter((_, idx) => idx !== i))}
-                className="text-gray-400 hover:text-red-600"
+                className="text-gray-400 hover:text-red-600 shrink-0"
                 aria-label="Remove"
               >
-                <X size={11} />
+                <X size={12} />
               </button>
             </li>
           ))}
         </ul>
       )}
-      <div className="flex gap-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          // Commit only on Enter or the "+" button — no onBlur add, so clicking
-          // Next doesn't silently push a half-typed entry.
-          placeholder={placeholder}
-          className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="px-2.5 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md text-xs font-semibold"
-        >
-          <Plus size={11} />
-        </button>
-      </div>
+
+      {atMax ? (
+        <p className="text-[11px] text-gray-400 text-center py-1.5">Maximum {max} reached</p>
+      ) : (
+        <div className="flex items-center gap-1.5 border border-dashed border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50/40 focus-within:border-solid focus-within:border-green-400 focus-within:bg-white transition-colors">
+          <Plus size={12} className="text-gray-400 shrink-0" />
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text");
+              if (/\r?\n/.test(text.trim())) {
+                e.preventDefault();
+                addPastedLines(text);
+                setDraft("");
+              }
+            }}
+            // Commit only on Enter or the "+" button — no onBlur add, so clicking
+            // Next doesn't silently push a half-typed entry.
+            placeholder={placeholder}
+            className="flex-1 min-w-0 bg-transparent text-xs focus:outline-none placeholder:text-gray-400"
+          />
+          {draft.trim() && (
+            <button type="button" onClick={add} className="shrink-0 text-green-600 hover:text-green-700" aria-label="Add">
+              <Check size={14} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

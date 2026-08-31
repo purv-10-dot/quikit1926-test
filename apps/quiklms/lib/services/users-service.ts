@@ -324,21 +324,21 @@ export async function updateUser(id: string, orgId: string | undefined, data: Re
       const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || ''}/login`;
       await sendEmail({
         to: emailChangedTo,
-        subject: 'QuikSkill — Your account email was updated',
+        subject: 'QuikLMS — Your account email was updated',
         html: `
           <div style="max-width:600px;margin:0 auto;font-family:'Segoe UI',Tahoma,sans-serif;">
             <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:32px;border-radius:16px 16px 0 0;text-align:center;">
-              <h1 style="color:#fff;margin:0;font-size:24px;">Welcome to QuikSkill</h1>
+              <h1 style="color:#fff;margin:0;font-size:24px;">Welcome to QuikLMS</h1>
               <p style="color:rgba(255,255,255,0.9);margin:8px 0 0;">Your sign-in email was updated</p>
             </div>
             <div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 16px 16px;">
               <p style="color:#374151;font-size:15px;">Hello <strong>${fn}</strong>,</p>
-              <p style="color:#374151;font-size:15px;line-height:1.6;">Your administrator updated the email address on your QuikSkill LMS account${roleLabel ? ` (${roleLabel})` : ''}. Your password is unchanged — sign in with the email below.</p>
+              <p style="color:#374151;font-size:15px;line-height:1.6;">Your administrator updated the email address on your QuikLMS LMS account${roleLabel ? ` (${roleLabel})` : ''}. Your password is unchanged — sign in with the email below.</p>
               <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin:16px 0;">
                 <p style="color:#166534;font-size:12px;font-weight:600;margin:0 0 4px;text-transform:uppercase;">Your login email</p>
                 <p style="color:#14532d;font-size:15px;margin:0;word-break:break-all;">${emailChangedTo}</p>
               </div>
-              ${loginUrl ? `<p style="text-align:center;margin:20px 0;"><a href="${loginUrl}" style="display:inline-block;background:#667eea;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">Log in to QuikSkill</a></p>` : ''}
+              ${loginUrl ? `<p style="text-align:center;margin:20px 0;"><a href="${loginUrl}" style="display:inline-block;background:#667eea;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">Log in to QuikLMS</a></p>` : ''}
               <p style="color:#6b7280;font-size:13px;">If you did not expect this change, contact your administrator.</p>
             </div>
           </div>`,

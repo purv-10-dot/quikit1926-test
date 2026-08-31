@@ -45,7 +45,7 @@ export function CoverageLinks({
 
   const load = () => {
     if (!caseId) return;
-    fetch(`/api/test/cases/${caseId}/coverage`)
+    fetch(`/api/test/cases/${caseId}/work-item-coverage`)
       .then((r) => r.json())
       .then((j: { success: boolean; data?: CoverageLink[] }) => {
         if (j.success && j.data) setLinks(j.data);
@@ -80,7 +80,7 @@ export function CoverageLinks({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/test/cases/${caseId}/coverage`, {
+      const res = await fetch(`/api/test/cases/${caseId}/work-item-coverage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId, type: "covers" }),
@@ -103,7 +103,7 @@ export function CoverageLinks({
     if (!caseId) return;
     setBusy(true);
     try {
-      await fetch(`/api/test/cases/${caseId}/coverage?linkId=${linkId}`, {
+      await fetch(`/api/test/cases/${caseId}/work-item-coverage?linkId=${linkId}`, {
         method: "DELETE",
       });
       load();
@@ -138,7 +138,7 @@ export function CoverageLinks({
       {links.map((l) => (
         <div
           key={l.id}
-          className="flex items-center gap-2 rounded border border-gray-200 px-2 py-1.5"
+          className="flex items-center gap-2 rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5"
         >
           <Link2 className="h-3.5 w-3.5 shrink-0 text-gray-400" />
           <span className="shrink-0 text-xs font-medium text-blue-700">
@@ -165,7 +165,7 @@ export function CoverageLinks({
       ))}
 
       {adding ? (
-        <div className="rounded border border-gray-200 p-2">
+        <div className="rounded border border-gray-200 dark:border-gray-700 p-2">
           <Input
             autoFocus
             value={query}
@@ -180,7 +180,7 @@ export function CoverageLinks({
                   type="button"
                   disabled={busy}
                   onClick={() => addLink(h.id)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   <span className="shrink-0 text-xs font-medium text-blue-700">
                     {h.key}
@@ -211,7 +211,7 @@ export function CoverageLinks({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-accent-700 hover:bg-accent-50"
+            className="flex items-center gap-1.5 rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5 text-xs text-accent-700 dark:text-accent-300 hover:bg-accent-50 dark:hover:bg-gray-800"
           >
             <Plus className="h-3.5 w-3.5" />
             Link a work item

@@ -146,6 +146,12 @@ destructive tool name like `"delete_issue"` is unreachable via the real
   resolved `access.projectId` (for a project) or `resolveIssueIdOrKey()`
   (`lib/mcp/resolveIssue.ts`, for an issue) first, so it also accepts the
   human-readable key (e.g. `"QUIKTR"` / `"QUIKTR-119"`), not just the cuid.
+- If the new tool mutates data, call `logMcpAction()`
+  (`lib/mcp/actionLog.ts`, see the QUIKTR-121 section below) at every
+  success and failure branch after `checkWritePermission` passes — the
+  static test in `mcp-tool-source-audit.test.ts` only checks a minimum call
+  count, so a new write tool without this wired in won't fail CI on its own.
+  Read-only tools don't need this (see QUIKTR-121's scope decision).
 
 # Access control (QUIKTR-119)
 
@@ -216,6 +222,19 @@ Every `checkProjectMembership` / `checkWritePermission` decision — allow
 which `(resource, action)` for write tools, and a short human-readable
 reason. A logging failure (e.g. the migration not yet applied) never
 breaks the actual tool call — it falls back to a structured console line.
+
+### QUIKTR-121 — MCP action log
+
+`QtMcpAccessLog` above answers "was this call allowed" — it doesn't record
+what actually happened to which entity. QUIKTR-121 adds a second, distinct
+log, `QtMcpActionLog` (`apps/quiktrack/lib/mcp/actionLog.ts`'s
+`logMcpAction()`, schema in `docs/mcp-action-log-schema.md`), written once
+per *mutating* tool call — entity type/id/key, sanitized request payload,
+before/after field diff, and success/error result. Read-only tools are
+deliberately **not** covered here; they remain fully covered by
+`QtMcpAccessLog` alone (see the schema doc's "scope decision" section for
+the reasoning). Surfaced in a filterable Settings → Audit Log page and a
+per-issue "MCP Log" activity tab.
 
 ## Tests
 

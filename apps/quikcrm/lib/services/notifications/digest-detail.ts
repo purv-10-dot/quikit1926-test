@@ -17,10 +17,16 @@
  *   Calls    : CrmActivity type="Call" → linkedCallLogId → CrmCallLog
  *              (durationSec, dispositionName, notes). Contact/Company from the
  *              related Lead (relatedKind="Lead").
- *   Emails   : CrmEmailMessage direction="outbound". Delivery status is NOT
- *              tracked in the model → we honestly report "Sent" (recorded), never
- *              a fabricated "Delivered". Reply status is DERIVED: an inbound
- *              message in the same thread after the outbound sentAt.
+ *   Emails   : CrmEmailMessage direction="outbound", sentAt in window. Delivery
+ *              status is NOT tracked in the model → we honestly report "Sent"
+ *              (recorded), never a fabricated "Delivered".
+ *   Replies  : CrmEmailMessage direction="inbound", RECEIVEDAT in window, on a
+ *              thread a scoped rep has ever sent into (thread ownership is
+ *              derived from unbounded outbound history, NOT from this window —
+ *              a reply is usually a day or more after the send it answers).
+ *              replyStatus on the Emails table reads the same window-bounded
+ *              set, so the two surfaces cannot disagree and a later reply never
+ *              back-dates an earlier digest.
  *   Meetings : CrmOpportunityClientMeeting (meetingType, outcome, notes). No
  *              status column exists → Status shows the meeting outcome. Client =
  *              the opportunity's account name.
@@ -269,6 +275,20 @@ const SPECIALIZED_TYPES_QUERY = [
   "OpportunityClientMeeting",
 ] as const;
 
+/**
+ * Every `type` string that means "a meeting happened", across both writers: the
+ * opportunity client-meeting route stores "OpportunityClientMeeting", while the
+ * Activity module stores the configured type LABEL ("Meeting"). The Meetings
+ * section must match ALL of them — matching only the opportunity casing made
+ * Activity-module meetings count as 0 while ALSO being excluded from the generic
+ * pass by SPECIALIZED_TYPES, so they landed in no bucket at all.
+ *
+ * Prisma's `in` is case-sensitive, hence the explicit casings. Keep every entry
+ * here present in SPECIALIZED_TYPES too, so a row counted as a meeting is never
+ * also counted as a generic "other" activity.
+ */
+const MEETING_TYPES_QUERY = ["OpportunityClientMeeting", "Meeting", "meeting"] as const;
+
 function isSpecializedType(type: string): boolean {
   return SPECIALIZED_TYPES.has(type.trim().toLowerCase());
 }
@@ -441,16 +461,65 @@ export async function assembleUserActivityDetail(
       })
     : [];
 
-  // Reply derivation: a thread has a reply if it holds any inbound message after
-  // the outbound sentAt. Batch: for the threads we touched, find inbound rows.
+  // ── Thread ownership (NOT window-bounded) ───────────────────────────────────
+  // A reply is almost never same-day: the rep sends Monday, the customer answers
+  // Tuesday. Deriving the candidate threads from THIS window's outbound mail
+  // therefore misses the normal case entirely — Tuesday's digest never sees the
+  // Monday thread, so its reply count reads 0 forever.
   //
-  // The same rows feed the 📩 Email Replies section, so we select the display
-  // columns (fromAddress/subject) too — one query serves both the replyStatus
-  // flag and the detailed reply table.
-  const threadIds = [...new Set(emailMessages.map((m) => m.threadId))];
-  const inboundRows = threadIds.length
+  // So thread ownership is established from the rep's FULL outbound history:
+  // this query answers only "did a scoped rep ever send into this thread?", and
+  // carries no date filter. The digest window is applied to the INBOUND side
+  // (below) instead, which is the side whose timestamp the digest is about.
+  const ownedOutbound = mailboxIds.length
     ? await prisma.crmEmailMessage.findMany({
-        where: { orgId, threadId: { in: threadIds }, direction: "inbound" },
+        where: {
+          orgId,
+          mailboxConnectionId: { in: mailboxIds },
+          direction: "outbound",
+          sentAt: { lt: range.to }, // a send after the window can't be replied to inside it
+        },
+        select: {
+          mailboxConnectionId: true,
+          threadId: true,
+          sentAt: true,
+          subject: true,
+        },
+        orderBy: { sentAt: "asc" },
+      })
+    : [];
+
+  // Thread → the rep's outbound messages, so a reply can name the mail it
+  // answers and be attributed to the right user. A thread can hold outbound
+  // mail from more than one scoped rep; each reply is credited to the rep whose
+  // send most recently preceded it.
+  const outboundByThread = new Map<string, { sentAt: Date; subject: string; userId: string }[]>();
+  for (const m of ownedOutbound) {
+    const uid = mailboxUserById.get(m.mailboxConnectionId);
+    if (!uid || !m.sentAt) continue;
+    const arr = outboundByThread.get(m.threadId) ?? [];
+    arr.push({ sentAt: m.sentAt, subject: m.subject || "(no subject)", userId: uid });
+    outboundByThread.set(m.threadId, arr);
+  }
+
+  // ── Replies (inbound, window-bounded) ───────────────────────────────────────
+  // Scoped to threads a scoped rep has sent into, and to replies that ARRIVED in
+  // this window. Cold inbound mail on a thread with no preceding rep send is
+  // excluded here (unknown thread) and again by the `preceding` guard below.
+  //
+  // The same rows feed BOTH the 📩 Email Replies section and the replyStatus
+  // flag on the Emails Sent table, so the two can never disagree — and a reply
+  // that lands after the window cannot retroactively mark an earlier digest's
+  // email as "Customer Replied".
+  const ownedThreadIds = [...outboundByThread.keys()];
+  const inboundRows = ownedThreadIds.length
+    ? await prisma.crmEmailMessage.findMany({
+        where: {
+          orgId,
+          threadId: { in: ownedThreadIds },
+          direction: "inbound",
+          receivedAt: { gte: range.from, lt: range.to },
+        },
         select: {
           threadId: true,
           receivedAt: true,
@@ -470,24 +539,14 @@ export async function assembleUserActivityDetail(
     inboundByThread.set(r.threadId, arr);
   }
 
-  // Thread → the rep's outbound messages, so a reply can name the mail it
-  // answers and be attributed to the right user. A thread can hold outbound
-  // mail from more than one scoped rep; each reply is credited to the rep whose
-  // send most recently preceded it.
-  const outboundByThread = new Map<string, { sentAt: Date; subject: string; userId: string }[]>();
-  for (const m of emailMessages) {
-    const uid = mailboxUserById.get(m.mailboxConnectionId);
-    if (!uid || !m.sentAt) continue;
-    const arr = outboundByThread.get(m.threadId) ?? [];
-    arr.push({ sentAt: m.sentAt, subject: m.subject || "(no subject)", userId: uid });
-    outboundByThread.set(m.threadId, arr);
-  }
-
   // ── Meetings ─────────────────────────────────────────────────────────────────
-  // Meeting activities are type="OpportunityClientMeeting"; rich detail lives on
-  // CrmOpportunityClientMeeting (join via opportunityId). Client = opp's account.
+  // Two writers produce meetings (see MEETING_TYPES_QUERY): the opportunity
+  // client-meeting route ("OpportunityClientMeeting"), whose rich detail lives on
+  // CrmOpportunityClientMeeting (join via opportunityId, Client = opp's account),
+  // and the Activity module ("Meeting"), which has no such record — its detail
+  // comes off the activity row itself (fields selected below).
   const meetingActivities = await prisma.crmActivity.findMany({
-    where: { ...windowWhere, ...owner, type: "OpportunityClientMeeting" },
+    where: { ...windowWhere, ...owner, type: { in: [...MEETING_TYPES_QUERY] } },
     select: {
       ownerId: true,
       occurredAt: true,
@@ -496,6 +555,13 @@ export async function assembleUserActivityDetail(
       // relatedKind lets the lead-wise rollup tell a Lead-linked meeting from an
       // Opportunity-linked one; the meeting section itself doesn't need it.
       relatedKind: true,
+      // Fallback detail for Activity-module meetings, which have no
+      // CrmOpportunityClientMeeting row to read from.
+      subject: true,
+      outcome: true,
+      activityCode: true,
+      logOutcome: true,
+      detailNotes: true,
     },
     orderBy: { occurredAt: "asc" },
   });
@@ -517,6 +583,10 @@ export async function assembleUserActivityDetail(
       })
     : [];
   const oppById = new Map(opps.map((o) => [o.id, o]));
+  // Activity-module meetings can hang off any record kind (Lead, Contact, …), so
+  // the opportunity/account lookup above cannot name their client. Resolve those
+  // labels with the same batch resolver the Calls and generic sections use.
+  const meetingRelatedLabels = await resolveRelatedLabels(orgId, meetingActivities);
   // Pick the meeting record closest to the activity's occurredAt per opp+time.
   const meetingByOppTime = new Map<string, (typeof meetingRecords)[number]>();
   for (const m of meetingRecords) {
@@ -713,12 +783,16 @@ export async function assembleUserActivityDetail(
       meetingByOppTime.get(`${oppId}:${m.occurredAt?.getTime() ?? 0}`) ??
       meetingRecords.find((r) => r.opportunityId === oppId);
     const opp = oppById.get(oppId);
+    // Activity-module meetings have no CrmOpportunityClientMeeting row (rec is
+    // undefined) — read their detail off the activity instead, so they render as
+    // real rows rather than a line of em-dashes.
     u.meetings.push({
       time: m.occurredAt,
-      client: opp?.account?.name || opp?.name || "—",
-      meetingType: rec?.meetingType || "—",
-      status: rec?.outcome || "Completed",
-      notes: rec?.notes || "—",
+      client:
+        opp?.account?.name || opp?.name || meetingRelatedLabels.get(rowKey(m)) || "—",
+      meetingType: rec?.meetingType || m.activityCode || m.subject || "—",
+      status: rec?.outcome || m.logOutcome || m.outcome || "Completed",
+      notes: rec?.notes || m.detailNotes || "—",
     });
   }
 

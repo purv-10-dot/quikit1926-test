@@ -16,6 +16,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
   try {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const sixMoStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     // Current week, Monday–Sunday.
     const weekStart = new Date(now);
     weekStart.setHours(0, 0, 0, 0);
@@ -31,7 +32,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     const [
       openReqCount, openReqs, inPipeline, stageGroups, reqCounts,
       interviewsThisWeek, offersOut, offersSentMTD, offersAcceptedMTD, offersDeclinedMTD,
-      hiresMTD, hiredApps,
+      hiresMTD, hiredApps, hiresForTrend,
       recentOfferApps, upcomingInterviews,
     ] = await Promise.all([
       prisma.jobRequisition.count({ where: { orgId, deletedAt: null, status: "ReqOpen" } }),
@@ -39,11 +40,11 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
         where: { orgId, deletedAt: null, status: "ReqOpen" },
         select: { id: true, title: true, requisitionNumber: true, createdAt: true, positions: true, filledPositions: true, recruiterId: true, etaToFillDays: true },
         orderBy: { createdAt: "asc" },
-        take: 10,
+        take: 50,
       }),
       prisma.jobApplication.count({ where: activeWhere }),
       prisma.jobApplication.groupBy({ by: ["currentStage"], where: activeWhere, _count: { _all: true } }),
-      prisma.jobApplication.groupBy({ by: ["requisitionId"], where: activeWhere, _count: { _all: true } }),
+      prisma.jobApplication.groupBy({ by: ["requisitionId", "currentStage"], where: activeWhere, _count: { _all: true } }),
       prisma.interview.count({ where: { orgId, scheduledAt: { gte: weekStart, lt: weekEnd }, status: { in: ["IntScheduled", "IntRescheduled"] } } }),
       prisma.jobApplication.count({ where: { orgId, deletedAt: null, offerStatus: "OfferSent" } }),
       prisma.jobApplication.count({ where: { orgId, deletedAt: null, offerSentAt: { gte: monthStart } } }),
@@ -51,6 +52,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
       prisma.jobApplication.count({ where: { orgId, deletedAt: null, offerStatus: "OfferDeclined", offerRespondedAt: { gte: monthStart } } }),
       prisma.jobApplication.count({ where: { orgId, deletedAt: null, status: "AppHired", updatedAt: { gte: monthStart } } }),
       prisma.jobApplication.findMany({ where: { orgId, deletedAt: null, status: "AppHired" }, select: { appliedDate: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 50 }),
+      prisma.jobApplication.findMany({ where: { orgId, deletedAt: null, status: "AppHired", hiredAt: { gte: sixMoStart } }, select: { hiredAt: true } }),
       prisma.jobApplication.findMany({
         where: { orgId, deletedAt: null, offerSentAt: { not: null } },
         select: { id: true, offerStatus: true, offerSentAt: true, offerRespondedAt: true, candidate: { select: { firstName: true, lastName: true } }, requisition: { select: { title: true } } },
@@ -79,10 +81,22 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
     const acceptanceRate = decidedMTD ? Math.round((offersAcceptedMTD / decidedMTD) * 100) : 0;
 
     // ── Candidate counts per requisition (for aging + recruiter workload) ──
-    const cntByReq = new Map(reqCounts.map((r) => [r.requisitionId, r._count._all]));
+    // reqCounts is now grouped by [requisitionId, currentStage] — roll up to a
+    // per-requisition total AND keep the per-stage breakdown (for the funnel
+    // widget's "which requisitions have candidates at this stage" filter).
+    const cntByReq = new Map<string, number>();
+    const stageCountsByReq = new Map<string, Record<string, number>>();
+    for (const rc of reqCounts) {
+      cntByReq.set(rc.requisitionId, (cntByReq.get(rc.requisitionId) ?? 0) + rc._count._all);
+      if (rc.currentStage) {
+        const stages = stageCountsByReq.get(rc.requisitionId) ?? {};
+        stages[rc.currentStage] = (stages[rc.currentStage] ?? 0) + rc._count._all;
+        stageCountsByReq.set(rc.requisitionId, stages);
+      }
+    }
 
     // Resolve recruiter names (union of open-req recruiters + those with active apps).
-    const reqIds = reqCounts.map((r) => r.requisitionId);
+    const reqIds = [...new Set(reqCounts.map((r) => r.requisitionId))];
     const reqRecs = reqIds.length
       ? await prisma.jobRequisition.findMany({ where: { orgId, id: { in: reqIds } }, select: { id: true, recruiterId: true } })
       : [];
@@ -104,10 +118,15 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
       const eta = r.etaToFillDays ?? 30;
       const ratio = eta > 0 ? ageDays / eta : 0;
       const status = ratio > 1 ? "overdue" : ratio > 0.66 ? "aging" : "on-track";
+      const stageCounts = stageCountsByReq.get(r.id) ?? {};
       return {
         id: r.id, title: r.title, requisitionNumber: r.requisitionNumber,
         recruiter: r.recruiterId ? empName.get(r.recruiterId) ?? "—" : "—",
         candidates: cntByReq.get(r.id) ?? 0, ageDays, etaDays: eta, status,
+        positions: r.positions,
+        onboarded: r.filledPositions,
+        inOffer: stageCounts["Offer"] ?? 0,
+        stageCounts,
       };
     });
 
@@ -137,6 +156,16 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
 
     const openPositions = openReqs.reduce((s, r) => s + Math.max(0, r.positions - r.filledPositions), 0);
 
+    // ── Hires per month — last 6 calendar months (oldest → newest) ──
+    const monthlyHires: { month: string; hires: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const bucketStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const bucketEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const monthLabel = bucketStart.toLocaleDateString("en-US", { month: "short" });
+      const hires = hiresForTrend.filter((a) => a.hiredAt && a.hiredAt >= bucketStart && a.hiredAt < bucketEnd).length;
+      monthlyHires.push({ month: monthLabel, hires });
+    }
+
     return successResponse({
       kpis: {
         openRequisitions: openReqCount,
@@ -153,10 +182,11 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
       funnel,
       openReqAging,
       recruiterWorkload,
+      monthlyHires,
       activity: activity.slice(0, 8),
     });
   } catch (error) {
     console.error("GET /recruit/dashboard error:", error);
     return internalError();
   }
-}, { requiredPermissions: ["hrms.recruit.read", "hrms.recruit.write"], anyPermission: true });
+}, { requiredPermissions: ["hrms.recruit.read", "hrms.recruit.write", "hrms.recruit.read_self"], anyPermission: true });

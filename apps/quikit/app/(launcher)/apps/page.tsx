@@ -330,9 +330,26 @@ export default function AppLauncherPage() {
           setOrgs(all);
           const sessionOrgId = session?.user?.orgId;
           const match = active.find((o) => o.orgId === sessionOrgId);
-          setSelectedOrg(match ?? active[0] ?? null);
-          if (active[0] && !sessionOrgId) {
-            selectOrgInSession(active[0].orgId, active[0].role);
+          // `?org=<orgId>` — a deep link (e.g. an emailed QuikTrack work item)
+          // naming the org that owns the record. It wins over the session's
+          // last-used org, otherwise the ?handoff= auto-launch below mints its
+          // token for the wrong workspace and the app 404s on arrival. Only an
+          // org the user is actually an active member of can be picked.
+          const requestedOrgId =
+            typeof window !== "undefined"
+              ? new URLSearchParams(window.location.search).get("org")
+              : null;
+          const requested = requestedOrgId
+            ? active.find((o) => o.orgId === requestedOrgId)
+            : undefined;
+          const chosen = requested ?? match ?? active[0] ?? null;
+          setSelectedOrg(chosen);
+          // Push the choice onto the JWT when there is nothing selected yet
+          // (first visit) or when a deep link asked for a different org. Any
+          // other case is left alone — flipping a session org nobody asked to
+          // change is not this effect's job.
+          if (chosen && (!sessionOrgId || (requested && requested.orgId !== sessionOrgId))) {
+            selectOrgInSession(chosen.orgId, chosen.role);
           }
         }
       })

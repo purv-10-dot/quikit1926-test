@@ -482,7 +482,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
         lastName,
         department: body.department ?? null,
         mobile: body.mobile ? String(body.mobile).trim() : null,
-        mobileAccessEnabled: body.mobileAccessEnabled === true,
+        mobileAccessEnabled: body.appAllow === true,
       },
       create: {
         userId: centralUserId!,
@@ -491,7 +491,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
         lastName,
         department: body.department ?? null,
         mobile: body.mobile ? String(body.mobile).trim() : null,
-        mobileAccessEnabled: body.mobileAccessEnabled === true,
+        mobileAccessEnabled: body.appAllow === true,
       },
     });
 
@@ -625,10 +625,24 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
   // page. The launcher reads `OrgMember.invitationToken` + `inviteMethod`
   // and drives the right onboarding UX (Set-Password modal for native,
   // Google/Microsoft sign-in for SSO).
-  const launcherBase =
-    process.env.NEXT_PUBLIC_QUIKIT_URL ?? process.env.QUIKIT_URL ?? "http://localhost:3001";
+  //
+  // Exception: when this invite has mobile access enabled, point at
+  // QuikInfra's own `/invite/{token}` landing page instead — that's the
+  // domain Android App Links are configured against
+  // (`/.well-known/assetlinks.json`), so the OS can intercept the link and
+  // open the native app directly. That page falls back to this same
+  // launcher accept flow when the app isn't installed. Every other invite
+  // (the default — `mobileAccessEnabled` false/absent) is unchanged.
+  const launcherBase = (
+    process.env.NEXT_PUBLIC_QUIKIT_URL ?? process.env.QUIKIT_URL ?? "http://localhost:3001"
+  ).replace(/\/$/, "");
+  const quikinfraBase = (
+    process.env.NEXT_PUBLIC_QUIKINFRA_URL ?? process.env.QUIKINFRA_URL ?? launcherBase
+  ).replace(/\/$/, "");
   const inviteUrl = centralInvitationToken
-    ? `${launcherBase}/invitations/accept?token=${centralInvitationToken}`
+    ? body.appAllow === true
+      ? `${quikinfraBase}/invite/${centralInvitationToken}`
+      : `${launcherBase}/invitations/accept?token=${centralInvitationToken}`
     : launcherBase;
 
   // ── Send onboarding invitation email ───────────────────────────────

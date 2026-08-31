@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "QuikFetch Upwork",
+  "version": "1.0.5",
+  "description": "Data Scrapper - Upwork feature (isolated for QuikCRM migration)",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "identity",
+    "tabs",
+    "sidePanel"
+  ],
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "https://www.upwork.com/*",
+    "https://upwork.com/*",
+    "https://crm.quikit.ai/*",
+    "https://uatcrm.quikit.ai/*",
+    "http://localhost:3008/*",
+    "https://localhost:3008/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon16.png",
+      "128": "assets/icon16.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon16.png",
+    "128": "assets/icon16.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "upwork.html",
+        "upwork.js",
+        "popup.html",
+        "popup.css",
+        "popup.js",
+        "api.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

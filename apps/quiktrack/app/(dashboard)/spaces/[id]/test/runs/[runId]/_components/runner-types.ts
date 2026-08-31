@@ -11,7 +11,13 @@ export interface TestStatusLite {
   orderNo?: number;
 }
 
-/** A row in the runner's left-hand work list. */
+export interface RunnerCaseLabel {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+/** A row in the runner's grid (QUIKTR-341). */
 export interface RunnerTest {
   id: string;
   refId: number;
@@ -24,8 +30,16 @@ export interface RunnerTest {
     title: string;
     priority: string;
     type: string;
+    labels: RunnerCaseLabel[];
+    /** The folder this case lives in — QUIKTR-341 section grouping. */
+    section: { id: string; name: string };
   };
   config: { id: string; name: string } | null;
+  /** True once ANY result has ever been recorded for this test — QUIKTR-341's
+   *  edit-run "Select cases" modal uses this to decide whether the case can be
+   *  removed. The server independently re-verifies this before deleting; it
+   *  is not itself trusted for that decision. */
+  hasResults?: boolean;
 }
 
 export interface RunnerStep {
@@ -41,6 +55,9 @@ export interface TestDetail {
   id: string;
   refId: number;
   caseVersion: number;
+  /** Per-execution owner (QUIKTR-317) — a case can have a different tester in
+   *  each run, which is why this is on the test, not the case. */
+  assigneeId: string | null;
   currentStatus: TestStatusLite;
   config: { id: string; name: string } | null;
   run: {
@@ -58,10 +75,20 @@ export interface TestDetail {
     title: string;
     description: string | null;
     preconditions: string | null;
+    /** Case-level Expected Result — the TEXT/BDD templates' authored body. */
+    expectedResult: string | null;
+    /** TEXT | STEPS | BDD | EXPLORATORY — decides which body the runner shows. */
+    templateKind: string | null;
     priority: string;
     type: string;
     automationId: string | null;
+    /** MANUAL | AUTOMATED — the detail panel's "IS AUTOMATED" field. */
+    automationStatus: string;
+    /** Harness name (Playwright, Cypress, …) — "AUTOMATION TYPE". Null for a
+     *  manual case. */
+    automationTool: string | null;
     currentVersion: number;
+    labels: RunnerCaseLabel[];
   };
   steps: RunnerStep[];
   stepsSource: "pinned" | "live";
@@ -77,6 +104,8 @@ export interface RunSummaryData {
   build: string | null;
   environment: string | null;
   counts: Record<string, number>;
+  /** Run owner (QUIKTR-317), not a per-test assignee. */
+  owner: { id: string; firstName: string; lastName: string } | null;
 }
 
 /** Display id for a test — the reference UI's `T106`. */

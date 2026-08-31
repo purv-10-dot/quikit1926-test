@@ -23,8 +23,25 @@ export const DRAFT_STORAGE_KEY = "quikcrm.activity-composer.draft.v1";
 // Named-drafts collection (v2) — the array new drafts append to.
 export const DRAFTS_STORAGE_KEY = "quikcrm.activity-composer.drafts.v2";
 
-// The 4 real lookup kinds plus the standalone sentinel, mirroring the composer.
-export type DraftRelatedKind = "None" | "Lead" | "Opportunity" | "Contact" | "Account";
+/**
+ * Every lookup kind plus the standalone sentinel, mirroring the composer.
+ *
+ * Deliberately spelled out here rather than imported from
+ * `services/activities/target-existence`: this module is client-only, and that
+ * one imports the Prisma client at module scope. A `import type` would be erased
+ * at build time, but keeping a server module out of this file's import graph
+ * entirely means no future non-type import can accidentally pull Prisma into the
+ * browser bundle. Kept in sync with ACTIVITY_KINDS — adding a kind there means
+ * adding it here.
+ */
+export type DraftRelatedKind =
+  | "None"
+  | "Lead"
+  | "Opportunity"
+  | "Contact"
+  | "Account"
+  | "Prospect"
+  | "Upwork";
 
 export type NamedDraft = {
   id: string;

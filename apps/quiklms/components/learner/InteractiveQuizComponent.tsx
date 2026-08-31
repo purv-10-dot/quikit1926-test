@@ -1,6 +1,6 @@
 'use client';
 /**
- * InteractiveQuizComponent — ported from the old QuikSkills frontend
+ * InteractiveQuizComponent — ported from the old QuikLMSs frontend
  * (`src/components/learner/InteractiveQuizComponent.tsx`).
  *
  * Renders the full interactive quiz-taking experience:

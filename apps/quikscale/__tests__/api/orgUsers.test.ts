@@ -93,11 +93,10 @@ describe("POST /api/org/users — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  // Password is OPTIONAL on create: Native invitees get a server-generated
-  // temporary password emailed to them, and the Users drawer never collects
-  // one (see lib/utils/userPayload). A missing password must therefore not be
-  // a validation error.
   it("does not reject a create with no password", async () => {
+    // `password` has been `.optional()` in createOrgUserSchema since the
+    // temp-password feature — the server generates and emails one. The
+    // QuikScale UI never sends the field at all.
     const res = await POST(buildPOST({ email: "x@y.com", firstName: "A", lastName: "B" }), routeCtx);
     expect(res.status).not.toBe(400);
   });

@@ -8,6 +8,9 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionApprovalRequest } from "@/lib/services/requisition-approval-service";
 import { notifyRequisitionNextApprover } from "@/lib/services/requisition-notifications";
 import { resolveApprovalChainLevels } from "@/lib/services/approval-chain";
+import { generatePositionsForRequisition } from "@/lib/services/requisition-positions";
+import { generateRequisitionNumber } from "@/lib/utils/requisition-number";
+import { createAuditLog } from "@/lib/utils/audit";
 
 const schema = z.object({
   title: z.string().min(2).max(200),
@@ -21,7 +24,7 @@ const schema = z.object({
   reportingToId: z.string().optional(),
   hiringManagerId: z.string().optional(),
   recruiterId: z.string().optional(),
-  jobLevelId: z.string().optional(),
+  jobLevelId: z.string().min(1, "Job level required"),
   customSlaDays: z.number().int().min(1).max(3650).nullable().optional(),
   customSlaReason: z.string().max(1000).optional(),
   interviewPanelIds: z.array(z.string()).optional(),
@@ -55,11 +58,6 @@ const schema = z.object({
   priority: z.enum(["Low", "Medium", "High", "Urgent"]).default("Medium"),
 });
 
-function reqNumber(): string {
-  const d = new Date();
-  return `REQ-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const raiserId = await resolveEmployeeId(orgId, userId);
@@ -89,10 +87,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       });
     }
 
+    const requisitionNumber = await generateRequisitionNumber(orgId);
     const requisition = await prisma.jobRequisition.create({
       data: {
         orgId,
-        requisitionNumber: reqNumber(),
+        requisitionNumber,
         title: data.title,
         jobOpeningName: data.jobOpeningName,
         departmentId: deptId ?? undefined,
@@ -117,6 +116,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         etaToFillDays: data.etaToFillDays,
+        // Frozen at creation — Deadline TAT compares later revisions against
+        // this to know whether the ORIGINAL commitment was also missed.
+        originalTargetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
+        originalEtaToFillDays: data.etaToFillDays,
         jobGrade: data.jobGrade,
         costCenter: data.costCenter,
         jobDescription: data.jobDescription,
@@ -142,6 +145,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         createdById: raiserId,
         createdBy: userId, updatedBy: userId,
       },
+    });
+
+    // Recruiter & Position Tracking (Phase 1) — one RequisitionPosition row per
+    // opening, generated up front. The requisition itself is never duplicated.
+    await generatePositionsForRequisition(orgId, requisition.id, requisitionNumber, data.positions, userId);
+
+    void createAuditLog({
+      orgId, userId, action: "Create", entityType: "Requisition", entityId: requisition.id,
+      changes: { title: requisition.title, requisitionNumber, positions: requisition.positions, raised: true },
     });
 
     if (data.recruiterId) {

@@ -126,22 +126,35 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : {}),
   };
 
-  const [issues, totalIssues, projects] = await Promise.all([
+  const issueSelect = {
+    id: true,
+    key: true,
+    title: true,
+    type: true,
+    projectId: true,
+    statusId: true,
+    updatedAt: true,
+    status: { select: { id: true, name: true, category: true } },
+    project: { select: { id: true, name: true } },
+  } as const;
+
+  // Exact key match ("QUIKTR-1") — pinned to the top. Without this, `contains` +
+  // `orderBy updatedAt desc` + a small `take` could bury the exact match under
+  // more-recently-updated keys that merely *contain* the query (e.g. QUIKTR-142
+  // matches "QUIKTR-1"). We fetch the exact-key row separately and prepend it.
+  const exactKeyMatch = q
+    ? await db.qtIssue.findFirst({
+        where: { orgId, isDeleted: false, ...projectScope, key: { equals: q, mode: "insensitive" } },
+        select: issueSelect,
+      })
+    : null;
+
+  const [issuesRaw, totalIssues, projects] = await Promise.all([
     db.qtIssue.findMany({
       where: issueWhere,
       orderBy: { updatedAt: "desc" },
       take: limit,
-      select: {
-        id: true,
-        key: true,
-        title: true,
-        type: true,
-        projectId: true,
-        statusId: true,
-        updatedAt: true,
-        status: { select: { id: true, name: true, category: true } },
-        project: { select: { id: true, name: true } },
-      },
+      select: issueSelect,
     }),
     db.qtIssue.count({ where: issueWhere }),
     db.qtProject.findMany({
@@ -171,6 +184,12 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       },
     }),
   ]);
+
+  // Pin the exact-key match first, then the recency-ordered fuzzy matches
+  // (deduped), capped to `limit`.
+  const issues = exactKeyMatch
+    ? [exactKeyMatch, ...issuesRaw.filter((i) => i.id !== exactKeyMatch.id)].slice(0, limit)
+    : issuesRaw;
 
   return NextResponse.json({
     success: true,

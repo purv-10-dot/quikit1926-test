@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { prettyStage } from "@/lib/services/pipeline-stages";
 
 // Single source of truth for widget types. The `WidgetType` union, the
 // API allow-list, and any UI catalog all derive from this — add a new widget
@@ -338,8 +339,9 @@ export async function computeWidget(
         const key = a.currentStage?.trim() || (a.status === "AppOffered" ? "Offer" : "New");
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
-      // Stable, intuitive order — known stages first, custom stages after.
-      const STAGE_ORDER = ["New", "Sourced", "Screening", "Phone Screen", "Interview", "Onsite", "Offer", "Background Check"];
+      // Stable, intuitive order — known (raw, internal) stages first, custom
+      // stages after. Matches the real Hiring Pipeline's own stage order.
+      const STAGE_ORDER = ["New", "Screening", "PhoneScreen", "TechnicalInterview", "ManagerInterview", "HRInterview", "Offer", "Hired"];
       const sorted = [...counts.entries()].sort(([a], [b]) => {
         const ai = STAGE_ORDER.indexOf(a);
         const bi = STAGE_ORDER.indexOf(b);
@@ -348,7 +350,9 @@ export async function computeWidget(
         if (bi !== -1) return 1;
         return a.localeCompare(b);
       });
-      return { type, pie: sorted.map(([name, value]) => ({ name, value })) };
+      // Same stage → label mapping the Hiring Pipeline board uses, so a
+      // stage reads identically here as everywhere else in the app.
+      return { type, pie: sorted.map(([name, value]) => ({ name: prettyStage(name), value })) };
     }
     case "aging-requisitions": {
       // Open reqs bucketed by how long they've been open. Anything 60+ days

@@ -1,6 +1,6 @@
 'use client';
 /**
- * CelebrationModal — ported from the old QuikSkills frontend
+ * CelebrationModal — ported from the old QuikLMSs frontend
  * (QuikSkillsfrontend/src/components/learner/CelebrationModal.tsx).
  *
  * Course-completion celebration overlay:
