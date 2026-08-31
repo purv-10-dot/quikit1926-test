@@ -27,6 +27,7 @@ import {
   EmptyState,
   SignOffBar,
   Skeleton,
+  aiUnavailableMessage,
 } from "./reportUi";
 
 interface MeetingRow {
@@ -35,7 +36,14 @@ interface MeetingRow {
   callStatus: string | null;
 }
 
-interface ReportState {
+/** The transcript linked to this meeting, and how much of it has been read. */
+interface SourceState {
+  transcriptId: string | null;
+  extractionStatus: string | null;
+  extractionCoveragePct: number | null;
+}
+
+interface ReportState extends SourceState {
   report: StoredWmReport | null;
   confidence: number | null;
   completeness: string | null;
@@ -49,6 +57,9 @@ interface ReportState {
 }
 
 const EMPTY: ReportState = {
+  transcriptId: null,
+  extractionStatus: null,
+  extractionCoveragePct: null,
   report: null,
   confidence: null,
   completeness: null,
@@ -89,6 +100,7 @@ export function WeeklyMeetingReportPanel({
   const [loadingList, setLoadingList] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -146,6 +158,10 @@ export function WeeklyMeetingReportPanel({
       if (!json.success) throw new Error(json.error ?? "Failed to load the report");
       const d = json.data;
       setState({
+        transcriptId: d.transcript?.id ?? null,
+        extractionStatus: d.extraction?.status ?? null,
+        extractionCoveragePct:
+          typeof d.extraction?.coveragePct === "number" ? d.extraction.coveragePct : null,
         report: (d.report as StoredWmReport | null) ?? null,
         confidence: typeof d.confidence === "number" ? d.confidence : null,
         completeness: d.completeness ?? null,
@@ -169,6 +185,56 @@ export function WeeklyMeetingReportPanel({
     void loadReport();
   }, [loadReport]);
 
+  /**
+   * Read the linked transcript into facts.
+   *
+   * The report is composed from FACTS, never from the transcript — that is what
+   * makes viewing it free and regenerating it cheap. But nothing in the app
+   * could produce those facts: extraction was designed to run on the QuikFlow
+   * worker, which is not deployed, so "Generate report" on a meeting whose
+   * transcript had never been extracted quietly produced an empty report and
+   * called it PARTIAL. The banner even said "retry the failed parts of the
+   * extraction" with no way to do so. This is that way.
+   *
+   * `retryFailed` is always on: a chunk that failed on a transient provider
+   * error is exactly what the reader is here to fix, and chunks that already
+   * COMPLETED are never re-read or re-billed.
+   */
+  const readTranscript = useCallback(async () => {
+    if (!state.transcriptId) return;
+    setExtracting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(
+        `/api/client-meetings/transcripts/${encodeURIComponent(state.transcriptId)}/extract`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ retryFailed: true }),
+        },
+      );
+      const json = await res.json();
+      const d = json?.data ?? {};
+      if (!json.success) {
+        setNotice(json?.error ?? "Could not read the transcript.");
+      } else if (typeof d.coveragePct === "number" && d.coveragePct < 100) {
+        // Partial is a real outcome, not a failure: say how much was read so
+        // the reader can decide between running it again and generating now.
+        setNotice(
+          `Read ${d.coveragePct}% of the meeting${
+            d.chunksFailed ? ` — ${d.chunksFailed} part(s) could not be read` : ""
+          }. Run it again to retry the rest, or generate a partial report.`,
+        );
+      }
+      await loadReport();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExtracting(false);
+    }
+  }, [state.transcriptId, loadReport]);
+
   const generate = useCallback(async () => {
     if (!meetingId) return;
     setGenerating(true);
@@ -189,7 +255,7 @@ export function WeeklyMeetingReportPanel({
           d.message ?? "Extraction is still running for this meeting. Try again in a few minutes.",
         );
       } else if (d.aiUnavailable) {
-        setNotice("AI is temporarily unavailable — please try again shortly.");
+        setNotice(aiUnavailableMessage(d));
       } else if (d.reportError) {
         setNotice(`Could not generate the report: ${d.reportError}`);
       } else if (!json.success) {
@@ -262,6 +328,16 @@ export function WeeklyMeetingReportPanel({
 
   const selected = meetings.find((m) => m.id === meetingId) ?? null;
   const partial = state.report != null && state.completeness !== "COMPLETE";
+  /**
+   * There is a transcript, and it has not been fully read into facts — either
+   * never extracted, or extracted with parts missing. Both are recoverable by
+   * running the reader, so both offer it.
+   */
+  const needsExtraction =
+    state.transcriptId != null &&
+    (state.extractionStatus == null ||
+      state.extractionStatus !== "COMPLETED" ||
+      (state.extractionCoveragePct != null && state.extractionCoveragePct < 100));
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -310,6 +386,41 @@ export function WeeklyMeetingReportPanel({
 
         {state.canEdit && meetingId ? (
           <div className="border-t border-gray-200 bg-white p-3">
+            {/* Source state, above Generate — because generating before the
+                transcript has been read produces an empty report, and the old
+                panel gave no hint that this step existed at all. */}
+            {!state.transcriptId ? (
+              <p className="mb-2 rounded-lg bg-amber-50 px-2.5 py-2 text-[10.5px] leading-relaxed text-amber-800">
+                No transcript is linked to this meeting. Upload one under Transcripts with this
+                meeting&apos;s date, or connect the recording — the report is built from what the
+                meeting actually said.
+              </p>
+            ) : needsExtraction ? (
+              <>
+                <button
+                  type="button"
+                  onClick={readTranscript}
+                  disabled={extracting}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent-300 bg-white px-3 py-2.5 text-xs font-semibold text-accent-700 shadow-sm transition hover:bg-accent-50 disabled:opacity-50"
+                >
+                  {extracting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Reading transcript…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-3.5 w-3.5" />
+                      {state.extractionStatus ? "Read the rest of the transcript" : "Read transcript"}
+                    </>
+                  )}
+                </button>
+                <p className="mb-3 mt-1.5 text-center text-[10.5px] text-gray-400">
+                  {state.extractionCoveragePct != null
+                    ? `${state.extractionCoveragePct}% read so far — the report needs the facts this produces.`
+                    : "One-off, per transcript. The report is built from the facts this produces."}
+                </p>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={generate}

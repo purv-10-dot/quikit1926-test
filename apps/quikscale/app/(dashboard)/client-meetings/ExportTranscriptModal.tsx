@@ -934,6 +934,7 @@ export function ExportTranscriptModal({
                         key={`${selected.id}-${reportNonce}`}
                         transcriptId={selected.id}
                         currentUserId={currentUserId}
+                        clientName={selected.clientName}
                       />
                     ) : (
                       <div className="space-y-4">

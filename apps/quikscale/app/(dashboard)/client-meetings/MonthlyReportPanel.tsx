@@ -23,7 +23,8 @@ import {
   DownloadPdfButton,
   EmptyState,
   SignOffBar,
-  Skeleton,
+  Skeleton,
+  aiUnavailableMessage,
 } from "./reportUi";
 
 interface WeekCoverage {
@@ -123,7 +124,7 @@ export function MonthlyReportPanel({
       const json = await res.json();
       const d = json?.data ?? {};
       if (d.aiUnavailable) {
-        setNotice("AI is temporarily unavailable — please try again shortly.");
+        setNotice(aiUnavailableMessage(d));
       } else if (d.reportError) {
         setNotice(`Could not generate the report: ${d.reportError}`);
       } else if (!json.success) {

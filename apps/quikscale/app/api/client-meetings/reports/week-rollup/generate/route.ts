@@ -188,7 +188,18 @@ export const POST = auth.update(async ({ orgId, userId }, req) => {
     modelId = result.model;
   } catch (err) {
     if (err instanceof LlmUnavailableError) {
-      return NextResponse.json({ success: true, data: { aiUnavailable: true } });
+      // Carry the classified reason so the panel can say whether waiting helps
+      // (quota window) or a config change is needed (revoked key, retired model).
+      console.error(`[report/generate] AI unavailable (${err.reason}): ${err.message}`);
+      return NextResponse.json({
+        success: true,
+        data: {
+          aiUnavailable: true,
+          aiReason: err.reason,
+          aiRetryAfterSec: err.retryAfterSec,
+          aiDetail: err.message,
+        },
+      });
     }
     if (err instanceof LlmValidationError) {
       return NextResponse.json({

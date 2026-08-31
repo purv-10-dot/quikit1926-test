@@ -19,6 +19,36 @@ import { useOrgInfo } from "@/lib/hooks/useOrgInfo";
 /* ───────────────────────────── layout ───────────────────────────── */
 
 /** A titled block. `action` sits on the right of the header row. */
+/**
+ * Turn the route's classified AI failure into something the reader can act on.
+ *
+ * The old text — "AI is temporarily unavailable — please try again shortly" —
+ * was the same sentence for a quota window that refills in twenty seconds, an
+ * API key that had been revoked, and a model id Google had retired. Two of
+ * those never resolve by waiting, and "try again shortly" sent people looking
+ * for a bug in the report pipeline instead of at the key configuration.
+ */
+export function aiUnavailableMessage(data: {
+  aiReason?: string;
+  aiRetryAfterSec?: number | null;
+}): string {
+  const wait = typeof data.aiRetryAfterSec === "number" && data.aiRetryAfterSec > 0
+    ? ` Try again in about ${data.aiRetryAfterSec}s.`
+    : "";
+  switch (data.aiReason) {
+    case "QUOTA":
+      return `The AI provider's request quota is exhausted for now.${wait || " Try again shortly."}`;
+    case "AUTH":
+      return "The AI provider rejected the configured API key(s). This needs a key update — retrying will not help.";
+    case "MODEL_NOT_FOUND":
+      return "The configured AI model is not available to this account. Set GEMINI_MODEL to a supported model — retrying will not help.";
+    case "NO_KEYS":
+      return "No AI API keys are configured for this environment.";
+    default:
+      return "AI is temporarily unavailable — please try again shortly.";
+  }
+}
+
 export function SectionCard({
   title,
   subtitle,
@@ -315,8 +345,13 @@ export function DownloadPdfButton({
       if (!blob || blob.size === 0) throw new Error("Generated PDF is empty");
       triggerDownload(blob, filename);
     } catch (e) {
+      // The real message, not a generic apology. "Please try again" is the same
+      // sentence for a transient hiccup and for a document module that cannot
+      // load at all — and the second never fixes itself, so the advice actively
+      // misleads. A type imported as a value once broke this exact button, and
+      // the generic text is why it took a bug report to find out.
       console.error("[report] PDF generation failed", e);
-      setError("Could not generate the PDF. Please try again.");
+      setError(e instanceof Error ? e.message : "Could not generate the PDF.");
     } finally {
       setBusy(false);
     }

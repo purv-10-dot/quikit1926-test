@@ -5,7 +5,7 @@
  * Attendance, Adherence Snapshot + summary tiles, Individual Participant
  * Breakdown, Stucks & Blockers) with the org's own name in the header
  * instead of a fixed third-party brand. Consumed via `pdf(...).toBlob()`
- * from `DownloadDailyAdherencePdfButton`, same pattern as `SWTPdfDoc.tsx`.
+ * via the shared `DownloadPdfButton` in `MeetingReportPanel`.
  */
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { StoredMeetingReport } from "@/lib/ai/meetingReport";

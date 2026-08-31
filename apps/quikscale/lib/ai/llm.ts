@@ -49,9 +49,12 @@ import type { z } from "zod";
 import { db } from "@/lib/db";
 
 import {
+  classifyFailure,
   GEMINI_MODEL,
   GEMINI_MODEL_ANALYSIS,
   GeminiUnavailableError,
+  retryAfterSeconds,
+  type GeminiFailureReason,
   generateContentDetailed,
   isRateLimit,
   type GeminiUsage,
@@ -155,14 +158,27 @@ export class LlmValidationError extends Error {
   }
 }
 
-/** Raised when every attempt failed for a reason other than validation. */
+/**
+ * Raised when every attempt failed for a reason other than validation.
+ *
+ * `reason` and `retryAfterSec` are lifted from the underlying
+ * `GeminiUnavailableError` so a route can tell the user whether waiting will
+ * help. A quota window that refills in seconds and a revoked API key are not
+ * the same event, and reporting both as "unavailable" costs debugging hours.
+ */
 export class LlmUnavailableError extends Error {
+  readonly reason: GeminiFailureReason;
+  readonly retryAfterSec: number | null;
+
   constructor(
     message: string,
     readonly cause?: unknown,
   ) {
     super(message);
     this.name = "LlmUnavailableError";
+    const root = cause instanceof GeminiUnavailableError ? cause : null;
+    this.reason = root?.reason ?? classifyFailure(cause);
+    this.retryAfterSec = root?.retryAfterSec ?? retryAfterSeconds(cause);
   }
 }
 

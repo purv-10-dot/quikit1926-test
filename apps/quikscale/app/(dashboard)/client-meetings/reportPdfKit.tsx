@@ -145,6 +145,64 @@ export const metricLabel = (metric: string): string => {
 /** Loose rows carry `unknown`; render a string or nothing. */
 export const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
+/**
+ * Make a string safe for the built-in Helvetica.
+ *
+ * `pdfWinAnsiGlyphs.test.ts` guards the characters WE write into these
+ * documents. It cannot guard the ones the MODEL writes: a weekly report quoting
+ * "₹11.63L" printed "¹11.63L", because U+20B9 has no WinAnsi glyph name and
+ * react-pdf coerced it to a single byte that happens to be a superscript one.
+ * No error, no warning — just a wrong number in a client deliverable, which is
+ * worse than a blank.
+ *
+ * So every string that came from a model or from user data passes through here
+ * on its way to a `<Text>`. Known symbols become a readable ASCII equivalent;
+ * anything else outside the encoding is dropped rather than allowed to print as
+ * a different character. Registering an embedded font would be the richer fix,
+ * and would add ~300 KB to a lazy-loaded bundle to render a handful of symbols.
+ */
+/**
+ * ONLY characters WinAnsi cannot represent appear here.
+ *
+ * The em dash, the ellipsis, the curly quotes, the bullet and the euro sign
+ * all have CP1252 glyph names and print correctly, so rewriting them would
+ * silently edit an author's text for no gain — and the existing reports use
+ * `—`, `·` and `•` as separators. Transform only what would otherwise come
+ * out wrong; leave everything else exactly as written.
+ */
+const WINANSI_SUBSTITUTIONS: [RegExp, string][] = [
+  [/₹/g, "Rs."], // U+20B9 — the one that actually bit us
+  [/[→➡]/g, "->"],
+  [/←/g, "<-"],
+  [/≤/g, "<="],
+  [/≥/g, ">="],
+  [/≠/g, "!="],
+  [/[✓✔]/g, "Yes"],
+  [/[✗✘]/g, "No"],
+  [/[▪●○◐]/g, "-"],
+  [/[‒―]/g, "-"], // figure dash / horizontal bar; – and — are representable
+];
+
+/** True for a code point the non-embedded Helvetica can actually paint. */
+function isWinAnsi(cp: number): boolean {
+  if (cp === 0x09 || cp === 0x0a) return true; // tab, newline
+  if (cp >= 0x20 && cp <= 0x7e) return true; // ASCII printable
+  if (cp >= 0xa0 && cp <= 0xff && cp !== 0xad) return true; // Latin-1, minus soft hyphen
+  // The CP1252 specials that DO have glyph names.
+  return "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ".includes(
+    String.fromCodePoint(cp),
+  );
+}
+
+export function winAnsi(value: string | null | undefined): string {
+  if (!value) return "";
+  let out = value;
+  for (const [pattern, replacement] of WINANSI_SUBSTITUTIONS) out = out.replace(pattern, replacement);
+  // Whatever is left and still unrepresentable is dropped: a missing character
+  // is honest, a substituted one is a lie.
+  return [...out].filter((ch) => isWinAnsi(ch.codePointAt(0)!)).join("");
+}
+
 export function ReportHeader({
   orgName,
   title,
@@ -157,12 +215,12 @@ export function ReportHeader({
   return (
     <View style={pdfStyles.header}>
       <View>
-        <Text style={pdfStyles.orgName}>{orgName || "QuikScale"}</Text>
+        <Text style={pdfStyles.orgName}>{winAnsi(orgName) || "QuikScale"}</Text>
         <Text style={pdfStyles.orgTagline}>Performance OS - Meeting Rhythm</Text>
       </View>
       <View style={pdfStyles.titleBlock}>
-        <Text style={pdfStyles.reportTitle}>{title}</Text>
-        {subtitle ? <Text style={pdfStyles.reportSub}>{subtitle}</Text> : null}
+        <Text style={pdfStyles.reportTitle}>{winAnsi(title)}</Text>
+        {subtitle ? <Text style={pdfStyles.reportSub}>{winAnsi(subtitle)}</Text> : null}
       </View>
     </View>
   );
@@ -180,7 +238,7 @@ export function ReportFooter({ label }: { label: string }) {
 }
 
 export function SectionTitle({ children }: { children: string }) {
-  return <Text style={pdfStyles.h2}>{children}</Text>;
+  return <Text style={pdfStyles.h2}>{winAnsi(children)}</Text>;
 }
 
 export function Bullets({ items }: { items: string[] }) {
@@ -190,7 +248,7 @@ export function Bullets({ items }: { items: string[] }) {
       {items.map((item, i) => (
         <View key={i} style={pdfStyles.bullet}>
           <Text style={pdfStyles.bulletDot}>-</Text>
-          <Text style={pdfStyles.bulletText}>{item}</Text>
+          <Text style={pdfStyles.bulletText}>{winAnsi(item)}</Text>
         </View>
       ))}
     </View>
@@ -202,8 +260,8 @@ export function DetailsTable({ rows }: { rows: [string, string][] }) {
     <View style={pdfStyles.detailsTable}>
       {rows.map(([label, value], i) => (
         <View key={i} style={pdfStyles.detailsRow}>
-          <Text style={pdfStyles.detailsLabel}>{label}</Text>
-          <Text style={pdfStyles.detailsValue}>{value}</Text>
+          <Text style={pdfStyles.detailsLabel}>{winAnsi(label)}</Text>
+          <Text style={pdfStyles.detailsValue}>{winAnsi(value)}</Text>
         </View>
       ))}
     </View>
@@ -276,7 +334,7 @@ export function DataTable<Row>({
                 c.color?.(row) ? { color: c.color(row) as string } : {},
               ]}
             >
-              {c.cell(row)}
+              {winAnsi(c.cell(row))}
             </Text>
           ))}
         </View>

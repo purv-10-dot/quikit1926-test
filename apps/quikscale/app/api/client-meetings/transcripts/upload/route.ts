@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { parseDocxTranscript, DocxTranscriptError, DOCX_MIME, MAX_DOCX_BYTES } from "@/lib/services/docxTranscript";
+import { findMeetingOccurrence } from "@/lib/meetings/linkOccurrence";
 
 export const runtime = "nodejs";
 
@@ -129,12 +130,25 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       ? Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000)
       : null;
 
+  const meetingDay = new Date(`${meetingDate}T00:00:00.000Z`);
+
+  // Link to the occurrence row this transcript belongs to, exactly as the
+  // Fathom ingest path does. Without it the transcript is orphaned: the Weekly
+  // Meeting Report and the Daily Huddle rollup both find their transcript
+  // THROUGH the meeting, so an unlinked upload can never produce either — it
+  // only ever yields the lightweight per-transcript report. Nulls are fine and
+  // expected when nobody has scheduled a meeting on that date; the transcript
+  // is still fully usable and the backfill script can relink it later.
+  const occurrence = await findMeetingOccurrence(orgId, clientId, type, meetingDay);
+
   const row = await db.clientMeetingTranscript.create({
     data: {
       orgId,
       clientId,
       type,
-      meetingDate: new Date(`${meetingDate}T00:00:00.000Z`),
+      dailyHuddleId: occurrence.dailyHuddleId,
+      weeklyMeetingId: occurrence.weeklyMeetingId,
+      meetingDate: meetingDay,
       title,
       rawText,
       source: "manual",
@@ -154,6 +168,8 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       id: true,
       clientId: true,
       type: true,
+      dailyHuddleId: true,
+      weeklyMeetingId: true,
       meetingDate: true,
       title: true,
       recordingUrl: true,

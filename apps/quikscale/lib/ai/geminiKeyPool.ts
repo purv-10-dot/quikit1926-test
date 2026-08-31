@@ -43,16 +43,110 @@ export const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flas
 /**
  * Thrown when no key could service the request (none configured, or all of
  * them failed). Callers catch this to fall back to the no-AI path.
+ *
+ * `reason` and `retryAfterSec` exist so the UI can say something true. "AI is
+ * temporarily unavailable" is the same sentence whether a key was revoked,
+ * the model id was retired, or the free-tier window is 20 seconds from
+ * refilling — and the first two need a config change while the third needs
+ * nothing but patience. The routes pass these through; the panel shows them.
  */
 export class GeminiUnavailableError extends Error {
   constructor(
     message: string,
     public readonly cause?: unknown,
+    public readonly reason: GeminiFailureReason = "UNKNOWN",
+    public readonly retryAfterSec: number | null = null,
   ) {
     super(message);
     this.name = "GeminiUnavailableError";
   }
 }
+
+/** Why the pool gave up — the distinction the user needs to act. */
+export type GeminiFailureReason =
+  | "NO_KEYS"
+  | "QUOTA"
+  | "AUTH"
+  | "MODEL_NOT_FOUND"
+  | "UNKNOWN";
+
+/** Classify a provider error into the reason a human can act on. */
+export function classifyFailure(err: unknown): GeminiFailureReason {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown } | null;
+  const status =
+    typeof e?.status === "number"
+      ? e.status
+      : typeof e?.code === "number"
+        ? e.code
+        : undefined;
+  const msg = (typeof e?.message === "string" ? e.message : "").toLowerCase();
+
+  if (status === 429 || isRateLimit(err)) return "QUOTA";
+  if (status === 404 || msg.includes("not_found") || msg.includes("is not found")) {
+    return "MODEL_NOT_FOUND";
+  }
+  if (
+    status === 401 ||
+    status === 403 ||
+    msg.includes("api key not valid") ||
+    msg.includes("api_key_invalid") ||
+    msg.includes("permission_denied") ||
+    msg.includes("unauthenticated")
+  ) {
+    return "AUTH";
+  }
+  return "UNKNOWN";
+}
+
+/**
+ * Seconds until the provider says this key is worth trying again.
+ *
+ * A Gemini 429 carries the refill hint in the body — `"Please retry in
+ * 6.418238728s"`, and a `RetryInfo` detail with `retryDelay: "6s"`. Reading it
+ * is what turns a hard failure into a short wait: the free-tier window is
+ * per-minute, so the honest answer to most 429s is "in a few seconds", not
+ * "unavailable". Returns null when the error carries no hint.
+ */
+export function retryAfterSeconds(err: unknown): number | null {
+  const e = err as { message?: unknown } | null;
+  const msg = typeof e?.message === "string" ? e.message : "";
+  const spoken = /retry in ([0-9]+(?:\.[0-9]+)?)s/i.exec(msg);
+  if (spoken) return Math.ceil(Number(spoken[1]));
+  const structured = /"?retryDelay"?\s*:\s*"?([0-9]+(?:\.[0-9]+)?)s/i.exec(msg);
+  if (structured) return Math.ceil(Number(structured[1]));
+  return null;
+}
+
+/**
+ * Keys the provider has told us to leave alone, and until when (epoch ms).
+ *
+ * Round-robin without this is actively harmful once one key is throttled: the
+ * cursor keeps handing out the exhausted key first, so every request pays a
+ * doomed round-trip (and its rate-limit reservation) before failing over. With
+ * a cooldown the pool skips it until the provider's own refill estimate has
+ * passed, which is exactly the information the 429 body already carried.
+ *
+ * Per-instance, like the cursor — a cooldown is an optimisation, not a
+ * correctness guarantee, and a cold instance simply learns it again.
+ */
+const cooldownUntil = new Map<string, number>();
+
+/** True when this key is inside a provider-advised cooldown. */
+function isCoolingDown(apiKey: string, now: number): boolean {
+  const until = cooldownUntil.get(apiKey);
+  if (until === undefined) return false;
+  if (until <= now) {
+    cooldownUntil.delete(apiKey);
+    return false;
+  }
+  return true;
+}
+
+/** Default cooldown when a 429 arrives with no retry hint at all. */
+const DEFAULT_COOLDOWN_SEC = 30;
+
+/** Longest wait we will sit through rather than reporting unavailable. */
+const MAX_INLINE_WAIT_MS = 25_000;
 
 /** Read the configured keys in order, dropping blanks/whitespace. */
 function loadKeys(): string[] {
@@ -247,6 +341,8 @@ export async function generateContentDetailed(
   if (keys.length === 0) {
     throw new GeminiUnavailableError(
       "No Gemini API keys configured (set GEMINI_API_KEY_1..3).",
+      undefined,
+      "NO_KEYS",
     );
   }
 
@@ -261,79 +357,149 @@ export async function generateContentDetailed(
 
   let lastErr: unknown;
   let rateWaitMs = 0;
+  let tried = 0;
 
-  for (let attempt = 0; attempt < keys.length; attempt++) {
-    const idx = (start + attempt) % keys.length;
-    const keyId = keyLabel(idx);
-    if (attempt === 0) console.log(`[Gemini] Using ${keyId} (${model})`);
-    else console.log(`[Gemini] Failover to ${keyId}`);
+  // Two passes at most. The first skips keys the provider put in cooldown; if
+  // that leaves nothing to try, the second waits out the shortest cooldown
+  // (when it is short enough to be worth waiting for) and goes again. A
+  // per-minute quota window that refills in six seconds must not surface to the
+  // user as "AI is unavailable" — that was the whole failure mode this loop
+  // exists to remove.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let attempt = 0; attempt < keys.length; attempt++) {
+      const idx = (start + attempt) % keys.length;
+      const keyId = keyLabel(idx);
+      const now = Date.now();
 
-    const began = Date.now();
-    try {
-      if (useLimiter) {
-        rateWaitMs += await sharedRateLimiter.acquire(keyId, estTokens, {
-          signal: opts.signal,
+      if (isCoolingDown(keys[idx], now)) {
+        const left = Math.ceil((cooldownUntil.get(keys[idx])! - now) / 1000);
+        console.log(`[Gemini] Skipping ${keyId} — quota cooldown, ~${left}s left`);
+        continue;
+      }
+
+      tried += 1;
+      if (tried === 1) console.log(`[Gemini] Using ${keyId} (${model})`);
+      else console.log(`[Gemini] Failover to ${keyId}`);
+
+      const began = Date.now();
+      try {
+        if (useLimiter) {
+          rateWaitMs += await sharedRateLimiter.acquire(keyId, estTokens, {
+            signal: opts.signal,
+          });
+        }
+
+        const ai = getGeminiClient(keys[idx]);
+        const res = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            ...(opts.responseMimeType
+              ? { responseMimeType: opts.responseMimeType }
+              : {}),
+            ...(opts.responseSchema
+              ? { responseSchema: opts.responseSchema as never }
+              : {}),
+            ...(opts.temperature !== undefined
+              ? { temperature: opts.temperature }
+              : {}),
+            ...(opts.maxOutputTokens !== undefined
+              ? { maxOutputTokens: opts.maxOutputTokens }
+              : {}),
+            ...(opts.signal ? { abortSignal: opts.signal } : {}),
+          },
         });
+
+        const text = res.text;
+        const usage = readUsage(res);
+
+        // Reconcile the window against what was actually billed, so our
+        // 4-chars-per-token estimate does not drift the limiter over time.
+        if (useLimiter) {
+          sharedRateLimiter.settle(keyId, estTokens, usage.totalTokens || estTokens);
+        }
+
+        if (!text || !text.trim()) {
+          throw new Error("Gemini returned an empty response");
+        }
+
+        return {
+          text,
+          usage,
+          model,
+          keyId,
+          keyAttempts: tried,
+          rateWaitMs,
+          latencyMs: Date.now() - began,
+        };
+      } catch (err) {
+        lastErr = err;
+        const reason = classifyFailure(err);
+
+        if (reason === "QUOTA") {
+          // A 429 means we were over the real ceiling, whatever our configured
+          // one says. Penalise the key so the next window is gentler, and park
+          // it for as long as the provider asked so the next request does not
+          // open on a key we already know is dead.
+          if (useLimiter) sharedRateLimiter.penalise(keyId);
+          const wait = retryAfterSeconds(err) ?? DEFAULT_COOLDOWN_SEC;
+          cooldownUntil.set(keys[idx], Date.now() + wait * 1000);
+          console.log(`[Gemini] ${keyId} quota exhausted — cooling down ${wait}s`);
+        } else {
+          // Anything else is this key's own problem (revoked key, retired
+          // model id, transient 5xx). Log WHY: the old loop printed only
+          // "Failover to key#2", which said nothing about what to fix.
+          const detail = err instanceof Error ? err.message.slice(0, 200) : String(err);
+          console.log(`[Gemini] ${keyId} failed (${reason}): ${detail}`);
+        }
+        continue;
       }
-
-      const ai = getGeminiClient(keys[idx]);
-      const res = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          ...(opts.responseMimeType
-            ? { responseMimeType: opts.responseMimeType }
-            : {}),
-          ...(opts.responseSchema
-            ? { responseSchema: opts.responseSchema as never }
-            : {}),
-          ...(opts.temperature !== undefined
-            ? { temperature: opts.temperature }
-            : {}),
-          ...(opts.maxOutputTokens !== undefined
-            ? { maxOutputTokens: opts.maxOutputTokens }
-            : {}),
-          ...(opts.signal ? { abortSignal: opts.signal } : {}),
-        },
-      });
-
-      const text = res.text;
-      const usage = readUsage(res);
-
-      // Reconcile the window against what was actually billed, so our
-      // 4-chars-per-token estimate does not drift the limiter over time.
-      if (useLimiter) {
-        sharedRateLimiter.settle(keyId, estTokens, usage.totalTokens || estTokens);
-      }
-
-      if (!text || !text.trim()) {
-        throw new Error("Gemini returned an empty response");
-      }
-
-      return {
-        text,
-        usage,
-        model,
-        keyId,
-        keyAttempts: attempt + 1,
-        rateWaitMs,
-        latencyMs: Date.now() - began,
-      };
-    } catch (err) {
-      lastErr = err;
-      // A 429 means we were over the real ceiling, whatever our configured
-      // one says. Penalise the key so the next window is gentler rather than
-      // hammering it again immediately.
-      if (useLimiter && isRateLimit(err)) sharedRateLimiter.penalise(keyId);
-      // Key errors and transient errors alike: fall through to the next key
-      // for resilience. We remember the last error for the final message.
-      continue;
     }
+
+    // Every key has now been tried or skipped. Waiting is worth it only on the
+    // first pass and only when NOTHING was tried — i.e. every key is cooling
+    // down — and the shortest wait is short. Free-tier windows refill in
+    // seconds; reporting "unavailable" for that is a worse answer than waiting.
+    if (pass === 0 && tried === 0) {
+      const cooling = keys
+        .map((k) => cooldownUntil.get(k))
+        .filter((v): v is number => typeof v === "number");
+      const waitMs = cooling.length ? Math.min(...cooling) - Date.now() : 0;
+      if (waitMs > 0 && waitMs <= MAX_INLINE_WAIT_MS) {
+        console.log(`[Gemini] All keys cooling down — waiting ${Math.ceil(waitMs / 1000)}s`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs + 250));
+        continue;
+      }
+    }
+    break;
   }
 
+  // Report the reason and the provider's own refill estimate, so the caller can
+  // tell the user "retry in ~20s" instead of an unqualified "unavailable".
+  const failureReason: GeminiFailureReason =
+    tried === 0 ? "QUOTA" : classifyFailure(lastErr);
+  const hinted = retryAfterSeconds(lastErr);
+  // Only THIS request's keys. The cooldown map outlives any one call and can
+  // hold entries for keys that are no longer configured; using them would
+  // attach a retry estimate to a failure that has nothing to do with quota.
+  const cooling = keys
+    .map((k) => cooldownUntil.get(k))
+    .filter((v): v is number => typeof v === "number");
+  const soonest = cooling.length
+    ? Math.ceil((Math.min(...cooling) - Date.now()) / 1000)
+    : null;
+  const retryAfterSec =
+    hinted ?? (soonest !== null && soonest > 0 ? soonest : null);
+
+  const detail =
+    lastErr instanceof Error ? lastErr.message.slice(0, 300) : String(lastErr ?? "");
   throw new GeminiUnavailableError(
-    `All ${keys.length} Gemini API key(s) failed.`,
+    tried === 0
+      ? `All ${keys.length} Gemini API key(s) are in quota cooldown.`
+      : `All ${keys.length} Gemini API key(s) failed (${failureReason}): ${detail}`,
     lastErr,
+    failureReason,
+    retryAfterSec,
   );
 }
 

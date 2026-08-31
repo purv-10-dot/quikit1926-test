@@ -361,22 +361,41 @@ interface PersistArgs {
 
 async function persistChunkFacts(tx: Tx, args: PersistArgs): Promise<void> {
   const { orgId, run, chunk, extracted } = args;
+
+  /**
+   * Provenance every fact row carries.
+   *
+   * `cadence` is NOT part of it. Only the three fact types a Daily Huddle can
+   * produce — participant, stuck, WWW — have that column; they are the ones
+   * both cadences write, so they need to record which one they came from. The
+   * four Weekly-Meeting-only types (KPI read, gap, discussion, segment) can
+   * only ever be WEEKLY, so the column would be a constant and the schema does
+   * not carry it.
+   *
+   * Spreading `cadence` into all seven was a silent killer of weekly
+   * extraction: Prisma rejects `Unknown argument 'cadence'`, that throw takes
+   * down the whole chunk transaction, and any chunk in which the model found a
+   * KPI read, a gap or a discussion — i.e. most of a real weekly meeting —
+   * failed. Coverage fell, the report came out PARTIAL or empty, and nothing
+   * in the failure named the column.
+   */
   const common = {
     orgId,
     clientId: run.clientId,
     transcriptId: run.transcriptId,
     runId: run.id,
-    cadence: run.cadence,
     chunkIdx: chunk.idx,
     extractionVersion: EXTRACTION_VERSION,
     promptVersion: extracted.promptVersion,
     modelId: extracted.model,
   };
+  /** For the fact types both cadences produce, which do carry `cadence`. */
+  const commonWithCadence = { ...common, cadence: run.cadence };
 
   if (extracted.participants.length) {
     await tx.meetingParticipantFact.createMany({
       data: extracted.participants.map((p) => ({
-        ...common,
+        ...commonWithCadence,
         speakerRaw: p.speakerRaw,
         achievementText: p.achievement.text,
         achievementAdherence: p.achievement.adherence,
@@ -400,7 +419,7 @@ async function persistChunkFacts(tx: Tx, args: PersistArgs): Promise<void> {
   if (extracted.stucks.length) {
     await tx.meetingStuckFact.createMany({
       data: extracted.stucks.map((s) => ({
-        ...common,
+        ...commonWithCadence,
         raisedByRaw: s.raisedByRaw,
         raisedForRaw: s.raisedForRaw,
         description: s.description,
@@ -467,7 +486,7 @@ async function persistChunkFacts(tx: Tx, args: PersistArgs): Promise<void> {
   if (extracted.wwwCandidates.length) {
     await tx.meetingWwwFact.createMany({
       data: extracted.wwwCandidates.map((w) => ({
-        ...common,
+        ...commonWithCadence,
         whoRaw: w.whoRaw,
         what: w.what,
         normalizedKey: w.normalizedKey,

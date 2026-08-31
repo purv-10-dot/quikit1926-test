@@ -81,6 +81,34 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     scopeKeyFor({ kind: KIND, weeklyMeetingId: meeting.id }),
   );
 
+  /**
+   * The source this meeting's report can be built from.
+   *
+   * Reported because its absence is the single most common reason "Generate
+   * report" produces nothing useful, and until now the panel could not see it:
+   * a report needs FACTS, facts come from extraction, extraction needs a
+   * transcript linked to this meeting. With no transcript there is nothing to
+   * read; with a transcript but no extraction run there are no facts yet, and
+   * the report comes out empty while saying only that it is PARTIAL. Neither
+   * state is a failure — both are just work that has not happened — so they are
+   * surfaced as state rather than as an error.
+   *
+   * Two cheap indexed reads on a route whose whole promise is that viewing
+   * costs nothing. No model is called.
+   */
+  const transcript = await db.clientMeetingTranscript.findFirst({
+    where: { orgId, weeklyMeetingId: meeting.id, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, title: true },
+  });
+  const extraction = transcript
+    ? await db.meetingExtractionRun.findFirst({
+        where: { orgId, transcriptId: transcript.id },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true, coveragePct: true },
+      })
+    : null;
+
   const canEdit = await userCan(userId, orgId, "ClientMeetings.Report", "update");
 
   // Version drift only — the source fingerprint needs the full context load, so
@@ -105,6 +133,10 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
         callStatus: meeting.callStatus,
       },
       client: meeting.client,
+      /** Null when no transcript is linked to this meeting — nothing to read. */
+      transcript,
+      /** Null when the transcript has never been read into facts. */
+      extraction,
       report: saved?.report ?? null,
       metrics: saved?.metrics ?? null,
       validation: saved?.validation ?? null,

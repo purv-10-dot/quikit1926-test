@@ -10,6 +10,7 @@ import {
   type MeetingType,
 } from "@/lib/services/meetingTranscriptMatch";
 import { emitMeetingTranscriptAttached } from "@/lib/services/workflowEvents";
+import { findMeetingOccurrence } from "@/lib/meetings/linkOccurrence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -164,33 +165,6 @@ async function matchMeeting(
   return { clientId: null, type: null, matchStatus: anyCandidate ? "AMBIGUOUS" : "UNMATCHED" };
 }
 
-/** Find an existing meeting row for this client + cadence + date to link to. */
-async function findMeetingRecord(
-  orgId: string,
-  clientId: string,
-  type: MeetingType,
-  meetingDate: Date,
-): Promise<{ dailyHuddleId: string | null; weeklyMeetingId: string | null }> {
-  const dayStart = new Date(meetingDate);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-  const range = { gte: dayStart, lt: dayEnd };
-
-  if (type === "DAILY") {
-    const row = await db.clientDailyHuddle.findFirst({
-      where: { orgId, clientId, deletedAt: null, meetingDate: range },
-      select: { id: true },
-    });
-    return { dailyHuddleId: row?.id ?? null, weeklyMeetingId: null };
-  }
-  const row = await db.clientWeeklyMeeting.findFirst({
-    where: { orgId, clientId, deletedAt: null, meetingDate: range },
-    select: { id: true },
-  });
-  return { dailyHuddleId: null, weeklyMeetingId: row?.id ?? null };
-}
-
 export async function POST(req: NextRequest) {
   const secret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
@@ -231,7 +205,7 @@ export async function POST(req: NextRequest) {
     let dailyHuddleId: string | null = null;
     let weeklyMeetingId: string | null = null;
     if (clientId && type && meetingDate) {
-      const link = await findMeetingRecord(b.orgId, clientId, type, meetingDate);
+      const link = await findMeetingOccurrence(b.orgId, clientId, type, meetingDate);
       dailyHuddleId = link.dailyHuddleId;
       weeklyMeetingId = link.weeklyMeetingId;
     }
