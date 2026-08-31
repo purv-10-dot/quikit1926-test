@@ -14,6 +14,7 @@ import {
   Check,
 } from "lucide-react";
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
+import { buildUserPayload } from "@/lib/utils/userPayload";
 import {
   RightPanel,
   RightPanelFooter,
@@ -78,13 +79,12 @@ type FormState = {
   /**
    * Set when the admin picks an existing org member from the email
    * autocomplete dropdown. Triggers the "link existing user → grant
-   * QuikScale access" backend path.
+   * QuikScale access" backend path — the invite-method picker is hidden here.
    */
   linkExistingUserId: string | null;
   /**
-   * "native" → the server generates a temporary password and emails it; the
-   *            user signs in with email+password and resets it on first login.
-   * "sso"    → no password at all; user authenticates via Google/Microsoft.
+   * "native" → server emails a temp password; user signs in with email+password.
+   * "sso"    → no password collected; user authenticates via Google/Microsoft.
    *            Server stores `auth.User.password = null` so the password
    *            credential provider can't log them in — only OAuth works.
    */
@@ -475,13 +475,15 @@ function UserPanel({
       setError("Email is required.");
       return;
     }
-    // No password is ever collected here. Native invites get a server-generated
-    // temporary password emailed to the invitee (matching the QuikIT
-    // super-admin onboarding flow); SSO invitees never have one.
+    // No password is ever collected in this drawer — Native invitees receive a
+    // server-generated temporary password by email and reset it on first
+    // sign-in; existing users change theirs via self-service reset.
 
     setSaving(true);
     setError("");
     try {
+      // Payload shape lives in lib/utils/userPayload — it never emits a
+      // `password` key. See buildUserPayload for the full contract.
       const payload = buildUserPayload(form, Boolean(editUser));
 
       const url = editUser

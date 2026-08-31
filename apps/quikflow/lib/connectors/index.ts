@@ -9,7 +9,7 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import { GMAIL } from "./gmail";
 import { OUTLOOK } from "./microsoft";
 import { TEAMS } from "./teams";
-import { CalendarEventNotFoundError } from "./types";
+import { CalendarEventNotFoundError, ReconnectRequiredError } from "./types";
 import type {
   CalendarEventInput,
   CalendarEventResult,
@@ -220,7 +220,21 @@ export async function getFreshAccessToken(conn: StoredConnection): Promise<strin
   if (conn.accessToken && notExpired) return decryptSecret(conn.accessToken);
 
   if (!conn.refreshToken) throw new Error("Connection has no refresh token — reconnect required.");
-  const refreshed = await provider.refresh(decryptSecret(conn.refreshToken));
+
+  let refreshed: TokenSet;
+  try {
+    refreshed = await provider.refresh(decryptSecret(conn.refreshToken));
+  } catch (e) {
+    // A dead grant is a standing state of the connection, not a property of the
+    // run that happened to notice it. Recording it means the Connections page
+    // can say "Reconnect required" instead of leaving the only evidence buried
+    // in one workflow run's log — which is exactly how AADSTS65001 stayed
+    // invisible until someone opened Run History.
+    if (e instanceof ReconnectRequiredError) {
+      await db.wfConnection.update({ where: { id: conn.id }, data: { status: "error" } });
+    }
+    throw e;
+  }
   await db.wfConnection.update({
     where: { id: conn.id },
     data: {
@@ -351,6 +365,82 @@ export interface CalendarLinkKey {
 }
 
 /**
+ * Why an online meeting carries no Fathom notetaker.
+ *
+ * `not-an-online-meeting` is not a problem — a room-only event has nothing for
+ * a bot to join. The rest are: they mean somebody expects a recording that will
+ * never happen.
+ */
+export type NotetakerNote = "not-configured" | "invalid-email" | "bot-mailbox" | "not-an-online-meeting";
+
+/** Reported alongside every created/updated event so no caller has to guess. */
+export interface NotetakerOutcome {
+  /** The address actually invited, or null when none was. */
+  notetaker: string | null;
+  notetakerInvited: boolean;
+  /** Present only when `notetakerInvited` is false. */
+  notetakerNote?: NotetakerNote;
+}
+
+/**
+ * Deliberately loose: this only has to reject values that would make Graph
+ * reject the WHOLE event (a bare word, a missing domain, an embedded space).
+ * Judging real deliverability is Exchange's job, not a regex's — and a stricter
+ * pattern here would start rejecting addresses that work.
+ */
+const EMAIL_SHAPE = /^[^\s@,]+@[^\s@,.]+\.[^\s@,]+$/;
+
+/**
+ * Addresses that look like "Fathom's bot mailbox" — which does not exist.
+ *
+ * Fathom has NO invitable notetaker address. Its bot joins a meeting because
+ * that meeting is on the calendar of a Fathom USER account whose auto-record is
+ * on; the invite is how the meeting reaches that person's calendar, so the
+ * value here has to be a real human mailbox. A value like
+ * notetaker@fathom.video is nobody's mailbox: the invite bounces, the meeting
+ * never appears in Fathom's Upcoming Meetings, and nothing ever joins — with
+ * every layer reporting success. That silent failure is why this is detected
+ * rather than merely documented.
+ */
+const BOT_MAILBOX = /(@(fathom\.video|fathom\.ai)$)|(^[^@]*(notetaker|fathom-bot|fathombot)[^@]*@)/i;
+
+/** True for an address that cannot be a real person's mailbox. Exported for the settings API. */
+export function isBotMailbox(address: string): boolean {
+  return BOT_MAILBOX.test(address.trim());
+}
+
+/**
+ * Resolve the Fathom account address for a connection: per-connection setting
+ * first (set on /connections), then the org-wide env var. Anything that cannot
+ * work resolves to a null address plus a reason rather than being handed to
+ * Graph — one typo would otherwise 400 the entire event creation, losing the
+ * meeting as well as the recording.
+ */
+function resolveNotetaker(conn: StoredConnection): {
+  email: string | null;
+  reason: "ok" | "not-configured" | "invalid" | "bot-mailbox";
+} {
+  const settings = conn.settings as { notetakerEmail?: string } | null | undefined;
+  const raw = settings?.notetakerEmail?.trim() || process.env.FATHOM_NOTETAKER_EMAIL?.trim();
+  if (!raw) return { email: null, reason: "not-configured" };
+  if (!EMAIL_SHAPE.test(raw)) return { email: null, reason: "invalid" };
+  if (isBotMailbox(raw)) return { email: null, reason: "bot-mailbox" };
+  return { email: raw, reason: "ok" };
+}
+
+/** Shape the resolution + the event kind into the reported outcome. */
+function notetakerStatusFor(
+  onlineMeeting: boolean | undefined,
+  resolved: { email: string | null; reason: "ok" | "not-configured" | "invalid" | "bot-mailbox" },
+): NotetakerOutcome {
+  if (!onlineMeeting) return { notetaker: null, notetakerInvited: false, notetakerNote: "not-an-online-meeting" };
+  if (resolved.reason === "invalid") return { notetaker: null, notetakerInvited: false, notetakerNote: "invalid-email" };
+  if (resolved.reason === "bot-mailbox") return { notetaker: null, notetakerInvited: false, notetakerNote: "bot-mailbox" };
+  if (!resolved.email) return { notetaker: null, notetakerInvited: false, notetakerNote: "not-configured" };
+  return { notetaker: resolved.email, notetakerInvited: true };
+}
+
+/**
  * Create (or idempotently update) a calendar event on an org's connected
  * Microsoft calendar. Attendee owner/user ids are resolved to emails. When a
  * `link` key is supplied, a stored WfCalendarLink for (org, refType, refId,
@@ -361,30 +451,49 @@ export async function createCalendarEventForOrg(
   orgId: string,
   event: CalendarEventInput,
   opts?: { connectionId?: string; link?: CalendarLinkKey; createdBy?: string },
-): Promise<(CalendarEventResult & { organizer: string; updated: boolean }) | null> {
+): Promise<(CalendarEventResult & NotetakerOutcome & { organizer: string; updated: boolean }) | null> {
   const found = await findCalendarConnection(orgId, opts?.connectionId);
   if (!found) return null;
 
   // Resolve any QuikScale user ids among the attendees to real addresses.
-  const attendees = event.attendees?.length
-    ? (await resolveRecipients(orgId, event.attendees.join(",")))
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
+  const resolveList = async (list: string[] | undefined): Promise<string[]> =>
+    list?.length
+      ? (await resolveRecipients(orgId, list.join(",")))
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+  const attendees = await resolveList(event.attendees);
+  // Optional attendees go through the same id→address resolution. Kept a
+  // separate list all the way to the Graph mapping so the invite records WHY
+  // someone was invited, not just that they were.
+  const optionalAttendees = await resolveList(event.optionalAttendees);
 
   // Invite Fathom's notetaker bot on online meetings so it auto-joins and
   // records — no manual "Start Recording" click in Fathom. Per-connection
   // setting wins (org admins set this per Fathom account on /connections);
-  // falls back to the org-wide env var; no-op when neither is set.
-  const connSettings = found.conn.settings as { notetakerEmail?: string } | null | undefined;
-  const notetaker = connSettings?.notetakerEmail?.trim() || process.env.FATHOM_NOTETAKER_EMAIL?.trim();
-  if (event.onlineMeeting && notetaker && !attendees.some((a) => a.toLowerCase() === notetaker.toLowerCase())) {
-    attendees.push(notetaker);
-  }
+  // falls back to the org-wide env var.
+  //
+  // The outcome is REPORTED, never silent: an org with no notetaker configured
+  // (or a typo'd one) still gets its meeting, but the caller — workflow run
+  // output, /api/internal/calendar/schedule, QuikScale's "Create Teams
+  // meetings" — is told the meeting will not be recorded and why. Silently
+  // creating an unrecorded meeting that everyone believes Fathom is covering
+  // is the worst of the three outcomes.
+  const resolved = resolveNotetaker(found.conn);
+  const notetaker = event.onlineMeeting ? resolved.email : null;
+  const alreadyInvited =
+    !!notetaker && attendees.some((a) => a.toLowerCase() === notetaker.toLowerCase());
+  if (notetaker && !alreadyInvited) attendees.push(notetaker);
+  const notetakerStatus = notetakerStatusFor(event.onlineMeeting, resolved);
 
   const accessToken = await getFreshAccessToken(found.conn);
-  const payload = { ...event, attendees };
+  // The notetaker stays REQUIRED — it is not an optional guest, it is how the
+  // meeting gets recorded at all. A bot address the caller happened to pass in
+  // `optionalAttendees` is still appended here, and toGraphEvent's
+  // required-wins-a-duplicate rule drops the optional copy.
+  const payload = { ...event, attendees, optionalAttendees };
   const link = opts?.link;
 
   if (link) {
@@ -456,7 +565,7 @@ export async function createCalendarEventForOrg(
             joinUrl: updated.joinUrl ?? null,
           },
         });
-        return { ...updated, organizer: found.conn.label, updated: true };
+        return { ...updated, ...notetakerStatus, organizer: found.conn.label, updated: true };
       } catch (e) {
         // Stale link: the stored event id no longer exists on the connected
         // calendar (deleted manually, or orphaned by a Teams reconnect since
@@ -475,7 +584,7 @@ export async function createCalendarEventForOrg(
             joinUrl: recreated.joinUrl ?? null,
           },
         });
-        return { ...recreated, organizer: found.conn.label, updated: false };
+        return { ...recreated, ...notetakerStatus, organizer: found.conn.label, updated: false };
       }
     }
 
@@ -485,11 +594,11 @@ export async function createCalendarEventForOrg(
       where: { id: claim.row.id },
       data: { externalEventId: created.id, webLink: created.webLink ?? null, joinUrl: created.joinUrl ?? null },
     });
-    return { ...created, organizer: found.conn.label, updated: false };
+    return { ...created, ...notetakerStatus, organizer: found.conn.label, updated: false };
   }
 
   const created = await found.provider.createEvent(accessToken, payload);
-  return { ...created, organizer: found.conn.label, updated: false };
+  return { ...created, ...notetakerStatus, organizer: found.conn.label, updated: false };
 }
 
 /**
@@ -582,6 +691,8 @@ export interface ClientMeetingSpec {
   name: string;
   timeZone: string;
   attendees: string[];
+  /** Invited as optional — shown in the report, never scored. */
+  optionalAttendees?: string[];
   daily?: ClientMeetingWindow;
   weekly?: ClientMeetingWindow;
   createdBy?: string;
@@ -600,6 +711,7 @@ function buildMeetingEvent(title: string, spec: ClientMeetingSpec, w: ClientMeet
     end,
     timeZone: spec.timeZone,
     attendees: spec.attendees,
+    optionalAttendees: spec.optionalAttendees ?? [],
     onlineMeeting: true,
     recurrence: { pattern: "weekly", interval: 1, daysOfWeek: days, startDate: w.startDate, endDate: w.until ?? null },
   };

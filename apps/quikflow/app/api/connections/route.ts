@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { isBotMailbox } from "@/lib/connectors";
 import { db } from "@/lib/db";
 import { Prisma } from "@quikit/database";
 import type { ConnectionDTO } from "@/types";
@@ -82,17 +83,41 @@ export const POST = withOrgAuth(
 
 const settingsSchema = z.object({
   id: z.string().min(1),
-  // Teams calendar connection: the bot email Fathom's auto-join invite goes
-  // to. Empty string clears the override (falls back to FATHOM_NOTETAKER_EMAIL).
-  notetakerEmail: z.string().trim().max(320).optional(),
+  // Teams calendar connection: the email of the FATHOM ACCOUNT whose calendar
+  // should auto-join. Fathom has no invitable bot mailbox — its notetaker joins
+  // meetings that appear on a Fathom user's connected calendar, so inviting
+  // that person is how a QuikFlow-created meeting reaches Fathom at all.
+  // Empty string clears the override (falls back to FATHOM_NOTETAKER_EMAIL).
+  //
+  // Both checks below exist because every way of getting this wrong fails
+  // SILENTLY at meeting time — a malformed value makes Graph reject the whole
+  // event, and a bot-looking value is nobody's mailbox, so the invite bounces
+  // and Fathom never learns the meeting exists. Save time is the only moment a
+  // human is present to see the problem.
+  notetakerEmail: z
+    .union([
+      z.literal(""),
+      z
+        .string()
+        .trim()
+        .max(320)
+        .email("Fathom account email must be a valid email address")
+        .refine((v) => !isBotMailbox(v), {
+          message:
+            "Fathom has no invitable bot mailbox. Enter the email of the Fathom account whose calendar should auto-join (that person's own address, e.g. name@company.com).",
+        }),
+    ])
+    .optional(),
 });
 
 /**
  * PATCH /api/connections — update a connection's per-connection settings
  * (App Admin). Today this is just `notetakerEmail` on a Teams calendar
- * connection: the Fathom bot address auto-invited to every online meeting
- * QuikFlow creates, so it auto-joins and records. Merges into the existing
- * settings JSON rather than replacing it.
+ * connection: the Fathom account address auto-invited to every online meeting
+ * QuikFlow creates, which is what puts the meeting on that account's synced
+ * calendar so Fathom auto-joins and records. The stored key keeps its original
+ * name so existing connections keep working; the meaning is the Fathom user,
+ * not a bot. Merges into the existing settings JSON rather than replacing it.
  */
 export const PATCH = withOrgAuth(
   async ({ orgId }, req) => {

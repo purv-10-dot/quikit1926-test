@@ -25,7 +25,17 @@ const auth = withOrgAuthForResource("clientMeetings.dashboard", "ClientMeetings.
 // Bound candidate sets and total semantic calls so a pathological org / noisy
 // transcript can't blow up the prompt or the Gemini quota.
 const CANDIDATE_CAP = 300;
-const SEMANTIC_BUDGET = 20;
+/**
+ * Semantic duplicate-check calls allowed per report.
+ *
+ * Deliberately small. Each one is a separate model request, and the Gemini free
+ * tier allows ~20 requests per window per project — so the old budget of 20
+ * meant ONE report could exhaust the quota by itself, and the next generate
+ * (or the next user) got "AI is temporarily unavailable". Exact-name matching
+ * is free and unbounded; this budget only buys fuzzy matches for the first few
+ * items, and running out degrades to exact-only rather than failing.
+ */
+const SEMANTIC_BUDGET = 6;
 
 type Candidate = { id: string; name: string; ownerName: string | null };
 const norm = (s: string) => s.trim().toLowerCase();
@@ -146,7 +156,11 @@ async function applyDailyDeterministicFields(
  *
  * Responses (all 200):
  *   { report, canEdit }        — generated report with duplicate tags
- *   { aiUnavailable: true }    — every Gemini key failed
+ *   { aiUnavailable: true, aiReason, aiRetryAfterSec, aiDetail }
+ *                              — every Gemini key failed; `aiReason` says which
+ *                                of QUOTA / AUTH / MODEL_NOT_FOUND / NO_KEYS,
+ *                                so the panel can tell the user whether to wait
+ *                                or to fix configuration
  *   { reportError: string }    — model output could not be parsed
  */
 export const POST = auth.view<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
@@ -187,7 +201,19 @@ export const POST = auth.view<{ id: string }>(async ({ orgId, userId }, _req, { 
     report = await generateMeetingReport(input);
   } catch (err) {
     if (err instanceof GeminiUnavailableError) {
-      return NextResponse.json({ success: true, data: { aiUnavailable: true } });
+      // Pass the classified reason through. "Unavailable" alone sent people
+      // hunting for a bug in the report code when the answer was a quota
+      // window that refills in seconds, or a model id that no longer exists.
+      console.error(`[report/generate] AI unavailable (${err.reason}): ${err.message}`);
+      return NextResponse.json({
+        success: true,
+        data: {
+          aiUnavailable: true,
+          aiReason: err.reason,
+          aiRetryAfterSec: err.retryAfterSec,
+          aiDetail: err.message,
+        },
+      });
     }
     if (err instanceof MeetingReportError) {
       return NextResponse.json({ success: true, data: { reportError: err.message } });

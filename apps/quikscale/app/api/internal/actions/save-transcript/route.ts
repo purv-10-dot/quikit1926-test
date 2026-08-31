@@ -10,6 +10,7 @@ import {
   type MeetingType,
 } from "@/lib/services/meetingTranscriptMatch";
 import { emitMeetingTranscriptAttached } from "@/lib/services/workflowEvents";
+import { findMeetingOccurrence } from "@/lib/meetings/linkOccurrence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,9 +28,24 @@ export const dynamic = "force-dynamic";
  * Nothing is ever dropped: an unresolved transcript is still stored with
  * matchStatus UNMATCHED/AMBIGUOUS (clientId null) for the "Unassigned" bucket.
  */
+/**
+ * NOTE — `z.object` STRIPS unknown keys, and the parsed value is what gets
+ * written to `attendees` below. So any field not named here is silently deleted
+ * at this boundary, however faithfully the connector emitted it. That is why
+ * the invitee/identified distinction has to be declared explicitly.
+ *
+ * Explicit fields rather than `.passthrough()`: passthrough would let arbitrary
+ * vendor data — including PII we never reviewed — into a Json column, and the
+ * whole point of this work is knowing exactly what we store.
+ */
 const attendeeSchema = z.object({
   name: z.string().nullable().optional(),
   email: z.string().nullable().optional(),
+  /** On the calendar invite. */
+  isInvitee: z.boolean().optional(),
+  /** Identified by Fathom as actually present — its UI shows these separately. */
+  isIdentified: z.boolean().optional(),
+  linkedinUrl: z.string().nullable().optional(),
 });
 
 const bodySchema = z.object({
@@ -43,7 +59,23 @@ const bodySchema = z.object({
   attendees: z.array(attendeeSchema).optional().default([]),
   recordingUrl: z.string().nullable().optional(),
   rawText: z.string().nullable().optional(),
+  /**
+   * The structured transcript with timestamps preserved. `rawText` is a
+   * flattened "Speaker: text" rendering of the same content that drops every
+   * timestamp, so without this the meeting pipeline has no time information at
+   * all and must interpolate. Optional and loosely typed on purpose: a
+   * recorder that only returns a plain string sends nothing, and the
+   * normaliser coerces defensively rather than rejecting the ingestion.
+   */
+  rawSegments: z.array(z.any()).nullable().optional(),
   summary: z.string().nullable().optional(),
+  /**
+   * Deliberately loose, unlike `attendees` above: `z.any()` passes every field
+   * through, so an action item's assignee, timestamp and completed state reach
+   * the Json column without this schema needing to know about them. The
+   * asymmetry is intentional — attendees are pinned because that list is the
+   * one the client matcher reads.
+   */
   actionItems: z.array(z.any()).optional().default([]),
   // Manual overrides (builder params) — pin the match.
   clientId: z.string().optional(),
@@ -133,33 +165,6 @@ async function matchMeeting(
   return { clientId: null, type: null, matchStatus: anyCandidate ? "AMBIGUOUS" : "UNMATCHED" };
 }
 
-/** Find an existing meeting row for this client + cadence + date to link to. */
-async function findMeetingRecord(
-  orgId: string,
-  clientId: string,
-  type: MeetingType,
-  meetingDate: Date,
-): Promise<{ dailyHuddleId: string | null; weeklyMeetingId: string | null }> {
-  const dayStart = new Date(meetingDate);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-  const range = { gte: dayStart, lt: dayEnd };
-
-  if (type === "DAILY") {
-    const row = await db.clientDailyHuddle.findFirst({
-      where: { orgId, clientId, deletedAt: null, meetingDate: range },
-      select: { id: true },
-    });
-    return { dailyHuddleId: row?.id ?? null, weeklyMeetingId: null };
-  }
-  const row = await db.clientWeeklyMeeting.findFirst({
-    where: { orgId, clientId, deletedAt: null, meetingDate: range },
-    select: { id: true },
-  });
-  return { dailyHuddleId: null, weeklyMeetingId: row?.id ?? null };
-}
-
 export async function POST(req: NextRequest) {
   const secret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
@@ -200,7 +205,7 @@ export async function POST(req: NextRequest) {
     let dailyHuddleId: string | null = null;
     let weeklyMeetingId: string | null = null;
     if (clientId && type && meetingDate) {
-      const link = await findMeetingRecord(b.orgId, clientId, type, meetingDate);
+      const link = await findMeetingOccurrence(b.orgId, clientId, type, meetingDate);
       dailyHuddleId = link.dailyHuddleId;
       weeklyMeetingId = link.weeklyMeetingId;
     }
@@ -218,6 +223,7 @@ export async function POST(req: NextRequest) {
       durationMinutes: b.durationMinutes ?? null,
       attendees: b.attendees ?? [],
       rawText: b.rawText ?? null,
+      rawSegments: b.rawSegments ?? undefined,
       summary: b.summary ?? null,
       actionItems: b.actionItems ?? [],
       matchStatus,

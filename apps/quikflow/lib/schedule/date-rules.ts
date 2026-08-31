@@ -36,7 +36,11 @@ export const DATE_RULES: DateRule[] = [
     mode: "before",
     softDelete: true,
     excludeStatusColumn: "status",
-    excludeStatusValues: ["completed"],
+    // "not-applicable" is this app's expression of CANCELLED. Excluding only
+    // "completed" meant a withdrawn item kept firing reminders at whoever used
+    // to own it. Kept in step with lib/services/wwwLifecycle.ts in quikscale,
+    // which is the single definition of closed/overdue.
+    excludeStatusValues: ["completed", "not-applicable"],
     defaultOffsetDays: 3,
   },
   {
@@ -47,7 +51,11 @@ export const DATE_RULES: DateRule[] = [
     mode: "overdue",
     softDelete: true,
     excludeStatusColumn: "status",
-    excludeStatusValues: ["completed"],
+    // "not-applicable" is this app's expression of CANCELLED. Excluding only
+    // "completed" meant a withdrawn item kept firing reminders at whoever used
+    // to own it. Kept in step with lib/services/wwwLifecycle.ts in quikscale,
+    // which is the single definition of closed/overdue.
+    excludeStatusValues: ["completed", "not-applicable"],
   },
 ];
 

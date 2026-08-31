@@ -34,12 +34,14 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const teamFilter = searchParams.get("teamId") || undefined;
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
+  // Overdue is derived, never stored — see lib/services/wwwLifecycle.ts.
+  const overdue = searchParams.get("overdue") === "true";
   // Scope + trash + status + row-level visibility (`who`) live in the shared
   // helper so the WWW export route enforces identical rules. Search + orderBy
   // are layered on below.
   const where = await buildWwwScopeWhere(
     { orgId, userId },
-    { status, who: whoFilter, teamId: teamFilter, includeDeleted },
+    { status, who: whoFilter, teamId: teamFilter, includeDeleted, overdue },
   );
 
   // Due-date range nav (Day / Week / Month / All on the WWW toolbar) — "All"

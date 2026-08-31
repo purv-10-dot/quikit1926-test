@@ -295,28 +295,61 @@ export const PUT = auth.update<{ id: string }>(
       );
     }
 
-    const updated = await db.wWWItem.update({
-      where: { id: params.id },
-      data: {
-        who: nextWho ?? undefined,
-        what: what ?? undefined,
-        // A TBD save leaves `when` untouched — the stored date stays as the
-        // placeholder that keeps the column NOT NULL. Clearing TBD requires the
-        // client to send a real date (enforced in the panel).
-        when: !dueDateTBD && when ? new Date(when) : undefined,
-        dueDateTBD: dueDateTBD !== undefined ? dueDateTBD : undefined,
-        status: status ?? undefined,
-        notes: notes !== undefined ? notes : undefined,
-        category: category !== undefined ? category : undefined,
-        originalDueDate:
-          originalDueDate !== undefined
-            ? originalDueDate
-              ? new Date(originalDueDate)
-              : null
-            : undefined,
-        revisedDates: revisedDates ?? undefined,
-        updatedBy: userId,
-      },
+    // A status change and its history row are written TOGETHER. The audit trail
+    // records status edits too, but `lib/audit/audit.ts` swallows its own
+    // failures by contract — correct for telemetry, wrong for the ledger that
+    // completion rate, overdue rate and average closure time are computed from.
+    // A metric with silently missing rows is worse than no metric, so the
+    // history is transactional: either both land, or neither does.
+    const statusChanged = status !== undefined && status !== existing.status;
+
+    const updated = await db.$transaction(async (tx) => {
+      const row = await tx.wWWItem.update({
+        where: { id: params.id },
+        data: {
+          who: nextWho ?? undefined,
+          what: what ?? undefined,
+          // A TBD save leaves `when` untouched — the stored date stays as the
+          // placeholder that keeps the column NOT NULL. Clearing TBD requires the
+          // client to send a real date (enforced in the panel).
+          when: !dueDateTBD && when ? new Date(when) : undefined,
+          dueDateTBD: dueDateTBD !== undefined ? dueDateTBD : undefined,
+          status: status ?? undefined,
+          notes: notes !== undefined ? notes : undefined,
+          category: category !== undefined ? category : undefined,
+          originalDueDate:
+            originalDueDate !== undefined
+              ? originalDueDate
+                ? new Date(originalDueDate)
+                : null
+              : undefined,
+          revisedDates: revisedDates ?? undefined,
+          updatedBy: userId,
+          // Stamped on the transition INTO completed, and cleared on reopen so
+          // a reopened item does not keep claiming a closure date it no longer
+          // has. Without the clear, "average days to close" would silently
+          // include items that are open again.
+          ...(statusChanged && status === "completed" ? { completedAt: new Date() } : {}),
+          ...(statusChanged && existing.status === "completed" && status !== "completed"
+            ? { completedAt: null }
+            : {}),
+        },
+      });
+
+      if (statusChanged) {
+        await tx.wWWStatusHistory.create({
+          data: {
+            orgId,
+            wwwItemId: params.id,
+            fromStatus: existing.status,
+            toStatus: row.status,
+            changedBy: userId,
+            source: "web",
+          },
+        });
+      }
+
+      return row;
     });
 
     // QuikFlow: emit www.completed on transition to "completed" (fire-and-forget).

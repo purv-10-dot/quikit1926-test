@@ -1,44 +1,38 @@
 /**
- * Pure builder for the POST /api/org/users and PUT /api/org/users/[id] request
- * bodies. Extracted from the Org Setup → Users drawer so the exact wire shape
- * can be unit-tested without rendering the panel.
+ * Request-body builder for the Org Setup → Users drawer.
  *
- * Deliberately never emits a `password` key. The QuikScale UI does not collect
- * passwords at all:
- *   - Native invites → the server generates a temporary password and emails it.
- *   - SSO invites    → the user has no password; they sign in via their provider.
- *   - Edit           → users change their own password via the reset flow.
- * The server-side schemas still accept an optional `password` for the QuikIT
- * super-admin / auth-service callers, so the contract is unchanged.
+ * Extracted from the page component so the shape of what we POST/PUT is
+ * unit-testable. The important guarantee: **no `password` key is ever
+ * produced**. Admins cannot set another user's password from QuikScale —
+ * Native invitees get a server-generated temporary password emailed to them
+ * at create time and reset it on first sign-in; everyone else uses the
+ * self-service reset flow.
  */
 
 export type InvitationMethod = "native" | "sso";
 
-/** The subset of the drawer's form state that shapes the request body. */
-export interface UserPayloadForm {
+/** Structural subset of the drawer's form state that the payload needs. */
+export type UserPayloadForm = {
   firstName: string;
   lastName: string;
   email: string;
-  /** Legacy OrgMember.role — always sent as "member"; the real role is a
-   *  separate PATCH /role call with the chosen AppRole. */
-  role: string;
   teamIds: string[];
   status: string;
   /** Set when linking an existing QuikIT user instead of creating one. */
   linkExistingUserId: string | null;
   invitationMethod: InvitationMethod;
-}
+};
 
 /**
  * @param form   current drawer form state
- * @param isEdit true for PUT (an existing user), false for POST
+ * @param isEdit true → PUT /api/org/users/[id]; false → POST /api/org/users
  */
 export function buildUserPayload(
   form: UserPayloadForm,
-  isEdit: boolean,
+  isEdit: boolean
 ): Record<string, unknown> {
-  // Legacy `role` is pinned to "member" for back-compat with OrgMember.role.
-  // The authoritative role assignment happens via PATCH /role.
+  // Legacy `role` is still required for back-compat with OrgMember.role.
+  // The authoritative role assignment is the AppRole (PATCH /role).
   const payload: Record<string, unknown> = {
     firstName: form.firstName,
     lastName: form.lastName,
@@ -47,14 +41,14 @@ export function buildUserPayload(
     teamIds: form.teamIds,
   };
 
-  if (isEdit) {
-    payload.status = form.status;
-    return payload;
-  }
+  // Status is editable only on an existing member.
+  if (isEdit) payload.status = form.status;
 
-  if (form.linkExistingUserId) {
+  // Create-only branches: link an existing user, or pick an invite method.
+  if (!isEdit && form.linkExistingUserId) {
     payload.linkExistingUserId = form.linkExistingUserId;
-  } else {
+  }
+  if (!isEdit && !form.linkExistingUserId) {
     payload.invitationMethod = form.invitationMethod;
   }
 

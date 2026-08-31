@@ -7,6 +7,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { emitClientCreated } from "@/lib/services/workflowEvents";
+import { splitInviteEmails } from "@/lib/meetings/inviteLists";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, activeBooleanFromSearch, commaTokens } from "@/lib/api/listSearch";
@@ -156,7 +157,12 @@ export const GET = auth.view(async ({ orgId }, request) => {
       meetingUntil: r.meetingUntil ? r.meetingUntil.toISOString().slice(0, 10) : null,
       teamMembers: r.teamMembers
         .filter(tm => !tm.member.deletedAt)
-        .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
+        .map(tm => ({
+          id: tm.member.id,
+          name: tm.member.name,
+          email: tm.member.email,
+          attendanceType: tm.attendanceType,
+        })),
       userMemberCount: r._count.memberships,
       createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
       createdBy: r.createdBy,
@@ -225,7 +231,11 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         meetingUntil:    d.meetingUntil ? new Date(d.meetingUntil) : null,
         createdBy: userId,
         teamMembers: {
-          create: d.teamMemberIds.map(cmId => ({ orgId, clientMemberId: cmId })),
+          create: d.teamMemberIds.map(cmId => ({
+            orgId,
+            clientMemberId: cmId,
+            attendanceType: d.teamMemberTypes?.[cmId] ?? "REQUIRED",
+          })),
         },
       },
     });
@@ -238,6 +248,7 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         description: created.description,
         isActive: created.isActive,
         teamMemberIds: d.teamMemberIds,
+        teamMemberTypes: d.teamMemberTypes ?? {},
       },
     });
 
@@ -258,6 +269,7 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         dailyStartTime: created.dailyStartTime,
         dailyEndTime: created.dailyEndTime,
         teamMemberIds: d.teamMemberIds,
+        teamMemberTypes: d.teamMemberTypes ?? {},
       },
       ...requestContext(request),
     });
@@ -266,15 +278,21 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
     // the meeting windows + team-member emails so a calendar workflow can create
     // Teams events (times are also record-loadable; emails are a relation and
     // must ride the payload as {{trigger.teamMemberEmails}}).
-    const memberEmails = d.teamMemberIds.length
-      ? (await db.clientMember.findMany({
+    const memberRows = d.teamMemberIds.length
+      ? await db.clientMember.findMany({
           where: { id: { in: d.teamMemberIds }, orgId },
-          select: { email: true },
-        }))
-          .map((m) => m.email)
-          .filter(Boolean)
-          .join(", ")
-      : "";
+          select: { id: true, email: true },
+        })
+      : [];
+    // Required and optional go to the invite as different attendee types, so
+    // Teams' attendance report can distinguish a no-show that counts from one
+    // that does not. See lib/meetings/inviteLists.ts.
+    const invite = splitInviteEmails(
+      memberRows.map((m) => ({
+        email: m.email,
+        attendanceType: d.teamMemberTypes?.[m.id] ?? "REQUIRED",
+      })),
+    );
     emitClientCreated({
       orgId,
       clientId: created.id,
@@ -283,7 +301,8 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
       dailyEndTime: created.dailyEndTime,
       weeklyStartTime: created.weeklyStartTime,
       weeklyEndTime: created.weeklyEndTime,
-      teamMemberEmails: memberEmails,
+      teamMemberEmails: invite.required,
+      optionalMemberEmails: invite.optional,
       weeklyDay: created.weeklyDay,
       dailyDays: created.dailyDays,
       meetingUntil: created.meetingUntil ? created.meetingUntil.toISOString().slice(0, 10) : "",

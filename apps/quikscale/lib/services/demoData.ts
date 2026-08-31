@@ -19,7 +19,7 @@ import { generateQuarterDates } from "@/lib/utils/quarterGen";
 
 export interface SeedDemoDataResult {
   seeded: boolean;
-  reason?: "already-seeded" | "cleared" | "created";
+  reason?: "already-seeded" | "cleared" | "created" | "org-has-real-data" | "in-progress-or-failed";
 }
 
 export interface ClearDemoDataResult {
@@ -147,7 +147,41 @@ export function generateDemoWeeklyValues(
 export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Promise<SeedDemoDataResult> {
   const state = await db.demoDataState.findUnique({ where: { orgId } });
   if (state?.clearedAt) return { seeded: false, reason: "cleared" };
-  if (state) return { seeded: false, reason: "already-seeded" };
+  if (state?.seededAt) return { seeded: false, reason: "already-seeded" };
+  // A row with neither timestamp is a claim that never completed — either a
+  // concurrent call is mid-transaction right now, or a previous attempt threw.
+  // Either way this call must NOT start a second seeding run. See the failure
+  // handling at the bottom of this function for why the claim is deliberately
+  // left behind rather than released.
+  if (state) return { seeded: false, reason: "in-progress-or-failed" };
+
+  // Emptiness guard. `DemoDataState` alone is NOT a reliable "is this org
+  // new?" signal: every org created before this table existed has no row, and
+  // so does any org whose row was deleted. Those orgs are full of real,
+  // user-authored content — and seeding writes fixed names into namespaces
+  // the user owns (AccountabilityFunction is unique on `orgId,chartType,name`,
+  // UnitMaster on `orgId,nameKey`, Client on `orgId,name`, OPSPPlan on
+  // `orgId,userId`), so the run dies on P2002 partway through. Root cause of a
+  // real bug: an org with 565 KPIs and a hand-created FACe function named
+  // "Sales" failed seeding on EVERY dashboard render.
+  //
+  // `findFirst` over `orgId`-indexed tables, short-circuited — and it runs at
+  // most once per org, because the outcome is recorded as `clearedAt` below.
+  const realContent = await Promise.all([
+    db.kPI.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+    db.priority.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+    db.wWWItem.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+    db.client.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+    db.accountabilityFunction.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+    db.oPSPData.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+    db.qsTeam.findFirst({ where: { orgId, isDemoData: false }, select: { id: true } }),
+  ]);
+  if (realContent.some(Boolean)) {
+    // Record the decision so this check is never repeated for this org, and so
+    // demo data can never appear later on top of real content.
+    await db.demoDataState.create({ data: { orgId, clearedAt: new Date() } }).catch(() => {});
+    return { seeded: false, reason: "org-has-real-data" };
+  }
 
   // Atomically claim the seed slot before touching any other table. This
   // layout runs on every server-rendered hit (force-dynamic) and Next.js
@@ -183,9 +217,12 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
 
     await tx.unitMaster.createMany({
       data: [
-        { orgId, name: "Leads", nameKey: "leads", createdBy: adminUserId, isDemoData: true },
-        { orgId, name: "Calls", nameKey: "calls", createdBy: adminUserId, isDemoData: true },
-        { orgId, name: "Hours", nameKey: "hours", createdBy: adminUserId, isDemoData: true },
+        // "Demo " prefix is load-bearing, not cosmetic: UnitMaster is unique
+        // on (orgId, nameKey), and "Leads"/"Calls"/"Hours" are exactly what a
+        // real user names their units. Matches QsTeam/CategoryMaster below.
+        { orgId, name: "Demo Leads", nameKey: "demo leads", createdBy: adminUserId, isDemoData: true },
+        { orgId, name: "Demo Calls", nameKey: "demo calls", createdBy: adminUserId, isDemoData: true },
+        { orgId, name: "Demo Hours", nameKey: "demo hours", createdBy: adminUserId, isDemoData: true },
       ],
     });
 
@@ -468,7 +505,17 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
         isDemoData: true,
       },
     });
-    await tx.oPSPUserSection.create({
+    // OPSPUserSection is unique on (orgId, userId, year, quarter) and OPSPPlan
+    // on (orgId, userId) — both keyed to the SEEDING ADMIN, so unlike every
+    // other table here a name prefix can't keep them out of the user's way.
+    // The emptiness guard above catches the common case, but an admin can
+    // legitimately have filled in their own OPSP page before any other module
+    // has a single row. Skip rather than clash.
+    const existingSection = await tx.oPSPUserSection.findUnique({
+      where: { orgId_userId_year_quarter: { orgId, userId: adminUserId, year, quarter } },
+      select: { id: true },
+    });
+    if (!existingSection) await tx.oPSPUserSection.create({
       data: {
         orgId,
         userId: adminUserId,
@@ -494,7 +541,11 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
         isDemoData: true,
       },
     });
-    await tx.oPSPPlan.create({
+    const existingPlan = await tx.oPSPPlan.findUnique({
+      where: { orgId_userId: { orgId, userId: adminUserId } },
+      select: { id: true },
+    });
+    if (!existingPlan) await tx.oPSPPlan.create({
       data: {
         orgId,
         userId: adminUserId,
@@ -570,16 +621,19 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
     });
 
     // --- FACe / PACe -----------------------------------------------------------------
+    // Every name here is "Demo "-prefixed on purpose: AccountabilityFunction is
+    // unique on (orgId, chartType, name), and bare "Leadership"/"Sales" are the
+    // first two functions any real org creates by hand.
     const faceParent = await tx.accountabilityFunction.create({
-      data: { orgId, name: "Leadership", chartType: "face", assignedToUserId: adminUserId, isDemoData: true },
+      data: { orgId, name: "Demo Leadership", chartType: "face", assignedToUserId: adminUserId, isDemoData: true },
     });
     await tx.accountabilityFunction.create({
-      data: { orgId, name: "Sales", chartType: "face", parentFunctionId: faceParent.id, teamId: salesTeam.id, assignedToUserId: adminUserId, isDemoData: true },
+      data: { orgId, name: "Demo Sales", chartType: "face", parentFunctionId: faceParent.id, teamId: salesTeam.id, assignedToUserId: adminUserId, isDemoData: true },
     });
     const paceParent = await tx.accountabilityFunction.create({
       data: {
         orgId,
-        name: "Close 5 enterprise deals",
+        name: "Demo Close 5 enterprise deals",
         chartType: "pace",
         assignedToUserId: adminUserId,
         expectedOutcomes: "₹4Cr in new ARR this quarter",
@@ -589,7 +643,7 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
     await tx.accountabilityFunction.create({
       data: {
         orgId,
-        name: "Ship v2 customer portal",
+        name: "Demo Ship v2 customer portal",
         chartType: "pace",
         parentFunctionId: paceParent.id,
         teamId: engineeringTeam.id,
@@ -601,9 +655,23 @@ export async function seedDemoDataForOrg(orgId: string, adminUserId: string): Pr
 
     });
   } catch (err) {
-    // Release the claim so a future request can retry cleanly instead of
-    // permanently believing this org is "already seeding" after a failed run.
-    await db.demoDataState.delete({ where: { orgId } }).catch(() => {});
+    // The claim row is deliberately LEFT IN PLACE (seededAt + clearedAt both
+    // null), so the guard at the top of this function bails out on every
+    // subsequent call with "in-progress-or-failed".
+    //
+    // It used to be deleted here so a failed run could "retry cleanly". That
+    // was wrong: nothing about a failure is transient in practice — the usual
+    // cause is a unique-constraint clash with a row the user owns, which is
+    // still there next request. Releasing the claim turned that into a retry
+    // storm: this runs from the force-dynamic dashboard layout, so EVERY
+    // navigation re-opened a ~40-write transaction and rolled it back.
+    //
+    // The transaction rolled back, so no partial demo rows exist. To retry
+    // after fixing the underlying cause, delete the org's DemoDataState row.
+    console.error("[demo-data] seeding transaction failed; claim retained to prevent retry storm", {
+      orgId,
+      error: err,
+    });
     throw err;
   }
 

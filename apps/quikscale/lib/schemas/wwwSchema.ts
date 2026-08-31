@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+// The five values the UI can render. Accepting "in-progress" and "blocked"
+// here let writes create rows the status <select> cannot display — it matches
+// no option and silently falls back to showing "Not Applicable".
+import { WWW_STORED_STATUSES } from "@/lib/services/wwwLifecycle";
+
 export const WWW_CATEGORIES = ["eNPS", "cNPS", "Others"] as const;
 export type WWWCategory = (typeof WWW_CATEGORIES)[number];
 
@@ -15,7 +20,7 @@ export const createWWWSchema = z
     // EITHER a date OR the To-Be-Decided flag.
     when:            z.string().min(1).optional(),
     dueDateTBD:      z.boolean().optional().default(false),
-    status:          z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","in-progress","blocked"]).default("not-yet-started"),
+    status:          z.enum(WWW_STORED_STATUSES).default("not-yet-started"),
     notes:           z.string().optional().nullable(),
     category:        z.enum(["eNPS", "cNPS", "Others"]).optional().nullable(),
     originalDueDate: z.string().optional().nullable(),
@@ -40,7 +45,7 @@ export const updateWWWSchema = z.object({
   what:            z.string().min(1).optional(),
   when:            z.string().min(1).optional(),
   dueDateTBD:      z.boolean().optional(),
-  status:          z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","in-progress","blocked"]).optional(),
+  status:          z.enum(WWW_STORED_STATUSES).optional(),
   notes:           z.string().optional().nullable(),
   category:        z.enum(["eNPS", "cNPS", "Others"]).optional().nullable(),
   originalDueDate: z.string().optional().nullable(),

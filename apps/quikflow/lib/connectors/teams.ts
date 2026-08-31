@@ -11,7 +11,8 @@
  * means revoking/rotating consent for one connector affects the other.
  * (Still NOT the MS_TEAMS_* names — those are QuikHRMS's own, unrelated
  * app-only Graph integration on a different Azure app registration.)
- * Delegated Graph scopes: Calendars.ReadWrite, User.Read, offline_access.
+ * Delegated Graph scopes: REQUIRED_SCOPES always, CAPTURE_SCOPES only for the
+ * attendance report — see both constants below for why that split matters.
  */
 import {
   GRAPH,
@@ -30,7 +31,50 @@ import {
   type CalendarRecurrence,
 } from "./types";
 
-const SCOPES = ["offline_access", "Calendars.ReadWrite", "User.Read"];
+/**
+ * Scopes without which this connector cannot do its job at all: create, update,
+ * read and delete calendar events, and identify the connected mailbox.
+ *
+ * NOTHING on the create/update/delete/read path may depend on a scope outside
+ * this list. That separation is load-bearing, not tidiness — see CAPTURE_SCOPES.
+ */
+export const REQUIRED_SCOPES = ["offline_access", "Calendars.ReadWrite", "User.Read"];
+
+/**
+ * OPTIONAL, READ-ONLY scopes for the attendance report only (teams-attendance.ts):
+ * resolving a meeting from its join URL, and reading who joined and for how long.
+ * Nothing writes through them — no auto-record, no lobby settings, no PATCH.
+ *
+ * The missing lobby settings are a PRODUCT REQUIREMENT, not an omission.
+ * Fathom's notetaker joins anonymously, so with no `lobbyBypassSettings` on the
+ * meeting it waits in the lobby until a human clicks Admit — which is exactly
+ * the wanted flow (join → lobby → admit → record), and it keeps a bot out of
+ * any meeting nobody showed up to. Writing `lobbyBypassSettings.scope` would
+ * mean PATCHing /me/onlineMeetings/{id}, which needs OnlineMeetings.ReadWrite
+ * and therefore re-consent for EVERY existing connection. Do not add it to
+ * "fix" a bot stuck in the lobby — that is a Teams meeting-policy question for
+ * the organiser's tenant. `__tests__/unit/teams-no-lobby-bypass.test.ts` pins
+ * this by asserting on the Graph request body.
+ *
+ * Requesting them delegated rather than as application permissions is what
+ * avoids the Teams application access policy (`Grant-CsApplicationAccessPolicy`)
+ * that app-only access to these endpoints requires. The connected mailbox is
+ * the organiser, so its own token is entitled to its own meetings.
+ *
+ * BOTH REQUIRE ENTRA ADMIN CONSENT. A tenant whose admin has not granted them
+ * can still connect and run every calendar feature; only the attendance report
+ * is unavailable, and `missingCaptureScopes()` reports that as an actionable
+ * "reconnect to grant X" instead of an opaque 403 at report time.
+ *
+ * A connection consented before these existed keeps working exactly this way,
+ * because the refresh grant never re-asserts scopes (see `msRefresh`). Do not
+ * "fix" that by sending the full set on refresh — that is precisely the bug
+ * that took calendar creation down tenant-wide.
+ */
+export const CAPTURE_SCOPES = ["OnlineMeetings.Read.All", "OnlineMeetingArtifact.Read.All"];
+
+/** Everything the consent screen asks for. Optional scopes may be declined. */
+const SCOPES = [...REQUIRED_SCOPES, ...CAPTURE_SCOPES];
 const MAX_CALENDAR_VIEW = 250;
 
 function cfg(): MsAppConfig {
@@ -72,10 +116,28 @@ function toGraphEvent(event: Partial<CalendarEventInput>): Record<string, unknow
   if (event.end !== undefined && event.timeZone !== undefined) {
     body.end = { dateTime: event.end, timeZone: event.timeZone };
   }
-  if (event.attendees !== undefined) {
-    body.attendees = (event.attendees ?? [])
-      .filter(Boolean)
-      .map((a) => ({ emailAddress: { address: a.trim() }, type: "required" }));
+  // Graph carries required/optional on the attendee itself, and the distinction
+  // is load-bearing downstream: the attendance report is read against the
+  // invite, so an optional attendee who skips a huddle must not look like a
+  // team member who did. Emitted whenever EITHER list is supplied, because
+  // Graph replaces the whole array — sending only the required half on an
+  // update would silently drop every optional invitee.
+  if (event.attendees !== undefined || event.optionalAttendees !== undefined) {
+    const asAttendee = (address: string, type: "required" | "optional") => ({
+      emailAddress: { address: address.trim() },
+      type,
+    });
+    const required = (event.attendees ?? []).filter(Boolean);
+    const requiredSet = new Set(required.map((a) => a.trim().toLowerCase()));
+    body.attendees = [
+      ...required.map((a) => asAttendee(a, "required")),
+      ...(event.optionalAttendees ?? [])
+        .filter(Boolean)
+        // Required wins a duplicate: the stricter obligation is the safe one to
+        // keep, and Graph rejects the same address twice.
+        .filter((a) => !requiredSet.has(a.trim().toLowerCase()))
+        .map((a) => asAttendee(a, "optional")),
+    ];
   }
   if (event.location !== undefined) {
     body.location = { displayName: event.location ?? "" };
@@ -141,8 +203,10 @@ export const TEAMS: CalendarProvider = {
     return msExchangeCode(cfg(), SCOPES, code, redirectUri);
   },
 
+  // No scope argument: a refresh re-issues whatever was consented. Passing
+  // SCOPES here is what broke every pre-attendance connection — see msRefresh.
   refresh(refreshToken) {
-    return msRefresh(cfg(), SCOPES, refreshToken);
+    return msRefresh(cfg(), refreshToken);
   },
 
   async createEvent(accessToken, event) {

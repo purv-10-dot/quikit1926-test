@@ -42,6 +42,10 @@ export type AuditEntityType =
   | "WeeklyMeeting"
   | "ClientMember"
   | "Client"
+  // Meeting Rhythm AI pipeline: the Fathom recording itself, and any report
+  // generated from one (daily / weekly rollup / weekly meeting / monthly).
+  | "MeetingTranscript"
+  | "MeetingReport"
   | "Review"
   | "Impersonation"
   | "DemoData";

@@ -1,5 +1,6 @@
 node_modules
 .next
+.next-build
 .turbo
 dist
 .env
@@ -62,4 +63,19 @@ graphify-out/
 # ────────────────────────────────────────────────────────────────────────────
 packages/database/prisma/migrations/*_quiklms_*/
 packages/database/prisma/manual-migrations/*app_quiklms*
-.env*
+
+# ────────────────────────────────────────────────────────────────────────────
+# Fathom capture output (apps/quikflow/scripts/fathom-capture.ts).
+# The RAW dump contains a client's real attendee emails and the verbatim
+# transcript of what people said; the redaction map is a reverse lookup from
+# pseudonyms back to those real identities. Neither may ever be committed.
+# Only the REDACTED payload is fixture material, and only after a human has
+# read it — see apps/quikflow/scripts/redactFathomPayload.ts.
+# ────────────────────────────────────────────────────────────────────────────
+.fathom-capture/
+**/fathom-raw-*.json
+**/redaction-map-*.json
+
+# npm lockfile — not tracked in this repo.
+package-lock.json
+**/package-lock.json

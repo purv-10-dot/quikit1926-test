@@ -1,7 +1,7 @@
 import type { ActionContext, StepResult } from "./types";
 import { moduleForEvent } from "@/lib/catalog";
 import { createCalendarEventForOrg, deleteCalendarEventsForOrg, sendMailForOrg } from "@/lib/connectors";
-import type { CalendarRecurrence, MailProviderId } from "@/lib/connectors";
+import type { CalendarRecurrence, MailProviderId, NotetakerNote } from "@/lib/connectors";
 
 /**
  * Action executor registry.
@@ -407,6 +407,24 @@ function resolveRecurrence(p: Record<string, unknown>, anchorDate: string): Cale
 }
 
 /**
+ * Turn a "no Fathom bot on this meeting" reason into something the person
+ * reading the run log can act on. Names the fix, not just the fault.
+ */
+function notetakerWarning(note: NotetakerNote): string {
+  const tail = "The meeting was created but will not be recorded.";
+  if (note === "invalid-email") {
+    return `Fathom NOT invited — the configured Fathom account email is not a valid address. Fix it on the Teams connection in /connections. ${tail}`;
+  }
+  if (note === "bot-mailbox") {
+    // The failure this exists to stop: a bot-looking address is nobody's
+    // mailbox, so the invite goes nowhere and Fathom never learns the meeting
+    // exists — while every layer reports success.
+    return `Fathom NOT invited — the configured address looks like a bot mailbox, which Fathom does not have. Enter the email of the Fathom ACCOUNT whose calendar should auto-join (that person's own address) on the Teams connection in /connections. ${tail}`;
+  }
+  return `Fathom NOT invited — no Fathom account email is configured. Set one on the Teams connection in /connections, or set FATHOM_NOTETAKER_EMAIL. ${tail}`;
+}
+
+/**
  * REAL: create (or idempotently update) a calendar event on the org's connected
  * Microsoft calendar, attaching a Teams online meeting by default. Accepts start
  * / end as full local date-times, or as `start_time` / `end_time` ("HH:mm") with
@@ -444,10 +462,16 @@ const calendarCreate: ActionExecutor = async (ctx) => {
     );
   }
 
-  const attendeesRaw = firstString(p.attendees, p.to, d.teamMemberEmails);
-  const attendees = attendeesRaw
-    ? attendeesRaw.split(",").map((s) => s.trim()).filter(Boolean)
-    : [];
+  const emailList = (raw: string | null): string[] =>
+    raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+  const attendees = emailList(firstString(p.attendees, p.to, d.teamMemberEmails));
+  // Optional attendees auto-fill from the client exactly like the required
+  // ones. They reach Graph as `type: "optional"`, which is what lets the
+  // attendance report tell a no-show that counts from one that does not.
+  const optionalAttendees = emailList(
+    firstString(p.optional_attendees, p.optionalAttendees, d.optionalMemberEmails),
+  );
   const onlineRaw = p.online_meeting ?? p.onlineMeeting;
 
   // Recurrence: explicit flat params win; else auto-fill from the client by kind.
@@ -475,6 +499,7 @@ const calendarCreate: ActionExecutor = async (ctx) => {
         end,
         timeZone: firstString(p.timezone, p.time_zone, p.timeZone) ?? process.env.QUIKFLOW_DEFAULT_TIMEZONE ?? "UTC",
         attendees,
+        optionalAttendees,
         location: firstString(p.location) ?? undefined,
         // Attach a Teams meeting by default; opt out with online_meeting=false.
         onlineMeeting: onlineRaw === undefined ? true : boolParam(onlineRaw),
@@ -492,6 +517,14 @@ const calendarCreate: ActionExecutor = async (ctx) => {
         webLink: result.webLink,
         joinUrl: result.joinUrl,
         organizer: result.organizer,
+        // Whether this meeting will actually be recorded. The step stays "ok"
+        // when it won't — the meeting itself is real and useful — but the run
+        // log has to say so instead of letting everyone assume Fathom has it.
+        notetaker: result.notetaker,
+        notetakerInvited: result.notetakerInvited,
+        ...(result.notetakerNote && result.notetakerNote !== "not-an-online-meeting"
+          ? { warning: notetakerWarning(result.notetakerNote) }
+          : {}),
       },
     };
   } catch (e) {
@@ -735,6 +768,12 @@ const saveTranscript: ActionExecutor = async (ctx) => {
     attendees: Array.isArray(d.attendees) ? d.attendees : [],
     recordingUrl: firstString(d.recordingUrl),
     rawText: firstString(d.transcriptText, d.rawText),
+    // The structured transcript, timestamps intact. `rawText` above is a
+    // flattened rendering of the same content that drops every timestamp;
+    // QuikScale needs the timings for evidence anchoring and for chunking long
+    // meetings. Optional — a recorder that only returns a plain string sends
+    // null, and QuikScale interpolates.
+    rawSegments: Array.isArray(d.transcriptSegments) ? d.transcriptSegments : null,
     summary: firstString(d.summary),
     actionItems: Array.isArray(d.actionItems) ? d.actionItems : [],
     // Optional manual overrides from the builder's action params.

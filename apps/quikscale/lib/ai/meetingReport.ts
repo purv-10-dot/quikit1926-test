@@ -16,6 +16,7 @@
 import { z } from "zod";
 import { generateContent } from "./geminiKeyPool";
 import { QUIKSCALE_OVERVIEW } from "./quikscaleOverview";
+import { summaryToPlainText } from "../meetings/summaryFormat";
 
 export type ReportType = "DAILY" | "WEEKLY" | "GENERAL";
 
@@ -76,12 +77,21 @@ const attendanceSchema = z.object({
   comparisonNote: z.string().nullish(),
 });
 
+/**
+ * `raisedFor` and `status` back the Weekly Report's §4.5A "All Stucks Raised
+ * During the Week" table. Both are nullish so reports saved before they
+ * existed still parse — those rows simply render "—".
+ */
 const blockerSchema = z.object({
   raisedBy: z.string(),
+  /** Person or party the stuck is ON (dependency owner), if the transcript names one. */
+  raisedFor: z.string().nullish(),
   category: z.string(),
   description: z.string(),
   impact: z.string().nullish(),
   requiredAction: z.string().nullish(),
+  /** Only when the transcript states it — never inferred. */
+  status: z.enum(["OPEN", "IN_PROGRESS", "RESOLVED"]).nullish(),
 });
 
 const scorecardRowSchema = z.object({
@@ -199,6 +209,31 @@ export interface ReportTranscriptInput {
 /** Cap the raw transcript sent to the model to bound token cost. */
 export const RAW_TEXT_CAP = 60_000;
 
+/**
+ * What the model may extract into `extractedItems`, per cadence.
+ *
+ * Daily Huddles are stand-ups, not planning meetings: a KPI or Priority is
+ * never *created* there, so DAILY extracts WWW action items ONLY. When a huddle
+ * does surface the need for a KPI/Priority, that becomes a WWW to go and create
+ * it — the decision itself belongs to the Weekly Meeting, which is where the
+ * K&P dashboard is actually reviewed and which keeps full extraction.
+ */
+function extractionGuidance(type: ReportType): string[] {
+  if (type === "DAILY") {
+    return [
+      "Also extract action items the transcript implies, into `extractedItems.wwws` — `who`, `what`, and `when` as an ISO date.",
+      "If the huddle discussed that a KPI or a Priority ought to be created or updated, do NOT put it in `kpis`/`priorities` — express it as a WWW action item instead (e.g. what: \"Create a KPI for deployment cycle time\").",
+      "`extractedItems.kpis` and `extractedItems.priorities` MUST both be empty arrays for a Daily Huddle.",
+    ];
+  }
+  return [
+    "In every case also extract candidate records the transcript implies, into `extractedItems`:",
+    "- `kpis`: measurable metrics discussed (name, optional description/measurementUnit/target).",
+    "- `priorities`: quarterly objectives/rocks an owner committed to (name, optional owner/description).",
+    "- `wwws`: action items (who, what, optional when as an ISO date).",
+  ];
+}
+
 /** Build the report prompt. Pure — exported for unit testing. */
 export function buildReportPrompt(t: ReportTranscriptInput): string {
   const type: ReportType = t.type ?? "GENERAL";
@@ -208,6 +243,10 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
     .join(", ");
   const rawText = (t.rawText ?? "").slice(0, RAW_TEXT_CAP);
   const truncated = (t.rawText ?? "").length > RAW_TEXT_CAP;
+  // Fathom's summary carries a recorder citation URL on every bullet. Feeding
+  // those to the model wastes tokens and lets a `fathom.video` link surface in
+  // generated report prose, so the prompt gets the cleaned text.
+  const sourceSummary = summaryToPlainText(t.summary);
 
   const templateGuidance =
     type === "DAILY"
@@ -216,7 +255,7 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
           "- `adherence`: one row per participant who actually spoke in the transcript, with achievement/focus/stuck each rated YES|PARTIAL|NO, a score like \"2/3\", a rating FULL|GOOD|PARTIAL|POOR, and — for the Individual Participant Breakdown — a short rationale in `achievementNote`/`focusNote`/`stuckNote` explaining WHY each was rated that way (e.g. \"Explicitly stated no blockers.\" or \"Vague — activity referenced but not framed as an achievement.\").",
           "- `meetingDetails`: only `meetingType` (e.g. \"Daily Huddle — Google Meet\", infer the platform from the transcript if mentioned, else omit it) and `timeOfDay` (e.g. \"Morning (inferred from greetings)\") — leave `dateLabel`/`durationLabel`/`startMark`/`endMark` null unless the transcript states an explicit recording timestamp, since the app fills in the real date/duration separately.",
           "- `attendance.present`: everyone who actually spoke, each with a short `role` inferred from what they discuss (e.g. \"Client Reporting\", \"Senior Coach\") — do not invent a `notPresent` list, the app computes that separately.",
-          "- `blockers`: every stuck/blocker raised, each with `raisedBy`, a short `category` (e.g. \"Technical / Platform\", \"Finance / Collections\", \"Coordination\"), a `description`, an `impact`, and a `requiredAction`. Merge multiple mentions of the same underlying issue into one entry and note the overlap in its description.",
+          "- `blockers`: every stuck/blocker raised, each with `raisedBy`, a short `category` (e.g. \"Technical / Platform\", \"Finance / Collections\", \"Coordination\"), a `description`, an `impact`, and a `requiredAction`. Also set `raisedFor` to the person or party the stuck is ON (the dependency owner) when the transcript names one, else null. Set `status` to OPEN|IN_PROGRESS|RESOLVED only when the transcript explicitly states it — otherwise leave it null rather than guessing. Merge multiple mentions of the same underlying issue into one entry and note the overlap in its description.",
           "- `sections`: leave empty or include only a brief opening summary paragraph if useful — the structured fields above are the primary content. Leave `scorecard` null.",
         ]
       : type === "WEEKLY"
@@ -235,14 +274,11 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
     "You are a meeting-report analyst. Analyze the meeting transcript below and return a single JSON object.",
     ...templateGuidance,
     "",
-    "In every case also extract candidate records the transcript implies, into `extractedItems`:",
-    "- `kpis`: measurable metrics discussed (name, optional description/measurementUnit/target).",
-    "- `priorities`: quarterly objectives/rocks an owner committed to (name, optional owner/description).",
-    "- `wwws`: action items (who, what, optional when as an ISO date).",
+    ...extractionGuidance(type),
     "Only extract items the transcript actually supports. For each item and for the report overall, include a `confidence` from 0 to 1 reflecting how clearly the transcript supports it. Add a short `sourceQuote` where possible.",
     "",
     "Return ONLY a JSON object with this exact shape (no markdown, no prose outside the JSON):",
-    '{"reportType":"DAILY|WEEKLY|GENERAL","title":string,"overallConfidence":number,"meta":{"client":string|null,"date":string|null,"durationMinutes":number|null,"platform":string|null,"attendees":string[]},"summary":string,"sections":[{"heading":string,"body":string,"assessment":string|null}],"adherence":[{"participant":string,"role":string|null,"achievement":"YES|PARTIAL|NO","focus":"YES|PARTIAL|NO","stuck":"YES|PARTIAL|NO","score":string,"rating":string,"achievementNote":string|null,"focusNote":string|null,"stuckNote":string|null}]|null,"scorecard":[{"metric":string,"reading":string,"rag":"GREEN|AMBER|RED"}]|null,"meetingDetails":{"meetingType":string|null,"dateLabel":string|null,"startMark":string|null,"endMark":string|null,"durationLabel":string|null,"timeOfDay":string|null}|null,"attendance":{"present":[{"name":string,"role":string|null}]}|null,"blockers":[{"raisedBy":string,"category":string,"description":string,"impact":string|null,"requiredAction":string|null}]|null,"extractedItems":{"kpis":[{"name":string,"description":string|null,"measurementUnit":"Number|Percentage|Currency|Ratio"|null,"target":number|null,"confidence":number,"sourceQuote":string|null}],"priorities":[{"name":string,"description":string|null,"owner":string|null,"confidence":number,"sourceQuote":string|null}],"wwws":[{"who":string|null,"what":string,"when":string|null,"confidence":number,"sourceQuote":string|null}]}}',
+    '{"reportType":"DAILY|WEEKLY|GENERAL","title":string,"overallConfidence":number,"meta":{"client":string|null,"date":string|null,"durationMinutes":number|null,"platform":string|null,"attendees":string[]},"summary":string,"sections":[{"heading":string,"body":string,"assessment":string|null}],"adherence":[{"participant":string,"role":string|null,"achievement":"YES|PARTIAL|NO","focus":"YES|PARTIAL|NO","stuck":"YES|PARTIAL|NO","score":string,"rating":string,"achievementNote":string|null,"focusNote":string|null,"stuckNote":string|null}]|null,"scorecard":[{"metric":string,"reading":string,"rag":"GREEN|AMBER|RED"}]|null,"meetingDetails":{"meetingType":string|null,"dateLabel":string|null,"startMark":string|null,"endMark":string|null,"durationLabel":string|null,"timeOfDay":string|null}|null,"attendance":{"present":[{"name":string,"role":string|null}]}|null,"blockers":[{"raisedBy":string,"raisedFor":string|null,"category":string,"description":string,"impact":string|null,"requiredAction":string|null,"status":"OPEN|IN_PROGRESS|RESOLVED"|null}]|null,"extractedItems":{"kpis":[{"name":string,"description":string|null,"measurementUnit":"Number|Percentage|Currency|Ratio"|null,"target":number|null,"confidence":number,"sourceQuote":string|null}],"priorities":[{"name":string,"description":string|null,"owner":string|null,"confidence":number,"sourceQuote":string|null}],"wwws":[{"who":string|null,"what":string,"when":string|null,"confidence":number,"sourceQuote":string|null}]}}',
     "",
     "MEETING METADATA:",
     `- Cadence: ${type}`,
@@ -251,7 +287,7 @@ export function buildReportPrompt(t: ReportTranscriptInput): string {
     `- Date: ${t.meetingDate ?? "(unknown)"}`,
     `- Duration (min): ${t.durationMinutes ?? "(unknown)"}`,
     `- Attendees: ${attendees || "(unknown)"}`,
-    t.summary ? `\nSOURCE SUMMARY:\n${t.summary}` : "",
+    sourceSummary ? `\nSOURCE SUMMARY:\n${sourceSummary}` : "",
     t.actionItems && t.actionItems.length
       ? `\nSOURCE ACTION ITEMS:\n${t.actionItems.map((a) => `- ${a?.text ?? ""}`).join("\n")}`
       : "",
@@ -297,12 +333,15 @@ export function parseReportResponse(raw: string): MeetingReport {
   }
 
   const r = parsed.data;
+  // Daily Huddles are WWW-only (see `extractionGuidance`). Enforce it here
+  // rather than trusting the model to have returned empty arrays.
+  const wwwOnly = r.reportType === "DAILY";
   return {
     ...r,
     overallConfidence: clamp01(r.overallConfidence),
     extractedItems: {
-      kpis: r.extractedItems.kpis.map((k) => ({ ...k, confidence: clamp01(k.confidence) })),
-      priorities: r.extractedItems.priorities.map((p) => ({ ...p, confidence: clamp01(p.confidence) })),
+      kpis: wwwOnly ? [] : r.extractedItems.kpis.map((k) => ({ ...k, confidence: clamp01(k.confidence) })),
+      priorities: wwwOnly ? [] : r.extractedItems.priorities.map((p) => ({ ...p, confidence: clamp01(p.confidence) })),
       wwws: r.extractedItems.wwws.map((w) => ({ ...w, confidence: clamp01(w.confidence) })),
     },
   };

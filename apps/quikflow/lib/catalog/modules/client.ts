@@ -25,6 +25,11 @@ export const CLIENT_MASTER_MODULE: ModuleDef = {
     // they are NOT record-projected — hence no `column`. Exposed as a trigger
     // token to feed calendar.event.create's attendees. See workflowEvents.ts.
     { key: "teamMemberEmails", label: "Team member emails", type: "text", usableIn: ["trigger", "condition"] },
+    // Optional attendees ride the same payload for the same reason. Kept as a
+    // SEPARATE token rather than a typed list because the calendar action's
+    // params are flat strings, and because a workflow that only wants the
+    // required roster should not have to filter one.
+    { key: "optionalMemberEmails", label: "Optional member emails", type: "text", usableIn: ["trigger", "condition"] },
     // Recurrence tokens for the calendar action — carried PRE-FORMATTED in the
     // event payload (weekday names / comma list / YYYY-MM-DD), so they are
     // payload-only (no column) to keep formatting control (a column would

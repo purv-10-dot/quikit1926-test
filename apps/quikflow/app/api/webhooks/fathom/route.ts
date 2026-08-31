@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { decryptSecret, FATHOM_PROVIDER_ID } from "@/lib/connectors";
-import { normalizeMeeting, meetingToEventData, verifyWebhookSignature } from "@/lib/connectors/fathom";
+import { normalizeMeeting, meetingToEventData, verifyWebhookSignature, withFullDetail } from "@/lib/connectors/fathom";
 import { enqueueEvent } from "@/lib/queue/queue";
 import { FATHOM_APP_SLUG, FATHOM_EVENT_TRANSCRIBED } from "@/lib/catalog/fathom";
 
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const conn = await db.wfConnection.findFirst({
     where: { id: connectionId, provider: FATHOM_PROVIDER_ID as never, status: "connected" },
-    select: { id: true, orgId: true, refreshToken: true },
+    select: { id: true, orgId: true, refreshToken: true, accessToken: true },
   });
   if (!conn) {
     return NextResponse.json({ success: false, error: "Unknown connection" }, { status: 404 });
@@ -68,13 +68,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: { ignored: true } }, { status: 200 });
   }
 
+  // Fathom's webhook announces that the recording is ready rather than carrying
+  // it, so the payload routinely omits the transcript, the summary and the
+  // action items. Nothing downstream ever re-read those, so the meeting kept an
+  // empty summary FOREVER. Backfill here or the data is lost for good.
+  const apiKey = conn.accessToken ? decryptSecret(conn.accessToken) : null;
+  const withText = apiKey ? await withFullDetail(apiKey, meeting) : meeting;
+
   const jobId = await enqueueEvent({
     app: FATHOM_APP_SLUG,
     event: FATHOM_EVENT_TRANSCRIBED,
     orgId: conn.orgId,
-    dedupeKey: `fathom:${meeting.recordingId}`,
-    data: meetingToEventData(meeting),
-    occurredAt: meeting.startedAt ?? undefined,
+    dedupeKey: `fathom:${withText.recordingId}`,
+    data: meetingToEventData(withText),
+    occurredAt: withText.startedAt ?? undefined,
   });
 
   return NextResponse.json({ success: true, data: { enqueued: true, jobId } }, { status: 202 });

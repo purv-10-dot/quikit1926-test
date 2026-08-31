@@ -145,8 +145,9 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "DailyHuddle", label: "Daily Huddle", actions: ACTIONS },
       { resource: "WeeklyMeeting", label: "Weekly Meeting", actions: ACTIONS },
       // AI meeting report: `view` = generate/view a report from a transcript;
-      // `update` = the "Edit Report" gate (edit fields and Save).
-      { resource: "ClientMeetings.Report", label: "Meeting Report", actions: ["view", "update"] },
+      // `update` = the "Edit Report" gate (edit fields and Save);
+      // `delete` = remove a transcript, or discard a generated report.
+      { resource: "ClientMeetings.Report", label: "Meeting Report", actions: ["view", "update", "delete"] },
     ],
   },
   {
@@ -296,6 +297,10 @@ export const NAV_RESOURCE: Record<string, string> = {
   "orgSetup.units": "Unit",
   www: "WWW",
   "clientMeetings.dashboard": "ClientMeetings.Dashboard",
+  // The Transcripts route is the AI meeting pipeline's UI, so it rides on the
+  // same resource its report APIs are gated by rather than inventing a grant
+  // every existing role would have to be re-seeded with.
+  "clientMeetings.transcripts": "ClientMeetings.Report",
   "clientMeetings.clients": "ClientMaster",
   "clientMeetings.members": "ClientMember",
   "clientMeetings.dailyHuddle": "DailyHuddle",

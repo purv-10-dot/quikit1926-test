@@ -30,6 +30,14 @@ const nextConfig = {
   },
 
   experimental: {
+    // @react-pdf/renderer must NOT be bundled into the server (rsc) layer. In
+    // that layer webpack aliases `react` to React's server build
+    // (react.shared-subset), which exports no `Component` - and react-pdf's
+    // reconciler does `new React.Component`, so a server-side render dies with
+    // "a.Component is not a constructor". Externalising the package makes Node
+    // load it at runtime, where plain resolution hands it the FULL React.
+    // Needed by the bulk report export - the only server-side PDF render.
+    serverComponentsExternalPackages: ["@react-pdf/renderer"],
     serverActions: {
       allowedOrigins: ["localhost:3002"],
     },

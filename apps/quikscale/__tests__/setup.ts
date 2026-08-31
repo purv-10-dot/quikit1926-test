@@ -67,7 +67,10 @@ export function setSession(user: TestUser | null) {
 // For unit tests we bypass the permission check globally and re-enable it
 // per-test via `setPermissionGate(false)` when a test specifically wants to
 // assert the 403 path. Same control-surface pattern as `setSession`.
-const _permState: { allow: boolean } = { allow: true };
+const _permState: {
+  allow: boolean;
+  matrix: ((resource: string, action: string) => boolean) | null;
+} = { allow: true, matrix: null };
 
 vi.mock("@/lib/api/permissions", async () => {
   const actual = await vi.importActual<
@@ -75,12 +78,38 @@ vi.mock("@/lib/api/permissions", async () => {
   >("@/lib/api/permissions");
   return {
     ...actual,
-    userCan: vi.fn(async () => _permState.allow),
+    userCan: vi.fn(
+      async (_userId: string, _orgId: string, resource: string, action: string) =>
+        _permState.matrix
+          ? _permState.matrix(resource, action)
+          : _permState.allow,
+    ),
   };
 });
 
 export function setPermissionGate(allow: boolean) {
   _permState.allow = allow;
+  _permState.matrix = null;
+}
+
+/**
+ * Per-(resource, action) permission control, for routes whose behaviour differs
+ * between verbs on the SAME resource.
+ *
+ * `setPermissionGate` is a single boolean, which cannot express "this user may
+ * view a report but not generate one" — exactly the distinction doc 17 D14
+ * introduced when Generate moved from `Report:view` to `Report:update`. Without
+ * this, that tightening is untestable and could silently regress.
+ *
+ *   setPermissionMatrix((resource, action) =>
+ *     resource === "ClientMeetings.Report" && action === "view");
+ *
+ * Cleared by `setPermissionGate`, and reset between files by `clearMocks`.
+ */
+export function setPermissionMatrix(
+  fn: (resource: string, action: string) => boolean,
+) {
+  _permState.matrix = fn;
 }
 
 // ---------------------------------------------------------------------------

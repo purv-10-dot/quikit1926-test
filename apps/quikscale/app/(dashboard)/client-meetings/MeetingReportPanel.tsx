@@ -13,12 +13,36 @@ import { useCallback, useEffect, useState } from "react";
 import type { StoredMeetingReport } from "@/lib/ai/meetingReport";
 import { kpiPayload, priorityPayload, wwwPayload, quarterOfMonth, resolveOwnerId, type CreateContext, type OwnerUser } from "./reportMapping";
 import { DailyAdherenceReport } from "./DailyAdherenceReport";
-import { DownloadDailyAdherencePdfButton } from "./DownloadDailyAdherencePdfButton";
+import { aiUnavailableMessage, DownloadPdfButton } from "./reportUi";
 
 type ItemKind = "kpis" | "priorities" | "wwws";
 
 const pct = (c: number) => `${Math.round(c * 100)}%`;
 const confColor = (c: number) => (c >= 0.7 ? "bg-green-500" : c >= 0.4 ? "bg-amber-400" : "bg-red-500");
+
+/**
+ * `Weekly-Meeting-Report-Moreyeahs-Live-2026-08-31.pdf`
+ *
+ * Named for the meeting, not the transcript id, because these land in a
+ * downloads folder next to the .docx and the rollup PDF and have to be
+ * tellable apart there.
+ */
+export function pdfFilename(report: StoredMeetingReport, clientName?: string | null): string {
+  const kind = report.reportType === "DAILY" ? "Daily-Huddle-Adherence" : `${report.reportType}-Meeting-Report`;
+  const who = clientName ?? report.meta?.client ?? "";
+  const when = report.meetingDetails?.dateLabel || report.meta?.date || "";
+  const stem = [kind, who, when]
+    .filter(Boolean)
+    .join("-")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    // Trim the STEM, never the whole name: slicing after the extension is how
+    // a long client name silently produces a file the browser saves without
+    // one, which then opens as plain text.
+    .slice(0, 80);
+  return `${stem || "Meeting-Report"}.pdf`;
+}
 
 function ConfidenceBar({ value, label }: { value: number; label?: string }) {
   return (
@@ -34,9 +58,12 @@ function ConfidenceBar({ value, label }: { value: number; label?: string }) {
 export function MeetingReportPanel({
   transcriptId,
   currentUserId,
+  clientName,
 }: {
   transcriptId: string;
   currentUserId: string;
+  /** Named on the PDF cover and in its filename; report meta is the fallback. */
+  clientName?: string | null;
 }) {
   const now = new Date();
   const [report, setReport] = useState<StoredMeetingReport | null>(null);
@@ -103,7 +130,7 @@ export function MeetingReportPanel({
       const data = json?.data ?? {};
       setCanEdit(Boolean(data.canEdit));
       if (data.aiUnavailable) {
-        setNotice("AI is temporarily unavailable — please try again shortly.");
+        setNotice(aiUnavailableMessage(data));
         setStatus("idle");
       } else if (data.reportError) {
         setNotice(`Could not generate a report: ${data.reportError}`);
@@ -245,7 +272,25 @@ export function MeetingReportPanel({
           <ConfidenceBar value={report.overallConfidence} />
         </div>
         <div className="flex items-center gap-2">
-          {report.reportType === "DAILY" ? <DownloadDailyAdherencePdfButton report={report} /> : null}
+          {/*
+            The SAME `.pdf` control the Daily Huddle Rollup and the Weekly Meeting
+            Report use, so one product does not offer three differently-shaped
+            download buttons. Every cadence gets one now: a Daily Huddle renders its
+            five-section adherence deliverable, everything else the narrative report.
+            Both documents are lazy-imported, so react-pdf never lands in the page
+            bundle for the many visits that download nothing.
+          */}
+          <DownloadPdfButton
+            filename={pdfFilename(report, clientName)}
+            makeDoc={async (orgName) => {
+              if (report.reportType === "DAILY") {
+                const { default: Doc } = await import("./DailyAdherencePdfDoc");
+                return <Doc report={report} orgName={orgName} />;
+              }
+              const { default: Doc } = await import("./MeetingReportPdfDoc");
+              return <Doc report={report} orgName={orgName} clientName={clientName} />;
+            }}
+          />
           {canEdit ? (
             editing ? (
               <>
@@ -334,9 +379,16 @@ export function MeetingReportPanel({
         </section>
       ) : null}
 
-      {/* Extracted items */}
-      <ExtractedGroup title="KPIs" kind="kpis" items={report.extractedItems.kpis} editing={editing} getLabel={(k) => k.name ?? ""} onToggle={(i, v) => patchItem("kpis", i, { accepted: v })} onRename={(i, v) => patchItem("kpis", i, { name: v })} />
-      <ExtractedGroup title="Priorities" kind="priorities" items={report.extractedItems.priorities} editing={editing} getLabel={(p) => p.name ?? ""} onToggle={(i, v) => patchItem("priorities", i, { accepted: v })} onRename={(i, v) => patchItem("priorities", i, { name: v })} />
+      {/* Extracted items. Daily Huddles are WWW-only — a stand-up never creates
+          a KPI or Priority, so those groups are suppressed for DAILY reports
+          (the generator already returns them empty; this keeps older saved
+          DAILY reports, generated before that rule, consistent too). */}
+      {report.reportType === "DAILY" ? null : (
+        <>
+          <ExtractedGroup title="KPIs" kind="kpis" items={report.extractedItems.kpis} editing={editing} getLabel={(k) => k.name ?? ""} onToggle={(i, v) => patchItem("kpis", i, { accepted: v })} onRename={(i, v) => patchItem("kpis", i, { name: v })} />
+          <ExtractedGroup title="Priorities" kind="priorities" items={report.extractedItems.priorities} editing={editing} getLabel={(p) => p.name ?? ""} onToggle={(i, v) => patchItem("priorities", i, { accepted: v })} onRename={(i, v) => patchItem("priorities", i, { name: v })} />
+        </>
+      )}
       <ExtractedGroup title="WWW (action items)" kind="wwws" items={report.extractedItems.wwws} editing={editing} getLabel={(w) => w.what ?? ""} onToggle={(i, v) => patchItem("wwws", i, { accepted: v })} onRename={(i, v) => patchItem("wwws", i, { what: v })} />
     </div>
   );

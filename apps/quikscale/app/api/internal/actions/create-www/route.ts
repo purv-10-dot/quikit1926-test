@@ -48,7 +48,11 @@ export async function POST(req: NextRequest) {
         whoIds: [b.who],
         what: b.what,
         when: new Date(b.when),
-        status: "not-started",
+        // "not-yet-started", not "not-started". The latter appears in no enum
+        // in this repo, so the status <select> matched no option and silently
+        // fell back to its first — displaying every workflow-created item as
+        // "Not Applicable" — and wwwStats.ts dropped it from every bucket.
+        status: "not-yet-started",
         category: b.category ?? null,
         notes: b.notes ?? null,
         createdBy: b.actorId,

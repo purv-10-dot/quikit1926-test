@@ -50,6 +50,9 @@ export const POST = withServiceAuth(async (req) => {
     attendees: Array.isArray(body?.attendees)
       ? (body!.attendees as unknown[]).filter((x): x is string => typeof x === "string")
       : [],
+    optionalAttendees: Array.isArray(body?.optionalAttendees)
+      ? (body!.optionalAttendees as unknown[]).filter((x): x is string => typeof x === "string")
+      : [],
     createdBy: typeof body?.createdBy === "string" ? body.createdBy : "system",
     daily: parseWindow(body?.daily),
     weekly: parseWindow(body?.weekly, true),

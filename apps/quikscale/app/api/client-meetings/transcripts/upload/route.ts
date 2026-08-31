@@ -2,18 +2,35 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { parseDocxTranscript, DocxTranscriptError, DOCX_MIME, MAX_DOCX_BYTES } from "@/lib/services/docxTranscript";
+import { findMeetingOccurrence } from "@/lib/meetings/linkOccurrence";
 
 export const runtime = "nodejs";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
+/** "HH:mm" — the optional actual start/end the uploader may supply. */
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 /**
  * POST /api/client-meetings/transcripts/upload — manually add a meeting
  * transcript from a `.docx` file (multipart form: file, clientId, type,
- * meetingDate, title?) when no Fathom recording exists for a meeting. The
- * resulting row is a normal `ClientMeetingTranscript` (`source: "manual"`)
- * so the existing viewer, export, and Gemini report-generation routes work
- * on it unchanged.
+ * meetingDate, title?, attendeeIds?, startTime?, endTime?) when no Fathom
+ * recording exists for a meeting. The resulting row is a normal
+ * `ClientMeetingTranscript` (`source: "manual"`) so the existing viewer,
+ * export, and Gemini report-generation routes work on it unchanged.
+ *
+ * WHY `attendeeIds` MATTERS
+ * ------------------------
+ * A `.docx` carries no participant list, so without this the attendance ladder
+ * has nothing but "who spoke" — and silence is not evidence of absence, so
+ * every quiet attendee lands on UNKNOWN and no absentee is ever named. A human
+ * ticking who attended is the strongest signal there is: it is authoritative in
+ * BOTH directions (`attendeesSource: "manual"`), so anyone on the roster and
+ * not on the list reads ABSENT. That is what puts absentees back in the report.
+ *
+ * It stays OPTIONAL. Omitting it reproduces the old behaviour exactly — the
+ * list is then empty, `attendeesSource` is null, and the ladder falls back to
+ * transcript evidence — so an integration that only posts a file still works.
  */
 export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const form = await request.formData().catch(() => null);
@@ -26,6 +43,9 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const type = form.get("type");
   const meetingDate = form.get("meetingDate");
   const titleInput = form.get("title");
+  const attendeeIdsInput = form.get("attendeeIds");
+  const startTimeInput = form.get("startTime");
+  const endTimeInput = form.get("endTime");
 
   if (!(file instanceof File)) {
     return NextResponse.json({ success: false, error: "Missing file" }, { status: 400 });
@@ -46,9 +66,43 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
     return NextResponse.json({ success: false, error: "meetingDate must be YYYY-MM-DD" }, { status: 400 });
   }
 
+  let attendeeIds: string[] = [];
+  if (typeof attendeeIdsInput === "string" && attendeeIdsInput.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(attendeeIdsInput);
+      if (!Array.isArray(parsed) || parsed.some((v) => typeof v !== "string")) throw new Error();
+      attendeeIds = [...new Set(parsed as string[])];
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "attendeeIds must be a JSON array of member ids" },
+        { status: 400 },
+      );
+    }
+  }
+  for (const [label, value] of [["startTime", startTimeInput], ["endTime", endTimeInput]] as const) {
+    if (value !== null && value !== "" && !(typeof value === "string" && HHMM.test(value))) {
+      return NextResponse.json({ success: false, error: `${label} must be HH:mm` }, { status: 400 });
+    }
+  }
+
   const client = await db.client.findFirst({ where: { id: clientId, orgId }, select: { name: true } });
   if (!client) {
     return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+  }
+
+  // Resolve against THIS org's members only, so a stray id from another tenant
+  // cannot be written into the attendee list.
+  const attendeeMembers = attendeeIds.length
+    ? await db.clientMember.findMany({
+        where: { id: { in: attendeeIds }, orgId, deletedAt: null },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  if (attendeeMembers.length !== attendeeIds.length) {
+    return NextResponse.json(
+      { success: false, error: "One or more attendees are invalid" },
+      { status: 400 },
+    );
   }
 
   let rawText: string;
@@ -64,15 +118,48 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
 
   const title = (typeof titleInput === "string" && titleInput.trim()) || file.name.replace(/\.docx$/i, "");
 
+  // Times are stored as instants on the meeting date. They are only ever used
+  // for duration and punctuality, both of which compare against the client's
+  // planned window in the same frame, so the date-local reading is the right one.
+  const atTime = (hhmm: FormDataEntryValue | null): Date | null =>
+    typeof hhmm === "string" && HHMM.test(hhmm) ? new Date(`${meetingDate}T${hhmm}:00.000Z`) : null;
+  const startedAt = atTime(startTimeInput);
+  const endedAt = atTime(endTimeInput);
+  const durationMinutes =
+    startedAt && endedAt && endedAt > startedAt
+      ? Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000)
+      : null;
+
+  const meetingDay = new Date(`${meetingDate}T00:00:00.000Z`);
+
+  // Link to the occurrence row this transcript belongs to, exactly as the
+  // Fathom ingest path does. Without it the transcript is orphaned: the Weekly
+  // Meeting Report and the Daily Huddle rollup both find their transcript
+  // THROUGH the meeting, so an unlinked upload can never produce either — it
+  // only ever yields the lightweight per-transcript report. Nulls are fine and
+  // expected when nobody has scheduled a meeting on that date; the transcript
+  // is still fully usable and the backfill script can relink it later.
+  const occurrence = await findMeetingOccurrence(orgId, clientId, type, meetingDay);
+
   const row = await db.clientMeetingTranscript.create({
     data: {
       orgId,
       clientId,
       type,
-      meetingDate: new Date(`${meetingDate}T00:00:00.000Z`),
+      dailyHuddleId: occurrence.dailyHuddleId,
+      weeklyMeetingId: occurrence.weeklyMeetingId,
+      meetingDate: meetingDay,
       title,
       rawText,
       source: "manual",
+      attendees: attendeeMembers.map((m) => ({ name: m.name, email: m.email })),
+      // Only claim the list is human-authored when a human actually supplied
+      // one. An empty list must stay indistinguishable from "not asked",
+      // otherwise an uploader who skipped the field marks the whole team absent.
+      attendeesSource: attendeeMembers.length ? "manual" : null,
+      startedAt,
+      endedAt,
+      durationMinutes,
       fathomRecordingId: `manual-${crypto.randomUUID()}`,
       matchStatus: "MATCHED",
       createdBy: userId,
@@ -81,6 +168,8 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       id: true,
       clientId: true,
       type: true,
+      dailyHuddleId: true,
+      weeklyMeetingId: true,
       meetingDate: true,
       title: true,
       recordingUrl: true,
@@ -91,6 +180,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       summary: true,
       actionItems: true,
       rawText: true,
+      rawSegments: true,
       matchStatus: true,
     },
   });

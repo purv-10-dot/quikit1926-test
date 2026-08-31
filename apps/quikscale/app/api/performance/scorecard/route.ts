@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { quikScaleMemberWhere } from "@/lib/api/permissions";
+import { isClosed, isOverdue } from "@/lib/services/wwwLifecycle";
 const withOrgAuth = withOrgAuthForModule("analytics.scorecard");
 
 export const GET = withOrgAuth(async ({ orgId }) => {
@@ -37,13 +38,22 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     const attendedCount = meetings.reduce((sum, m) => sum + m.attendees.filter(a => a.attended).length, 0);
     const attendanceRate = totalAttendees > 0 ? Math.round((attendedCount / totalAttendees) * 100) : 0;
 
-    // WWW open items
-    const openWWW = wwwItems.filter(w => w.status === "open" || w.status === "in-progress" || w.status === "not-started").length;
-    const overdueWWW = wwwItems.filter(w => {
-      const dueDate = w.when;
-      if (!dueDate) return false;
-      return new Date(dueDate) < new Date() && w.status !== "done" && w.status !== "closed" && w.status !== "completed";
-    }).length;
+    // WWW open + overdue, via the shared lifecycle rules.
+    //
+    // Both counts were previously computed inline here, and both were wrong:
+    //
+    //   · `openWWW` matched "open" (a value in no enum in this repo),
+    //     "in-progress" and "not-started" (legacy spellings) — and MISSED the
+    //     three canonical open states, so it undercounted badly.
+    //   · `overdueWWW` excluded "done" and "closed", neither of which exists,
+    //     so the exclusion never matched; and it ignored `dueDateTBD`, making
+    //     every to-be-decided item overdue from the day it was created.
+    //
+    // `lib/services/wwwLifecycle.ts` is now the only definition, shared with
+    // the WWW list filter and aligned with QuikFlow's overdue notification —
+    // so a user cannot see three different overdue counts in three places.
+    const openWWW = wwwItems.filter((w) => !isClosed(w.status)).length;
+    const overdueWWW = wwwItems.filter((w) => isOverdue(w)).length;
 
     // Overall org score
     const orgScore = Math.round(kpiAttainment * 0.5 + priorityRate * 0.3 + attendanceRate * 0.2);

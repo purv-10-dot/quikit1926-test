@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Daily Huddle Adherence Report — downloadable PDF (react-pdf).
  *
@@ -7,7 +5,7 @@
  * Attendance, Adherence Snapshot + summary tiles, Individual Participant
  * Breakdown, Stucks & Blockers) with the org's own name in the header
  * instead of a fixed third-party brand. Consumed via `pdf(...).toBlob()`
- * from `DownloadDailyAdherencePdfButton`, same pattern as `SWTPdfDoc.tsx`.
+ * via the shared `DownloadPdfButton` in `MeetingReportPanel`.
  */
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { StoredMeetingReport } from "@/lib/ai/meetingReport";
@@ -167,8 +165,10 @@ export default function DailyAdherencePdfDoc({
                   Not Present ({notPresent.length}){report.attendance?.comparisonNote ? ` — ${report.attendance.comparisonNote}` : ""}
                 </Text>
                 <View style={styles.attendeeGrid}>
+                  {/* "•" not "▪": Helvetica is WinAnsi-only in react-pdf and
+                      drops anything outside it without warning. */}
                   {notPresent.map((name, i) => (
-                    <Text key={i} style={styles.attendeeItem}>▪ {name}</Text>
+                    <Text key={i} style={styles.attendeeItem}>• {name}</Text>
                   ))}
                 </View>
               </View>

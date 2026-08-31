@@ -88,7 +88,7 @@ interface ClientRow {
   weeklyStartTime: string | null; weeklyEndTime: string | null;
   dailyStartTime: string | null;  dailyEndTime: string | null;
   weeklyDay: string | null; dailyDays: string[]; meetingUntil: string | null; startDate: string | null;
-  teamMembers: Array<{ id: string; name: string; email: string }>;
+  teamMembers: Array<{ id: string; name: string; email: string; attendanceType?: AttendanceType }>;
   createdAt: string; updatedAt: string;
   createdBy: string; createdByName: string; createdByInitials: string;
   updatedBy: string | null;
@@ -105,7 +105,39 @@ const emptyForm = {
   weeklyDay: "" as string, dailyDays: [] as string[],
   startDate: "" as string, meetingUntil: "" as string,
   teamMemberIds: [] as string[],
+  /**
+   * Members who are welcome but not obliged. Kept as its own picker because
+   * "who must be here" and "who may be here" are two different questions about
+   * the meeting, and asking them separately is clearer than one list plus a
+   * per-row toggle. Both collapse into `teamMemberTypes` on submit — there is
+   * still exactly one stored concept, `ClientTeamMember.attendanceType`.
+   */
+  optionalMemberIds: [] as string[],
+  /** Per-member attendance classification for this client. Absent ⇒ REQUIRED. */
+  teamMemberTypes: {} as Record<string, AttendanceType>,
 };
+
+type AttendanceType = "REQUIRED" | "OPTIONAL" | "EXTERNAL";
+
+/**
+ * Only REQUIRED members count toward the attendance percentage. OPTIONAL and
+ * EXTERNAL still appear in the weekly report so you can see whether they
+ * turned up, but they neither raise nor lower the team average.
+ */
+const ATTENDANCE_TYPE_OPTIONS: { value: AttendanceType; label: string }[] = [
+  { value: "REQUIRED", label: "Required" },
+  { value: "OPTIONAL", label: "Optional" },
+  { value: "EXTERNAL", label: "External" },
+];
+
+/**
+ * The classification a member of the main list can hold.
+ *
+ * OPTIONAL is missing on purpose — it is expressed by the Optional Members
+ * picker instead, so there is one control per question rather than two ways to
+ * say the same thing that can disagree.
+ */
+const TEAM_MEMBER_TYPE_OPTIONS = ATTENDANCE_TYPE_OPTIONS.filter(o => o.value !== "OPTIONAL");
 
 // Weekday chips for the recurrence editor (keys match the calendar tokens).
 const DAY_CHIPS: { key: string; label: string }[] = [
@@ -411,6 +443,24 @@ export default function ClientsPage() {
     return m;
   }, [rows]);
 
+  // Sticky id -> display-name cache for everything that renders a picked member
+  // by name (the Attendance rows, the Teams-invite preview). `memberOptions` is
+  // only the current paginated/searched slice of client members, and `rows` only
+  // covers the visible page of already-saved clients - so neither on its own can
+  // name a member the user just picked in a *new* client form. Accumulating into
+  // a ref means a name never regresses to a raw id once it has been seen.
+  const memberNameCache = useRef<Map<string, string>>(new Map());
+  const resolveMemberName = useMemo(() => {
+    const cache = memberNameCache.current;
+    const put = (id: string, name: string) => { if (name) cache.set(id, name); };
+    const label = (u: PickerUser) =>
+      [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email || "";
+    for (const u of memberOptions) put(u.id, label(u));
+    for (const u of editSeedMembers) put(u.id, label(u));
+    for (const c of rows) for (const tm of c.teamMembers) put(tm.id, tm.name);
+    return (id: string) => cache.get(id) ?? id;
+  }, [memberOptions, editSeedMembers, rows]);
+
   // Clients list — DB-level pagination + search + status/client filters + sort.
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -546,7 +596,14 @@ export default function ClientsPage() {
         dailyDays:       row.dailyDays ?? [],
         startDate:       row.startDate ? row.startDate.slice(0, 10) : "",
         meetingUntil:    row.meetingUntil ?? "",
-        teamMemberIds:   row.teamMembers.map(m => m.id),
+        // Split the stored roster back into the two pickers it is edited
+        // through. External members stay in the main list — they are expected
+        // to attend, they are just not the team being measured.
+        teamMemberIds:     row.teamMembers.filter(m => m.attendanceType !== "OPTIONAL").map(m => m.id),
+        optionalMemberIds: row.teamMembers.filter(m => m.attendanceType === "OPTIONAL").map(m => m.id),
+        teamMemberTypes: Object.fromEntries(
+          row.teamMembers.map(m => [m.id, m.attendanceType ?? "REQUIRED"]),
+        ) as Record<string, AttendanceType>,
       },
     });
   }
@@ -565,6 +622,9 @@ export default function ClientsPage() {
     if (f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
     if (f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
 
+    // One roster goes to the server. Someone picked in both lists appears once.
+    const allMemberIds = [...new Set([...f.teamMemberIds, ...f.optionalMemberIds])];
+
     setSaving(true); setError("");
     try {
       const body = {
@@ -579,7 +639,17 @@ export default function ClientsPage() {
         dailyDays:       f.dailyDays,
         startDate:       f.startDate || null,
         meetingUntil:    f.meetingUntil || null,
-        teamMemberIds:   f.teamMemberIds,
+        teamMemberIds:   allMemberIds,
+        // Only send classifications for members still selected, so removing
+        // someone cannot leave a stale entry behind. The optional picker wins
+        // over the segmented control for anyone in both lists — it is the more
+        // explicit statement of intent.
+        teamMemberTypes: Object.fromEntries(
+          allMemberIds.map(id => [
+            id,
+            f.optionalMemberIds.includes(id) ? "OPTIONAL" : f.teamMemberTypes[id] ?? "REQUIRED",
+          ]),
+        ),
       };
       const url = editing.id ? `/api/client-meetings/clients/${editing.id}` : "/api/client-meetings/clients";
       const method = editing.id ? "PUT" : "POST";
@@ -1020,6 +1090,73 @@ export default function ClientsPage() {
                 chipLimit={Infinity}
               />
             )}
+
+            {/* Optional attendees. Their own picker rather than a per-row
+                toggle: this list also drives the Teams invite, where they are
+                sent as `type: "optional"` so Outlook shows them under Optional
+                and Graph's attendance report can tell a no-show that matters
+                from one that does not. */}
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Optional Members</label>
+              <UserMultiPicker
+                values={editing.form.optionalMemberIds}
+                onChange={(ids) =>
+                  setEditing({ ...editing, form: { ...editing.form, optionalMemberIds: ids } })
+                }
+                users={memberPickerOptions}
+                selectedUsers={editSeedMembers}
+                onSearchChange={setMemberSearch}
+                onLoadMore={fetchMoreMembers}
+                hasMore={membersHasMore}
+                loadingMore={membersLoadingMore}
+                loading={membersLoading}
+                placeholder="Nobody optional…"
+                chipLimit={Infinity}
+              />
+              <p className="mt-1 text-[11px] text-gray-400">
+                Invited as optional in Teams. Shown in the report, but never counted for or
+                against the attendance %.
+              </p>
+            </div>
+
+            {/* Per-member classification. Only Required members count toward the
+                attendance percentage — see ATTENDANCE_TYPE_OPTIONS. */}
+            {editing.form.teamMemberIds.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                  <span className="text-xs font-medium text-gray-700">Attendance</span>
+                  <span className="text-[11px] text-gray-400">
+                    Only Required members count toward attendance %
+                  </span>
+                </div>
+                <ul className="max-h-56 divide-y divide-gray-100 overflow-y-auto">
+                  {editing.form.teamMemberIds.map((id) => {
+                    const m = resolveMemberName(id);
+                    return (
+                      <li key={id} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <span className="min-w-0 truncate text-xs text-gray-700">{m}</span>
+                        <Segmented
+                          value={editing.form.teamMemberTypes[id] === "EXTERNAL" ? "EXTERNAL" : "REQUIRED"}
+                          onChange={(v) =>
+                            setEditing({
+                              ...editing,
+                              form: {
+                                ...editing.form,
+                                teamMemberTypes: {
+                                  ...editing.form.teamMemberTypes,
+                                  [id]: v as AttendanceType,
+                                },
+                              },
+                            })
+                          }
+                          options={TEAM_MEMBER_TYPE_OPTIONS}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <div>
@@ -1151,11 +1288,7 @@ export default function ClientsPage() {
                 weeklyDay={editing.form.weeklyDay}
                 dailyDays={editing.form.dailyDays}
                 until={editing.form.meetingUntil}
-                attendeeNames={editing.form.teamMemberIds.map((id) => {
-                  const opt = memberOptions.find((o) => o.id === id);
-                  const optName = opt ? [opt.firstName, opt.lastName].filter(Boolean).join(" ").trim() || opt.email : "";
-                  return optName || memberNameById.get(id) || id;
-                })}
+                attendeeNames={editing.form.teamMemberIds.map(resolveMemberName)}
               />
 
               {/* Direct create — makes both recurring Teams meetings now. Saving

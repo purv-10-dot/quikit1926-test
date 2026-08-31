@@ -276,6 +276,7 @@ function IntegrationsInner() {
                           {p.id === "teams" ? (
                             <NotetakerEmailField
                               connectionId={c.id}
+                              organizerMailbox={c.label}
                               value={c.notetakerEmail ?? ""}
                               onSave={(notetakerEmail) => saveNotetaker.mutate({ id: c.id, notetakerEmail })}
                               saving={saveNotetaker.isPending && saveNotetaker.variables?.id === c.id}
@@ -590,17 +591,28 @@ function FathomConnectModal({
 }
 
 /**
- * Fathom notetaker bot email for a Teams connection — invited as an attendee
- * on every online meeting QuikFlow creates so Fathom auto-joins & records.
+ * Fathom ACCOUNT email for a Teams connection — invited as a required attendee
+ * on every online meeting QuikFlow creates.
+ *
+ * Not a bot address: Fathom has no invitable mailbox. Its notetaker joins
+ * meetings that appear on the calendar connected to a Fathom USER account, so
+ * inviting that person is what puts a QuikFlow-created meeting into their
+ * Fathom "Upcoming Meetings" — which is what auto-joins. The organiser here is
+ * a QuikFlow integration account whose calendar Fathom does not sync, so
+ * without this the meeting is invisible to Fathom entirely.
+ *
  * Blank clears the override (falls back to the org-wide FATHOM_NOTETAKER_EMAIL).
  */
 function NotetakerEmailField({
   connectionId,
+  organizerMailbox,
   value,
   onSave,
   saving,
 }: {
   connectionId: string;
+  /** The connected mailbox that organises the meetings — this connection's label. */
+  organizerMailbox: string;
   value: string;
   onSave: (notetakerEmail: string) => void;
   saving: boolean;
@@ -612,7 +624,7 @@ function NotetakerEmailField({
   return (
     <div className="mt-2 border-t border-[var(--color-border)] pt-2">
       <label htmlFor={`notetaker-${connectionId}`} className="mb-1 block text-xs font-medium text-gray-500">
-        Fathom notetaker bot email (auto-join & record)
+        Fathom account email (drives auto-join)
       </label>
       <div className="flex items-center gap-2">
         <input
@@ -620,7 +632,7 @@ function NotetakerEmailField({
           type="email"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="notetaker@fathom.video"
+          placeholder="name@company.com"
           className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-accent-400"
         />
         <button
@@ -631,6 +643,28 @@ function NotetakerEmailField({
         >
           {saving ? "Saving…" : "Save"}
         </button>
+      </div>
+
+      {/* Readiness. QuikFlow can only verify the first line — the two Fathom
+          settings have no API, so they are stated as a checklist rather than a
+          status QuikFlow pretends to know. */}
+      <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-gray-500">
+        <p>
+          Meetings are organised by <span className="font-medium text-gray-600">{organizerMailbox}</span>, whose calendar
+          Fathom does not sync — the address above is invited as a required attendee so the meeting also lands on{" "}
+          <em>its</em> calendar.
+        </p>
+        {draft.trim() ? null : (
+          <p className="text-amber-600">
+            Not set — QuikFlow-created meetings will not be recorded.
+          </p>
+        )}
+        <p className="pt-0.5 font-medium text-gray-600">Then, in Fathom (once):</p>
+        <ul className="list-disc space-y-0.5 pl-4">
+          <li>Settings → Calendar: connect the calendar of this same address.</li>
+          <li>Settings → Recording: auto-record ON for all meetings.</li>
+          <li>Confirm the meeting shows in Fathom&apos;s Upcoming Meetings — if it does not, nothing will auto-join.</li>
+        </ul>
       </div>
     </div>
   );

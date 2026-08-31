@@ -18,8 +18,8 @@ function listEl(container: HTMLElement): HTMLElement {
 }
 
 describe("FilterPicker", () => {
-  // ── Backward-compat: client mode (no onSearch) — UNCHANGED behavior ──
-  describe("client mode (no onSearch)", () => {
+  // ── Backward-compat: client mode (no onSearchChange) — UNCHANGED behavior ──
+  describe("client mode (no onSearchChange)", () => {
     it("filters options locally by substring on label", () => {
       render(<FilterPicker value="" onChange={() => {}} options={OPTIONS} allLabel="All Users" />);
       open();
@@ -60,11 +60,11 @@ describe("FilterPicker", () => {
     });
   });
 
-  // ── New opt-in: server mode (onSearch provided) ──
-  describe("server mode (onSearch)", () => {
+  // ── New opt-in: server mode (onSearchChange provided) ──
+  describe("server mode (onSearchChange)", () => {
     it("does NOT filter locally — the parent controls the option set", () => {
       render(
-        <FilterPicker value="" onChange={() => {}} options={OPTIONS} allLabel="All Users" onSearch={() => {}} />,
+        <FilterPicker value="" onChange={() => {}} options={OPTIONS} allLabel="All Users" onSearchChange={() => {}} />,
       );
       open();
       // A term that matches neither option must still leave both rendered,
@@ -74,21 +74,21 @@ describe("FilterPicker", () => {
       expect(screen.getByText("Bob Jones")).toBeInTheDocument();
     });
 
-    it("calls onSearch with the (debounced) typed query", async () => {
-      const onSearch = vi.fn();
+    it("calls onSearchChange with the (debounced) typed query", async () => {
+      const onSearchChange = vi.fn();
       render(
-        <FilterPicker value="" onChange={() => {}} options={OPTIONS} allLabel="All Users" onSearch={onSearch} />,
+        <FilterPicker value="" onChange={() => {}} options={OPTIONS} allLabel="All Users" onSearchChange={onSearchChange} />,
       );
       open();
       fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "shub" } });
-      await waitFor(() => expect(onSearch).toHaveBeenCalledWith("shub"));
+      await waitFor(() => expect(onSearchChange).toHaveBeenCalledWith("shub"));
     });
 
     it("keeps paginating while a query is typed (server search is page-able)", () => {
       const onLoadMore = vi.fn();
       const { container } = render(
         <FilterPicker value="" onChange={() => {}} options={OPTIONS} allLabel="All Users"
-          onSearch={() => {}} hasMore loadingMore={false} onLoadMore={onLoadMore} />,
+          onSearchChange={() => {}} hasMore loadingMore={false} onLoadMore={onLoadMore} />,
       );
       open();
       fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "ab" } });
@@ -99,7 +99,7 @@ describe("FilterPicker", () => {
     it("selecting an option fires onChange with its value", () => {
       const onChange = vi.fn();
       render(
-        <FilterPicker value="" onChange={onChange} options={OPTIONS} allLabel="All Users" onSearch={() => {}} />,
+        <FilterPicker value="" onChange={onChange} options={OPTIONS} allLabel="All Users" onSearchChange={() => {}} />,
       );
       open();
       fireEvent.click(screen.getByText("Alice Smith"));
