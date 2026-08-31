@@ -75,3 +75,7 @@ packages/database/prisma/manual-migrations/*app_quiklms*
 .fathom-capture/
 **/fathom-raw-*.json
 **/redaction-map-*.json
+
+# npm lockfile — not tracked in this repo.
+package-lock.json
+**/package-lock.json
