@@ -20,6 +20,7 @@ import {
   Banner,
   ConfidenceBadge,
   DownloadDocxButton,
+  DownloadPdfButton,
   EmptyState,
   SignOffBar,
   Skeleton,
@@ -321,6 +322,15 @@ export function MonthlyReportPanel({
                     endpoint="/api/client-meetings/reports/monthly/export"
                     body={{ clientId, period }}
                     filename={`Monthly-${(clientName ?? report.clientName).replace(/[^\w.-]+/g, "-")}-${period}.docx`}
+                  />
+                  <DownloadPdfButton
+                    filename={`Monthly-${(clientName ?? report.clientName).replace(/[^\w.-]+/g, "-")}-${period}.pdf`}
+                    makeDoc={async (orgName) => {
+                      const { default: Doc } = await import("./MonthlyReportPdfDoc");
+                      return (
+                        <Doc report={report} orgName={orgName} validated={validatedAt !== null} />
+                      );
+                    }}
                   />
                   {canEdit ? (
                     <button

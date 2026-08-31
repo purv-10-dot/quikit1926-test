@@ -11,9 +11,10 @@
  * a data state — see the theming rules in CLAUDE.md.
  */
 
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { AlertTriangle, Check, CheckCircle2, Download, FileText, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
+import { useOrgInfo } from "@/lib/hooks/useOrgInfo";
 
 /* ───────────────────────────── layout ───────────────────────────── */
 
@@ -274,6 +275,60 @@ export function DownloadDocxButton({
         onClick={download}
         disabled={busy}
         className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-700 disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        {busy ? "Building…" : label}
+      </button>
+      {error ? <span className="text-[11px] text-red-600">{error}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * Download a report as .pdf, rendered in the browser.
+ *
+ * The PDF is built client-side with react-pdf (lazy-imported, so its weight
+ * never lands in the page bundle) from the SAME component the bulk export uses
+ * on the server. One component, two callers: a report downloaded here and the
+ * same report pulled out of a bulk zip are the same document.
+ */
+export function DownloadPdfButton({
+  makeDoc,
+  filename,
+  label = ".pdf",
+}: {
+  /** Given the org name, produce the document element to render. */
+  makeDoc: (orgName: string) => Promise<ReactElement>;
+  filename: string;
+  label?: string;
+}) {
+  const { org } = useOrgInfo();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function download() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { pdf } = await import("@react-pdf/renderer");
+      const blob = await pdf(await makeDoc(org?.name ?? "QuikScale")).toBlob();
+      if (!blob || blob.size === 0) throw new Error("Generated PDF is empty");
+      triggerDownload(blob, filename);
+    } catch (e) {
+      console.error("[report] PDF generation failed", e);
+      setError("Could not generate the PDF. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
       >
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
         {busy ? "Building…" : label}

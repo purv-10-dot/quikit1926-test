@@ -15,8 +15,11 @@
  *
  * Each scope has ONE list on the left and ONE detail pane on the right, so the
  * same muscle memory works everywhere. The sub-views ("Transcripts / Report")
- * are what keep the reports reachable without a second entry point — Meeting
- * Rhythm → Dashboard stays the only way in.
+ * are what keep the reports reachable without a second entry point.
+ *
+ * Rendered in two places from one component (see the `variant` prop):
+ *   · Meeting Rhythm → Transcripts  — the route, `variant="page"`
+ *   · a dialog over any host page    — `variant="modal"` (default)
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
@@ -26,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileQuestion,
+  Package,
   Sun,
   Trash2,
   Upload,
@@ -33,6 +37,7 @@ import {
 } from "lucide-react";
 import { MeetingReportPanel } from "./MeetingReportPanel";
 import { UploadTranscriptModal } from "./UploadTranscriptModal";
+import { BulkDownloadReportsModal } from "./BulkDownloadReportsModal";
 import { WeeklyRollupPanel } from "./WeeklyRollupPanel";
 import { WeeklyMeetingReportPanel } from "./WeeklyMeetingReportPanel";
 import { MonthlyReportPanel } from "./MonthlyReportPanel";
@@ -339,11 +344,20 @@ export function ExportTranscriptModal({
   initialClientId,
   initialMode,
   onClose,
+  variant = "modal",
 }: {
   clients: ClientOpt[];
   initialClientId: string;
   initialMode: "daily" | "weekly";
-  onClose: () => void;
+  /** Modal-only — there is nothing to close when `variant` is "page". */
+  onClose?: () => void;
+  /**
+   * "modal" (default) keeps the dashboard's dialog-over-backdrop presentation.
+   * "page" drops the backdrop, the close button and Escape-to-close so the same
+   * workspace can BE the /client-meetings/transcripts route. Nothing else
+   * differs: one component serves both, so the two entry points cannot drift.
+   */
+  variant?: "modal" | "page";
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date();
@@ -363,6 +377,7 @@ export function ExportTranscriptModal({
   const [downloading, setDownloading] = useState(false);
   const [viewerTab, setViewerTab] = useState<"transcript" | "report">("transcript");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [reportNonce, setReportNonce] = useState(0);
 
   const [confirming, setConfirming] = useState<(DeleteTarget & { url: string; after: "list" | "report" }) | null>(null);
@@ -397,12 +412,15 @@ export function ExportTranscriptModal({
   }, [scope]);
 
   useEffect(() => {
+    // As a page there is no dialog for Escape to dismiss — swallowing the key
+    // there would strand the user on a route with no way back.
+    if (variant === "page") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !uploadOpen && !confirming) onClose();
+      if (e.key === "Escape" && !uploadOpen && !bulkOpen && !confirming) onClose?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, uploadOpen, confirming]);
+  }, [onClose, uploadOpen, bulkOpen, confirming, variant]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -577,15 +595,34 @@ export function ExportTranscriptModal({
   const week = weekBounds(date);
   const period = `${year}-${String(month).padStart(2, "0")}`;
 
+  const isPage = variant === "page";
+
   return (
     <>
-      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4" role="presentation" onClick={onClose}>
+      {/*
+        Both variants render the same two elements; only their props differ.
+        In page mode the outer one becomes `display: contents` — layout-
+        transparent, so the panel sizes to the route instead of the viewport,
+        while the DOM nesting (and this file) stays untouched.
+      */}
+      <div
+        className={isPage ? "contents" : "fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"}
+        role={isPage ? undefined : "presentation"}
+        onClick={isPage ? undefined : onClose}
+      >
         <div
-          className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-          role="dialog"
-          aria-modal="true"
+          className={
+            isPage
+              ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+              : "flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          }
+          data-testid="transcript-workspace"
+          // "region" keeps the aria-labelledby below meaningful on the route,
+          // where there is no dialog for it to name.
+          role={isPage ? "region" : "dialog"}
+          aria-modal={isPage ? undefined : true}
           aria-labelledby="export-transcript-title"
-          onClick={(e) => e.stopPropagation()}
+          onClick={isPage ? undefined : (e) => e.stopPropagation()}
         >
           {/* ── Header ───────────────────────────────────────────────── */}
           <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3.5">
@@ -597,13 +634,15 @@ export function ExportTranscriptModal({
                 Read a recording, or build the daily, weekly and monthly reports from it.
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            {!isPage && (
+              <button
+                onClick={onClose}
+                className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {/* ── Controls ─────────────────────────────────────────────── */}
@@ -762,6 +801,17 @@ export function ExportTranscriptModal({
                   >
                     <Upload className="h-3.5 w-3.5" /> Upload Transcript
                   </button>
+                  {/*
+                    Bulk download sits beside Upload rather than inside a report
+                    panel: it spans every client, kind and week, so it does not
+                    belong to whichever single report is on screen.
+                  */}
+                  <button
+                    onClick={() => setBulkOpen(true)}
+                    className="mt-1.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 transition hover:border-accent-300 hover:bg-accent-50/40 hover:text-accent-700"
+                  >
+                    <Package className="h-3.5 w-3.5" /> Bulk Download Reports
+                  </button>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   {loading ? (
@@ -918,6 +968,14 @@ export function ExportTranscriptModal({
           initialClientId={clientId}
           onClose={() => setUploadOpen(false)}
           onUploaded={handleUploaded}
+        />
+      ) : null}
+
+      {bulkOpen ? (
+        <BulkDownloadReportsModal
+          clients={clients}
+          initialClientId={clientId}
+          onClose={() => setBulkOpen(false)}
         />
       ) : null}
 

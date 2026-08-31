@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Daily Huddle Weekly Report — downloadable PDF (react-pdf).
  *
@@ -8,7 +6,8 @@
  * `DownloadWeeklyReportButtons`, the same lazy-import pattern as
  * `DailyAdherencePdfDoc`.
  */
-import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, View, Text } from "@react-pdf/renderer";
+import { pdfStyles } from "./reportPdfKit";
 import type { StoredWeeklyReport } from "@/lib/ai/weeklyHuddleCompose";
 import {
   buildWeeklyAdherenceSnapshot,
@@ -51,58 +50,14 @@ const STATUS: Record<string, { label: string; color: string }> = {
 
 const flag = (v: SnapshotFlag | null) => (v ? SNAPSHOT_FLAG_LABEL[v] : "—");
 
-const styles = StyleSheet.create({
-  page: { paddingHorizontal: 28, paddingVertical: 26, fontFamily: "Helvetica", fontSize: 9, color: "#1F2937" },
-
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    borderBottomWidth: 2,
-    borderBottomColor: "#0F766E",
-    paddingBottom: 8,
-    marginBottom: 10,
-  },
-  orgName: { fontFamily: "Helvetica-Bold", fontSize: 13, color: "#0F766E" },
-  orgTagline: { fontSize: 7, fontStyle: "italic", color: "#64748B", marginTop: 1 },
-  titleBlock: { alignItems: "flex-end" },
-  reportTitle: { fontFamily: "Helvetica-Bold", fontSize: 14, color: "#111827" },
-  reportSub: { fontSize: 8, color: "#64748B", marginTop: 1 },
-
-  h2: { fontFamily: "Helvetica-Bold", fontSize: 11, color: "#0F172A", marginTop: 12, marginBottom: 5 },
-  h3: { fontFamily: "Helvetica-Bold", fontSize: 9, color: "#334155", marginTop: 8, marginBottom: 4 },
-  note: { fontSize: 7, fontStyle: "italic", color: "#64748B", marginTop: 3 },
-  warn: { fontSize: 7, fontStyle: "italic", color: "#B45309", marginTop: 3 },
-
-  detailsTable: { borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 3 },
-  detailsRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
-  detailsLabel: { width: 160, backgroundColor: "#F8FAFC", padding: 5, fontFamily: "Helvetica-Bold", fontSize: 8, color: "#334155" },
-  detailsValue: { flex: 1, padding: 5, fontSize: 8 },
-
-  tilesRow: { flexDirection: "row", gap: 6 },
-  tile: { flex: 1, borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 3, paddingVertical: 6, alignItems: "center" },
-  tileValue: { fontFamily: "Helvetica-Bold", fontSize: 13, color: "#111827" },
-  tileLabel: { fontSize: 6.5, color: "#64748B", marginTop: 1, textAlign: "center" },
-
-  table: { borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 3, marginTop: 4 },
-  tHead: { flexDirection: "row", backgroundColor: "#EFF6FF" },
-  th: { padding: 5, fontFamily: "Helvetica-Bold", fontSize: 7.5, color: "#1E3A8A" },
-  tRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#E2E8F0" },
-  tTotal: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#E2E8F0", backgroundColor: "#F8FAFC" },
-  td: { padding: 5, fontSize: 8 },
-  tdCenter: { padding: 5, fontSize: 8, textAlign: "center" },
-  bold: { fontFamily: "Helvetica-Bold" },
-
-  bullet: { flexDirection: "row", marginBottom: 2 },
-  bulletDot: { width: 10, fontSize: 8 },
-  bulletText: { flex: 1, fontSize: 8, lineHeight: 1.35 },
-
-  obsRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#E2E8F0" },
-  obsLabel: { width: 120, backgroundColor: "#F8FAFC", padding: 5, fontFamily: "Helvetica-Bold", fontSize: 7.5, color: "#334155" },
-  obsText: { flex: 1, padding: 5, fontSize: 8, lineHeight: 1.35 },
-
-  footer: { position: "absolute", bottom: 16, left: 28, right: 28, textAlign: "center", fontSize: 7, fontStyle: "italic", color: "#94A3B8" },
-});
+/**
+ * The shared Meeting Rhythm PDF stylesheet.
+ *
+ * These rules used to live here and now live in `reportPdfKit`, unchanged, so
+ * that the five report PDFs — which arrive in one zip from the bulk export —
+ * cannot drift into five different-looking documents.
+ */
+const styles = pdfStyles;
 
 /** Loose report rows carry `unknown`; render a string or nothing. */
 const str = (v: unknown): string => (typeof v === "string" ? v : "");

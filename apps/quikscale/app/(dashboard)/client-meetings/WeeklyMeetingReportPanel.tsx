@@ -23,6 +23,7 @@ import {
   Banner,
   ConfidenceBadge,
   DownloadDocxButton,
+  DownloadPdfButton,
   EmptyState,
   SignOffBar,
   Skeleton,
@@ -388,6 +389,19 @@ export function WeeklyMeetingReportPanel({
                     endpoint="/api/client-meetings/reports/weekly-meeting/export"
                     body={{ weeklyMeetingId: meetingId }}
                     filename={`Weekly-Meeting-${(clientName ?? state.report.clientName).replace(/[^\w.-]+/g, "-")}-${state.report.meetingDate}.docx`}
+                  />
+                  <DownloadPdfButton
+                    filename={`Weekly-Meeting-${(clientName ?? state.report.clientName).replace(/[^\w.-]+/g, "-")}-${state.report.meetingDate}.pdf`}
+                    makeDoc={async (orgName) => {
+                      const { default: Doc } = await import("./WeeklyMeetingReportPdfDoc");
+                      return (
+                        <Doc
+                          report={state.report!}
+                          orgName={orgName}
+                          validated={state.validatedAt !== null}
+                        />
+                      );
+                    }}
                   />
                   {state.canEdit ? (
                     <button

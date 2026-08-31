@@ -538,7 +538,7 @@ export const meetingRhythm: KBChapter = {
         },
         {
           type: "p",
-          text: "The module ships with five pages: a Dashboard, Client Master, Client Members, Daily Huddle and Weekly Meeting.",
+          text: "The module ships with six pages: a Dashboard, Transcripts, Client Master, Client Members, Daily Huddle and Weekly Meeting.",
         },
         {
           type: "figure",
@@ -550,7 +550,7 @@ export const meetingRhythm: KBChapter = {
     },
     {
       id: "mr-pages",
-      title: "The five pages",
+      title: "The six pages",
       blocks: [
         {
           type: "table",
@@ -558,6 +558,7 @@ export const meetingRhythm: KBChapter = {
           widths: [1, 2.6],
           rows: [
             ["Dashboard", "Six-month rolling performance per client, in Daily or Weekly mode, with a colour-coded score per metric per month and an overall column. Weekly mode adds a Member Punch-In tab."],
+            ["Transcripts", "Recorded meetings and everything built from them: the transcript itself, its summary and action items, and the daily, weekly, week-rollup and monthly AI reports. Transcripts arrive automatically from a Fathom workflow, or by manual upload."],
             ["Client Master", "The list of clients or internal groups whose meetings you track. Create one row per recurring meeting group."],
             ["Client Members", "Who belongs to each client's meeting roster. Drives the attendance and punch-in metrics."],
             ["Daily Huddle", "One record per daily huddle: date, who attended, punctuality, duration, stuck items."],

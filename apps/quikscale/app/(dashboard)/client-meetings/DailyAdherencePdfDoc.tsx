@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Daily Huddle Adherence Report — downloadable PDF (react-pdf).
  *

@@ -297,6 +297,10 @@ export const NAV_RESOURCE: Record<string, string> = {
   "orgSetup.units": "Unit",
   www: "WWW",
   "clientMeetings.dashboard": "ClientMeetings.Dashboard",
+  // The Transcripts route is the AI meeting pipeline's UI, so it rides on the
+  // same resource its report APIs are gated by rather than inventing a grant
+  // every existing role would have to be re-seeded with.
+  "clientMeetings.transcripts": "ClientMeetings.Report",
   "clientMeetings.clients": "ClientMaster",
   "clientMeetings.members": "ClientMember",
   "clientMeetings.dailyHuddle": "DailyHuddle",
