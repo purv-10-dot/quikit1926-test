@@ -1,5 +1,6 @@
 ﻿import { prisma } from "@/lib/prisma";
 import type { QuikCRMMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 export interface QuikCRMStats {
   leads:       number; // new contacts in last 7 days
@@ -18,7 +19,8 @@ export interface QuikCRMStats {
 async function getClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "QUIKCRM", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("QuikCRM not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("QuikCRM not connected");
 
   const apiKey = conn.accessToken;
   if (!apiKey) throw new Error("QuikCRM API key missing");

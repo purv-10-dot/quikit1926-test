@@ -31,12 +31,17 @@ const FEATURES = [
   { icon: "📊", title: "Every channel, one view", body: "GA4, Search Console, Meta, LinkedIn, YouTube, HubSpot and more — unified into a single live dashboard." },
   { icon: "🤖", title: "Ask AI, grounded in your data", body: "Ask plain-English questions and get answers tied to your real metrics, not generic guesses." },
   { icon: "🔌", title: "Real connectors in minutes", body: "Connect your marketing and CRM stack with secure OAuth — no CSVs, no manual exports." },
-  { icon: "🎯", title: "Insights that tell you what to do", body: "Automatic, rule-based recommendations across SEO, social, and sales — surfaced the moment they matter." },
+  { icon: "🎯", title: "Insights that tell you what to do", body: "AI-generated recommendations, grounded in rule-based analysis of your own data, across SEO, social, and sales — surfaced the moment they matter." },
   { icon: "👥", title: "Team & OKRs in context", body: "See execution and objectives beside the numbers they move, backed by the tools you already use." },
   { icon: "✉️", title: "Reports that send themselves", body: "Scheduled email digests keep leadership aligned without anyone building a slide." },
 ];
 
-const CONNECTORS = ["Google Analytics 4", "Meta", "LinkedIn", "HubSpot", "Salesforce", "YouTube", "Mailchimp"];
+// Kept in sync with lib/types/connections.ts PLATFORM_CONFIGS — the real,
+// current connector list, not a hand-picked subset. Update both together.
+const CONNECTORS = [
+  "Google Analytics 4", "Google Ads", "YouTube", "Search Console", "Google Business Profile",
+  "Meta", "Meta Ads", "LinkedIn", "HubSpot", "Salesforce", "Mailchimp", "Dynamics 365", "Zoho CRM",
+];
 
 function Brand() {
   return (
@@ -163,10 +168,17 @@ export default function Landing() {
       <footer className="lp-footer">
         <Brand />
         {/* Operator + contact are verification requirements: a reviewer must be
-            able to tell who runs the app and how to reach them. */}
+            able to tell who runs the app and how to reach them. Privacy/Terms
+            links are required by the OAuth consent screen's Privacy Policy URL
+            requirement — this exact URL (https://insights.quikit.ai/legal/privacy)
+            must also be entered in the Cloud Console consent screen config. */}
         <span>
           © {new Date().getFullYear()} {APP_NAME} · Operated by {OPERATOR} ·{" "}
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+          {" · "}
+          <Link href="/legal/privacy">Privacy Policy</Link>
+          {" · "}
+          <Link href="/legal/terms">Terms of Service</Link>
         </span>
       </footer>
     </div>

@@ -1,11 +1,13 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import type { SalesforceMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 async function getSalesforceAuth(userId: string, workspaceId?: string): Promise<{ token: string; instanceUrl: string }> {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "SALESFORCE", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Salesforce not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Salesforce not connected");
 
   const metadata = (conn.metadata ?? {}) as SalesforceMetadata;
 

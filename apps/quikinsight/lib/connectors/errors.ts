@@ -30,11 +30,33 @@ const UNCONFIGURED_PATTERNS = [
   "no ad account",
   "no google",
   "no youtube channel",
+  "no facebook page selected",
+  "no instagram business account",
 ];
 
 export function isUnconfiguredError(err: unknown): boolean {
   const message = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
   return UNCONFIGURED_PATTERNS.some((p) => message.includes(p));
+}
+
+/**
+ * Thrown by a connector when there is no PlatformConnection row at all for
+ * this platform/workspace — the user has never been through OAuth for it.
+ * Distinct from every other "unconfigured" state (row exists but inactive,
+ * or connected with no page/property picked yet), which are real signals
+ * that a connection was attempted and needs attention rather than a first-
+ * time empty state. See withSample() in lib/api/sample.ts for why the
+ * distinction matters: sample data must only stand in for "never connected".
+ */
+export class NoConnectionError extends Error {
+  constructor(message = "No connection exists for this platform") {
+    super(message);
+    this.name = "NoConnectionError";
+  }
+}
+
+export function isNoConnectionError(err: unknown): boolean {
+  return err instanceof NoConnectionError;
 }
 
 /**
@@ -79,20 +101,30 @@ function providerDetail(err: unknown): string | null {
 /**
  * Standard catch handler for a platform route.
  *
- * Unconfigured → `{ connected: false }` so the page shows its setup prompt.
+ * No connection row at all → `{ connected: false, neverConnected: true }` —
+ * the only case sample data (withSample() in lib/api/sample.ts) should stand
+ * in for. Every other "unconfigured"/expired-auth state still reports
+ * `connected: false` so the page shows its setup/reconnect prompt, but WITHOUT
+ * `neverConnected`, so the client shows real zeros + a fix-it prompt instead
+ * of fabricated sample figures — a connection that was attempted and is now
+ * broken or incomplete must never be papered over with invented numbers.
  * Anything else → 500, AND logged with the platform name. Previously these
  * failures were returned to the browser and never written anywhere, so a real
  * outage showed up as a bare `500` in the dev console with no way to tell what
  * had actually gone wrong.
  */
 export function connectorErrorResponse(platform: string, err: unknown) {
+  if (isNoConnectionError(err)) {
+    return { body: { connected: false, neverConnected: true }, status: 200 as const };
+  }
+
   if (isUnconfiguredError(err)) {
     return { body: { connected: false }, status: 200 as const };
   }
 
   // A dead OAuth grant is an auth state, not a server fault: the only fix is for
   // the user to reconnect. Report it as not-connected so the page shows its
-  // connect prompt (and sample data) instead of a hard 500 on every load.
+  // connect prompt instead of a hard 500 on every load.
   if (isAuthExpiredError(err)) {
     console.warn(`[api/${platform}] OAuth grant is no longer valid — reconnect required`);
     return { body: { connected: false, needsReauth: true }, status: 200 as const };

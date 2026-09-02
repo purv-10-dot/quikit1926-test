@@ -1,6 +1,7 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import type { DynamicsMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 export interface DynamicsStats {
   totalAccounts: number;
@@ -12,7 +13,8 @@ export interface DynamicsStats {
 async function getClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "DYNAMICS", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Dynamics not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Dynamics not connected");
 
   const metadata = (conn.metadata ?? {}) as DynamicsMetadata;
   const resource = (metadata.resourceUrl || process.env.DYNAMICS_RESOURCE || "").replace(/\/$/, "");

@@ -2,13 +2,15 @@
 // and degrades gracefully when the account manages no Page / no linked IG.
 import axios from "axios";
 import { prisma } from "@/lib/prisma";
+import { NoConnectionError } from "./errors";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
 async function getMetaConn(userId: string, workspaceId?: string): Promise<{ token: string; selectedPageId: string }> {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "META_FACEBOOK" },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Meta not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Meta not connected");
   const md = (conn.metadata ?? {}) as Record<string, string>;
   return { token: conn.accessToken ?? "", selectedPageId: md.selectedPageId ?? md.pageId ?? "" };
 }

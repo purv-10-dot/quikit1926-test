@@ -1,6 +1,7 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import type { MailchimpMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 export interface MailchimpStats {
   subscribers: number;
@@ -12,7 +13,8 @@ export interface MailchimpStats {
 async function getClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "MAILCHIMP", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Mailchimp not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Mailchimp not connected");
   const metadata = (conn.metadata ?? {}) as MailchimpMetadata;
   // Mailchimp tokens don't expire; data-center prefix lives in metadata
   const base = metadata.apiEndpoint || (metadata.dc ? `https://${metadata.dc}.api.mailchimp.com` : "");

@@ -38,7 +38,7 @@ export async function GET() {
   }).catch(() => null);
 
   if (hubspot?.status !== "CONNECTED") {
-    return NextResponse.json(EMPTY);
+    return NextResponse.json({ ...EMPTY, neverConnected: !hubspot });
   }
 
   try {

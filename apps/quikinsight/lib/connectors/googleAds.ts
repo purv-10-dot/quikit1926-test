@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { trailingWindow } from "@/lib/period/resolve";
 import type { DateWindow } from "@/lib/period/types";
+import { NoConnectionError } from "./errors";
 
 async function listAccessibleCustomers(accessToken: string): Promise<string[]> {
   const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? "";
@@ -16,7 +17,8 @@ async function listAccessibleCustomers(accessToken: string): Promise<string[]> {
 async function getGoogleAdsConn(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "GOOGLE_ADS", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Google Ads not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Google Ads not connected");
   const md = (conn.metadata ?? {}) as Record<string, string>;
   return {
     accessToken: conn.accessToken ?? "",

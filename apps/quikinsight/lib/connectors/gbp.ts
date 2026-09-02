@@ -1,6 +1,7 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import type { GbpMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 export interface GbpStats {
   searches:      number;
@@ -14,7 +15,8 @@ export interface GbpStats {
 async function getClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "GOOGLE_BUSINESS_PROFILE", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("GBP not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("GBP not connected");
 
   let token = conn.accessToken ?? "";
   // Refresh if expired

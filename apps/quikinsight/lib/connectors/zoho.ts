@@ -1,6 +1,7 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import type { ZohoMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 export interface ZohoStats {
   totalContacts: number;
@@ -12,7 +13,8 @@ export interface ZohoStats {
 async function getClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "ZOHO", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Zoho not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Zoho not connected");
 
   let token = conn.accessToken ?? "";
   if (conn.tokenExpiresAt && conn.tokenExpiresAt < new Date() && conn.refreshToken) {

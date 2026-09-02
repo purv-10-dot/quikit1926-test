@@ -2,13 +2,15 @@
 import { prisma } from "@/lib/prisma";
 import { trailingWindow } from "@/lib/period/resolve";
 import type { DateWindow } from "@/lib/period/types";
+import { NoConnectionError } from "./errors";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
 async function getMetaAdsConn(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "META_ADS", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Meta Ads not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Meta Ads not connected");
   const md = (conn.metadata ?? {}) as Record<string, string>;
   return { token: conn.accessToken ?? "", adAccountId: md.adAccountId ?? "" };
 }

@@ -75,23 +75,32 @@ export function hasAnyConnection(): Promise<boolean> {
 }
 
 /**
- * Sample data only for a workspace that has connected nothing at all.
+ * Sample data ONLY for a platform this workspace has never connected at all.
  *
- * Two guards, in order:
- *   1. This platform is connected  -> its real payload, always. A live account
+ * Guards, in order:
+ *   1. This platform is connected -> its real payload, always. A live account
  *      with genuinely zero activity keeps its real zeros rather than being
  *      papered over with invented traffic.
- *   2. Any OTHER platform is connected -> still the real payload (zeros), not a
+ *   2. This platform was connected but is now broken or incomplete (wrong
+ *      status, dead token, no page/property picked yet — anything short of
+ *      `neverConnected`) -> still the real payload/error state, never a
+ *      sample. A partially-configured or expired connection is a real
+ *      problem the user needs to see and fix, not something to mask behind
+ *      invented numbers.
+ *   3. Any OTHER platform is connected -> still the real payload, not a
  *      sample. The workspace is live, and fabricated figures must not appear
  *      beside real ones. The page marks the card "Connect source".
  *
- * Only when neither holds does the sample stand in.
+ * Only when the platform has truly never been connected (no PlatformConnection
+ * row exists at all — `neverConnected: true` from connectorErrorResponse in
+ * lib/connectors/errors.ts) does the sample stand in.
  */
-export async function withSample<T extends { connected: boolean }>(
+export async function withSample<T extends { connected: boolean; neverConnected?: boolean }>(
   live: T,
   sample: Omit<T, "connected">,
 ): Promise<T & SampleFlag> {
   if (live?.connected) return live as T & SampleFlag;
+  if (!live?.neverConnected) return live as T & SampleFlag;
   if (await hasAnyConnection()) return live as T & SampleFlag;
   return { ...(sample as object), connected: true, isSampleData: true } as T & SampleFlag;
 }

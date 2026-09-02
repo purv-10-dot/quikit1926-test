@@ -1,6 +1,7 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import type { LinkedInMetadata } from "@/lib/types/connections";
+import { NoConnectionError } from "./errors";
 
 const LI_VERSION = "202607";
 
@@ -72,7 +73,8 @@ function resolveUrn(urn: unknown, map: Record<string, string>): string {
 async function getLinkedInToken(userId: string, workspaceId?: string): Promise<{ token: string; metadata: LinkedInMetadata }> {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "LINKEDIN", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("LinkedIn not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("LinkedIn not connected");
   return { token: conn.accessToken ?? "", metadata: (conn.metadata ?? {}) as LinkedInMetadata };
 }
 
@@ -200,7 +202,8 @@ export async function getLinkedInOrgStats(userId: string, workspaceId?: string) 
 
 export async function getLinkedInMemberStats(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "LINKEDIN" } });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("LinkedIn not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("LinkedIn not connected");
   const token       = conn.accessToken ?? "";
   const headersRest = { Authorization: `Bearer ${token}`, "X-Restli-Protocol-Version": "2.0.0", "LinkedIn-Version": LI_VERSION };
   const now = Date.now(), since7d = now - 7 * 24 * 60 * 60 * 1000;

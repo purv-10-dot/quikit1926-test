@@ -19,7 +19,7 @@ export async function GET() {
   }).catch(() => null);
 
   if (hubspot?.status !== "CONNECTED") {
-    return NextResponse.json({ connected: false });
+    return NextResponse.json({ connected: false, neverConnected: !hubspot });
   }
 
   try {

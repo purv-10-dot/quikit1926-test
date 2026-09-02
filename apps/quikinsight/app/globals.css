@@ -480,6 +480,26 @@
   .lp-band p{margin:0 0 22px; opacity:.92; font-size:15px;}
   .lp-band .lp-btn-primary{background:#fff; color:var(--accent-ink); box-shadow:0 10px 30px -10px rgba(0,0,0,.4);}
   .lp-footer{border-top:1px solid var(--border); padding:26px 32px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; color:var(--text-muted); font-size:12.5px;}
+  .lp-footer a{color:var(--text-muted); text-decoration:underline;}
+  .lp-footer a:hover{color:var(--text-primary);}
+  .lp-legal{max-width:760px; margin:0 auto; padding:56px 32px 72px;}
+  .lp-legal-title{font-size:clamp(26px,4vw,38px); font-weight:800; letter-spacing:-.02em; color:var(--ink); margin:0 0 8px;}
+  .lp-legal-updated{color:var(--text-muted); font-size:13px; margin:0 0 36px;}
+  .lp-legal-body{color:var(--text-secondary); font-size:15px; line-height:1.7;}
+  .lp-legal-body h2{color:var(--ink); font-size:19px; font-weight:700; margin:36px 0 12px;}
+  .lp-legal-body h2:first-child{margin-top:0;}
+  .lp-legal-body p{margin:0 0 16px;}
+  .lp-legal-body ul{margin:0 0 16px; padding-left:22px;}
+  .lp-legal-body li{margin:0 0 8px;}
+  .lp-legal-body a{color:var(--accent-ink); text-decoration:underline;}
+  .lp-legal-body strong{color:var(--ink);}
+  .lp-legal-placeholder{background:var(--surface); border:1px dashed var(--border); border-radius:6px; padding:1px 6px; color:var(--text-muted); font-style:italic;}
+  .lp-legal-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-top:8px;}
+  .lp-legal-card, .lp-legal-card *{text-decoration:none;}
+  .lp-legal-card{display:block; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; transition:transform .15s, box-shadow .2s;}
+  .lp-legal-card:hover{transform:translateY(-3px); box-shadow:0 18px 40px -24px rgba(20,22,28,.4);}
+  .lp-legal-card h3{margin:0 0 6px; font-size:16px; font-weight:700; color:var(--ink);}
+  .lp-legal-card p{margin:0; font-size:13.5px; line-height:1.6; color:var(--text-secondary);}
   @media (max-width:640px){
     .lp-kpis{grid-template-columns:repeat(2,1fr);}
     .lp-nav{padding:14px 18px;}

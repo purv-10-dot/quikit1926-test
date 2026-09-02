@@ -1,12 +1,14 @@
 ﻿// Facebook connector â€” fetches page insights using the META_FACEBOOK connection
 import { prisma } from "@/lib/prisma";
+import { NoConnectionError } from "./errors";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
 async function getMetaConn(userId: string, workspaceId?: string): Promise<{ token: string; pageId: string; pageName: string }> {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "META_FACEBOOK", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Meta not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Meta not connected");
   const md = (conn.metadata ?? {}) as Record<string, string>;
   const pageId = md.selectedPageId ?? md.pageId ?? "";
   const pageName = md.pageName ?? md.selectedPageName ?? "";

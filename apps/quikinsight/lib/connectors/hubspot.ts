@@ -1,10 +1,12 @@
 ﻿import axios from "axios";
 import { prisma } from "@/lib/prisma";
+import { NoConnectionError } from "./errors";
 
 async function getHubSpotToken(userId: string, workspaceId?: string): Promise<string> {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "HUBSPOT", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("HubSpot not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("HubSpot not connected");
 
   // Refresh if expired
   if (conn.tokenExpiresAt && conn.tokenExpiresAt < new Date() && conn.refreshToken) {

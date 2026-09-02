@@ -13,7 +13,6 @@ const CONNECTOR_BACKEND: Record<string, string> = {
   meta:       "meta",       // one Meta auth → Facebook + Instagram
   meta_ads:   "meta_ads",   // separate Meta app from the FB/Instagram organic auth
   li_page:    "linkedin",
-  li_profile: "linkedin",
   hubspot:    "hubspot",
   salesforce: "salesforce",
   mailchimp:  "mailchimp",

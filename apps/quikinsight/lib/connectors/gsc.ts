@@ -3,11 +3,13 @@ import { prisma } from "@/lib/prisma";
 import type { GoogleMetadata } from "@/lib/types/connections";
 import { trailingWindow } from "@/lib/period/resolve";
 import type { DateWindow } from "@/lib/period/types";
+import { NoConnectionError } from "./errors";
 
 async function getGSCClient(userId: string, workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform: "GOOGLE_SEARCH_CONSOLE", ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error("Google Search Console not connected");
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error("Google Search Console not connected");
 
   const oauth2 = new google.auth.OAuth2(
     process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID,

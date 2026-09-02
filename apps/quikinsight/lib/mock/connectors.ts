@@ -8,7 +8,6 @@ export const connectors: Connector[] = [
   { id: "meta_ads", name: "Meta Ads", category: "Advertising", initials: "Me", color: "#0866FF", connected: true },
   { id: "li_ads", name: "LinkedIn Ads", category: "Advertising", initials: "in", color: "#0A66C2", connected: false },
   { id: "x_ads", name: "X Ads", category: "Advertising", initials: "X", color: "#14171A", connected: false },
-  { id: "li_profile", name: "LinkedIn Profile", category: "Organic & social", initials: "in", color: "#0A66C2", connected: false },
   { id: "li_page", name: "LinkedIn Company Page", category: "Organic & social", initials: "in", color: "#0A66C2", connected: false },
   { id: "meta", name: "Meta (Facebook & Instagram)", category: "Organic & social", initials: "M", color: "#0866FF", connected: false },
   { id: "x_organic", name: "X (Twitter)", category: "Organic & social", initials: "X", color: "#14171A", connected: false },

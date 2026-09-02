@@ -8,6 +8,7 @@ import type {
 
 import { resolvePeriod, trailingWindow, windowToDays } from "@/lib/period/resolve";
 import type { DateWindow, PeriodSelection } from "@/lib/period/types";
+import { NoConnectionError } from "./errors";
 
 // Re-export so the aggregator can use a single import
 export type { GA4DataResult, WeekOverWeekResult };
@@ -17,7 +18,8 @@ type GooglePlatform = "GOOGLE_ANALYTICS" | "YOUTUBE" | "GOOGLE_SEARCH_CONSOLE";
 async function getClient(userId: string, platform: GooglePlatform = "GOOGLE_ANALYTICS", workspaceId?: string) {
   const conn = await prisma.platformConnection.findFirst({ where: { userId, platform, ...(workspaceId ? { workspaceId } : {}) },
   });
-  if (!conn || conn.status !== "CONNECTED") throw new Error(`${platform} not connected`);
+  if (!conn) throw new NoConnectionError();
+  if (conn.status !== "CONNECTED") throw new Error(`${platform} not connected`);
 
   const oauth2 = new google.auth.OAuth2(
     process.env.QUIKINSIGHT_GOOGLE_CLIENT_ID,
