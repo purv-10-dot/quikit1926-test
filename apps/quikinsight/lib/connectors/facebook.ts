@@ -32,7 +32,9 @@ export async function getFacebookStats(userId: string, workspaceId?: string) {
     const accounts = await metaGet(`/me/accounts?fields=id,name,access_token`, token);
     const page = (accounts.data ?? []).find((p: Record<string, string>) => p.id === pageId);
     if (page?.access_token) pageToken = page.access_token;
-  } catch { /* use user token */ }
+  } catch (err) {
+    console.error("[facebook] page token lookup failed, falling back to user token:", err instanceof Error ? err.message : err);
+  }
 
   // Fan count
   let fans = 0;
@@ -41,7 +43,9 @@ export async function getFacebookStats(userId: string, workspaceId?: string) {
     const pg = await metaGet(`/${pageId}?fields=fan_count,followers_count,name`, pageToken);
     fans = Number(pg.fan_count ?? pg.followers_count ?? 0);
     resolvedPageName = pg.name ?? pageName;
-  } catch { /* */ }
+  } catch (err) {
+    console.error("[facebook] fan count fetch failed:", err instanceof Error ? err.message : err);
+  }
 
   // Posts with insights
   let topPosts: Array<{ id: string; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; clicks: number }> = [];
@@ -64,7 +68,9 @@ export async function getFacebookStats(userId: string, workspaceId?: string) {
         clicks: insightMap["post_clicks"] ?? 0,
       };
     }).sort((a: { reach: number }, b: { reach: number }) => b.reach - a.reach).slice(0, 10);
-  } catch { /* */ }
+  } catch (err) {
+    console.error("[facebook] posts/insights fetch failed:", err instanceof Error ? err.message : err);
+  }
 
   const reach = topPosts.reduce((s, p) => s + p.reach, 0);
   const engagedUsers = topPosts.reduce((s, p) => s + p.engagement, 0);

@@ -58,43 +58,53 @@ export async function getInstagramStats(userId: string, workspaceId?: string) {
   const since = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
   const until = Math.floor(Date.now() / 1000);
   try {
+    // `impressions` was deprecated on this account-level endpoint; `views`
+    // is Meta's replacement. `reach` and `profile_views` are unaffected.
+    // Metric names/scopes: https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/insights
     const ins = await metaGet(
-      `/${igId}/insights?metric=reach,impressions,profile_views&period=day&since=${since}&until=${until}`,
+      `/${igId}/insights?metric=reach,views,profile_views&period=day&since=${since}&until=${until}`,
       pageToken,
     );
     for (const item of ins.data ?? []) {
       const total = (item.values ?? []).reduce((acc: number, v: { value: number }) => acc + (Number(v.value) || 0), 0);
       if (item.name === "reach") reach = total;
-      else if (item.name === "impressions") impressions = total;
+      else if (item.name === "views") impressions = total;
       else if (item.name === "profile_views") profileViews = total;
     }
-  } catch { /* */ }
+  } catch (err) {
+    console.error("[instagram] account insights fetch failed:", err instanceof Error ? err.message : err);
+  }
 
   // Recent media
   type IgPost = { id: string; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; mediaType?: string };
   let topPosts: IgPost[] = [];
   try {
+    // `engagement` was deprecated as a per-media insights metric; Meta split
+    // it into likes/comments/saved/shares. `impressions` is similarly
+    // deprecated per-media in favor of `views` for many accounts/media types.
     const media = await metaGet(
-      `/${igId}/media?fields=id,caption,media_type,thumbnail_url,media_url,timestamp,insights.metric(impressions,reach,engagement)&limit=20`,
+      `/${igId}/media?fields=id,caption,media_type,thumbnail_url,media_url,timestamp,insights.metric(views,reach,likes,comments,saved,shares)&limit=20`,
       pageToken,
     );
     topPosts = (media.data ?? []).map((post: Record<string, unknown>) => {
       const insightMap: Record<string, number> = {};
       const insights = post.insights as { data?: Array<{ name: string; values?: Array<{ value: number }> }> } | undefined;
       for (const i of insights?.data ?? []) insightMap[i.name] = i.values?.[0]?.value ?? 0;
-      const eng = insightMap["engagement"] ?? 0;
+      const eng = (insightMap["likes"] ?? 0) + (insightMap["comments"] ?? 0) + (insightMap["saved"] ?? 0) + (insightMap["shares"] ?? 0);
       accountsEngaged += eng;
       return {
         id: String(post.id ?? ""),
         message: (post.caption as string | undefined)?.slice(0, 100) ?? "",
         thumbnail: (post.thumbnail_url ?? post.media_url) as string | undefined,
         timestamp: String(post.timestamp ?? ""),
-        reach: insightMap["reach"] ?? 0,
+        reach: insightMap["views"] ?? insightMap["reach"] ?? 0,
         engagement: eng,
         mediaType: post.media_type as string | undefined,
       };
     }).sort((a: IgPost, b: IgPost) => b.reach - a.reach).slice(0, 10);
-  } catch { /* */ }
+  } catch (err) {
+    console.error("[instagram] media insights fetch failed:", err instanceof Error ? err.message : err);
+  }
 
   if (reach === 0) reach = topPosts.reduce((s, p) => s + p.reach, 0);
   if (impressions === 0) impressions = reach;
