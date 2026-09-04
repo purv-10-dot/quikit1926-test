@@ -59,24 +59,22 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
   let impressions = 0;
   let profileViews = 0;
   let accountsEngaged = 0;
-  let debugRawInsights: unknown = null;
   const { since, until } = windowToUnixRange(w);
   try {
     // `impressions` was deprecated on this account-level endpoint; `views`
     // is Meta's replacement. `reach` and `profile_views` are unaffected.
     // `metric_type=total_value` is required as of Graph API v19+ for `views`
-    // and `profile_views` to return real data on this endpoint â€” without it
-    // they come back empty/zero while `reach` (still on the legacy shape)
-    // parses fine, which is what made Impressions silently equal Reach below.
+    // and `profile_views` to return real data on this endpoint. With
+    // `metric_type=total_value`, Meta returns each metric as a single
+    // `{ total_value: { value } }` object rather than the old per-day
+    // `{ values: [{ value }] }` time-series array â€” read accordingly.
     // Metric names/scopes: https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/insights
     const ins = await metaGet(
       `/${igId}/insights?metric=reach,views,profile_views&period=day&metric_type=total_value&since=${since}&until=${until}`,
       pageToken,
     );
-    // TEMP DEBUG â€” remove before merging
-    debugRawInsights = ins;
     for (const item of ins.data ?? []) {
-      const total = (item.values ?? []).reduce((acc: number, v: { value: number }) => acc + (Number(v.value) || 0), 0);
+      const total = Number(item.total_value?.value) || 0;
       if (item.name === "reach") reach = total;
       else if (item.name === "views") impressions = total;
       else if (item.name === "profile_views") profileViews = total;
@@ -127,8 +125,6 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
     console.error("[instagram] media insights fetch failed:", err instanceof Error ? err.message : err);
   }
 
-  if (reach === 0) reach = topPosts.reduce((s, p) => s + p.reach, 0);
-
   return {
     username,
     followers,
@@ -139,8 +135,5 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
     engagementRate: computeEngagementRate(accountsEngaged, reach),
     topPosts,
     period: w,
-    // TEMP DEBUG â€” remove before merging. Raw, unparsed account-insights
-    // response so it can be inspected client-side via the API route.
-    _debugRawInsights: debugRawInsights,
   };
 }

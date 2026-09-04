@@ -21,9 +21,6 @@ export async function GET(req: Request) {
     const sp = new URL(req.url).searchParams;
     const window = sp.size > 0 ? resolvePeriod(decodePeriod(sp)).current : undefined;
     const data = await getInstagramStats(session.user.id, workspaceId, window);
-    // TEMP DEBUG â€” remove before merging. `_debugRawInsights` is additive only;
-    // it surfaces the raw, unparsed Meta account-insights response so it can be
-    // inspected via the browser Network tab. Comes through from `data` as-is.
     return NextResponse.json({ connected: true, ...data });
   } catch (err) {
     const { body, status } = connectorErrorResponse("instagram", err);
