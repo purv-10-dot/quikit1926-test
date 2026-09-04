@@ -15,6 +15,8 @@ export interface InstagramData {
   accountsEngaged?: number;
   engagementRate?: string;
   period?: DateWindow;
+  /** Set when the requested range exceeded Meta's ~28-day account-insights lookback and was clamped. */
+  insightsNotice?: string | null;
   topPosts?: Array<{
     id: string;
     message: string;

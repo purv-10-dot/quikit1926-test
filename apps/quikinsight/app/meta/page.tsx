@@ -234,6 +234,10 @@ function InstagramPanel({ period, rangeLabel }: { period: PeriodSpec; rangeLabel
         <Kpi label="Eng. Rate"     value={`${engRate.toFixed(1)}%`}      delta="" trend={engRate >= 3 ? "up" : engRate >= 1 ? "flat" : "down"} sub="reach basis" />
       </div>
 
+      {data.insightsNotice && (
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "-6px 0 16px" }}>{data.insightsNotice}</p>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
         <div className="chart-card">
           <div className="chart-head"><h3>Audience metrics</h3></div>
