@@ -59,7 +59,15 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
   let impressions = 0;
   let profileViews = 0;
   let accountsEngaged = 0;
+  let debugRawInsights: unknown = undefined;
   const { since, until } = windowToUnixRange(w);
+  // TEMP DEBUG â€” remove once the >30-day zero-metrics investigation is done.
+  // Meta's account-insights endpoint with period=day appears to cap the
+  // since/until lookback around 28-30 days; wider ranges are suspected to
+  // silently return an empty `data` array instead of erroring. Only log for
+  // windows that exceed that so 7-day/30-day requests are untouched.
+  const windowDays = Math.round((until - since) / 86400);
+  const isLongWindow = windowDays > 30;
   try {
     // `impressions` was deprecated on this account-level endpoint; `views`
     // is Meta's replacement. `reach` and `profile_views` are unaffected.
@@ -73,6 +81,13 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
       `/${igId}/insights?metric=reach,views,profile_views&period=day&metric_type=total_value&since=${since}&until=${until}`,
       pageToken,
     );
+    if (isLongWindow) {
+      debugRawInsights = ins;
+      console.log(
+        `[instagram][DEBUG] raw account-insights response for ${windowDays}-day window (since=${since}, until=${until}):`,
+        JSON.stringify(ins, null, 2),
+      );
+    }
     for (const item of ins.data ?? []) {
       const total = Number(item.total_value?.value) || 0;
       if (item.name === "reach") reach = total;
@@ -81,6 +96,11 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
     }
     if (impressions === 0) {
       console.error("[instagram] Instagram views metric returned 0 for account insights (accountId:", igId, ")");
+      if (isLongWindow) {
+        console.error(
+          `[instagram][DEBUG] window is ${windowDays} days â€” Meta's period=day account-insights endpoint is suspected to cap lookback around 28-30 days and silently return empty data beyond that.`,
+        );
+      }
     }
   } catch (err) {
     console.error("[instagram] account insights fetch failed:", err instanceof Error ? err.message : err);
@@ -135,5 +155,9 @@ export async function getInstagramStats(userId: string, workspaceId?: string, wi
     engagementRate: computeEngagementRate(accountsEngaged, reach),
     topPosts,
     period: w,
+    // TEMP DEBUG â€” remove once the >30-day zero-metrics investigation is
+    // done. Only set for windows longer than 30 days; additive, undefined
+    // (and therefore omitted from the JSON response) otherwise.
+    ...(debugRawInsights !== undefined ? { _debugRawInsights: debugRawInsights } : {}),
   };
 }
