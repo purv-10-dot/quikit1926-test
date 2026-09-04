@@ -287,7 +287,7 @@ async function computeAggregatedDashboard(
   ] = await Promise.allSettled([
     connected.has("GOOGLE_ANALYTICS")        ? withTimeout(getGA4Data(userId, window, workspaceId), "GA4")             : Promise.reject("not connected"),
     period.previous ? fetchBaseline(userId, connected, period.previous, workspaceId) : Promise.resolve(EMPTY_BASELINE),
-    connected.has("META_FACEBOOK")           ? withTimeout(getAllMetaInsights(userId), "Meta")         : Promise.reject("not connected"),
+    connected.has("META_FACEBOOK")           ? withTimeout(getAllMetaInsights(userId, workspaceId, window), "Meta")         : Promise.reject("not connected"),
     connected.has("LINKEDIN")                ? withTimeout(getLinkedInOrgStats(userId, workspaceId), "LinkedIn")    : Promise.reject("not connected"),
     connected.has("HUBSPOT")                 ? withTimeout(getHubSpotCRMStats(userId, workspaceId), "HubSpot")      : Promise.reject("not connected"),
     connected.has("SALESFORCE")              ? withTimeout(getSalesforcePipelineStats(userId, workspaceId), "Salesforce") : Promise.reject("not connected"),

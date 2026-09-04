@@ -86,6 +86,14 @@ const QUIKFLOW_BASE = resolveAppUrl("QUIKFLOW_URL", "http://localhost:3014"); //
 // absolute base for QuikCRM's iconUrl below.
 const QUIKIT_BASE = resolveAppUrl("QUIKIT_URL", "http://localhost:3000"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 
+// Optional extra deployed origin for QuikInsight (e.g. a Vercel preview/test
+// deployment) whose redirect URIs should be registered ALONGSIDE localhost,
+// not instead of it — set QUIKINSIGHT_DEPLOYED_URL to add it without losing
+// local dev SSO. Unlike the *_BASE constants above, this is additive, not a
+// single-origin replacement, since quikinsight's own dev server and its
+// deployed instance both need to keep working at the same time.
+const QUIKINSIGHT_DEPLOYED_URL = process.env.QUIKINSIGHT_DEPLOYED_URL?.replace(/\/$/, "");
+
 const APPS = [
   {
     slug: "quikscale",
@@ -321,6 +329,31 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKCHAT_OAUTH_CLIENT_SECRET", "quikchat-dev-secret-change-in-prod"),
       redirectUris: [
         "http://localhost:3011/api/auth/callback/quikit",
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikinsight",
+    name: "QuikInsight",
+    description: "Marketing analytics — unifies analytics, ads, social, and CRM into one live dashboard.",
+    baseUrl: resolveAppUrl("QUIKINSIGHT_URL", "http://localhost:3015"),
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikinsight.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikinsight",
+      clientSecretPlain: resolveClientSecret("QUIKINSIGHT_OAUTH_CLIENT_SECRET", "quikinsight-dev-secret-change-in-prod"),
+      redirectUris: [
+        "http://localhost:3015/api/oauth/meta/callback",
+        "http://localhost:3015/api/auth/callback/quikit",
+        // Extra deployed origin (e.g. Vercel test deployment), added
+        // alongside localhost — see QUIKINSIGHT_DEPLOYED_URL above.
+        ...(QUIKINSIGHT_DEPLOYED_URL
+          ? [
+              `${QUIKINSIGHT_DEPLOYED_URL}/api/oauth/meta/callback`,
+              `${QUIKINSIGHT_DEPLOYED_URL}/api/auth/callback/quikit`,
+            ]
+          : []),
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

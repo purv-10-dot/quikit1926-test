@@ -3,6 +3,9 @@
 import axios from "axios";
 import { prisma } from "@/lib/prisma";
 import { NoConnectionError } from "./errors";
+import { computeEngagementRate, windowToUnixRange, withinWindow } from "./metaEngagement";
+import { trailingWindow } from "@/lib/period/resolve";
+import type { DateWindow } from "@/lib/period/types";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
@@ -30,9 +33,8 @@ const emptyIg = {
   engagementRate: "0", topPosts: [] as Array<Record<string, unknown>>,
 };
 
-async function facebookInsights(pageId: string, pageToken: string) {
-  const since = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
-  const until = Math.floor(Date.now() / 1000);
+async function facebookInsights(pageId: string, pageToken: string, w: DateWindow) {
+  const { since, until } = windowToUnixRange(w);
   const metrics: Record<string, number> = {};
 
   // Page-level insights are best-effort: Meta has deprecated many of these
@@ -59,13 +61,16 @@ async function facebookInsights(pageId: string, pageToken: string) {
   } catch { /* */ }
 
   // Posts + per-post insights (these still work) â€” the basis for our aggregates.
-  let allPosts: Array<{ id: string; platform: "facebook"; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; clicks: number }> = [];
+  // No native date filter on this edge, so the window is applied client-side
+  // below (`withinWindow`) after fetching the most recent posts.
+  type FbAggPost = { id: string; platform: "facebook"; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; clicks: number };
+  let allPosts: FbAggPost[] = [];
   try {
     const postsData = await metaGet(
-      `/${pageId}/posts?fields=message,created_time,full_picture,insights.metric(post_impressions,post_engaged_users,post_clicks)&limit=25`,
+      `/${pageId}/posts?fields=message,created_time,full_picture,insights.metric(post_impressions,post_engaged_users,post_clicks)&limit=50`,
       pageToken
     );
-    allPosts = (postsData.data ?? []).map((post: Record<string, unknown>) => {
+    const mapped: FbAggPost[] = (postsData.data ?? []).map((post: Record<string, unknown>) => {
       const insightMap: Record<string, number> = {};
       const insights = post.insights as { data?: Array<{ name: string; values?: Array<{ value: number }> }> } | undefined;
       for (const i of insights?.data ?? []) insightMap[i.name] = i.values?.[0]?.value ?? 0;
@@ -79,6 +84,7 @@ async function facebookInsights(pageId: string, pageToken: string) {
         clicks: insightMap["post_clicks"] ?? 0,
       };
     });
+    allPosts = mapped.filter((p) => withinWindow(p.timestamp, w));
   } catch { /* */ }
 
   const topPosts = [...allPosts].sort((a, b) => b.reach - a.reach).slice(0, 5);
@@ -86,21 +92,22 @@ async function facebookInsights(pageId: string, pageToken: string) {
   const postEngSum   = allPosts.reduce((acc, p) => acc + (p.engagement || 0), 0);
 
   // Prefer page insights when present, else fall back to post-derived totals.
+  // Both sides are now scoped to the same `w` window, so this ratio and the
+  // post totals agree with the account-level insights call above.
   const impressions  = metrics["page_impressions"] || postReachSum;
   const reach        = postReachSum || impressions;
   const engagedUsers = postEngSum;
   const fans         = fanCount;
   return {
     reach, impressions, engagedUsers, postEngagements: postEngSum, fans,
-    engagementRate: reach > 0 ? ((engagedUsers / reach) * 100).toFixed(1) : "0",
+    engagementRate: computeEngagementRate(engagedUsers, reach),
     topPosts,
   };
 }
 
-async function instagramInsights(igId: string, token: string) {
+async function instagramInsights(igId: string, token: string, w: DateWindow) {
   const metrics: Record<string, number> = {};
-  const since = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
-  const until = Math.floor(Date.now() / 1000);
+  const { since, until } = windowToUnixRange(w);
 
   // Account-level insights are best-effort (several IG metrics were deprecated).
   try {
@@ -122,18 +129,25 @@ async function instagramInsights(igId: string, token: string) {
     followers = Number(acc.followers_count ?? 0);
   } catch { /* */ }
 
-  let allPosts: Array<{ id: string; platform: "instagram"; message: string; thumbnail?: string; timestamp: string; likes: number; comments: number; reach: number; engagement: number }> = [];
+  // `saved`/`shares` are included alongside `likes`/`comments` so this matches
+  // the formula in lib/connectors/instagram.ts exactly (previously this path
+  // summed only likes+comments, undercounting engagement vs. the dedicated
+  // /instagram page for the same account and period).
+  type IgAggPost = { id: string; platform: "instagram"; message: string; thumbnail?: string; timestamp: string; likes: number; comments: number; reach: number; engagement: number };
+  let allPosts: IgAggPost[] = [];
   try {
     const postsData = await metaGet(
-      `/${igId}/media?fields=caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count,insights.metric(reach)&limit=25`,
+      `/${igId}/media?fields=caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count,insights.metric(reach,saved,shares)&limit=50`,
       token
     );
-    allPosts = (postsData.data ?? []).map((post: Record<string, unknown>) => {
+    const mapped: IgAggPost[] = (postsData.data ?? []).map((post: Record<string, unknown>) => {
       const insightMap: Record<string, number> = {};
       const insights = post.insights as { data?: Array<{ name: string; values?: Array<{ value: number }> }> } | undefined;
       for (const i of insights?.data ?? []) insightMap[i.name] = i.values?.[0]?.value ?? 0;
       const likes = Number(post.like_count ?? 0);
       const comments = Number(post.comments_count ?? 0);
+      const saved = insightMap["saved"] ?? 0;
+      const shares = insightMap["shares"] ?? 0;
       return {
         id: String(post.id ?? ""), platform: "instagram" as const,
         message: (post.caption as string | undefined)?.slice(0, 80) ?? "",
@@ -141,9 +155,10 @@ async function instagramInsights(igId: string, token: string) {
         timestamp: String(post.timestamp ?? ""),
         likes, comments,
         reach: insightMap["reach"] ?? 0,
-        engagement: likes + comments,
+        engagement: likes + comments + saved + shares,
       };
     });
+    allPosts = mapped.filter((p) => withinWindow(p.timestamp, w));
   } catch { /* */ }
 
   const topPosts = [...allPosts].sort((a, b) => b.reach - a.reach).slice(0, 5);
@@ -154,12 +169,13 @@ async function instagramInsights(igId: string, token: string) {
   const accountsEngaged = postEngSum;
   return {
     reach, impressions: reach, profileViews: followers,
-    accountsEngaged, engagementRate: reach > 0 ? ((accountsEngaged / reach) * 100).toFixed(1) : "0",
+    accountsEngaged, engagementRate: computeEngagementRate(accountsEngaged, reach),
     topPosts,
   };
 }
 
-export async function getAllMetaInsights(userId: string, workspaceId?: string) {
+export async function getAllMetaInsights(userId: string, workspaceId?: string, window?: DateWindow) {
+  const w = window ?? trailingWindow(7);
   const { token, selectedPageId } = await getMetaConn(userId, workspaceId);
 
   // Discover the Page (and its linked IG account) at runtime
@@ -186,8 +202,8 @@ export async function getAllMetaInsights(userId: string, workspaceId?: string) {
   const igId = page.instagram_business_account?.id;
 
   const [facebook, instagram] = await Promise.all([
-    facebookInsights(page.id, pageToken),
-    igId ? instagramInsights(igId, pageToken) : Promise.resolve(emptyIg),
+    facebookInsights(page.id, pageToken, w),
+    igId ? instagramInsights(igId, pageToken, w) : Promise.resolve(emptyIg),
   ]);
 
   return {

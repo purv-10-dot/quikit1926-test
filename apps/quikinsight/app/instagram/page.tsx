@@ -6,6 +6,12 @@ import { getInstagramData, type InstagramData } from "@/lib/api/instagram";
 import Kpi from "@/components/ui/Kpi";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import PeriodPicker from "@/components/ui/PeriodPicker";
+import { resolvePeriod, periodLabel } from "@/lib/period/resolve";
+import type { PeriodSpec } from "@/lib/period/types";
+
+/** This page's pre-existing default range (matches the connector's own trailingWindow(7) fallback). */
+const INITIAL_PERIOD: PeriodSpec = { preset: 7, compare: "none" };
 
 const IG_COLOR = "#E1306C";
 const IG_GRAD  = "linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)";
@@ -31,10 +37,15 @@ export default function InstagramPage() {
   const router = useRouter();
   const [data, setData] = useState<InstagramData | null>(null);
   const [error, setError] = useState(false);
+  const [period, setPeriod] = useState<PeriodSpec>(INITIAL_PERIOD);
 
   useEffect(() => {
-    getInstagramData().then(setData).catch(() => setError(true));
-  }, []);
+    setData(null);
+    setError(false);
+    getInstagramData(period).then(setData).catch(() => setError(true));
+  }, [period]);
+
+  const rangeLabel = periodLabel(resolvePeriod(period));
 
   if (error) return (
     <div>
@@ -85,10 +96,11 @@ export default function InstagramPage() {
             <h1 className="greeting" style={{ fontSize: 22 }}>
               {data.username ? `@${data.username}` : "Instagram"}
             </h1>
-            <p className="page-sub" style={{ margin: 0 }}>Account analytics Â· last 7 days</p>
+            <p className="page-sub" style={{ margin: 0 }}>Account analytics Â· {rangeLabel}</p>
           </div>
         </div>
         <div className="greet-actions">
+          <PeriodPicker value={period} onChange={setPeriod} allowCompare={false} />
           <button className="btn" type="button" onClick={() => router.push("/integrations")}>Reconnect</button>
           <button className="btn btn-primary" type="button" onClick={() => router.push("/ask-ai")}>âœ¦ Ask AI</button>
         </div>
@@ -97,9 +109,9 @@ export default function InstagramPage() {
       {/* KPI strip */}
       <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         <Kpi label="Followers"       value={fmt(data.followers ?? 0)}         delta="" trend="flat" sub="total" />
-        <Kpi label="Reach"           value={fmt(data.reach ?? 0)}             delta="" trend="flat" sub="last 7 days" />
-        <Kpi label="Impressions"     value={fmt(data.impressions ?? 0)}       delta="" trend="flat" sub="last 7 days" />
-        <Kpi label="Profile Views"   value={fmt(data.profileViews ?? 0)}      delta="" trend="flat" sub="last 7 days" />
+        <Kpi label="Reach"           value={fmt(data.reach ?? 0)}             delta="" trend="flat" sub={rangeLabel} />
+        <Kpi label="Impressions"     value={fmt(data.impressions ?? 0)}       delta="" trend="flat" sub={rangeLabel} />
+        <Kpi label="Profile Views"   value={fmt(data.profileViews ?? 0)}      delta="" trend="flat" sub={rangeLabel} />
         <Kpi label="Eng. Rate"       value={`${engRate.toFixed(1)}%`}         delta="" trend={engRate >= 3 ? "up" : engRate >= 1 ? "flat" : "down"} sub="reach basis" />
       </div>
 
@@ -127,7 +139,7 @@ export default function InstagramPage() {
         {/* Top posts */}
         <div className="chart-card">
           <div className="chart-head"><h3>Top posts by reach</h3></div>
-          <p className="chart-sub">Last 20 posts, sorted by reach</p>
+          <p className="chart-sub">{rangeLabel}, sorted by reach</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
             {(data.topPosts ?? []).slice(0, 5).map((post, i) => (
               <div key={post.id || i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "var(--canvas)", borderRadius: 8 }}>

@@ -1,6 +1,9 @@
 ﻿// Facebook connector â€” fetches page insights using the META_FACEBOOK connection
 import { prisma } from "@/lib/prisma";
 import { NoConnectionError } from "./errors";
+import { computeEngagementRate, withinWindow } from "./metaEngagement";
+import { trailingWindow } from "@/lib/period/resolve";
+import type { DateWindow } from "@/lib/period/types";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
@@ -22,7 +25,8 @@ async function metaGet(path: string, token: string) {
   return res.json();
 }
 
-export async function getFacebookStats(userId: string, workspaceId?: string) {
+export async function getFacebookStats(userId: string, workspaceId?: string, window?: DateWindow) {
+  const w = window ?? trailingWindow(7);
   const { token, pageId, pageName } = await getMetaConn(userId, workspaceId);
   if (!pageId) throw new Error("No Facebook page selected");
 
@@ -48,13 +52,17 @@ export async function getFacebookStats(userId: string, workspaceId?: string) {
   }
 
   // Posts with insights
-  let topPosts: Array<{ id: string; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; clicks: number }> = [];
+  type FbPost = { id: string; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; clicks: number };
+  let topPosts: FbPost[] = [];
   try {
+    // No native date filter on this edge — Graph API always returns the most
+    // recent posts regardless of range, so the selected window is applied
+    // client-side below (`withinWindow`) rather than as a query param here.
     const postsData = await metaGet(
-      `/${pageId}/posts?fields=message,created_time,full_picture,insights.metric(post_impressions,post_engaged_users,post_clicks)&limit=20`,
+      `/${pageId}/posts?fields=message,created_time,full_picture,insights.metric(post_impressions,post_engaged_users,post_clicks)&limit=50`,
       pageToken,
     );
-    topPosts = (postsData.data ?? []).map((post: Record<string, unknown>) => {
+    const allPosts: FbPost[] = (postsData.data ?? []).map((post: Record<string, unknown>) => {
       const insightMap: Record<string, number> = {};
       const insights = post.insights as { data?: Array<{ name: string; values?: Array<{ value: number }> }> } | undefined;
       for (const i of insights?.data ?? []) insightMap[i.name] = i.values?.[0]?.value ?? 0;
@@ -67,11 +75,15 @@ export async function getFacebookStats(userId: string, workspaceId?: string) {
         engagement: insightMap["post_engaged_users"] ?? 0,
         clicks: insightMap["post_clicks"] ?? 0,
       };
-    }).sort((a: { reach: number }, b: { reach: number }) => b.reach - a.reach).slice(0, 10);
+    });
+    const inWindow = allPosts.filter((p) => withinWindow(p.timestamp, w));
+    topPosts = inWindow.sort((a, b) => b.reach - a.reach).slice(0, 10);
   } catch (err) {
     console.error("[facebook] posts/insights fetch failed:", err instanceof Error ? err.message : err);
   }
 
+  // reach/engagedUsers are derived from the SAME window-filtered post list, so
+  // the engagement rate's numerator and denominator always share one period.
   const reach = topPosts.reduce((s, p) => s + p.reach, 0);
   const engagedUsers = topPosts.reduce((s, p) => s + p.engagement, 0);
   const postEngagements = engagedUsers;
@@ -84,7 +96,8 @@ export async function getFacebookStats(userId: string, workspaceId?: string) {
     impressions,
     engagedUsers,
     postEngagements,
-    engagementRate: reach > 0 ? ((engagedUsers / reach) * 100).toFixed(1) : "0",
+    engagementRate: computeEngagementRate(engagedUsers, reach),
     topPosts,
+    period: w,
   };
 }

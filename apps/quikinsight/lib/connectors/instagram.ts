@@ -1,6 +1,9 @@
 ﻿// Instagram connector â€” fetches IG business account insights via META_FACEBOOK connection
 import { prisma } from "@/lib/prisma";
 import { NoConnectionError } from "./errors";
+import { computeEngagementRate, windowToUnixRange, withinWindow } from "./metaEngagement";
+import { trailingWindow } from "@/lib/period/resolve";
+import type { DateWindow } from "@/lib/period/types";
 
 const BASE = "https://graph.facebook.com/v19.0";
 
@@ -20,7 +23,8 @@ async function getMetaConn(userId: string, workspaceId?: string) {
   return { token: conn.accessToken ?? "", pageId: md.selectedPageId ?? md.pageId ?? "" };
 }
 
-export async function getInstagramStats(userId: string, workspaceId?: string) {
+export async function getInstagramStats(userId: string, workspaceId?: string, window?: DateWindow) {
+  const w = window ?? trailingWindow(7);
   const { token, pageId } = await getMetaConn(userId, workspaceId);
   if (!pageId) throw new Error("No Facebook page selected");
 
@@ -55,8 +59,7 @@ export async function getInstagramStats(userId: string, workspaceId?: string) {
   let impressions = 0;
   let profileViews = 0;
   let accountsEngaged = 0;
-  const since = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
-  const until = Math.floor(Date.now() / 1000);
+  const { since, until } = windowToUnixRange(w);
   try {
     // `impressions` was deprecated on this account-level endpoint; `views`
     // is Meta's replacement. `reach` and `profile_views` are unaffected.
@@ -82,16 +85,18 @@ export async function getInstagramStats(userId: string, workspaceId?: string) {
     // `engagement` was deprecated as a per-media insights metric; Meta split
     // it into likes/comments/saved/shares. `impressions` is similarly
     // deprecated per-media in favor of `views` for many accounts/media types.
+    // No native date filter on this edge — Graph API always returns the most
+    // recent posts regardless of range, so the selected window is applied
+    // client-side below (`withinWindow`) rather than as a query param here.
     const media = await metaGet(
-      `/${igId}/media?fields=id,caption,media_type,thumbnail_url,media_url,timestamp,insights.metric(views,reach,likes,comments,saved,shares)&limit=20`,
+      `/${igId}/media?fields=id,caption,media_type,thumbnail_url,media_url,timestamp,insights.metric(views,reach,likes,comments,saved,shares)&limit=50`,
       pageToken,
     );
-    topPosts = (media.data ?? []).map((post: Record<string, unknown>) => {
+    const allPosts: IgPost[] = (media.data ?? []).map((post: Record<string, unknown>) => {
       const insightMap: Record<string, number> = {};
       const insights = post.insights as { data?: Array<{ name: string; values?: Array<{ value: number }> }> } | undefined;
       for (const i of insights?.data ?? []) insightMap[i.name] = i.values?.[0]?.value ?? 0;
       const eng = (insightMap["likes"] ?? 0) + (insightMap["comments"] ?? 0) + (insightMap["saved"] ?? 0) + (insightMap["shares"] ?? 0);
-      accountsEngaged += eng;
       return {
         id: String(post.id ?? ""),
         message: (post.caption as string | undefined)?.slice(0, 100) ?? "",
@@ -101,7 +106,13 @@ export async function getInstagramStats(userId: string, workspaceId?: string) {
         engagement: eng,
         mediaType: post.media_type as string | undefined,
       };
-    }).sort((a: IgPost, b: IgPost) => b.reach - a.reach).slice(0, 10);
+    });
+    // Engagement is summed only from posts within the SAME window as `reach`
+    // (the account-insights denominator above) so the rate isn't a mix of a
+    // 7-day reach against an unbounded post history.
+    const inWindow = allPosts.filter((p) => withinWindow(p.timestamp, w));
+    accountsEngaged = inWindow.reduce((s, p) => s + p.engagement, 0);
+    topPosts = inWindow.sort((a, b) => b.reach - a.reach).slice(0, 10);
   } catch (err) {
     console.error("[instagram] media insights fetch failed:", err instanceof Error ? err.message : err);
   }
@@ -116,7 +127,8 @@ export async function getInstagramStats(userId: string, workspaceId?: string) {
     impressions,
     profileViews,
     accountsEngaged,
-    engagementRate: reach > 0 ? ((accountsEngaged / reach) * 100).toFixed(1) : "0",
+    engagementRate: computeEngagementRate(accountsEngaged, reach),
     topPosts,
+    period: w,
   };
 }

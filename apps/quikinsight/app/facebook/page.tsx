@@ -6,6 +6,12 @@ import { getFacebookData, type FacebookData } from "@/lib/api/facebook";
 import Kpi from "@/components/ui/Kpi";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import PeriodPicker from "@/components/ui/PeriodPicker";
+import { resolvePeriod, periodLabel } from "@/lib/period/resolve";
+import type { PeriodSpec } from "@/lib/period/types";
+
+/** This page's pre-existing default range (matches the connector's own trailingWindow(7) fallback). */
+const INITIAL_PERIOD: PeriodSpec = { preset: 7, compare: "none" };
 
 const FB_BLUE = "#0866FF";
 
@@ -34,10 +40,15 @@ export default function FacebookPage() {
   const router = useRouter();
   const [data, setData] = useState<FacebookData | null>(null);
   const [error, setError] = useState(false);
+  const [period, setPeriod] = useState<PeriodSpec>(INITIAL_PERIOD);
 
   useEffect(() => {
-    getFacebookData().then(setData).catch(() => setError(true));
-  }, []);
+    setData(null);
+    setError(false);
+    getFacebookData(period).then(setData).catch(() => setError(true));
+  }, [period]);
+
+  const rangeLabel = periodLabel(resolvePeriod(period));
 
   if (error) return (
     <div>
@@ -86,10 +97,11 @@ export default function FacebookPage() {
           </div>
           <div>
             <h1 className="greeting" style={{ fontSize: 22 }}>{data.pageName ?? "Facebook"}</h1>
-            <p className="page-sub" style={{ margin: 0 }}>Page analytics Â· last 7 days</p>
+            <p className="page-sub" style={{ margin: 0 }}>Page analytics Â· {rangeLabel}</p>
           </div>
         </div>
         <div className="greet-actions">
+          <PeriodPicker value={period} onChange={setPeriod} allowCompare={false} />
           <button className="btn" type="button" onClick={() => router.push("/integrations")}>Reconnect</button>
           <button className="btn btn-primary" type="button" onClick={() => router.push("/ask-ai")}>âœ¦ Ask AI</button>
         </div>
@@ -98,9 +110,9 @@ export default function FacebookPage() {
       {/* KPI strip */}
       <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
         <Kpi label="Page Fans"     value={fmt(data.fans ?? 0)}            delta="" trend="flat" sub="total followers" />
-        <Kpi label="Reach"         value={fmt(data.reach ?? 0)}           delta="" trend="flat" sub="last 7 days" />
-        <Kpi label="Impressions"   value={fmt(data.impressions ?? 0)}     delta="" trend="flat" sub="last 7 days" />
-        <Kpi label="Engaged Users" value={fmt(data.engagedUsers ?? 0)}    delta="" trend="flat" sub="last 7 days" />
+        <Kpi label="Reach"         value={fmt(data.reach ?? 0)}           delta="" trend="flat" sub={rangeLabel} />
+        <Kpi label="Impressions"   value={fmt(data.impressions ?? 0)}     delta="" trend="flat" sub={rangeLabel} />
+        <Kpi label="Engaged Users" value={fmt(data.engagedUsers ?? 0)}    delta="" trend="flat" sub={rangeLabel} />
         <Kpi label="Eng. Rate"     value={`${engRate.toFixed(1)}%`}       delta="" trend={engRate >= 3 ? "up" : engRate >= 1 ? "flat" : "down"} sub="reach basis" />
       </div>
 
@@ -108,7 +120,7 @@ export default function FacebookPage() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
         <div className="chart-card">
           <div className="chart-head"><h3>Engagement breakdown</h3></div>
-          <p className="chart-sub">Post interactions â€” last 7 days</p>
+          <p className="chart-sub">Post interactions â€” {rangeLabel}</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
             {[
               { label: "Reach",          value: data.reach ?? 0,           color: FB_BLUE },
@@ -127,7 +139,7 @@ export default function FacebookPage() {
         {/* Top posts */}
         <div className="chart-card">
           <div className="chart-head"><h3>Top posts by reach</h3></div>
-          <p className="chart-sub">Last 20 posts, sorted by impressions</p>
+          <p className="chart-sub">{rangeLabel}, sorted by impressions</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
             {(data.topPosts ?? []).slice(0, 5).map((post, i) => (
               <div key={post.id || i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "var(--canvas)", borderRadius: 8 }}>
