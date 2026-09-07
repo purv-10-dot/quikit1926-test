@@ -93,15 +93,40 @@ export async function getSearchConsoleData(
     }),
   ]);
 
-  // Totals from query rows (most accurate aggregate)
-  let totalClicks = 0, totalImpressions = 0, totalPosition = 0, positionCount = 0;
-  for (const row of queryRes.data.rows ?? []) {
-    totalClicks      += row.clicks      ?? 0;
-    totalImpressions += row.impressions ?? 0;
-    if ((row.position ?? 0) > 0) { totalPosition += row.position!; positionCount++; }
+  // Site-wide totals: a SEPARATE, dimensionless request. Summing the
+  // query-dimensioned rows above (rowLimit: 25) would badly undercount —
+  // that request only returns the top 25 queries by clicks, so long-tail
+  // queries that contribute heavily to impressions (but rarely convert to
+  // clicks) are excluded entirely, which also skews avgPosition optimistic
+  // (top-clicking queries tend to rank better) and inflates CTR. A request
+  // with NO `dimensions` field returns exactly one row: the true site-wide
+  // aggregate for the period, with no row limit to worry about.
+  let totalClicks: number, totalImpressions: number, ctr: string, avgPosition: string;
+  try {
+    const totalsRes = await webmasters.searchanalytics.query({ ...base });
+    const totalsRow = totalsRes.data.rows?.[0];
+    if (!totalsRow) throw new Error("no totals row returned");
+    totalClicks      = totalsRow.clicks      ?? 0;
+    totalImpressions = totalsRow.impressions ?? 0;
+    ctr         = totalsRow.ctr      != null ? (totalsRow.ctr * 100).toFixed(1) : "0";
+    avgPosition = totalsRow.position != null ? totalsRow.position.toFixed(1)   : "â€”";
+  } catch (err) {
+    console.error(
+      "[search-console] dimensionless totals request failed, falling back to summed top-25-query totals (less accurate):",
+      err instanceof Error ? err.message : err,
+    );
+    // Fallback: the old (less accurate) approach — sum from the top-25 query rows.
+    let fallbackClicks = 0, fallbackImpressions = 0, fallbackPosition = 0, positionCount = 0;
+    for (const row of queryRes.data.rows ?? []) {
+      fallbackClicks      += row.clicks      ?? 0;
+      fallbackImpressions += row.impressions ?? 0;
+      if ((row.position ?? 0) > 0) { fallbackPosition += row.position!; positionCount++; }
+    }
+    totalClicks      = fallbackClicks;
+    totalImpressions = fallbackImpressions;
+    ctr         = fallbackImpressions > 0 ? ((fallbackClicks / fallbackImpressions) * 100).toFixed(1) : "0";
+    avgPosition = positionCount > 0 ? (fallbackPosition / positionCount).toFixed(1) : "â€”";
   }
-  const ctr         = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(1) : "0";
-  const avgPosition = positionCount > 0 ? (totalPosition / positionCount).toFixed(1) : "â€”";
 
   const topQueries = (queryRes.data.rows ?? []).map((r) => ({
     query:       r.keys?.[0] ?? "",
