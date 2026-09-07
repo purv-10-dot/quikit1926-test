@@ -9,6 +9,8 @@ export interface YouTubeData {
   channelName?: string;
   subscribers?: number;
   totalViews?: number;
+  /** Period-scoped views for the currently selected date range (unlike totalViews, which is all-time). */
+  viewsInPeriod?: number;
   totalVideos?: number;
   watchTimeHours?: number;
   avgViewDuration?: number;

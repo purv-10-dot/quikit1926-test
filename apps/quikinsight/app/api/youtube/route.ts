@@ -29,6 +29,10 @@ export async function GET(req: Request) {
       connected: true,
       subscribers:     data.channelStats.subscribers,
       totalViews:      data.channelStats.totalViews,
+      // Period-scoped views (from the Analytics API's date-bound report),
+      // distinct from totalViews (channels.list' all-time lifetime count,
+      // which is intentionally NOT period-bound and must not change here).
+      viewsInPeriod:   data.analytics.views,
       totalVideos:     data.channelStats.videoCount,
       watchTimeHours:  Math.round((data.analytics.watchMinutes / 60) * 10) / 10,
       avgViewDuration: data.analytics.avgViewDurationSeconds,
