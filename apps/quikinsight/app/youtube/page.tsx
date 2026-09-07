@@ -98,7 +98,7 @@ export default function YouTubePage() {
 
       <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
         <Kpi label="Subscribers" value={fmt(data.subscribers ?? 0)} color={YT_RED} />
-        <Kpi label="Total Views" value={fmt(data.totalViews ?? 0)} color={YT_RED} sub={rangeLabel} />
+        <Kpi label="Total Views" value={fmt(data.totalViews ?? 0)} color={YT_RED} sub="total" />
         <Kpi label="Views in Period" value={fmt(data.viewsInPeriod ?? 0)} color={YT_RED} sub={rangeLabel} />
         <Kpi label="Videos" value={String(data.totalVideos ?? 0)} color={YT_RED} />
         <Kpi label="Watch Time" value={`${fmt(data.watchTimeHours ?? 0)}h`} color={YT_RED} sub={rangeLabel} />
