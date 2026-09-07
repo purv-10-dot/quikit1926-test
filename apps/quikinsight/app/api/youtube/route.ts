@@ -21,7 +21,21 @@ export async function GET(req: Request) {
   const workspaceId = await getActiveWorkspaceId(session.user.id, (session.user as any).orgId ?? "");
   try {
     const data = await getYouTubeData(session.user.id, window ?? 28, workspaceId);
-    return NextResponse.json({ connected: true, ...data });
+    // getYouTubeData returns a nested { channelStats, analytics, ... } shape —
+    // lib/data/aggregator.ts reads that nested shape directly (yt.analytics.views,
+    // etc.), so it stays as-is. The YouTube page/lib/api/youtube.ts instead expects
+    // flat top-level fields, so remap here rather than changing the connector.
+    return NextResponse.json({
+      connected: true,
+      subscribers:     data.channelStats.subscribers,
+      totalViews:      data.channelStats.totalViews,
+      totalVideos:     data.channelStats.videoCount,
+      watchTimeHours:  Math.round((data.analytics.watchMinutes / 60) * 10) / 10,
+      avgViewDuration: data.analytics.avgViewDurationSeconds,
+      topVideos:       data.topVideos,
+      dailyTrend:      data.dailyTrend,
+      trafficSources:  data.trafficSources,
+    });
   } catch (err) {
     // A dead grant is terminal — record it so Integrations offers a reconnect
     // instead of silently retrying a doomed refresh on every page load.
