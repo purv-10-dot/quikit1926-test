@@ -59,6 +59,14 @@ export async function getSearchConsoleData(
   const startDate = w.start;
   const endDate   = w.end;
 
+  // KNOWN LIMITATION (documented, not fixed): the Search Console API caps
+  // each searchanalytics.query response at 50,000 rows per site/search type.
+  // A wide window (e.g. 90 days or a year on a high-traffic property) can
+  // silently hit that cap â€” the API returns its top rows by clicks and
+  // simply omits the rest, with no error or truncation flag. Totals below
+  // are summed only from whatever rows come back, so a truncated response
+  // understates the true total rather than throwing. Not paginated around
+  // here; see PHASE_LOG.md discussion of platform date-range constraints.
   const base = { siteUrl: metadata.siteUrl, requestBody: { startDate, endDate } };
 
   // Fan out all dimension queries concurrently

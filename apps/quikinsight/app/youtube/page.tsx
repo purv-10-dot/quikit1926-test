@@ -5,6 +5,12 @@ import { getYouTubeData, type YouTubeData } from "@/lib/api/youtube";
 import Kpi from "@/components/ui/Kpi";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import PeriodPicker from "@/components/ui/PeriodPicker";
+import { resolvePeriod, periodLabel } from "@/lib/period/resolve";
+import type { PeriodSpec } from "@/lib/period/types";
+
+/** YouTube's pre-existing default (matches the connector's own 28-day fallback). */
+const INITIAL_PERIOD: PeriodSpec = { preset: 30, compare: "none" };
 
 const YT_RED = "#FF0000";
 
@@ -34,10 +40,15 @@ function timeAgo(iso: string): string {
 export default function YouTubePage() {
   const [data, setData] = useState<YouTubeData | null>(null);
   const [error, setError] = useState(false);
+  const [period, setPeriod] = useState<PeriodSpec>(INITIAL_PERIOD);
 
   useEffect(() => {
-    getYouTubeData().then(setData).catch(() => setError(true));
-  }, []);
+    setData(null);
+    setError(false);
+    getYouTubeData(period).then(setData).catch(() => setError(true));
+  }, [period]);
+
+  const rangeLabel = periodLabel(resolvePeriod(period));
 
   if (error) return (
     <div>
@@ -77,17 +88,20 @@ export default function YouTubePage() {
           </div>
           <div>
             <div className="page-title">YouTube</div>
-            <p className="page-sub">{data.channelName ?? "Channel analytics"}</p>
+            <p className="page-sub">{data.channelName ?? "Channel analytics"} Â· {rangeLabel}</p>
           </div>
+        </div>
+        <div className="greet-actions">
+          <PeriodPicker value={period} onChange={setPeriod} allowCompare={false} />
         </div>
       </div>
 
       <div className="kpi-strip">
         <Kpi label="Subscribers" value={fmt(data.subscribers ?? 0)} color={YT_RED} />
-        <Kpi label="Total Views" value={fmt(data.totalViews ?? 0)} color={YT_RED} />
+        <Kpi label="Total Views" value={fmt(data.totalViews ?? 0)} color={YT_RED} sub={rangeLabel} />
         <Kpi label="Videos" value={String(data.totalVideos ?? 0)} color={YT_RED} />
-        <Kpi label="Watch Time" value={`${fmt(data.watchTimeHours ?? 0)}h`} color={YT_RED} />
-        <Kpi label="Avg. View Duration" value={fmtTime(data.avgViewDuration ?? 0)} color={YT_RED} />
+        <Kpi label="Watch Time" value={`${fmt(data.watchTimeHours ?? 0)}h`} color={YT_RED} sub={rangeLabel} />
+        <Kpi label="Avg. View Duration" value={fmtTime(data.avgViewDuration ?? 0)} color={YT_RED} sub={rangeLabel} />
       </div>
 
       {(data.topVideos?.length ?? 0) > 0 && (

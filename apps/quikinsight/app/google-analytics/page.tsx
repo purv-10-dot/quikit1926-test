@@ -9,6 +9,12 @@ import LineAreaChart from "@/components/charts/LineAreaChart";
 import BarChartSimple from "@/components/charts/BarChartSimple";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import PeriodPicker from "@/components/ui/PeriodPicker";
+import { resolvePeriod, periodLabel } from "@/lib/period/resolve";
+import type { PeriodSpec } from "@/lib/period/types";
+
+/** GA4's pre-existing default (matches the connector's own 28-day fallback). */
+const INITIAL_PERIOD: PeriodSpec = { preset: 30, compare: "none" };
 
 /**
  * Google Analytics — layout ported from the v15 preview's platform-detail view
@@ -48,7 +54,7 @@ function fmtDate(d: string): string {
   return `${digits.slice(6)}/${digits.slice(4, 6)}`;
 }
 
-function Header({ live }: { live?: number }) {
+function Header({ live, period, onPeriodChange }: { live?: number; period: PeriodSpec; onPeriodChange: (next: PeriodSpec) => void }) {
   return (
     <div className="page-head">
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -71,6 +77,7 @@ function Header({ live }: { live?: number }) {
             <span style={{ fontSize: 13, fontWeight: 600, color: GA_GREEN }}>{live} live right now</span>
           </span>
         )}
+        <PeriodPicker value={period} onChange={onPeriodChange} allowCompare={false} />
         <Link href="/integrations" className="btn">Manage in Integrations</Link>
       </div>
     </div>
@@ -80,21 +87,26 @@ function Header({ live }: { live?: number }) {
 export default function GoogleAnalyticsPage() {
   const [data, setData] = useState<GoogleAnalyticsData | null>(null);
   const [error, setError] = useState(false);
+  const [period, setPeriod] = useState<PeriodSpec>(INITIAL_PERIOD);
 
   useEffect(() => {
-    getGoogleAnalyticsData().then(setData).catch(() => setError(true));
-  }, []);
+    setData(null);
+    setError(false);
+    getGoogleAnalyticsData(period).then(setData).catch(() => setError(true));
+  }, [period]);
+
+  const rangeLabel = periodLabel(resolvePeriod(period));
 
   if (error) return (
     <div>
-      <Header />
+      <Header period={period} onPeriodChange={setPeriod} />
       <NotConnected icon="⚠️" title="Couldn't load GA4 data" body="Something went wrong. Please refresh and try again." ctaHref="/google-analytics" ctaLabel="Retry" />
     </div>
   );
 
   if (!data) return (
     <div>
-      <Header />
+      <Header period={period} onPeriodChange={setPeriod} />
       <SkeletonKpiStrip />
       <div style={{ marginTop: 16 }}><SkeletonChartCards /></div>
     </div>
@@ -114,7 +126,7 @@ export default function GoogleAnalyticsPage() {
 
   return (
     <div>
-      <Header live={data.realtime?.activeUsers} />
+      <Header live={data.realtime?.activeUsers} period={period} onPeriodChange={setPeriod} />
 
       {/* Connection banner — the preview's "synced / connect" strip. */}
       {mock ? (
@@ -150,7 +162,7 @@ export default function GoogleAnalyticsPage() {
               ACTIVE USERS, not sessions, so the title says what is actually
               plotted rather than inheriting the preview's label. */}
           <div className="chart-head"><h3>Active users trend</h3></div>
-          <p className="chart-sub">Daily, current period</p>
+          <p className="chart-sub">Daily &middot; {rangeLabel}</p>
           <div style={{ position: "relative", height: 200 }}>
             {trend.length > 0 ? (
               <LineAreaChart
@@ -167,7 +179,7 @@ export default function GoogleAnalyticsPage() {
         <div className={`chart-card${mock ? " mock-wrap" : ""}`}>
           {mock && <MockBadge />}
           <div className="chart-head"><h3>Top channels by sessions</h3></div>
-          <p className="chart-sub">This period</p>
+          <p className="chart-sub">{rangeLabel}</p>
           <div style={{ position: "relative", height: 200 }}>
             {channels.length > 0 ? (
               <BarChartSimple

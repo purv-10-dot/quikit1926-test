@@ -1,5 +1,7 @@
 import { withSample } from "./sample";
 import { GA4_SAMPLE } from "@/lib/mock/platformSamples";
+import { encodePeriod } from "@/lib/period/resolve";
+import type { PeriodSpec } from "@/lib/period/types";
 export interface GA4ChannelBreakdown {
   channel: string;
   sessions: number;
@@ -34,8 +36,11 @@ export interface GoogleAnalyticsData {
   realtime?: { activeUsers: number; byCountry: Array<{ country: string; activeUsers: number }>; perMinute: number[] };
 }
 
-export async function getGoogleAnalyticsData(days?: number): Promise<GoogleAnalyticsData> {
-  const qs = days ? `?days=${days}` : "";
+export async function getGoogleAnalyticsData(period?: PeriodSpec | number): Promise<GoogleAnalyticsData> {
+  const qs =
+    period == null ? "" :
+    typeof period === "number" ? `?days=${period}` :
+    `?${encodePeriod(period).toString()}`;
   const res = await fetch(`/api/google-analytics${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load Google Analytics data (${res.status})`);
   const live = (await res.json()) as GoogleAnalyticsData;

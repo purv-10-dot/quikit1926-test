@@ -153,7 +153,7 @@ export default function ReportsPage() {
 
   async function save() {
     if (!draft) return;
-    if (!draft.name.trim()) { showToast("Give the report a name"); return; }
+    if (!draft.name.trim()) { showToast("Report name is required."); return; }
     if (draft.frequency !== "none" && draft.recipients.length === 0) {
       showToast("Add at least one recipient to schedule automatic sending");
       return;

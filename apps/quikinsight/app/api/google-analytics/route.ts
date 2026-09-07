@@ -4,6 +4,7 @@ import { getActiveWorkspaceId } from "@/lib/workspace";
 import { getGA4Data } from "@/lib/connectors/google";
 import { connectorErrorResponse } from "@/lib/connectors/errors";
 import { markExpiredIfAuthError } from "@/lib/connectors/reauth";
+import { decodePeriod, resolvePeriod } from "@/lib/period/resolve";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,12 +12,15 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // Clamped so a hand-edited query string can't ask a platform API for an
-  // absurd window. Defaults to 28 days, the long-standing behaviour.
-  const days = Math.min(Math.max(Number(new URL(req.url).searchParams.get("days") ?? 28), 1), 365);
+  // Accepts ?start/&end (from PeriodPicker via encodePeriod) and the legacy
+  // ?days=N. No params at all -> undefined, so getGA4Data falls back to its
+  // own 28-day default — preserving this endpoint's pre-existing behaviour
+  // for any caller that doesn't pass a range.
+  const sp = new URL(req.url).searchParams;
+  const window = sp.size > 0 ? resolvePeriod(decodePeriod(sp)).current : undefined;
   const workspaceId = await getActiveWorkspaceId(session.user.id, (session.user as any).orgId ?? "");
   try {
-    const data = await getGA4Data(session.user.id, days, workspaceId);
+    const data = await getGA4Data(session.user.id, window ?? 28, workspaceId);
     return NextResponse.json({ connected: true, ...data });
   } catch (err) {
     // A dead grant is terminal — record it so Integrations offers a reconnect

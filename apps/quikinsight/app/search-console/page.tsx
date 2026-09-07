@@ -5,6 +5,12 @@ import { getSearchConsoleData, type SearchConsoleData } from "@/lib/api/search-c
 import Kpi from "@/components/ui/Kpi";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonKpiStrip, SkeletonChartCards } from "@/components/ui/Skeleton";
+import PeriodPicker from "@/components/ui/PeriodPicker";
+import { resolvePeriod, periodLabel } from "@/lib/period/resolve";
+import type { PeriodSpec } from "@/lib/period/types";
+
+/** GSC's pre-existing default (matches the connector's own 28-day fallback). */
+const INITIAL_PERIOD: PeriodSpec = { preset: 30, compare: "none" };
 
 const GSC_GREEN = "#34A853";
 
@@ -17,10 +23,15 @@ function fmt(n: number): string {
 export default function SearchConsolePage() {
   const [data, setData] = useState<SearchConsoleData | null>(null);
   const [error, setError] = useState(false);
+  const [period, setPeriod] = useState<PeriodSpec>(INITIAL_PERIOD);
 
   useEffect(() => {
-    getSearchConsoleData().then(setData).catch(() => setError(true));
-  }, []);
+    setData(null);
+    setError(false);
+    getSearchConsoleData(period).then(setData).catch(() => setError(true));
+  }, [period]);
+
+  const rangeLabel = periodLabel(resolvePeriod(period));
 
   if (error) return (
     <div>
@@ -60,8 +71,11 @@ export default function SearchConsolePage() {
           </div>
           <div>
             <div className="page-title">Search Console</div>
-            <p className="page-sub">{data.siteUrl ?? "Organic search performance"}</p>
+            <p className="page-sub">{data.siteUrl ?? "Organic search performance"} Â· {rangeLabel}</p>
           </div>
+        </div>
+        <div className="greet-actions">
+          <PeriodPicker value={period} onChange={setPeriod} allowCompare={false} />
         </div>
       </div>
 
