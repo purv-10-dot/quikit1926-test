@@ -29,7 +29,7 @@ const emptyFb = {
   engagementRate: "0", topPosts: [] as Array<Record<string, unknown>>,
 };
 const emptyIg = {
-  reach: 0, impressions: 0, profileViews: 0, accountsEngaged: 0,
+  reach: 0, impressions: 0, profileViews: 0, followers: 0, accountsEngaged: 0,
   engagementRate: "0", topPosts: [] as Array<Record<string, unknown>>,
 };
 
@@ -40,9 +40,20 @@ async function facebookInsights(pageId: string, pageToken: string, w: DateWindow
   // Page-level insights are best-effort: Meta has deprecated many of these
   // metrics, and one invalid metric fails the whole call â€” so we never rely on
   // it alone. Post-derived aggregates below are the dependable source.
+  //
+  // UNVERIFIED metric name: `page_impressions` was deprecated (Nov 2025) along
+  // with the rest of this family; `page_views_total` is the best-corroborated
+  // replacement found via research, matching the same impressions->views
+  // pattern already confirmed for Instagram's account-insights fix earlier
+  // this session, but could not be confirmed against Meta's live docs
+  // (network-restricted in this environment). This call is best-effort/
+  // fire-and-forget anyway (its result barely affects `reach` below), so a
+  // wrong name here degrades to the existing post-derived fallback rather
+  // than breaking anything. MUST be smoke-tested against a real Page before
+  // fully trusting `impressions` if it's ever surfaced directly.
   try {
     const data = await metaGet(
-      `/${pageId}/insights?metric=page_impressions&period=day&since=${since}&until=${until}`,
+      `/${pageId}/insights?metric=page_views_total&period=day&since=${since}&until=${until}`,
       pageToken
     );
     for (const item of data.data ?? []) {
@@ -66,8 +77,18 @@ async function facebookInsights(pageId: string, pageToken: string, w: DateWindow
   type FbAggPost = { id: string; platform: "facebook"; message: string; thumbnail?: string; timestamp: string; reach: number; engagement: number; clicks: number };
   let allPosts: FbAggPost[] = [];
   try {
+    // UNVERIFIED metric name: `post_impressions` was deprecated (Nov 2025);
+    // `post_media_view` is the confirmed replacement per multiple independent
+    // sources describing this same deprecation wave (mirrors the
+    // impressions->views fix already confirmed and shipped for Instagram's
+    // account-insights call earlier this session). Could not verify the
+    // literal string against Meta's live docs directly (network-restricted
+    // in this environment) â€” MUST be smoke-tested against a real Page before
+    // fully trusting `reach`/`engagement` below; this IS the metric that was
+    // silently zeroing Facebook Reach/Engagement while Fans stayed correct
+    // (fan_count comes from a separate, unrelated call above).
     const postsData = await metaGet(
-      `/${pageId}/posts?fields=message,created_time,full_picture,insights.metric(post_impressions,post_engaged_users,post_clicks)&limit=50`,
+      `/${pageId}/posts?fields=message,created_time,full_picture,insights.metric(post_media_view,post_engaged_users,post_clicks)&limit=50`,
       pageToken
     );
     const mapped: FbAggPost[] = (postsData.data ?? []).map((post: Record<string, unknown>) => {
@@ -79,7 +100,7 @@ async function facebookInsights(pageId: string, pageToken: string, w: DateWindow
         message: (post.message as string | undefined)?.slice(0, 80) ?? "",
         thumbnail: post.full_picture as string | undefined,
         timestamp: String(post.created_time ?? ""),
-        reach: insightMap["post_impressions"] ?? 0,
+        reach: insightMap["post_media_view"] ?? 0,
         engagement: insightMap["post_engaged_users"] ?? 0,
         clicks: insightMap["post_clicks"] ?? 0,
       };
@@ -94,7 +115,7 @@ async function facebookInsights(pageId: string, pageToken: string, w: DateWindow
   // Prefer page insights when present, else fall back to post-derived totals.
   // Both sides are now scoped to the same `w` window, so this ratio and the
   // post totals agree with the account-level insights call above.
-  const impressions  = metrics["page_impressions"] || postReachSum;
+  const impressions  = metrics["page_views_total"] || postReachSum;
   const reach        = postReachSum || impressions;
   const engagedUsers = postEngSum;
   const fans         = fanCount;
@@ -168,7 +189,12 @@ async function instagramInsights(igId: string, token: string, w: DateWindow) {
   const reach = metrics["reach"] || postReachSum;
   const accountsEngaged = postEngSum;
   return {
-    reach, impressions: reach, profileViews: followers,
+    reach, impressions: reach,
+    // `profileViews` here has always actually held the follower count, not
+    // real profile-view data (there's no profile_views fetch in this
+    // function) — kept as-is since something may already read it under that
+    // name, but `followers` is the correctly-named field going forward.
+    profileViews: followers, followers,
     accountsEngaged, engagementRate: computeEngagementRate(accountsEngaged, reach),
     topPosts,
   };

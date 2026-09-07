@@ -141,10 +141,10 @@ export async function buildEmailReport(opts: {
   const p = dash?.platforms ?? {};
   if (p.meta) {
     organicPlatforms.push({ name: "Facebook",  followers: p.meta.facebook.fans ?? 0,  engagement: Number(p.meta.facebook.engagementRate) || 0,  reach: p.meta.facebook.reach ?? 0 });
-    organicPlatforms.push({ name: "Instagram", followers: 0,                          engagement: Number(p.meta.instagram.engagementRate) || 0, reach: p.meta.instagram.reach ?? 0 });
+    organicPlatforms.push({ name: "Instagram", followers: p.meta.instagram.followers ?? 0, engagement: Number(p.meta.instagram.engagementRate) || 0, reach: p.meta.instagram.reach ?? 0 });
   }
   if (p.linkedin) organicPlatforms.push({ name: "LinkedIn", followers: p.linkedin.followers ?? 0, engagement: Number(p.linkedin.engagementRate) || 0, reach: p.linkedin.reach ?? 0 });
-  if (p.youtube)  organicPlatforms.push({ name: "YouTube",  followers: p.youtube.channelStats.subscribers ?? 0, engagement: 0, reach: p.youtube.analytics.views ?? 0 });
+  if (p.youtube)  organicPlatforms.push({ name: "YouTube",  followers: p.youtube.channelStats.subscribers ?? 0, engagement: p.youtube.analytics.likes ?? 0, reach: p.youtube.analytics.views ?? 0 });
 
   const googlePlatforms: EmailGooglePlatform[] = [];
   if (p.ga4) googlePlatforms.push({ id: "ga4", name: "Google Analytics 4", metrics: [
