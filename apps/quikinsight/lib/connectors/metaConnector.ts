@@ -131,13 +131,19 @@ async function instagramInsights(igId: string, token: string, w: DateWindow) {
   const { since, until } = windowToUnixRange(w);
 
   // Account-level insights are best-effort (several IG metrics were deprecated).
+  // `metric_type=total_value` is required as of Graph API v19+ for `reach` to
+  // return real data on this endpoint â€” without it the response's `data`
+  // items carry an empty `values` array, which silently summed to 0 here and
+  // fell through to the less-accurate postReachSum fallback below. Same fix
+  // already applied in lib/connectors/instagram.ts; ported here since this is
+  // a separate, duplicated implementation that never got the fix.
   try {
     const data = await metaGet(
-      `/${igId}/insights?metric=reach&period=day&since=${since}&until=${until}`,
+      `/${igId}/insights?metric=reach&period=day&metric_type=total_value&since=${since}&until=${until}`,
       token
     );
     for (const item of data.data ?? []) {
-      metrics[item.name] = (item.values ?? []).reduce((acc: number, v: any) => acc + (Number(v.value) || 0), 0);
+      metrics[item.name] = Number(item.total_value?.value) || 0;
     }
   } catch (err) {
     console.error("IG account insights error:", err instanceof Error ? err.message : err);
