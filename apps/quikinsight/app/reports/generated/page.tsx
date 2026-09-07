@@ -421,7 +421,7 @@ export default function ReportsPage() {
           body="Connect a platform in Integrations to generate a real performance report from your live metrics."
         />
       ) : (
-        <div ref={printRef} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div ref={printRef} className="report-card" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Sample figures must never appear unlabelled — see lib/api/sample.ts.
               Inside printRef so an exported PDF carries the disclosure too. */}
           {everythingIsMock && <SampleDataBanner platform="a platform" />}
