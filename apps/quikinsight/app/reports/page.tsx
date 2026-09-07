@@ -114,6 +114,7 @@ export default function ReportsPage() {
   const [draft, setDraft] = useState<Report | null>(null); // non-null = modal open
   const [saving, setSaving] = useState(false);
   const [recipientDraft, setRecipientDraft] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -153,7 +154,8 @@ export default function ReportsPage() {
 
   async function save() {
     if (!draft) return;
-    if (!draft.name.trim()) { showToast("Report name is required."); return; }
+    if (!draft.name.trim()) { setNameError("Report name is required."); return; }
+    setNameError(null);
     if (draft.frequency !== "none" && draft.recipients.length === 0) {
       showToast("Add at least one recipient to schedule automatic sending");
       return;
@@ -220,7 +222,7 @@ export default function ReportsPage() {
       className="modal-overlay open"
       role="dialog"
       aria-modal="true"
-      onClick={(e) => { if (e.target === e.currentTarget) setDraft(null); }}
+      onClick={(e) => { if (e.target === e.currentTarget) { setDraft(null); setNameError(null); } }}
     >
       <div className="modal-box" style={{ maxWidth: 520, maxHeight: "88vh", overflowY: "auto" }}>
         <p className="modal-title">{draft.id ? "Edit report" : "New report"}</p>
@@ -234,7 +236,10 @@ export default function ReportsPage() {
             className="ws-new-input" style={{ width: "100%" }}
             placeholder="e.g. Q3 board update"
             value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            onChange={(e) => {
+              setDraft({ ...draft, name: e.target.value });
+              if (nameError) setNameError(null);
+            }}
           />
         </div>
 
@@ -378,8 +383,12 @@ export default function ReportsPage() {
           )}
         </div>
 
+        {nameError && (
+          <p style={{ fontSize: 12, color: "var(--red)", margin: "0 0 10px" }}>{nameError}</p>
+        )}
+
         <div className="modal-actions">
-          <button className="btn btn-sm" type="button" onClick={() => setDraft(null)} disabled={saving}>Cancel</button>
+          <button className="btn btn-sm" type="button" onClick={() => { setDraft(null); setNameError(null); }} disabled={saving}>Cancel</button>
           <button className="btn btn-sm btn-primary" type="button" onClick={save} disabled={saving}>
             {saving ? "Saving…" : draft.id ? "Save changes" : "Create report"}
           </button>
@@ -400,7 +409,7 @@ export default function ReportsPage() {
         </div>
         <button
           className="btn btn-primary" type="button"
-          onClick={() => { setDraft(emptyDraft(activeWsId)); setRecipientDraft(""); }}
+          onClick={() => { setDraft(emptyDraft(activeWsId)); setRecipientDraft(""); setNameError(null); }}
         >
           + New report
         </button>
@@ -454,7 +463,7 @@ export default function ReportsPage() {
                         <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); openReport(r.id); }}>
                           View →
                         </button>{" "}
-                        <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); setDraft({ ...r }); setRecipientDraft(""); }}>
+                        <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); setDraft({ ...r }); setRecipientDraft(""); setNameError(null); }}>
                           Edit
                         </button>
                       </td>
