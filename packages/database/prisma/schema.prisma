@@ -30053,9 +30053,46 @@ model QiReport {
   lastSentAt    DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  snapshots     QiReportSnapshot[]
 
   @@index([orgId])
   @@index([orgId, createdAt])
+  @@schema("app_quikinsight")
+}
+
+/// A frozen point-in-time capture of a QiReport's computed data — the
+/// "Phase 1" building block for report comparison (generate today, generate
+/// again in N days, diff the two). Distinct from QiReport itself, which only
+/// ever stores configuration (name, dateRange, channels, ...) and is
+/// re-fetched live on every view; nothing before this model persisted actual
+/// KPI numbers anywhere.
+///
+/// One row per (reportId, snapshotDate) — the unique constraint below is
+/// what a create-or-update keyed on that pair relies on to naturally
+/// overwrite a same-day duplicate rather than accumulating multiple
+/// snapshots for one calendar day.
+model QiReportSnapshot {
+  id           String   @id @default(cuid())
+  reportId     String
+  report       QiReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  /// Calendar day this snapshot belongs to (date-only, no time component) —
+  /// the dedupe key alongside reportId. Distinct from windowStart/windowEnd:
+  /// this is "when the snapshot was taken", those are "what period its data
+  /// covers".
+  snapshotDate DateTime @db.Date
+  /// Explicit date range the snapshot's data actually covers. Always a
+  /// concrete window (e.g. 2026-08-11..2026-09-08), never a rolling
+  /// "trailing N days" — a snapshot must mean the same thing whenever it is
+  /// later viewed, unlike QiReport.dateRange's live re-resolution.
+  windowStart  DateTime
+  windowEnd    DateTime
+  /// Computed KPIs / platform breakdown at snapshot time — the frozen output
+  /// that QiReport itself never stores.
+  data         Json
+  generatedAt  DateTime @default(now())
+
+  @@unique([reportId, snapshotDate])
+  @@index([reportId])
   @@schema("app_quikinsight")
 }
 

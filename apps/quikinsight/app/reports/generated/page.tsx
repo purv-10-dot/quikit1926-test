@@ -155,12 +155,16 @@ export default function ReportsPage() {
   /** Non-null when opened as a saved report. */
   const [scope, setScope] = useState<ReportScope | null>(null);
 
+  /** The saved report's id, when opened as one — used only for Phase 2 snapshotting below. */
+  const [reportId, setReportId] = useState<string | null>(null);
+
   // Load the saved report's config, if this is one. The document then honours
   // its range, channel mix and — for a custom report — its metric selection,
   // instead of always rendering every section.
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("report");
     if (!id) return;
+    setReportId(id);
     fetch(`/api/reports/${encodeURIComponent(id)}`)
       .then((r) => r.json())
       .then((j) => {
@@ -213,6 +217,21 @@ export default function ReportsPage() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [range]);
+
+  // Phase 2 of the report snapshot/comparison feature (PHASE_LOG.md): record
+  // today's snapshot whenever a saved report's scoped view finishes loading.
+  // Purely additive — fire-and-forget, no loading state, no UI feedback, and
+  // failure is invisible to the viewer by design (the endpoint itself always
+  // resolves 200; this effect ignores the response either way).
+  const snapshottedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!reportId || loading || error) return;
+    if (snapshottedRef.current === reportId) return;
+    snapshottedRef.current = reportId;
+    fetch(`/api/reports/${encodeURIComponent(reportId)}/snapshot`, { method: "POST" }).catch(() => {
+      /* intentionally ignored — see lib/reports/snapshot.ts */
+    });
+  }, [reportId, loading, error]);
 
   useEffect(() => {
     setTsLoading(true);

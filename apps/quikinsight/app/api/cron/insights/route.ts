@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { buildReportForUser } from "@/lib/insights/report";
+import { buildReportForUser, frequencyToDays } from "@/lib/insights/report";
 import { renderInsightsEmail } from "@/lib/insights/emailTemplate";
 import { sendReportEmail } from "@/lib/insights/mailer";
 import { isDue, toBuilderFrequency } from "@/lib/reports/scope";
+import { saveReportSnapshot } from "@/lib/reports/snapshot";
+import { trailingWindow } from "@/lib/period/resolve";
 
 export const runtime = "nodejs";
 // Hobby plan caps functions at 60s. Sends are sequential; a large due list
@@ -84,6 +86,17 @@ export async function GET(req: Request) {
           data: { lastSentAt: new Date() },
         });
         sent++;
+
+        // Additive side effect — see lib/reports/snapshot.ts. Awaited (not
+        // fire-and-forget) so it can't be killed mid-write when this
+        // serverless function returns, but it never throws and never affects
+        // the send that already succeeded above.
+        const builderFrequency = toBuilderFrequency(report.frequency);
+        await saveReportSnapshot({
+          reportId: report.id,
+          window: trailingWindow(frequencyToDays(builderFrequency)),
+          data: built,
+        });
       } else {
         failed++;
         errors.push(`send:${result.error}`);
