@@ -148,19 +148,38 @@ export default function OverviewPage() {
   const showMock = sampleMode === true;
   const needsSource = sampleMode === false;
 
-  // No live endpoint feeds the email card yet, so once the workspace is live it
-  // reads zero. Previously the "connected" branch rendered these demo figures
-  // under the heading "Live send, open, and click performance".
-  const emailStats = showMock
-    ? EMAIL_STATS
-    : { sends: 0, openRate: 0, clickRate: 0, unsubRate: 0, pipeline: 0 };
-
   // ── DEMO: channel glance totals ────────────────────────────────────────────
   const glance = useMemo(() => {
-    // Live workspace: no live endpoint feeds these yet, so they read zero
-    // rather than borrowing the demo numbers.
+    // Live workspace: same real, per-platform breakdown the organic/paid/email
+    // tabs already read (data.organicPlatforms/paidPlatforms/emailPlatforms'
+    // `raw` numeric fields) — this section just displays a subset of the same
+    // numbers above the tabs. Pipeline $ and Emails sent have no real source
+    // anywhere in the app (same gap already established for the tabs), so
+    // they stay at their honest zero rather than being fabricated.
     if (!showMock) {
-      return { paidPipeline: "0.00", paidRoas: "0.0", followers: "0.0", engagement: "0.0", sends: "0.0" };
+      const paidCards = data?.paidPlatforms ?? [];
+      const withRoas = paidCards.filter((c) => c.raw?.roas != null);
+      const paidRoas = withRoas.length
+        ? withRoas.reduce((s, c) => s + (c.raw?.roas ?? 0), 0) / withRoas.length
+        : 0;
+
+      const organicCards = data?.organicPlatforms ?? [];
+      const followers = organicCards.reduce((s, c) => s + (c.raw?.followers ?? 0), 0);
+      const withEng = organicCards.filter((c) => c.raw?.engagementRate != null);
+      const engagement = withEng.length
+        ? withEng.reduce((s, c) => s + (c.raw?.engagementRate ?? 0), 0) / withEng.length
+        : 0;
+
+      const mailchimp = (data?.emailPlatforms ?? []).find((c) => c.id === "mailchimp");
+
+      return {
+        paidPipeline: "0.00",
+        paidRoas: paidRoas.toFixed(1),
+        followers: (followers / 1000).toFixed(1),
+        engagement: engagement.toFixed(1),
+        sends: "0.0",
+        openRate: mailchimp?.raw?.openRate ?? 0,
+      };
     }
     const paid = CHANNELS.filter((c) => c.type === "paid");
     const paidSpend = paid.reduce((s, c) => s + c.spend, 0);
@@ -172,8 +191,17 @@ export default function OverviewPage() {
       followers: (platforms.reduce((s, p) => s + p.followers, 0) / 1000).toFixed(1),
       engagement: (platforms.reduce((s, p) => s + p.engagement, 0) / platforms.length).toFixed(1),
       sends: (EMAIL_STATS.sends / 1000).toFixed(1),
+      openRate: EMAIL_STATS.openRate,
     };
-  }, [showMock]);
+  }, [showMock, data]);
+
+  // No live endpoint feeds sends/click/unsub/pipeline yet, so those stay zero
+  // once the workspace is live. Open rate now comes from `glance` (real
+  // Mailchimp data when connected, the mock figure while sampling), so this
+  // card's Open rate matches the "Marketing channels at a glance" card above it.
+  const emailStats = showMock
+    ? EMAIL_STATS
+    : { sends: 0, openRate: glance.openRate, clickRate: 0, unsubRate: 0, pipeline: 0 };
 
   // ── KPI strip. "all" prefers LIVE data; the other tabs are DEMO. ───────────
   /**
