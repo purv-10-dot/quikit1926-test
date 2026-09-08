@@ -131,6 +131,9 @@ export async function GET(req: Request) {
         { label: "Engagement",  value: `${Number(fb.engagementRate ?? 0).toFixed(1)}%` },
         { label: "Page views",  value: fmt(fb.pageViews   ?? 0) },
       ],
+      // `fans` doubles as Facebook's follower count (same convention used
+      // elsewhere in this app — Meta doesn't distinguish the two).
+      raw: { followers: fb.fans ?? 0, reach: fb.reach ?? 0, engagementRate: Number(fb.engagementRate ?? 0) },
     });
     if (ig) organicPlatforms.push({
       id: "instagram", name: "Instagram", color: "#E1306C",
@@ -140,6 +143,7 @@ export async function GET(req: Request) {
         { label: "Engagement",  value: `${Number(ig.engagementRate ?? 0).toFixed(1)}%` },
         { label: "Impressions", value: fmt(ig.impressions    ?? 0) },
       ],
+      raw: { followers: ig.followers ?? 0, reach: ig.reach ?? 0, engagementRate: Number(ig.engagementRate ?? 0) },
     });
   }
 
@@ -152,6 +156,11 @@ export async function GET(req: Request) {
         { label: "Reach",      value: fmt((li as any).reach         ?? 0) },
         { label: "Engagement", value: `${Number((li as any).engagementRate ?? 0).toFixed(1)}%` },
       ],
+      raw: {
+        followers: (li as any).followers ?? 0,
+        reach: (li as any).reach ?? 0,
+        engagementRate: Number((li as any).engagementRate ?? 0),
+      },
     });
   }
 
@@ -170,6 +179,7 @@ export async function GET(req: Request) {
         { label: "CTR",          value: `${Number(ga.ctr ?? 0).toFixed(1)}%` },
         { label: "ROAS",         value: `${Number(ga.roas ?? 0).toFixed(2)}x` },
       ],
+      raw: { spend: ga.spend ?? 0, roas: Number(ga.roas ?? 0) },
     });
   }
 
@@ -185,6 +195,7 @@ export async function GET(req: Request) {
         { label: "CTR",         value: `${Number(ma.ctr ?? 0).toFixed(1)}%` },
         { label: "ROAS",        value: `${Number(ma.roas ?? 0).toFixed(2)}x` },
       ],
+      raw: { spend: ma.spend ?? 0, roas: Number(ma.roas ?? 0) },
     });
   }
 
@@ -266,6 +277,7 @@ export async function GET(req: Request) {
         { label: "Click rate",  value: `${Number((mc as any).clickRate ?? 0).toFixed(1)}%` },
         { label: "Campaigns",   value: fmt((mc as any).campaigns ?? 0) },
       ],
+      raw: { openRate: Number((mc as any).openRate ?? 0), clickRate: Number((mc as any).clickRate ?? 0) },
     });
   }
 

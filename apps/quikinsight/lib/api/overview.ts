@@ -23,6 +23,13 @@ export interface PlatformCard {
   name: string;
   color: string;
   metrics: { label: string; value: string }[];
+  /**
+   * Raw numeric values behind a subset of `metrics`, for callers that need to
+   * sum/average across cards (e.g. Overview's Social/Paid/Email KPI strips) —
+   * `metrics` alone can't be aggregated since its values are pre-formatted
+   * strings ("1.3K", "9.8%"). Optional: not every card populates it.
+   */
+  raw?: Record<string, number>;
 }
 
 export interface OverviewPeriod {

@@ -186,21 +186,59 @@ export default function OverviewPage() {
     comparing ? { delta, trend } : { delta: "", trend: "flat" as const };
 
   const kpis = useMemo(() => {
-    // The organic / paid / email tabs are fed entirely by the demo constants —
-    // there is no per-channel live endpoint. On a live workspace they must show
-    // zeros, not the sample story. The "all" tab falls through to data.kpis.
-    if (needsSource && view !== "all") {
-      const zeros: Record<string, Array<[string, string]>> = {
-        organic: [["Followers", "0"], ["Engagement rate", "0.0%"], ["Organic reach", "0"], ["Content pipeline", "$0.00M"]],
-        paid:    [["Paid pipeline", "$0.00M"], ["Paid spend", "$0.00M"], ["CAC", "$0"], ["ROAS", "0.0x"]],
-        email:   [["Emails sent", "0"], ["Open rate", "0.0%"], ["Click rate", "0.0%"], ["Email pipeline", "$0.00M"]],
-      };
-      return (zeros[view] ?? []).map(([label, value]) => ({
-        label, value, delta: "", trend: "flat" as const, sub: "",
-        comparison: "unavailable" as const,
-      }));
+    // The organic / paid / email tabs' KPI cards come from data.organicPlatforms /
+    // data.paidPlatforms / data.emailPlatforms — the same real, per-platform
+    // breakdown /api/overview already builds from the aggregator (each card's
+    // `raw` field carries plain numbers for summing here; `metrics` is already
+    // formatted for display elsewhere and can't be aggregated). Fields with no
+    // real source anywhere in the app (Content/Paid/Email pipeline $, CAC,
+    // Emails sent) stay at their honest zero rather than being fabricated.
+    // The "all" tab falls through to data.kpis below, unchanged.
+    if (needsSource && view === "organic") {
+      const cards = data?.organicPlatforms ?? [];
+      const filtered = checkedPlatforms.length
+        ? cards.filter((c) => checkedPlatforms.includes(c.name))
+        : cards;
+      const followers = filtered.reduce((s, c) => s + (c.raw?.followers ?? 0), 0);
+      const reach = filtered.reduce((s, c) => s + (c.raw?.reach ?? 0), 0);
+      const withEng = filtered.filter((c) => c.raw?.engagementRate != null);
+      const eng = withEng.length
+        ? withEng.reduce((s, c) => s + (c.raw?.engagementRate ?? 0), 0) / withEng.length
+        : 0;
+      return [
+        { label: "Followers", value: `${(followers / 1000).toFixed(1)}K`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Engagement rate", value: `${eng.toFixed(1)}%`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Organic reach", value: `${Math.round(reach / 1000)}K`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Content pipeline", value: "$0.00M", delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+      ];
     }
-    if (view === "organic") {
+    if (needsSource && view === "paid") {
+      const cards = data?.paidPlatforms ?? [];
+      const filtered = checkedChannels.length
+        ? cards.filter((c) => checkedChannels.includes(c.name))
+        : cards;
+      const spend = filtered.reduce((s, c) => s + (c.raw?.spend ?? 0), 0);
+      const withRoas = filtered.filter((c) => c.raw?.roas != null);
+      const roas = withRoas.length
+        ? withRoas.reduce((s, c) => s + (c.raw?.roas ?? 0), 0) / withRoas.length
+        : 0;
+      return [
+        { label: "Paid pipeline", value: "$0.00M", delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Paid spend", value: `$${(spend / 1000).toFixed(2)}M`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "CAC", value: "$0", delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "ROAS", value: `${roas.toFixed(1)}x`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+      ];
+    }
+    if (needsSource && view === "email") {
+      const mailchimp = (data?.emailPlatforms ?? []).find((c) => c.id === "mailchimp");
+      return [
+        { label: "Emails sent", value: "0", delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Open rate", value: `${(mailchimp?.raw?.openRate ?? 0).toFixed(1)}%`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Click rate", value: `${(mailchimp?.raw?.clickRate ?? 0).toFixed(1)}%`, delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+        { label: "Email pipeline", value: "$0.00M", delta: "", trend: "flat" as const, sub: "", comparison: "unavailable" as const },
+      ];
+    }
+    if (showMock && view === "organic") {
       // Chips narrow the totals; no selection means all platforms.
       const keys = checkedPlatforms.length ? checkedPlatforms : Object.keys(ORGANIC_PLATFORMS);
       const platforms = keys.map((k) => ORGANIC_PLATFORMS[k]).filter(Boolean);
@@ -270,7 +308,7 @@ export default function OverviewPage() {
       { label: "CAC", value: `$${Math.round(KPI_BASE.cac)}`, ...cmp("▼ 8%", "down"), sub: "AI-flagged this week" },
       { label: "ROAS", value: `${(selSpend ? selPipeline / selSpend : 0).toFixed(1)}x`, ...cmp("—", "flat"), sub: "vs. planned 4.0x" },
     ];
-  }, [view, mult, comparing, needsSource, data, checkedPlatforms, checkedChannels]);
+  }, [view, mult, comparing, needsSource, showMock, data, checkedPlatforms, checkedChannels]);
 
   /**
    * Both trend charts carry a pill: chart A a growth % over the 6-week series,
@@ -283,6 +321,22 @@ export default function OverviewPage() {
     const bestDay = (byDay: Record<string, number>) =>
       Object.entries(byDay).reduce((best, e) => (e[1] > best[1] ? e : best))[0];
 
+    if (view === "organic" && needsSource) {
+      // No connector anywhere in the app captures daily historical snapshots
+      // for followers/engagement (Meta/LinkedIn only ever return a current
+      // total) — a real trend needs new scheduled-snapshot infrastructure
+      // that doesn't exist yet. Rather than keep showing FOLLOWER_TREND/
+      // ENGAGEMENT_BY_DAY's fabricated numbers under the "Connect source"
+      // badge (which only warns, it doesn't hide them), render an honest
+      // empty chart until that infrastructure exists.
+      const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      return {
+        aTitle: "Follower growth", aSub: "Last 6 weeks", aPill: "—", aPillTone: "neutral" as const,
+        a: <LineAreaChart labels={WEEK_LABELS} data={WEEK_LABELS.map(() => 0)} valueSuffix="K" />,
+        bTitle: "Engagement by day", bSub: "This week", bPill: "—", bPillTone: "neutral" as const,
+        b: <BarChartSimple labels={weekdays} data={weekdays.map(() => 0)} />,
+      };
+    }
     if (view === "organic") {
       const scaled = FOLLOWER_TREND.map((v) => v);
       return {
@@ -321,7 +375,7 @@ export default function OverviewPage() {
       bTitle: "Leads by day", bSub: "This week", bPill: `Best: ${bestDay(leadsScaled)}`, bPillTone: "neutral" as const,
       b: <BarChartSimple labels={Object.keys(leadsScaled)} data={Object.values(leadsScaled)} />,
     };
-  }, [view, mult, checkedChannels]);
+  }, [view, mult, checkedChannels, needsSource]);
 
   /**
    * Campaigns respect the channel chips AND the sort. Empty chip selection
@@ -544,10 +598,19 @@ export default function OverviewPage() {
           )}
 
           {/* Filter chips + range, one row. Which chips appear depends on the
-              active segment, exactly as in the preview. */}
+              active segment, exactly as in the preview.
+              On a live (needsSource) workspace, organic/paid chip labels come
+              from data.organicPlatforms/data.paidPlatforms — the SAME real
+              card names (and `name` values) the KPI sums above filter by —
+              instead of the mock ORGANIC_PLATFORMS/CHANNELS lists, whose
+              labels ("LinkedIn Company Page", "Search", "Social", "Events")
+              never matched the real card names ("LinkedIn", "Google Ads",
+              "Meta Ads") and would have silently zeroed a platform out of the
+              sum if clicked. The "all" tab's chips are untouched — they still
+              filter the campaigns table via CHANNELS, unrelated to this. */}
           <div className="filter-row">
             {view === "organic" &&
-              Object.keys(ORGANIC_PLATFORMS).map((pf) => (
+              (needsSource ? (data?.organicPlatforms ?? []).map((c) => c.name) : Object.keys(ORGANIC_PLATFORMS)).map((pf) => (
                 <button
                   key={pf}
                   type="button"
@@ -560,8 +623,8 @@ export default function OverviewPage() {
             {view === "email" && (
               <span className="chip active" style={{ cursor: "default" }}>Email</span>
             )}
-            {(view === "all" || view === "paid") &&
-              CHANNELS.filter((c) => view === "all" || c.type === "paid").map((c) => (
+            {view === "all" &&
+              CHANNELS.map((c) => (
                 <button
                   key={c.name}
                   type="button"
@@ -569,6 +632,17 @@ export default function OverviewPage() {
                   onClick={() => toggleChannel(String(c.name))}
                 >
                   {c.name}
+                </button>
+              ))}
+            {view === "paid" &&
+              (needsSource ? (data?.paidPlatforms ?? []).map((c) => c.name) : CHANNELS.filter((c) => c.type === "paid").map((c) => String(c.name))).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={`chip${checkedChannels.includes(name) ? " active" : ""}`}
+                  onClick={() => toggleChannel(name)}
+                >
+                  {name}
                 </button>
               ))}
             {(checkedChannels.length > 0 || checkedPlatforms.length > 0) && (
