@@ -200,6 +200,11 @@ export default function ReportsPage() {
     router.push(`/reports/generated?report=${encodeURIComponent(id)}`);
   }
 
+  /** Open the snapshot comparison view for a report. */
+  function openCompare(id: string) {
+    router.push(`/reports/compare?report=${encodeURIComponent(id)}`);
+  }
+
   function addRecipient() {
     const v = recipientDraft.trim().toLowerCase();
     if (!v) return;
@@ -465,6 +470,9 @@ export default function ReportsPage() {
                         </button>{" "}
                         <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); setDraft({ ...r }); setRecipientDraft(""); setNameError(null); }}>
                           Edit
+                        </button>{" "}
+                        <button className="btn btn-sm" type="button" onClick={(e) => { e.stopPropagation(); openCompare(r.id); }}>
+                          Compare
                         </button>
                       </td>
                     </tr>
