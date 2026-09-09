@@ -19,6 +19,7 @@ export function validateReportInput(body: Record<string, unknown>): { error: str
   name: string; type: string; workspaceId: string | null; dateRange: string; channels: string[];
   audience: string; customSummary: string | null; customMetrics: string[];
   recipients: string[]; frequency: string;
+  preferredHour: number | null; timezone: string | null;
 } } {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return { error: "Report name is required" };
@@ -52,6 +53,19 @@ export function validateReportInput(body: Record<string, unknown>): { error: str
     return { error: "Add at least one recipient before setting a send frequency" };
   }
 
+  // Best-effort preferred send hour — additive, optional. Only meaningful
+  // together (see isDue() in lib/reports/scope.ts); either alone still saves,
+  // but has no effect until both are set. Omitted/invalid input on either
+  // resolves to null, exactly the same as a report created before this
+  // feature existed — no default is applied.
+  const rawHour = body.preferredHour;
+  const parsedHour = typeof rawHour === "number" ? rawHour : Number(rawHour);
+  const preferredHour =
+    rawHour != null && Number.isInteger(parsedHour) && parsedHour >= 0 && parsedHour <= 23
+      ? parsedHour
+      : null;
+  const timezone = typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : null;
+
   return {
     data: {
       name,
@@ -66,6 +80,8 @@ export function validateReportInput(body: Record<string, unknown>): { error: str
       customMetrics,
       recipients,
       frequency,
+      preferredHour,
+      timezone,
     },
   };
 }

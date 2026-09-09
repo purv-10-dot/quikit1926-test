@@ -76,10 +76,30 @@ export interface Report {
   customMetrics: string[];
   recipients: string[];
   frequency: string;
+  /** Best-effort preferred send hour (0-23), local to `timezone`. Both must be set to take effect — see PHASE_LOG.md. */
+  preferredHour: number | null;
+  timezone: string | null;
   status: string;
   lastSentAt: string | null;
   createdAt: string;
 }
+
+/** Short list of common IANA zones — not exhaustive, just the common cases. */
+const TIMEZONES = [
+  { id: "", label: "No preference" },
+  { id: "America/Los_Angeles", label: "Pacific Time (US)" },
+  { id: "America/Denver", label: "Mountain Time (US)" },
+  { id: "America/Chicago", label: "Central Time (US)" },
+  { id: "America/New_York", label: "Eastern Time (US)" },
+  { id: "UTC", label: "UTC" },
+  { id: "Europe/London", label: "London" },
+  { id: "Europe/Paris", label: "Paris / Berlin / Madrid" },
+  { id: "Asia/Kolkata", label: "India (IST)" },
+  { id: "Asia/Dubai", label: "Dubai" },
+  { id: "Asia/Singapore", label: "Singapore" },
+  { id: "Asia/Tokyo", label: "Tokyo" },
+  { id: "Australia/Sydney", label: "Sydney" },
+] as const;
 
 interface Workspace { id: string; name: string }
 
@@ -98,6 +118,7 @@ function emptyDraft(workspaceId: string | null): Report {
     id: "", name: "", type: "executive", workspaceId, dateRange: "30",
     channels: CHANNELS.map((c) => c.id), audience: "internal",
     customSummary: "", customMetrics: [], recipients: [], frequency: "none",
+    preferredHour: null, timezone: null,
     status: "Ready", lastSentAt: null, createdAt: "",
   };
 }
@@ -375,7 +396,7 @@ export default function ReportsPage() {
           )}
         </div>
 
-        <div className="modal-field" style={{ marginBottom: 0 }}>
+        <div className="modal-field" style={{ marginBottom: draft.frequency !== "none" ? undefined : 0 }}>
           <label>Send frequency</label>
           <select className="range-select" style={{ width: "100%" }} value={draft.frequency}
             onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}>
@@ -387,6 +408,43 @@ export default function ReportsPage() {
             </p>
           )}
         </div>
+
+        {/* Best-effort preferred time — only meaningful once a schedule is
+            set. Optional: leaving timezone at "No preference" (or hour
+            unset) keeps this report on the plain daily/weekly/monthly
+            schedule, exactly as before this feature existed. */}
+        {draft.frequency !== "none" && (
+          <div className="modal-field" style={{ marginBottom: 0 }}>
+            <label>Preferred time (best effort)</label>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "0 0 8px" }}>
+              This plan checks for due reports once daily, so a preferred time can only
+              guarantee the report won&apos;t send before that hour — it may still arrive
+              up to 24h later. Leave as &quot;No preference&quot; for the plain schedule above.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <select
+                className="range-select" style={{ flex: 1 }}
+                value={draft.timezone ?? ""}
+                onChange={(e) => {
+                  const timezone = e.target.value || null;
+                  setDraft({ ...draft, timezone, preferredHour: timezone ? draft.preferredHour ?? 9 : null });
+                }}
+              >
+                {TIMEZONES.map((tz) => <option key={tz.id} value={tz.id}>{tz.label}</option>)}
+              </select>
+              <select
+                className="range-select" style={{ width: 110 }}
+                value={draft.preferredHour ?? 9}
+                disabled={!draft.timezone}
+                onChange={(e) => setDraft({ ...draft, preferredHour: Number(e.target.value) })}
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>{h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         {nameError && (
           <p style={{ fontSize: 12, color: "var(--red)", margin: "0 0 10px" }}>{nameError}</p>

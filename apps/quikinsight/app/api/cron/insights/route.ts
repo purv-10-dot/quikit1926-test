@@ -49,7 +49,11 @@ export async function GET(req: Request) {
 
   // Sequential to stay well within SMTP rate limits; the volume is small.
   for (const report of scheduled) {
-    if (!isDue(report.frequency, report.lastSentAt, now)) {
+    // preferredHour/timezone are additive, best-effort fields (see
+    // schema.prisma's doc comment on QiReport and PHASE_LOG.md) — every
+    // report created before this feature has both as null, so this call
+    // resolves through isDue()'s exact same two lines as before, unchanged.
+    if (!isDue(report.frequency, report.lastSentAt, now, report.preferredHour, report.timezone)) {
       skipped++;
       continue;
     }

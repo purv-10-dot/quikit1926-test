@@ -30049,6 +30049,18 @@ model QiReport {
   recipients    String[] @default([])
   /// "none" | "daily" | "weekly" | "monthly".
   frequency     String   @default("none")
+  /// Best-effort preferred send hour, 0-23, in `timezone` below. Optional —
+  /// null means "no preference," matching every report's behavior before this
+  /// field existed. Requires `timezone` to also be set to take effect; see
+  /// isDue() in lib/reports/scope.ts. Hobby-plan cron runs once daily, so this
+  /// can only guarantee the report never sends BEFORE this local hour on a
+  /// given day — it may still send up to ~24h later, whenever the next daily
+  /// cron run lands at/after it. Not exact-hour scheduling.
+  preferredHour Int?
+  /// IANA timezone (e.g. "Asia/Kolkata") preferredHour is interpreted in.
+  /// Optional — null means "no preference." Both fields must be set together
+  /// for the best-effort hour check to apply; either alone is ignored.
+  timezone      String?
   status        String   @default("Ready")
   lastSentAt    DateTime?
   createdAt     DateTime @default(now())

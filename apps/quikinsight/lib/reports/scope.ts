@@ -115,9 +115,62 @@ export const DUE_AFTER_MS: Record<string, number> = {
   monthly: (30 * 24 - 12) * 60 * 60 * 1000,
 };
 
-export function isDue(frequency: string, lastSentAt: Date | null, now: number): boolean {
+/**
+ * The report's current local hour (0-23) in `timezone`, at instant `now`.
+ * Returns `null` if `timezone` is missing or not a recognized IANA zone —
+ * callers must treat `null` as "can't evaluate the preferred-hour check,"
+ * never as hour 0, so a bad timezone value degrades to skipping the check
+ * (same as not setting one) rather than silently misfiring at midnight.
+ */
+function localHourIn(timezone: string, now: number): number | null {
+  try {
+    const hourStr = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date(now));
+    // "24" is what some ICU implementations format midnight as with
+    // hour12:false; normalise to 0 so the comparison below is a plain 0-23 range.
+    const h = Number(hourStr) % 24;
+    return Number.isFinite(h) ? h : null;
+  } catch {
+    return null; // invalid IANA zone string
+  }
+}
+
+/**
+ * @param preferredHour Best-effort local send hour (0-23), or null/undefined
+ *   for "no preference." Only takes effect when `timezone` is ALSO set —
+ *   either alone is ignored, matching schema.prisma's doc comment on
+ *   QiReport.preferredHour/timezone. Additive: every existing caller (and
+ *   every report that has never set these fields) passes neither argument,
+ *   so `preferredHour`/`timezone` are both `undefined`, the `if` below is
+ *   never entered, and this function executes exactly the same two lines it
+ *   always has — same cadence window, same lastSentAt dedup, zero behavior
+ *   change.
+ * @param timezone IANA zone (e.g. "Asia/Kolkata") preferredHour is read in.
+ */
+export function isDue(
+  frequency: string,
+  lastSentAt: Date | null,
+  now: number,
+  preferredHour?: number | null,
+  timezone?: string | null,
+): boolean {
   const window = DUE_AFTER_MS[frequency];
   if (!window) return false;      // "none" is never due
-  if (!lastSentAt) return true;   // never sent
-  return now - lastSentAt.getTime() >= window;
+  const cadenceDue = !lastSentAt || now - lastSentAt.getTime() >= window;
+  if (!cadenceDue) return false;
+
+  // Best-effort preferred-hour gate — only when BOTH fields are set. Hobby
+  // plan's cron runs once daily, so this can only guarantee the report never
+  // sends BEFORE this local hour on a given day; it may still send up to
+  // ~24h later, on whichever daily run first lands at/after it. See
+  // PHASE_LOG.md for the full tradeoff.
+  if (preferredHour != null && timezone) {
+    const localHour = localHourIn(timezone, now);
+    if (localHour !== null && localHour < preferredHour) return false;
+  }
+
+  return true;
 }
