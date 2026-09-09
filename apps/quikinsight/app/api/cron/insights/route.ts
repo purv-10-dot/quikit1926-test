@@ -55,7 +55,13 @@ export async function GET(req: Request) {
     }
 
     try {
-      const built = await buildReportForUser(report.userId, toBuilderFrequency(report.frequency));
+      // dateRange passed so the email covers the report's own configured
+      // period (rangeDays' logic, applied inside buildReportForUser) — not
+      // just how often it sends. Was previously omitted here, meaning a
+      // "daily" report's email only ever covered 1 day
+      // (frequencyToDays("DAILY")) regardless of its actual configured
+      // range; the snapshot branch below already had the equivalent fix.
+      const built = await buildReportForUser(report.userId, toBuilderFrequency(report.frequency), new Date(), report.dateRange);
 
       // Nothing connected yet — sending an empty report trains people to ignore it.
       if (built.empty) {
@@ -121,8 +127,11 @@ export async function GET(req: Request) {
         // frequency (daily → 1 day) was clamping the snapshot to a 1-day
         // window and returning genuine zeros; the report's dateRange is the
         // period it's meant to reflect, independent of how often it sends.
-        // buildReportForUser's own days calculation for the EMAIL above is
-        // untouched — it still derives from frequency, as before.
+        // buildReportForUser now receives report.dateRange too (passed at the
+        // call above), so this branch's own computation stays independent —
+        // this snapshotDays/rangeDays(report) call is unchanged either way,
+        // kept as its own explicit computation rather than reusing whatever
+        // buildReportForUser resolved internally, for clarity and isolation.
         try {
           const snapshotWorkspaceId = report.workspaceId ?? undefined;
           const snapshotDays = rangeDays(report);

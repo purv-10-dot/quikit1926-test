@@ -184,7 +184,15 @@ function buildSocialBlocks(data: DashboardData, connected: Set<string>): Platfor
           ],
         });
       }
-      if (connected.has("META_INSTAGRAM")) {
+      // `META_INSTAGRAM` is never a real platformConnection.platform value —
+      // Instagram is reached through the same META_FACEBOOK connection/token
+      // (see lib/connectors/metaConnector.ts's getMetaConn), so
+      // connected.has("META_INSTAGRAM") can never be true and this block was
+      // dead code. Gate on the fetched data itself instead, same as the
+      // manual view (app/api/overview/route.ts's `if (ig)` check on
+      // p.meta.instagram) — real Instagram data already arrives on `meta`
+      // whenever Meta is connected at all.
+      if (meta.instagram) {
         const ig = meta.instagram;
         const quiet = ig.reach === 0 && (ig.topPosts?.length ?? 0) === 0;
         blocks.push({

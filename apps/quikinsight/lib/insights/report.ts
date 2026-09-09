@@ -36,11 +36,22 @@ function periodLabel(days: number, now: Date): string {
  *
  * Returns `report.empty === true` when the user has no connected platforms, so
  * callers can skip sending.
+ *
+ * `dateRange` is optional and additive: when a caller has a saved QiReport in
+ * hand, pass its `dateRange` (e.g. "30") so the report covers the period the
+ * report is actually configured for — the same value/logic
+ * lib/reports/scope.ts's `rangeDays()` applies (falls back to 30 when
+ * missing/invalid) — not how often it happens to send. Omitted, `days` falls
+ * back to `frequencyToDays(frequency)` exactly as before, unchanged for
+ * callers with no report to scope to (lib/insights/ai.ts's getAiInsights,
+ * which generates dashboard AI-insight cards for a user, not any one saved
+ * report).
  */
 export async function buildReportForUser(
   userId: string,
   frequency: Frequency,
-  now: Date = new Date()
+  now: Date = new Date(),
+  dateRange?: string,
 ): Promise<InsightsReport> {
   const connections = await prisma.platformConnection.findMany({
     where: { userId, status: "CONNECTED" },
@@ -48,7 +59,13 @@ export async function buildReportForUser(
   });
   const connected = new Set(connections.map((c) => c.platform as string));
 
-  const days = frequencyToDays(frequency);
+  const parsedDateRange = Number(dateRange);
+  const days =
+    dateRange !== undefined && Number.isFinite(parsedDateRange) && parsedDateRange > 0
+      ? parsedDateRange
+      : dateRange !== undefined
+        ? 30 // dateRange was passed but unparseable — same fallback rangeDays() uses
+        : frequencyToDays(frequency);
 
   // No connected platforms → nothing to generate. Skip the (expensive) fan-out.
   if (connected.size === 0) {
