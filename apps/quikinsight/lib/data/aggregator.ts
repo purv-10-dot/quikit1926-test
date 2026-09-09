@@ -318,6 +318,39 @@ async function computeAggregatedDashboard(
   const googleAds = googleAdsResult.status === "fulfilled" ? googleAdsResult.value : null;
   const metaAds   = metaAdsResult.status   === "fulfilled" ? metaAdsResult.value   : null;
 
+  // Logging only — does NOT change any value above or the empty-report
+  // fallback in generateInsights. Promise.allSettled already silently turns
+  // a connector timeout/error into `null` (matching a genuinely-unconnected
+  // platform), which is indistinguishable from a real outage without this.
+  // Skips the expected `"not connected"` rejection (the Promise.reject used
+  // as a placeholder above when a platform isn't connected at all — not a
+  // real failure) so logs only surface actual connector errors/timeouts for
+  // platforms this user IS connected to.
+  const CONNECTOR_RESULTS: Array<[string, PromiseSettledResult<unknown>, boolean]> = [
+    ["GA4", ga4Result, connected.has("GOOGLE_ANALYTICS")],
+    ["Meta", metaResult, connected.has("META_FACEBOOK")],
+    ["LinkedIn", linkedinResult, connected.has("LINKEDIN")],
+    ["HubSpot", hubspotResult, connected.has("HUBSPOT")],
+    ["Salesforce", salesforceResult, connected.has("SALESFORCE")],
+    ["YouTube", youtubeResult, connected.has("YOUTUBE")],
+    ["GBP", gbpResult, connected.has("GOOGLE_BUSINESS_PROFILE")],
+    ["Mailchimp", mailchimpResult, connected.has("MAILCHIMP")],
+    ["Dynamics", dynamicsResult, connected.has("DYNAMICS")],
+    ["GSC", gscResult, connected.has("GOOGLE_SEARCH_CONSOLE")],
+    ["Zoho", zohoResult, connected.has("ZOHO")],
+    ["QuikCRM", quikCRMResult, connected.has("QUIKCRM")],
+    ["Google Ads", googleAdsResult, connected.has("GOOGLE_ADS")],
+    ["Meta Ads", metaAdsResult, connected.has("META_ADS")],
+  ];
+  for (const [label, result, isConnected] of CONNECTOR_RESULTS) {
+    if (result.status === "rejected" && isConnected) {
+      console.error(
+        `[aggregator] ${label} fetch failed for a connected platform (userId=${userId}, workspaceId=${workspaceId ?? "none"}):`,
+        result.reason,
+      );
+    }
+  }
+
   // ── KPIs ────────────────────────────────────────────────────────────────────
 
   // Reach = total audience across every connected channel. GA4 web users count
