@@ -109,11 +109,22 @@ export async function GET(req: Request) {
         try {
           const builderFrequency = toBuilderFrequency(report.frequency);
           const days = frequencyToDays(builderFrequency);
+          const snapshotWorkspaceId = report.workspaceId ?? undefined;
           const dashboardData = await getAggregatedDashboard(
             report.userId,
             days,
-            report.workspaceId ?? undefined,
+            snapshotWorkspaceId,
           );
+          // TEMP DEBUG — investigating all-zero scheduled-send snapshot KPIs
+          // (workspaceId cmtlm1r1c0000p7xdi3yi3pb1). Remove once resolved.
+          (dashboardData as any)._debugParams = {
+            userId: report.userId,
+            workspaceId: snapshotWorkspaceId,
+            reportWorkspaceIdRaw: report.workspaceId,
+            days,
+            frequency: report.frequency,
+            builderFrequency,
+          };
           await saveReportSnapshot({
             reportId: report.id,
             window: trailingWindow(days),
