@@ -6,6 +6,7 @@ import { sendReportEmail } from "@/lib/insights/mailer";
 import { isDue, toBuilderFrequency } from "@/lib/reports/scope";
 import { saveReportSnapshot } from "@/lib/reports/snapshot";
 import { trailingWindow } from "@/lib/period/resolve";
+import { getAggregatedDashboard } from "@/lib/data/aggregator";
 
 export const runtime = "nodejs";
 // Hobby plan caps functions at 60s. Sends are sequential; a large due list
@@ -89,14 +90,38 @@ export async function GET(req: Request) {
 
         // Additive side effect — see lib/reports/snapshot.ts. Awaited (not
         // fire-and-forget) so it can't be killed mid-write when this
-        // serverless function returns, but it never throws and never affects
-        // the send that already succeeded above.
-        const builderFrequency = toBuilderFrequency(report.frequency);
-        await saveReportSnapshot({
-          reportId: report.id,
-          window: trailingWindow(frequencyToDays(builderFrequency)),
-          data: built,
-        });
+        // serverless function returns, but wrapped in its own try/catch so a
+        // failure here can NEVER affect the send that already succeeded above.
+        //
+        // Deliberately does NOT snapshot `built` (the InsightsReport used to
+        // render the email above) — that shape has no top-level `kpis` array
+        // and no numeric `rawValue`, so it can't be diffed by /reports/compare.
+        // Instead this re-runs getAggregatedDashboard, the same aggregation
+        // call the manual-view snapshot endpoint (app/api/reports/[id]/
+        // snapshot/route.ts) already uses, so every future scheduled-send
+        // snapshot is shaped exactly like a manual-view one — a real `kpis`
+        // array with `rawValue` per KPI — regardless of what shape the email
+        // itself is built from. This is a second server-side computation of
+        // already-fetched-this-request-cycle numbers, not a new external call
+        // beyond what buildReportForUser above already made — the Meta 28-day
+        // clamp inside lib/connectors/instagram.ts/facebook.ts applies exactly
+        // as it does everywhere else, since nothing here changes the window.
+        try {
+          const builderFrequency = toBuilderFrequency(report.frequency);
+          const days = frequencyToDays(builderFrequency);
+          const dashboardData = await getAggregatedDashboard(
+            report.userId,
+            days,
+            report.workspaceId ?? undefined,
+          );
+          await saveReportSnapshot({
+            reportId: report.id,
+            window: trailingWindow(days),
+            data: dashboardData,
+          });
+        } catch (snapshotErr) {
+          console.error(`[cron/insights] snapshot failed for report ${report.id}:`, snapshotErr);
+        }
       } else {
         failed++;
         errors.push(`send:${result.error}`);
