@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { buildReportForUser } from "@/lib/insights/report";
-import { renderInsightsEmail } from "@/lib/insights/emailTemplate";
+import { renderInsightsReportEmail } from "@/lib/insights/renderInsightsReportEmail";
 import { sendReportEmail } from "@/lib/insights/mailer";
 import { isDue, toBuilderFrequency, rangeDays } from "@/lib/reports/scope";
 import { saveReportSnapshot } from "@/lib/reports/snapshot";
@@ -68,7 +68,15 @@ export async function GET(req: Request) {
         select: { firstName: true, email: true },
       });
 
-      const { subject, html } = renderInsightsEmail(built, {
+      // renderInsightsReportEmail — NOT emailTemplate.ts's renderInsightsEmail.
+      // That function is built for ReportsPageData (the manual send's flat
+      // shape); built here is an InsightsReport (sections/blocks/cards). Every
+      // condition in renderInsightsEmail reads a field InsightsReport doesn't
+      // have, so calling it here always fell back to "No connected platforms"
+      // regardless of built.empty (see PHASE_LOG.md 2026-09-09 entries for the
+      // full investigation). This is a dedicated renderer for InsightsReport's
+      // actual shape — see lib/insights/renderInsightsReportEmail.ts.
+      const { subject, html } = renderInsightsReportEmail(built, {
         recipientName: author?.firstName ?? null,
         appUrl,
       });
