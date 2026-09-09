@@ -252,10 +252,52 @@ export async function getAggregatedDashboard(
   return data;
 }
 
+/**
+ * TEMP DEBUG — investigating scheduled-send reports coming back empty despite
+ * real connections (see PHASE_LOG.md 2026-09-09 entries). NOT used by any
+ * production caller. Deliberately bypasses the 60s in-memory aggregation
+ * cache (getAggCache/setAggCache) entirely — a debug call sharing a cache
+ * key with a real request within that window could otherwise return a
+ * stale/cached result instead of actually re-running the fetch, which would
+ * make this debug endpoint just as unable to reproduce the issue as the
+ * earlier hand-constructed test call was. Returns the same DashboardData
+ * getAggregatedDashboard would, plus the raw per-platform
+ * Promise.allSettled outcome (fulfilled/rejected + reason) that
+ * computeAggregatedDashboard normally only sends to console.error.
+ *
+ * DELETE once the investigation concludes, along with app/api/cron/
+ * debug-run-report/route.ts, which is this function's only caller.
+ */
+export async function getAggregatedDashboardDebug(
+  userId: string,
+  period: PeriodSelection | number = 28,
+  workspaceId?: string,
+): Promise<{ data: DashboardData; connectorResults: ConnectorResultDebug[] }> {
+  const sel = toPeriod(period);
+  let connectorResults: ConnectorResultDebug[] = [];
+  const data = await computeAggregatedDashboard(userId, sel, workspaceId, (results) => {
+    connectorResults = results;
+  });
+  return { data, connectorResults };
+}
+
+// TEMP DEBUG hook — see getAggregatedDashboardDebug below. Optional and unused
+// by every existing caller (getAggregatedDashboard never passes it), so this
+// adds a parameter with no default-path behavior change: when omitted,
+// computeAggregatedDashboard runs byte-for-byte as before.
+export interface ConnectorResultDebug {
+  label: string;
+  connected: boolean;
+  status: "fulfilled" | "rejected";
+  reason?: string;
+}
+type ConnectorDebugSink = (results: ConnectorResultDebug[]) => void;
+
 async function computeAggregatedDashboard(
   userId: string,
   period: PeriodSelection,
   workspaceId?: string,
+  onConnectorResults?: ConnectorDebugSink,
 ): Promise<DashboardData> {
   const window = period.current;
   const days = windowToDays(window);
@@ -349,6 +391,21 @@ async function computeAggregatedDashboard(
         result.reason,
       );
     }
+  }
+
+  // TEMP DEBUG — see getAggregatedDashboardDebug. No-op (onConnectorResults is
+  // undefined) for every real caller; only the debug endpoint passes a sink.
+  if (onConnectorResults) {
+    onConnectorResults(
+      CONNECTOR_RESULTS.map(([label, result, isConnected]) => ({
+        label,
+        connected: isConnected,
+        status: result.status,
+        reason: result.status === "rejected"
+          ? (result.reason instanceof Error ? result.reason.message : String(result.reason))
+          : undefined,
+      })),
+    );
   }
 
   // ── KPIs ────────────────────────────────────────────────────────────────────
