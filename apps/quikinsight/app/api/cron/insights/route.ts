@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { buildReportForUser, frequencyToDays } from "@/lib/insights/report";
+import { buildReportForUser } from "@/lib/insights/report";
 import { renderInsightsEmail } from "@/lib/insights/emailTemplate";
 import { sendReportEmail } from "@/lib/insights/mailer";
-import { isDue, toBuilderFrequency } from "@/lib/reports/scope";
+import { isDue, toBuilderFrequency, rangeDays } from "@/lib/reports/scope";
 import { saveReportSnapshot } from "@/lib/reports/snapshot";
 import { trailingWindow } from "@/lib/period/resolve";
 import { getAggregatedDashboard } from "@/lib/data/aggregator";
@@ -106,28 +106,26 @@ export async function GET(req: Request) {
         // beyond what buildReportForUser above already made — the Meta 28-day
         // clamp inside lib/connectors/instagram.ts/facebook.ts applies exactly
         // as it does everywhere else, since nothing here changes the window.
+        //
+        // `days` here is the report's own configured `dateRange` (via
+        // rangeDays, same as the manual-view snapshot endpoint) — NOT
+        // frequencyToDays(frequency). Confirmed by debug output that using
+        // frequency (daily → 1 day) was clamping the snapshot to a 1-day
+        // window and returning genuine zeros; the report's dateRange is the
+        // period it's meant to reflect, independent of how often it sends.
+        // buildReportForUser's own days calculation for the EMAIL above is
+        // untouched — it still derives from frequency, as before.
         try {
-          const builderFrequency = toBuilderFrequency(report.frequency);
-          const days = frequencyToDays(builderFrequency);
           const snapshotWorkspaceId = report.workspaceId ?? undefined;
+          const snapshotDays = rangeDays(report);
           const dashboardData = await getAggregatedDashboard(
             report.userId,
-            days,
+            snapshotDays,
             snapshotWorkspaceId,
           );
-          // TEMP DEBUG — investigating all-zero scheduled-send snapshot KPIs
-          // (workspaceId cmtlm1r1c0000p7xdi3yi3pb1). Remove once resolved.
-          (dashboardData as any)._debugParams = {
-            userId: report.userId,
-            workspaceId: snapshotWorkspaceId,
-            reportWorkspaceIdRaw: report.workspaceId,
-            days,
-            frequency: report.frequency,
-            builderFrequency,
-          };
           await saveReportSnapshot({
             reportId: report.id,
-            window: trailingWindow(days),
+            window: trailingWindow(snapshotDays),
             data: dashboardData,
           });
         } catch (snapshotErr) {
