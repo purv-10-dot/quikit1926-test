@@ -18,6 +18,7 @@ import { useToastStore } from "@/store/useToastStore";
 import NotConnected from "@/components/ui/NotConnected";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { computeKpiDeltas, type ComparisonKpiRow, type SnapshotKpi } from "@/lib/reports/compare";
+import { computePlatformGroupDeltas } from "@/lib/reports/compareMetrics";
 
 interface SnapshotListItem {
   id: string;
@@ -33,10 +34,52 @@ interface SnapshotDetail {
   generatedAt: string;
   kind: "dashboard" | "insights-report" | "unknown";
   kpis: SnapshotKpi[];
+  /** Additive — the per-platform raw data (GA4/GSC/Meta/YouTube), powering the extended comparison sections below the original 6-KPI table. */
+  platforms?: unknown;
 }
 
 function fmtDate(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * One comparison table — extracted so the new per-platform sections below
+ * render with the exact same markup/style as the original KPI table above,
+ * without duplicating it five more times. The original table's own JSX is
+ * left as-is (not swapped to use this) so its existing behavior is provably
+ * unchanged; this is purely new code for the new sections.
+ */
+function ComparisonTable({ rows, dateALabel, dateBLabel }: { rows: ComparisonKpiRow[]; dateALabel: string; dateBLabel: string }) {
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <thead>
+        <tr style={{ borderBottom: "2px solid var(--border)" }}>
+          <th style={{ padding: "7px 6px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>Metric</th>
+          <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>{dateALabel}</th>
+          <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>{dateBLabel}</th>
+          <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.label} style={{ borderBottom: "1px solid var(--border)" }}>
+            <td style={{ padding: "9px 6px", color: "var(--text-primary)", fontWeight: 600 }}>{r.label}</td>
+            <td style={{ padding: "9px 6px", textAlign: "right", color: "var(--text-muted)" }}>{r.aValue ?? "—"}</td>
+            <td style={{ padding: "9px 6px", textAlign: "right", color: "var(--text-primary)", fontWeight: 700 }}>{r.bValue ?? "—"}</td>
+            <td style={{ padding: "9px 6px", textAlign: "right" }}>
+              {r.deltaPct == null ? (
+                <span style={{ color: "var(--text-muted)" }}>—</span>
+              ) : (
+                <span style={{ fontWeight: 700, color: r.deltaPct > 0 ? "#16a34a" : r.deltaPct < 0 ? "#dc2626" : "var(--text-muted)" }}>
+                  {r.deltaPct > 0 ? "▲" : r.deltaPct < 0 ? "▼" : "–"} {Math.abs(r.deltaPct).toFixed(1)}%
+                </span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 export default function ComparePage() {
@@ -114,6 +157,14 @@ export default function ComparePage() {
 
   const eitherUncomparable =
     (snapA && snapA.kind !== "dashboard") || (snapB && snapB.kind !== "dashboard");
+
+  // Additive: per-platform sections (GA4/GSC/Facebook/Instagram/YouTube)
+  // alongside the original 6-KPI table above. Same "dashboard"-kind gate as
+  // `rows` — an "insights-report" snapshot has no `platforms` field either.
+  const platformGroups =
+    snapA?.kind === "dashboard" && snapB?.kind === "dashboard"
+      ? computePlatformGroupDeltas(snapA.platforms, snapB.platforms)
+      : [];
 
   async function sendComparison() {
     const toFromDraft = emailToDraft.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -286,46 +337,63 @@ export default function ComparePage() {
               body="One of the selected dates was recorded from a scheduled email send, which stores a different report format than the on-screen view. Pick a date recorded from viewing the report on-screen instead."
             />
           ) : snapA && snapB ? (
-            <div className="chart-card">
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>Key Performance Indicators</h3>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{fmtDate(snapA.snapshotDate)} vs {fmtDate(snapB.snapshotDate)}</span>
-              </div>
-              {rows.length === 0 ? (
-                <div style={{ padding: "24px 0", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                  No matching KPIs between these two snapshots.
+            <>
+              <div className="chart-card">
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>Key Performance Indicators</h3>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{fmtDate(snapA.snapshotDate)} vs {fmtDate(snapB.snapshotDate)}</span>
                 </div>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: "2px solid var(--border)" }}>
-                      <th style={{ padding: "7px 6px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>KPI</th>
-                      <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>{fmtDate(snapA.snapshotDate)}</th>
-                      <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>{fmtDate(snapB.snapshotDate)}</th>
-                      <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>Change</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.label} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "9px 6px", color: "var(--text-primary)", fontWeight: 600 }}>{r.label}</td>
-                        <td style={{ padding: "9px 6px", textAlign: "right", color: "var(--text-muted)" }}>{r.aValue ?? "—"}</td>
-                        <td style={{ padding: "9px 6px", textAlign: "right", color: "var(--text-primary)", fontWeight: 700 }}>{r.bValue ?? "—"}</td>
-                        <td style={{ padding: "9px 6px", textAlign: "right" }}>
-                          {r.deltaPct == null ? (
-                            <span style={{ color: "var(--text-muted)" }}>—</span>
-                          ) : (
-                            <span style={{ fontWeight: 700, color: r.deltaPct > 0 ? "#16a34a" : r.deltaPct < 0 ? "#dc2626" : "var(--text-muted)" }}>
-                              {r.deltaPct > 0 ? "▲" : r.deltaPct < 0 ? "▼" : "–"} {Math.abs(r.deltaPct).toFixed(1)}%
-                            </span>
-                          )}
-                        </td>
+                {rows.length === 0 ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                    No matching KPIs between these two snapshots.
+                  </div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                        <th style={{ padding: "7px 6px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>KPI</th>
+                        <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>{fmtDate(snapA.snapshotDate)}</th>
+                        <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>{fmtDate(snapB.snapshotDate)}</th>
+                        <th style={{ padding: "7px 6px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: 11 }}>Change</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.label} style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td style={{ padding: "9px 6px", color: "var(--text-primary)", fontWeight: 600 }}>{r.label}</td>
+                          <td style={{ padding: "9px 6px", textAlign: "right", color: "var(--text-muted)" }}>{r.aValue ?? "—"}</td>
+                          <td style={{ padding: "9px 6px", textAlign: "right", color: "var(--text-primary)", fontWeight: 700 }}>{r.bValue ?? "—"}</td>
+                          <td style={{ padding: "9px 6px", textAlign: "right" }}>
+                            {r.deltaPct == null ? (
+                              <span style={{ color: "var(--text-muted)" }}>—</span>
+                            ) : (
+                              <span style={{ fontWeight: 700, color: r.deltaPct > 0 ? "#16a34a" : r.deltaPct < 0 ? "#dc2626" : "var(--text-muted)" }}>
+                                {r.deltaPct > 0 ? "▲" : r.deltaPct < 0 ? "▼" : "–"} {Math.abs(r.deltaPct).toFixed(1)}%
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Additive per-platform sections — new, below the original KPI
+                  table above, never replacing it. A platform with no data in
+                  either snapshot (not connected, or an older snapshot from
+                  before this metric existed) is simply omitted rather than
+                  shown as an empty/misleading section. */}
+              {platformGroups.map((group) => (
+                <div className="chart-card" key={group.key}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{group.title}</h3>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{fmtDate(snapA.snapshotDate)} vs {fmtDate(snapB.snapshotDate)}</span>
+                  </div>
+                  <ComparisonTable rows={group.rows} dateALabel={fmtDate(snapA.snapshotDate)} dateBLabel={fmtDate(snapB.snapshotDate)} />
+                </div>
+              ))}
+            </>
           ) : null}
 
           <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "8px 0 4px" }}>

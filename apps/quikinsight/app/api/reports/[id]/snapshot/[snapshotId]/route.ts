@@ -61,6 +61,11 @@ export async function GET(
       // Only the comparable shape is handed back as `kpis` — kind tells the
       // caller whether to trust it.
       kpis: kind === "dashboard" ? data.kpis : [],
+      // Additive: the per-platform breakdown (GA4/GSC/Meta/YouTube raw
+      // fields), same "dashboard" shape only — powers the extended
+      // per-platform comparison sections in lib/reports/compareMetrics.ts.
+      // Never present (and never read) on an "insights-report" snapshot.
+      platforms: kind === "dashboard" ? (data.platforms ?? null) : null,
     },
   });
 }

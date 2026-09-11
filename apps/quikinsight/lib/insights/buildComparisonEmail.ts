@@ -13,6 +13,7 @@
  */
 
 import type { ComparisonKpiRow } from "@/lib/reports/compare";
+import type { PlatformGroup } from "@/lib/reports/compareMetrics";
 
 const BRAND      = "#4f46e5";
 const INK        = "#1a1d23";
@@ -55,6 +56,20 @@ export interface ComparisonEmailData {
   dateB: string;
   rows: ComparisonKpiRow[];
   generatedAt: string;
+  /** Additive — the same per-platform sections /reports/compare shows below its KPI table. Omitted/empty renders nothing extra, matching the page's behavior when a platform has no data in either snapshot. */
+  platformGroups?: PlatformGroup[];
+}
+
+function tableHtmlFor(rows: ComparisonKpiRow[], dateA: string, dateB: string, colHeader: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr style="border-bottom:2px solid ${BORDER};">
+      <th style="padding:7px 6px;text-align:left;font-weight:600;color:${MUTED};font-size:11px;">${esc(colHeader)}</th>
+      <th style="padding:7px 6px;text-align:right;font-weight:600;color:${MUTED};font-size:11px;">${esc(dateA)}</th>
+      <th style="padding:7px 6px;text-align:right;font-weight:600;color:${MUTED};font-size:11px;">${esc(dateB)}</th>
+      <th style="padding:7px 6px;text-align:right;font-weight:600;color:${MUTED};font-size:11px;">Change</th>
+    </tr>
+    ${rows.map(kpiCompareRow).join("")}
+  </table>`;
 }
 
 export interface RenderOptions {
@@ -108,6 +123,21 @@ export function buildComparisonEmail(
       <tr><td style="padding:18px 20px;">${tableHtml}</td></tr>
     </table>
   </td></tr>
+
+  <!-- Additive per-platform sections — new, below the original KPI table
+       above, never replacing it. A group with no comparable rows (platform
+       not connected/no data in either snapshot) is simply not present in
+       platformGroups (see computePlatformGroupDeltas), so nothing renders
+       for it here — same "omit, don't fabricate" behavior as the page. -->
+  ${(data.platformGroups ?? []).map((group) => `
+  <tr><td>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${SURFACE};border:1px solid ${BORDER};border-radius:12px;margin-bottom:16px;">
+      <tr><td style="padding:18px 20px;">
+        <div style="font-size:15px;font-weight:700;color:${INK};margin-bottom:12px;">${esc(group.title)}</div>
+        ${tableHtmlFor(group.rows, data.dateA, data.dateB, "Metric")}
+      </td></tr>
+    </table>
+  </td></tr>`).join("")}
 
   <tr><td style="padding:8px 0 4px;">
     <p style="margin:0;font-size:11px;color:#9aa1ac;">MoreYeahs Marketing Operating System</p>

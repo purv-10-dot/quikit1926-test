@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { computeKpiDeltas } from "@/lib/reports/compare";
+import { computePlatformGroupDeltas } from "@/lib/reports/compareMetrics";
 import { buildComparisonEmail } from "@/lib/insights/buildComparisonEmail";
 import { sendReportEmail } from "@/lib/insights/mailer";
 
@@ -72,6 +73,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const rows = computeKpiDeltas(kpisA, kpisB);
+  // Additive: the same per-platform sections /reports/compare shows below
+  // its KPI table. Reads directly off the already-loaded snapshot rows —
+  // no extra fetch, no connector call.
+  const platformGroups = computePlatformGroupDeltas(snapA.data?.platforms, snapB.data?.platforms);
 
   const { subject, html } = buildComparisonEmail(
     {
@@ -79,6 +84,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       dateA: snapA.snapshotDate.toISOString().slice(0, 10),
       dateB: snapB.snapshotDate.toISOString().slice(0, 10),
       rows,
+      platformGroups,
       generatedAt: new Date().toISOString(),
     },
     { recipientName: session.user.name ?? null, appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3015" },
