@@ -131,19 +131,31 @@ async function instagramInsights(igId: string, token: string, w: DateWindow) {
   const { since, until } = windowToUnixRange(w);
 
   // Account-level insights are best-effort (several IG metrics were deprecated).
-  // `metric_type=total_value` is required as of Graph API v19+ for `reach` to
-  // return real data on this endpoint â€” without it the response's `data`
-  // items carry an empty `values` array, which silently summed to 0 here and
-  // fell through to the less-accurate postReachSum fallback below. Same fix
-  // already applied in lib/connectors/instagram.ts; ported here since this is
-  // a separate, duplicated implementation that never got the fix.
+  // `metric_type=total_value` is required as of Graph API v19+ for `reach`/
+  // `views`/`profile_views` to return real data on this endpoint — without it
+  // the response's `data` items carry an empty `values` array, which silently
+  // summed to 0 here and fell through to the less-accurate postReachSum
+  // fallback below. `reach`-only fix already applied in lib/connectors/
+  // instagram.ts and ported here; `views`/`profile_views` were NOT included
+  // in that port, so `impressions` below was hardcoded to equal `reach`
+  // (never a real, independent number) and `profileViews` was actually the
+  // follower count — both fixed now by requesting and parsing the same three
+  // metrics instagram.ts already does, in the same shape.
+  let impressions = 0;
+  let profileViews = 0;
   try {
     const data = await metaGet(
-      `/${igId}/insights?metric=reach&period=day&metric_type=total_value&since=${since}&until=${until}`,
+      `/${igId}/insights?metric=reach,views,profile_views&period=day&metric_type=total_value&since=${since}&until=${until}`,
       token
     );
     for (const item of data.data ?? []) {
-      metrics[item.name] = Number(item.total_value?.value) || 0;
+      const total = Number(item.total_value?.value) || 0;
+      metrics[item.name] = total;
+      if (item.name === "views") impressions = total;
+      else if (item.name === "profile_views") profileViews = total;
+    }
+    if (impressions === 0) {
+      console.error("[metaConnector] Instagram views metric returned 0 for account insights (accountId:", igId, ")");
     }
   } catch (err) {
     console.error("IG account insights error:", err instanceof Error ? err.message : err);
@@ -195,12 +207,12 @@ async function instagramInsights(igId: string, token: string, w: DateWindow) {
   const reach = metrics["reach"] || postReachSum;
   const accountsEngaged = postEngSum;
   return {
-    reach, impressions: reach,
-    // `profileViews` here has always actually held the follower count, not
-    // real profile-view data (there's no profile_views fetch in this
-    // function) — kept as-is since something may already read it under that
-    // name, but `followers` is the correctly-named field going forward.
-    profileViews: followers, followers,
+    reach,
+    // Real, independently-fetched values as of this fix — previously
+    // `impressions` was hardcoded to equal `reach` and `profileViews` was
+    // actually the follower count (see the account-insights fetch above).
+    impressions, profileViews,
+    followers,
     accountsEngaged, engagementRate: computeEngagementRate(accountsEngaged, reach),
     topPosts,
   };
