@@ -106,6 +106,30 @@ interface Workspace { id: string; name: string }
 const labelOf = (list: ReadonlyArray<{ id: string; label: string }>, id: string) =>
   list.find((x) => x.id === id)?.label ?? id;
 
+/**
+ * This system's one fixed daily schedule check (apps/quikinsight/vercel.json's
+ * `/api/cron/insights` cron — "0 7 * * *"). A plain constant, not a live
+ * lookup: display-only, so the preferred-time copy can show it converted into
+ * whichever timezone the user picks, without adding any new logic/state.
+ */
+const DAILY_CHECK_UTC_HOUR = 7;
+
+/** `DAILY_CHECK_UTC_HOUR` converted to a wall-clock hour in `timezone`, or `null` if it can't be computed (unrecognized zone). */
+function dailyCheckHourIn(timezone: string): number | null {
+  try {
+    const check = new Date(Date.UTC(2000, 0, 1, DAILY_CHECK_UTC_HOUR));
+    const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hour12: false }).format(check);
+    const h = Number(hourStr) % 24;
+    return Number.isFinite(h) ? h : null;
+  } catch {
+    return null;
+  }
+}
+
+function fmtHour12(h: number): string {
+  return h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`;
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -412,39 +436,64 @@ export default function ReportsPage() {
         {/* Best-effort preferred time — only meaningful once a schedule is
             set. Optional: leaving timezone at "No preference" (or hour
             unset) keeps this report on the plain daily/weekly/monthly
-            schedule, exactly as before this feature existed. */}
-        {draft.frequency !== "none" && (
-          <div className="modal-field" style={{ marginBottom: 0 }}>
-            <label>Preferred time (best effort)</label>
-            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "0 0 8px" }}>
-              This plan checks for due reports once daily, so a preferred time can only
-              guarantee the report won&apos;t send before that hour — it may still arrive
-              up to 24h later. Leave as &quot;No preference&quot; for the plain schedule above.
-            </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <select
-                className="range-select" style={{ flex: 1 }}
-                value={draft.timezone ?? ""}
-                onChange={(e) => {
-                  const timezone = e.target.value || null;
-                  setDraft({ ...draft, timezone, preferredHour: timezone ? draft.preferredHour ?? 9 : null });
-                }}
-              >
-                {TIMEZONES.map((tz) => <option key={tz.id} value={tz.id}>{tz.label}</option>)}
-              </select>
-              <select
-                className="range-select" style={{ width: 110 }}
-                value={draft.preferredHour ?? 9}
-                disabled={!draft.timezone}
-                onChange={(e) => setDraft({ ...draft, preferredHour: Number(e.target.value) })}
-              >
-                {Array.from({ length: 24 }, (_, h) => (
-                  <option key={h} value={h}>{h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}</option>
-                ))}
-              </select>
+            schedule, exactly as before this feature existed.
+
+            TEXT-ONLY copy below (plus dailyCheckHourIn/fmtHour12, pure
+            display helpers reading the fixed DAILY_CHECK_UTC_HOUR constant)
+            — no new state, no new save/validation logic. See PHASE_LOG.md:
+            users were assuming "8 AM" meant delivery AT 8 AM; the hour is
+            actually only a minimum guard against this system's one fixed
+            daily check, so most chosen hours resolve to the same actual
+            delivery time. */}
+        {draft.frequency !== "none" && (() => {
+          const checkHour = draft.timezone ? dailyCheckHourIn(draft.timezone) : null;
+          const hourIsAfterCheck = draft.timezone && checkHour != null && draft.preferredHour != null && draft.preferredHour > checkHour;
+          return (
+            <div className="modal-field" style={{ marginBottom: 0 }}>
+              <label>Preferred time (best effort)</label>
+              <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "0 0 6px" }}>
+                This does <strong>not</strong> schedule delivery at your chosen hour — it only
+                guarantees the report won&apos;t send <strong>before</strong> that hour. This system
+                checks for due reports once daily, so most preferred hours will all result in the
+                same actual delivery time. Leave as &quot;No preference&quot; for the plain schedule above.
+              </p>
+              {checkHour != null && (
+                <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "0 0 8px" }}>
+                  This system&apos;s daily check runs once, at approximately <strong>{fmtHour12(checkHour)}</strong> in
+                  the timezone selected below.
+                </p>
+              )}
+              {hourIsAfterCheck && (
+                <p style={{ fontSize: 11.5, color: "var(--red)", margin: "0 0 8px" }}>
+                  Warning: this hour may be later than this system&apos;s daily check time — your report
+                  may not send today, and will only send once the check catches up naturally over time.
+                </p>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <select
+                  className="range-select" style={{ flex: 1 }}
+                  value={draft.timezone ?? ""}
+                  onChange={(e) => {
+                    const timezone = e.target.value || null;
+                    setDraft({ ...draft, timezone, preferredHour: timezone ? draft.preferredHour ?? 9 : null });
+                  }}
+                >
+                  {TIMEZONES.map((tz) => <option key={tz.id} value={tz.id}>{tz.label}</option>)}
+                </select>
+                <select
+                  className="range-select" style={{ width: 110 }}
+                  value={draft.preferredHour ?? 9}
+                  disabled={!draft.timezone}
+                  onChange={(e) => setDraft({ ...draft, preferredHour: Number(e.target.value) })}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{fmtHour12(h)}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {nameError && (
           <p style={{ fontSize: 12, color: "var(--red)", margin: "0 0 10px" }}>{nameError}</p>
